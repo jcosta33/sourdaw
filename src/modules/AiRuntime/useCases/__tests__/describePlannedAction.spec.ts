@@ -54,6 +54,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     activeRecordingRef: { current: [] },
 }));
 
+import { describeAction } from '#/modules/Command/useCases';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { describePlannedAction } from '../describePlannedAction';
 
@@ -110,6 +112,12 @@ const context: ProjectContext = {
 describe('describePlannedAction', () => {
     beforeEach(() => {
         mocks.markerStoreValue.value = null;
+    });
+
+    it('words an action type with no planned reading as the action registry does', () => {
+        const action = { type: 'togglePlayback' } as const;
+
+        expect(describePlannedAction({ action, context })).toBe(describeAction(action));
     });
 
     it('discloses the exact clip, track, range, and dormant loop-length effect', () => {

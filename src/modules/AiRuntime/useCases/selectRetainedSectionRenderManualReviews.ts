@@ -1,6 +1,6 @@
+import { type RenderProjectSectionJobSnapshot } from '#/modules/AudioRendering/events';
 import { getExactAgentSectionRenderArtifact } from '#/modules/AudioRendering/useCases';
 import { getVerifiedBatchReceiptIdentity, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentRunPendingEffectContinuation, type AgentRunState } from '../models/AgentRun';
 

@@ -275,8 +275,14 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         }
 
         if (this._counter >= this._measureQuanta) {
+            // The tail gets its own rate only when it lasted at least one
+            // segment target, or when no segment has closed yet so the run has
+            // a rate. A shorter tail would be rated from a `Date.now()` delta
+            // quantized to whole milliseconds, which can inflate it several
+            // times over; it pushes no rate and calibration rates its samples
+            // from the last closed segment.
             const tailMs = Date.now() - this._segmentStartMs;
-            if (tailMs > 0) {
+            if (tailMs > 0 && (tailMs >= this._segmentTargetMs || this._segmentRates.length === 0)) {
                 this._segmentRates.push(((after - this._segmentStartTick) | 0) / tailMs);
             }
             this.port.postMessage({

@@ -109,7 +109,9 @@ export function validateAgentRiskApproval(input: ValidateAgentRiskApprovalInput)
     try {
         current = compileAgentRiskApproval({
             commandBatch: input.commandBatch,
-            requireExplicitApproval: input.approval.policy.decision === 'confirm',
+            // An approval stored before the input was recorded keeps the inference it was validated by.
+            requireExplicitApproval:
+                input.approval.explicitApprovalRequired ?? input.approval.policy.decision === 'confirm',
             metricGoalState: serializedGoals,
         });
     } catch (error) {

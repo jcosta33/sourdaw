@@ -38,10 +38,10 @@ describe('handleSetMasterGain — execute', () => {
         expect(mockedReplace).not.toHaveBeenCalled();
     });
 
-    it('calls replaceMasterGain with expected and replacement when store has gain', () => {
+    it('calls replaceMasterGain with expected and replacement when store has gain', async () => {
         mockValue = { masterGain: 50 };
         mockedReplace.mockReturnValue(true);
-        handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
+        await handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
         expect(mockedReplace).toHaveBeenCalledWith({ expectedPercent: 50, replacementPercent: 80 });
     });
 

@@ -27,8 +27,29 @@ it meets and drops the rest. That is the VST® 3 specification's own rule for it
 applies it to every hosted format, so a plugin installed twice is hosted from the copy the user
 installed most deliberately.
 
+A default folder is located the way the platform names it, never by a spelling that usually matches.
+On Windows both formats define their folders relative to `%COMMONPROGRAMFILES%` and `%LOCALAPPDATA%`,
+and Sourdaw resolves them from the shell's own known folders (`FOLDERID_ProgramFilesCommon`,
+`FOLDERID_LocalAppData`) — the same query the VST® 3 SDK's Windows host module makes — rather than from
+a drive letter or from the process environment. A folder the shell cannot name is left out, not guessed.
+
 Custom plugin folders require a future native grant or trusted preference flow before they can be scanned.
 A renderer-provided absolute path is not enough authority.
+
+### `CLAP_PATH` is not a scan root
+
+CLAP's discovery rule asks a host to read the `CLAP_PATH` environment variable as a list of extra
+directories to search. Sourdaw does not, on any platform.
+
+The variable is outside the renderer's reach, but that is not what makes a root trustworthy here. A
+scan root is an authority the native layer grants, and every path it adds is third-party code the scan
+worker loads. `CLAP_PATH` is a custom root set by whatever launched the process — a shell profile, a
+launcher, an installer's leftover — with no grant, no record, and no way for the person running
+Sourdaw to see or revoke it. Honouring it would open the user-supplied-folder route this policy keeps
+closed until the native grant flow exists, and would do it through the one channel that flow could
+never show in settings. When that grant flow is designed, whether `CLAP_PATH` entries can be offered
+as grants is a question for that design; until then, a plugin outside the default folders is not
+scanned, whatever the environment says.
 
 The scanner also refuses symlinked plugin paths, including paths with symlinked ancestors. A symlink
 under or at an allowed root must not become an implicit grant to scan or load a target outside the

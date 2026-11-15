@@ -1,7 +1,8 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { grooveTemplateStore } from '#/modules/MIDI/stores';
 import { restoreGrooveAssignment } from '#/modules/MIDI/useCases';
-import { type YeastGrooveAssignmentSnapshot } from '#/utils/handlerContract';
+
+import { type YeastGrooveAssignmentSnapshot } from '../events/yeastAppActions';
 
 /**
  * The write half of the #4124 capture/restore pair: re-binds the groove

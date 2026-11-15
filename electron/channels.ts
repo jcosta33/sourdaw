@@ -28,6 +28,9 @@ export const DIALOG_MESSAGE_CHANNEL = 'sourdaw:dialog:message';
 export const PATHS_SAMPLES_BASE_CHANNEL = 'sourdaw:paths:samples-base';
 export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
 
+/** Renderer → main, invoke: the machine's total physical memory, in bytes. */
+export const SYSTEM_TOTAL_MEMORY_CHANNEL = 'sourdaw:system:total-memory';
+
 /** Preload-only capability channels for local microphone dictation. */
 export const VOICE_DICTATION_ARM_CHANNEL = 'sourdaw:voice-dictation:arm';
 export const VOICE_DICTATION_DISARM_CHANNEL = 'sourdaw:voice-dictation:disarm';
@@ -178,6 +181,10 @@ export type SourdawBridge = {
         readonly samplesBase: () => Promise<string>;
         /** OS-correct filesystem path join, for paths handed back to native commands. */
         readonly join: (...segments: readonly string[]) => Promise<string>;
+    };
+    system: {
+        /** Total physical memory of this machine, in bytes. Not free memory: it does not change while the app runs. */
+        readonly totalMemoryBytes: () => Promise<number>;
     };
     /** Deliberately outside generic `invoke`: start requires a preload-held activation. */
     voiceDictation: {

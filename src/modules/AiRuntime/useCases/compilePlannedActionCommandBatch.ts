@@ -6,6 +6,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionCommandGraph } from '../models/ActionCommandGraph';
+import { automationTransformByActionType } from '../models/AutomationTransformByActionType';
 import { type ProjectContext } from '../models/ProjectContext';
 
 import { compilePendingActionCommandEnvelopes } from './compilePendingActionCommandEnvelopes';
@@ -24,15 +25,6 @@ type CompilePlannedActionCommandBatchInput = {
     runId: string;
     context: ProjectContext;
 };
-
-const AUTOMATION_TRANSFORM_TYPES = new Set<AppAction['type']>([
-    'scaleAutomation',
-    'stretchAutomation',
-    'invertAutomation',
-    'reverseAutomation',
-    'thinAutomation',
-    'quantizeAutomation',
-]);
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -295,7 +287,7 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
             recordDynamicEffects();
             continue;
         }
-        if (!AUTOMATION_TRANSFORM_TYPES.has(action.type)) {
+        if (!automationTransformByActionType[action.type]) {
             recordDynamicEffects();
             continue;
         }

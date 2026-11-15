@@ -2,8 +2,9 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { markGrooveTemplateProjectWrite } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext, type YeastProcessorSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type YeastProcessorSnapshot } from '../events/yeastAppActions';
 import { type ProcessorType } from '../models/ProcessorCatalog';
 import { createInitialYeastProcessorParams } from '../models/YeastProcessorInitialParams';
 import { addYeastProcessor } from '../useCases/addYeastProcessor';

@@ -69,6 +69,12 @@ impl LorenzMod {
     }
 }
 
+impl Default for LorenzMod {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Perlin-style smooth noise modulator — organic, flowing modulation.
 /// Uses a simple interpolated noise approach (not true Perlin, but similar character).
 pub struct PerlinMod {
@@ -124,5 +130,11 @@ impl PerlinMod {
         let t = self.phase;
         let smooth_t = (1.0 - (t * core::f32::consts::PI).cos()) * 0.5;
         self.val_a * (1.0 - smooth_t) + self.val_b * smooth_t
+    }
+}
+
+impl Default for PerlinMod {
+    fn default() -> Self {
+        Self::new()
     }
 }

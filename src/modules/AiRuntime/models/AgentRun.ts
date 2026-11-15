@@ -157,9 +157,38 @@ export type AgentRunPlanStep = {
     description: string;
 };
 
+/** A scalar figure exactly as the measurement reported it, with the unit its metric definition fixes. */
+export type AgentRunMeasuredFigure = { value: number; unit: string };
+
+/** One metric a measured preview moved: its figures before and after the batch and the compared change. */
+export type AgentRunMeasuredAudibleMetric = {
+    targetId: string;
+    targetKind: 'master' | 'track' | 'bus';
+    /** The beat range the figures were measured over. */
+    range: { startBeat: number; endBeat: number; sectionId: string | null };
+    metricId: string;
+    baseline: AgentRunMeasuredFigure;
+    preview: AgentRunMeasuredFigure;
+    delta: AgentRunMeasuredFigure;
+};
+
+/** The longest text a persisted run keeps in any one field; longer text is refused when the run is read. */
+export const AGENT_RUN_MAX_TEXT_LENGTH = 128 * 1024;
+
+/** The most figures a plan's audible claim lists; the persisted run is refused past it, so a claim never exceeds it. */
+export const MAX_AUDIBLE_CLAIM_METRICS = 256;
+
+/**
+ * What the plan says the batch does to the sound: nothing, or the figures of a measurement bound to
+ * exactly this batch at this revision.
+ */
+export type AgentRunPlanAudibleImpact =
+    | { status: 'not-claimed'; reason: string }
+    | { status: 'measured'; revision: string; batchContentHash: string; metrics: AgentRunMeasuredAudibleMetric[] };
+
 export type AgentRunPlanExpectedImpact = {
     project: string[];
-    audible: { status: 'not-claimed'; reason: string };
+    audible: AgentRunPlanAudibleImpact;
 };
 
 export type AgentRunPlanCapability = {

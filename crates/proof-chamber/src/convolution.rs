@@ -146,7 +146,7 @@ struct ConvStage {
 impl ConvStage {
     fn new(partition_size: usize, ir_segment: &[f32], delay_samples: usize) -> Self {
         let fft_size = partition_size * 2;
-        let num_partitions = (ir_segment.len() + partition_size - 1) / partition_size;
+        let num_partitions = ir_segment.len().div_ceil(partition_size);
 
         let mut ir_re = Vec::with_capacity(num_partitions);
         let mut ir_im = Vec::with_capacity(num_partitions);

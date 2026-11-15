@@ -741,7 +741,9 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
                     }),
                 };
             });
-            await expect(startMeasuredPreviewAudition({ ...input, side: 'baseline' })).resolves.toMatchObject({
+            await expect(
+                startMeasuredPreviewAudition({ ...input, side: 'baseline', surface: 'agent-workspace' })
+            ).resolves.toMatchObject({
                 status: 'unavailable',
             });
             pendingActionConfirmationStore.update((state) => {
@@ -769,14 +771,18 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
                     throw new Error('Missing genuine retained baseline address.');
                 }
                 expect(getAgentMeasurementArtifact(retainedAddress)).toBeNull();
-                await expect(startMeasuredPreviewAudition({ ...input, side: 'preview' })).resolves.toMatchObject({
+                await expect(
+                    startMeasuredPreviewAudition({ ...input, side: 'preview', surface: 'agent-workspace' })
+                ).resolves.toMatchObject({
                     status: 'unavailable',
                 });
             } finally {
                 expired.mockRestore();
             }
             clearAgentMeasurementArtifacts();
-            await expect(startMeasuredPreviewAudition({ ...input, side: 'baseline' })).resolves.toMatchObject({
+            await expect(
+                startMeasuredPreviewAudition({ ...input, side: 'baseline', surface: 'agent-workspace' })
+            ).resolves.toMatchObject({
                 status: 'unavailable',
             });
             expect(drumsLevel()).toBe(0);

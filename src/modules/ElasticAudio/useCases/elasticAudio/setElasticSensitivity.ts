@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { describeAppActionRefusal, executeAppAction, isAppActionAdmissionRefusal } from '#/modules/Command/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -122,7 +122,9 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             }
             completeOwnedSensitivityDetection(owner.clipId, owner.revision, committed);
         } catch (error) {
-            if (!owner.signal.aborted) {
+            if (isAppActionAdmissionRefusal(error)) {
+                notifyUser(describeAppActionRefusal('detectTransients'), 'warning');
+            } else if (!owner.signal.aborted) {
                 logger.error(
                     error instanceof Error ? error : new Error('Transient detection failed', { cause: error })
                 );

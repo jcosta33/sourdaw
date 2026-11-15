@@ -8,6 +8,7 @@
 //! not the path to it.
 
 use super::*;
+use crate::allocation_counter::allocation_count;
 use crate::runtime::HostedRuntime;
 use crate::traits::{
     take_pending_process_refusal_signal, PluginHostRequest, PROCESS_REFUSAL_HINT_TEST_LOCK,
@@ -50,6 +51,9 @@ const SIX_CHANNELS: SpeakerArrangement = 0b111111;
 /// allocation inside `process`.
 const OBSERVED_BUS_CAPACITY: usize = 8;
 
+/// A process mode no host ever stated.
+const MODE_NEVER_STATED: int32 = -1;
+
 /// Everything a test can observe about what the host did to the plugin.
 #[derive(Default)]
 struct FakeState {
@@ -80,6 +84,11 @@ struct FakeState {
     event_input_buses: AtomicI32,
     max_block: AtomicI32,
     sample_rate: AtomicU64,
+    /// The `processMode` of the last `setupProcessing` and of the last
+    /// `ProcessData`. Start at [`MODE_NEVER_STATED`], because `kRealtime` is
+    /// zero and a default-initialised field would read as a realtime host.
+    setup_process_mode: AtomicI32,
+    block_process_mode: AtomicI32,
     saw_process_context: AtomicBool,
     saw_tempo: AtomicU64,
 
@@ -136,6 +145,12 @@ impl FakeState {
 
     fn with_buses(inputs: Vec<FakeBus>, outputs: Vec<FakeBus>) -> Arc<Self> {
         let state = Arc::new(Self::default());
+        state
+            .setup_process_mode
+            .store(MODE_NEVER_STATED, Ordering::Release);
+        state
+            .block_process_mode
+            .store(MODE_NEVER_STATED, Ordering::Release);
         state
             .processor_gain
             .store(1.0f64.to_bits(), Ordering::Release);
@@ -198,7 +213,7 @@ impl FakeState {
     /// # Safety
     /// `context` is the pointer the host passed to `initialize`.
     unsafe fn remember_host(&self, context: *mut FUnknown) {
-        let Some(context) = ComRef::from_raw(context) else {
+        let Some(context) = (unsafe { ComRef::from_raw(context) }) else {
             return;
         };
         let Some(application) = context.cast::<IHostApplication>() else {
@@ -438,13 +453,13 @@ unsafe fn component_bus_info(
         let Some(declared) = audio_bus_at(state, direction, index) else {
             return kInvalidArgument;
         };
-        write_bus_info(bus, media, direction, declared.channels(), declared.is_main);
+        unsafe { write_bus_info(bus, media, direction, declared.channels(), declared.is_main) };
         return kResultOk;
     }
     if index != 0 || component_bus_count(state, media, direction) == 0 {
         return kInvalidArgument;
     }
-    write_bus_info(bus, media, direction, 0, true);
+    unsafe { write_bus_info(bus, media, direction, 0, true) };
     kResultOk
 }
 
@@ -458,15 +473,17 @@ unsafe fn write_bus_info(
     if bus.is_null() {
         return;
     }
-    (*bus).mediaType = media;
-    (*bus).direction = direction;
-    (*bus).channelCount = channels;
-    (*bus).busType = if is_main {
-        BusTypes_::kMain as int32
-    } else {
-        BusTypes_::kAux as int32
+    unsafe { (*bus).mediaType = media };
+    unsafe { (*bus).direction = direction };
+    unsafe { (*bus).channelCount = channels };
+    unsafe {
+        (*bus).busType = if is_main {
+            BusTypes_::kMain as int32
+        } else {
+            BusTypes_::kAux as int32
+        }
     };
-    (*bus).flags = 0;
+    unsafe { (*bus).flags = 0 };
 }
 
 /// The plugin's answer to the arrangement the host states.
@@ -491,8 +508,8 @@ unsafe fn fake_set_bus_arrangements(
     {
         return kResultFalse;
     }
-    accept_arrangements(&mut buses.inputs, inputs);
-    accept_arrangements(&mut buses.outputs, outputs);
+    unsafe { accept_arrangements(&mut buses.inputs, inputs) };
+    unsafe { accept_arrangements(&mut buses.outputs, outputs) };
     kResultOk
 }
 
@@ -503,7 +520,7 @@ unsafe fn accept_arrangements(buses: &mut [FakeBus], requested: *mut SpeakerArra
         return;
     }
     for (index, bus) in buses.iter_mut().enumerate() {
-        bus.arrangement = *requested.add(index);
+        bus.arrangement = unsafe { *requested.add(index) };
     }
 }
 
@@ -519,7 +536,7 @@ unsafe fn fake_get_bus_arrangement(
     let Some(bus) = audio_bus_at(state, direction, index) else {
         return kInvalidArgument;
     };
-    *arrangement = bus.arrangement;
+    unsafe { *arrangement = bus.arrangement };
     kResultOk
 }
 
@@ -527,10 +544,10 @@ unsafe fn component_set_state(state: &FakeState, stream: *mut IBStream) -> tresu
     if state.refuses_set_state.load(Ordering::Acquire) {
         return kResultFalse;
     }
-    let Some(stream) = ComRef::from_raw(stream) else {
+    let Some(stream) = (unsafe { ComRef::from_raw(stream) }) else {
         return kInvalidArgument;
     };
-    *state.component_chunk.lock().expect("chunk mutex") = read_all(stream);
+    *state.component_chunk.lock().expect("chunk mutex") = unsafe { read_all(stream) };
     kResultOk
 }
 
@@ -538,10 +555,10 @@ unsafe fn component_get_state(state: &FakeState, stream: *mut IBStream) -> tresu
     if state.fails_get_state.load(Ordering::Acquire) {
         return kResultFalse;
     }
-    let Some(stream) = ComRef::from_raw(stream) else {
+    let Some(stream) = (unsafe { ComRef::from_raw(stream) }) else {
         return kInvalidArgument;
     };
-    write_all(stream, &state.component_chunk.lock().expect("chunk mutex"))
+    unsafe { write_all(stream, &state.component_chunk.lock().expect("chunk mutex")) }
 }
 
 /// What a half was told, and on which thread — the whole reason a message is
@@ -550,15 +567,15 @@ unsafe fn record_notification(
     log: &Mutex<Vec<(String, ThreadId)>>,
     message: *mut IMessage,
 ) -> tresult {
-    let Some(message) = ComRef::from_raw(message) else {
+    let Some(message) = (unsafe { ComRef::from_raw(message) }) else {
         return kInvalidArgument;
     };
-    let id = message.getMessageID();
+    let id = unsafe { message.getMessageID() };
     if id.is_null() {
         return kInvalidArgument;
     }
     log.lock().expect("notification mutex").push((
-        CStr::from_ptr(id).to_string_lossy().into_owned(),
+        unsafe { CStr::from_ptr(id) }.to_string_lossy().into_owned(),
         std::thread::current().id(),
     ));
     kResultOk
@@ -569,11 +586,13 @@ unsafe fn read_all(stream: ComRef<'_, IBStream>) -> Vec<u8> {
     let mut buffer = [0u8; 64];
     loop {
         let mut read = 0;
-        if stream.read(
-            buffer.as_mut_ptr() as *mut std::ffi::c_void,
-            buffer.len() as int32,
-            &mut read,
-        ) != kResultOk
+        if unsafe {
+            stream.read(
+                buffer.as_mut_ptr() as *mut std::ffi::c_void,
+                buffer.len() as int32,
+                &mut read,
+            )
+        } != kResultOk
             || read == 0
         {
             return collected;
@@ -584,11 +603,13 @@ unsafe fn read_all(stream: ComRef<'_, IBStream>) -> Vec<u8> {
 
 unsafe fn write_all(stream: ComRef<'_, IBStream>, bytes: &[u8]) -> tresult {
     let mut written = 0;
-    stream.write(
-        bytes.as_ptr() as *mut std::ffi::c_void,
-        bytes.len() as int32,
-        &mut written,
-    )
+    unsafe {
+        stream.write(
+            bytes.as_ptr() as *mut std::ffi::c_void,
+            bytes.len() as int32,
+            &mut written,
+        )
+    }
 }
 
 /// Apply whatever the host put in `inputParameterChanges`, then scale the block.
@@ -600,45 +621,49 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         return kInvalidArgument;
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
+    state
+        .block_process_mode
+        .store(unsafe { (*data).processMode }, Ordering::Release);
     if state.refuses_process.load(Ordering::Acquire) {
         // Before touching a buffer: a processor that answers a failure has told
         // the host its output means nothing, and one that wrote first would let
         // a host reading that output pass the test anyway.
         return kResultFalse;
     }
-    let data = &mut *data;
+    let data = unsafe { &mut *data };
 
-    record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs);
-    record_bus_shape(&state.observed_outputs, data.outputs, data.numOutputs);
+    unsafe { record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs) };
+    unsafe { record_bus_shape(&state.observed_outputs, data.outputs, data.numOutputs) };
 
     state
         .saw_process_context
         .store(!data.processContext.is_null(), Ordering::Release);
     if !data.processContext.is_null() {
-        state
-            .saw_tempo
-            .store((*data.processContext).tempo.to_bits(), Ordering::Release);
+        state.saw_tempo.store(
+            unsafe { (*data.processContext).tempo }.to_bits(),
+            Ordering::Release,
+        );
     }
 
     state.parameter_queues_seen.store(0, Ordering::Release);
-    if let Some(changes) = ComRef::from_raw(data.inputParameterChanges) {
+    if let Some(changes) = unsafe { ComRef::from_raw(data.inputParameterChanges) } {
         state
             .parameter_queues_seen
-            .store(changes.getParameterCount(), Ordering::Release);
-        for index in 0..changes.getParameterCount() {
-            let Some(queue) = ComRef::from_raw(changes.getParameterData(index)) else {
+            .store(unsafe { changes.getParameterCount() }, Ordering::Release);
+        for index in 0..unsafe { changes.getParameterCount() } {
+            let Some(queue) = (unsafe { ComRef::from_raw(changes.getParameterData(index)) }) else {
                 continue;
             };
-            if queue.getParameterId() != GAIN_PARAM {
+            if unsafe { queue.getParameterId() } != GAIN_PARAM {
                 continue;
             }
-            let points = queue.getPointCount();
+            let points = unsafe { queue.getPointCount() };
             if points == 0 {
                 continue;
             }
             let mut offset = 0;
             let mut value = 0.0;
-            if queue.getPoint(points - 1, &mut offset, &mut value) == kResultOk {
+            if unsafe { queue.getPoint(points - 1, &mut offset, &mut value) } == kResultOk {
                 state
                     .processor_gain
                     .store(value.to_bits(), Ordering::Release);
@@ -646,20 +671,20 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         }
     }
 
-    if let Some(events) = ComRef::from_raw(data.inputEvents) {
+    if let Some(events) = unsafe { ComRef::from_raw(data.inputEvents) } {
         let mut notes = state.notes.lock().expect("notes mutex");
-        for index in 0..events.getEventCount() {
-            let mut event: Event = std::mem::zeroed();
-            if events.getEvent(index, &mut event) != kResultOk {
+        for index in 0..unsafe { events.getEventCount() } {
+            let mut event: Event = unsafe { std::mem::zeroed() };
+            if unsafe { events.getEvent(index, &mut event) } != kResultOk {
                 continue;
             }
             let is_on = event.r#type == EventTypes_::kNoteOnEvent as u16;
             let note = if is_on {
-                event.__field0.noteOn
+                unsafe { event.__field0.noteOn }
             } else {
                 NoteOnEvent {
-                    channel: event.__field0.noteOff.channel,
-                    pitch: event.__field0.noteOff.pitch,
+                    channel: unsafe { event.__field0.noteOff.channel },
+                    pitch: unsafe { event.__field0.noteOff.pitch },
                     tuning: 0.0,
                     velocity: 0.0,
                     length: 0,
@@ -676,19 +701,19 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
     }
     let gain = state.processor_gain() as f32;
     // Bus zero is the main bus this fake declares, in both directions.
-    let input = &*data.inputs;
-    let output = &*data.outputs;
-    let in_buffers = input.__field0.channelBuffers32;
-    let out_buffers = output.__field0.channelBuffers32;
+    let input = unsafe { &*data.inputs };
+    let output = unsafe { &*data.outputs };
+    let in_buffers = unsafe { input.__field0.channelBuffers32 };
+    let out_buffers = unsafe { output.__field0.channelBuffers32 };
     if in_buffers.is_null() || out_buffers.is_null() {
         return kResultOk;
     }
     let channels = input.numChannels.min(output.numChannels).max(0) as usize;
     for channel in 0..channels {
-        let source = *in_buffers.add(channel);
-        let target = *out_buffers.add(channel);
+        let source = unsafe { *in_buffers.add(channel) };
+        let target = unsafe { *out_buffers.add(channel) };
         for sample in 0..data.numSamples as usize {
-            *target.add(sample) = *source.add(sample) * gain;
+            unsafe { *target.add(sample) = *source.add(sample) * gain };
         }
     }
     kResultOk
@@ -710,11 +735,11 @@ unsafe fn record_bus_shape(
         return;
     }
     for index in 0..count.max(0) as usize {
-        let bus = &*buses.add(index);
+        let bus = unsafe { &*buses.add(index) };
         observed.push(ObservedBus {
             channels: bus.numChannels,
             silence_flags: bus.silenceFlags,
-            has_buffers: !bus.__field0.channelBuffers32.is_null(),
+            has_buffers: !unsafe { bus.__field0.channelBuffers32 }.is_null(),
         });
     }
 }
@@ -724,7 +749,7 @@ macro_rules! fake_component_impls {
         impl IPluginBaseTrait for $type {
             unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
                 self.state.initialize_calls.fetch_add(1, Ordering::AcqRel);
-                self.state.remember_host(context);
+                unsafe { self.state.remember_host(context) };
                 kResultOk
             }
 
@@ -736,7 +761,7 @@ macro_rules! fake_component_impls {
 
         impl IComponentTrait for $type {
             unsafe fn getControllerClassId(&self, class_id: *mut TUID) -> tresult {
-                Self::write_controller_class_id(class_id)
+                unsafe { Self::write_controller_class_id(class_id) }
             }
 
             unsafe fn setIoMode(&self, _mode: int32) -> tresult {
@@ -754,7 +779,7 @@ macro_rules! fake_component_impls {
                 index: int32,
                 bus: *mut BusInfo,
             ) -> tresult {
-                component_bus_info(&self.state, r#type, dir, index, bus)
+                unsafe { component_bus_info(&self.state, r#type, dir, index, bus) }
             }
 
             unsafe fn getRoutingInfo(
@@ -782,11 +807,11 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn setState(&self, state: *mut IBStream) -> tresult {
-                component_set_state(&self.state, state)
+                unsafe { component_set_state(&self.state, state) }
             }
 
             unsafe fn getState(&self, state: *mut IBStream) -> tresult {
-                component_get_state(&self.state, state)
+                unsafe { component_get_state(&self.state, state) }
             }
         }
 
@@ -798,11 +823,13 @@ macro_rules! fake_component_impls {
                 outputs: *mut u64,
                 num_outs: int32,
             ) -> tresult {
-                fake_set_bus_arrangements(&self.state, inputs, num_ins, outputs, num_outs)
+                unsafe {
+                    fake_set_bus_arrangements(&self.state, inputs, num_ins, outputs, num_outs)
+                }
             }
 
             unsafe fn getBusArrangement(&self, dir: int32, index: int32, arr: *mut u64) -> tresult {
-                fake_get_bus_arrangement(&self.state, dir, index, arr)
+                unsafe { fake_get_bus_arrangement(&self.state, dir, index, arr) }
             }
 
             unsafe fn canProcessSampleSize(&self, symbolic_sample_size: int32) -> tresult {
@@ -824,10 +851,13 @@ macro_rules! fake_component_impls {
                 self.state.setup_calls.fetch_add(1, Ordering::AcqRel);
                 self.state
                     .max_block
-                    .store((*setup).maxSamplesPerBlock, Ordering::Release);
+                    .store(unsafe { (*setup).maxSamplesPerBlock }, Ordering::Release);
                 self.state
                     .sample_rate
-                    .store((*setup).sampleRate.to_bits(), Ordering::Release);
+                    .store(unsafe { (*setup).sampleRate }.to_bits(), Ordering::Release);
+                self.state
+                    .setup_process_mode
+                    .store(unsafe { (*setup).processMode }, Ordering::Release);
                 kResultOk
             }
 
@@ -840,7 +870,7 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn process(&self, data: *mut ProcessData) -> tresult {
-                fake_process(&self.state, data)
+                unsafe { fake_process(&self.state, data) }
             }
 
             unsafe fn getTailSamples(&self) -> uint32 {
@@ -865,7 +895,7 @@ impl FakeSplitComponent {
         if class_id.is_null() {
             return kInvalidArgument;
         }
-        *class_id = SPLIT_CONTROLLER_CID;
+        unsafe { *class_id = SPLIT_CONTROLLER_CID };
         kResultOk
     }
 }
@@ -896,14 +926,14 @@ unsafe fn controller_parameter_info(index: int32, info: *mut ParameterInfo) -> t
         ),
         _ => return kInvalidArgument,
     };
-    (*info).id = id;
-    (*info).stepCount = 0;
-    (*info).defaultNormalizedValue = 1.0;
-    (*info).unitId = 0;
-    (*info).flags = flags;
-    write_tchar(&mut (*info).title, title);
-    write_tchar(&mut (*info).shortTitle, title);
-    write_tchar(&mut (*info).units, "dB");
+    unsafe { (*info).id = id };
+    unsafe { (*info).stepCount = 0 };
+    unsafe { (*info).defaultNormalizedValue = 1.0 };
+    unsafe { (*info).unitId = 0 };
+    unsafe { (*info).flags = flags };
+    write_tchar(unsafe { &mut (*info).title }, title);
+    write_tchar(unsafe { &mut (*info).shortTitle }, title);
+    write_tchar(unsafe { &mut (*info).units }, "dB");
     kResultOk
 }
 
@@ -911,33 +941,36 @@ macro_rules! fake_controller_impls {
     ($type:ty) => {
         impl IEditControllerTrait for $type {
             unsafe fn setComponentState(&self, state: *mut IBStream) -> tresult {
-                let Some(stream) = ComRef::from_raw(state) else {
+                let Some(stream) = (unsafe { ComRef::from_raw(state) }) else {
                     return kInvalidArgument;
                 };
                 *self
                     .state
                     .controller_saw_component_chunk
                     .lock()
-                    .expect("chunk mutex") = read_all(stream);
+                    .expect("chunk mutex") = unsafe { read_all(stream) };
                 kResultOk
             }
 
             unsafe fn setState(&self, state: *mut IBStream) -> tresult {
-                let Some(stream) = ComRef::from_raw(state) else {
+                let Some(stream) = (unsafe { ComRef::from_raw(state) }) else {
                     return kInvalidArgument;
                 };
-                *self.state.controller_chunk.lock().expect("chunk mutex") = read_all(stream);
+                *self.state.controller_chunk.lock().expect("chunk mutex") =
+                    unsafe { read_all(stream) };
                 kResultOk
             }
 
             unsafe fn getState(&self, state: *mut IBStream) -> tresult {
-                let Some(stream) = ComRef::from_raw(state) else {
+                let Some(stream) = (unsafe { ComRef::from_raw(state) }) else {
                     return kInvalidArgument;
                 };
-                write_all(
-                    stream,
-                    &self.state.controller_chunk.lock().expect("chunk mutex"),
-                )
+                unsafe {
+                    write_all(
+                        stream,
+                        &self.state.controller_chunk.lock().expect("chunk mutex"),
+                    )
+                }
             }
 
             unsafe fn getParameterCount(&self) -> int32 {
@@ -949,7 +982,7 @@ macro_rules! fake_controller_impls {
                 param_index: int32,
                 info: *mut ParameterInfo,
             ) -> tresult {
-                controller_parameter_info(param_index, info)
+                unsafe { controller_parameter_info(param_index, info) }
             }
 
             unsafe fn getParamStringByValue(
@@ -1001,7 +1034,7 @@ macro_rules! fake_controller_impls {
 
             unsafe fn setComponentHandler(&self, handler: *mut IComponentHandler) -> tresult {
                 let mut slot = self.state.handler.lock().expect("handler mutex");
-                *slot = ComRef::from_raw(handler).map(|handler| handler.to_com_ptr());
+                *slot = unsafe { ComRef::from_raw(handler) }.map(|handler| handler.to_com_ptr());
                 kResultOk
             }
 
@@ -1009,7 +1042,7 @@ macro_rules! fake_controller_impls {
                 let Some(editor) = self.state.editor.lock().expect("editor mutex").clone() else {
                     return ptr::null_mut();
                 };
-                editor.record_create_view(name);
+                unsafe { editor.record_create_view(name) };
                 new_fake_view(editor)
             }
         }
@@ -1022,7 +1055,7 @@ fake_controller_impls!(FakeController);
 impl IPluginBaseTrait for FakeController {
     unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
         self.state.initialize_calls.fetch_add(1, Ordering::AcqRel);
-        self.state.remember_host(context);
+        unsafe { self.state.remember_host(context) };
         kResultOk
     }
 
@@ -1034,7 +1067,7 @@ impl IPluginBaseTrait for FakeController {
 
 impl IConnectionPointTrait for FakeSplitComponent {
     unsafe fn connect(&self, other: *mut IConnectionPoint) -> tresult {
-        let Some(peer) = ComRef::from_raw(other) else {
+        let Some(peer) = (unsafe { ComRef::from_raw(other) }) else {
             return kInvalidArgument;
         };
         self.state.component_connects.fetch_add(1, Ordering::AcqRel);
@@ -1049,7 +1082,7 @@ impl IConnectionPointTrait for FakeSplitComponent {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
-        record_notification(&self.state.component_notifications, message)
+        unsafe { record_notification(&self.state.component_notifications, message) }
     }
 }
 
@@ -1072,7 +1105,7 @@ impl IConnectionPointTrait for FakeController {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
-        record_notification(&self.state.controller_notifications, message)
+        unsafe { record_notification(&self.state.controller_notifications, message) }
     }
 }
 
@@ -1223,7 +1256,10 @@ impl FakeEditor {
             self.platform_types
                 .lock()
                 .expect("platform type mutex")
-                .push(format!("view:{}", CStr::from_ptr(name).to_string_lossy()));
+                .push(format!(
+                    "view:{}",
+                    unsafe { CStr::from_ptr(name) }.to_string_lossy()
+                ));
         }
     }
 
@@ -1236,7 +1272,11 @@ impl FakeEditor {
         self.platform_types
             .lock()
             .expect("platform type mutex")
-            .push(CStr::from_ptr(value).to_string_lossy().into_owned());
+            .push(
+                unsafe { CStr::from_ptr(value) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
     }
 
     fn content_scales(&self) -> Vec<f32> {
@@ -1274,7 +1314,7 @@ impl FakeEditor {
             right: left + size.0 as int32,
             bottom: top + size.1 as int32,
         };
-        frame.resizeView(self.view.load(Ordering::Acquire), &mut rect)
+        unsafe { frame.resizeView(self.view.load(Ordering::Acquire), &mut rect) }
     }
 }
 
@@ -1332,7 +1372,7 @@ fn new_fake_view(editor: Arc<FakeEditor>) -> *mut IPlugView {
 impl IPlugViewTrait for FakeView {
     unsafe fn isPlatformTypeSupported(&self, r#type: FIDString) -> tresult {
         self.editor.record("isPlatformTypeSupported");
-        self.editor.record_platform_type(r#type);
+        unsafe { self.editor.record_platform_type(r#type) };
         if self.editor.refuses_platform.load(Ordering::Acquire) {
             return kResultFalse;
         }
@@ -1341,7 +1381,7 @@ impl IPlugViewTrait for FakeView {
 
     unsafe fn attached(&self, parent: *mut std::ffi::c_void, r#type: FIDString) -> tresult {
         self.editor.record("attached");
-        self.editor.record_platform_type(r#type);
+        unsafe { self.editor.record_platform_type(r#type) };
         self.editor.attached_to.store(parent, Ordering::Release);
         self.editor.attached_yet.store(true, Ordering::Release);
 
@@ -1353,7 +1393,7 @@ impl IPlugViewTrait for FakeView {
             .take();
         if let Some(size) = requested {
             let before = self.editor.call_count();
-            let answer = self.editor.ask_host_for_size(size);
+            let answer = unsafe { self.editor.ask_host_for_size(size) };
             self.editor
                 .attach_resize_result
                 .store(answer, Ordering::Release);
@@ -1394,11 +1434,13 @@ impl IPlugViewTrait for FakeView {
         } else {
             *self.editor.size.lock().expect("size mutex")
         };
-        *size = ViewRect {
-            left: 0,
-            top: 0,
-            right: width as int32,
-            bottom: height as int32,
+        unsafe {
+            *size = ViewRect {
+                left: 0,
+                top: 0,
+                right: width as int32,
+                bottom: height as int32,
+            }
         };
         kResultOk
     }
@@ -1407,10 +1449,12 @@ impl IPlugViewTrait for FakeView {
         if new_size.is_null() {
             return kInvalidArgument;
         }
-        let size = (
-            ((*new_size).right - (*new_size).left) as u32,
-            ((*new_size).bottom - (*new_size).top) as u32,
-        );
+        let size = unsafe {
+            (
+                ((*new_size).right - (*new_size).left) as u32,
+                ((*new_size).bottom - (*new_size).top) as u32,
+            )
+        };
         self.editor.record("onSize");
         *self
             .editor
@@ -1422,7 +1466,7 @@ impl IPlugViewTrait for FakeView {
             .lock()
             .expect("window size mutex");
         *self.editor.on_size_origin.lock().expect("size mutex") =
-            Some(((*new_size).left, (*new_size).top));
+            Some(unsafe { ((*new_size).left, (*new_size).top) });
         if self.editor.refuses_on_size.load(Ordering::Acquire) {
             return kResultFalse;
         }
@@ -1436,7 +1480,7 @@ impl IPlugViewTrait for FakeView {
             .expect("resize mutex")
             .take();
         if let Some(nested) = nested {
-            let answer = self.editor.ask_host_for_size(nested);
+            let answer = unsafe { self.editor.ask_host_for_size(nested) };
             self.editor
                 .nested_resize_result
                 .store(answer, Ordering::Release);
@@ -1456,7 +1500,7 @@ impl IPlugViewTrait for FakeView {
         }
         self.editor.record("setFrame");
         *self.editor.frame.lock().expect("frame mutex") =
-            ComRef::from_raw(frame).map(|frame| frame.to_com_ptr());
+            unsafe { ComRef::from_raw(frame) }.map(|frame| frame.to_com_ptr());
         kResultOk
     }
 
@@ -1476,10 +1520,10 @@ impl IPlugViewTrait for FakeView {
             return kResultFalse;
         }
         if let Some((width, height)) = *self.editor.constrained_to.lock().expect("size mutex") {
-            (*rect).left = 0;
-            (*rect).top = 0;
-            (*rect).right = width as int32;
-            (*rect).bottom = height as int32;
+            unsafe { (*rect).left = 0 };
+            unsafe { (*rect).top = 0 };
+            unsafe { (*rect).right = width as int32 };
+            unsafe { (*rect).bottom = height as int32 };
         }
         kResultTrue
     }
@@ -1500,7 +1544,7 @@ unsafe fn tuid_from_fid(value: FIDString) -> Option<TUID> {
         return None;
     }
     let mut id: TUID = [0; 16];
-    ptr::copy_nonoverlapping(value, id.as_mut_ptr(), 16);
+    unsafe { ptr::copy_nonoverlapping(value, id.as_mut_ptr(), 16) };
     Some(id)
 }
 
@@ -1513,7 +1557,7 @@ impl IPluginFactoryTrait for FakeFactory {
         if info.is_null() {
             return kInvalidArgument;
         }
-        write_char8(&mut (*info).vendor, "Fake Audio");
+        write_char8(unsafe { &mut (*info).vendor }, "Fake Audio");
         kResultOk
     }
 
@@ -1528,10 +1572,10 @@ impl IPluginFactoryTrait for FakeFactory {
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = entry.cid;
-        (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, entry.category);
-        write_char8(&mut (*info).name, entry.name);
+        unsafe { (*info).cid = entry.cid };
+        unsafe { (*info).cardinality = 0x7FFF_FFFF };
+        write_char8(unsafe { &mut (*info).category }, entry.category);
+        write_char8(unsafe { &mut (*info).name }, entry.name);
         kResultOk
     }
 
@@ -1541,7 +1585,7 @@ impl IPluginFactoryTrait for FakeFactory {
         _iid: FIDString,
         obj: *mut *mut std::ffi::c_void,
     ) -> tresult {
-        let Some(cid) = tuid_from_fid(cid) else {
+        let Some(cid) = (unsafe { tuid_from_fid(cid) }) else {
             return kInvalidArgument;
         };
         if obj.is_null() {
@@ -1568,7 +1612,7 @@ impl IPluginFactoryTrait for FakeFactory {
         let Some(pointer) = pointer else {
             return kNoInterface;
         };
-        *obj = pointer;
+        unsafe { *obj = pointer };
         kResultOk
     }
 }
@@ -1581,13 +1625,13 @@ impl IPluginFactory2Trait for FakeFactory {
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = entry.cid;
-        (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, entry.category);
-        write_char8(&mut (*info).name, entry.name);
-        write_char8(&mut (*info).vendor, "Fake Audio");
-        write_char8(&mut (*info).version, "3.2.1");
-        write_char8(&mut (*info).subCategories, entry.sub_categories);
+        unsafe { (*info).cid = entry.cid };
+        unsafe { (*info).cardinality = 0x7FFF_FFFF };
+        write_char8(unsafe { &mut (*info).category }, entry.category);
+        write_char8(unsafe { &mut (*info).name }, entry.name);
+        write_char8(unsafe { &mut (*info).vendor }, "Fake Audio");
+        write_char8(unsafe { &mut (*info).version }, "3.2.1");
+        write_char8(unsafe { &mut (*info).subCategories }, entry.sub_categories);
         kResultOk
     }
 }
@@ -1681,6 +1725,11 @@ fn try_load(state: &Arc<FakeState>, class_id: TUID) -> Result<Vst3Wrapper, Strin
     Vst3Wrapper::activated(instantiate(state, class_id), class_id, 48_000.0)
 }
 
+fn load_in_mode(state: &Arc<FakeState>, class_id: TUID, mode: ProcessMode) -> Vst3Wrapper {
+    Vst3Wrapper::activated_with_mode(instantiate(state, class_id), class_id, 48_000.0, mode)
+        .expect("the fake plugin activates")
+}
+
 /// A plugin that offers the given editor. Without one, `createView` answers
 /// null, which is how VST3 says "no editor".
 fn state_with_editor(editor: &Arc<FakeEditor>) -> Arc<FakeState> {
@@ -1689,11 +1738,12 @@ fn state_with_editor(editor: &Arc<FakeEditor>) -> Arc<FakeState> {
     state
 }
 
+/// The `(width, height)` sizes a recording window was told, in order.
+type WindowSizes = Arc<Mutex<Vec<(u32, u32)>>>;
+
 /// The host's native-window resizer, recording every size it was told into the
 /// editor's own call log so the order of the handshake is observable.
-fn recording_window(
-    editor: &Arc<FakeEditor>,
-) -> (EditorWindowResizer, Arc<Mutex<Vec<(u32, u32)>>>) {
+fn recording_window(editor: &Arc<FakeEditor>) -> (EditorWindowResizer, WindowSizes) {
     let sizes = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&sizes);
     let editor = Arc::clone(editor);
@@ -1846,6 +1896,51 @@ fn the_plugin_is_set_up_with_the_hosts_real_block_and_rate() {
     assert_eq!(
         f64::from_bits(state.sample_rate.load(Ordering::Acquire)),
         48_000.0
+    );
+}
+
+/// The mode an instance is built in is the one the plugin is set up in and the
+/// one every block states; a setup that says offline over blocks that say
+/// realtime leaves the plugin on whichever answer it happens to read.
+#[test]
+fn an_offline_instance_states_offline_to_setup_and_to_every_block() {
+    let state = FakeState::new();
+    let mut wrapper = load_in_mode(&state, COMBINED_CID, ProcessMode::Offline);
+    render(&mut wrapper, 1.0, 8);
+
+    let offline = ProcessModes_::kOffline as int32;
+    assert_eq!(state.setup_process_mode.load(Ordering::Acquire), offline);
+    assert_eq!(state.block_process_mode.load(Ordering::Acquire), offline);
+}
+
+#[test]
+fn a_realtime_instance_states_realtime_to_setup_and_to_every_block() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    render(&mut wrapper, 1.0, 8);
+
+    let realtime = ProcessModes_::kRealtime as int32;
+    assert_eq!(state.setup_process_mode.load(Ordering::Acquire), realtime);
+    assert_eq!(state.block_process_mode.load(Ordering::Acquire), realtime);
+}
+
+/// A latency change re-runs `setupProcessing`, and the re-setup must restate
+/// the mode the instance was built in rather than fall back to realtime.
+#[test]
+fn a_latency_reactivation_restates_the_offline_mode() {
+    let state = FakeState::new();
+    let mut wrapper = load_in_mode(&state, COMBINED_CID, ProcessMode::Offline);
+    state
+        .setup_process_mode
+        .store(MODE_NEVER_STATED, Ordering::Release);
+
+    wrapper
+        .reactivate_for_latency()
+        .expect("the fake re-activates");
+
+    assert_eq!(
+        state.setup_process_mode.load(Ordering::Acquire),
+        ProcessModes_::kOffline as int32
     );
 }
 
@@ -2712,11 +2807,13 @@ fn a_plugin_that_refuses_every_arrangement_the_host_can_feed_is_refused_at_load(
 /// Rust panic is undefined behaviour rather than an unwind.
 unsafe fn write_bytes(stream: &HostStream, bytes: &[u8]) -> tresult {
     let mut written = 0;
-    stream.write(
-        bytes.as_ptr() as *mut std::ffi::c_void,
-        bytes.len() as int32,
-        &mut written,
-    )
+    unsafe {
+        stream.write(
+            bytes.as_ptr() as *mut std::ffi::c_void,
+            bytes.len() as int32,
+            &mut written,
+        )
+    }
 }
 
 /// A plugin may seek anywhere. Parking the cursor where it asked turns the next
@@ -3832,7 +3929,7 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
             // Drained, as a real editor drains its connection: leaving the byte
             // there would keep the descriptor readable and spin the service.
             let mut byte = 0u8;
-            libc::read(fd, std::ptr::addr_of_mut!(byte).cast(), 1);
+            unsafe { libc::read(fd, std::ptr::addr_of_mut!(byte).cast(), 1) };
             self.wakes.fetch_add(1, Ordering::AcqRel);
         }
     }
@@ -3996,52 +4093,3 @@ fn a_render_block_performs_no_heap_allocation() {
         after - before
     );
 }
-
-/// A counting allocator that counts *per thread*.
-///
-/// Per thread rather than per process because `cargo test` runs these tests
-/// concurrently: a global counter would pick up every other test's allocations
-/// and fail this one for reasons that have nothing to do with the render path.
-///
-/// The counter is a `Cell` behind a `const`-initialised thread local, so reading
-/// or incrementing it allocates nothing itself and cannot recurse into the
-/// allocator.
-struct CountingAllocator;
-
-thread_local! {
-    static ALLOCATIONS: Cell<u64> = const { Cell::new(0) };
-}
-
-fn allocation_count() -> u64 {
-    ALLOCATIONS.with(Cell::get)
-}
-
-unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
-        count_allocation();
-        std::alloc::System.alloc(layout)
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
-        std::alloc::System.dealloc(pointer, layout)
-    }
-
-    unsafe fn realloc(
-        &self,
-        pointer: *mut u8,
-        layout: std::alloc::Layout,
-        new_size: usize,
-    ) -> *mut u8 {
-        count_allocation();
-        std::alloc::System.realloc(pointer, layout, new_size)
-    }
-}
-
-/// `try_with` rather than `with`: an allocation during thread teardown finds the
-/// thread local already destroyed, and panicking there would abort the process.
-fn count_allocation() {
-    let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
-}
-
-#[global_allocator]
-static COUNTING_ALLOCATOR: CountingAllocator = CountingAllocator;

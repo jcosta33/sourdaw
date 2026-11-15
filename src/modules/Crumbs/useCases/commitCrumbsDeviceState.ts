@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { type createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
 
 import { toCrumbsDeviceState } from '../models/CrumbsDeviceState';
 import { crumbsStore } from '../stores/crumbsStore';
@@ -16,15 +16,20 @@ import { crumbsStore } from '../stores/crumbsStore';
  *
  * Fire-and-forget by design: the sample is already loaded and the store already
  * updated by the time this runs. The action itself is a no-op when the device is
- * gone from project truth.
+ * gone from project truth. A refused project (repair required, brief locked) keeps
+ * the edit in the session and tells the user once per device through `episodes`.
  */
-export function commitCrumbsDeviceState(deviceId: string): void {
+export function commitCrumbsDeviceState(
+    deviceId: string,
+    episodes: ReturnType<typeof createUserAppActionRefusalEpisodes>
+): void {
     const state = crumbsStore.value?.[deviceId];
     if (!state) {
         return;
     }
 
-    void executeAppAction(
+    void episodes.execute(
+        deviceId,
         {
             type: 'setDeviceState',
             payload: {

@@ -4,13 +4,10 @@ import {
     type AudioSourceSnapshot,
     type AudioSourceTile,
 } from '#/utils/audioSourceTime';
-import {
-    type CompAudioSourceInputProof,
-    type CompAudioSourceOwnerSnapshot,
-    type CompAudioSourcePromotionSnapshot,
-} from '#/utils/handlerContract';
+import { type CompAudioSourceInputProof, type CompAudioSourceOwnerSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { type CompAudioSourcePromotionSnapshot } from '../events/arrangementTakeAppActions';
 import { type CompRegion, type TakeLane } from '../models/TakeLane';
 
 import {

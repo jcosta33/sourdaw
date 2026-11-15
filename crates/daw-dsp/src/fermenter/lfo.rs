@@ -58,3 +58,9 @@ impl Lfo {
         self.phase = 0.0;
     }
 }
+
+impl Default for Lfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}

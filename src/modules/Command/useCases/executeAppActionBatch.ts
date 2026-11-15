@@ -21,6 +21,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
+import { undoEntryStoresCommandIdByActionType } from '../models/UndoEntryCommandIdPolicy';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 import {
     registerActionReplayCapabilities,
@@ -606,7 +607,7 @@ function recordCommittedBatch(
             inverseAction,
             options?.source ?? 'manual',
             description.redoAction,
-            action.type === 'removeClip' || action.type === 'splitClip' ? envelope.commandId : undefined
+            undoEntryStoresCommandIdByActionType[action.type] ? envelope.commandId : undefined
         );
         if (historyGroupId) {
             undoEntry.groupId = historyGroupId;

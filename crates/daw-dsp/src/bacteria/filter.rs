@@ -6,6 +6,14 @@
 use crate::primitives::{flush_denormal, pole_from_ms};
 use std::f32::consts::PI;
 
+/// One SVF step's low-pass and band-pass outputs and the damping `k` the
+/// high-pass and notch responses subtract them with.
+struct SvfTaps {
+    low: f32,
+    band: f32,
+    damping: f32,
+}
+
 /// Filter mode selector.
 #[derive(Clone, Copy, PartialEq)]
 pub enum FilterMode {
@@ -76,9 +84,11 @@ impl SvfFilter {
         }
     }
 
+    /// A zero or negative time is an instant follower: a coefficient of 0.0
+    /// makes `env_level` land on the input at once.
     fn time_to_coeff(ms: f32, sample_rate: f32) -> f32 {
         if ms <= 0.0 {
-            1.0
+            0.0
         } else {
             pole_from_ms(ms, sample_rate)
         }
@@ -113,11 +123,26 @@ impl SvfFilter {
     pub fn process_sample(&mut self, input: f32) -> f32 {
         match self.mode {
             FilterMode::Comb => self.process_comb(input),
-            _ => self.process_svf(input),
+            FilterMode::LowPass => self.advance_svf(input).low,
+            FilterMode::HighPass => {
+                let taps = self.advance_svf(input);
+                input - taps.damping * taps.band - taps.low
+            }
+            FilterMode::BandPass => self.advance_svf(input).band,
+            FilterMode::Notch => {
+                let taps = self.advance_svf(input);
+                input - taps.damping * taps.band
+            }
+            FilterMode::Formant => {
+                // Simple formant: resonant bandpass with boosted Q
+                self.advance_svf(input).band * 2.0
+            }
         }
     }
 
-    fn process_svf(&mut self, input: f32) -> f32 {
+    /// Advance the state-variable filter one sample and return the taps each
+    /// SVF response is mixed from.
+    fn advance_svf(&mut self, input: f32) -> SvfTaps {
         // Update envelope follower
         let abs_input = input.abs();
         if abs_input > self.env_level {
@@ -146,16 +171,10 @@ impl SvfFilter {
         self.ic1eq = flush_denormal(2.0 * v1 - self.ic1eq);
         self.ic2eq = flush_denormal(2.0 * v2 - self.ic2eq);
 
-        match self.mode {
-            FilterMode::LowPass => v2,
-            FilterMode::HighPass => input - k * v1 - v2,
-            FilterMode::BandPass => v1,
-            FilterMode::Notch => input - k * v1,
-            FilterMode::Formant => {
-                // Simple formant: resonant bandpass with boosted Q
-                v1 * 2.0
-            }
-            FilterMode::Comb => unreachable!(),
+        SvfTaps {
+            low: v2,
+            band: v1,
+            damping: k,
         }
     }
 
@@ -193,16 +212,40 @@ impl SvfFilter {
 mod tests {
     use super::SvfFilter;
 
-    /// The filter envelope freezes at zero and negative times: a coefficient of
-    /// 1.0 holds `env_level` where it is. Pinned as found, not endorsed — the
-    /// other millisecond followers in this crate go instant at 0 ms instead.
     #[test]
-    fn filter_envelope_time_at_or_below_zero_is_a_coefficient_of_one() {
-        assert_eq!(SvfFilter::time_to_coeff(0.0, 48_000.0), 1.0);
-        assert_eq!(SvfFilter::time_to_coeff(-1.0, 48_000.0), 1.0);
+    fn filter_envelope_time_coefficients_are_instant_at_or_below_zero_and_unchanged_above() {
+        assert_eq!(SvfFilter::time_to_coeff(0.0, 48_000.0), 0.0);
+        assert_eq!(SvfFilter::time_to_coeff(-1.0, 48_000.0), 0.0);
         assert_eq!(
             SvfFilter::time_to_coeff(5.0, 48_000.0).to_bits(),
             0x3f7e_ef80
         );
+        assert_eq!(
+            SvfFilter::time_to_coeff(0.005, 48_000.0).to_bits(),
+            0.015_503_856_f32.to_bits()
+        );
+    }
+
+    #[test]
+    fn zero_attack_and_release_times_make_the_follower_track_the_input_instantly() {
+        let mut filter = SvfFilter::new(48_000.0);
+        filter.set_param("filterEnvAmount", 1.0);
+        filter.set_param("filterEnvAttack", 0.0);
+        filter.set_param("filterEnvRelease", 0.0);
+
+        for _ in 0..16 {
+            filter.process_sample(0.0);
+        }
+        assert_eq!(filter.env_level, 0.0);
+
+        filter.process_sample(0.5);
+        assert_eq!(filter.env_level, 0.5, "attack must be instant at 0 ms");
+        for _ in 0..16 {
+            filter.process_sample(0.5);
+        }
+        assert_eq!(filter.env_level, 0.5);
+
+        filter.process_sample(0.0);
+        assert_eq!(filter.env_level, 0.0, "release must be instant at 0 ms");
     }
 }

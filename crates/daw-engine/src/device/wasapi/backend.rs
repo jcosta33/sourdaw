@@ -190,6 +190,9 @@ struct ComGuard;
 impl ComGuard {
     fn initialize() -> Result<Self, String> {
         // S_FALSE (already initialized on this thread) is success here.
+        // SAFETY: the reserved argument is `None` (null), as the API requires,
+        // and nothing else is passed; the matching `CoUninitialize` runs only
+        // from this guard's `Drop`, on the same thread, after a success.
         let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         if hr.is_err() {
             return Err(format!("CoInitializeEx failed: {hr:?}"));
@@ -200,6 +203,11 @@ impl ComGuard {
 
 impl Drop for ComGuard {
     fn drop(&mut self) {
+        // SAFETY: a `ComGuard` exists only after `CoInitializeEx` succeeded
+        // (S_OK or S_FALSE, both of which need this balancing call), and it
+        // is a local of `stream_thread_main`, so this runs on that same
+        // thread, after the later-declared stream runtime has released its
+        // COM objects.
         unsafe { CoUninitialize() };
     }
 }
@@ -216,12 +224,17 @@ struct MmcssGuard(Option<HANDLE>);
 impl MmcssGuard {
     fn register() -> Self {
         let mut task_index = 0u32;
+        // SAFETY: `w!` yields a static NUL-terminated UTF-16 task name, and
+        // `task_index` is a live, aligned `u32` the call may write.
         match unsafe { AvSetMmThreadCharacteristicsW(w!("Pro Audio"), &mut task_index) } {
             Ok(task) => Self(Some(task)),
             Err(avrt_error) => {
-                match unsafe {
-                    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)
-                } {
+                // SAFETY: `GetCurrentThread` takes nothing and returns this
+                // thread's pseudo-handle, which needs no closing.
+                let current_thread = unsafe { GetCurrentThread() };
+                // SAFETY: `current_thread` is the calling thread's valid
+                // pseudo-handle, and the priority is a defined constant.
+                match unsafe { SetThreadPriority(current_thread, THREAD_PRIORITY_TIME_CRITICAL) } {
                     Ok(()) => eprintln!(
                         "[Engine] MMCSS Pro Audio registration refused ({avrt_error}); \
                          running the stream thread at time-critical priority instead"
@@ -241,6 +254,11 @@ impl MmcssGuard {
 impl Drop for MmcssGuard {
     fn drop(&mut self) {
         if let Some(task) = self.0.take() {
+            // SAFETY: `task` is the handle a successful
+            // `AvSetMmThreadCharacteristicsW` returned in `register`, taken
+            // out so it is reverted once, and this guard is a local of
+            // `stream_thread_main`, so the revert runs on the registering
+            // thread as the API requires.
             let _ = unsafe { AvRevertMmThreadCharacteristics(task) };
         }
     }
@@ -251,6 +269,8 @@ struct EventHandle(HANDLE);
 
 impl EventHandle {
     fn create() -> Result<Self, String> {
+        // SAFETY: no security attributes (`None`) and a null name are both
+        // documented as valid; the call reads no memory of ours.
         let handle = unsafe { CreateEventW(None, false, false, PCWSTR::null()) }
             .map_err(|error| format!("CreateEventW failed: {error}"))?;
         Ok(Self(handle))
@@ -259,6 +279,8 @@ impl EventHandle {
 
 impl Drop for EventHandle {
     fn drop(&mut self) {
+        // SAFETY: `self.0` is the handle `CreateEventW` returned in `create`;
+        // this owner never copies it out and closes it exactly once, here.
         let _ = unsafe { CloseHandle(self.0) };
     }
 }
@@ -312,6 +334,10 @@ fn engine_format_blob(layout: SampleLayout, rate: u32, channels: u16) -> DeviceF
             SampleLayout::I16 => KSDATAFORMAT_SUBTYPE_PCM,
         },
     };
+    // SAFETY: the pointer is to the live local `extensible`, read for exactly
+    // its own size; `WAVEFORMATEXTENSIBLE` is `repr(C, packed(1))` with no
+    // padding, so every byte is initialised, `u8` has no alignment need, and
+    // the slice is copied out by `to_vec` while `extensible` is still alive.
     let bytes = unsafe {
         std::slice::from_raw_parts(
             (&extensible as *const WAVEFORMATEXTENSIBLE).cast::<u8>(),
@@ -342,19 +368,37 @@ fn channel_mask(channels: u16) -> u32 {
 ///
 /// Returns the blob (always — its rate and channel count seed the ladder
 /// even when its layout is not renderable) and the parsed report.
+///
+/// # Safety
+/// `raw` must point to a live, initialised `WAVEFORMATEX` followed by its
+/// `cbSize` extension bytes, readable for the duration of the call — the
+/// block `IAudioClient::GetMixFormat` returns, before `CoTaskMemFree`.
 unsafe fn parse_mix_format(raw: *const WAVEFORMATEX) -> (Vec<u8>, MixFormatReport) {
-    let header = std::ptr::read_unaligned(raw);
+    // SAFETY: the `# Safety` contract makes `raw` a readable, initialised
+    // `WAVEFORMATEX`; `read_unaligned` needs no alignment.
+    let header = unsafe { std::ptr::read_unaligned(raw) };
     let total_len = std::mem::size_of::<WAVEFORMATEX>() + usize::from(header.cbSize);
-    let bytes = std::slice::from_raw_parts(raw.cast::<u8>(), total_len).to_vec();
+    // SAFETY: the `# Safety` contract makes the header plus its `cbSize`
+    // extension bytes — exactly `total_len` — readable and initialised for the
+    // call; `u8` has no alignment need, and `to_vec` copies them out at once.
+    let bytes = unsafe { std::slice::from_raw_parts(raw.cast::<u8>(), total_len) }.to_vec();
 
     let renderable = match header.wFormatTag {
         WAVE_FORMAT_TAG_IEEE_FLOAT if header.wBitsPerSample == 32 => Some(SampleLayout::F32),
         WAVE_FORMAT_TAG_PCM if header.wBitsPerSample == 16 => Some(SampleLayout::I16),
         WAVE_FORMAT_TAG_EXTENSIBLE if total_len >= std::mem::size_of::<WAVEFORMATEXTENSIBLE>() => {
-            let extensible = std::ptr::read_unaligned(raw.cast::<WAVEFORMATEXTENSIBLE>());
+            // SAFETY: this arm runs only when `total_len` covers a whole
+            // `WAVEFORMATEXTENSIBLE`, and the `# Safety` contract makes those
+            // `total_len` bytes readable and initialised; `read_unaligned`
+            // needs no alignment.
+            let extensible =
+                unsafe { std::ptr::read_unaligned(raw.cast::<WAVEFORMATEXTENSIBLE>()) };
             // Copies, not references: the struct is packed, and a reference
             // to an unaligned field is undefined behavior (E0793).
-            let valid_bits = { extensible.Samples.wValidBitsPerSample };
+            // SAFETY: every variant of the `Samples` union is a `u16`, so
+            // reading it as `wValidBitsPerSample` is valid for any bits the
+            // device wrote; the read is a by-value copy, never a reference.
+            let valid_bits = unsafe { extensible.Samples.wValidBitsPerSample };
             let sub_format = { extensible.SubFormat };
             if sub_format == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT && header.wBitsPerSample == 32 {
                 Some(SampleLayout::F32)
@@ -414,6 +458,9 @@ impl LiveNegotiation {
     }
 
     fn activate_client(&self) -> Result<IAudioClient, i32> {
+        // SAFETY: `self.device` is a live `IMMDevice`, used only on the
+        // COM-initialised stream thread that obtained it (`open_stream_runtime`);
+        // no activation parameters are passed, which the API permits.
         unsafe { self.device.Activate::<IAudioClient>(CLSCTX_ALL, None) }
             .map_err(|error| hresult_of(&error))
     }
@@ -447,8 +494,16 @@ impl DeviceNegotiation for LiveNegotiation {
             return Ok(report);
         }
         let client = self.activate_client()?;
+        // SAFETY: `client` is a live `IAudioClient` just activated on this
+        // COM-initialised stream thread; the call takes no pointer of ours.
         let raw = unsafe { client.GetMixFormat() }.map_err(|error| hresult_of(&error))?;
+        // SAFETY: on success `GetMixFormat` returns a `CoTaskMemAlloc`ed
+        // `WAVEFORMATEX` plus its `cbSize` extension, not yet freed — exactly
+        // `parse_mix_format`'s `# Safety` contract.
         let (bytes, report) = unsafe { parse_mix_format(raw) };
+        // SAFETY: `raw` is the `CoTaskMemAlloc`ed block `GetMixFormat` handed
+        // over, freed once here after `parse_mix_format` copied what it needs;
+        // nothing reads it afterwards.
         unsafe { CoTaskMemFree(Some(raw.cast())) };
         self.mix_blob = Some(bytes);
         self.mix_report = Some(report);
@@ -468,6 +523,11 @@ impl DeviceNegotiation for LiveNegotiation {
             min: 0,
             max: 0,
         };
+        // SAFETY: `client3` is a live interface on this COM-initialised stream
+        // thread; `format.as_wave_format()` points at `format`'s owned blob — a
+        // complete `WAVEFORMATEX` plus its `cbSize` extension (see
+        // `DeviceFormat`), byte-aligned as the packed struct needs — alive for
+        // the call; the four outputs are live, aligned `u32`s.
         unsafe {
             client3.GetSharedModeEnginePeriod(
                 format.as_wave_format(),
@@ -489,6 +549,10 @@ impl DeviceNegotiation for LiveNegotiation {
         let format = self.format_for(candidate)?;
         let client = self.activate_client()?;
         let client3: IAudioClient3 = client.cast().map_err(|error| hresult_of(&error))?;
+        // SAFETY: `client3` is a live interface on this COM-initialised stream
+        // thread; the format pointer is `format`'s owned, complete blob, alive
+        // for the call (the API copies what it keeps), and no session GUID is
+        // passed, which the API permits.
         unsafe {
             client3.InitializeSharedAudioStream(
                 AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
@@ -519,6 +583,10 @@ impl DeviceNegotiation for LiveNegotiation {
             stream_flags |=
                 AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
         }
+        // SAFETY: `client` is a live interface on this COM-initialised stream
+        // thread; the format pointer is `format`'s owned, complete blob, alive
+        // for the call (the API copies what it keeps), and no session GUID is
+        // passed, which the API permits.
         unsafe {
             client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
@@ -544,6 +612,8 @@ impl DeviceNegotiation for LiveNegotiation {
 
         let mut default_period_hns: i64 = 0;
         let mut minimum_period_hns: i64 = 0;
+        // SAFETY: `probe` is a live interface on this COM-initialised stream
+        // thread, and both outputs are live, aligned `i64` locals.
         unsafe {
             probe.GetDevicePeriod(Some(&mut default_period_hns), Some(&mut minimum_period_hns))
         }
@@ -595,6 +665,10 @@ impl LiveNegotiation {
     ) -> Result<IAudioClient, i32> {
         // Event-driven exclusive requires equal buffer duration and period.
         let attempt = |client: &IAudioClient, period_hns: i64| -> Result<(), i32> {
+            // SAFETY: `client` is a live interface on this COM-initialised
+            // stream thread; the format pointer is `format`'s owned, complete
+            // blob, alive for the call (the API copies what it keeps), and no
+            // session GUID is passed, which the API permits.
             unsafe {
                 client.Initialize(
                     AUDCLNT_SHAREMODE_EXCLUSIVE,
@@ -612,6 +686,8 @@ impl LiveNegotiation {
         match attempt(&client, period_hns) {
             Ok(()) => Ok(client),
             Err(hresult) if hresult == policy::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED => {
+                // SAFETY: `client` is a live interface on this COM-initialised
+                // stream thread; the call takes no pointer of ours.
                 let aligned_frames =
                     unsafe { client.GetBufferSize() }.map_err(|error| hresult_of(&error))?;
                 let aligned_period_hns = ((10_000_000.0 * f64::from(aligned_frames)
@@ -651,18 +727,28 @@ enum LoopExit {
 impl StreamRuntime {
     fn attach(initialized: InitializedClient) -> Result<Self, String> {
         let event = EventHandle::create()?;
+        // SAFETY: the client is a live, initialised interface on this
+        // COM-initialised stream thread, and `event.0` is a live event handle
+        // that the returned runtime owns alongside the client, so it outlives
+        // every signal the client raises on it.
         unsafe { initialized.client.SetEventHandle(event.0) }
             .map_err(|error| format!("SetEventHandle failed: {error}"))?;
+        // SAFETY: the client is a live, initialised interface on this
+        // COM-initialised stream thread; the call takes no pointer of ours.
         let buffer_frames = unsafe { initialized.client.GetBufferSize() }
             .map_err(|error| format!("GetBufferSize failed: {error}"))?;
+        // SAFETY: as above; `GetService` writes only the interface it returns.
         let render_client = unsafe { initialized.client.GetService::<IAudioRenderClient>() }
             .map_err(|error| format!("GetService(IAudioRenderClient) failed: {error}"))?;
         let scratch =
             vec![0.0f32; buffer_frames as usize * usize::from(initialized.format.channels)];
         // Timing is additive: an unavailable clock does not prevent playback.
+        // SAFETY: as above; `GetService` writes only the interface it returns.
         let clock = unsafe { initialized.client.GetService::<IAudioClock>() }.ok();
         let clock_frequency = clock
             .as_ref()
+            // SAFETY: `clock` is the live `IAudioClock` just obtained on this
+            // thread; the call takes no pointer of ours.
             .and_then(|clock| unsafe { clock.GetFrequency() }.ok())
             .filter(|value| *value > 0);
         Ok(Self {
@@ -685,14 +771,20 @@ impl StreamRuntime {
         // plays whatever the DMA buffer held, and a shared one opens on an
         // underrun. SILENT zero-fills on release, so the returned pointer
         // is never written.
+        // SAFETY: `render_client` is a live interface on this COM-initialised
+        // stream thread; the returned pointer is discarded unread.
         unsafe { self.render_client.GetBuffer(self.buffer_frames) }
             .map_err(|error| format!("Pre-fill GetBuffer failed: {error}"))?;
+        // SAFETY: as above; this releases the same frame count the `GetBuffer`
+        // above just acquired, and nothing wrote through its pointer.
         unsafe {
             self.render_client
                 .ReleaseBuffer(self.buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT.0 as u32)
         }
         .map_err(|error| format!("Pre-fill ReleaseBuffer failed: {error}"))?;
         self.submitted_frames = u64::from(self.buffer_frames);
+        // SAFETY: `client` is a live, initialised interface on this
+        // COM-initialised stream thread; the call takes no pointer of ours.
         unsafe { self.client.Start() }.map_err(|error| format!("Failed to play stream: {error}"))
     }
 
@@ -710,6 +802,8 @@ impl StreamRuntime {
         if self.exclusive {
             return Ok(self.buffer_frames);
         }
+        // SAFETY: `client` is a live, initialised interface on this
+        // COM-initialised stream thread; the call takes no pointer of ours.
         let padding =
             unsafe { self.client.GetCurrentPadding() }.map_err(|error| hresult_of(&error))?;
         Ok(self.buffer_frames.saturating_sub(padding))
@@ -718,6 +812,8 @@ impl StreamRuntime {
     /// A control-rate liveliness probe for a stream whose event has gone
     /// silent: any client call surfaces `AUDCLNT_E_DEVICE_INVALIDATED`.
     fn health_probe(&self) -> Result<(), i32> {
+        // SAFETY: `client` is a live, initialised interface on this
+        // COM-initialised stream thread; the call takes no pointer of ours.
         unsafe { self.client.GetCurrentPadding() }
             .map(|_| ())
             .map_err(|error| hresult_of(&error))
@@ -733,6 +829,10 @@ impl StreamRuntime {
         // Preserve S_FALSE: the generated Result wrapper erases this degraded
         // success. The optional QPC output is unnecessary because the native
         // monotonic reads bracket the same position query explicitly.
+        // SAFETY: the vtable entry and `this` pointer come from `clock`, a live
+        // `IAudioClock` this runtime holds on its COM-initialised stream
+        // thread; `position` is a live, aligned `u64`, and the QPC output is
+        // documented as optional, so null is valid.
         let status = unsafe {
             (Interface::vtable(clock).GetPosition)(
                 Interface::as_raw(clock),
@@ -771,6 +871,8 @@ impl StreamRuntime {
                 return LoopExit::Stopped;
             }
 
+            // SAFETY: `self.event.0` is the live event handle this runtime
+            // owns and closes only on drop; the call touches no memory of ours.
             let wait = unsafe { WaitForSingleObject(self.event.0, EVENT_WAIT_SLICE_MS) };
             if wait == WAIT_TIMEOUT {
                 // A healthy stream signals every period; silence this long
@@ -796,6 +898,9 @@ impl StreamRuntime {
                 continue;
             }
 
+            // SAFETY: `render_client` is a live interface on this
+            // COM-initialised stream thread; the call takes no pointer of ours,
+            // and `frames` is at most what `writable_frames` reported free.
             let buffer = match unsafe { self.render_client.GetBuffer(frames) } {
                 Ok(buffer) => buffer,
                 Err(error) => return LoopExit::Error(hresult_of(&error)),
@@ -824,25 +929,50 @@ impl StreamRuntime {
                 return LoopExit::Error(E_FAIL);
             }
 
-            unsafe {
-                match self.format.layout {
-                    SampleLayout::F32 => {
-                        std::ptr::copy_nonoverlapping(
-                            interleaved.as_ptr().cast::<u8>(),
-                            buffer,
-                            samples * self.format.bytes_per_sample(),
-                        );
-                    }
-                    SampleLayout::I16 => {
-                        let out = buffer.cast::<i16>();
-                        for (index, sample) in interleaved.iter().enumerate() {
-                            *out.add(index) =
-                                (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16;
-                        }
+            match self.format.layout {
+                // SAFETY: the source is `interleaved`, `samples` initialised
+                // `f32`s, so `samples * 4` readable bytes. The destination is
+                // the `GetBuffer(frames)` area, valid for `frames * nBlockAlign`
+                // bytes until `ReleaseBuffer`; an F32 format has `nBlockAlign`
+                // equal to `channels * 4` (set so in `engine_format_blob`, and
+                // required of a 32-bit float mix format by `WAVEFORMATEX`), so
+                // the `samples * 4` bytes written fit. The scratch `Vec` and the
+                // device buffer are separate allocations, and `u8` copies need
+                // no alignment.
+                SampleLayout::F32 => unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        interleaved.as_ptr().cast::<u8>(),
+                        buffer,
+                        samples * self.format.bytes_per_sample(),
+                    );
+                },
+                SampleLayout::I16 => {
+                    let out = buffer.cast::<i16>();
+                    for (index, sample) in interleaved.iter().enumerate() {
+                        let value = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16;
+                        // SAFETY: `interleaved` is `scratch[..samples]` with
+                        // `samples = frames * channels`, so `index < samples`.
+                        // The `GetBuffer(frames)` area spans `frames *
+                        // nBlockAlign` bytes, and a 16-bit PCM format has
+                        // `nBlockAlign` equal to `channels * 2` (set so in
+                        // `engine_format_blob`, and required of 16-bit PCM by
+                        // `WAVEFORMATEX`), i.e. `samples` `i16`s, so the
+                        // offset stays inside that one allocation.
+                        let slot = unsafe { out.add(index) };
+                        // SAFETY: `slot` is inside the `GetBuffer` area, which
+                        // is valid for writes of `samples` `i16`s until the
+                        // `ReleaseBuffer` below and which nothing else accesses
+                        // meanwhile. WASAPI documents no alignment for that
+                        // pointer, and `write_unaligned` requires none.
+                        unsafe { slot.write_unaligned(value) };
                     }
                 }
             }
 
+            // SAFETY: `render_client` is a live interface on this
+            // COM-initialised stream thread; this releases exactly the
+            // `frames` the `GetBuffer` above acquired, and `buffer` is not
+            // touched after it.
             if let Err(error) = unsafe { self.render_client.ReleaseBuffer(frames, 0) } {
                 return LoopExit::Error(hresult_of(&error));
             }
@@ -853,6 +983,9 @@ impl StreamRuntime {
 
 impl Drop for StreamRuntime {
     fn drop(&mut self) {
+        // SAFETY: `client` is still a live interface (fields drop after this
+        // body), and the runtime is dropped on the COM-initialised stream
+        // thread that owns it, before `ComGuard` uninitialises COM.
         let _ = unsafe { self.client.Stop() };
     }
 }
@@ -860,9 +993,14 @@ impl Drop for StreamRuntime {
 /// Negotiate and attach one stream on the current (COM-initialized)
 /// thread, reporting the chosen path and every refusal on the way there.
 fn open_stream_runtime(request: &DeviceOpenRequest) -> Result<StreamRuntime, String> {
+    // SAFETY: every caller runs on the stream thread after `ComGuard`
+    // initialised COM; the class id is a static GUID and no aggregating outer
+    // object is passed.
     let enumerator: IMMDeviceEnumerator =
         unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
             .map_err(|error| format!("Failed to reach the audio device enumerator: {error}"))?;
+    // SAFETY: `enumerator` is the live interface just created on this
+    // COM-initialised thread; the call takes only enum values.
     let device = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }
         .map_err(|error| format!("No default audio output device found ({error})"))?;
 

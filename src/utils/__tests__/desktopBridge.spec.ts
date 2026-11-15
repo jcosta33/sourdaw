@@ -13,6 +13,7 @@ import {
     desktopSaveDialog,
     desktopSetZoomFactor,
     desktopSamplesBaseUrl,
+    desktopTotalMemoryBytes,
     desktopWindowControls,
     invokeForBinaryResponse,
     invokeWithBinaryBody,
@@ -45,6 +46,9 @@ const createBridgeMock = (platform = 'linux') => ({
     paths: {
         samplesBase: vi.fn().mockResolvedValue('app://sourdaw/samples'),
         join: vi.fn().mockResolvedValue('/bridge-joined'),
+    },
+    system: {
+        totalMemoryBytes: vi.fn().mockResolvedValue(17_179_869_184),
     },
     windowControls: {
         minimize: vi.fn().mockResolvedValue(undefined),
@@ -131,6 +135,7 @@ describe('desktopBridge', () => {
             ['desktopSaveDialog', async () => desktopSaveDialog({ defaultPath: 'mix.wav' })],
             ['desktopPathJoin', async () => desktopPathJoin('/exports', 'mix.wav')],
             ['desktopSamplesBaseUrl', async () => desktopSamplesBaseUrl()],
+            ['desktopTotalMemoryBytes', async () => desktopTotalMemoryBytes()],
         ])('should refuse %s loudly rather than silently no-op', async (_name, call) => {
             await expect(call()).rejects.toThrow('Sourdaw desktop bridge is not available');
         });
@@ -455,6 +460,13 @@ describe('desktopBridge', () => {
 
             await expect(desktopSamplesBaseUrl()).resolves.toBe('app://sourdaw/samples');
             expect(bridge.paths.samplesBase).toHaveBeenCalledTimes(1);
+        });
+
+        it('should answer the machine total memory from the bridge', async () => {
+            const bridge = installBridge();
+
+            await expect(desktopTotalMemoryBytes()).resolves.toBe(17_179_869_184);
+            expect(bridge.system.totalMemoryBytes).toHaveBeenCalledTimes(1);
         });
     });
 });

@@ -455,7 +455,8 @@ fn retire_owner(owner: &str, state: &AppState) -> Result<Value, String> {
         if let Some(engine) = engine.as_mut() {
             if !engine.is_rendering() {
                 return Err(
-                    "engine-not-rendering: timeline retirement requires engine recovery".into(),
+                    crate::commands::graph_refusals::EngineNotRendering::TimelineRetirement
+                        .to_string(),
                 );
             }
             engine

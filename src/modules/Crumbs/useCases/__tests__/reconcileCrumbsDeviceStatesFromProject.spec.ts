@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
     nativeLoadSample: vi.fn(),
     getWaveformPeaks: vi.fn(() => Promise.resolve([])),
     getDroppedWrites: vi.fn(() => Promise.resolve(0)),
-    executeAppAction: vi.fn((_action: unknown) => Promise.resolve()),
+    executeAppAction: vi.fn((_action: unknown, _options?: unknown) => Promise.resolve()),
 }));
 
 // Exhaustive over this spec's graph: the sweep reads `trackStore` and nothing
@@ -30,7 +30,15 @@ vi.mock('../../repositories/crumbsBridge/getCrumbsDroppedSampleWrites', () => ({
 }));
 // The persistence subscriber commits through this door; captured so the
 // data-loss case can read exactly what a local edit mirrored into the document.
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+    // The real episodes object would dispatch through the real kernel; route it to the captured door.
+    createUserAppActionRefusalEpisodes: () => ({
+        execute: (_key: string, action: unknown, options?: unknown) => mocks.executeAppAction(action, options),
+        end: vi.fn(),
+        endAll: vi.fn(),
+    }),
+}));
 
 import { setCrumbsEventBus } from '../../stores/crumbsEventBus';
 import { crumbsStore, defaultCrumbsState, setMode, setTune } from '../../stores/crumbsStore';

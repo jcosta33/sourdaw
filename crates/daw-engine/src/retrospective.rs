@@ -321,7 +321,7 @@ impl RetrospectiveWriter {
             return;
         };
 
-        if channels == 0 || block.len() % channels != 0 {
+        if channels == 0 || !block.len().is_multiple_of(channels) {
             return;
         }
 

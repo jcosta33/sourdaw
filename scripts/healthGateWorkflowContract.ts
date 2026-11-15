@@ -209,6 +209,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache the cargo registry index',
+            'Lint the Windows audio crates',
             'Test the audio crates',
         ],
         'native-parity': [

@@ -1,0 +1,278 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": [],
+    "jsPlugins": [
+        {
+            "name": "sourdaw",
+            "specifier": "./scripts/lint/sourdaw.mjs"
+        },
+        {
+            "name": "@eslint-react",
+            "specifier": "@eslint-react/eslint-plugin"
+        },
+        {
+            "name": "react-hooks-js",
+            "specifier": "eslint-plugin-react-hooks"
+        },
+        {
+            "name": "@tanstack/query",
+            "specifier": "@tanstack/eslint-plugin-query"
+        },
+        {
+            "name": "@stylistic",
+            "specifier": "@stylistic/eslint-plugin"
+        },
+        {
+            "name": "promise-js",
+            "specifier": "eslint-plugin-promise"
+        },
+        {
+            "name": "jsx-a11y-x-js",
+            "specifier": "eslint-plugin-jsx-a11y-x"
+        }
+    ],
+    "categories": {
+        "correctness": "off",
+        "suspicious": "off",
+        "pedantic": "off",
+        "perf": "off",
+        "style": "off",
+        "restriction": "off",
+        "nursery": "off"
+    },
+    "env": {
+        "browser": true,
+        "builtin": true
+    },
+    "settings": {
+        "react-x": {
+            "version": "detect",
+            "importSource": "react",
+            "polymorphicPropName": "as"
+        }
+    },
+    "ignorePatterns": [
+        "build/",
+        "dist/",
+        "node_modules/",
+        "public/",
+        "coverage/",
+        "storybook-static/",
+        "electron/out/**",
+        ".agents/",
+        "src/routeTree.gen.ts",
+        "src/modules/AudioEngine/wasm/*.js",
+        "src/modules/AudioEngine/wasm/*.d.ts",
+        "src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.js",
+        "src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.d.ts",
+        "src/modules/AudioRendering/workers/vendor/opus/opus-encode.js",
+        "src/modules/AudioRendering/workers/vendor/opus/opus-encode.d.ts",
+        "src/modules/AudioRendering/workers/vendor/opus/core.js",
+        "src/modules/AudioRendering/workers/vendor/vorbis/vorbis.wasm.js",
+        "src/modules/AudioRendering/workers/vendor/opus/src/opus.wasm.js",
+        "test-debug.mjs",
+        "test-manual-fix.mjs",
+        "test-manual-fix.ts",
+        "**/*.md",
+        "scripts/oxlintCraft/__tests__/fixtures/**"
+    ],
+    "rules": {
+        "@eslint-react/error-boundaries": "error",
+        "@eslint-react/no-access-state-in-setstate": "error",
+        "@eslint-react/no-children-count": "error",
+        "@eslint-react/no-children-for-each": "error",
+        "@eslint-react/no-children-map": "error",
+        "@eslint-react/no-children-only": "error",
+        "@eslint-react/no-children-to-array": "error",
+        "@eslint-react/no-clone-element": "error",
+        "@eslint-react/no-component-will-mount": "error",
+        "@eslint-react/no-component-will-receive-props": "error",
+        "@eslint-react/no-component-will-update": "error",
+        "@eslint-react/no-context-provider": "error",
+        "@eslint-react/no-create-ref": "error",
+        "@eslint-react/no-direct-mutation-state": "error",
+        "@eslint-react/no-forward-ref": "error",
+        "@eslint-react/no-missing-key": "error",
+        "@eslint-react/no-nested-component-definitions": "error",
+        "@eslint-react/no-nested-lazy-component-declarations": "error",
+        "@eslint-react/no-set-state-in-component-did-mount": "error",
+        "@eslint-react/no-set-state-in-component-did-update": "error",
+        "@eslint-react/no-set-state-in-component-will-update": "error",
+        "@eslint-react/no-unnecessary-use-prefix": "error",
+        "@eslint-react/no-unsafe-component-will-mount": "error",
+        "@eslint-react/no-unsafe-component-will-receive-props": "error",
+        "@eslint-react/no-unsafe-component-will-update": "error",
+        "@eslint-react/no-unused-class-component-members": "error",
+        "@eslint-react/no-use-context": "error",
+        "@eslint-react/purity": "error",
+        "@eslint-react/rules-of-hooks": "error",
+        "@eslint-react/set-state-in-render": "error",
+        "@eslint-react/static-components": "error",
+        "@eslint-react/unsupported-syntax": "error",
+        "@eslint-react/use-memo": "error",
+        "@eslint-react/jsx-no-children-prop": "error",
+        "@eslint-react/jsx-no-children-prop-with-children": "error",
+        "@eslint-react/jsx-no-comment-textnodes": "error",
+        "@eslint-react/jsx-no-key-after-spread": "error",
+        "@eslint-react/jsx-no-leaked-dollar": "error",
+        "@eslint-react/jsx-no-leaked-semicolon": "error",
+        "@eslint-react/jsx-no-namespace": "error",
+        "@eslint-react/rsc-function-definition": "error",
+        "@eslint-react/dom-no-dangerously-set-innerhtml": "error",
+        "@eslint-react/dom-no-dangerously-set-innerhtml-with-children": "error",
+        "@eslint-react/dom-no-find-dom-node": "error",
+        "@eslint-react/dom-no-flush-sync": "error",
+        "@eslint-react/dom-no-hydrate": "error",
+        "@eslint-react/dom-no-render": "error",
+        "@eslint-react/dom-no-render-return-value": "error",
+        "@eslint-react/dom-no-script-url": "error",
+        "@eslint-react/dom-no-unsafe-iframe-sandbox": "error",
+        "@eslint-react/dom-no-use-form-state": "error",
+        "@eslint-react/dom-no-void-elements-with-children": "error",
+        "@eslint-react/web-api-no-leaked-event-listener": "error",
+        "@eslint-react/web-api-no-leaked-fetch": "error",
+        "@eslint-react/web-api-no-leaked-intersection-observer": "error",
+        "@eslint-react/web-api-no-leaked-interval": "error",
+        "@eslint-react/web-api-no-leaked-resize-observer": "error",
+        "@eslint-react/web-api-no-leaked-timeout": "error",
+        "@eslint-react/naming-convention-id-name": "error",
+        "react-hooks-js/rules-of-hooks": "error",
+        "react-hooks-js/static-components": "error",
+        "react-hooks-js/use-memo": "error",
+        "react-hooks-js/void-use-memo": "error",
+        "react-hooks-js/preserve-manual-memoization": "error",
+        "react-hooks-js/incompatible-library": "error",
+        "react-hooks-js/immutability": "error",
+        "react-hooks-js/globals": "error",
+        "react-hooks-js/error-boundaries": "error",
+        "react-hooks-js/purity": "error",
+        "react-hooks-js/set-state-in-render": "error",
+        "react-hooks-js/unsupported-syntax": "error",
+        "react-hooks-js/config": "error",
+        "react-hooks-js/gating": "error",
+        "@tanstack/query/exhaustive-deps": "error",
+        "@tanstack/query/stable-query-client": "error",
+        "@tanstack/query/no-unstable-deps": "error",
+        "@tanstack/query/infinite-query-property-order": "error",
+        "@tanstack/query/mutation-property-order": "error"
+    },
+    "overrides": [
+        {
+            "files": [
+                "scripts/**/*.{js,mjs,cjs}",
+                "tests/e2e/**/*.ts",
+                "server/**/*.ts",
+                "crates/daw-dsp/benches/wasm/**/*.{js,mjs,d.mts}"
+            ],
+            "env": {
+                "browser": true,
+                "node": true
+            }
+        },
+        {
+            "files": ["**/*.{js,jsx,ts,tsx,mts,cts}"],
+            "rules": {
+                "@stylistic/spaced-comment": [
+                    "error",
+                    "always",
+                    {
+                        "line": {
+                            "markers": ["/"],
+                            "exceptions": ["/", "#"]
+                        },
+                        "block": {
+                            "markers": ["!"],
+                            "exceptions": ["*"],
+                            "balanced": true
+                        }
+                    }
+                ],
+                "sourdaw/no-react-import-outside-ui": "error",
+                "promise-js/no-return-wrap": "error",
+                "jsx-a11y-x-js/interactive-supports-focus": "error"
+            }
+        },
+        {
+            "files": ["**/*.{ts,tsx,mts,cts}"],
+            "rules": {
+                "sourdaw/no-enum": "error",
+                "sourdaw/no-foreign-store-write": "error",
+                "sourdaw/no-model-layer-upward-import": "error",
+                "sourdaw/no-multiple-function-exports": "error",
+                "sourdaw/no-namespace-import": "error",
+                "sourdaw/no-nonmodule-private-module-import": "error",
+                "sourdaw/no-repository-usecase-import": "error",
+                "sourdaw/no-type-only-private-module-import": "error",
+                "sourdaw/no-type-assertion-escape": "error"
+            }
+        },
+        {
+            "files": ["**/*.{tsx,jsx}"],
+            "rules": {
+                "@eslint-react/no-children-for-each": "off",
+                "@eslint-react/no-children-count": "off",
+                "@eslint-react/no-children-map": "off",
+                "@eslint-react/no-children-to-array": "off",
+                "@eslint-react/no-forward-ref": "error",
+                "@eslint-react/static-components": "off",
+                "react-hooks-js/purity": "error",
+                "@eslint-react/purity": "error",
+                "@eslint-react/unsupported-syntax": "error",
+                "sourdaw/no-useeffect-fetching": "error",
+                "sourdaw/no-useeffect-derived-state": "error",
+                "sourdaw/no-manual-memoization": "error",
+                "jsx-a11y-x-js/interactive-supports-focus": "error"
+            }
+        },
+        {
+            "files": ["**/*.{ts,tsx,mts,cts}"],
+            "rules": {
+                "@tanstack/query/exhaustive-deps": "error",
+                "@tanstack/query/no-unstable-deps": "error",
+                "@tanstack/query/stable-query-client": "error"
+            }
+        },
+        {
+            "files": [
+                "src/**/useCases/**/*.ts",
+                "src/**/repositories/**/*.ts",
+                "src/**/transformers/**/*.ts",
+                "src/**/models/**/*.ts",
+                "src/**/stores/**/*.ts",
+                "src/**/events/**/*.ts",
+                "src/**/services/**/*.ts",
+                "src/**/validators/**/*.ts",
+                "src/**/worklets/**/*.ts",
+                "src/helpers/**/*.ts"
+            ],
+            "rules": {
+                "sourdaw/no-react-in-domain-logic": "error",
+                "sourdaw/no-usecase-repository-reexport": "error"
+            }
+        },
+        {
+            "files": [
+                "**/*.spec.{ts,tsx}",
+                "**/*.test.{ts,tsx}",
+                "**/setupTests.ts",
+                "**/*.mock.ts",
+                "**/__tests__/**/*.{ts,tsx}",
+                "src/**/testing/**/*.{ts,tsx}"
+            ],
+            "rules": {
+                "@eslint-react/no-unnecessary-use-prefix": "off",
+                "@eslint-react/no-create-ref": "off",
+                "sourdaw/no-manual-memoization": "off",
+                "sourdaw/no-useeffect-derived-state": "off",
+                "sourdaw/no-namespace-import": "off",
+                "sourdaw/no-type-assertion-escape": "off"
+            }
+        },
+        {
+            "files": ["src/components/**/*.{ts,tsx}"],
+            "rules": {
+                "sourdaw/no-namespace-import": "off"
+            }
+        }
+    ]
+}

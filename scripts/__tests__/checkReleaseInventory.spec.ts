@@ -119,7 +119,7 @@ const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
 // The v0_2_87 libraries introduce the publisher-named TVM → TIRx → FFI chain.
 // Pin the independently reviewed paths, separate source buckets, source mapping
 // and exact legal bytes, including the shared notice's updated attribution.
-const WEBLLM_LEGAL_CLOSURE_DIGEST = '0284201b3f782842e3681b1c1ef6dcef228b1bf4cac0201a91103c6baada01a8';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = '0643986ff5fe4de46fd87f2c1cb743182cf6daad26b6af6638b61a58e8c3c86c';
 const APACHE_TVM_COMMIT = 'e345029cedf0be76a087fcad9c89a97bed4f7204';
 const TVM_TIRX_COMMIT = '198a04573ea44e060c1087c8223cf082c64a6c03';
 const TVM_FFI_COMMIT = '6628c464e3b824d09c9cf65ac0c6c24f973f6d56';

@@ -10,7 +10,7 @@
 
 #![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 
-use daw_dsp::fermenter::effects::Compressor;
+use daw_dsp::fermenter::effects::{Compressor, CompressorSettings};
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const FRAMES: usize = 4_800;
@@ -34,11 +34,13 @@ fn below_threshold_gain_at(threshold_db: f32, ratio: f32, input: f32, frame: usi
     compressor.process_block(
         &mut left,
         &mut right,
-        threshold_db,
-        ratio,
-        10.0,
-        100.0,
-        1.0,
+        CompressorSettings {
+            threshold: threshold_db,
+            ratio,
+            attack: 10.0,
+            release: 100.0,
+            mix: 1.0,
+        },
         SAMPLE_RATE,
     );
     left[frame] / input

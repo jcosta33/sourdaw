@@ -1,5 +1,4 @@
-import { type OverdubControllerRowsSnapshot } from '#/utils/handlerContract';
-
+import { type OverdubControllerRowsSnapshot } from '../../events/midiAppActions';
 import { midiStore } from '../../stores/midiStore';
 
 import { readLiveClipIds } from './readLiveClipIds';

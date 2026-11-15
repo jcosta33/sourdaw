@@ -1,6 +1,7 @@
-import { type AppAction, type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';

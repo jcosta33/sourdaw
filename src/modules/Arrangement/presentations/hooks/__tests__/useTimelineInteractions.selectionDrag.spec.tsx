@@ -138,6 +138,8 @@ vi.mock('#/modules/Preferences/stores', () => ({
     },
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: mocks.executeUserAppAction,
     generateGroupId: mocks.generateGroupId,
@@ -298,7 +300,9 @@ const dispatchedActions = (): AppAction[] =>
 const applyCapturedAction = (action: AppAction): { label: string; undo: () => void; redo: () => void } => {
     const handler = dispatchedHandlers[action.type as keyof typeof dispatchedHandlers];
     const described = handler.describe(action as never);
-    handler.execute(action as never);
+    if (handler.execute(action as never) instanceof Promise) {
+        throw new TypeError(`expected a synchronous ${action.type} result`);
+    }
     const inverse = described?.inverseAction ?? null;
     return {
         label: described?.label ?? '',

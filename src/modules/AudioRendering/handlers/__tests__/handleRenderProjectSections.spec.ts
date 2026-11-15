@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AppAction, type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type RenderProjectSectionJobSnapshot } from '../../events/audioRenderingAppActions';
 import { handleRemoveRenderedProjectSections } from '../handleRemoveRenderedProjectSections';
 import { handleRenderProjectSections } from '../handleRenderProjectSections';
 

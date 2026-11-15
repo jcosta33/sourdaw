@@ -120,7 +120,11 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'diff.patch'))).toEqual(expected);
             expect(readReviewBundleContext(destination)).toMatchObject({ baseSha: base, headSha: head });
             const publication = publicationShellPort(
-                { configDir: root, env: process.env, dispose: () => undefined },
+                {
+                    configDir: root,
+                    env: { ...process.env, GH_TOKEN: ['ghs', 'fixture'].join('_') },
+                    dispose: () => undefined,
+                },
                 root,
                 (command, args, options) => {
                     if (command === 'gh') {
@@ -169,8 +173,14 @@ describe('review prepare', () => {
         mkdirSync(join(root, '.git'));
         mkdirSync(join(root, '.gh'));
         const capture = vi.spyOn(githubAppIdentity, 'spawnCapture').mockImplementation((_command, args) => {
+            if (args.includes('--show-object-format')) {
+                return 'sha1';
+            }
             if (args[0] === 'rev-parse') {
                 return join(root, '.git');
+            }
+            if (args.includes('for-each-ref')) {
+                return '';
             }
             if (args[0] === 'diff') {
                 return numstat;
@@ -319,6 +329,7 @@ describe('review prepare', () => {
             'scripts/canonicalRecord.ts',
             'scripts/evidenceSafety.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/prContract.ts',
             'scripts/prepareReview.ts',
             'scripts/prepareReviewEntry.ts',
@@ -334,6 +345,7 @@ describe('review prepare', () => {
             'scripts/reviewRiskPolicy.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/savedProjectStatePaths.ts',
+            'scripts/tokenBearingChildPlacement.ts',
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/wasm-artifacts.ts',
             'scripts/wasmToolchainPins.ts',

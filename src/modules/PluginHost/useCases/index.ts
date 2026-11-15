@@ -25,6 +25,7 @@ export { observeExternalPluginParameterEdits } from './pluginLifecycle/observeEx
 // derives it from the sink it registers.
 export { registerReleasedStripReportSink } from './pluginLifecycle/registerReleasedStripReportSink';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
+export { editExternalPluginParameter } from './pluginLifecycle/editExternalPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';

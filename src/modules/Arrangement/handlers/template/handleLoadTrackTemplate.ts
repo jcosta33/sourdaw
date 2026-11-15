@@ -2,6 +2,8 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
+import { activateCreatedTrackHostedPlugins } from '../../useCases/device/activateCreatedTrackHostedPlugins';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
@@ -56,7 +58,18 @@ export const handleLoadTrackTemplate = createHandler<'loadTrackTemplate'>({
                 : null;
             pending.redoAction = captured ? { type: 'restoreTracks', payload: { restores } } : undefined;
         }
-        return toHandlerExecutionResult(createdTrackIds.length > 0);
+        const hostedTrackIds = (getTrackStoreState()?.tracks ?? [])
+            .filter((track) => createdTrackIds.includes(track.id) && collectHostedPluginInstances(track).length > 0)
+            .map((track) => track.id);
+        if (hostedTrackIds.length === 0) {
+            return toHandlerExecutionResult(createdTrackIds.length > 0);
+        }
+        const activate = () => {
+            for (const trackId of hostedTrackIds) {
+                activateCreatedTrackHostedPlugins(trackId);
+            }
+        };
+        return { status: 'written', afterCommit: activate, afterAmbiguousCommit: activate };
     },
     describe: (alpha) => {
         const result: MutableDescribeResult = { label: 'Load Track Template', inverseAction: null };

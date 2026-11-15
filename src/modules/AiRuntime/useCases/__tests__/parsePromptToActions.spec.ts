@@ -9,6 +9,8 @@ import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfig
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
+import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
 import {
     buildPresetContext,
     tryPresetMatch,
@@ -1356,6 +1358,58 @@ describe('parsePromptToActions', () => {
             },
         });
         expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
+    describe('with no backend to plan on', () => {
+        beforeEach(() => {
+            aiBackendPreferenceStore.set('auto');
+            hostedLlmProviderStatusStore.set(null);
+        });
+
+        afterEach(() => {
+            hostedLlmProviderStatusStore.set(null);
+        });
+
+        // The real provider boundary runs here: no WebGPU verified and no hosted session leave an empty chain.
+        it('says how to enable a local model or a hosted provider, naming no vendor', async () => {
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            expect(generateToolCalls).toHaveBeenCalled();
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.planningOutcome).toEqual({
+                kind: 'denied',
+                reason: 'This request needs an AI model, and none is available. To run it locally, load the local model in Settings > AI > AI Model Manager. To run it on a hosted provider, add a hosted provider in Settings > AI > Hosted AI provider (desktop app) and choose Hosted provider as the AI execution backend.',
+            });
+            expect(JSON.stringify(result.planningOutcome)).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
+        });
+
+        it('says first that Automatic never uses a configured hosted provider', async () => {
+            hostedLlmProviderStatusStore.set({
+                provider: 'anthropic',
+                model: 'hosted-model',
+                baseUrl: null,
+                authentication: 'api-key',
+                reasoningEffort: null,
+                thinking: null,
+            });
+
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            const reason = result.planningOutcome.kind === 'denied' ? result.planningOutcome.reason : '';
+            expect(reason).toMatch(
+                /^Automatic uses only the local model and never sends requests to a hosted provider\. This request needs an AI model/u
+            );
+            expect(reason).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
+        });
     });
 
     it.each([

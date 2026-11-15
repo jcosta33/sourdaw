@@ -33,6 +33,7 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    tokenFreeGitEnv,
     type FileReader,
     type GhSession,
     type GitHubJsonClient,
@@ -82,7 +83,7 @@ export type ConfirmReviewRepairsCoordinatorDependencies = {
     serialize: PullRequestMutationSerialization;
     authenticateReviewer: (primaryRoot: string) => Promise<ConfirmReviewRepairsAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
-    port: (session: GhSession, primaryRoot: string) => ConfirmReviewRepairsPort;
+    port: (session: GhSession, primaryRoot: string, repository: string) => ConfirmReviewRepairsPort;
     confirm: (number: number, head: string, port: ConfirmReviewRepairsPort) => { resolved: string[] };
 };
 
@@ -467,11 +468,11 @@ function drainComments(listed: ListedThread, gh: Gh, label: string): ReviewRepai
 }
 
 /**
- * The repository owner and name are fixed for the run, so they are read once through the same
- * capture the rest of the port uses rather than re-resolved per call.
+ * The owner and name come from the one repository name the coordinator read and asserted. Reading
+ * the checkout query again would let a lane rewrite `remote.<name>.gh-resolved` between the two
+ * reads and move every later read and thread resolution to a repository it chose.
  */
-function repositoryFields(gh: Gh): string[] {
-    const nameWithOwner = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+function repositoryFields(nameWithOwner: string): string[] {
     const [owner, name] = nameWithOwner.split('/');
     if (owner === undefined || name === undefined) {
         fail(`repository name ${nameWithOwner} is not owner/name`);
@@ -607,22 +608,23 @@ export function shellIsAncestor(
 
 export function shellPort(
     session: GhSession,
-    cwd: string = process.cwd(),
-    capture: typeof spawnCapture = spawnCapture
+    cwd: string,
+    capture: typeof spawnCapture,
+    repository: string
 ): ConfirmReviewRepairsPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
     const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
-    const fields = repositoryFields(gh);
+    const fields = repositoryFields(repository);
     return {
         pullRequestHead: (pr) => readPullRequestHead(pr, gh, fields),
         pullRequestBase: (pr) => readPullRequestBase(pr, gh, fields),
         readThreads: (pr) => readReviewThreads(pr, gh, fields),
         postConfirmation: (thread, body, clientMutationId) => postConfirmationReply(thread, body, clientMutationId, gh),
         resolve: (thread, clientMutationId) => resolveConfirmedThread(thread, clientMutationId, gh),
-        isAncestor: shellIsAncestor(primaryRoot, session.env),
+        isAncestor: shellIsAncestor(primaryRoot, tokenFreeGitEnv(session.env)),
         log: (message) => {
             console.log(message);
         },
@@ -660,7 +662,7 @@ export function defaultConfirmReviewRepairsCoordinatorDependencies(): ConfirmRev
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        port: (session, primaryRoot) => shellPort(session, primaryRoot, spawnCapture),
+        port: (session, primaryRoot, repository) => shellPort(session, primaryRoot, spawnCapture, repository),
         confirm: confirmReviewRepairs,
     };
 }
@@ -679,8 +681,9 @@ export async function coordinateConfirmReviewRepairs(
                 if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
                     fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
                 }
-                assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-                const port = dependencies.port(auth.session, primaryRoot);
+                const repository = dependencies.repositoryName(auth.session, primaryRoot);
+                assertRequiredRepository(repository);
+                const port = dependencies.port(auth.session, primaryRoot, repository);
                 const guardedPort: ConfirmReviewRepairsPort = {
                     ...port,
                     postConfirmation: (...args) => {

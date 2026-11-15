@@ -94,9 +94,9 @@ impl AnalysisBuffer {
     fn extract(&self, output: &mut [f32], len: usize) {
         let capacity = self.data.len();
         let len = len.min(capacity).min(output.len());
-        for i in 0..len {
+        for (i, slot) in output.iter_mut().enumerate().take(len) {
             let idx = (self.write_pos + capacity - len + i) % capacity;
-            output[i] = self.data[idx];
+            *slot = self.data[idx];
         }
     }
 }
@@ -147,8 +147,8 @@ impl TemporalStabilizer {
 
         // Sort by frequency, weighted by confidence
         let mut pairs: [(f32, f32); HISTORY_SIZE] = [(0.0, 0.0); HISTORY_SIZE];
-        for i in 0..self.count {
-            pairs[i] = (self.freqs[i], self.confs[i]);
+        for (i, pair) in pairs.iter_mut().enumerate().take(self.count) {
+            *pair = (self.freqs[i], self.confs[i]);
         }
         // Simple insertion sort (N=8, negligible cost)
         for i in 1..self.count {
@@ -168,10 +168,10 @@ impl TemporalStabilizer {
         }
 
         let mut cumulative = 0.0;
-        for i in 0..self.count {
-            cumulative += pairs[i].1;
+        for &(freq, weight) in pairs.iter().take(self.count) {
+            cumulative += weight;
             if cumulative >= total_weight * 0.5 {
-                return pairs[i].0;
+                return freq;
             }
         }
         pairs[self.count / 2].0

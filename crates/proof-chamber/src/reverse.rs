@@ -314,7 +314,7 @@ mod tests {
         // boundary cases the old design erased.
         let reverse_len = 9600;
         for phase in [0, 1, reverse_len / 2, reverse_len - 2, reverse_len - 1] {
-            let (energy, peak) = impulse_response(phase, reverse_len);
+            let (_, peak) = impulse_response(phase, reverse_len);
             assert!(
                 peak > 0.0001,
                 "phase {phase}: peak {peak} lost at the grain boundary (must be non-zero)"

@@ -1,189 +1,28 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { macroGeneratedIdByActionType, noGeneratedId } from '../../models/MacroGeneratedId';
+import {
+    type MacroReplayCreate,
+    macroReplayCreateByActionType,
+    notAGeneratedCreate,
+    type MacroReplayReads,
+} from '../../models/MacroReplayCreate';
+import { type MacroReplayIdMappings } from '../../models/MacroReplayIdMappings';
+import { keepRecordedPayload, macroReplayPayloadResetByActionType } from '../../models/MacroReplayPayloadReset';
+import { leaveReferencesUnmapped, macroReplayRemapByActionType } from '../../models/MacroReplayRemap';
+import { getHandlerByType } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
 import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from '../materializeCommandHandlerArguments';
 
 import { lowerSourceMacroAction } from './lowerSourceMacroAction';
 import { macroCoreReads } from './macroCoreReads';
 import { replayTempoMapMacroAction } from './tempoMapMacroReplay';
 
-type ReplayIdMappings = {
-    tempoRowIds: Map<string, string>;
-    automationLaneIds: Map<string, string>;
-    automationPointIds: Map<string, string>;
-    sidechainRouteIds: Map<string, string>;
-    chordEventIds: Map<string, string>;
-    layerIds: Map<string, string>;
-    regionIds: Map<string, string>;
-    vcaGroupIds: Map<string, string>;
-    markerIds: Map<string, string>;
-    sectionIds: Map<string, string>;
-    trackAlternativeIds: Map<string, string>;
-};
-
-function remapChordReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (action.type === 'moveChordEvent' || action.type === 'updateChordEvent' || action.type === 'removeChordEvent') {
-        action.payload.eventId = mappings.chordEventIds.get(action.payload.eventId) ?? action.payload.eventId;
-    }
-}
-
-function remapMarkerReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (action.type === 'removeMarker' || action.type === 'setMarkerColor') {
-        action.payload.markerId = mappings.markerIds.get(action.payload.markerId) ?? action.payload.markerId;
-        return;
-    }
-    if (action.type === 'removeSection' || action.type === 'renameSection') {
-        action.payload.sectionId = mappings.sectionIds.get(action.payload.sectionId) ?? action.payload.sectionId;
-    }
-}
-
-function remapTrackAlternativeReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (
-        action.type === 'deleteTrackAlternative' ||
-        action.type === 'renameTrackAlternative' ||
-        action.type === 'switchTrackAlternative'
-    ) {
-        action.payload.alternativeId =
-            mappings.trackAlternativeIds.get(action.payload.alternativeId) ?? action.payload.alternativeId;
-    }
-    // Recorded via revertAction (no skipMacroRecording): a create's undo inverse
-    // is a deleteTrackAlternative whose fallbackAlternativeId references another
-    // recorded alternative — remap it too or the replayed delete degrades to the
-    // first-in-list fallback and restores the wrong active alternative.
-    if (action.type === 'deleteTrackAlternative' && action.payload.fallbackAlternativeId) {
-        action.payload.fallbackAlternativeId =
-            mappings.trackAlternativeIds.get(action.payload.fallbackAlternativeId) ??
-            action.payload.fallbackAlternativeId;
-    }
-}
-
-function remapSidechainReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (action.type === 'removeSidechainRoute' && action.payload.routeId) {
-        action.payload.routeId = mappings.sidechainRouteIds.get(action.payload.routeId) ?? action.payload.routeId;
-    }
-}
-
-function remapLayerId(layerId: string, mappings: ReplayIdMappings): string {
-    return mappings.layerIds.get(layerId) ?? layerId;
-}
-
-function remapRegionId(regionId: string, mappings: ReplayIdMappings): string {
-    return mappings.regionIds.get(regionId) ?? regionId;
-}
-
-function remapVcaGroupId(vcaGroupId: string, mappings: ReplayIdMappings): string {
-    return mappings.vcaGroupIds.get(vcaGroupId) ?? vcaGroupId;
-}
-
-function remapVcaReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (action.type === 'assignToVca' || action.type === 'setVcaGain') {
-        action.payload.vcaGroupId = remapVcaGroupId(action.payload.vcaGroupId, mappings);
-    }
-}
-
-function remapAutomationLaneId(laneId: string, mappings: ReplayIdMappings): string {
-    return mappings.automationLaneIds.get(laneId) ?? laneId;
-}
-
-function remapAutomationPointSnapshots(
-    points: Extract<AppAction, { type: 'restoreAutomationLanePoints' }>['payload']['points'],
-    mappings: ReplayIdMappings
-): Extract<AppAction, { type: 'restoreAutomationLanePoints' }>['payload']['points'] {
-    return points.map((point) =>
-        point.id ? { ...point, id: mappings.automationPointIds.get(point.id) ?? point.id } : point
-    );
-}
-
-function remapAutomationReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (
-        action.type === 'removeAutomationLane' ||
-        action.type === 'setAutomationLaneEnabled' ||
-        action.type === 'addAutomationPoint' ||
-        action.type === 'removeAutomationPoint' ||
-        action.type === 'scaleAutomation' ||
-        action.type === 'stretchAutomation' ||
-        action.type === 'invertAutomation' ||
-        action.type === 'reverseAutomation' ||
-        action.type === 'thinAutomation' ||
-        action.type === 'quantizeAutomation' ||
-        action.type === 'restoreAutomationLanePoints'
-    ) {
-        action.payload.laneId = remapAutomationLaneId(action.payload.laneId, mappings);
-    }
-
-    if (action.type === 'restoreAutomationLanePoints') {
-        action.payload.points = remapAutomationPointSnapshots(action.payload.points, mappings);
-        if (action.payload.expectedPoints) {
-            action.payload.expectedPoints = remapAutomationPointSnapshots(action.payload.expectedPoints, mappings);
-        }
-    }
-    if (action.type === 'removeAutomationPoint' && action.payload.pointId) {
-        action.payload.pointId = mappings.automationPointIds.get(action.payload.pointId) ?? action.payload.pointId;
-    }
-}
-
-function remapAdjustmentReferences(action: AppAction, mappings: ReplayIdMappings): void {
-    if (
-        action.type === 'removeAdjustmentLayer' ||
-        action.type === 'toggleAdjustmentLayer' ||
-        action.type === 'setLayerParameter' ||
-        action.type === 'setLayerMix' ||
-        action.type === 'setLayerAffectedTracks' ||
-        action.type === 'setLayerInsertionIndex'
-    ) {
-        action.payload.layerId = remapLayerId(action.payload.layerId, mappings);
-        return;
-    }
-    if (action.type === 'removeAdjustmentRegion') {
-        action.payload.layerId = remapLayerId(action.payload.layerId, mappings);
-        action.payload.regionId = remapRegionId(action.payload.regionId, mappings);
-        return;
-    }
-    if (action.type === 'moveAdjustmentRegion' || action.type === 'setLayerFades') {
-        action.payload.regionId = remapRegionId(action.payload.regionId, mappings);
-    }
-}
-
-function getGeneratedLayerId(action: AppAction): string | undefined {
-    return action.type === 'createAdjustmentLayer' ? action.payload.layerId : undefined;
-}
-function getGeneratedChordEventId(action: AppAction): string | undefined {
-    return action.type === 'addChordEvent' ? action.payload.eventId : undefined;
-}
-
-function getGeneratedRegionId(action: AppAction): string | undefined {
-    return action.type === 'addAdjustmentRegion' ? action.payload.regionId : undefined;
-}
-
-function getGeneratedVcaGroupId(action: AppAction): string | undefined {
-    if (action.type === 'createVcaGroup') {
-        return action.payload.vcaGroupId;
-    }
-    return undefined;
-}
-
-function getGeneratedMarkerId(action: AppAction): string | undefined {
-    return action.type === 'addMarker' ? action.payload.markerId : undefined;
-}
-
-function getGeneratedSectionId(action: AppAction): string | undefined {
-    return action.type === 'addSection' ? action.payload.sectionId : undefined;
-}
-
-function getGeneratedTrackAlternativeId(action: AppAction): string | undefined {
-    return action.type === 'createTrackAlternative' ? action.payload.alternativeId : undefined;
-}
-
-function getGeneratedAutomationLaneId(action: AppAction): string | undefined {
-    return action.type === 'addAutomationLane' ? action.payload.laneId : undefined;
-}
-
-function getGeneratedAutomationPointId(action: AppAction): string | undefined {
-    return action.type === 'addAutomationPoint' ? action.payload.pointId : undefined;
-}
+type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
 /**
  * The lane id a replayed addAutomationLane actually produced. When the track
@@ -205,211 +44,99 @@ function resolveMaterializedLaneId(generatedLaneId: string, target: { trackId: s
     );
 }
 
-function getGeneratedSidechainRouteId(action: AppAction): string | undefined {
-    return action.type === 'addSidechainRoute' ? action.payload.routeId : undefined;
+type GeneratedIds = string | readonly string[] | undefined;
+
+/** The replayed create with the kernel's ids and then its handler's own drawn ids in place. */
+function materializeReplayedCreate(replayAction: AppAction): AppAction {
+    const kernelMaterialized = materializeCommandApplicationIds(replayAction).action;
+    const handler = getHandlerByType(kernelMaterialized.type);
+    if (!handler) {
+        return kernelMaterialized;
+    }
+    return materializeCommandHandlerArguments(kernelMaterialized, handler);
 }
 
 /**
- * Dispatch a replayed create and return the generated id the executed command
+ * Dispatch a replayed create and return the generated ids the executed command
  * carried. executeAppAction materializes its own copy of the action and never
- * writes generated ids back onto the caller's object (#4817), so the id is
- * minted here through the same materialization executeAppAction will repeat
- * idempotently, and read back from the action that was actually dispatched.
+ * writes generated ids back onto the caller's object (#4817), so the ids are
+ * minted here through the same kernel and handler materializations
+ * executeAppAction will repeat idempotently, and read back from the action that
+ * was actually dispatched.
  */
 async function executeGeneratedCreate(
     replayAction: AppAction,
-    options: { groupId: string; groupLabel: string },
-    readGeneratedId: (action: AppAction) => string | undefined
-): Promise<string | undefined> {
-    const materialized = materializeCommandApplicationIds(replayAction);
-    await executeAppAction(materialized.action, options);
-    return readGeneratedId(materialized.action);
+    options: { groupId: string; groupLabel: string }
+): Promise<GeneratedIds> {
+    const materialized = materializeReplayedCreate(replayAction);
+    await executeAppAction(materialized, options);
+    return lookupGeneratedId(materialized);
 }
+
+function toIdList(ids: GeneratedIds): readonly string[] {
+    if (ids === undefined) {
+        return [];
+    }
+    return typeof ids === 'string' ? [ids] : ids;
+}
+
+function lookupRemap<Type extends AppActionType>(action: ActionOf<Type>, mappings: MacroReplayIdMappings): void {
+    if (!Object.hasOwn(macroReplayRemapByActionType, action.type)) {
+        leaveReferencesUnmapped();
+        return;
+    }
+    macroReplayRemapByActionType[action.type](action, mappings);
+}
+
+function lookupGeneratedId<Type extends AppActionType>(action: ActionOf<Type>): GeneratedIds {
+    if (!Object.hasOwn(macroGeneratedIdByActionType, action.type)) {
+        return noGeneratedId();
+    }
+    return macroGeneratedIdByActionType[action.type](action);
+}
+
+function lookupCreate<Type extends AppActionType>(
+    action: ActionOf<Type>,
+    mappings: MacroReplayIdMappings
+): MacroReplayCreate | null {
+    if (!Object.hasOwn(macroReplayCreateByActionType, action.type)) {
+        return notAGeneratedCreate();
+    }
+    return macroReplayCreateByActionType[action.type](action, mappings);
+}
+
+function lookupPayloadReset<Type extends AppActionType>(action: ActionOf<Type>): AppAction {
+    if (!Object.hasOwn(macroReplayPayloadResetByActionType, action.type)) {
+        return keepRecordedPayload(action);
+    }
+    return macroReplayPayloadResetByActionType[action.type](action);
+}
+
+const macroReplayReads: MacroReplayReads = { resolveMaterializedLaneId };
 
 async function executeMacroAction(
     action: AppAction,
-    mappings: ReplayIdMappings,
+    mappings: MacroReplayIdMappings,
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
     if (action.type === 'editTempoMap' || action.type === 'restoreTempoMapEdit') {
         await replayTempoMapMacroAction(action, mappings.tempoRowIds, options);
         return;
     }
-    const replayAction = lowerSourceMacroAction(action, mappings.tempoRowIds);
-    if (replayAction.type === 'slipClipContent' || replayAction.type === 'trimClipStart') {
-        // A public history reversion can record restoration-only hints. Macro
-        // playback uses the fresh command law against today's clip and rows;
-        // its handler captures that execution for its own exact Undo and Redo.
-        delete replayAction.payload.midiRowCoordinates;
-        if (replayAction.type === 'slipClipContent') {
-            delete replayAction.payload.rowLiftBeats;
-        } else {
-            delete replayAction.payload.midiOffsetBeats;
-            delete replayAction.payload.loopOriginBeat;
-        }
-    }
-    if (replayAction.type === 'addSection') {
-        // Same rule for a reverted section removal: its recorded slot belongs
-        // to the section list it was recorded against, so replay appends like a
-        // fresh public request.
-        delete replayAction.payload.index;
-    }
-    if (replayAction.type === 'addSidechainRoute') {
-        const recordedRouteId = replayAction.payload.routeId;
-        delete replayAction.payload.routeId;
-        const generatedRouteId = await executeGeneratedCreate(replayAction, options, getGeneratedSidechainRouteId);
-        if (recordedRouteId && generatedRouteId) {
-            mappings.sidechainRouteIds.set(recordedRouteId, generatedRouteId);
+    const replayAction = lookupPayloadReset(lowerSourceMacroAction(action, mappings.tempoRowIds));
+    const create = lookupCreate(replayAction, mappings);
+    if (create) {
+        const generatedIds = toIdList(await executeGeneratedCreate(replayAction, options));
+        // A list create pairs its ids by position, up to the shorter list.
+        for (const [index, recordedId] of toIdList(create.recordedId).entries()) {
+            const generatedId = generatedIds[index];
+            if (recordedId && generatedId) {
+                create.remember(recordedId, generatedId, macroReplayReads);
+            }
         }
         return;
     }
-    if (replayAction.type === 'addAutomationLane') {
-        const recordedLaneId = replayAction.payload.laneId;
-        delete replayAction.payload.laneId;
-        const generatedLaneId = await executeGeneratedCreate(replayAction, options, getGeneratedAutomationLaneId);
-        if (recordedLaneId && generatedLaneId) {
-            const materializedLaneId = resolveMaterializedLaneId(generatedLaneId, {
-                trackId: replayAction.payload.trackId,
-                parameterId: replayAction.payload.parameterId,
-            });
-            mappings.automationLaneIds.set(recordedLaneId, materializedLaneId);
-        }
-        return;
-    }
-    if (replayAction.type === 'addAutomationPoint') {
-        replayAction.payload.laneId = remapAutomationLaneId(replayAction.payload.laneId, mappings);
-        const recordedPointId = replayAction.payload.pointId;
-        delete replayAction.payload.pointId;
-        const generatedPointId = await executeGeneratedCreate(replayAction, options, getGeneratedAutomationPointId);
-        if (recordedPointId && generatedPointId) {
-            mappings.automationPointIds.set(recordedPointId, generatedPointId);
-        }
-        return;
-    }
-    if (replayAction.type === 'addChordEvent') {
-        const recordedEventId = replayAction.payload.eventId;
-        delete replayAction.payload.eventId;
-        const generatedEventId = await executeGeneratedCreate(replayAction, options, getGeneratedChordEventId);
-        if (recordedEventId && generatedEventId) {
-            mappings.chordEventIds.set(recordedEventId, generatedEventId);
-        }
-        return;
-    }
-    if (replayAction.type === 'createAdjustmentLayer') {
-        const recordedLayerId = replayAction.payload.layerId;
-        delete replayAction.payload.layerId;
-        const generatedLayerId = await executeGeneratedCreate(replayAction, options, getGeneratedLayerId);
-        if (recordedLayerId && generatedLayerId) {
-            mappings.layerIds.set(recordedLayerId, generatedLayerId);
-        }
-        return;
-    }
-
-    if (replayAction.type === 'duplicateClipAt') {
-        // The recorded copy id was consumed by the recorded gesture's undo: on
-        // replay the copy still exists, so the pinned id would make the handler
-        // no-write and the step would silently vanish. Clear it so the handler
-        // mints a fresh copy, like every create branch above.
-        delete replayAction.payload.targetClipId;
-        await executeAppAction(replayAction, options);
-        return;
-    }
-
-    if (replayAction.type === 'glueClips' || replayAction.type === 'stripSilence') {
-        // The recorded plan names the ids the recorded gesture created and the
-        // project it read; the handler keeps a carried plan and refuses it once
-        // stale. A replay is a new gesture, so clear the plan and let the
-        // handler plan it against the project as it now is.
-        delete replayAction.payload.expected;
-        delete replayAction.payload.replacement;
-        if (replayAction.type === 'glueClips') {
-            delete replayAction.payload.targetClipId;
-        }
-        await executeAppAction(replayAction, options);
-        return;
-    }
-
-    if (replayAction.type === 'quantizeTransients') {
-        // As above: the recorded plan names the recorded slices and the source it detected; a
-        // replay plans again against the project as it now is.
-        delete replayAction.payload.plan;
-        await executeAppAction(replayAction, options);
-        return;
-    }
-
-    if (replayAction.type === 'extractGroove') {
-        // The recorded template and note revision belong to the recorded gesture; a replay extracts
-        // again from the clip's notes as they now are.
-        const { clipId, templateId, sourceName, subdivision } = replayAction.payload;
-        await executeAppAction(
-            { type: 'extractGroove', payload: { clipId, templateId, sourceName, subdivision } },
-            options
-        );
-        return;
-    }
-
-    if (replayAction.type === 'addAdjustmentRegion') {
-        replayAction.payload.layerId = remapLayerId(replayAction.payload.layerId, mappings);
-        const recordedRegionId = replayAction.payload.regionId;
-        delete replayAction.payload.regionId;
-        const generatedRegionId = await executeGeneratedCreate(replayAction, options, getGeneratedRegionId);
-        if (recordedRegionId && generatedRegionId) {
-            mappings.regionIds.set(recordedRegionId, generatedRegionId);
-        }
-        return;
-    }
-
-    if (replayAction.type === 'createVcaGroup') {
-        const recordedVcaGroupId = replayAction.payload.vcaGroupId;
-        delete replayAction.payload.vcaGroupId;
-        const generatedVcaGroupId = await executeGeneratedCreate(replayAction, options, getGeneratedVcaGroupId);
-        if (recordedVcaGroupId && generatedVcaGroupId) {
-            mappings.vcaGroupIds.set(recordedVcaGroupId, generatedVcaGroupId);
-        }
-        return;
-    }
-
-    if (replayAction.type === 'addMarker') {
-        const recordedMarkerId = replayAction.payload.markerId;
-        delete replayAction.payload.markerId;
-        const generatedMarkerId = await executeGeneratedCreate(replayAction, options, getGeneratedMarkerId);
-        if (recordedMarkerId && generatedMarkerId) {
-            mappings.markerIds.set(recordedMarkerId, generatedMarkerId);
-        }
-        return;
-    }
-
-    if (replayAction.type === 'addSection') {
-        const recordedSectionId = replayAction.payload.sectionId;
-        delete replayAction.payload.sectionId;
-        const generatedSectionId = await executeGeneratedCreate(replayAction, options, getGeneratedSectionId);
-        if (recordedSectionId && generatedSectionId) {
-            mappings.sectionIds.set(recordedSectionId, generatedSectionId);
-        }
-        return;
-    }
-
-    if (replayAction.type === 'createTrackAlternative') {
-        const recordedAlternativeId = replayAction.payload.alternativeId;
-        delete replayAction.payload.alternativeId;
-        const generatedAlternativeId = await executeGeneratedCreate(
-            replayAction,
-            options,
-            getGeneratedTrackAlternativeId
-        );
-        if (recordedAlternativeId && generatedAlternativeId) {
-            mappings.trackAlternativeIds.set(recordedAlternativeId, generatedAlternativeId);
-        }
-        return;
-    }
-
-    remapAutomationReferences(replayAction, mappings);
-    remapSidechainReferences(replayAction, mappings);
-    remapAdjustmentReferences(replayAction, mappings);
-    remapChordReferences(replayAction, mappings);
-    remapVcaReferences(replayAction, mappings);
-    remapMarkerReferences(replayAction, mappings);
-    remapTrackAlternativeReferences(replayAction, mappings);
+    lookupRemap(replayAction, mappings);
     await executeAppAction(replayAction, options);
 }
 
@@ -435,7 +162,7 @@ export async function playMacro(macroId: string): Promise<void> {
     // drops the group id for them, so each lands as its own undo entry; every
     // batch-capable action still shares the macro's group below.
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
-    const replayIdMappings: ReplayIdMappings = {
+    const replayIdMappings: MacroReplayIdMappings = {
         tempoRowIds: new Map(),
         automationLaneIds: new Map(),
         automationPointIds: new Map(),
@@ -447,6 +174,7 @@ export async function playMacro(macroId: string): Promise<void> {
         markerIds: new Map(),
         sectionIds: new Map(),
         trackAlternativeIds: new Map(),
+        scratchPadSectionIds: new Map(),
     };
 
     for (const action of macro.actions) {

@@ -4,6 +4,8 @@ import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
+import { unloadDiscardedHostedPlugins } from '../../useCases/device/unloadDiscardedHostedPlugins';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
@@ -42,6 +44,9 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
             return { status: 'conflict' };
         }
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
+        // Read before removeTrack: the instances are unreachable once the track leaves the store.
+        const heldTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId);
+        const hostedInstances = heldTrack ? collectHostedPluginInstances(heldTrack) : [];
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -59,6 +64,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
                 runAllAsyncEffects(
                     [
                         result.finalizeRuntimeRemoval,
+                        () => unloadDiscardedHostedPlugins(hostedInstances),
                         finalizeModulationRemoval.afterCommit,
                         () => publishTrackRemoved({ trackId: action.payload.trackId }),
                     ].map((effect) => runtimeAuthority.guardAbsent(action.payload.trackId, effect))
@@ -84,6 +90,9 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
                 } else {
                     effects.unshift(
                         runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            unloadDiscardedHostedPlugins(hostedInstances)
+                        ),
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
                         )

@@ -177,7 +177,7 @@ fn hit_energy(engine_type: usize, decay: f32, sample_rate: f32, open: bool) -> f
 /// narrow-range engines live in the audit spec.
 #[test]
 fn every_engine_renders_a_longer_tail_at_maximum_decay_than_at_minimum() {
-    for engine_type in 0..DrumEngineType::COUNT {
+    for (engine_type, engine_name) in ENGINE_NAMES.iter().enumerate() {
         if engine_type == MODAL_ENGINE || engine_type == CR78_DRUM_ENGINE {
             continue; // total energy is the wrong observable here; checked below
         }
@@ -192,7 +192,7 @@ fn every_engine_renders_a_longer_tail_at_maximum_decay_than_at_minimum() {
                 long > short * 1.2,
                 "{}{} at {sample_rate} Hz must ring longer at decay 1.0 than at 0.0: \
                  short={short}, long={long}",
-                ENGINE_NAMES[engine_type],
+                engine_name,
                 if open { " (open)" } else { "" },
             );
         }
@@ -657,7 +657,12 @@ fn production_instance_offsets_stay_stable_and_processing_does_not_allocate() {
     let mut instance = ToasterInstance::new(48_000.0, PADS as u32);
     let base = instance.process(0);
     let right = instance.get_right_ptr();
-    assert_eq!(unsafe { right.offset_from(base) }, MAX_BLOCK_SIZE as isize);
+    // SAFETY: `base` is `output_buf.as_ptr()` and `right` is that pointer advanced by
+    // `MAX_BLOCK_SIZE` floats (`get_right_ptr`), so both lie in the one `output_buf`
+    // allocation (`(2 + PADS * 2) * MAX_BLOCK_SIZE` floats from `new`), derive from the same
+    // pointer, and their distance is a whole number of `f32`s.
+    let right_offset = unsafe { right.offset_from(base) };
+    assert_eq!(right_offset, MAX_BLOCK_SIZE as isize);
 
     instance.note_on(0, 127.0, 60);
     assert_no_alloc(|| {
@@ -670,13 +675,29 @@ fn production_instance_offsets_stay_stable_and_processing_does_not_allocate() {
         instance.reset_pad_dry_routing();
     });
 
-    let pad_zero_left = unsafe { std::slice::from_raw_parts(base.add(2 * MAX_BLOCK_SIZE), FRAMES) };
-    let pad_zero_right =
-        unsafe { std::slice::from_raw_parts(base.add(3 * MAX_BLOCK_SIZE), FRAMES) };
+    // SAFETY: `output_buf` holds `(2 + PADS * 2) * MAX_BLOCK_SIZE` floats from `new`, so
+    // channel 2 starts inside it.
+    let pad_zero_left_base = unsafe { base.add(2 * MAX_BLOCK_SIZE) };
+    // SAFETY: the pointer is channel 2 of the zero-initialised, never-resized `output_buf`;
+    // `FRAMES` (128) is within the channel's `MAX_BLOCK_SIZE` floats, and `instance` is not
+    // used while the slice lives.
+    let pad_zero_left = unsafe { std::slice::from_raw_parts(pad_zero_left_base, FRAMES) };
+    // SAFETY: `output_buf` holds `(2 + PADS * 2) * MAX_BLOCK_SIZE` floats from `new`, so
+    // channel 3 starts inside it.
+    let pad_zero_right_base = unsafe { base.add(3 * MAX_BLOCK_SIZE) };
+    // SAFETY: the pointer is channel 3 of the same never-resized `output_buf`; `FRAMES` is
+    // within the channel's `MAX_BLOCK_SIZE` floats, and `instance` is not used while the
+    // slice lives.
+    let pad_zero_right = unsafe { std::slice::from_raw_parts(pad_zero_right_base, FRAMES) };
     assert!(energy(pad_zero_left) + energy(pad_zero_right) > 0.0);
     for channel in 4..2 + PADS * 2 {
-        let inactive =
-            unsafe { std::slice::from_raw_parts(base.add(channel * MAX_BLOCK_SIZE), FRAMES) };
+        // SAFETY: `channel < 2 + PADS * 2`, the channel count `new` sized `output_buf` for, so
+        // the offset stays inside that allocation.
+        let inactive_base = unsafe { base.add(channel * MAX_BLOCK_SIZE) };
+        // SAFETY: the pointer is the start of channel `channel` of the never-resized
+        // `output_buf`; `FRAMES` is within its `MAX_BLOCK_SIZE` floats, and `instance` is not
+        // used while the slice lives.
+        let inactive = unsafe { std::slice::from_raw_parts(inactive_base, FRAMES) };
         assert_eq!(energy(inactive), 0.0, "inactive channel {channel}");
     }
 }

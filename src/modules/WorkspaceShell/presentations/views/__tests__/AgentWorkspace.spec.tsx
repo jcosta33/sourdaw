@@ -1,7 +1,7 @@
 import { type ComponentProps } from 'react';
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
     agentChangeComparisonStore,
@@ -9,6 +9,8 @@ import {
     aiActionHistoryStore,
     pendingActionConfirmationStore,
 } from '#/modules/AiRuntime/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { type AgentApprovalSection } from '../../components/agentWorkspace/AgentApprovalSection';
 import { AgentWorkspace } from '../AgentWorkspace';
@@ -75,8 +77,16 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
 
 vi.mock('#/modules/AiRuntime/presentations/views', () => ({
     AgentRunDecisionPanel: () => <div data-testid="agent-decision-panel" />,
-    MeasuredPreviewAudition: (input: { confirmationId: string; selectedIntentGroupIds: readonly string[] }) => (
-        <section aria-label="Measured audio comparison" data-confirmation-id={input.confirmationId}>
+    MeasuredPreviewAudition: (input: {
+        confirmationId: string;
+        selectedIntentGroupIds: readonly string[];
+        surface: string;
+    }) => (
+        <section
+            aria-label="Measured audio comparison"
+            data-confirmation-id={input.confirmationId}
+            data-surface={input.surface}
+        >
             {input.selectedIntentGroupIds.join(',')}
         </section>
     ),
@@ -405,6 +415,8 @@ describe('AgentWorkspace', () => {
         const comparison = screen.getByRole('region', { name: 'Measured audio comparison' });
         expect(screen.getAllByRole('region', { name: 'Measured audio comparison' })).toHaveLength(1);
         expect(comparison).toHaveAttribute('data-confirmation-id', 'confirmation-1');
+        // The Workspace names itself, so closing the chat never stops what it started.
+        expect(comparison).toHaveAttribute('data-surface', 'agent-workspace');
         expect(comparison).toHaveTextContent('group-a,group-b');
         stopMeasuredPreviewAuditionMock.mockImplementationOnce((input: { confirmationId: string }) => {
             expect(input).toEqual({ confirmationId: 'confirmation-1' });
@@ -670,6 +682,250 @@ describe('AgentWorkspace', () => {
         expect(screen.getByText('Write a walking bassline')).toBeInTheDocument();
         expect(screen.getByText('addNotes: Add eight notes')).toBeInTheDocument();
         expect(container.textContent).not.toContain('secret');
+    });
+
+    describe('plan stopping conditions and audible claim', () => {
+        afterEach(() => {
+            // Unmount first: the panel subscribes to the track store, so resetting it while mounted updates outside act.
+            cleanup();
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        });
+
+        function plannedRun(overrides: {
+            stoppingConditions: string[];
+            audible: NonNullable<ReturnType<typeof run>['plan']>['expectedImpact']['audible'];
+        }) {
+            return run({
+                plan: {
+                    summary: 'Gain',
+                    commandIds: [],
+                    serializedBatchIdentity: null,
+                    revision: null,
+                    classification: 'simple',
+                    showPlanPanel: true,
+                    objective: 'Raise the vocal',
+                    interpretedConstraints: [],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    steps: [],
+                    expectedImpact: { project: [], audible: overrides.audible },
+                    capabilities: [],
+                    risks: [],
+                    approvalPoints: [],
+                    validationStrategy: [],
+                    stoppingConditions: overrides.stoppingConditions,
+                    alternatives: [],
+                    needsUserDecision: false,
+                },
+            });
+        }
+
+        it('lists the plan stopping conditions under their own label', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([
+                plannedRun({
+                    stoppingConditions: ['Stop if the project revision changes', 'Stop if a render fails'],
+                    audible: { status: 'not-claimed', reason: 'No render' },
+                }),
+            ]);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Stopping conditions' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual(['Stop if the project revision changes', 'Stop if a render fails']);
+        });
+
+        it('renders a repeated stopping condition once per occurrence without a duplicate-key warning', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([
+                plannedRun({
+                    stoppingConditions: ['Stop if a render fails', 'Stop if a render fails'],
+                    audible: { status: 'not-claimed', reason: 'No render' },
+                }),
+            ]);
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Stopping conditions' });
+            const sameKeyWarnings = consoleError.mock.calls.filter((call) =>
+                call.some((part) => typeof part === 'string' && part.includes('same key'))
+            );
+            consoleError.mockRestore();
+            expect(within(list).getAllByText('Stop if a render fails')).toHaveLength(2);
+            expect(sameKeyWarnings).toEqual([]);
+        });
+
+        it('renders no stopping-conditions list or placeholder when the plan has none', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([plannedRun({ stoppingConditions: [], audible: { status: 'not-claimed', reason: 'No render' } })]);
+
+            const { container } = render(<AgentWorkspace />);
+
+            expect(screen.queryByRole('list', { name: 'Stopping conditions' })).not.toBeInTheDocument();
+            expect(container.textContent).not.toMatch(/Stopping conditions/u);
+            expect(screen.getByText('Audible impact not-claimed: No render')).toBeInTheDocument();
+        });
+
+        it('names the range of each line when one metric of a target was measured over several', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            const loudness = (startBeat: number, endBeat: number, delta: number) => ({
+                targetId: 'master-uuid',
+                targetKind: 'master' as const,
+                range: { startBeat, endBeat, sectionId: null },
+                metricId: 'integratedLoudness',
+                baseline: { value: -14, unit: 'LUFS' },
+                preview: { value: -14 + delta, unit: 'LUFS' },
+                delta: { value: delta, unit: 'LU' },
+            });
+            setRuns([
+                plannedRun({
+                    stoppingConditions: [],
+                    audible: {
+                        status: 'measured',
+                        revision: 'revision-1',
+                        batchContentHash: 'hash-1',
+                        metrics: [loudness(0, 4, 1.5), loudness(4, 8, 0.8)],
+                    },
+                }),
+            ]);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Measured audible impact' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Master integratedLoudness (beats 0–4): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
+                'Master integratedLoudness (beats 4–8): -14.00 LUFS → -13.20 LUFS (+0.80 LU)',
+            ]);
+        });
+
+        it('tells apart ranges with equal beats over different sections', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            const loudness = (sectionId: string | null, delta: number) => ({
+                targetId: 'master-uuid',
+                targetKind: 'master' as const,
+                range: { startBeat: 0, endBeat: 4, sectionId },
+                metricId: 'integratedLoudness',
+                baseline: { value: -14, unit: 'LUFS' },
+                preview: { value: -14 + delta, unit: 'LUFS' },
+                delta: { value: delta, unit: 'LU' },
+            });
+            const runWithChorusDelta = (chorusDelta: number) =>
+                plannedRun({
+                    stoppingConditions: [],
+                    audible: {
+                        status: 'measured',
+                        revision: 'revision-1',
+                        batchContentHash: 'hash-1',
+                        metrics: [loudness('verse', 1.5), loudness('chorus', chorusDelta)],
+                    },
+                });
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            setRuns([runWithChorusDelta(0.8)]);
+
+            const { rerender } = render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Measured audible impact' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Master integratedLoudness (beats 0–4, section verse): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
+                'Master integratedLoudness (beats 0–4, section chorus): -14.00 LUFS → -13.20 LUFS (+0.80 LU)',
+            ]);
+
+            act(() => {
+                setRuns([runWithChorusDelta(0.3)]);
+            });
+            rerender(<AgentWorkspace />);
+
+            expect(
+                within(screen.getByRole('list', { name: 'Measured audible impact' }))
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Master integratedLoudness (beats 0–4, section verse): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
+                'Master integratedLoudness (beats 0–4, section chorus): -14.00 LUFS → -13.70 LUFS (+0.30 LU)',
+            ]);
+            const duplicateKeyWarnings = consoleError.mock.calls.filter((call) =>
+                call.some((part) => typeof part === 'string' && part.includes('same key'))
+            );
+            consoleError.mockRestore();
+            expect(duplicateKeyWarnings).toEqual([]);
+        });
+
+        it('names each measured target as the approval card does and prints each moved figure in its format', () => {
+            trackStore.set({
+                tracks: [createTrack({ id: 'track-uuid-1', name: 'Lead Vocal', kind: 'audio' })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([
+                plannedRun({
+                    stoppingConditions: [],
+                    audible: {
+                        status: 'measured',
+                        revision: 'revision-1',
+                        batchContentHash: 'hash-1',
+                        metrics: [
+                            {
+                                targetId: 'track-uuid-1',
+                                targetKind: 'track',
+                                range: { startBeat: 0, endBeat: 4, sectionId: null },
+                                metricId: 'rms',
+                                baseline: { value: -20.123456789, unit: 'dBFS' },
+                                preview: { value: -17.0000001, unit: 'dBFS' },
+                                delta: { value: 3.123456689, unit: 'dB' },
+                            },
+                            {
+                                targetId: 'master-uuid',
+                                targetKind: 'master',
+                                range: { startBeat: 0, endBeat: 4, sectionId: null },
+                                metricId: 'truePeak',
+                                baseline: { value: -3, unit: 'dBTP' },
+                                preview: { value: -4.5, unit: 'dBTP' },
+                                delta: { value: -1.5, unit: 'dB' },
+                            },
+                            {
+                                targetId: 'bus-uuid',
+                                targetKind: 'bus',
+                                range: { startBeat: 0, endBeat: 4, sectionId: null },
+                                metricId: 'crestFactor',
+                                baseline: { value: 9, unit: 'dB' },
+                                preview: { value: 9.5, unit: 'dB' },
+                                delta: { value: 0.5, unit: 'dB' },
+                            },
+                        ],
+                    },
+                }),
+            ]);
+
+            const { container } = render(<AgentWorkspace />);
+
+            expect(screen.getByText('Audible impact measured')).toBeInTheDocument();
+            const list = screen.getByRole('list', { name: 'Measured audible impact' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Lead Vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dB)',
+                'Master truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dB)',
+                'bus-uuid crestFactor: 9.00 dB → 9.50 dB (+0.50 dB)',
+            ]);
+            expect(container.textContent).not.toContain('track-uuid-1');
+            expect(container.textContent).not.toContain('master-uuid');
+            expect(screen.queryByText(/Audible impact not-claimed/u)).not.toBeInTheDocument();
+        });
     });
 
     it('announces phase in a polite live region and a terminal outcome in an alert', () => {

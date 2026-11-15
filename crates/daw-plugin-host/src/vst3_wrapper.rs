@@ -15,7 +15,7 @@ use crate::params::PluginParameter;
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
     HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
-    PluginHostRequestNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    PluginHostRequestNotifier, ProcessMode, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
     MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use crate::vst3_bus_layout::{
@@ -131,8 +131,8 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         if index != 0 || !self.filled.get() || sample_offset.is_null() || value.is_null() {
             return kInvalidArgument;
         }
-        *sample_offset = 0;
-        *value = self.value.get();
+        unsafe { *sample_offset = 0 };
+        unsafe { *value = self.value.get() };
         kResultOk
     }
 
@@ -145,7 +145,7 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         self.value.set(value);
         self.filled.set(true);
         if !index.is_null() {
-            *index = 0;
+            unsafe { *index = 0 };
         }
         kResultOk
     }
@@ -235,11 +235,11 @@ impl IParameterChangesTrait for HostParameterChanges {
         if id.is_null() {
             return ptr::null_mut();
         }
-        let Some(position) = self.queue_index_for(*id) else {
+        let Some(position) = self.queue_index_for(unsafe { *id }) else {
             return ptr::null_mut();
         };
         if !index.is_null() {
-            *index = position as int32;
+            unsafe { *index = position as int32 };
         }
         borrowed_ptr(&self.queues[position])
     }
@@ -315,7 +315,7 @@ impl IEventListTrait for HostEventList {
         if index < 0 || index as usize >= self.count.get() || e.is_null() {
             return kInvalidArgument;
         }
-        *e = (*self.events.as_ptr())[index as usize];
+        unsafe { *e = (*self.events.as_ptr())[index as usize] };
         kResultOk
     }
 
@@ -443,15 +443,15 @@ impl IBStreamTrait for HostStream {
         // and a panic here unwinds into the plugin's frame.
         let Some(remaining) = cursor.bytes.get(cursor.position..) else {
             if !num_bytes_read.is_null() {
-                *num_bytes_read = 0;
+                unsafe { *num_bytes_read = 0 };
             }
             return kResultOk;
         };
         let count = remaining.len().min(num_bytes as usize);
-        ptr::copy_nonoverlapping(remaining.as_ptr(), buffer as *mut u8, count);
+        unsafe { ptr::copy_nonoverlapping(remaining.as_ptr(), buffer as *mut u8, count) };
         cursor.position += count;
         if !num_bytes_read.is_null() {
-            *num_bytes_read = count as int32;
+            unsafe { *num_bytes_read = count as int32 };
         }
         kResultOk
     }
@@ -481,14 +481,16 @@ impl IBStreamTrait for HostStream {
             cursor.bytes.resize(end, 0);
         }
         let start = cursor.position;
-        ptr::copy_nonoverlapping(
-            buffer as *const u8,
-            cursor.bytes[start..].as_mut_ptr(),
-            count,
-        );
+        unsafe {
+            ptr::copy_nonoverlapping(
+                buffer as *const u8,
+                cursor.bytes[start..].as_mut_ptr(),
+                count,
+            )
+        };
         cursor.position = end;
         if !num_bytes_written.is_null() {
-            *num_bytes_written = count as int32;
+            unsafe { *num_bytes_written = count as int32 };
         }
         kResultOk
     }
@@ -513,7 +515,7 @@ impl IBStreamTrait for HostStream {
         let clamped = (target as u64).min(cursor.bytes.len() as u64) as usize;
         cursor.position = clamped;
         if !result.is_null() {
-            *result = clamped as int64;
+            unsafe { *result = clamped as int64 };
         }
         kResultOk
     }
@@ -523,7 +525,7 @@ impl IBStreamTrait for HostStream {
             return kInvalidArgument;
         };
         if !pos.is_null() {
-            *pos = cursor.position as int64;
+            unsafe { *pos = cursor.position as int64 };
         }
         kResultOk
     }
@@ -624,7 +626,7 @@ impl IConnectionPointTrait for Vst3ConnectionProxy {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
-        let Some(message) = ComRef::from_raw(message) else {
+        let Some(message) = (unsafe { ComRef::from_raw(message) }) else {
             return kInvalidArgument;
         };
         if self.state.defer_message(self.peer, message.to_com_ptr()) {
@@ -997,6 +999,10 @@ pub struct Vst3Wrapper {
 
     descriptor_id: String,
     sample_rate: f64,
+    /// The `ProcessModes_` value this instance was built with, stated in every
+    /// `setupProcessing` and every `ProcessData`. Held as the format's own
+    /// value so a block reads a field rather than converting one.
+    process_mode: int32,
     activated: bool,
     accepts_midi: bool,
     processing: Arc<ProcessingGate>,
@@ -1046,8 +1052,24 @@ impl Vst3Wrapper {
     /// Load a bundle, instantiate the class the descriptor names, and activate
     /// it at the given sample rate.
     pub fn new(bundle_path: &Path, descriptor_id: &str, sample_rate: f64) -> Result<Self, String> {
+        Self::new_with_mode(
+            bundle_path,
+            descriptor_id,
+            sample_rate,
+            ProcessMode::Realtime,
+        )
+    }
+
+    /// [`Vst3Wrapper::new`], with the process mode the plugin is set up in and
+    /// told on every block.
+    pub fn new_with_mode(
+        bundle_path: &Path,
+        descriptor_id: &str,
+        sample_rate: f64,
+        mode: ProcessMode,
+    ) -> Result<Self, String> {
         let instance = Vst3Instance::open(bundle_path, descriptor_id)?;
-        Self::activated(instance, parse_class_id(descriptor_id)?, sample_rate)
+        Self::activated_with_mode(instance, parse_class_id(descriptor_id)?, sample_rate, mode)
     }
 
     /// Activate an already-instantiated plugin. Separate so a test can build the
@@ -1056,6 +1078,16 @@ impl Vst3Wrapper {
         instance: Vst3Instance,
         class_id: TUID,
         sample_rate: f64,
+    ) -> Result<Self, String> {
+        Self::activated_with_mode(instance, class_id, sample_rate, ProcessMode::Realtime)
+    }
+
+    /// [`Vst3Wrapper::activated`], in the given process mode.
+    pub fn activated_with_mode(
+        instance: Vst3Instance,
+        class_id: TUID,
+        sample_rate: f64,
+        mode: ProcessMode,
     ) -> Result<Self, String> {
         let mut wrapper = Self {
             editor: None,
@@ -1068,6 +1100,7 @@ impl Vst3Wrapper {
             editor_scale: DEFAULT_EDITOR_CONTENT_SCALE,
             descriptor_id: format_class_id(&class_id),
             sample_rate,
+            process_mode: vst3_process_mode(mode),
             activated: false,
             processing: Arc::new(ProcessingGate::default()),
             input_scratch: Box::new([[0.0; MAX_BUFFER]; CHANNELS]),
@@ -1152,7 +1185,7 @@ impl Vst3Wrapper {
 
     fn process_setup(&self) -> ProcessSetup {
         ProcessSetup {
-            processMode: ProcessModes_::kRealtime as int32,
+            processMode: self.process_mode,
             symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
             maxSamplesPerBlock: MAX_BUFFER as int32,
             sampleRate: self.sample_rate,
@@ -1539,7 +1572,7 @@ impl Vst3Wrapper {
             );
 
             let mut data = ProcessData {
-                processMode: ProcessModes_::kRealtime as int32,
+                processMode: self.process_mode,
                 symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
                 numSamples: samples as int32,
                 numInputs: self.input_bus_buffers.len() as int32,
@@ -2142,10 +2175,10 @@ fn create_controller(
 unsafe fn activate_first_event_bus(component: &ComPtr<IComponent>) {
     let media = MediaTypes_::kEvent as int32;
     let direction = BusDirections_::kInput as int32;
-    if component.getBusCount(media, direction) <= 0 {
+    if unsafe { component.getBusCount(media, direction) } <= 0 {
         return;
     }
-    component.activateBus(media, direction, 0, 1);
+    unsafe { component.activateBus(media, direction, 0, 1) };
 }
 
 /// One zeroed `AudioBusBuffers` per declared bus, allocated at activation so the
@@ -2227,6 +2260,13 @@ fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
 }
 
+fn vst3_process_mode(mode: ProcessMode) -> int32 {
+    match mode {
+        ProcessMode::Realtime => ProcessModes_::kRealtime as int32,
+        ProcessMode::Offline => ProcessModes_::kOffline as int32,
+    }
+}
+
 fn empty_process_context(sample_rate: f64) -> ProcessContext {
     // SAFETY: `ProcessContext` is plain `repr(C)` data; zero is a valid value
     // for every field, and `state` zero means "nothing below is valid".
@@ -2248,7 +2288,9 @@ fn fill_process_context(target: &mut ProcessContext, source: HostTransport, samp
         state |= StatesAndFlags_::kPlaying;
     }
 
-    target.state = state as u32;
+    // The flag constants are `c_int` on Windows and `c_uint` elsewhere, while
+    // the field is always `u32`; reinterpreting the bytes is the same bits.
+    target.state = u32::from_ne_bytes(state.to_ne_bytes());
     target.sampleRate = sample_rate;
     target.projectTimeSamples = (source.song_pos_seconds * sample_rate) as i64;
     target.projectTimeMusic = source.song_pos_beats;

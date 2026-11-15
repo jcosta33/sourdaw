@@ -129,6 +129,10 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
                 samplesBase: () => Promise.reject(new Error('Unexpected native path call: samplesBase')),
                 join: () => Promise.reject(new Error('Unexpected native path call: join')),
             },
+            // Boot reads the machine memory once to size the local model list.
+            system: {
+                totalMemoryBytes: () => Promise.resolve(16_000_000_000),
+            },
             voiceDictation: {
                 start: () => Promise.reject(new Error('Unexpected native dictation call: start')),
                 stop: () => Promise.reject(new Error('Unexpected native dictation call: stop')),

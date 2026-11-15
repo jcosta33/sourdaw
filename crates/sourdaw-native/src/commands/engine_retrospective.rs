@@ -221,7 +221,7 @@ mod tests {
         state: &AppState,
     ) -> rtrb::Consumer<daw_engine::scheduler::GraphCommand> {
         let (engine, commands, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         commands
     }
@@ -557,12 +557,13 @@ mod tests {
 
     #[test]
     fn the_owed_arm_follows_the_resolved_id_and_never_rearms_a_matching_engine() {
-        let cases: [(
+        type OwedArmCase = (
             Option<DesiredRetrospectiveArm>,
             Option<usize>,
             Option<usize>,
             Option<(usize, usize)>,
-        ); 8] = [
+        );
+        let cases: [OwedArmCase; 8] = [
             // Nothing recorded owes nothing, whatever the engine holds.
             (None, None, None, None),
             (None, Some(4), None, None),

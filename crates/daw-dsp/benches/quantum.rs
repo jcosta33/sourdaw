@@ -183,7 +183,11 @@
 //!   collapses any note within 12 semitones of a held one onto the held voice,
 //!   so 64 notes spread over 88 keys become 32 sounding voices.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "benchmarks assert by unwrapping and fail by panicking"
+)]
 
 use std::hint::black_box;
 use std::time::Duration;
@@ -541,12 +545,19 @@ fn grinder_instance(amp_model: f32) -> GrinderInstance {
     for frame in 0..QUANTUM {
         let phase = 2.0 * std::f32::consts::PI * 220.0 * (frame as f32) / SAMPLE_RATE;
         let sample = 0.25 * phase.sin();
-        // SAFETY: both pointers come from `Vec<f32>` fields of `instance` that
-        // are `MAX_GRINDER_BLOCK_SIZE` (2048) long, and `frame < QUANTUM`.
-        unsafe {
-            *left_ptr.add(frame) = sample;
-            *right_ptr.add(frame) = sample;
-        }
+        // SAFETY: `left_ptr` comes from a `Vec<f32>` field of `instance` that
+        // is `MAX_GRINDER_BLOCK_SIZE` (2048) long and never resized, and
+        // `frame < QUANTUM` (128), so the offset stays inside it.
+        let left_slot = unsafe { left_ptr.add(frame) };
+        // SAFETY: `left_slot` is in bounds of that initialised buffer, and no
+        // reference to it is live while the bench writes.
+        unsafe { *left_slot = sample };
+        // SAFETY: `right_ptr` comes from the separate right input field, sized
+        // and bounded exactly as the left one above.
+        let right_slot = unsafe { right_ptr.add(frame) };
+        // SAFETY: `right_slot` is in bounds of that initialised buffer, and no
+        // reference to it is live while the bench writes.
+        unsafe { *right_slot = sample };
     }
 
     for _ in 0..WARMUP_BLOCKS {
@@ -807,22 +818,40 @@ fn excitation(frame: usize) -> (f32, f32) {
 }
 
 /// # Safety
-/// `left` and `right` must each point to at least `QUANTUM` writable `f32`s.
+/// `left` and `right` must each point to at least `QUANTUM` writable `f32`s
+/// that no live reference aliases during the call.
 unsafe fn fill_input(left: *mut f32, right: *mut f32, block: usize) {
     for frame in 0..QUANTUM {
         let (l, r) = excitation(block * QUANTUM + frame);
-        *left.add(frame) = l;
-        *right.add(frame) = r;
+        // SAFETY: `frame < QUANTUM`, and the `# Safety` contract makes `left`
+        // the start of at least `QUANTUM` writable `f32`s.
+        let left_slot = unsafe { left.add(frame) };
+        // SAFETY: `left_slot` is inside those writable samples, which the
+        // `# Safety` contract keeps free of live references.
+        unsafe { *left_slot = l };
+        // SAFETY: as for `left`, under the same `# Safety` contract.
+        let right_slot = unsafe { right.add(frame) };
+        // SAFETY: as for `left_slot`, under the same `# Safety` contract.
+        unsafe { *right_slot = r };
     }
 }
 
 /// # Safety
-/// `left` and `right` must each point to at least `QUANTUM` readable `f32`s.
+/// `left` and `right` must each point to at least `QUANTUM` readable,
+/// initialised `f32`s that nothing writes during the call.
 unsafe fn rms_at(left: *const f32, right: *const f32) -> f32 {
     let mut sum = 0.0_f64;
     for frame in 0..QUANTUM {
-        let l = *left.add(frame) as f64;
-        let r = *right.add(frame) as f64;
+        // SAFETY: `frame < QUANTUM`, and the `# Safety` contract makes `left`
+        // the start of at least `QUANTUM` readable `f32`s.
+        let left_slot = unsafe { left.add(frame) };
+        // SAFETY: `left_slot` is inside those initialised samples, which the
+        // `# Safety` contract keeps unwritten during the call.
+        let l = unsafe { *left_slot } as f64;
+        // SAFETY: as for `left`, under the same `# Safety` contract.
+        let right_slot = unsafe { right.add(frame) };
+        // SAFETY: as for `left_slot`, under the same `# Safety` contract.
+        let r = unsafe { *right_slot } as f64;
         sum += l * l + r * r;
     }
     (sum / (2 * QUANTUM) as f64).sqrt() as f32
@@ -849,6 +878,10 @@ macro_rules! effect_row {
         let mut instance = $instance;
         let samples = sample_quanta(
             &mut instance,
+            // SAFETY: every `effect_row!` instance (Bacteria, Gluten, Crust,
+            // Knead) allocates its input buffers at 4096 samples in `new` and
+            // never resizes them, so each pointer starts at least `QUANTUM`
+            // writable samples that no reference aliases while the closure runs.
             &mut |device, block| unsafe {
                 fill_input(
                     device.get_input_left_ptr(),
@@ -858,6 +891,10 @@ macro_rules! effect_row {
             },
             &mut |device| device.process(QUANTUM as u32),
         );
+        // SAFETY: `process` returns the instance's left output and
+        // `get_right_ptr` its right one, both allocated at 4096 samples in
+        // `new` and never resized; `process` has just written the `QUANTUM`
+        // frames `rms_at` reads, and nothing writes them during the call.
         let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
         Row {
             id: $id,
@@ -948,6 +985,9 @@ fn row_proof() -> Row {
     instance.set_param("lim_ceiling", -1.0);
     let samples = sample_quanta(
         &mut instance,
+        // SAFETY: `ProofInstance::new` allocates both input buffers at 4096
+        // samples and never resizes them, so each pointer starts at least
+        // `QUANTUM` writable samples that no reference aliases here.
         &mut |device, block| unsafe {
             fill_input(
                 device.get_input_left_ptr(),
@@ -957,6 +997,10 @@ fn row_proof() -> Row {
         },
         &mut |device| device.process(QUANTUM as u32),
     );
+    // SAFETY: `process` and `get_right_ptr` return Proof's left and right
+    // outputs, allocated at 4096 samples in `new` and never resized; `process`
+    // has just written the `QUANTUM` frames `rms_at` reads, and nothing writes
+    // them during the call.
     let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
     let reduction = instance.get_limiter_gr_db();
     Row {
@@ -1037,6 +1081,10 @@ fn row_grinder() -> Row {
     instance.set_param("fat", 0.0);
     let samples = sample_quanta(
         &mut instance,
+        // SAFETY: `GrinderInstance::new` allocates both input buffers at
+        // `MAX_GRINDER_BLOCK_SIZE` (2048) samples and never resizes them, so
+        // each pointer starts at least `QUANTUM` writable samples that no
+        // reference aliases here.
         &mut |device, block| unsafe {
             fill_input(
                 device.get_input_left_ptr(),
@@ -1097,6 +1145,10 @@ fn row_grand_boule() -> Row {
         },
         &mut |device| device.process(QUANTUM as u32),
     );
+    // SAFETY: `process` and `get_right_ptr` return Grand Boule's left and
+    // right outputs, allocated at 4096 samples in `new` and never resized;
+    // `process` has just written the `QUANTUM` frames `rms_at` reads, and
+    // nothing writes them during the call.
     let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
     let active = instance.active_voices();
     assert_eq!(active, GRAND_BOULE_POOL as u32);
@@ -1134,6 +1186,11 @@ fn row_toaster() -> Row {
         },
         &mut |device| device.process(QUANTUM as u32),
     );
+    // SAFETY: `process` returns the base of Toaster's `output_buf`, allocated
+    // at `(2 + 2 * pads) * 4096` samples in `new` and never resized, and
+    // `get_right_ptr` returns that base plus 4096, so both channels hold at
+    // least `QUANTUM` samples; `process` has just written the frames `rms_at`
+    // reads, and nothing writes them during the call.
     let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
     Row {
         id: "toaster",
@@ -1586,11 +1643,19 @@ fn bench_remaining_devices(criterion: &mut Criterion) {
             );
             let mut block = 0_usize;
             for warm in 0..WARMUP_BLOCKS {
+                // SAFETY: every `bench_effect!` instance (Bacteria, Gluten,
+                // Knead) allocates its input buffers at 4096 samples in `new`
+                // and never resizes them, so `left_in` and `right_in` stay
+                // valid for `QUANTUM` writable samples, and no reference to
+                // them is live between `process` calls.
                 unsafe { fill_input(left_in, right_in, warm) };
                 instance.process(QUANTUM as u32);
             }
             group.bench_function(BenchmarkId::from_parameter($name), |bencher| {
                 bencher.iter(|| {
+                    // SAFETY: the same never-resized 4096-sample input
+                    // buffers as the warmup above, written between `process`
+                    // calls while no reference to them is live.
                     unsafe { fill_input(left_in, right_in, block) };
                     block += 1;
                     black_box(instance.process(black_box(QUANTUM as u32)))
@@ -1619,6 +1684,10 @@ fn bench_remaining_devices(criterion: &mut Criterion) {
     proof.set_param("lim_ceiling", -1.0);
     let (left_in, right_in) = (proof.get_input_left_ptr(), proof.get_input_right_ptr());
     for warm in 0..WARMUP_BLOCKS {
+        // SAFETY: `ProofInstance::new` allocates both input buffers at 4096
+        // samples and never resizes them, so `left_in` and `right_in` stay
+        // valid for `QUANTUM` writable samples, and no reference to them is
+        // live between `process` calls.
         unsafe { fill_input(left_in, right_in, warm) };
         proof.process(QUANTUM as u32);
     }
@@ -1629,6 +1698,9 @@ fn bench_remaining_devices(criterion: &mut Criterion) {
     let mut block = 0_usize;
     group.bench_function(BenchmarkId::from_parameter("proof"), |bencher| {
         bencher.iter(|| {
+            // SAFETY: the same never-resized 4096-sample Proof input buffers
+            // as the warmup above, written between `process` calls while no
+            // reference to them is live.
             unsafe { fill_input(left_in, right_in, block) };
             block += 1;
             black_box(proof.process(black_box(QUANTUM as u32)))

@@ -7,6 +7,7 @@ import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
+import { NoAiBackendError } from '../../errors/NoAiBackendError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
@@ -36,7 +37,11 @@ import {
 } from '../../models/ModelProviderProtocol';
 import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import { type ToolSchema } from '../../models/ToolDefinitions';
-import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import {
+    type LocalWorkflowGrounding,
+    WORKFLOW_ACTION_TOOL_NAMES,
+    WORKFLOW_CAPABILITY_TOOL_NAME,
+} from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import {
     AUTO_TOOL_CHOICE,
@@ -60,6 +65,7 @@ import {
     type LocalContextWindowShortfall,
     readEngineContextWindowShortfall,
 } from '../../transformers/localContextWindowRefusal';
+import { narrowWebLlmWorkflowSelector, readLocalWorkflowOffer } from '../../transformers/narrowWebLlmWorkflowTools';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { serializeWebLlmToolPlanningPrompt } from '../../transformers/serializeWebLlmToolPlanningPrompt';
 import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
@@ -80,6 +86,7 @@ import { getBackendChain } from './backendResolution/getBackendChain';
 import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
+import { readAnsweringStatus } from './readAnsweringStatus';
 
 // The core planning contract and whichever interpretation control this live phase publishes.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -90,11 +97,14 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ANSWER_INTERPRETATION_TOOL_NAME,
 ]);
 
-// The general-planning mandatory set (the workflow selector, the mandatory planning tools,
-// command-index search, catalog discovery, the joint interpretation tool and every workflow action
-// tool) plus exactly one optional or discovered tool, selected below. A phase that publishes fewer
-// mandatory tools leaves spare capacity, which never admits another command.
-export const WEBLLM_TOOL_BUDGET = 35;
+// The general-planning mandatory set of a workflow-shaped request (the workflow selector, the
+// mandatory planning tools, command-index search, catalog discovery, the joint interpretation tool
+// every workflow action tool, and the brief compiler when the request offers it) plus exactly one
+// optional or discovered tool, selected below. A
+// request no workflow with capability data can ground is offered no workflow action tool, and a
+// phase that publishes fewer mandatory tools leaves spare capacity, which never admits another
+// command.
+export const WEBLLM_TOOL_BUDGET = 36;
 
 /**
  * What one hosted turn replays: the run's first user message, the turns behind it, and the note
@@ -427,6 +437,8 @@ async function generateLocalToolPlanningOutcome(input: {
     }
     if (!isWebLlmLoaded()) {
         await waitForInference(initWebLlmEngine(undefined, { signal: input.signal }), input.signal);
+        // Loading publishes its progress and then `ready`; the local model now answers the turn.
+        llmStatusStore.set(readAnsweringStatus('webllm'));
     }
     const generatedInference = Promise.resolve<unknown>(
         Reflect.apply(generateWebLlmToolCalls, undefined, [
@@ -537,7 +549,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         hostedTurn?: HostedTurnRequest,
         // The same turn in the local profile, which a WebLLM attempt sends in place of
         // `userMessage`: the local window cannot carry the policy and the project twice.
-        localUserMessage: string = userMessage
+        localUserMessage: string = userMessage,
+        // What that local message can ground a workflow in. A WebLLM attempt offers only those
+        // workflows, and their action tools only when one of them plans actions; absent, no
+        // workflow capability is grounded. The cloud backend ignores it.
+        localWorkflowGrounding?: LocalWorkflowGrounding
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const reportProviderResult = (result: ModelProviderResult): void => {
@@ -554,18 +570,24 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         }
 
         if (chain.length === 0) {
-            throw createAiRuntimeError(
-                'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
-            );
+            throw new NoAiBackendError();
         }
 
         const previousStatus = llmStatusStore.value;
-        llmStatusStore.set({ state: 'generating' });
+        // A request refused before the engine loaded leaves the engine as it was.
+        const settleRefusedAttempt = (backend: RunnableAiBackend): void => {
+            llmStatusStore.set(
+                backend !== 'webllm' || isWebLlmLoaded()
+                    ? { state: 'ready', backend, modelId: getBackendModelId(backend) }
+                    : previousStatus
+            );
+        };
 
         const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            llmStatusStore.set(readAnsweringStatus(backend));
             let admittedAttempt: AdmittedProviderAttempt | null = null;
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
@@ -585,14 +607,21 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     ? toolSchemas.map(getHostedProposalWireToolSchema)
                     : toolSchemas;
                 if (backend === 'webllm') {
-                    const workflowSelectionTools = toolSchemas.filter(
-                        (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
+                    const workflowOffer = readLocalWorkflowOffer(localWorkflowGrounding);
+                    const workflowSelectionTools = toolSchemas.flatMap((tool) => {
+                        if (tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME) {
+                            return [];
+                        }
+                        const narrowed = narrowWebLlmWorkflowSelector(tool, workflowOffer.selectableCapabilityIds);
+                        return narrowed === null ? [] : [narrowed];
+                    });
+                    const applicationTools = toolSchemas.filter(
+                        (tool) =>
+                            WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) ||
+                            tool.function.name === BRIEF_COMPILE_TOOL_NAME
                     );
-                    const applicationTools = toolSchemas.filter((tool) =>
-                        WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
-                    );
-                    // The reference comparison and the brief compiler are not mandatory and are never
-                    // offered locally.
+                    // The brief compiler is in the request only when it offered it, and is then mandatory
+                    // beside the application tools. The reference comparison is never offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
@@ -606,7 +635,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         prompt: toolSelectionPrompt,
                     });
                     const workflowActionTools =
-                        workflowSelectionTools.length > 0
+                        workflowSelectionTools.length > 0 && workflowOffer.offersWorkflowActions
                             ? actionTools.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
@@ -698,6 +727,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                           }),
                 });
                 if (compiledRequest.status !== 'ready') {
+                    settleRefusedAttempt(backend);
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
                 }
                 const providerRequest = compiledRequest.request;
@@ -750,6 +780,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         },
                     });
                     providerSessionSettled = true;
+                    settleRefusedAttempt(backend);
                     return { status: 'rejected', reason: 'The model provider request is missing required messages.' };
                 }
                 let outcome: ToolPlanningOutcome;
@@ -812,12 +843,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         providerSessionSettled = true;
                         reportProviderResult(refusedResult);
                         logger.warn(`[AI Engine] (webllm) tool planning refused: ${reason}`);
-                        // A request refused before the engine loaded leaves the engine as it was.
-                        llmStatusStore.set(
-                            isWebLlmLoaded()
-                                ? { state: 'ready', backend, modelId: getBackendModelId(backend) }
-                                : previousStatus
-                        );
+                        settleRefusedAttempt(backend);
                         return { status: 'rejected', reason };
                     }
                     outcome = normalizeGeneratedToolPlanningOutcome(local.outcome);

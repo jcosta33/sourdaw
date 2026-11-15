@@ -24,6 +24,7 @@ import {
     EVENT_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     VOICE_DICTATION_ARM_CHANNEL,
     VOICE_DICTATION_CANCEL_CHANNEL,
@@ -379,6 +380,16 @@ export const createSourdawBridge = (
                 const result = await ipc.invoke(PATHS_JOIN_CHANNEL, segments);
                 if (typeof result !== 'string') {
                     throw new TypeError('The joined path is not a string');
+                }
+                return result;
+            },
+        },
+
+        system: {
+            totalMemoryBytes: async () => {
+                const result = await ipc.invoke(SYSTEM_TOTAL_MEMORY_CHANNEL);
+                if (typeof result !== 'number' || !Number.isSafeInteger(result) || result <= 0) {
+                    throw new TypeError('system.totalMemoryBytes returned a payload that is not a positive integer');
                 }
                 return result;
             },

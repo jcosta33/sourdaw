@@ -1,13 +1,29 @@
 import { getExecutableAppActionEffect, getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { isRecord } from '#/utils/structuralEquality';
 
-import {
-    type ExcludingPerceptualConstraint,
-    type PerceptualConstraint,
-    type PerceptualExcludedDimension,
-} from '../../models/PerceptualConstraint';
+import { type ExcludingPerceptualConstraint, type PerceptualConstraint } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
+import {
+    automatedParameterDimensions,
+    type AutomatedParameter,
+    describeEdit,
+    type Edit,
+    edits,
+    inScope,
+    readAddedDeviceEdits,
+    readConstraintReach,
+    readLane,
+    readOutputEdits,
+    readParameterEdits,
+    readReachedTrackIds,
+    readRemovedDeviceEdits,
+    readRouting,
+    readSendRangeEdits,
+    readSendRoutingEdits,
+    reachedChainDimensions,
+    readSenderIds,
+} from '../../transformers/excludedDimensionEdits';
 import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 
 type ActionEffect = NonNullable<ReturnType<typeof getExecutableAppActionEffect>>;
@@ -15,29 +31,8 @@ type EffectDimension = ActionEffect['dimensions'][number];
 type TargetCapability = NonNullable<
     ReturnType<typeof getExecutableAppActionGroundingRules>
 >['targetRules'][number]['capability'];
+type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
-/** `unclassified` is an edit that reaches a scoped track in a way no reader here can place, so it fails every exclusion. */
-type EditDimension = PerceptualExcludedDimension | 'unclassified';
-type Edit = { dimension: EditDimension; trackId: string | null; detail: string };
-type DeviceFacts = { type: string | null; trackId: string | null };
-type AutomatedParameter = { trackId: string | null; parameterId: string };
-
-/** Devices whose whole job is spectral shaping: removing or bypassing one changes the low end it shapes. */
-const SPECTRAL_DEVICE_TYPES = new Set(['builtin-eq', 'builtin-filter']);
-/** Devices that add space around a source. */
-const SPATIAL_DEVICE_TYPES = new Set([
-    'builtin-reverb',
-    'builtin-convolution-reverb',
-    'builtin-delay',
-    'builtin-chorus',
-    'builtin-stereo-widener',
-]);
-/** Parameters on other devices that set where their low end is cut or summed to mono. */
-const LOW_END_PARAMETER_IDS = new Set(['rev-lowcut', 'delay-lowcut', 'conv-lowcut', 'width-mono-bass']);
-const SPATIAL_PARAMETER_PREFIXES = ['rev-', 'conv-', 'delay-', 'chorus-', 'width-'];
-/** The channel strip's own level and pan lanes, as the automation lanes name them. */
-const CHANNEL_PARAMETER_IDS = new Set(['gain', 'pan']);
-const SEND_PARAMETER_PREFIX = 'send:';
 /** The effect dimensions through which a command can change what a track sounds like. */
 const SOUND_DIMENSIONS: ReadonlySet<EffectDimension> = new Set(['processing', 'routing', 'automation']);
 /**
@@ -51,113 +46,10 @@ const CHANNEL_TARGET_CAPABILITIES: ReadonlySet<TargetCapability> = new Set([
     'vca-member-track',
 ]);
 
-const DIMENSION_LABELS: Readonly<Record<PerceptualExcludedDimension, string>> = {
-    'low-frequency-band': 'low end',
-    ambience: 'ambience',
-};
-
 /** A command's arguments as the registry's target declarations name them. */
 function readPayload(action: AppAction): Readonly<Record<string, unknown>> {
     const payload: unknown = 'payload' in action ? action.payload : undefined;
     return isRecord(payload) ? payload : {};
-}
-
-function readDeviceFacts(deviceId: string, actions: readonly AppAction[], context: ProjectContext): DeviceFacts {
-    for (const track of context.tracks) {
-        const device = track.devices.find((candidate) => candidate.id === deviceId);
-        if (device !== undefined) {
-            return { type: device.type, trackId: track.id };
-        }
-    }
-    for (const action of actions) {
-        if (action.type === 'addDevice' && action.payload.deviceId === deviceId) {
-            return { type: action.payload.deviceType, trackId: action.payload.trackId };
-        }
-    }
-    return { type: null, trackId: null };
-}
-
-/** A device of unknown type is judged by its parameter's prefix, a known one by its type. */
-function isSpatialParameter(deviceType: string | null, paramId: string): boolean {
-    if (deviceType === null) {
-        return SPATIAL_PARAMETER_PREFIXES.some((prefix) => paramId.startsWith(prefix));
-    }
-    return SPATIAL_DEVICE_TYPES.has(deviceType);
-}
-
-/**
- * The dimensions one parameter write edits. A filter's type and cutoff decide together whether it
- * removes the low end, and either may stay at its current value, so every filter write counts. A
- * device whose type is unknown is read by its parameter id alone, which every built-in names uniquely.
- */
-function parameterDimensions(deviceType: string | null, paramId: string): PerceptualExcludedDimension[] {
-    const dimensions: PerceptualExcludedDimension[] = [];
-    const eqLowBand = paramId.startsWith('eq-low-') && (deviceType === null || deviceType === 'builtin-eq');
-    const filter = deviceType === 'builtin-filter' || (deviceType === null && paramId.startsWith('filter-'));
-    if (eqLowBand || filter || LOW_END_PARAMETER_IDS.has(paramId)) {
-        dimensions.push('low-frequency-band');
-    }
-    if (isSpatialParameter(deviceType, paramId)) {
-        dimensions.push('ambience');
-    }
-    return dimensions;
-}
-
-function deviceTypeDimensions(deviceType: string | null): PerceptualExcludedDimension[] {
-    if (deviceType === null) {
-        return [];
-    }
-    if (SPECTRAL_DEVICE_TYPES.has(deviceType)) {
-        return ['low-frequency-band'];
-    }
-    return SPATIAL_DEVICE_TYPES.has(deviceType) ? ['ambience'] : [];
-}
-
-/** Every dimension a chain of these device types shapes, once each. */
-function chainDimensions(deviceTypes: readonly string[]): PerceptualExcludedDimension[] {
-    return [...new Set(deviceTypes.flatMap(deviceTypeDimensions))];
-}
-
-function edits(dimensions: readonly EditDimension[], trackId: string | null, detail: string): Edit[] {
-    return dimensions.map((dimension) => ({ dimension, trackId, detail }));
-}
-
-/**
- * What a lane's parameter id automates: the channel's own fader or pan, a send, or a device
- * parameter as `<deviceId>:<paramId>`. Any other id is one this reader cannot place.
- */
-function automatedParameterDimensions(
-    parameterId: string,
-    actions: readonly AppAction[],
-    context: ProjectContext
-): EditDimension[] {
-    if (CHANNEL_PARAMETER_IDS.has(parameterId)) {
-        return [];
-    }
-    if (parameterId.startsWith(SEND_PARAMETER_PREFIX)) {
-        return ['ambience'];
-    }
-    const separator = parameterId.indexOf(':');
-    if (separator < 0) {
-        return ['unclassified'];
-    }
-    const deviceId = parameterId.slice(0, separator);
-    const paramId = parameterId.slice(separator + 1);
-    return parameterDimensions(readDeviceFacts(deviceId, actions, context).type, paramId);
-}
-
-/** A lane by id, in the project or created earlier in the same batch. */
-function readLane(laneId: string, actions: readonly AppAction[], context: ProjectContext): AutomatedParameter | null {
-    const lane = (context.automationLanes ?? []).find((candidate) => candidate.id === laneId);
-    if (lane !== undefined) {
-        return { trackId: lane.trackId, parameterId: lane.parameterId };
-    }
-    for (const action of actions) {
-        if (action.type === 'addAutomationLane' && action.payload.laneId === laneId) {
-            return { trackId: action.payload.trackId, parameterId: action.payload.parameterId };
-        }
-    }
-    return null;
 }
 
 /**
@@ -197,59 +89,6 @@ function readAutomationEdits(
     return edits(dimensions, automated.trackId, automated.parameterId);
 }
 
-/** Every dimension the devices on these tracks shape, as the project holds them. */
-function reachedChainDimensions(trackIds: ReadonlySet<string>, context: ProjectContext): PerceptualExcludedDimension[] {
-    const deviceTypes = context.tracks
-        .filter((track) => trackIds.has(track.id))
-        .flatMap((track) => track.devices.map((device) => device.type));
-    return chainDimensions(deviceTypes);
-}
-
-function isSendCommand(
-    action: AppAction
-): action is Extract<AppAction, { type: 'addSend' | 'setSend' | 'removeSend' }> {
-    return action.type === 'addSend' || action.type === 'setSend' || action.type === 'removeSend';
-}
-
-/** An output a later output on the same track replaces never survives the batch, so it edits nothing. */
-function isSupersededOutput(action: AppAction, actions: readonly AppAction[]): boolean {
-    if (action.type !== 'setTrackOutput') {
-        return false;
-    }
-    return actions
-        .slice(actions.indexOf(action) + 1)
-        .some((later) => later.type === 'setTrackOutput' && later.payload.trackId === action.payload.trackId);
-}
-
-/**
- * A track routed into a bus takes on the processing of everything that bus reaches, bus to bus: its
- * space, or its spectral shaping. A send, added, changed or removed, moves a processed parallel copy,
- * so it is always space and also reshapes the low end when a reached track holds a spectral device.
- */
-function readRoutingEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
-    if (action.type !== 'setTrackOutput' && !isSendCommand(action)) {
-        return null;
-    }
-    if (isSupersededOutput(action, actions)) {
-        return [];
-    }
-    const destinationId = action.type === 'setTrackOutput' ? action.payload.outputId : action.payload.busId;
-    const dimensions = reachedChainDimensions(readReachedTrackIds([destinationId], actions, context), context);
-    if (isSendCommand(action)) {
-        const lowEnd = dimensions.filter((dimension) => dimension === 'low-frequency-band');
-        return edits(['ambience', ...lowEnd], action.payload.trackId, 'send');
-    }
-    const destination = context.tracks.find((track) => track.id === destinationId);
-    return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? destinationId}`);
-}
-
-/** Every other track that sends into this one, in the routing as the batch leaves it. */
-function readSenderIds(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
-    return context.tracks
-        .filter((track) => track.id !== trackId && readRouting(track.id, actions, context).sends.includes(trackId))
-        .map((track) => track.id);
-}
-
 /**
  * Removing a track takes its devices and its sends with it, while every track routed into its output
  * is repointed to the output it had, so what lies past it on an output chain stays heard. The removed
@@ -279,40 +118,6 @@ function readTrackRemovalEdits(
             ...readSenderIds(removedId, actions, context).flatMap((senderId) => edits(copyLoss, senderId, detail)),
         ];
     });
-}
-
-function readParameterEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
-    if (action.type !== 'setDeviceParameter') {
-        return null;
-    }
-    const facts = readDeviceFacts(action.payload.deviceId, actions, context);
-    const deviceType = action.payload.expectedDeviceType ?? facts.type;
-    const trackId = action.payload.expectedTrackId ?? facts.trackId;
-    return edits(parameterDimensions(deviceType, action.payload.paramId), trackId, action.payload.paramId);
-}
-
-function readDeviceChainEdits(
-    action: AppAction,
-    actions: readonly AppAction[],
-    context: ProjectContext
-): Edit[] | null {
-    if (action.type === 'addDevice') {
-        // An added EQ or filter sits at its defaults until a parameter write shapes it; added space is space.
-        const spatial = SPATIAL_DEVICE_TYPES.has(action.payload.deviceType);
-        return edits(spatial ? ['ambience'] : [], action.payload.trackId, action.payload.deviceType);
-    }
-    if (action.type === 'removeDevice' || action.type === 'bypassDevice') {
-        const facts = readDeviceFacts(action.payload.deviceId, actions, context);
-        return edits(deviceTypeDimensions(facts.type), facts.trackId, facts.type ?? action.payload.deviceId);
-    }
-    return null;
-}
-
-function readSendEdits(action: AppAction): Edit[] | null {
-    if (action.type === 'automateSendRange' || action.type === 'automateSendRanges') {
-        return action.payload.trackIds.flatMap((trackId) => edits(['ambience'], trackId, 'send automation'));
-    }
-    return null;
 }
 
 /** A write that moves only channel strips: processing or automation whose every target is one. */
@@ -346,112 +151,441 @@ function readUnclassifiedEdits(action: AppAction, effect: ActionEffect, context:
     return owners.flatMap((trackId) => edits(['unclassified'], trackId, reach));
 }
 
-function readActionEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] {
-    const effect = getExecutableAppActionEffect(action.type);
-    if (effect === null) {
-        return [];
-    }
+type EditReader<Type extends AppActionType> = (
+    action: ActionOf<Type>,
+    actions: readonly AppAction[],
+    context: ProjectContext,
+    effect: ActionEffect
+) => Edit[];
+
+function readSendAutomationWrite(
+    action: ActionOf<'automateSendRange' | 'automateSendRanges'>,
+    actions: readonly AppAction[],
+    context: ProjectContext,
+    effect: ActionEffect
+): Edit[] {
+    return readTrackRemovalEdits(action, effect, actions, context) ?? readSendRangeEdits(action);
+}
+
+/** What the command's declared effect says it edits, failing closed as `unclassified` for a sound edit no reader places. */
+function readEffectDeclaredEdits(
+    action: AppAction,
+    actions: readonly AppAction[],
+    context: ProjectContext,
+    effect: ActionEffect
+): Edit[] {
     return (
-        readParameterEdits(action, actions, context) ??
-        readDeviceChainEdits(action, actions, context) ??
-        readRoutingEdits(action, actions, context) ??
         readTrackRemovalEdits(action, effect, actions, context) ??
-        readSendEdits(action) ??
         readAutomationEdits(action, effect, actions, context) ??
         readUnclassifiedEdits(action, effect, context)
     );
 }
 
-/**
- * Where a track's signal goes once the batch has run: its sends and output as the project holds them,
- * with the batch's own routing commands applied in order. A later output replaces an earlier one, and
- * a removed send no longer reaches its bus. The batch is applied and heard as one change.
- */
-function readRouting(
-    trackId: string,
+// Every action type states how its edits are read: a new action does not compile until it does.
+const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } = {
+    importStemSet: readEffectDeclaredEdits,
+    discardImportedStemSet: readEffectDeclaredEdits,
+    addTrack: readEffectDeclaredEdits,
+    removeTrack: readEffectDeclaredEdits,
+    discardCreatedTrack: readEffectDeclaredEdits,
+    restoreTrack: readEffectDeclaredEdits,
+    restoreClip: readEffectDeclaredEdits,
+    discardDuplicatedClip: readEffectDeclaredEdits,
+    removeAllTracks: readEffectDeclaredEdits,
+    renameTrack: readEffectDeclaredEdits,
+    createTrackAlternative: readEffectDeclaredEdits,
+    switchTrackAlternative: readEffectDeclaredEdits,
+    renameTrackAlternative: readEffectDeclaredEdits,
+    deleteTrackAlternative: readEffectDeclaredEdits,
+    selectTrack: readEffectDeclaredEdits,
+    muteTrack: readEffectDeclaredEdits,
+    soloTrack: readEffectDeclaredEdits,
+    selectTake: readEffectDeclaredEdits,
+    replaceOriginalMidiTakeRow: readEffectDeclaredEdits,
+    replaceOriginalMidiBaseRow: readEffectDeclaredEdits,
+    toggleSoloSafe: readEffectDeclaredEdits,
+    setSoloSafe: readEffectDeclaredEdits,
+    restoreSoloSafe: readEffectDeclaredEdits,
+    armTrack: readEffectDeclaredEdits,
+    freezeTrack: readEffectDeclaredEdits,
+    unfreezeTrack: readEffectDeclaredEdits,
+    restoreFreezeState: readEffectDeclaredEdits,
+    flattenTrack: readEffectDeclaredEdits,
+    bounceInPlace: readEffectDeclaredEdits,
+    reorderTrack: readEffectDeclaredEdits,
+    setTempo: readEffectDeclaredEdits,
+    restoreTempoEdit: readEffectDeclaredEdits,
+    editTempoMap: readEffectDeclaredEdits,
+    restoreTempoMapEdit: readEffectDeclaredEdits,
+    setTimeSignature: readEffectDeclaredEdits,
+    setPlayback: readEffectDeclaredEdits,
+    togglePlayback: readEffectDeclaredEdits,
+    stopPlayback: readEffectDeclaredEdits,
+    toggleRecording: readEffectDeclaredEdits,
+    setMasterGain: readEffectDeclaredEdits,
+    restoreMasterGain: readEffectDeclaredEdits,
+    toggleLoop: readEffectDeclaredEdits,
+    toggleMetronome: readEffectDeclaredEdits,
+    setMetronomeVolume: readEffectDeclaredEdits,
+    setLoopRegion: readEffectDeclaredEdits,
+    setLoopEnabled: readEffectDeclaredEdits,
+    setMetronomeEnabled: readEffectDeclaredEdits,
+    restoreLoopRegion: readEffectDeclaredEdits,
+    addClip: readEffectDeclaredEdits,
+    moveClip: readEffectDeclaredEdits,
+    restoreClipPlacement: readEffectDeclaredEdits,
+    duplicateClip: readEffectDeclaredEdits,
+    duplicateClipToNextBar: readEffectDeclaredEdits,
+    duplicateTrack: readEffectDeclaredEdits,
+    removeClip: readEffectDeclaredEdits,
+    renameClip: readEffectDeclaredEdits,
+    splitClip: readEffectDeclaredEdits,
+    restoreClipSplitState: readEffectDeclaredEdits,
+    trimClipStart: readEffectDeclaredEdits,
+    trimClipEnd: readEffectDeclaredEdits,
+    restoreAudioClipStartTrim: readEffectDeclaredEdits,
+    restoreAudioClipSlip: readEffectDeclaredEdits,
+    slipClipContent: readEffectDeclaredEdits,
+    drawClip: readEffectDeclaredEdits,
+    discardDrawnClip: readEffectDeclaredEdits,
+    restoreDrawnClip: readEffectDeclaredEdits,
+    duplicateClipAt: readEffectDeclaredEdits,
+    moveClips: readEffectDeclaredEdits,
+    restoreClipMoves: readEffectDeclaredEdits,
+    addDevice: readAddedDeviceEdits,
+    bypassDevice: readRemovedDeviceEdits,
+    removeDevice: readRemovedDeviceEdits,
+    restoreDevice: readEffectDeclaredEdits,
+    reorderDevices: readEffectDeclaredEdits,
+    setDeviceParameter: readParameterEdits,
+    setExternalPluginState: readEffectDeclaredEdits,
+    setDeviceState: readEffectDeclaredEdits,
+    setFermenterPatch: readEffectDeclaredEdits,
+    setGrandBouleDeviceState: readEffectDeclaredEdits,
+    createBus: readEffectDeclaredEdits,
+    createFolder: readEffectDeclaredEdits,
+    setSend: readSendRoutingEdits,
+    setWorkspaceMode: readEffectDeclaredEdits,
+    openPreferencesDialog: readEffectDeclaredEdits,
+    openMixer: readEffectDeclaredEdits,
+    closeMixer: readEffectDeclaredEdits,
+    toggleSidebar: readEffectDeclaredEdits,
+    toggleInspector: readEffectDeclaredEdits,
+    toggleChatPanel: readEffectDeclaredEdits,
+    setTrackInput: readEffectDeclaredEdits,
+    restoreTrackInput: readEffectDeclaredEdits,
+    setEditingTool: readEffectDeclaredEdits,
+    setMarqueeSelection: readEffectDeclaredEdits,
+    addMarker: readEffectDeclaredEdits,
+    removeMarker: readEffectDeclaredEdits,
+    setMarkerColor: readEffectDeclaredEdits,
+    addSection: readEffectDeclaredEdits,
+    removeSection: readEffectDeclaredEdits,
+    renameSection: readEffectDeclaredEdits,
+    renameMarker: readEffectDeclaredEdits,
+    moveMarker: readEffectDeclaredEdits,
+    moveSection: readEffectDeclaredEdits,
+    resizeSection: readEffectDeclaredEdits,
+    setSectionColor: readEffectDeclaredEdits,
+    reorderSection: readEffectDeclaredEdits,
+    navigateSection: readEffectDeclaredEdits,
+    rehearseSection: readEffectDeclaredEdits,
+    restoreSectionBeats: readEffectDeclaredEdits,
+    setClipGainEnvelope: readEffectDeclaredEdits,
+    toggleClipGainEnvelope: readEffectDeclaredEdits,
+    addGainEnvelopePoint: readEffectDeclaredEdits,
+    removeGainEnvelopePoint: readEffectDeclaredEdits,
+    resetClipGainEnvelope: readEffectDeclaredEdits,
+    addModulator: readEffectDeclaredEdits,
+    removeModulator: readEffectDeclaredEdits,
+    updateModulator: readEffectDeclaredEdits,
+    addMapping: readEffectDeclaredEdits,
+    removeMapping: readEffectDeclaredEdits,
+    addAutomationLane: readEffectDeclaredEdits,
+    automateSendRange: readSendAutomationWrite,
+    automateSendRanges: readSendAutomationWrite,
+    removeSendAutomationRanges: readEffectDeclaredEdits,
+    renderProjectSections: readEffectDeclaredEdits,
+    removeRenderedProjectSections: readEffectDeclaredEdits,
+    automateTrackGainRange: readEffectDeclaredEdits,
+    automateParameterRange: readEffectDeclaredEdits,
+    removeTrackGainAutomationRange: readEffectDeclaredEdits,
+    removeSendAutomationRange: readEffectDeclaredEdits,
+    removeAutomationLane: readEffectDeclaredEdits,
+    setAutomationLaneEnabled: readEffectDeclaredEdits,
+    addAutomationPoint: readEffectDeclaredEdits,
+    quantizeNotes: readEffectDeclaredEdits,
+    removeShortMidiOverlaps: readEffectDeclaredEdits,
+    createDrumPreviewBranches: readEffectDeclaredEdits,
+    deleteDrumPreviewBranches: readEffectDeclaredEdits,
+    copyMidiArticulations: readEffectDeclaredEdits,
+    restoreMidiClipNotes: readEffectDeclaredEdits,
+    quantizeNoteLengths: readEffectDeclaredEdits,
+    transposeNotes: readEffectDeclaredEdits,
+    humanizeNotes: readEffectDeclaredEdits,
+    invertNotes: readEffectDeclaredEdits,
+    retrogradeNotes: readEffectDeclaredEdits,
+    scaleVelocities: readEffectDeclaredEdits,
+    scaleAllVelocities: readEffectDeclaredEdits,
+    setAllVelocities: readEffectDeclaredEdits,
+    setTrackGain: readEffectDeclaredEdits,
+    setTrackPan: readEffectDeclaredEdits,
+    setTrackColor: readEffectDeclaredEdits,
+    copyClip: readEffectDeclaredEdits,
+    cutClip: readEffectDeclaredEdits,
+    pasteClip: readEffectDeclaredEdits,
+    setClipFade: readEffectDeclaredEdits,
+    importMidiFile: readEffectDeclaredEdits,
+    normalizeClip: readEffectDeclaredEdits,
+    reverseClip: readEffectDeclaredEdits,
+    restoreReversedClip: readEffectDeclaredEdits,
+    glueClips: readEffectDeclaredEdits,
+    restoreClipGlueState: readEffectDeclaredEdits,
+    setCompRegion: readEffectDeclaredEdits,
+    removeCompRegion: readEffectDeclaredEdits,
+    restoreCompRegionInterval: readEffectDeclaredEdits,
+    nudgeClip: readEffectDeclaredEdits,
+    crossfadeClips: readEffectDeclaredEdits,
+    restoreCrossfadeClips: readEffectDeclaredEdits,
+    setClipGain: readEffectDeclaredEdits,
+    setClipColor: readEffectDeclaredEdits,
+    lockClip: readEffectDeclaredEdits,
+    consolidateSelection: readEffectDeclaredEdits,
+    bounceSelection: readEffectDeclaredEdits,
+    seekPlayhead: readEffectDeclaredEdits,
+    setPunchIn: readEffectDeclaredEdits,
+    setPunchOut: readEffectDeclaredEdits,
+    setPunchEnabled: readEffectDeclaredEdits,
+    restorePunchRegion: readEffectDeclaredEdits,
+    togglePunch: readEffectDeclaredEdits,
+    toggleCountIn: readEffectDeclaredEdits,
+    setCountInBars: readEffectDeclaredEdits,
+    togglePreRoll: readEffectDeclaredEdits,
+    setPreRollBars: readEffectDeclaredEdits,
+    zoomTracksVertical: readEffectDeclaredEdits,
+    addTimeSignatureChange: readEffectDeclaredEdits,
+    removeTimeSignatureChange: readEffectDeclaredEdits,
+    setTrackOutput: readOutputEdits,
+    addSend: readSendRoutingEdits,
+    removeSend: readSendRoutingEdits,
+    removeAutomationPoint: readEffectDeclaredEdits,
+    setAutomationMode: readEffectDeclaredEdits,
+    hideTrack: readEffectDeclaredEdits,
+    disableTrack: readEffectDeclaredEdits,
+    restoreTrackDisabled: readEffectDeclaredEdits,
+    setTrackHeight: readEffectDeclaredEdits,
+    setSnapValue: readEffectDeclaredEdits,
+    zoomToFit: readEffectDeclaredEdits,
+    zoomToSelection: readEffectDeclaredEdits,
+    exportProject: readEffectDeclaredEdits,
+    saveProject: readEffectDeclaredEdits,
+    newProject: readEffectDeclaredEdits,
+    importAudioFile: readEffectDeclaredEdits,
+    exportMidi: readEffectDeclaredEdits,
+    foldTrack: readEffectDeclaredEdits,
+    groupTracks: readEffectDeclaredEdits,
+    ungroupTracks: readEffectDeclaredEdits,
+    scaleAutomation: readEffectDeclaredEdits,
+    stretchAutomation: readEffectDeclaredEdits,
+    invertAutomation: readEffectDeclaredEdits,
+    reverseAutomation: readEffectDeclaredEdits,
+    thinAutomation: readEffectDeclaredEdits,
+    quantizeAutomation: readEffectDeclaredEdits,
+    restoreAutomationLanePoints: readEffectDeclaredEdits,
+    restoreAutomationPointPresence: readEffectDeclaredEdits,
+    loadPreset: readEffectDeclaredEdits,
+    restorePresetDeviceChain: readEffectDeclaredEdits,
+    savePreset: readEffectDeclaredEdits,
+    generateDrumPattern: readEffectDeclaredEdits,
+    generateMelody: readEffectDeclaredEdits,
+    generateChordProgression: readEffectDeclaredEdits,
+    setClipLoop: readEffectDeclaredEdits,
+    restoreClipLoop: readEffectDeclaredEdits,
+    setClipLoopLength: readEffectDeclaredEdits,
+    restoreClipLoopLength: readEffectDeclaredEdits,
+    createGrooveTemplate: readEffectDeclaredEdits,
+    renameGrooveTemplate: readEffectDeclaredEdits,
+    restoreGrooveTemplateName: readEffectDeclaredEdits,
+    deleteGrooveTemplate: readEffectDeclaredEdits,
+    restoreDeletedGrooveTemplate: readEffectDeclaredEdits,
+    assignGrooveTemplate: readEffectDeclaredEdits,
+    restoreGrooveAssignment: readEffectDeclaredEdits,
+    extractGroove: readEffectDeclaredEdits,
+    applyGroove: readEffectDeclaredEdits,
+    setClipStretchMode: readEffectDeclaredEdits,
+    setClipStretchRatio: readEffectDeclaredEdits,
+    restoreClipStretchState: readEffectDeclaredEdits,
+    fitClipToBeats: readEffectDeclaredEdits,
+    analyzeMix: readEffectDeclaredEdits,
+    autoFixMix: readEffectDeclaredEdits,
+    enableMpe: readEffectDeclaredEdits,
+    disableMpe: readEffectDeclaredEdits,
+    getLatencyReport: readEffectDeclaredEdits,
+    createCollabSession: readEffectDeclaredEdits,
+    joinCollabSession: readEffectDeclaredEdits,
+    leaveCollabSession: readEffectDeclaredEdits,
+    scanPlugins: readEffectDeclaredEdits,
+    loadExternalPlugin: readEffectDeclaredEdits,
+    audioToMidi: readEffectDeclaredEdits,
+    commitPitchEdit: readEffectDeclaredEdits,
+    restoreClipFileId: readEffectDeclaredEdits,
+    muteClip: readEffectDeclaredEdits,
+    clearSolos: readEffectDeclaredEdits,
+    restoreTrackSoloStates: readEffectDeclaredEdits,
+    setTrackNotes: readEffectDeclaredEdits,
+    deleteTime: readEffectDeclaredEdits,
+    insertTime: readEffectDeclaredEdits,
+    duplicateTimeRange: readEffectDeclaredEdits,
+    restoreTimeOperationState: readEffectDeclaredEdits,
+    restoreTrackHeights: readEffectDeclaredEdits,
+    restoreTrackGroupMemberships: readEffectDeclaredEdits,
+    restoreTracks: readEffectDeclaredEdits,
+    restoreTrackClipStates: readEffectDeclaredEdits,
+    discardCreatedTracks: readEffectDeclaredEdits,
+    discardCreatedCompGroup: readEffectDeclaredEdits,
+    restoreTrackAlternativeState: readEffectDeclaredEdits,
+    restoreScratchPadState: readEffectDeclaredEdits,
+    stripSilence: readEffectDeclaredEdits,
+    restoreStripSilenceState: readEffectDeclaredEdits,
+    detectTempo: readEffectDeclaredEdits,
+    detectKey: readEffectDeclaredEdits,
+    consolidateAllTracks: readEffectDeclaredEdits,
+    arpeggiate: readEffectDeclaredEdits,
+    addSidechainRoute: readEffectDeclaredEdits,
+    removeSidechainRoute: readEffectDeclaredEdits,
+    bounceToNewTrack: readEffectDeclaredEdits,
+    saveTrackTemplate: readEffectDeclaredEdits,
+    loadTrackTemplate: readEffectDeclaredEdits,
+    deleteTrackTemplate: readEffectDeclaredEdits,
+    createProjectFromTemplate: readEffectDeclaredEdits,
+    setProductionBrief: readEffectDeclaredEdits,
+    repairProjectData: readEffectDeclaredEdits,
+    createVcaGroup: readEffectDeclaredEdits,
+    assignToVca: readEffectDeclaredEdits,
+    removeFromVca: readEffectDeclaredEdits,
+    setVcaGain: readEffectDeclaredEdits,
+    restoreLegacyVcaState: readEffectDeclaredEdits,
+    setMidiOutput: readEffectDeclaredEdits,
+    clearMidiOutput: readEffectDeclaredEdits,
+    restoreMidiOutput: readEffectDeclaredEdits,
+    addNotes: readEffectDeclaredEdits,
+    completeMidi: readEffectDeclaredEdits,
+    variationMidi: readEffectDeclaredEdits,
+    generateBassline: readEffectDeclaredEdits,
+    replayGeneratedMidi: readEffectDeclaredEdits,
+    stemSeparate: readEffectDeclaredEdits,
+    autoOrganizeProject: readEffectDeclaredEdits,
+    addChordEvent: readEffectDeclaredEdits,
+    moveChordEvent: readEffectDeclaredEdits,
+    updateChordEvent: readEffectDeclaredEdits,
+    removeChordEvent: readEffectDeclaredEdits,
+    toggleChordTrack: readEffectDeclaredEdits,
+    clearChordTrack: readEffectDeclaredEdits,
+    restoreChordTrackState: readEffectDeclaredEdits,
+    clearAllMidiMappings: readEffectDeclaredEdits,
+    completeMidiLearn: readEffectDeclaredEdits,
+    removeMidiMapping: readEffectDeclaredEdits,
+    restoreMidiLearnMappings: readEffectDeclaredEdits,
+    toggleScratchPad: readEffectDeclaredEdits,
+    captureScratchPad: readEffectDeclaredEdits,
+    commitScratchPad: readEffectDeclaredEdits,
+    clearScratchPad: readEffectDeclaredEdits,
+    removeScratchPadSection: readEffectDeclaredEdits,
+    renameScratchPadSection: readEffectDeclaredEdits,
+    reorderScratchPadSection: readEffectDeclaredEdits,
+    setScratchPadSectionColor: readEffectDeclaredEdits,
+    createPatternInstance: readEffectDeclaredEdits,
+    detachPatternInstance: readEffectDeclaredEdits,
+    restorePatternInstanceLink: readEffectDeclaredEdits,
+    startMacroRecording: readEffectDeclaredEdits,
+    stopMacroRecording: readEffectDeclaredEdits,
+    playMacro: readEffectDeclaredEdits,
+    deleteMacro: readEffectDeclaredEdits,
+    renameMacro: readEffectDeclaredEdits,
+    undo: readEffectDeclaredEdits,
+    redo: readEffectDeclaredEdits,
+    toggleUndoTree: readEffectDeclaredEdits,
+    labelUndoBranch: readEffectDeclaredEdits,
+    detectSongStructure: readEffectDeclaredEdits,
+    createProjectVersion: readEffectDeclaredEdits,
+    restoreProjectVersion: readEffectDeclaredEdits,
+    createVersionBranch: readEffectDeclaredEdits,
+    generateFill: readEffectDeclaredEdits,
+    generateAllTransitions: readEffectDeclaredEdits,
+    compareToReference: readEffectDeclaredEdits,
+    toggleControlRoomMono: readEffectDeclaredEdits,
+    toggleControlRoomDim: readEffectDeclaredEdits,
+    switchMonitor: readEffectDeclaredEdits,
+    getMentorTips: readEffectDeclaredEdits,
+    searchSamples: readEffectDeclaredEdits,
+    createCompGroup: readEffectDeclaredEdits,
+    togglePunchRecording: readEffectDeclaredEdits,
+    toggleLoopRecord: readEffectDeclaredEdits,
+    triggerScene: readEffectDeclaredEdits,
+    nextSetlistItem: readEffectDeclaredEdits,
+    previousSetlistItem: readEffectDeclaredEdits,
+    createAdjustmentLayer: readEffectDeclaredEdits,
+    removeAdjustmentLayer: readEffectDeclaredEdits,
+    toggleAdjustmentLayer: readEffectDeclaredEdits,
+    setLayerParameter: readEffectDeclaredEdits,
+    setLayerMix: readEffectDeclaredEdits,
+    addAdjustmentRegion: readEffectDeclaredEdits,
+    removeAdjustmentRegion: readEffectDeclaredEdits,
+    moveAdjustmentRegion: readEffectDeclaredEdits,
+    setLayerFades: readEffectDeclaredEdits,
+    setLayerAffectedTracks: readEffectDeclaredEdits,
+    setLayerInsertionIndex: readEffectDeclaredEdits,
+    restoreAdjustmentLayerMutation: readEffectDeclaredEdits,
+    detectTransients: readEffectDeclaredEdits,
+    quantizeTransients: readEffectDeclaredEdits,
+    openElasticEditor: readEffectDeclaredEdits,
+    closeElasticEditor: readEffectDeclaredEdits,
+    elasticSetSensitivity: readEffectDeclaredEdits,
+    elasticAddMarker: readEffectDeclaredEdits,
+    elasticRemoveMarker: readEffectDeclaredEdits,
+    elasticToggleMarkerLock: readEffectDeclaredEdits,
+    elasticSetTool: readEffectDeclaredEdits,
+    toggleNodeView: readEffectDeclaredEdits,
+    setControlSurface: readEffectDeclaredEdits,
+    addCvOutput: readEffectDeclaredEdits,
+    removeCvOutput: readEffectDeclaredEdits,
+    connectPush: readEffectDeclaredEdits,
+    disconnectPush: readEffectDeclaredEdits,
+    exportDawProject: readEffectDeclaredEdits,
+    importDawProject: readEffectDeclaredEdits,
+    loadRaveModel: readEffectDeclaredEdits,
+    setRaveBlend: readEffectDeclaredEdits,
+    enableWarping: readEffectDeclaredEdits,
+    setWarpAlgorithm: readEffectDeclaredEdits,
+    setWarpPitchShift: readEffectDeclaredEdits,
+    setYeastProcessorParam: readEffectDeclaredEdits,
+    setYeastArpPattern: readEffectDeclaredEdits,
+    setYeastProcessorBypass: readEffectDeclaredEdits,
+    addYeastProcessor: readEffectDeclaredEdits,
+    removeYeastProcessor: readEffectDeclaredEdits,
+    reorderYeastProcessor: readEffectDeclaredEdits,
+    commitRecording: readEffectDeclaredEdits,
+    discardRecording: readEffectDeclaredEdits,
+    restoreRecording: readEffectDeclaredEdits,
+    appendOverdubControllers: readEffectDeclaredEdits,
+    removeOverdubControllers: readEffectDeclaredEdits,
+};
+
+function readEdits<Type extends AppActionType>(
+    action: ActionOf<Type>,
     actions: readonly AppAction[],
-    context: ProjectContext
-): { sends: string[]; outputId: string | undefined } {
-    const track = context.tracks.find((candidate) => candidate.id === trackId);
-    let sends = (track?.sends ?? []).map((send) => send.busId);
-    let outputId = track?.outputId;
-    for (const action of actions) {
-        if (action.type === 'addSend' && action.payload.trackId === trackId) {
-            sends.push(action.payload.busId);
-        }
-        if (action.type === 'removeSend' && action.payload.trackId === trackId) {
-            sends = sends.filter((busId) => busId !== action.payload.busId);
-        }
-        if (action.type === 'setTrackOutput' && action.payload.trackId === trackId) {
-            outputId = action.payload.outputId;
-        }
+    context: ProjectContext,
+    effect: ActionEffect
+): Edit[] {
+    return editsByActionType[action.type](action, actions, context, effect);
+}
+
+function readActionEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] {
+    const effect = getExecutableAppActionEffect(action.type);
+    if (effect === null) {
+        return [];
     }
-    return { sends, outputId };
-}
-
-function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
-    const { sends, outputId } = readRouting(trackId, actions, context);
-    return outputId === undefined ? sends : [...sends, outputId];
-}
-
-/**
- * The tracks a constraint's scope sounds through: each scoped track and every bus its sends or output
- * reach, bus to bus, since processing on a return or a bus it feeds shapes the scoped track as heard.
- */
-function readReachedTrackIds(
-    trackIds: readonly string[],
-    actions: readonly AppAction[],
-    context: ProjectContext
-): Set<string> {
-    const reached = new Set<string>();
-    const pending = [...trackIds];
-    while (pending.length > 0) {
-        const trackId = pending.pop();
-        if (trackId === undefined || reached.has(trackId)) {
-            continue;
-        }
-        reached.add(trackId);
-        pending.push(...readDestinations(trackId, actions, context));
-    }
-    return reached;
-}
-
-/** An owner the batch does not reveal is inside every scope: an unknown edit is never assumed elsewhere. */
-function inScope(reached: ReadonlySet<string> | null, trackId: string | null): boolean {
-    return reached === null || trackId === null || reached.has(trackId);
-}
-
-function nameOf(trackId: string | null, context: ProjectContext): string {
-    if (trackId === null) {
-        return 'a track the batch does not name';
-    }
-    return `“${context.tracks.find((track) => track.id === trackId)?.name ?? trackId}”`;
-}
-
-function describeEdit(
-    constraint: ExcludingPerceptualConstraint,
-    edit: Edit,
-    command: string,
-    context: ProjectContext
-): string {
-    const label = DIMENSION_LABELS[constraint.protection.dimension];
-    const owner = nameOf(edit.trackId, context);
-    if (edit.dimension === 'unclassified') {
-        return `The request says “${constraint.clause}”, but ${command} changes ${owner} in a way the application cannot show leaves its ${label} alone.`;
-    }
-    return `The request says “${constraint.clause}”, but ${command} edits the ${label} of ${owner}.`;
-}
-
-/** A mix-scoped constraint holds every track, so it reads no routing. */
-function readConstraintReach(
-    constraint: ExcludingPerceptualConstraint,
-    actions: readonly AppAction[],
-    context: ProjectContext
-): Set<string> | null {
-    if (constraint.scope.kind === 'mix') {
-        return null;
-    }
-    return readReachedTrackIds(constraint.scope.trackIds, actions, context);
+    return readEdits(action, actions, context, effect);
 }
 
 /**

@@ -49,7 +49,11 @@ fn excitation(frame: usize) -> f32 {
     // An impulse train keeps energy going into the tail for the whole run
     // instead of letting it decay to denormals halfway through.
     let tone = (t * 330.0 * std::f32::consts::TAU).sin() * 0.4;
-    let click = if frame % 4_096 == 0 { 0.9 } else { 0.0 };
+    let click = if frame.is_multiple_of(4_096) {
+        0.9
+    } else {
+        0.0
+    };
     tone + click
 }
 
@@ -64,7 +68,16 @@ fn block_at(offset: usize) -> (Vec<f32>, Vec<f32>) {
 /// `process` returns.
 unsafe fn read_output(ptr: *const f32) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
-    (0..BLOCK).map(|i| *ptr.add(i)).collect()
+    (0..BLOCK)
+        .map(|i| {
+            // SAFETY: `i < BLOCK`, and the `# Safety` contract makes `ptr`
+            // the start of at least `BLOCK` readable `f32`s.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is inside those `BLOCK` readable samples, which
+            // `process` initialised.
+            unsafe { *slot }
+        })
+        .collect()
 }
 
 fn peak(samples: &[f32]) -> f32 {
@@ -118,6 +131,9 @@ fn guarded_run(instance: &mut ProofChamberInstance) -> Vec<f32> {
 fn guarded_run_after(instance: &mut ProofChamberInstance, warmup_blocks: usize) -> Vec<f32> {
     for block in 0..warmup_blocks {
         let (l, r) = block_at(block * BLOCK);
+        // SAFETY: `process` returns the instance's `out_left`, a
+        // `PROOF_CHAMBER_BLOCK_FRAMES`-sample buffer it just wrote, which holds
+        // the `BLOCK` samples `read_output` requires.
         let out = unsafe { read_output(instance.process(&l, &r, BLOCK as u32)) };
         for (i, s) in out.iter().enumerate() {
             assert!(s.is_finite(), "warm-up produced a non-finite sample at {i}");
@@ -136,6 +152,10 @@ fn guarded_run_after(instance: &mut ProofChamberInstance, warmup_blocks: usize) 
         }
     });
 
+    // SAFETY: `GUARDED_BLOCKS > 0`, so `last` is the pointer the final guarded
+    // `process` returned: the instance's `out_left`, a
+    // `PROOF_CHAMBER_BLOCK_FRAMES`-sample buffer holding the `BLOCK` samples
+    // `read_output` requires, untouched since.
     unsafe { read_output(last) }
 }
 

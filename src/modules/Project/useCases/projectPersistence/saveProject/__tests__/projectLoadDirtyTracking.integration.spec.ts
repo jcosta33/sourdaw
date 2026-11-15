@@ -153,6 +153,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
     getExecutableAppActionEffect: vi.fn(() => null),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     clearUndoHistory: mockClearUndoHistory,
     executeAppAction: vi.fn(),

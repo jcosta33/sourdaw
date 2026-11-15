@@ -85,7 +85,7 @@ type DeadRegistration = (HandlerIdentity, FileDescriptor);
 /// `pointer` is an argument of an `IRunLoop` call, so it is either null or a
 /// live interface of the named type.
 unsafe fn handler_identity<I: vst3::Interface>(pointer: *mut I) -> Option<HandlerIdentity> {
-    com_identity(pointer).map(|identity| identity as HandlerIdentity)
+    unsafe { com_identity(pointer) }.map(|identity| identity as HandlerIdentity)
 }
 
 #[derive(Default)]
@@ -125,7 +125,7 @@ impl HostRunLoop {
     /// `pointer` is the argument of an `IRunLoop` call, so it is either null or
     /// a live interface of the named type.
     unsafe fn retain<I: vst3::Interface>(pointer: *mut I) -> Option<ComPtr<I>> {
-        ComRef::from_raw(pointer).map(|borrowed| borrowed.to_com_ptr())
+        unsafe { ComRef::from_raw(pointer) }.map(|borrowed| borrowed.to_com_ptr())
     }
 
     /// # Safety
@@ -138,10 +138,10 @@ impl HostRunLoop {
         if descriptor < 0 {
             return kInvalidArgument;
         }
-        let Some(handler) = Self::retain(handler) else {
+        let Some(handler) = (unsafe { Self::retain(handler) }) else {
             return kInvalidArgument;
         };
-        let Some(identity) = handler_identity(handler.as_ptr()) else {
+        let Some(identity) = (unsafe { handler_identity(handler.as_ptr()) }) else {
             return kInvalidArgument;
         };
         let mut registry = self.lock();
@@ -156,7 +156,7 @@ impl HostRunLoop {
     /// # Safety
     /// `handler` is the pointer the plugin passed to `unregisterEventHandler`.
     pub unsafe fn unregister_event_handler(&self, handler: *mut IEventHandler) -> tresult {
-        let Some(identity) = handler_identity(handler) else {
+        let Some(identity) = (unsafe { handler_identity(handler) }) else {
             return kInvalidArgument;
         };
         let mut registry = self.lock();
@@ -174,10 +174,10 @@ impl HostRunLoop {
         handler: *mut ITimerHandler,
         milliseconds: TimerInterval,
     ) -> tresult {
-        let Some(handler) = Self::retain(handler) else {
+        let Some(handler) = (unsafe { Self::retain(handler) }) else {
             return kInvalidArgument;
         };
-        let Some(identity) = handler_identity(handler.as_ptr()) else {
+        let Some(identity) = (unsafe { handler_identity(handler.as_ptr()) }) else {
             return kInvalidArgument;
         };
         let interval = Duration::from_millis(milliseconds).max(MIN_TIMER_INTERVAL);
@@ -194,7 +194,7 @@ impl HostRunLoop {
     /// # Safety
     /// `handler` is the pointer the plugin passed to `unregisterTimer`.
     pub unsafe fn unregister_timer(&self, handler: *mut ITimerHandler) -> tresult {
-        let Some(identity) = handler_identity(handler) else {
+        let Some(identity) = (unsafe { handler_identity(handler) }) else {
             return kInvalidArgument;
         };
         let mut registry = self.lock();

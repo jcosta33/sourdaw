@@ -22,12 +22,6 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { scratchPadStore } from '#/modules/Arrangement/stores';
-import {
-    removeScratchPadSection,
-    renameScratchPadSection,
-    setScratchPadSectionColor,
-    reorderScratchPadSection,
-} from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
@@ -116,7 +110,10 @@ export const ScratchPadView = ({
         }
         const trimmed = editing.name.trim();
         if (trimmed) {
-            renameScratchPadSection(editing.sectionId, trimmed);
+            void executeUserAppAction({
+                type: 'renameScratchPadSection',
+                payload: { sectionId: editing.sectionId, name: trimmed },
+            });
         }
         setEditing(null);
     };
@@ -312,7 +309,10 @@ export const ScratchPadView = ({
                                 color={context}
                                 active={contextMenu.section.color === context}
                                 onClick={() => {
-                                    setScratchPadSectionColor(contextMenu.section.id, context);
+                                    void executeUserAppAction({
+                                        type: 'setScratchPadSectionColor',
+                                        payload: { sectionId: contextMenu.section.id, color: context },
+                                    });
                                     setContextMenu({ kind: 'none' });
                                 }}
                                 aria-label={`Set color ${context}`}
@@ -327,7 +327,10 @@ export const ScratchPadView = ({
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
                         disabled={contextMenu.section.order === 0}
                         onClick={() => {
-                            reorderScratchPadSection(contextMenu.section.id, 'left');
+                            void executeUserAppAction({
+                                type: 'reorderScratchPadSection',
+                                payload: { sectionId: contextMenu.section.id, direction: 'left' },
+                            });
                             setContextMenu({ kind: 'none' });
                         }}
                     >
@@ -340,7 +343,10 @@ export const ScratchPadView = ({
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30 disabled:pointer-events-none"
                         disabled={contextMenu.section.order === sections.length - 1}
                         onClick={() => {
-                            reorderScratchPadSection(contextMenu.section.id, 'right');
+                            void executeUserAppAction({
+                                type: 'reorderScratchPadSection',
+                                payload: { sectionId: contextMenu.section.id, direction: 'right' },
+                            });
                             setContextMenu({ kind: 'none' });
                         }}
                     >
@@ -353,7 +359,10 @@ export const ScratchPadView = ({
                         type="button"
                         className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
                         onClick={() => {
-                            removeScratchPadSection(contextMenu.section.id);
+                            void executeUserAppAction({
+                                type: 'removeScratchPadSection',
+                                payload: { sectionId: contextMenu.section.id },
+                            });
                             setContextMenu({ kind: 'none' });
                         }}
                     >

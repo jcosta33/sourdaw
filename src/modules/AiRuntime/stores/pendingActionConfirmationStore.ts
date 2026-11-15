@@ -38,6 +38,8 @@ type PendingActionProtectedObject = {
 
 type PendingAgentRiskApproval = {
     metricGoalState?: string | null;
+    /** The explicit-approval input the approval was compiled with; absent on approvals stored before it was recorded. */
+    explicitApprovalRequired?: boolean;
     schemaVersion: 1;
     actionHashes: string[];
     sourceRevision: string;

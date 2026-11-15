@@ -446,7 +446,8 @@ export function assertGeneratedRegionMatches(markdown, data) {
     }
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const invokedScript = process.argv.at(1);
+if (invokedScript !== undefined && resolve(invokedScript) === fileURLToPath(import.meta.url)) {
     const data = readTable(jsonPath);
     const md = readFileSync(mdPath, 'utf8');
     if (process.argv.includes('--check')) {

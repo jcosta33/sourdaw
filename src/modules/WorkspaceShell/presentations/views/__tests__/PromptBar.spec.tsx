@@ -104,7 +104,10 @@ describe('PromptBar', () => {
 
     describe('processing state', () => {
         it('replaces the mode icon with a cancel-processing button and disables the input', () => {
-            setPromptState({ isProcessing: true, llmStatus: { state: 'generating' } });
+            setPromptState({
+                isProcessing: true,
+                llmStatus: { state: 'generating', backend: 'webllm', modelId: 'local-model' },
+            });
 
             render(<PromptBar onReviewRun={module_mocks.review_run} />);
 

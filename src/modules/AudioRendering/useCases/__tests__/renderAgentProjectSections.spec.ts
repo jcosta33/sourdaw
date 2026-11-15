@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAppError } from '#/infra/errors/createAppError';
 import { cancelExport, checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
 import { type AgentRenderReceipt } from '#/utils/agentRenderReceipt';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { type RenderProjectSectionJobSnapshot } from '../../events/audioRenderingAppActions';
 import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSectionRenderRetentionPolicy';
 import { clearAgentSectionRenderArtifacts } from '../clearAgentSectionRenderArtifacts';
 import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifacts';

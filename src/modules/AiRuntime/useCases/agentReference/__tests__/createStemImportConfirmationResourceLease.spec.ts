@@ -60,7 +60,7 @@ describe('createStemImportConfirmationResourceLease', () => {
             throw new Error('Expected a prepared stem resource lease');
         }
 
-        lease.release();
+        await lease.release();
 
         await vi.waitFor(() =>
             expect(mocks.loggerError).toHaveBeenCalledExactlyOnceWith(

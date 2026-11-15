@@ -41,7 +41,7 @@ pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// Sized from measurement, and the measurement is enforced rather than trusted:
 /// `the_response_limit_admits_the_stated_worst_case_parameter_list` serializes
-/// a parameter list at [`MAX_RESPONSE_PARAMETERS`], every descriptor maximal (a
+/// a parameter list at `MAX_RESPONSE_PARAMETERS`, every descriptor maximal (a
 /// 128-byte name beside a 128-byte module — the scanner's own text caps — plus
 /// a full-width id, three full-width floats and four booleans), and fails the
 /// moment the compact JSON outgrows this bound or loses its headroom.
@@ -67,31 +67,109 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 /// (`the_response_limit_admits_the_stated_worst_case_parameter_list`) that
 /// list serializes to 7,542,027 bytes compact, and the byte cap is the
 /// smallest power of two that keeps at least twofold headroom above it.
+#[cfg(test)]
 const MAX_RESPONSE_PARAMETERS: usize = 16_384;
 
 /// The refusal for a response whose compact serialization measures past
-/// [`MAX_RESPONSE_BYTES`]. Both sides of the process boundary use it: the leaf
-/// refuses to write such a response, and the supervisor refuses to read one.
+/// [`MAX_RESPONSE_BYTES`], as the message the leaf writes. Both sides of the
+/// process boundary use it: the leaf refuses to write such a response, and the
+/// supervisor refuses to read one ([`ScanFailure::ResponseOverLimit`]).
 fn oversized_response_error(bytes: usize) -> String {
-    format!("{HELPER_RESPONSE_OVER_LIMIT_PREFIX}{bytes} bytes exceeded the scan helper's {MAX_RESPONSE_BYTES}-byte limit")
+    ScanFailure::ResponseOverLimit { bytes }.to_string()
 }
 
-/// The prefix of [`oversized_response_error`], so a refusal can be recognized
-/// as the helper's limit without restating the sentence.
-const HELPER_RESPONSE_OVER_LIMIT_PREFIX: &str = "Plugin scan helper response of ";
+/// Why a scan through the bounded helper failed, as the supervisor sees it.
+///
+/// The variants are the failure kinds the supervisor treats differently:
+/// [`ScanFailure::is_process_failure`] decides crash quarantine and
+/// [`ScanFailure::is_response_limit_refusal`] decides which reason a row
+/// carries. `Display` is the message the registry and the renderer receive, so
+/// its text is a contract — rewording one needs a grep of `src/` and
+/// `electron/` first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScanFailure {
+    /// The helper child exited with a non-zero status other than
+    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`].
+    ExitedUnsuccessfully { path: PathBuf },
+    /// The helper child ran past its bound and was killed.
+    TimedOut,
+    /// The helper exited cleanly but left something other than a regular file
+    /// at its response path. Fixed text and the plugin path only: it is stored
+    /// as a quarantine reason, so it never carries plugin-originated bytes or
+    /// OS error text.
+    ResponseTampered { path: PathBuf },
+    /// The response measured past [`MAX_RESPONSE_BYTES`].
+    ResponseOverLimit { bytes: usize },
+    /// The helper self-reported that it could not write its response; see
+    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`].
+    ResponseWriteRefused { path: PathBuf },
+    /// Any other refusal: the read failed, not the plugin's process, so it is
+    /// never quarantine evidence.
+    Refused(String),
+}
 
-/// The refusal `scan_worker` returns when the helper child exited with a
-/// non-zero status, minus the path it is formatted with. See
-/// [`is_process_failure`].
-const HELPER_EXITED_UNSUCCESSFULLY_PREFIX: &str = "Plugin scan helper exited unsuccessfully for ";
-/// The refusal `wait_bounded` returns when the helper child ran past its
-/// bound and was killed.
-const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
-/// The refusal `scan_worker` returns when the helper exited cleanly but left
-/// something other than a regular file at its response path, minus the path it
-/// is formatted with. See [`is_process_failure`].
-const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
-    "Plugin scan helper response was not a regular file for ";
+impl ScanFailure {
+    /// Whether this is the process-level failure crash quarantine exists to
+    /// catch: the helper child exited unsuccessfully, ran past its bound and
+    /// was killed, or left a response that is not a regular file.
+    ///
+    /// The helper itself only ever writes a regular file, so a FIFO, symlink,
+    /// device or reparse point at the response path is the plugin's own code
+    /// tampering with the helper's output — as much evidence against the
+    /// binary as a crash.
+    ///
+    /// Distinct from a data-level refusal — a malformed response, an
+    /// oversized payload, an unregistered format — which says the *read*
+    /// failed, not that the binary itself is dangerous to keep re-running.
+    /// Only a process failure is evidence worth quarantining a binary over
+    /// (#2911).
+    pub fn is_process_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::ExitedUnsuccessfully { .. } | Self::ResponseTampered { .. } | Self::TimedOut
+        )
+    }
+
+    /// Whether this is the helper's own response limit rather than anything
+    /// the plugin did — an oversized response, or any other failure to write
+    /// one.
+    pub fn is_response_limit_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::ResponseOverLimit { .. } | Self::ResponseWriteRefused { .. }
+        )
+    }
+}
+
+impl std::fmt::Display for ScanFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExitedUnsuccessfully { path } => write!(
+                formatter,
+                "Plugin scan helper exited unsuccessfully for {}",
+                path.display()
+            ),
+            Self::TimedOut => formatter.write_str("Plugin scan helper timed out"),
+            Self::ResponseTampered { path } => write!(
+                formatter,
+                "Plugin scan helper response was not a regular file for {}",
+                path.display()
+            ),
+            Self::ResponseOverLimit { bytes } => write!(
+                formatter,
+                "Plugin scan helper response of {bytes} bytes exceeded the scan helper's {MAX_RESPONSE_BYTES}-byte limit"
+            ),
+            Self::ResponseWriteRefused { path } => write!(
+                formatter,
+                "Plugin scan helper could not write its response for {}; the scan helper's response limit is {MAX_RESPONSE_BYTES} bytes",
+                path.display()
+            ),
+            Self::Refused(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for ScanFailure {}
 
 /// The leaf worker's exit code for a self-diagnosed refusal to write its
 /// response — a malformed payload, the response exceeding
@@ -106,8 +184,8 @@ const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
 /// a read-only temp directory) that has nothing to do with any plugin being
 /// dangerous, and folding it into the same exit code as a crash would
 /// quarantine every binary the process ever touched. See
-/// [`process_failure_message`], which is what keeps it out of
-/// [`is_process_failure`].
+/// [`process_failure`], which is what keeps it out of
+/// [`ScanFailure::is_process_failure`].
 ///
 /// The inverse residual is accepted, not closed: a plugin whose own static
 /// initializer happens to call `exit(3)` reads as a self-diagnosed write
@@ -117,26 +195,6 @@ const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
 /// instead is still caught by `wait_bounded`'s timeout, which classifies
 /// entirely on elapsed time and never looks at an exit code at all.
 const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
-
-/// Whether an error from [`scan_descriptor_metadata`] or
-/// [`scan_instance_metadata`] is the process-level failure crash quarantine
-/// exists to catch: the helper child exited unsuccessfully, ran past its bound
-/// and was killed, or left a response that is not a regular file.
-///
-/// The helper itself only ever writes a regular file, so a FIFO, symlink,
-/// device or reparse point at the response path is the plugin's own code
-/// tampering with the helper's output — as much evidence against the binary as
-/// a crash.
-///
-/// Distinct from a data-level refusal — a malformed response, an oversized
-/// payload, an unregistered format — which says the *read* failed, not that
-/// the binary itself is dangerous to keep re-running. Only a process failure
-/// is evidence worth quarantining a binary over (#2911).
-pub fn is_process_failure(error: &str) -> bool {
-    error.starts_with(HELPER_EXITED_UNSUCCESSFULLY_PREFIX)
-        || error.starts_with(HELPER_RESPONSE_TAMPERED_PREFIX)
-        || error == HELPER_TIMED_OUT
-}
 
 /// Env var a host sets to describe how a leaf worker process is launched.
 ///
@@ -451,7 +509,7 @@ pub fn scan_descriptor_metadata(
     format: PluginFormat,
     path: &Path,
     timeout: Duration,
-) -> Result<Vec<ScannedDescriptor>, String> {
+) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
     scan_worker(format, path, None, timeout, WORKER_ARGUMENT)
 }
 
@@ -462,7 +520,7 @@ pub fn scan_instance_metadata(
     path: &Path,
     plugin_id: &str,
     timeout: Duration,
-) -> Result<ScannedInstance, String> {
+) -> Result<ScannedInstance, ScanFailure> {
     scan_worker(
         format,
         path,
@@ -475,21 +533,11 @@ pub fn scan_instance_metadata(
 /// The refusal `scan_worker` reports for a helper that exited unsuccessfully,
 /// shaped by which of two things that exit code means.
 ///
-/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] gets a message that does not match
-/// [`HELPER_EXITED_UNSUCCESSFULLY_PREFIX`] — deliberately, so
-/// [`is_process_failure`] never classifies it as evidence worth quarantining
-/// a binary over. Every other non-zero exit — a crash, `WorkerRole::Malformed`,
-/// no backend for the format — keeps the existing message, which
-/// `is_process_failure` does recognize.
-fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
-    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
-        return response_write_refusal_error(path);
-    }
-    format!("{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}", path.display())
-}
-
-/// The supervisor-side refusal for a helper that self-reported a response-write
-/// refusal, naming the helper's own limit.
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] is [`ScanFailure::ResponseWriteRefused`],
+/// which [`ScanFailure::is_process_failure`] never classifies as evidence
+/// worth quarantining a binary over. Every other non-zero exit — a crash,
+/// `WorkerRole::Malformed`, no backend for the format — is
+/// [`ScanFailure::ExitedUnsuccessfully`], which it does.
 ///
 /// The message states what happened (the helper could not write) and the one
 /// helper fact every exit-3 cause shares (its response limit). It deliberately
@@ -499,32 +547,13 @@ fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
 /// text from the same process the plugin's own code ran in toward strings the
 /// registry publishes, which the reason contract forbids. The measured size
 /// therefore appears only where it is observable, in
-/// [`oversized_response_error`]'s read-side refusal.
-///
-/// `pub` so the reason-shaping side (`commands::plugins`) and the tests can
-/// build the exact string the supervisor produces, the same way
-/// [`is_process_failure`] is `pub` for its callers.
-pub fn response_write_refusal_error(path: &Path) -> String {
-    format!(
-        "{HELPER_RESPONSE_WRITE_REFUSAL_PREFIX}{}; the scan helper's response limit is {MAX_RESPONSE_BYTES} bytes",
-        path.display()
-    )
-}
-
-/// The prefix of [`response_write_refusal_error`].
-const HELPER_RESPONSE_WRITE_REFUSAL_PREFIX: &str =
-    "Plugin scan helper could not write its response for ";
-
-/// Whether a scan refusal is the helper's own response limit rather than
-/// anything the plugin did — an oversized response, or any other failure to
-/// write one.
-///
-/// [`is_process_failure`]'s mirror: the `String` error contract is baked into
-/// [`scan_worker`]'s signature, so classification reads the message, and the
-/// prefixes it matches are the ones this file itself generates.
-pub fn is_response_limit_refusal(error: &str) -> bool {
-    error.starts_with(HELPER_RESPONSE_WRITE_REFUSAL_PREFIX)
-        || error.starts_with(HELPER_RESPONSE_OVER_LIMIT_PREFIX)
+/// [`ScanFailure::ResponseOverLimit`]'s read-side refusal.
+fn process_failure(path: &Path, status: &ExitStatus) -> ScanFailure {
+    let path = path.to_path_buf();
+    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
+        return ScanFailure::ResponseWriteRefused { path };
+    }
+    ScanFailure::ExitedUnsuccessfully { path }
 }
 
 /// The registry-facing reason for a response-write refusal.
@@ -548,14 +577,14 @@ fn scan_worker<T: DeserializeOwned>(
     plugin_id: Option<&str>,
     timeout: Duration,
     worker_argument: &str,
-) -> Result<T, String> {
+) -> Result<T, ScanFailure> {
     // Refused here as well as in the child: launching a process to be told the
     // format is unhostable spends a spawn and a deadline to reach the same
     // answer, and the child's refusal is an exit code with no reason in it.
     if scan_backend(format).is_none() {
-        return Err(no_scan_backend(format));
+        return Err(ScanFailure::Refused(no_scan_backend(format)));
     }
-    let launcher = ScanWorkerCommand::resolve()?;
+    let launcher = ScanWorkerCommand::resolve().map_err(ScanFailure::Refused)?;
     scan_worker_with(&launcher, format, path, plugin_id, timeout, worker_argument)
 }
 
@@ -566,8 +595,8 @@ fn scan_worker_with<T: DeserializeOwned>(
     plugin_id: Option<&str>,
     timeout: Duration,
     worker_argument: &str,
-) -> Result<T, String> {
-    let response_directory = ResponseDirectory::create()?;
+) -> Result<T, ScanFailure> {
+    let response_directory = ResponseDirectory::create().map_err(ScanFailure::Refused)?;
     let response_path = response_directory.0.join("metadata.json");
     let mut command = Command::new(&launcher.program);
     command
@@ -588,15 +617,20 @@ fn scan_worker_with<T: DeserializeOwned>(
         .stderr(Stdio::null());
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
-        return Err(process_failure_message(path, &status));
+        return Err(process_failure(path, &status));
     }
     let bytes = read_response_bytes(&response_path, path)?;
-    let response: WorkerResponse<T> = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("Plugin scan helper returned invalid metadata: {error}"))?;
+    let response: WorkerResponse<T> = serde_json::from_slice(&bytes).map_err(|error| {
+        ScanFailure::Refused(format!(
+            "Plugin scan helper returned invalid metadata: {error}"
+        ))
+    })?;
     if response.worker_pid == std::process::id() {
-        return Err("Plugin metadata extraction did not cross a process boundary".to_string());
+        return Err(ScanFailure::Refused(
+            "Plugin metadata extraction did not cross a process boundary".to_string(),
+        ));
     }
-    response.result
+    response.result.map_err(ScanFailure::Refused)
 }
 /// Read the helper's response, accepting only a regular file that can be read
 /// without blocking.
@@ -606,36 +640,46 @@ fn scan_worker_with<T: DeserializeOwned>(
 /// on the opened descriptor, never on the path, because the plugin — or a
 /// process it forked that outlives the helper — can swap the path between a
 /// check and the open.
-fn read_response_bytes(response_path: &Path, plugin_path: &Path) -> Result<Vec<u8>, String> {
+fn read_response_bytes(response_path: &Path, plugin_path: &Path) -> Result<Vec<u8>, ScanFailure> {
     let file = open_response(response_path, plugin_path)?;
     let metadata = file
         .metadata()
-        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+        .map_err(|error| cannot_read_response(&error))?;
     if !metadata.is_file() || is_reparse_point(&metadata) {
-        return Err(tampered_response_error(plugin_path));
+        return Err(ScanFailure::ResponseTampered {
+            path: plugin_path.to_path_buf(),
+        });
     }
     if metadata.len() > MAX_RESPONSE_BYTES {
-        return Err(oversized_response_error(
-            usize::try_from(metadata.len()).unwrap_or(usize::MAX),
-        ));
+        return Err(ScanFailure::ResponseOverLimit {
+            bytes: usize::try_from(metadata.len()).unwrap_or(usize::MAX),
+        });
     }
     // The bound stays on the read itself: a forked process can still grow the
     // file after the size was taken.
     let mut bytes = Vec::new();
     file.take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+        .map_err(|error| cannot_read_response(&error))?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(oversized_response_error(bytes.len()));
+        return Err(ScanFailure::ResponseOverLimit { bytes: bytes.len() });
     }
     Ok(bytes)
+}
+
+fn cannot_read_response(error: &std::io::Error) -> ScanFailure {
+    ScanFailure::Refused(format!("Cannot read plugin scan helper response: {error}"))
+}
+
+fn returned_no_metadata(error: &std::io::Error) -> ScanFailure {
+    ScanFailure::Refused(format!("Plugin scan helper returned no metadata: {error}"))
 }
 
 /// Open the response without following a final symlink, and on Unix without
 /// waiting for a FIFO's writer or adopting a terminal an intermediate
 /// directory swap could aim the open at.
 #[cfg(unix)]
-fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, String> {
+fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, ScanFailure> {
     use std::os::unix::fs::OpenOptionsExt;
     OpenOptions::new()
         .read(true)
@@ -643,29 +687,31 @@ fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, S
         .open(response_path)
         .map_err(|error| {
             if error.raw_os_error() == Some(libc::ELOOP) {
-                return tampered_response_error(plugin_path);
+                return ScanFailure::ResponseTampered {
+                    path: plugin_path.to_path_buf(),
+                };
             }
-            format!("Plugin scan helper returned no metadata: {error}")
+            returned_no_metadata(&error)
         })
 }
 
 #[cfg(windows)]
-fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, String> {
+fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, ScanFailure> {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(response_path)
-        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))
+        .map_err(|error| returned_no_metadata(&error))
 }
 
 #[cfg(not(any(unix, windows)))]
-fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, String> {
+fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, ScanFailure> {
     OpenOptions::new()
         .read(true)
         .open(response_path)
-        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))
+        .map_err(|error| returned_no_metadata(&error))
 }
 
 /// Whether the opened response is itself a reparse point. Opened with
@@ -683,25 +729,18 @@ fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
     false
 }
 
-/// The refusal for a response path the helper's plugin replaced. Fixed text
-/// and the plugin path only: it is stored as a quarantine reason, so it never
-/// carries plugin-originated bytes or OS error text.
-fn tampered_response_error(plugin_path: &Path) -> String {
-    format!("{HELPER_RESPONSE_TAMPERED_PREFIX}{}", plugin_path.display())
-}
-
-fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, String> {
+fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, ScanFailure> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Cannot start plugin scan helper: {error}"))?;
+    let mut child = command.spawn().map_err(|error| {
+        ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
+    })?;
     wait_bounded(&mut child, timeout)
 }
-fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, String> {
+fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, ScanFailure> {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
@@ -711,11 +750,13 @@ fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, Stri
             }
             Ok(None) => {
                 terminate_process_tree(child);
-                return Err(HELPER_TIMED_OUT.to_string());
+                return Err(ScanFailure::TimedOut);
             }
             Err(error) => {
                 terminate_process_tree(child);
-                return Err(format!("Cannot observe plugin scan helper: {error}"));
+                return Err(ScanFailure::Refused(format!(
+                    "Cannot observe plugin scan helper: {error}"
+                )));
             }
         }
     }
@@ -725,6 +766,10 @@ fn terminate_process_tree(child: &mut Child) {
     unsafe extern "C" {
         fn kill(pid: i32, signal: i32) -> i32;
     }
+    // SAFETY: `kill` is declared with POSIX `int kill(pid_t, int)`'s
+    // signature (`pid_t` is `i32` on every supported unix) and touches no
+    // memory of ours; the negative pid names the group `run_bounded` gave the
+    // helper with `process_group(0)`, which the unreaped child still holds.
     unsafe {
         let _ = kill(-(child.id() as i32), 9);
     }
@@ -989,7 +1034,10 @@ mod tests {
         )
         .expect_err("a format with no scan backend must be refused");
 
-        assert_eq!(refusal, "No plugin scan backend for format vst2");
+        assert_eq!(
+            refusal.to_string(),
+            "No plugin scan backend for format vst2"
+        );
     }
 
     #[test]
@@ -1200,7 +1248,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         command.env("SOURDAW_TEST_PLUGIN_HANG", "1");
         let error = run_bounded(&mut command, Duration::from_millis(500))
             .expect_err("the hung child should exceed the deadline");
-        assert_eq!(error, "Plugin scan helper timed out");
+        assert_eq!(error, ScanFailure::TimedOut);
     }
     #[cfg(unix)]
     /// A killed process stays visible to `kill(pid, 0)` until its parent
@@ -1209,6 +1257,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn process_is_gone_within(pid: i32, window: Duration) -> bool {
         let deadline = Instant::now() + window;
         loop {
+            // SAFETY: `libc::kill` takes plain integers and touches no memory
+            // of ours; signal 0 only probes whether `pid` exists.
             let probe = unsafe { libc::kill(pid, 0) };
             let gone =
                 probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
@@ -1256,13 +1306,90 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// The only two shapes crash quarantine exists to catch.
     #[test]
     fn is_process_failure_recognizes_exit_and_timeout_errors() {
-        assert!(is_process_failure(
+        assert!(exited_unsuccessfully("/plugins/Broken.clap").is_process_failure());
+        assert!(ScanFailure::TimedOut.is_process_failure());
+        assert!(tampered("/plugins/Hostile.clap").is_process_failure());
+    }
+
+    fn exited_unsuccessfully(path: &str) -> ScanFailure {
+        ScanFailure::ExitedUnsuccessfully {
+            path: PathBuf::from(path),
+        }
+    }
+
+    fn tampered(path: &str) -> ScanFailure {
+        ScanFailure::ResponseTampered {
+            path: PathBuf::from(path),
+        }
+    }
+
+    fn write_refused(path: &str) -> ScanFailure {
+        ScanFailure::ResponseWriteRefused {
+            path: PathBuf::from(path),
+        }
+    }
+
+    /// The text of every variant is the message the registry and the renderer
+    /// have always received. The expectations are the pre-enum format strings,
+    /// written out in full so a rewording fails here.
+    #[test]
+    fn display_reproduces_each_historical_message_byte_for_byte() {
+        assert_eq!(
+            exited_unsuccessfully("/plugins/Broken.clap").to_string(),
             "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
-        ));
-        assert!(is_process_failure("Plugin scan helper timed out"));
-        assert!(is_process_failure(&tampered_response_error(Path::new(
-            "/plugins/Hostile.clap"
-        ))));
+        );
+        assert_eq!(
+            ScanFailure::TimedOut.to_string(),
+            "Plugin scan helper timed out"
+        );
+        assert_eq!(
+            tampered("/plugins/Hostile.clap").to_string(),
+            "Plugin scan helper response was not a regular file for /plugins/Hostile.clap"
+        );
+        assert_eq!(
+            ScanFailure::ResponseOverLimit { bytes: 700_000 }.to_string(),
+            "Plugin scan helper response of 700000 bytes exceeded the scan helper's 16777216-byte limit"
+        );
+        assert_eq!(
+            write_refused("/plugins/X.clap").to_string(),
+            "Plugin scan helper could not write its response for /plugins/X.clap; the scan helper's response limit is 16777216 bytes"
+        );
+        assert_eq!(
+            ScanFailure::Refused("No plugin scan backend for format vst2".to_string()).to_string(),
+            "No plugin scan backend for format vst2"
+        );
+        assert_eq!(
+            oversized_response_error(1),
+            ScanFailure::ResponseOverLimit { bytes: 1 }.to_string()
+        );
+    }
+
+    /// Each variant answers both classification questions exactly as the
+    /// prefix match it replaced did.
+    #[test]
+    fn classification_is_decided_per_variant() {
+        let cases = [
+            (exited_unsuccessfully("/p.clap"), true, false),
+            (ScanFailure::TimedOut, true, false),
+            (tampered("/p.clap"), true, false),
+            (ScanFailure::ResponseOverLimit { bytes: 1 }, false, true),
+            (write_refused("/p.clap"), false, true),
+            (ScanFailure::Refused("deadline".to_string()), false, false),
+        ];
+        for (failure, process, limit) in cases {
+            assert_eq!(failure.is_process_failure(), process, "{failure}");
+            assert_eq!(failure.is_response_limit_refusal(), limit, "{failure}");
+        }
+    }
+
+    /// A refusal whose text merely resembles a classified message is still
+    /// data-level: classification reads the variant, never the text.
+    #[test]
+    fn a_refusal_that_reads_like_a_process_failure_is_not_one() {
+        let failure = ScanFailure::Refused("Plugin scan helper timed out".to_string());
+
+        assert!(!failure.is_process_failure());
+        assert!(!failure.is_response_limit_refusal());
     }
 
     /// A response the stand-in helper `script` leaves behind, read through the
@@ -1270,7 +1397,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// response path is the last. The call runs on its own thread with a
     /// bound, so a read that blocks fails the test instead of hanging it.
     #[cfg(unix)]
-    fn scan_with_stand_in_helper(script: String) -> Result<Vec<ScannedDescriptor>, String> {
+    fn scan_with_stand_in_helper(script: String) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
         let launcher = ScanWorkerCommand {
             program: PathBuf::from("/bin/sh"),
             args: vec![
@@ -1300,6 +1427,30 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     const VALID_RESPONSE: &str = r#"{"worker_pid":1,"result":{"Ok":[]}}"#;
 
+    /// An `Err` the helper reports in its response is the plugin's own text.
+    /// Whatever it says, it is a data-level refusal: classification reads the
+    /// variant, so a plugin that echoes a classified message cannot get itself
+    /// quarantined or its row blamed on the helper's limit.
+    #[cfg(unix)]
+    #[test]
+    fn a_reported_error_that_reads_like_a_classified_message_stays_data_level() {
+        // No apostrophe: the payload travels inside a single-quoted shell string.
+        for text in [
+            "Plugin scan helper timed out",
+            "Plugin scan helper response of 1 bytes exceeded the limit",
+        ] {
+            let response = format!(r#"{{"worker_pid":1,"result":{{"Err":"{text}"}}}}"#);
+
+            let failure =
+                scan_with_stand_in_helper(format!("printf '%s' '{response}' > \"$out\"\nexit 0"))
+                    .expect_err("a reported error must be returned as a failure");
+
+            assert_eq!(failure, ScanFailure::Refused(text.to_string()));
+            assert!(!failure.is_process_failure(), "{failure}");
+            assert!(!failure.is_response_limit_refusal(), "{failure}");
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_healthy_response_is_read() {
@@ -1318,7 +1469,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             scan_with_stand_in_helper("rm -f \"$out\"\nmkfifo \"$out\"\nexit 0".to_string())
                 .expect_err("a FIFO response must be refused");
 
-        assert!(is_process_failure(&error), "{error}");
+        assert!(error.is_process_failure(), "{error}");
     }
 
     /// The symlink's target is a valid response, so the refusal is the link
@@ -1331,7 +1482,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         ))
         .expect_err("a symlinked response must be refused");
 
-        assert!(is_process_failure(&error), "{error}");
+        assert!(error.is_process_failure(), "{error}");
     }
 
     /// An oversized regular file is the helper's limit, not tampering.
@@ -1344,8 +1495,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         ))
         .expect_err("an oversized response must be refused");
 
-        assert!(is_response_limit_refusal(&error), "{error}");
-        assert!(!is_process_failure(&error), "{error}");
+        assert!(error.is_response_limit_refusal(), "{error}");
+        assert!(!error.is_process_failure(), "{error}");
     }
 
     /// A real `ExitStatus` for a process that exited with `code`, obtained
@@ -1370,10 +1521,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure_message(path, &status);
+        let message = process_failure(path, &status);
 
         assert!(
-            !is_process_failure(&message),
+            !message.is_process_failure(),
             "a response-write refusal must never be classified as a process failure: {message}"
         );
     }
@@ -1387,10 +1538,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Hostile.clap");
         let status = exit_status_for_code(2);
 
-        let message = process_failure_message(path, &status);
+        let message = process_failure(path, &status);
 
         assert!(
-            is_process_failure(&message),
+            message.is_process_failure(),
             "a crash's exit code must still quarantine the binary: {message}"
         );
     }
@@ -1399,18 +1550,17 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// crashed or hung — never a reason to quarantine the binary.
     #[test]
     fn is_process_failure_rejects_data_level_refusals() {
-        assert!(!is_process_failure(
-            "No plugin scan backend for format vst2"
-        ));
-        assert!(!is_process_failure(&oversized_response_error(
-            MAX_RESPONSE_BYTES as usize
-        )));
-        assert!(!is_process_failure(
-            "Plugin scan helper returned invalid metadata: EOF"
-        ));
-        assert!(!is_process_failure(
-            "Cannot start plugin scan helper: denied"
-        ));
+        for message in [
+            "No plugin scan backend for format vst2",
+            "Plugin scan helper returned invalid metadata: EOF",
+            "Cannot start plugin scan helper: denied",
+        ] {
+            assert!(!ScanFailure::Refused(message.to_string()).is_process_failure());
+        }
+        assert!(!ScanFailure::ResponseOverLimit {
+            bytes: MAX_RESPONSE_BYTES as usize
+        }
+        .is_process_failure());
     }
 
     /// One `ScannedParameterDescriptor` at the scanner's own text caps: a
@@ -1531,49 +1681,48 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure_message(path, &status);
+        let message = process_failure(path, &status);
 
         assert!(
-            message.contains(&MAX_RESPONSE_BYTES.to_string()),
+            message
+                .to_string()
+                .contains(&MAX_RESPONSE_BYTES.to_string()),
             "the refusal must name the helper's limit so the plugin is not blamed \
              for its silence: {message}"
         );
         assert!(
-            !is_process_failure(&message),
+            !message.is_process_failure(),
             "a response-write refusal must never be classified as a process failure: {message}"
         );
-        assert!(is_response_limit_refusal(&message));
+        assert!(message.is_response_limit_refusal());
     }
 
     /// The oversized-response refusal carries the one number the refusing side
     /// can actually measure, and classifies as the helper's limit.
     #[test]
     fn an_oversized_response_refusal_names_the_size_and_the_helpers_limit() {
-        let error = oversized_response_error(700_000);
+        let error = ScanFailure::ResponseOverLimit { bytes: 700_000 };
 
         assert!(
-            error.contains("700000") && error.contains(&MAX_RESPONSE_BYTES.to_string()),
+            error.to_string().contains("700000")
+                && error.to_string().contains(&MAX_RESPONSE_BYTES.to_string()),
             "the refusal must name both the measured size and the helper's limit: {error}"
         );
         assert!(
-            !is_process_failure(&error),
+            !error.is_process_failure(),
             "a limit refusal is data-level, never quarantine evidence: {error}"
         );
-        assert!(is_response_limit_refusal(&error));
+        assert!(error.is_response_limit_refusal());
     }
 
     /// Only the helper's own limit refusals classify as such — a timeout, a
     /// crash, or any other refusal must keep its own classification.
     #[test]
     fn only_the_helpers_own_limit_refusals_are_response_limit_refusals() {
-        assert!(is_response_limit_refusal(&response_write_refusal_error(
-            Path::new("/plugins/X.clap")
-        )));
-        assert!(is_response_limit_refusal(&oversized_response_error(1)));
-        assert!(!is_response_limit_refusal("Plugin scan helper timed out"));
-        assert!(!is_response_limit_refusal(
-            "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
-        ));
-        assert!(!is_response_limit_refusal("deadline"));
+        assert!(write_refused("/plugins/X.clap").is_response_limit_refusal());
+        assert!(ScanFailure::ResponseOverLimit { bytes: 1 }.is_response_limit_refusal());
+        assert!(!ScanFailure::TimedOut.is_response_limit_refusal());
+        assert!(!exited_unsuccessfully("/plugins/Broken.clap").is_response_limit_refusal());
+        assert!(!ScanFailure::Refused("deadline".to_string()).is_response_limit_refusal());
     }
 }

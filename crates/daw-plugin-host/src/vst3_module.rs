@@ -1,10 +1,12 @@
 //! Opening a `.vst3` bundle and getting its factory, per platform.
 //!
-//! A `.vst3` is a *folder bundle* on every platform Sourdaw ships on. The bare
-//! Windows DLL form has been deprecated since VST 3.6.10, and this module does
-//! not probe for it: recognising it would mean claiming support for a layout the
-//! format itself retired, and no such file can reach the walk anyway — a bare
-//! `.dll` is not recognised as a plugin at all (see `scanner::detect_format`).
+//! A `.vst3` is a *folder bundle* on every platform Sourdaw ships on, and on
+//! Windows it may also be the older single-file shape: one DLL named `X.vst3`.
+//! The format deprecated that shape in VST 3.6.10, but the SDK's own Windows
+//! host module still loads it, and vendors still install it, so a Windows host
+//! that refuses it hides installed plugins. Only a file named `.vst3` is that
+//! shape; a bare `.dll` is not recognised as a plugin at all (see
+//! `scanner::detect_format`).
 //!
 //! The three platforms disagree about everything except `GetPluginFactory`:
 //!
@@ -91,6 +93,19 @@ pub fn windows_module_paths(bundle: &Path, target_arch: &str) -> Result<Vec<Path
         .collect())
 }
 
+/// Every image a Windows host would try for a `.vst3` path: the path itself
+/// when it is the single-file shape, otherwise the bundle's own modules.
+pub fn windows_load_candidates(
+    module: &Path,
+    is_single_file: bool,
+    target_arch: &str,
+) -> Result<Vec<PathBuf>, String> {
+    if is_single_file {
+        return Ok(vec![module.to_path_buf()]);
+    }
+    windows_module_paths(module, target_arch)
+}
+
 /// The `uname -m` spelling a Linux bundle names its architecture directory
 /// with, or `None` for an architecture the VST3 layout has no name for.
 ///
@@ -170,12 +185,14 @@ mod platform {
     /// CoreFoundation cannot express, which is the only failure it has.
     unsafe fn file_system_url(path: &Path) -> Option<CFURLRef> {
         let bytes = path.as_os_str().as_encoded_bytes();
-        let url = CFURLCreateFromFileSystemRepresentation(
-            std::ptr::null(),
-            bytes.as_ptr(),
-            bytes.len() as isize,
-            true as u8,
-        );
+        let url = unsafe {
+            CFURLCreateFromFileSystemRepresentation(
+                std::ptr::null(),
+                bytes.as_ptr(),
+                bytes.len() as isize,
+                true as u8,
+            )
+        };
         (!url.is_null()).then_some(url)
     }
 
@@ -183,12 +200,14 @@ mod platform {
     /// one longer than a path may be.
     unsafe fn url_file_system_path(url: CFURLRef) -> Option<PathBuf> {
         let mut buffer = [0u8; MAX_FILE_SYSTEM_PATH_BYTES];
-        let written = CFURLGetFileSystemRepresentation(
-            url,
-            true as u8,
-            buffer.as_mut_ptr(),
-            buffer.len() as isize,
-        );
+        let written = unsafe {
+            CFURLGetFileSystemRepresentation(
+                url,
+                true as u8,
+                buffer.as_mut_ptr(),
+                buffer.len() as isize,
+            )
+        };
         if written == 0 {
             return None;
         }
@@ -236,13 +255,15 @@ mod platform {
     /// Wrap a UTF-8 symbol name as a `CFStringRef`, or `None` when
     /// CoreFoundation refuses it.
     unsafe fn symbol_name(name: &[u8]) -> Option<CFStringRef> {
-        let string = CFStringCreateWithBytes(
-            std::ptr::null(),
-            name.as_ptr(),
-            name.len() as isize,
-            kCFStringEncodingUTF8,
-            false as u8,
-        );
+        let string = unsafe {
+            CFStringCreateWithBytes(
+                std::ptr::null(),
+                name.as_ptr(),
+                name.len() as isize,
+                kCFStringEncodingUTF8,
+                false as u8,
+            )
+        };
         if string.is_null() {
             return None;
         }
@@ -250,9 +271,9 @@ mod platform {
     }
 
     unsafe fn function_pointer(bundle: CFBundleRef, name: &[u8]) -> Option<*mut c_void> {
-        let symbol = symbol_name(name)?;
-        let pointer = CFBundleGetFunctionPointerForName(bundle, symbol);
-        CFRelease(symbol as CFTypeRef);
+        let symbol = unsafe { symbol_name(name) }?;
+        let pointer = unsafe { CFBundleGetFunctionPointerForName(bundle, symbol) };
+        unsafe { CFRelease(symbol as CFTypeRef) };
         if pointer.is_null() {
             return None;
         }
@@ -342,7 +363,7 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::{windows_module_paths, GET_PLUGIN_FACTORY};
+    use super::{windows_load_candidates, GET_PLUGIN_FACTORY};
     use libloading::os::windows::{
         Library, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
     };
@@ -391,7 +412,11 @@ mod platform {
         /// built. The library is dropped directly on that path instead, which
         /// unloads the image and calls nothing.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
-            let candidates = windows_module_paths(bundle_path, std::env::consts::ARCH)?;
+            let candidates = windows_load_candidates(
+                bundle_path,
+                bundle_path.is_file(),
+                std::env::consts::ARCH,
+            )?;
             let mut last_error = format!(
                 "VST3 bundle has no module for this architecture: {}",
                 bundle_path.display()
@@ -699,7 +724,10 @@ pub fn factory_is_non_discardable(factory: &ComPtr<IPluginFactory>) -> bool {
     let Some(info) = factory_info(factory) else {
         return false;
     };
-    info.flags & FactoryFlags_::kComponentNonDiscardable as i32 != 0
+    // The flag constant is `c_int` on Windows and `c_uint` elsewhere, while
+    // the field is always `i32`; reinterpreting the bytes is the same bits.
+    let non_discardable = i32::from_ne_bytes(FactoryFlags_::kComponentNonDiscardable.to_ne_bytes());
+    info.flags & non_discardable != 0
 }
 
 /// The factory's own `PFactoryInfo`, or `None` when it refuses to describe
@@ -735,6 +763,27 @@ mod tests {
 
     /// ARM64EC images exist to run inside an x64-emulated process. Loading one
     /// into a native ARM64 host is the wrong image, not a fallback.
+    /// The single-file shape is its own module: the loader opens the file it
+    /// was handed rather than looking for a bundle layout inside it.
+    #[test]
+    fn a_single_file_windows_module_is_loaded_from_its_own_path() {
+        assert_eq!(
+            windows_load_candidates(Path::new(r"C:\plugins\Legacy.vst3"), true, "x86_64")
+                .expect("a named module should resolve"),
+            vec![PathBuf::from(r"C:\plugins\Legacy.vst3")]
+        );
+    }
+
+    #[test]
+    fn a_windows_bundle_is_loaded_from_its_architecture_module() {
+        assert_eq!(
+            windows_load_candidates(Path::new("/plugins/Reverb.vst3"), false, "x86_64")
+                .expect("a named bundle should resolve"),
+            windows_module_paths(Path::new("/plugins/Reverb.vst3"), "x86_64")
+                .expect("a named bundle should resolve")
+        );
+    }
+
     #[test]
     fn a_windows_arm_host_never_probes_the_emulation_compatible_image() {
         assert!(!windows_architecture_directories("aarch64").contains(&"arm64ec-win"));
@@ -857,16 +906,16 @@ mod tests {
         let cache = fake_cache();
         let unloads = Arc::new(AtomicUsize::new(0));
         let loads = AtomicUsize::new(0);
-        let mut load = || {
+        let load = || {
             loads.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Arc::new(FakeModule {
                 unloads: Arc::clone(&unloads),
             }))
         };
 
-        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
-        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
@@ -911,7 +960,7 @@ mod tests {
         let cache = fake_cache();
         let unloads = Arc::new(AtomicUsize::new(0));
         let loads = AtomicUsize::new(0);
-        let mut load = || {
+        let load = || {
             loads.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Arc::new(FakeModule {
                 unloads: Arc::clone(&unloads),
@@ -919,10 +968,10 @@ mod tests {
         };
 
         drop(
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
                 .expect("the fake loads"),
         );
-        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);

@@ -1,7 +1,8 @@
 import { clipAutomationMoveStateMatches, restoreClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type ClipMoveActionSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type ClipMoveActionSnapshot } from '../../events/arrangementClipAppActions';
 import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';

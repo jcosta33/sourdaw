@@ -149,20 +149,31 @@ function recipeCriterionMatches(goal: MetricGoal, catalog: ReturnType<typeof get
     );
 }
 
+const ORDERING_POLICY_METRICS = {
+    'spectral-centroid-comparison-v1': 'spectralCentroid',
+    'integrated-loudness-comparison-v1': 'integratedLoudness',
+    'side-energy-fraction-comparison-v1': 'sideEnergyFraction',
+    'crest-factor-comparison-v1': 'crestFactor',
+} as const;
+
 function policyCriterionMatches(goal: MetricGoal): boolean {
     if (goal.source.kind !== 'policy') {
         return true;
     }
-    return !(
-        (goal.source.policyId === 'integrated-loudness-match-v1' &&
-            (goal.metricId !== 'integratedLoudness' ||
-                goal.relation !== 'match-current' ||
-                goal.tolerance !== 0.1 ||
-                goal.band !== null)) ||
-        (goal.source.policyId === 'spectral-centroid-comparison-v1' &&
-            (goal.metricId !== 'spectralCentroid' ||
-                !['greater-than-current', 'less-than-current'].includes(goal.relation) ||
-                goal.tolerance !== 0))
+    const { policyId } = goal.source;
+    if (policyId === 'integrated-loudness-match-v1') {
+        return (
+            goal.metricId === 'integratedLoudness' &&
+            goal.relation === 'match-current' &&
+            goal.tolerance === 0.1 &&
+            goal.band === null
+        );
+    }
+    return (
+        goal.metricId === ORDERING_POLICY_METRICS[policyId] &&
+        (goal.relation === 'greater-than-current' || goal.relation === 'less-than-current') &&
+        goal.tolerance === 0 &&
+        goal.band === null
     );
 }
 
@@ -307,7 +318,7 @@ function movedWithin(from: number, to: number, tolerance: number): boolean {
     return to - from <= tolerance + rounding;
 }
 
-function satisfies(goal: MetricGoal, before: number, after: number, reference: number | undefined): boolean {
+function satisfies(goal: MetricGoal, before: number, after: number, references: readonly number[]): boolean {
     if (goal.relation === 'increase') {
         return after > before;
     }
@@ -330,17 +341,21 @@ function satisfies(goal: MetricGoal, before: number, after: number, reference: n
             movedWithin(after, goal.targetValue, goal.tolerance)
         );
     }
-    if (reference === undefined) {
+    if (references.length === 0) {
         return false;
     }
+    // A subject handed several references clears each of them; the pairing is decided before this.
     if (goal.relation === 'match-current') {
-        return movedWithin(reference, after, goal.tolerance) && movedWithin(after, reference, goal.tolerance);
+        return references.every(
+            (reference) =>
+                movedWithin(reference, after, goal.tolerance) && movedWithin(after, reference, goal.tolerance)
+        );
     }
     if (goal.relation === 'greater-than-current') {
-        return after > reference;
+        return references.every((reference) => after > reference);
     }
     if (goal.relation === 'less-than-current') {
-        return after < reference;
+        return references.every((reference) => after < reference);
     }
     return false;
 }
@@ -360,6 +375,7 @@ function goalReferences(
         reference.push(figure.value);
     }
     if (
+        goal.relation === 'match-current' &&
         goal.referenceTargetIds.length > 0 &&
         goal.referenceTargetIds.length !== 1 &&
         goal.referenceTargetIds.length !== goal.targetIds.length
@@ -367,6 +383,20 @@ function goalReferences(
         failure = 'incomparable';
     }
     return { reference, failure };
+}
+
+/**
+ * The reference figures one target is held to. A match pairs by index (one reference serves every subject).
+ * An ordering does too when subjects and references are equal in number, as on main; one reference serves
+ * every subject; otherwise each subject clears every reference ("brighter than the guitars").
+ */
+function referencesFor(goal: MetricGoal, reference: number[], index: number): number[] {
+    const pairs = reference.length === goal.targetIds.length;
+    if (goal.relation !== 'match-current' && !pairs) {
+        return reference;
+    }
+    const paired = reference.length === 1 ? reference[0] : reference[index];
+    return paired === undefined ? [] : [paired];
 }
 
 function targetComparison(
@@ -414,12 +444,12 @@ function criterionTargets(
         baseline.push(before.value);
         observed.push(final.value);
         unit = final.unit;
-        const referenceValue = reference.length === 1 ? reference[0] : reference[index];
-        if (failure === null && !satisfies(goal, before.value, after.value, referenceValue)) {
+        const referenceValues = referencesFor(goal, reference, index);
+        if (failure === null && !satisfies(goal, before.value, after.value, referenceValues)) {
             failure = 'out-of-tolerance';
             violation = { targetId: id, from: before.value, to: after.value };
         }
-        if (failure === null && !satisfies(goal, initial.value, final.value, referenceValue)) {
+        if (failure === null && !satisfies(goal, initial.value, final.value, referenceValues)) {
             failure = 'out-of-tolerance';
             violation = { targetId: id, from: initial.value, to: final.value };
         }

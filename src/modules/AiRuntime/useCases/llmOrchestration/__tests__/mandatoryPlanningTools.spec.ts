@@ -21,7 +21,11 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import { THREAD_CONTEXT_MAX_BYTES, type ThreadContext } from '../../../models/ThreadContext';
 import { type ToolCallResult } from '../../../models/ToolCallResult';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../../models/WorkflowCapability';
+import {
+    type LocalWorkflowGrounding,
+    WORKFLOW_ACTION_TOOL_NAMES,
+    WORKFLOW_CAPABILITY_TOOL_NAME,
+} from '../../../models/WorkflowCapability';
 import { encodeWireToolName } from '../../../repositories/cloudLlm/cloudInference/encodeWireToolName';
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
@@ -49,6 +53,7 @@ import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     MANDATORY_PLANNING_TOOL_NAMES,
@@ -83,7 +88,19 @@ const mocks = vi.hoisted(() => ({
     requestHostedOpenAiProvider: vi.fn(),
 }));
 
+const estimator = vi.hoisted(() => ({ inputs: [] as string[] }));
+
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
+vi.mock('../../../transformers/estimateConservativePromptTokens', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../transformers/estimateConservativePromptTokens')>();
+    return {
+        ...actual,
+        estimateConservativePromptTokens: (text: string) => {
+            estimator.inputs.push(text);
+            return actual.estimateConservativePromptTokens(text);
+        },
+    };
+});
 vi.mock('../backendResolution/getBackendChain', () => ({ getBackendChain: () => mocks.backendChain.value }));
 vi.mock('../../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
     generateCloudToolCalls: mocks.generateCloudToolCalls,
@@ -124,7 +141,8 @@ function productionToolSchemas(
     catalog: CreativeInterpretationCatalog = creativeCatalog,
     context: ProjectContext = getProjectContext(),
     binding?: PlanningContextBinding,
-    prompt = RETENTION_PROMPT
+    prompt = RETENTION_PROMPT,
+    offersBrief = false
 ): ToolSchema[] {
     const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: catalog.revision });
     const actualBinding =
@@ -133,7 +151,7 @@ function productionToolSchemas(
             .planningBinding;
     return projectPlanningProviderToolSchemas(
         [
-            ...getPlanningProviderToolSchemas(),
+            ...getPlanningProviderToolSchemas(undefined, { offersBrief }),
             createPlanningInterpretationToolSchema({
                 creative: catalog,
                 answer,
@@ -394,7 +412,8 @@ describe('mandatory planning tools', () => {
     describe('WebLLM', () => {
         async function advertisedToWebLlm(
             prompt: string,
-            catalog: CreativeInterpretationCatalog = creativeCatalog
+            catalog: CreativeInterpretationCatalog = creativeCatalog,
+            localWorkflowGrounding?: LocalWorkflowGrounding
         ): Promise<string[]> {
             mocks.backendChain.value = ['webllm'];
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
@@ -406,7 +425,16 @@ describe('mandatory planning tools', () => {
                     getProjectContext(),
                     undefined,
                     catalog === creativeCatalog ? RETENTION_PROMPT : prompt
-                )
+                ),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt,
+                localWorkflowGrounding
             );
             return namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
         }
@@ -423,8 +451,12 @@ describe('mandatory planning tools', () => {
             expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         });
 
+        // The budget is the ceiling a workflow-shaped request reaches: a kept workflow capability
+        // offers every workflow action tool beside the mandatory set.
         it('sizes the budget at the mandatory set plus exactly one prompt-selected slot', async () => {
-            const advertised = await advertisedToWebLlm('add an eq device to the vocals');
+            const advertised = await advertisedToWebLlm('add an eq device to the vocals', creativeCatalog, {
+                keptCapabilityIds: ['drum-routing'],
+            });
             const mandatory = new Set<string>([
                 WORKFLOW_CAPABILITY_TOOL_NAME,
                 ...MANDATORY_PLANNING_TOOL_NAMES,
@@ -434,9 +466,152 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET).toBe(mandatory.size + 1);
+            // This request is not offered the brief; the budget is sized for the largest mandatory set,
+            // which also holds the brief compiler.
+            expect(WEBLLM_TOOL_BUDGET).toBe(new Set([...mandatory, BRIEF_COMPILE_TOOL_NAME]).size + 1);
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(mandatory.size + 1);
+        });
+
+        // Red when the brief compiler is dropped from the local tool list of a request that offered it, takes
+        // the one prompt-selected slot, or is advertised to a request that did not offer it.
+        it('adds the brief compiler to the mandatory set only when offered, leaving the one free slot', async () => {
+            const prompt = 'add an eq device to the vocals';
+            const catalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+                offersBrief: true,
+            });
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(catalog, getProjectContext(), undefined, prompt, true),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt
+            );
+            const advertised = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
+            const mandatory = new Set<string>([
+                WORKFLOW_CAPABILITY_TOOL_NAME,
+                ...MANDATORY_PLANNING_TOOL_NAMES,
+                AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                CREATIVE_INTERPRETATION_TOOL_NAME,
+                BRIEF_COMPILE_TOOL_NAME,
+            ]);
+
+            expect(advertised).toContain(BRIEF_COMPILE_TOOL_NAME);
+            expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
+            expect(advertised).toHaveLength(mandatory.size + 1);
+            expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
+
+            const notOfferedCatalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+            });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(notOfferedCatalog, getProjectContext(), undefined, prompt),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt
+            );
+            const notOffered = namesOf((mocks.generateWebLlmToolCalls.mock.calls[1]?.[2] ?? []) as ToolSchema[]);
+            expect(notOffered).not.toContain(BRIEF_COMPILE_TOOL_NAME);
+        });
+
+        // Red when an offered brief compiler is cut, or a mandatory tool is cut for it, beside every workflow
+        // action tool, or the budget admits a tool outside the mandatory set there.
+        it('keeps every mandatory tool and the brief compiler within the budget beside every workflow action tool', async () => {
+            const prompt = 'add an eq device to the vocals';
+            const catalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+                offersBrief: true,
+            });
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(catalog, getProjectContext(), undefined, prompt, true),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt,
+                { keptCapabilityIds: ['drum-routing'] }
+            );
+            const advertised = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
+            const mandatory = new Set<string>([
+                WORKFLOW_CAPABILITY_TOOL_NAME,
+                ...MANDATORY_PLANNING_TOOL_NAMES,
+                AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                CREATIVE_INTERPRETATION_TOOL_NAME,
+                BRIEF_COMPILE_TOOL_NAME,
+                ...WORKFLOW_ACTION_TOOL_NAMES,
+            ]);
+
+            expect(advertised).toEqual(expect.arrayContaining([...mandatory]));
+            expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
+            expect(advertised).toHaveLength(mandatory.size + 1);
+            expect(advertised).toHaveLength(WEBLLM_TOOL_BUDGET);
+        });
+
+        // Red when the offered brief compiler, beside every workflow action tool, leaves no free slot, so a
+        // discovered analysis.detectTransients is dropped after discovery and a call to it is refused.
+        it('keeps a discovered transient read beside the brief compiler and every workflow action tool', async () => {
+            const prompt = 'tighten the drums for this whole project';
+            const catalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+                offersBrief: true,
+            });
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(catalog, getProjectContext(), undefined, prompt, true),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                { firstUserMessage: prompt, history: [], budgetNote: '', transientOnsetsDiscovered: true },
+                prompt,
+                { keptCapabilityIds: ['drum-routing'] }
+            );
+            const advertised = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
+
+            expect(advertised).toContain('analysis.detectTransients');
+            expect(advertised).toContain(BRIEF_COMPILE_TOOL_NAME);
+            for (const name of WORKFLOW_ACTION_TOOL_NAMES) {
+                expect(advertised).toContain(name);
+            }
+            expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         });
 
         it('does not advertise analysis.compareReference with a reference loaded, even ahead of the free slot', async () => {
@@ -527,6 +702,7 @@ describe('mandatory planning tools', () => {
                 engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
             });
             const REQUEST = 'make the chorus wider and tame the harshness on the lead vocal';
+            const VIBE_REQUEST = "make this warm and punchy, don't touch the low end";
             const RECEIPT_EVIDENCE_CHARACTERS = 8_192;
 
             // What a receipt turn carries at the evidence budget's ceiling: the loop's receipt header
@@ -549,19 +725,24 @@ describe('mandatory planning tools', () => {
                 context: ProjectContext,
                 receiptSummary?: string,
                 thread?: ThreadContext,
-                transientOnsetsDiscovered?: true
+                transientOnsetsDiscovered?: true,
+                { offersBrief = false, request = REQUEST }: { offersBrief?: boolean; request?: string } = {}
             ) {
                 const catalog = prepareCreativeInterpretationCatalog({
-                    prompt: REQUEST,
+                    prompt: request,
                     context,
                     projectRevision: 'revision-1',
+                    offersBrief,
                 });
                 const phase = transientOnsetsDiscovered ? 'answer' : 'planning';
-                const names = [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
+                const names = [
+                    ...getPlanningProviderToolSchemas(undefined, { offersBrief }),
+                    createCreativeInterpretationToolSchema(catalog),
+                ];
                 const systemPrompt = buildPlanningSystemPrompt(undefined, phase);
                 const built = buildAgentContext({
                     fixedPolicy: systemPrompt,
-                    prompt: REQUEST,
+                    prompt: request,
                     context,
                     projectRevision: 'revision-1',
                     receipts:
@@ -576,7 +757,7 @@ describe('mandatory planning tools', () => {
                 if (phase === 'answer') {
                     tools = projectPlanningProviderToolSchemas(getPlanningProviderToolSchemas(), 'answer');
                 } else {
-                    tools = productionToolSchemas(catalog, context, built.planningBinding, REQUEST);
+                    tools = productionToolSchemas(catalog, context, built.planningBinding, request, offersBrief);
                 }
                 const { generateWebLlmToolCalls } = await vi.importActual<
                     typeof import('../../../repositories/webLlm/toolCalling')
@@ -593,12 +774,13 @@ describe('mandatory planning tools', () => {
                         transientOnsetsDiscovered,
                     };
                 }
+                estimator.inputs.length = 0;
                 const outcome = await generateToolPlanningOutcome(
                     systemPrompt,
                     built.message,
                     tools,
                     undefined,
-                    REQUEST,
+                    request,
                     (result: ModelProviderResult) => providerResults.push(result),
                     undefined,
                     undefined,
@@ -650,6 +832,80 @@ describe('mandatory planning tools', () => {
                     estimatedPromptTokens: promptTokens,
                 });
             });
+
+            // Red when the brief compiler is not spelled in the local system prompt of a request that offered it,
+            // or when offering it pushes a five-track first or receipt turn past the window.
+            it.each([
+                { label: 'first turn', receipts: undefined },
+                { label: 'receipt turn', receipts: receiptEvidence },
+            ])('fits a five-track $label with the brief compiler offered', async ({ receipts }) => {
+                engineState.activeModelId = PRO_MODEL_ID;
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+
+                const { built, outcome, sent } = await sendLocalRequest(
+                    fiveTrackProject(),
+                    receipts?.(),
+                    undefined,
+                    undefined,
+                    { offersBrief: true, request: VIBE_REQUEST }
+                );
+
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
+                const [systemText, userText] = sent ?? [];
+                if (typeof systemText !== 'string' || typeof userText !== 'string') {
+                    throw new TypeError('Expected the local request to reach the engine.');
+                }
+                expect(userText).toBe(built.localMessage);
+                expect(systemText).toContain(`- ${BRIEF_COMPILE_TOOL_NAME}:`);
+                const systemTokens = estimateConservativePromptTokens(systemText);
+                const userTokens = estimateConservativePromptTokens(userText);
+                const promptTokens = systemTokens + userTokens + LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS;
+                const window = getWebLlmContextWindowSize();
+                expect(promptTokens + LOCAL_PLANNING_REPLY_RESERVE_TOKENS).toBeLessThanOrEqual(window);
+            });
+
+            // Red when a whole-project request over the window reaches the engine, or the refusal's needed
+            // figure is not the budget's own count of the very texts it measured.
+            it('refuses a 64-track whole-project request with the brief offered, naming the figures the budget counted', async () => {
+                engineState.activeModelId = PRO_MODEL_ID;
+                mocks.isWebLlmLoaded.mockReturnValue(false);
+
+                const { built, outcome, providerResults } = await sendLocalRequest(
+                    createPlanningProject(getProjectContext(), 64),
+                    undefined,
+                    undefined,
+                    undefined,
+                    { offersBrief: true, request: VIBE_REQUEST }
+                );
+
+                expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+                expect(initWebLlmEngine).not.toHaveBeenCalled();
+                if (outcome.status !== 'rejected') {
+                    throw new Error('Expected the over-budget request to be refused.');
+                }
+                const countedSystem = estimator.inputs.find((text) => text.includes(`- ${BRIEF_COMPILE_TOOL_NAME}:`));
+                const countedUser = estimator.inputs.find((text) => text === built.localMessage);
+                if (countedSystem === undefined || countedUser === undefined) {
+                    throw new Error(
+                        'Expected the budget to count the brief-offering system text and the local message.'
+                    );
+                }
+                const needed =
+                    estimateConservativePromptTokens(countedSystem) +
+                    estimateConservativePromptTokens(countedUser) +
+                    LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS +
+                    LOCAL_PLANNING_REPLY_RESERVE_TOKENS;
+                const figures = /needs about ([\d,]+) tokens.*the window holds ([\d,]+)\./.exec(outcome.reason);
+                expect(Number(figures?.[1]?.replaceAll(',', ''))).toBe(needed);
+                expect(Number(figures?.[2]?.replaceAll(',', ''))).toBe(getWebLlmContextWindowSize());
+                expect(outcome.reason).toContain('Use a hosted model');
+                expect(providerResults).toHaveLength(1);
+                expect(providerResults[0]?.failure).toMatchObject({
+                    code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                    retryable: false,
+                    safeMessage: outcome.reason,
+                });
+            }, 30_000);
 
             it('fits a five-track receipt turn carrying a full thread context, its oldest requests dropped', async () => {
                 mocks.generateWebLlmCompletion.mockResolvedValue('[]');

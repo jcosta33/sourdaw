@@ -20,7 +20,15 @@ export type MetricGoalSource =
           readonly expectationIndex: number;
       }
     | { readonly kind: 'request-number'; readonly candidateId: string; readonly token: string }
-    | { readonly kind: 'policy'; readonly policyId: 'integrated-loudness-match-v1' | 'spectral-centroid-comparison-v1' }
+    | {
+          readonly kind: 'policy';
+          readonly policyId:
+              | 'integrated-loudness-match-v1'
+              | 'spectral-centroid-comparison-v1'
+              | 'integrated-loudness-comparison-v1'
+              | 'side-energy-fraction-comparison-v1'
+              | 'crest-factor-comparison-v1';
+      }
     /** A perceptual constraint the request states, held to its versioned invariant; `clause` is its own words. */
     | { readonly kind: 'constraint'; readonly constraintId: PerceptualConstraintId; readonly clause: string }
     | { readonly kind: 'unsupported' };

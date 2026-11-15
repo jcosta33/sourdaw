@@ -8,7 +8,6 @@ const executeUserAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefine
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    duplicateTrack: vi.fn(),
     removeTrack: vi.fn(),
     renameClip: vi.fn(),
     splitClip: vi.fn(),

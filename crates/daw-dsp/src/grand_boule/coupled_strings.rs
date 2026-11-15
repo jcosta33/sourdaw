@@ -37,7 +37,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
 }
 
 /// Gain applied to the prompt output before feeding it into the aftersound
-/// polarization. With `configure_aftersound`, the aftersound C0 is computed
+/// polarization. With `configure_aftersound_from_string_parameters`, the aftersound C0 is computed
 /// from the prompt bandwidth. The gain controls how quickly the aftersound
 /// builds relative to the prompt; both constants are project voicing.
 const POLARIZATION_TRANSFER_GAIN: f32 = 30.0;

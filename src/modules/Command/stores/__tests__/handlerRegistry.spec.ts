@@ -64,6 +64,16 @@ describe('handlerRegistry / registerHandlerMap', () => {
         expect(executions).toEqual(['togglePlayback', 'setTempo:120']);
     });
 
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+        'finds no handler for the inherited name %s',
+        (inheritedName) => {
+            registerHandlerMap({ togglePlayback: stub('a') });
+            const action = JSON.parse(`{"type":"${inheritedName}"}`);
+
+            expect(getHandler(action)).toBeUndefined();
+        }
+    );
+
     it('throws on a duplicate action-type registration (one handler per action type)', () => {
         registerHandlerMap({ togglePlayback: stub('first') });
 

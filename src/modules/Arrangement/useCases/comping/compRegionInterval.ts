@@ -1,5 +1,4 @@
 import {
-    type CompSelectionSpanSnapshot,
     type AppAction,
     type HandlerSessionActionEntry,
     type HandlerMaterializationContext,
@@ -7,6 +6,7 @@ import {
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { type CompSelectionSpanSnapshot } from '../../events/arrangementTakeAppActions';
 import { type Clip, type Track } from '../../models/Track';
 import { type CompAudioSourceInputContext } from '../../stores/compAudioSourceInputs';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';

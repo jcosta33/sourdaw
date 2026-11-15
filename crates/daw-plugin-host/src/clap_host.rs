@@ -81,13 +81,12 @@ pub struct HostCallbackState {
     /// and no control visit has since done so. Set by `clap_host
     /// .request_callback`; cleared by the carrier that makes the call.
     main_thread_callback_pending: AtomicBool,
-    /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty,
-    /// parameter-rescan and the main-thread callback — which a plugin raises
-    /// where allocating is ordinary. Its install also gates the
-    /// `[thread-safe]` asks' acceptance: it happens exactly when the native
-    /// engine takes the instance, which is exactly the set the drain thread
-    /// serves, so an instance with no install is one whose recorded ask
-    /// nothing would ever carry.
+    /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty
+    /// and parameter-rescan — which a plugin raises where allocating is
+    /// ordinary. Its install also gates the `[thread-safe]` asks' acceptance:
+    /// it happens exactly when the native engine takes the instance, which is
+    /// exactly the set the drain thread serves, so an instance with no install
+    /// is one whose recorded ask nothing would ever carry.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
 }
 
@@ -192,9 +191,19 @@ impl HostCallbackState {
     /// wake cannot be hijacked mid-life.
     ///
     /// The install is also the `[thread-safe]` asks' acceptance gate — see
-    /// [`Self::request_editor_resize`].
+    /// [`Self::request_editor_resize`] — and the moment the instance joins the
+    /// set the request watcher sweeps. A main-thread callback the plugin asked
+    /// for before then had its hint raised while no sweep could find it, so the
+    /// hint is raised again here and the ask is served on the next sweep rather
+    /// than left until the plugin happens to ask again.
     pub fn set_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
-        self.request_notifier.set(notifier).is_ok()
+        if self.request_notifier.set(notifier).is_err() {
+            return false;
+        }
+        if self.main_thread_callback_pending.load(Ordering::Acquire) {
+            signal_pending_main_thread_callback();
+        }
+        true
     }
 
     /// State whether there is a host window the plugin's editor can be resized
@@ -260,21 +269,24 @@ impl HostCallbackState {
         true
     }
 
-    /// Record that the plugin asked the host to call `on_main_thread` on it,
-    /// then wake the carrier.
+    /// Record that the plugin asked the host to call `on_main_thread` on it.
     ///
-    /// CLAP marks `request_callback` `[main-thread]`, so the raising thread may
-    /// allocate and the channel wake is ordinary. The flag is read-and-clear,
-    /// so a burst of asks before one control visit coalesces into a single
-    /// `on_main_thread` call — the same trade every ask on this type makes, and
-    /// enough for the contract: the call completes whatever the plugin parked
-    /// on it.
+    /// Two release stores and nothing else, for the same reason
+    /// [`Self::request_parameters_flush`] has none: CLAP marks
+    /// `request_callback` `[thread-safe]`, and plugins raise it from inside
+    /// `process()` to hand work to the main thread, where the request-notifier
+    /// channel's heap-copied instance id and channel node are a missed device
+    /// period. #6566 was that allocation. The flag is the record, the
+    /// process-wide hint is the wake, and the request watcher's sweep makes the
+    /// call. The flag is read-and-clear, so a burst of asks before one control
+    /// visit coalesces into a single `on_main_thread` call — enough for the
+    /// contract: the call completes whatever the plugin parked on it.
     pub fn mark_main_thread_callback_requested(&self) {
+        // Published before the hint, so a sweep the hint wakes always finds the
+        // ask it is being woken for.
         self.main_thread_callback_pending
             .store(true, Ordering::Release);
-        if let Some(notify) = self.request_notifier.get() {
-            notify(PluginHostRequest::MainThreadCallback);
-        }
+        signal_pending_main_thread_callback();
     }
 
     /// Atomically read-and-clear the pending main-thread callback request.
@@ -439,6 +451,34 @@ pub fn take_pending_latency_requery_signal() -> bool {
     LATENCY_REQUERY_PENDING.swap(false, Ordering::AcqRel)
 }
 
+/// Process-wide hint that some plugin raised `clap_host.request_callback`.
+///
+/// A hint, never the record — each instance's own pending flag is that. A lost
+/// signal costs at most one watcher interval, because the flag stays set until
+/// a control visit takes it. The hint carries no instance id because the raising
+/// callback is `[thread-safe]`: a plugin may raise it from inside `process()`,
+/// where copying the id onto the heap is the allocation this path exists to keep
+/// off the calling thread.
+static MAIN_THREAD_CALLBACK_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the main-thread callback hint. **Called from the plugin's own thread —
+/// CLAP marks `request_callback` `[thread-safe]`, so this may be the audio
+/// thread — so it is one release store and nothing else.**
+pub fn signal_pending_main_thread_callback() {
+    MAIN_THREAD_CALLBACK_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the main-thread callback hint.
+pub fn take_pending_main_thread_callback_signal() -> bool {
+    MAIN_THREAD_CALLBACK_PENDING.swap(false, Ordering::AcqRel)
+}
+
+/// Serialises every test that raises or reads the main-thread callback hint,
+/// for the same reason the restart lock exists: the hint is process-wide.
+#[cfg(test)]
+pub(crate) static MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK: std::sync::Mutex<()> =
+    std::sync::Mutex::new(());
+
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
 /// Returns `None` when `host` or `host_data` is null (e.g. a descriptor created
 /// without per-instance state, such as legacy test fixtures).
@@ -446,11 +486,11 @@ unsafe fn host_state<'a>(host: *const clap_host) -> Option<&'a HostCallbackState
     if host.is_null() {
         return None;
     }
-    let data = (*host).host_data as *const HostCallbackState;
+    let data = unsafe { (*host).host_data } as *const HostCallbackState;
     if data.is_null() {
         return None;
     }
-    Some(&*data)
+    Some(unsafe { &*data })
 }
 
 static HOST_NAME: &[u8] = b"Sourdaw\0";
@@ -485,7 +525,7 @@ unsafe extern "C" fn host_get_extension(
         return std::ptr::null();
     }
 
-    let id = CStr::from_ptr(extension_id);
+    let id = unsafe { CStr::from_ptr(extension_id) };
 
     if id == CLAP_EXT_PARAMS {
         return &HOST_PARAMS as *const clap_host_params as *const c_void;
@@ -520,7 +560,7 @@ unsafe extern "C" fn host_request_restart(host: *const clap_host) {
     // heap-copied instance id and channel node are a missed device period.
     // #3745 was that allocation. The flag is the record; the latency watcher
     // services the hint and makes the same re-query the channel wake did.
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.flag_latency_requery();
     }
 }
@@ -531,16 +571,17 @@ unsafe extern "C" fn host_request_process(_host: *const clap_host) {
 
 /// The plugin asks the host to call `on_main_thread` on it.
 ///
-/// Recorded and woken, never answered here: the plugin call is `[main-thread]`
-/// work, and this callback — though itself `[main-thread]` — can arrive while
-/// the instance is mid-process on the audio thread, where re-entering it is
-/// exactly what the access seam exists to prevent. The flag is the record, the
-/// request-notifier channel is the wake (legal to allocate on this ask's own
-/// thread), and the request watcher makes the call through the control seam.
-/// #3746 was this being a no-op, leaving a conforming plugin's deferred worker
-/// results and editor updates forever pending.
+/// Recorded and hinted, never answered here: the plugin call is `[main-thread]`
+/// work, and this callback is `[thread-safe]` — plugins raise it from inside
+/// `process()` on the audio thread, where re-entering the instance is exactly
+/// what the access seam exists to prevent, and where an allocation, a lock or a
+/// syscall is a missed device period. The flag is the record, the process-wide
+/// hint is the wake, and the request watcher's sweep makes the call through the
+/// control seam. #3746 was this being a no-op, leaving a conforming plugin's
+/// deferred worker results and editor updates forever pending; #6566 was its
+/// wake allocating on the calling thread.
 unsafe extern "C" fn host_request_callback(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_main_thread_callback_requested();
     }
 }
@@ -561,7 +602,7 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
 /// only says that there is work. Deliberately unlogged: it can arrive from a
 /// plugin's own thread, where stderr I/O is not acceptable.
 unsafe extern "C" fn host_params_rescan(host: *const clap_host, _flags: u32) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_parameters_rescan();
     }
 }
@@ -589,7 +630,7 @@ unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, 
 /// and deciding that plus making the call is the control path's job; this
 /// callback is `[thread-safe]` and may be the audio thread.
 unsafe extern "C" fn host_params_request_flush(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.request_parameters_flush();
     }
 }
@@ -625,7 +666,7 @@ unsafe extern "C" fn host_gui_request_resize(
     width: u32,
     height: u32,
 ) -> bool {
-    match host_state(host) {
+    match unsafe { host_state(host) } {
         Some(state) => state.request_editor_resize(width, height),
         None => false,
     }
@@ -660,7 +701,7 @@ static HOST_STATE: clap_host_state = clap_host_state {
 /// for the same reason nothing here reaches the renderer directly. The control
 /// path consumes the flag and publishes the change.
 unsafe extern "C" fn host_state_mark_dirty(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_state_dirty();
     }
 }
@@ -675,7 +716,7 @@ static HOST_LATENCY: clap_host_latency = clap_host_latency {
 /// main thread; latency itself may only change across a deactivate/reactivate,
 /// so we flag the instance dirty and let the control thread re-query.
 unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_latency_dirty();
     }
     eprintln!("[CLAP Host] Plugin reported a latency change");
@@ -694,7 +735,7 @@ static HOST_TAIL: clap_host_tail = clap_host_tail {
 /// stderr and making a write syscall is a dropout. Re-reading `clap.tail` is the
 /// control path's job.
 unsafe extern "C" fn host_tail_changed(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_tail_dirty();
     }
 }
@@ -856,11 +897,16 @@ mod tests {
 
     /// #3746's recording half: `request_callback` used to be a no-op, so a
     /// conforming plugin's deferred main-thread work never ran. The ask must
-    /// reach the control path as a recorded, wakeable request.
+    /// reach the control path as a recorded request with its hint raised, and
+    /// never through the allocating channel wake.
     #[test]
-    fn a_main_thread_callback_request_is_recorded_and_wakes_the_control_path() {
+    fn a_main_thread_callback_request_is_recorded_and_raises_the_hint() {
+        let _guard = MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (state, requests) = state_with_open_editor();
         let host = host_with_state(&state);
+        take_pending_main_thread_callback_signal();
 
         assert!(
             !state.take_main_thread_callback_requested(),
@@ -868,14 +914,17 @@ mod tests {
         );
         unsafe { host_request_callback(&host as *const clap_host) };
 
-        assert_eq!(
-            requests.lock().expect("request log").as_slice(),
-            [PluginHostRequest::MainThreadCallback],
-            "the ask wakes the carrier so the plugin call is not left to polling"
+        assert!(
+            take_pending_main_thread_callback_signal(),
+            "the ask raises the hint the request watcher sweeps on"
+        );
+        assert!(
+            requests.lock().expect("request log").is_empty(),
+            "the ask never reaches the channel wake"
         );
         assert!(
             state.take_main_thread_callback_requested(),
-            "the ask is recorded, so a lost wake costs a delay and never the call"
+            "the ask is recorded, so a lost hint costs a delay and never the call"
         );
 
         unsafe { host_request_callback(&host as *const clap_host) };
@@ -886,14 +935,95 @@ mod tests {
         );
     }
 
+    /// #6566: CLAP marks `request_callback` `[thread-safe]`, and plugins raise it
+    /// from inside `process()`. The wake installed here does what the native
+    /// host's does — copies the instance id and sends it on a channel — so a
+    /// callback that still reached it would allocate on the calling thread.
+    #[test]
+    fn a_main_thread_callback_request_allocates_nothing_on_the_calling_thread() {
+        let _guard = MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        assert!(state.set_request_notifier(Box::new(move |request| {
+            let _ = sender.send(("instance-1".to_string(), request));
+        })));
+        let host = host_with_state(&state);
+        take_pending_main_thread_callback_signal();
+
+        let before = crate::allocation_counter::allocation_count();
+        for _ in 0..64 {
+            unsafe { host_request_callback(&host as *const clap_host) };
+        }
+        let allocations = crate::allocation_counter::allocation_count() - before;
+
+        assert_eq!(
+            allocations, 0,
+            "request_callback allocated {allocations} times on the calling thread"
+        );
+        assert!(
+            receiver.try_recv().is_err(),
+            "the allocating channel wake is not reached"
+        );
+        assert!(
+            take_pending_main_thread_callback_signal(),
+            "the wait-free hint is the wake instead"
+        );
+        assert!(
+            state.take_main_thread_callback_requested(),
+            "the ask is still recorded"
+        );
+    }
+
+    /// An ask raised before the native engine took the instance raised its hint
+    /// while no sweep could find the instance, and that sweep spent the hint.
+    /// Installing the wake is when the instance becomes sweepable, so the
+    /// install raises the hint again for the ask still standing.
+    #[test]
+    fn installing_the_wake_re_raises_the_hint_for_an_ask_made_before_it() {
+        let _guard = MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+        unsafe { host_request_callback(&host as *const clap_host) };
+        assert!(take_pending_main_thread_callback_signal());
+
+        assert!(state.set_request_notifier(Box::new(|_| {})));
+
+        assert!(
+            take_pending_main_thread_callback_signal(),
+            "the standing ask is hinted again once the instance can be swept"
+        );
+        assert!(state.take_main_thread_callback_requested());
+    }
+
+    #[test]
+    fn installing_the_wake_with_no_standing_ask_raises_no_hint() {
+        let _guard = MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        take_pending_main_thread_callback_signal();
+
+        assert!(state.set_request_notifier(Box::new(|_| {})));
+
+        assert!(!take_pending_main_thread_callback_signal());
+    }
+
     #[test]
     fn the_restart_and_callback_callbacks_tolerate_a_null_host_state() {
         let _guard = LATENCY_REQUERY_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _callback_guard = MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let host = create_host_descriptor();
         assert!(host.host_data.is_null());
         take_pending_latency_requery_signal();
+        take_pending_main_thread_callback_signal();
 
         unsafe {
             host_request_restart(&host as *const clap_host);
@@ -903,6 +1033,10 @@ mod tests {
         assert!(
             !take_pending_latency_requery_signal(),
             "a descriptor with no per-instance state records nothing"
+        );
+        assert!(
+            !take_pending_main_thread_callback_signal(),
+            "a descriptor with no per-instance state raises no callback hint"
         );
     }
 

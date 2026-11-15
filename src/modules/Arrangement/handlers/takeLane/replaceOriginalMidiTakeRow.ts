@@ -1,12 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type HandlerSessionActionEntry,
-    type HandlerValidationContext,
-    type OriginalMidiTakeRowReplacementPayload,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type OriginalMidiTakeRowReplacementPayload } from '../../events/arrangementTakeAppActions';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { compRegionInterval } from '../../useCases/comping/compRegionInterval';
 import { originalMidiTakeRowReplacement } from '../../useCases/comping/prepareOriginalMidiTakeRowReplacement';

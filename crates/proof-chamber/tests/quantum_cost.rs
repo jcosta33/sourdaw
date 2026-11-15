@@ -163,7 +163,7 @@ fn proof_chamber_per_quantum_cost() {
 
         let mut left = [0.0_f32; QUANTUM];
         let mut right = [0.0_f32; QUANTUM];
-        let mut fill = |block: usize, left: &mut [f32; QUANTUM], right: &mut [f32; QUANTUM]| {
+        let fill = |block: usize, left: &mut [f32; QUANTUM], right: &mut [f32; QUANTUM]| {
             for frame in 0..QUANTUM {
                 let (l, r) = excitation(block * QUANTUM + frame);
                 left[frame] = l;
@@ -193,8 +193,12 @@ fn proof_chamber_per_quantum_cost() {
         let mut sum = 0.0_f64;
         for frame in 0..QUANTUM {
             // SAFETY: `process` returns a pointer to its own `out_left`, which
-            // is 1024 long and was just written for `QUANTUM` frames.
-            let sample = unsafe { *out.add(frame) } as f64;
+            // is `PROOF_CHAMBER_BLOCK_FRAMES` (1024) long and never resized, and
+            // `frame < QUANTUM`, which is inside that capacity.
+            let slot = unsafe { out.add(frame) };
+            // SAFETY: `slot` is in bounds of that buffer, which `process` just
+            // wrote and nothing writes before this read.
+            let sample = unsafe { *slot } as f64;
             sum += sample * sample;
         }
         let rms = (sum / QUANTUM as f64).sqrt();
@@ -208,8 +212,6 @@ fn proof_chamber_per_quantum_cost() {
         let floor = quantile(&samples, 0.01);
         let median = quantile(&samples, 0.5);
         let p95 = quantile(&samples, 0.95);
-        let p99 = quantile(&samples, 0.99);
-        let max = *samples.last().expect("timed at least one quantum") as f64;
         let pct = |ns: f64| (ns / BUDGET_NS) * 100.0;
 
         eprintln!(
