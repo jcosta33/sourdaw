@@ -2,6 +2,7 @@ import { takeLaneStore, timelineEditingStore } from '#/modules/Arrangement/store
 import { modulationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type AppActionType } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 
 import {
     dynamicEffectProofKindByActionType,
@@ -28,10 +29,6 @@ type DynamicCommandEffectProofInput = {
 
 type DynamicCommandEffectProver = (input: DynamicCommandEffectProofInput) => void;
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function getStringField(value: unknown, key: string): string | undefined {
     if (!isRecord(value)) {
         return undefined;
@@ -40,20 +37,32 @@ function getStringField(value: unknown, key: string): string | undefined {
     return typeof field === 'string' ? field : undefined;
 }
 
-function orEmpty<Value>(values: readonly Value[] | undefined): readonly Value[] {
-    if (!values) {
-        return [];
+type TrackContext = ProjectContext['tracks'][number];
+
+function collectTrackClipIds(track: TrackContext): Set<string> {
+    const clipIds = new Set(track.clips.map((clip) => clip.id));
+    if (track.alternativeClipIds) {
+        for (const clipId of track.alternativeClipIds) {
+            clipIds.add(clipId);
+        }
     }
-    return values;
+    return clipIds;
 }
 
 function readClipMidiEvents(clipId: string): readonly { readonly id: string }[] {
     const midiState = midiStore.value;
-    return [
-        ...orEmpty(midiState?.notesByClipId[clipId]),
-        ...orEmpty(midiState?.ccByClipId[clipId]),
-        ...orEmpty(midiState?.pitchBendByClipId[clipId]),
+    const events: { readonly id: string }[] = [];
+    const lists = [
+        midiState?.notesByClipId[clipId],
+        midiState?.ccByClipId[clipId],
+        midiState?.pitchBendByClipId[clipId],
     ];
+    for (const list of lists) {
+        if (list) {
+            events.push(...list);
+        }
+    }
+    return events;
 }
 
 /** Commands whose effects the compiled envelope already states fully. */
@@ -95,7 +104,7 @@ function proveDuplicateTrack(input: DynamicCommandEffectProofInput): void {
     }
     effects.affectedTrackIds.add(sourceTrackId);
     effects.affectedTrackIds.add(targetTrackId);
-    const sourceClipIds = new Set([...source.clips.map((clip) => clip.id), ...orEmpty(source.alternativeClipIds)]);
+    const sourceClipIds = collectTrackClipIds(source);
     for (const clipId of sourceClipIds) {
         effects.affectedClipIds.add(clipId);
     }
@@ -116,7 +125,7 @@ type TrackRemovalCascade = {
 function cascadeRemovedTrackContents(
     input: DynamicCommandEffectProofInput,
     cascade: TrackRemovalCascade,
-    removedTrack: ProjectContext['tracks'][number]
+    removedTrack: TrackContext
 ): void {
     for (const device of removedTrack.devices) {
         cascade.objectIds.add(device.id);
@@ -201,10 +210,7 @@ function proveRemoveTrack(input: DynamicCommandEffectProofInput): void {
     if (!trackId || !removedTrack) {
         throw new Error(`Cannot prove track removal bounds for ${trackId ?? 'unknown track'}`);
     }
-    const clipIds = new Set([
-        ...removedTrack.clips.map((clip) => clip.id),
-        ...orEmpty(removedTrack.alternativeClipIds),
-    ]);
+    const clipIds = collectTrackClipIds(removedTrack);
     const cascade: TrackRemovalCascade = {
         trackId,
         trackIds: new Set([trackId]),

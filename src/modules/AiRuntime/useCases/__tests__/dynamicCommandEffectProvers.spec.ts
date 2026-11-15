@@ -11,23 +11,25 @@ function isAppActionType(value: string): value is AppActionType {
 }
 
 describe('dynamic command effect provers', () => {
-    it('names exactly the action types whose effects depend on project state', () => {
+    it('maps exactly these action types to their proof kind', () => {
         const actionTypes = Object.keys(dynamicEffectProofKindByActionType).filter(isAppActionType);
-        const proven = actionTypes.filter((type) => dynamicEffectProofKindByActionType[type] !== 'none').sort();
+        const provenTypes = actionTypes.filter((type) => dynamicEffectProofKindByActionType[type] !== 'none');
+        const pairs = provenTypes.map((type) => [type, dynamicEffectProofKindByActionType[type]]);
+        const proven = pairs.sort();
 
         expect(proven).toEqual([
-            'clearSolos',
-            'duplicateClip',
-            'duplicateClipToNextBar',
-            'duplicateTrack',
-            'invertAutomation',
-            'quantizeAutomation',
-            'removeClip',
-            'removeTrack',
-            'reverseAutomation',
-            'scaleAutomation',
-            'stretchAutomation',
-            'thinAutomation',
+            ['clearSolos', 'clearSolos'],
+            ['duplicateClip', 'duplicateClip'],
+            ['duplicateClipToNextBar', 'duplicateClip'],
+            ['duplicateTrack', 'duplicateTrack'],
+            ['invertAutomation', 'automationLaneRewrite'],
+            ['quantizeAutomation', 'automationLaneRewrite'],
+            ['removeClip', 'removeClip'],
+            ['removeTrack', 'removeTrack'],
+            ['reverseAutomation', 'automationLaneRewrite'],
+            ['scaleAutomation', 'automationLaneRewrite'],
+            ['stretchAutomation', 'automationLaneRewrite'],
+            ['thinAutomation', 'automationLaneRewrite'],
         ]);
     });
 
