@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { automationTransformByActionType } from '../../models/AutomationTransformByActionType';
 import { dynamicEffectProofKindByActionType } from '../../models/DynamicEffectProofKindByActionType';
 import { proveDynamicCommandEffects } from '../dynamicCommandEffectProvers';
 
@@ -28,6 +29,16 @@ describe('dynamic command effect provers', () => {
             'stretchAutomation',
             'thinAutomation',
         ]);
+    });
+
+    it('proves automation lane rewrites for exactly the types the transform record marks', () => {
+        const actionTypes = Object.keys(dynamicEffectProofKindByActionType).filter(isAppActionType);
+        const proven = actionTypes
+            .filter((type) => dynamicEffectProofKindByActionType[type] === 'automationLaneRewrite')
+            .sort();
+        const transforms = actionTypes.filter((type) => automationTransformByActionType[type]).sort();
+
+        expect(proven).toEqual(transforms);
     });
 
     it('proves nothing for an untrusted inherited action type', () => {
