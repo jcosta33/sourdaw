@@ -49,8 +49,8 @@ beforeEach(() => {
 });
 
 describe('handleRenameMarker', () => {
-    it('executes the rename', () => {
-        handleRenameMarker.execute({ type: 'renameMarker', payload: { markerId: 'm1', name: 'Bridge' } });
+    it('executes the rename', async () => {
+        await handleRenameMarker.execute({ type: 'renameMarker', payload: { markerId: 'm1', name: 'Bridge' } });
         expect(renameMarker).toHaveBeenCalledWith('m1', 'Bridge');
     });
 
@@ -77,8 +77,8 @@ describe('handleRenameMarker', () => {
 });
 
 describe('handleMoveMarker', () => {
-    it('executes the move', () => {
-        handleMoveMarker.execute({ type: 'moveMarker', payload: { markerId: 'm1', beat: 15 } });
+    it('executes the move', async () => {
+        await handleMoveMarker.execute({ type: 'moveMarker', payload: { markerId: 'm1', beat: 15 } });
         expect(moveMarker).toHaveBeenCalledWith('m1', 15);
     });
 
@@ -96,8 +96,8 @@ describe('handleMoveMarker', () => {
 });
 
 describe('handleMoveSection', () => {
-    it('executes the move', () => {
-        handleMoveSection.execute({ type: 'moveSection', payload: { sectionId: 's1', startBeat: 4 } });
+    it('executes the move', async () => {
+        await handleMoveSection.execute({ type: 'moveSection', payload: { sectionId: 's1', startBeat: 4 } });
         expect(moveSection).toHaveBeenCalledWith('s1', 4);
     });
 
@@ -115,8 +115,11 @@ describe('handleMoveSection', () => {
 });
 
 describe('handleResizeSection', () => {
-    it('executes the resize', () => {
-        handleResizeSection.execute({ type: 'resizeSection', payload: { sectionId: 's1', startBeat: 2, endBeat: 20 } });
+    it('executes the resize', async () => {
+        await handleResizeSection.execute({
+            type: 'resizeSection',
+            payload: { sectionId: 's1', startBeat: 2, endBeat: 20 },
+        });
         expect(resizeSection).toHaveBeenCalledWith('s1', 2, 20);
     });
 
@@ -137,8 +140,8 @@ describe('handleResizeSection', () => {
 });
 
 describe('handleSetSectionColor', () => {
-    it('executes the recolour', () => {
-        handleSetSectionColor.execute({ type: 'setSectionColor', payload: { sectionId: 's1', color: '#222' } });
+    it('executes the recolour', async () => {
+        await handleSetSectionColor.execute({ type: 'setSectionColor', payload: { sectionId: 's1', color: '#222' } });
         expect(setSectionColor).toHaveBeenCalledWith('s1', '#222');
     });
 
@@ -161,8 +164,11 @@ describe('handleReorderSection', () => {
         { id: 's2', startBeat: 16, endBeat: 32, name: 'Verse', color: '#222' },
     ];
 
-    it('executes the reorder', () => {
-        handleReorderSection.execute({ type: 'reorderSection', payload: { sectionId: 's1', direction: 'right' } });
+    it('executes the reorder', async () => {
+        await handleReorderSection.execute({
+            type: 'reorderSection',
+            payload: { sectionId: 's1', direction: 'right' },
+        });
         expect(reorderSection).toHaveBeenCalledWith('s1', 'right');
     });
 
