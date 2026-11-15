@@ -410,6 +410,23 @@ describe('lint ledger crossing over a real repository', () => {
         expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
     });
 
+    it('crosses when main renames a bound file the pull request edits', () => {
+        const { git, write } = scratchRepository();
+        mkdirSync(join(directory ?? '', 'scripts'), { recursive: true });
+        write('scripts/lintSizeCeilings.json', JSON.stringify({ 'x.ts': 700 }));
+        write('x.ts', 'one;\ntwo;\nthree;\nfour;\nfive;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('x.ts', 'one;\ntwo;\nthree;\nfour;\nfive;\nsix;\n');
+        git(['commit', '--quiet', '-am', 'b']);
+        git(['switch', '--quiet', 'main']);
+        git(['mv', 'x.ts', 'y.ts']);
+        git(['commit', '--quiet', '-m', 'main renames']);
+
+        expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+    });
+
     it('reads a binding that only the merge base holds', () => {
         const { git, write } = scratchRepository();
         write('eslint-suppressions.json', JSON.stringify({ 'x.ts': { 'no-void': { count: 1 } } }));
