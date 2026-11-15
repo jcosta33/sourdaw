@@ -154,6 +154,43 @@ describe('positive whole-request metric intent', () => {
         expect(admitted).not.toHaveProperty('authority');
     });
 
+    it.each([
+        'Make Lead Vocal brighter',
+        'Make Lead Vocal warmer',
+        'Make Lead Vocal punchier',
+        'Make Lead Vocal louder than Bass',
+        'Make the drums glue together more',
+    ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt) => {
+        const value = fixture(prompt);
+        const admitted = admitPlanningInterpretation({
+            ...value,
+            projectRevision: 'metric-revision',
+            turn: 1,
+        });
+        expect(admitted.status).toBe('rejected');
+        expect(admitted).toMatchObject({ reason: expect.stringContaining('perceptual quality') });
+    });
+
+    it.each([
+        'Set Lead Vocal gain to -3 dB',
+        'Cut 200 Hz by 2 dB on Bass',
+        'Make Lead Vocal 3 dB louder',
+        'Set Lead Vocal gain to 70%',
+        'Raise "Bright" by 2 dB',
+        'Set device drums-trim gain-level to -6.02 over Chorus',
+        'Keep the Lead Vocal intimate and set Bass gain to -3 dB',
+        'Glue the MIDI clips',
+        'Set punch in at beat 20',
+    ])('still admits the literal label on a request with no unaccounted quality: %s', (prompt) => {
+        const value = fixture(prompt);
+        const admitted = admitPlanningInterpretation({
+            ...value,
+            projectRevision: 'metric-revision',
+            turn: 1,
+        });
+        expect(admitted.status).toBe('admitted');
+    });
+
     it.each([false, 3, 'literal', [], { kind: 'literal', objectives: [], uncertainty: 'none', value: 1 }])(
         'refuses malformed non-null intent %j before falling back to creative admission',
         (metricIntent) => {

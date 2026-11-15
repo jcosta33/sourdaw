@@ -51,7 +51,7 @@ function maskTrackNames(prompt: string, context: ProjectContext): string {
  * The catalog's own descriptor terms the prompt states, longest phrase first so "less bright" is
  * read once, as `dark`'s term, and not again as `bright`.
  */
-function readFirstPerceptualTerm(
+export function readFirstPerceptualTerm(
     prompt: string,
     context: ProjectContext,
     catalog: MixRecipeCatalog

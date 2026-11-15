@@ -41,6 +41,12 @@ function admitLiteralInterpretation(
             reason: 'Literal metric intake cannot grant creative authority.',
         };
     }
+    if (input.metric.unaccountedQualityWord !== null) {
+        return {
+            status: 'rejected' as const,
+            reason: `The request names "${input.metric.unaccountedQualityWord}", a perceptual quality, so it is not a literal request. Interpret it as a perceptual or comparative goal instead.`,
+        };
+    }
     const admitted = admitMetricIntent({
         catalog: input.metric,
         value: metricIntent,
