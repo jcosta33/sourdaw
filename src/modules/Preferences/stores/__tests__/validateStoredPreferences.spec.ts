@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { PREFERENCES_SCHEMA_VERSION, defaultPreferences } from '../../models/Preferences';
+import {
+    HOSTED_BACKEND_QUESTION_MAX_IDENTITIES,
+    HOSTED_BACKEND_QUESTION_MAX_IDENTITY_LENGTH,
+    PREFERENCES_SCHEMA_VERSION,
+    defaultPreferences,
+} from '../../models/Preferences';
 import { validateStoredPreferences } from '../preferencesStore';
 
 describe('validateStoredPreferences', () => {
@@ -442,5 +447,29 @@ describe('validateStoredPreferences — legacy count-in default migration', () =
         const result = validateStoredPreferences({ recordCountIn: 1 });
 
         expect(result.recordCountIn).toBe(0);
+    });
+
+    it('keeps a bounded list of asked hosted provider identities and drops a corrupt one', () => {
+        const asked = ['anthropic', 'openai-compatible https://provider.example/v1'];
+        expect(validateStoredPreferences({ ...defaultPreferences, hostedBackendQuestionAsked: asked })).toMatchObject({
+            hostedBackendQuestionAsked: asked,
+        });
+
+        for (const corrupt of [
+            'anthropic',
+            null,
+            [42],
+            [''],
+            ['x'.repeat(HOSTED_BACKEND_QUESTION_MAX_IDENTITY_LENGTH + 1)],
+            Array.from(
+                { length: HOSTED_BACKEND_QUESTION_MAX_IDENTITIES + 1 },
+                (_, index) => `endpoint-${String(index)}`
+            ),
+        ]) {
+            expect(
+                validateStoredPreferences({ ...defaultPreferences, hostedBackendQuestionAsked: corrupt })
+                    .hostedBackendQuestionAsked
+            ).toEqual([]);
+        }
     });
 });

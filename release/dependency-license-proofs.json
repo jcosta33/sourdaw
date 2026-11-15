@@ -53,7 +53,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "99f03a26030ffae2300524618304bdef1e9a1a80d0507dea959609feeca34839"
+                "sha256": "035f6fa152751956685e47513a2eecab7cc447af045b77884e0a6dff22097e96"
             },
             {
                 "path": "electron-builder.yml",

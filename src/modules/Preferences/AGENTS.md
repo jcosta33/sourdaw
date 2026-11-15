@@ -15,6 +15,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `pres
 
 - Preferences are client-local and application-global — they must never be saved into project document files or synced across collaboration peers.
 - Storage writes must safely catch quota exceeded errors and corrupted JSON, falling back cleanly to `defaultPreferences`.
+- Saving a hosted provider while the AI execution backend is Automatic asks once whether to select it, because Automatic never sends a request to a hosted provider and the saved provider would otherwise go unused without a word. Only Yes changes the selector. The provider's identity (its kind, or an OpenAI-compatible endpoint by its normalized base URL; never a model, key or anything secret) is recorded in `hostedBackendQuestionAsked` when the question is shown, so dismissing it or closing Settings counts as no and a later save of the same provider does not ask again; Yes removes it, since the backend selection lasts one session and Automatic returns at the next launch.
 
 ## Verification
 
