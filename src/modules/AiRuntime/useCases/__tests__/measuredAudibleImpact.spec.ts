@@ -8,7 +8,7 @@ import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases'
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
-import { MAX_AUDIBLE_CLAIM_METRICS } from '../../models/AgentRun';
+import { AGENT_RUN_MAX_TEXT_LENGTH, MAX_AUDIBLE_CLAIM_METRICS } from '../../models/AgentRun';
 import {
     type MeasuredMetricDelta,
     type MeasuredPreview,
@@ -728,6 +728,20 @@ describe('the plan’s audible claim', () => {
         expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
     });
 
+    it('round-trips a claim over the master target unchanged through what the store wrote', () => {
+        proposeCard({
+            gain: 0.7,
+            preview: previewOf([vocalTarget({ targetId: 'master', targetKind: 'master' })]),
+        });
+        const before = audible();
+        if (before.status !== 'measured') {
+            throw new Error('Expected a measured claim.');
+        }
+        expect(before.metrics.every((metric) => metric.targetKind === 'master')).toBe(true);
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
+    });
+
     describe('the size of a claim', () => {
         const manyTargets = (count: number) =>
             Array.from({ length: count }, (_, index) => vocalTarget({ targetId: `target-${String(index)}` }));
@@ -772,6 +786,12 @@ describe('the plan’s audible claim', () => {
             firstMetric(claim).range as Record<string, unknown>;
         const metricFigure = (claim: StoredClaim, key: 'baseline' | 'preview' | 'delta'): Record<string, unknown> =>
             firstMetric(claim)[key] as Record<string, unknown>;
+
+        const NON_FINITE = [
+            ['NaN', Number.NaN],
+            ['Infinity', Number.POSITIVE_INFINITY],
+            ['-Infinity', Number.NEGATIVE_INFINITY],
+        ] as const;
 
         const CORRUPTIONS: Corruption[] = [
             {
@@ -873,12 +893,259 @@ describe('the plan’s audible claim', () => {
                 },
             },
             {
+                rule: 'a range sectionId that is a non-string value with a positive length',
+                base: 'measured',
+                edit: (claim) => {
+                    metricRange(claim).sectionId = ['chorus'];
+                },
+            },
+            {
                 rule: 'a range sectionId that is an empty string',
                 base: 'measured',
                 edit: (claim) => {
                     metricRange(claim).sectionId = '';
                 },
             },
+            {
+                rule: 'a range with no sectionId key',
+                base: 'measured',
+                edit: (claim) => {
+                    delete metricRange(claim).sectionId;
+                },
+            },
+            {
+                rule: 'a range with no startBeat',
+                base: 'measured',
+                edit: (claim) => {
+                    delete metricRange(claim).startBeat;
+                },
+            },
+            {
+                rule: 'a range with no endBeat',
+                base: 'measured',
+                edit: (claim) => {
+                    delete metricRange(claim).endBeat;
+                },
+            },
+            {
+                rule: 'a metric range that is null',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).range = null;
+                },
+            },
+            {
+                rule: 'a metric range that is an array',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).range = [];
+                },
+            },
+            {
+                rule: 'a metric that is null',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.metrics = [null as unknown as Record<string, unknown>];
+                },
+            },
+            {
+                rule: 'a metric that is an array',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.metrics = [[] as unknown as Record<string, unknown>];
+                },
+            },
+            {
+                rule: 'a metric that is an array carrying every field of a valid metric',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.metrics = [Object.assign([], firstMetric(claim))];
+                },
+            },
+            {
+                rule: 'metrics that are a number',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.metrics = 3 as unknown as Record<string, unknown>[];
+                },
+            },
+            {
+                rule: 'metrics that are a plain object',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.metrics = { length: 1 } as unknown as Record<string, unknown>[];
+                },
+            },
+            {
+                rule: 'a metric with no targetId',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).targetId;
+                },
+            },
+            {
+                rule: 'an empty targetId',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).targetId = '';
+                },
+            },
+            {
+                rule: 'a metric with no targetKind',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).targetKind;
+                },
+            },
+            {
+                rule: 'a metric with no metricId',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).metricId;
+                },
+            },
+            {
+                rule: 'a metric with no range',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).range;
+                },
+            },
+            {
+                rule: 'a metric with no baseline',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).baseline;
+                },
+            },
+            {
+                rule: 'a metric with no preview',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).preview;
+                },
+            },
+            {
+                rule: 'a metric with no delta',
+                base: 'measured',
+                edit: (claim) => {
+                    delete firstMetric(claim).delta;
+                },
+            },
+            {
+                rule: 'a baseline that is null',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).baseline = null;
+                },
+            },
+            {
+                rule: 'a preview that is an array',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).preview = [];
+                },
+            },
+            {
+                rule: 'a delta whose value is a string',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'delta').value = 'loud';
+                },
+            },
+            {
+                rule: 'a preview whose value is a string',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'preview').value = 'loud';
+                },
+            },
+            {
+                rule: 'a figure with no value',
+                base: 'measured',
+                edit: (claim) => {
+                    delete metricFigure(claim, 'baseline').value;
+                },
+            },
+            {
+                rule: 'a figure with no unit',
+                base: 'measured',
+                edit: (claim) => {
+                    delete metricFigure(claim, 'preview').unit;
+                },
+            },
+            {
+                rule: 'a delta with an empty unit',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'delta').unit = '';
+                },
+            },
+            {
+                rule: 'a preview with an empty unit',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'preview').unit = '';
+                },
+            },
+            {
+                rule: 'a unit one character over the text bound',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'baseline').unit = 'x'.repeat(AGENT_RUN_MAX_TEXT_LENGTH + 1);
+                },
+            },
+            {
+                rule: 'a reason one character over the text bound',
+                base: 'not-claimed',
+                edit: (claim) => {
+                    claim.reason = 'x'.repeat(AGENT_RUN_MAX_TEXT_LENGTH + 1);
+                },
+            },
+            {
+                rule: 'a revision one character over the text bound',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.revision = 'x'.repeat(AGENT_RUN_MAX_TEXT_LENGTH + 1);
+                },
+            },
+            {
+                rule: 'a measured claim with no batchContentHash',
+                base: 'measured',
+                edit: (claim) => {
+                    delete claim.batchContentHash;
+                },
+            },
+            {
+                rule: 'a measured claim with no metrics',
+                base: 'measured',
+                edit: (claim) => {
+                    delete claim.metrics;
+                },
+            },
+            {
+                rule: 'a status that is missing',
+                base: 'measured',
+                edit: (claim) => {
+                    delete claim.status;
+                },
+            },
+            ...NON_FINITE.flatMap(([label, bad]) => [
+                ...(['baseline', 'preview', 'delta'] as const).map((key): Corruption => ({
+                    rule: `a ${key} value that is ${label}`,
+                    base: 'measured',
+                    edit: (claim) => {
+                        metricFigure(claim, key).value = bad;
+                    },
+                })),
+                ...(['startBeat', 'endBeat'] as const).map((key): Corruption => ({
+                    rule: `a range ${key} that is ${label}`,
+                    base: 'measured',
+                    edit: (claim) => {
+                        metricRange(claim)[key] = bad;
+                    },
+                })),
+            ]),
         ];
 
         /** How many runs survive a reload of the stored state after `edit` rewrote its audible claim. */
