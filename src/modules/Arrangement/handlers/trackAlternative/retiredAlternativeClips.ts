@@ -10,16 +10,20 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import {
     type PositionedClipAutomationLaneSnapshot,
+    type PositionedTakeLaneSnapshot,
     type TrackAlternativeRetiredClipsSnapshot,
 } from '../../events/arrangementTrackAppActions';
+import { type TakeLane } from '../../models/TakeLane';
 import { getHeldClips } from '../../models/TrackAlternativeClips';
 import {
     normalizeClipSatelliteEntry,
     readClipSatelliteEntry,
     writeClipSatelliteEntry,
 } from '../../stores/clipSatelliteState';
+import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { removeClipSatelliteData } from '../../useCases/clip/removeClipSatelliteData';
+import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 
 type HeldClipsTrack = {
     activeAlternativeId: string;
@@ -39,7 +43,19 @@ export function findRetiredClipIds(trackBefore: HeldClipsTrack, tracksAfter: rea
     return Array.from(heldBefore).filter((id) => !heldAfter.has(id));
 }
 
-/** The rows the live stores hold for `clipIds`, lanes with their store index. */
+/** The named take lanes as the take-lane store holds them now, with their index. */
+export function readTakeLanes(laneIds: readonly string[]): PositionedTakeLaneSnapshot[] {
+    const ids = new Set(laneIds);
+    return (takeLaneStore.value?.lanes ?? []).flatMap((lane, laneIndex) =>
+        ids.has(lane.id) ? [{ laneIndex, lane: structuredClone(lane) }] : []
+    );
+}
+
+/**
+ * The rows the live stores hold for `clipIds`, lanes with their store index.
+ * The take lanes are the ones `removeTakesForClips` would rewrite or drop for
+ * these clips, captured whole.
+ */
 export function captureRetiredClips(clipIds: readonly string[]): TrackAlternativeRetiredClipsSnapshot {
     const ids = new Set(clipIds);
     const midi = midiStore.value;
@@ -53,6 +69,7 @@ export function captureRetiredClips(clipIds: readonly string[]): TrackAlternativ
     const clipAutomationLanes: PositionedClipAutomationLaneSnapshot[] = getAutomationLanes().flatMap((lane, index) =>
         lane.clipId !== undefined && ids.has(lane.clipId) ? [{ index, lane: structuredClone(lane) }] : []
     );
+    const takeLaneIds = captureRetiredTakeLanes(clipIds).map((retired) => retired.lane.id);
     return {
         clipIds: [...clipIds],
         midiNotesByClipId: pick(midi?.notesByClipId),
@@ -62,11 +79,19 @@ export function captureRetiredClips(clipIds: readonly string[]): TrackAlternativ
             .map((clipId) => readClipSatelliteEntry(clipId))
             .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null),
         clipAutomationLanes,
+        takeLaneIds,
+        takeLanes: readTakeLanes(takeLaneIds),
     };
 }
 
-/** The same clip ids holding no rows: what the stores hold once the delete ran. */
-export function emptyRetiredClips(clipIds: readonly string[]): TrackAlternativeRetiredClipsSnapshot {
+/**
+ * The same clips holding no rows, with the named take lanes as the store holds
+ * them: what the stores hold once the delete ran, so read after its writes.
+ */
+export function settledRetiredClips(
+    clipIds: readonly string[],
+    takeLaneIds: readonly string[]
+): TrackAlternativeRetiredClipsSnapshot {
     return {
         clipIds: [...clipIds],
         midiNotesByClipId: {},
@@ -74,7 +99,35 @@ export function emptyRetiredClips(clipIds: readonly string[]): TrackAlternativeR
         midiPitchBendByClipId: {},
         clipSatellites: [],
         clipAutomationLanes: [],
+        takeLaneIds: [...takeLaneIds],
+        takeLanes: readTakeLanes(takeLaneIds),
     };
+}
+
+function takeLanesMatchLive(snapshot: TrackAlternativeRetiredClipsSnapshot): boolean {
+    const liveLanes = takeLaneStore.value?.lanes ?? [];
+    return snapshot.takeLaneIds.every((laneId) =>
+        valuesEqual(
+            liveLanes.find((lane) => lane.id === laneId),
+            snapshot.takeLanes.find((entry) => entry.lane.id === laneId)?.lane
+        )
+    );
+}
+
+/**
+ * A track holds at most one take lane, so a lane the restore would insert
+ * collides with a lane a peer gave the same track in the meantime.
+ */
+function takeLaneInsertCollides(snapshot: TrackAlternativeRetiredClipsSnapshot): boolean {
+    const named = new Set(snapshot.takeLaneIds);
+    const foreignTrackIds = new Set(
+        (takeLaneStore.value?.lanes ?? []).filter((lane) => !named.has(lane.id)).map((lane) => lane.trackId)
+    );
+    return snapshot.takeLanes.some((entry) => foreignTrackIds.has(entry.lane.trackId));
+}
+
+function decodedTakeLanes(snapshot: TrackAlternativeRetiredClipsSnapshot): TakeLane[] | null {
+    return decodeExactTakeLaneSnapshots(snapshot.takeLanes.map((entry) => entry.lane));
 }
 
 function lanesOf(snapshot: TrackAlternativeRetiredClipsSnapshot): ClipAutomationLaneSnapshot[] {
@@ -126,8 +179,10 @@ function midiIsRestorable(snapshot: TrackAlternativeRetiredClipsSnapshot): boole
 
 /**
  * Whether a restore may move these clips' rows from `expected` to `replacement`:
- * both sides name the same clips, the live stores hold exactly `expected` for
- * them, and no lane `replacement` adds back collides with a live lane id.
+ * both sides name the same clips and take lanes, the live stores hold exactly
+ * `expected` for them, no automation lane `replacement` adds back collides with
+ * a live lane id, and no take lane it puts back collides with another lane on
+ * its track.
  */
 export function retiredClipsTransitionIsAdmissible(
     expected: TrackAlternativeRetiredClipsSnapshot,
@@ -135,6 +190,10 @@ export function retiredClipsTransitionIsAdmissible(
 ): boolean {
     return (
         valuesEqual(expected.clipIds, replacement.clipIds) &&
+        valuesEqual(expected.takeLaneIds, replacement.takeLaneIds) &&
+        decodedTakeLanes(replacement) !== null &&
+        takeLanesMatchLive(expected) &&
+        !takeLaneInsertCollides(replacement) &&
         midiIsRestorable(replacement) &&
         midiMatchesLive(expected) &&
         satellitesMatchLive(expected) &&
@@ -201,4 +260,29 @@ export function applyRetiredClipRows(
             (clipId) => !restoredSatelliteIds.has(clipId) && !lanedClipIds.has(clipId) && !hasMidi(replacement, clipId)
         )
     );
+}
+
+/**
+ * The named take lanes become exactly what `replacement` holds, each at its
+ * captured index; every other lane is left where it is. Run only after
+ * `retiredClipsTransitionIsAdmissible` admitted the move.
+ */
+export function applyRetiredTakeLanes(
+    expected: TrackAlternativeRetiredClipsSnapshot,
+    replacement: TrackAlternativeRetiredClipsSnapshot
+): void {
+    const state = takeLaneStore.value;
+    const restored = decodedTakeLanes(replacement);
+    if (!state || !restored || (expected.takeLanes.length === 0 && replacement.takeLanes.length === 0)) {
+        return;
+    }
+    const named = new Set(replacement.takeLaneIds);
+    const lanes = state.lanes.filter((lane) => !named.has(lane.id));
+    const placed = replacement.takeLanes
+        .map((entry, position) => ({ laneIndex: entry.laneIndex, lane: restored[position]! }))
+        .toSorted((left, right) => left.laneIndex - right.laneIndex);
+    for (const { laneIndex, lane } of placed) {
+        lanes.splice(Math.min(Math.max(laneIndex, 0), lanes.length), 0, lane);
+    }
+    takeLaneStore.set({ lanes });
 }

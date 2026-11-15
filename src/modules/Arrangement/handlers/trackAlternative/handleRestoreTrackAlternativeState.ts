@@ -9,6 +9,7 @@ import { isRestorableAlternatives, isRestorableClips } from './isRestorableAlter
 import {
     applyRetiredClipLanes,
     applyRetiredClipRows,
+    applyRetiredTakeLanes,
     retiredClipsTransitionIsAdmissible,
 } from './retiredAlternativeClips';
 
@@ -59,7 +60,7 @@ function readRetiredClipsTransition(
 /**
  * Inverse and redo of `deleteTrackAlternative`. Deletion drops the alternative, may
  * promote a different one, rewrites the track's live clips, and retires the MIDI,
- * satellite and clip-lane rows of the clips the alternative held — all of it comes
+ * satellite, clip-lane and take rows of the clips the alternative held — all of it comes
  * back (or goes forward again, for redo) together in one guarded write.
  */
 export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlternativeState'>({
@@ -126,6 +127,7 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
         });
         if (retiredClips.kind === 'move') {
             applyRetiredClipRows(retiredClips.expected, retiredClips.replacement);
+            applyRetiredTakeLanes(retiredClips.expected, retiredClips.replacement);
         }
 
         return { status: 'written' };

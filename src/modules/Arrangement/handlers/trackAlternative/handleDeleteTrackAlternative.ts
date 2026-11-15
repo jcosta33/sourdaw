@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 
 import { type TrackAlternativeStateSnapshot } from '../../events/arrangementTrackAppActions';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
@@ -11,8 +12,8 @@ import {
     applyRetiredClipLanes,
     applyRetiredClipRows,
     captureRetiredClips,
-    emptyRetiredClips,
     findRetiredClipIds,
+    settledRetiredClips,
 } from './retiredAlternativeClips';
 
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
@@ -155,12 +156,14 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
         // removal retires them. Captured before the write so undo can put them back.
         const retiredClipIds = findRetiredClipIds(targetTrack, tracksAfter);
         const retiredClips = captureRetiredClips(retiredClipIds);
-        const settledClips = emptyRetiredClips(retiredClipIds);
-        if (!applyRetiredClipLanes(retiredClips, settledClips)) {
+        const clearedClips = settledRetiredClips(retiredClipIds, []);
+        if (!applyRetiredClipLanes(retiredClips, clearedClips)) {
             return toHandlerExecutionResult(false);
         }
         setTrackStoreState({ ...state, tracks: tracksAfter });
-        applyRetiredClipRows(retiredClips, settledClips);
+        applyRetiredClipRows(retiredClips, clearedClips);
+        removeTakesForClips(retiredClipIds);
+        const settledClips = settledRetiredClips(retiredClipIds, retiredClips.takeLaneIds);
 
         const pending = pendingDeletionSnapshots.get(action);
         if (pending) {

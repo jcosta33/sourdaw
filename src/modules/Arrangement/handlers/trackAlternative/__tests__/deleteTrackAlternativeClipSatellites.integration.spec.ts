@@ -90,7 +90,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -211,7 +211,32 @@ const seededLanes = [
     trackLane('lane-tail', 'a'),
 ];
 
+function take(id: string, clipId: string, startBeat: number) {
+    return { id, clipId, name: id, startBeat, endBeat: startBeat + 2, selected: false };
+}
+
+function takeLane(id: string, trackId: string, takes: ReturnType<typeof take>[]) {
+    return {
+        id,
+        trackId,
+        takes,
+        activeCompRegions: takes.map((candidate) => ({
+            takeId: candidate.id,
+            startBeat: candidate.startBeat,
+            endBeat: candidate.endBeat,
+        })),
+    };
+}
+
+// A's lane holds only `c`'s take, so retiring `c` drops the whole lane, and it
+// sits before B's lane, so a restore that appended it would show in the order.
+const seededTakeLanes = [
+    takeLane('takes-a', 'a', [take('take-c', 'c', 0)]),
+    takeLane('takes-b', 'b', [take('take-x', 'x', 0)]),
+];
+
 let seededTracks: ReturnType<typeof trackA>[] = [];
+let expectedTakeLanes: ReturnType<typeof takeLane>[] = [];
 
 function seedStores(): void {
     trackStore.set({ tracks: [trackA(), trackB()], selectedTrackId: null, ghostClips: [] });
@@ -219,6 +244,7 @@ function seedStores(): void {
     // what the store held rather than the fixture's unnormalized shape.
     seededTracks = structuredClone(trackStore.value!.tracks);
     automationStore.set({ lanes: structuredClone(seededLanes) });
+    seedTakeLanes(seededTakeLanes);
     midiStore.set({
         probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
         notesByClipId: Object.fromEntries(clipIds.map((id) => [id, midiByClip[id].notes])),
@@ -228,6 +254,15 @@ function seedStores(): void {
     for (const clipId of clipIds) {
         setEnvelope(clipId, gainEnvelope(clipId));
     }
+}
+
+function seedTakeLanes(lanes: ReturnType<typeof takeLane>[]): void {
+    takeLaneStore.set({ lanes: structuredClone(lanes) });
+    expectedTakeLanes = structuredClone(takeLaneStore.value!.lanes);
+}
+
+function takeIdsByLane(): string[][] {
+    return takeLaneStore.value!.lanes.map((lane) => [lane.id, ...lane.takes.map((candidate) => candidate.id)]);
 }
 
 function expectClipDataPresent(clipId: (typeof clipIds)[number]): void {
@@ -254,6 +289,7 @@ function laneIds(): string[] {
 function expectSeededState(): void {
     expect(trackStore.value!.tracks).toEqual(seededTracks);
     expect(automationStore.value!.lanes).toEqual(seededLanes);
+    expect(takeLaneStore.value!.lanes).toEqual(expectedTakeLanes);
     for (const clipId of clipIds) {
         expectClipDataPresent(clipId);
     }
@@ -287,6 +323,7 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
         midiStore.set({
             probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: {},
@@ -308,6 +345,7 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         expectClipDataPresent('live');
         expectClipDataPresent('x');
         expect(laneIds()).toEqual(['lane-track', 'lane-live', 'lane-x', 'lane-tail']);
+        expect(takeIdsByLane()).toEqual([['takes-b', 'take-x']]);
 
         await undo();
         expectSeededState();
@@ -317,6 +355,7 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         expectClipDataRetired('c');
         expectClipDataPresent('live');
         expectClipDataPresent('x');
+        expect(takeIdsByLane()).toEqual([['takes-b', 'take-x']]);
 
         await undo();
         expectSeededState();
@@ -324,6 +363,12 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
     });
 
     it("retires only the active alternative's live clips, never a clip its stale copy names on another track", async () => {
+        // A take on the moved clip `x` sits in A's lane too: `x` is B's clip now,
+        // so its take stays with the lane.
+        seedTakeLanes([
+            takeLane('takes-a', 'a', [take('take-c', 'c', 0), take('take-live', 'live', 2), take('take-xa', 'x', 4)]),
+            seededTakeLanes[1]!,
+        ]);
         await executeAppAction(
             { type: 'deleteTrackAlternative', payload: { trackId: 'a', alternativeId: 'alt-1' } },
             { source: 'manual' }
@@ -335,6 +380,14 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         expectClipDataPresent('c');
         expectClipDataPresent('x');
         expect(laneIds()).toEqual(['lane-track', 'lane-c', 'lane-x', 'lane-tail']);
+        expect(takeIdsByLane()).toEqual([
+            ['takes-a', 'take-c', 'take-xa'],
+            ['takes-b', 'take-x'],
+        ]);
+        expect(takeLaneStore.value!.lanes[0]!.activeCompRegions.map((region) => region.takeId)).toEqual([
+            'take-c',
+            'take-xa',
+        ]);
 
         await undo();
         expectSeededState();
@@ -343,6 +396,10 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         expectClipDataRetired('live');
         expectClipDataPresent('c');
         expectClipDataPresent('x');
+        expect(takeIdsByLane()).toEqual([
+            ['takes-a', 'take-c', 'take-xa'],
+            ['takes-b', 'take-x'],
+        ]);
 
         await undo();
         expectSeededState();
@@ -382,5 +439,38 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         await redo();
         expectClipDataRetired('c');
         expectClipDataPresent('live');
+    });
+
+    it('refuses an undo once a peer gave the track another take lane, writes nothing, and undoes once it is gone', async () => {
+        await executeAppAction(
+            { type: 'deleteTrackAlternative', payload: { trackId: 'a', alternativeId: 'alt-2' } },
+            { source: 'manual' }
+        );
+        expect(takeIdsByLane()).toEqual([['takes-b', 'take-x']]);
+        const peerTakeLane = takeLane('takes-peer', 'a', [take('take-peer', 'live', 0)]);
+        takeLaneStore.set({ lanes: [...takeLaneStore.value!.lanes, peerTakeLane] });
+        const tracksBeforeUndo = structuredClone(trackStore.value!.tracks);
+        const lanesBeforeUndo = structuredClone(automationStore.value!.lanes);
+        const takeLanesBeforeUndo = structuredClone(takeLaneStore.value!.lanes);
+
+        const refused = await undo();
+        expect(refused.headConsumed).toBe(false);
+        expect(trackStore.value!.tracks).toEqual(tracksBeforeUndo);
+        expect(automationStore.value!.lanes).toEqual(lanesBeforeUndo);
+        expect(takeLaneStore.value!.lanes).toEqual(takeLanesBeforeUndo);
+        expect(midiStore.value!.notesByClipId.c).toBeUndefined();
+
+        await redo();
+        expect(trackStore.value!.tracks).toEqual(tracksBeforeUndo);
+        expect(takeLaneStore.value!.lanes).toEqual(takeLanesBeforeUndo);
+
+        takeLaneStore.set({ lanes: takeLaneStore.value!.lanes.filter((lane) => lane.id !== 'takes-peer') });
+        const accepted = await undo();
+        expect(accepted.headConsumed).toBe(true);
+        expectSeededState();
+
+        await redo();
+        expectClipDataRetired('c');
+        expect(takeIdsByLane()).toEqual([['takes-b', 'take-x']]);
     });
 });
