@@ -15,8 +15,8 @@ describe('handleSetLayerFades', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards region id and fade values', () => {
-        handleSetLayerFades.execute({
+    it('forwards region id and fade values', async () => {
+        await handleSetLayerFades.execute({
             type: 'setLayerFades',
             payload: { regionId: 'R', fadeInBeats: 0.5, fadeOutBeats: 1 },
         });

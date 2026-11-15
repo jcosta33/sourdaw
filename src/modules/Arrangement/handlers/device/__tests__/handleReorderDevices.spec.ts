@@ -127,7 +127,7 @@ describe('handleReorderDevices', () => {
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
     });
 
-    it('validates and executes against planned same-batch topology after an earlier same-track add', () => {
+    it('validates and executes against planned same-batch topology after an earlier same-track add', async () => {
         const currentTrack = createAudioTrack();
         const addDeviceAction: AddDeviceAction = createAddDeviceAction();
         const reorderAction: ReorderDevicesAction = createReorderAction();
@@ -176,7 +176,7 @@ describe('handleReorderDevices', () => {
         expect(mocks.reorderDevicesInProject).toHaveBeenCalledTimes(1);
         expect(mocks.reorderDevicesInProject).toHaveBeenCalledWith('audio-1', afterTrack.devices);
 
-        result.afterCommit();
+        await result.afterCommit();
 
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
             before: expectedBeforeTrack,

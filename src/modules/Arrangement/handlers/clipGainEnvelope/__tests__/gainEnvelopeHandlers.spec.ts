@@ -61,9 +61,9 @@ describe('handleToggleClipGainEnvelope', () => {
         expect(toggleClipGainEnvelope).not.toHaveBeenCalled();
     });
 
-    it('toggles when the pre-toggle value matches', () => {
+    it('toggles when the pre-toggle value matches', async () => {
         mockedGetEnvelope.mockReturnValue({ ...priorEnvelope, enabled: true });
-        handleToggleClipGainEnvelope.execute({
+        await handleToggleClipGainEnvelope.execute({
             type: 'toggleClipGainEnvelope',
             payload: { clipId: 'clip-vox', expectedEnabled: true },
         });
@@ -96,13 +96,13 @@ describe('handleToggleClipGainEnvelope', () => {
 });
 
 describe('handleAddGainEnvelopePoint', () => {
-    it('executes with a minted point id the inverse removes', () => {
+    it('executes with a minted point id the inverse removes', async () => {
         mockedGetEnvelope.mockReturnValue(priorEnvelope);
         const action: Extract<AppAction, { type: 'addGainEnvelopePoint' }> = {
             type: 'addGainEnvelopePoint',
             payload: { clipId: 'clip-vox', beatOffset: 2, gainDb: -3 },
         };
-        handleAddGainEnvelopePoint.execute(action);
+        await handleAddGainEnvelopePoint.execute(action);
         const [, , , pointId] = vi.mocked(addGainEnvelopePoint).mock.calls[0]!;
         expect(pointId).toMatch(/^gep-/);
         expect(action.payload.pointId).toBe(pointId);
@@ -127,8 +127,8 @@ describe('handleAddGainEnvelopePoint', () => {
 });
 
 describe('handleRemoveGainEnvelopePoint', () => {
-    it('executes the removal through the use case', () => {
-        handleRemoveGainEnvelopePoint.execute({
+    it('executes the removal through the use case', async () => {
+        await handleRemoveGainEnvelopePoint.execute({
             type: 'removeGainEnvelopePoint',
             payload: { clipId: 'clip-vox', pointId: 'p2' },
         });
@@ -158,9 +158,9 @@ describe('handleRemoveGainEnvelopePoint', () => {
 });
 
 describe('handleResetClipGainEnvelope', () => {
-    it('executes the reset and inverts onto the whole prior envelope', () => {
+    it('executes the reset and inverts onto the whole prior envelope', async () => {
         mockedGetEnvelope.mockReturnValue(priorEnvelope);
-        handleResetClipGainEnvelope.execute({ type: 'resetClipGainEnvelope', payload: { clipId: 'clip-vox' } });
+        await handleResetClipGainEnvelope.execute({ type: 'resetClipGainEnvelope', payload: { clipId: 'clip-vox' } });
         expect(resetClipGainEnvelope).toHaveBeenCalledWith('clip-vox');
         const { inverseAction } = handleResetClipGainEnvelope.describe({
             type: 'resetClipGainEnvelope',
@@ -186,8 +186,8 @@ describe('handleResetClipGainEnvelope', () => {
 });
 
 describe('handleSetClipGainEnvelope', () => {
-    it('stores a thawed copy of the snapshot envelope', () => {
-        handleSetClipGainEnvelope.execute({
+    it('stores a thawed copy of the snapshot envelope', async () => {
+        await handleSetClipGainEnvelope.execute({
             type: 'setClipGainEnvelope',
             payload: { clipId: 'clip-vox', envelope: priorEnvelope },
         });
