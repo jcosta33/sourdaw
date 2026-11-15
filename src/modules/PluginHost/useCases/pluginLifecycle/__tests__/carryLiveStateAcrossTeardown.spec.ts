@@ -7,8 +7,9 @@ import {
 } from '../../../stores/externalPluginActivationStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { beginProjectSessionPluginRetirement } from '../beginProjectSessionPluginRetirement';
-import { carriedExternalPluginStates } from '../carriedExternalPluginStates';
+import { carriedExternalPluginStateFence, carriedExternalPluginStates } from '../carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
+import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures';
 import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { markExternalPluginRestoreFailure } from '../markExternalPluginRestoreFailure';
@@ -229,6 +230,34 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
             expect(carriedExternalPluginStates.size).toBe(0);
             await activate(SAVED_CHUNK);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it.each([
+            ['the removal unload', () => unloadPluginCarryingLiveState(INSTANCE_ID)],
+            [
+                'the engine retire',
+                async () => {
+                    const reading = await readExternalPluginStatesBeforeEngineRetire();
+                    reading.commit([INSTANCE_ID]);
+                    forgetRetiredPluginInstances([INSTANCE_ID]);
+                },
+            ],
+        ])('reads nothing for an instance marked as a failed restore before %s', async (_label, teardown) => {
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+            await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(true);
+            mocks.setPluginState.mockClear();
+            // A read reaching the bridge would reject and warn the user.
+            mocks.getPluginState.mockRejectedValue(new Error('control lock timed out'));
+
+            await teardown();
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
+
+            expect(mocks.getPluginState).not.toHaveBeenCalled();
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(warnings()).toEqual([]);
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
 
@@ -566,6 +595,36 @@ describe('live plugin state across an app-initiated teardown', () => {
 
             expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
             // A later plain unload restores the project chunk, not the stale read.
+            await unloadPlugin(INSTANCE_ID);
+            mocks.setPluginState.mockClear();
+            await activate(SAVED_CHUNK);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('plants no carry on an instance the incoming project reactivated back to the stamped slot', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const stamp = carriedExternalPluginStateFence.slotVersion(INSTANCE_ID);
+            expect(stamp).toBeGreaterThan(0);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            // The project replacement drops the carries and their slot versions.
+            await unloadPlugin();
+            expect(carriedExternalPluginStateFence.slotVersion(INSTANCE_ID)).toBe(0);
+            // The incoming project brings the same persisted instance id back;
+            // each activation advances the slot by one, so the slot climbs back
+            // to the stamp and only the generation fence still tells them apart.
+            for (let activation = 1; activation <= stamp; activation += 1) {
+                if (activation > 1) {
+                    await unloadPlugin(INSTANCE_ID);
+                }
+                await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            }
+            expect(carriedExternalPluginStateFence.slotVersion(INSTANCE_ID)).toBe(stamp);
+            reading.commit([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            expect(warnings()).toEqual([]);
+            // A later plain unload restores the incoming project's chunk, not the stale read.
             await unloadPlugin(INSTANCE_ID);
             mocks.setPluginState.mockClear();
             await activate(SAVED_CHUNK);
