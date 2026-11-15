@@ -479,6 +479,24 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         expect(newestCommittedTrackIds().toSorted()).toEqual([...expected].toSorted());
     });
 
+    it('asks which Lead again for an ordinal past the Leads, changing nothing', async () => {
+        scriptProvider([[VOCALS_DOWN_3_DB]]);
+        await commitVocalsDown3Db();
+        const commits = undoHistoryStore.value?.past.length ?? 0;
+        const lastCommit = readChatThreadContext()?.lastCommit;
+
+        await sendChatMessage('the third Lead too');
+
+        expect(lastAssistantMessage()?.content).toContain(
+            'the first Lead or the second Lead, counting from the top of the track list?'
+        );
+        expect(proposedIds()).toEqual([]);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(commits);
+        expect(readChatThreadContext()?.lastCommit).toEqual(lastCommit);
+        expect(decibelsOf('lead-a')).toBe(0);
+        expect(decibelsOf('lead-b')).toBe(0);
+    });
+
     it('a whole-name match wins over an ordinal reading', async () => {
         setProjectTracks([
             ['track-vocals', 'Vocals'],
@@ -510,7 +528,7 @@ describe('re-targeting a last commit onto same-named tracks', () => {
     });
 
     it.each<readonly [prompt: string, tracks: ReadonlyArray<NamedTrack>, status: string]>([
-        ['the third Lead', TWO_LEADS, 'unread'],
+        ['the third Lead', TWO_LEADS, 'ambiguous'],
         ['the second Bass', TWO_LEADS, 'unread'],
         ['the second', TWO_LEADS, 'unread'],
         ['track 2', TWO_LEADS, 'unread'],
@@ -519,7 +537,7 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         ['Lead 2', TWO_LEADS, 'ambiguous'],
         ['the zeroth Lead', TWO_LEADS, 'ambiguous'],
         ['the second Lead', THREE_LEADS, 'named'],
-        ['the fourth Lead', THREE_LEADS, 'unread'],
+        ['the fourth Lead', THREE_LEADS, 'ambiguous'],
     ])('reads "%s" against its project', (prompt, tracks, status): void => {
         setProjectTracks(tracks);
 

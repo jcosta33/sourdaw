@@ -46,12 +46,13 @@ function orderAmongSameName(track: ListedTrack, tracks: readonly ListedTrack[]):
     return tracks.filter((candidate) => sameName(candidate.name, track.name)).findIndex((c) => c.id === track.id) + 1;
 }
 
-type OrdinalReading = { status: 'read'; ranges: NamedRange[] } | { status: 'beyond-the-tracks' };
+type OrdinalReading =
+    { status: 'read'; ranges: NamedRange[] } | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] };
 
 /**
  * The "[the] second Lead" references of the text, each the k-th track of that whole name. A phrase
  * that is itself a track's whole name ("First Lead") is left to the name reading, and an ordinal past
- * the tracks sharing the name reads nothing at all.
+ * the tracks sharing the name reads nothing but names those tracks, so the caller can ask which.
  */
 function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): OrdinalReading {
     const names = [...new Set(tracks.map((track) => track.name.toLowerCase()))].toSorted(
@@ -75,7 +76,7 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
             const sharing = tracks.filter((track) => sameName(track.name, name));
             const target = sharing[ORDINAL_WORDS.indexOf(match[1]!.toLowerCase())];
             if (target === undefined) {
-                return { status: 'beyond-the-tracks' };
+                return { status: 'beyond-the-tracks', text: match[0], sharing };
             }
             ranges.push({ id: target.id, start, end });
         }
@@ -108,7 +109,15 @@ export function readNamedTracks(text: string, context: ProjectContext): NamedTra
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
     if (ordinal.status === 'beyond-the-tracks') {
-        return { status: 'unread' };
+        // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
+        if (ordinal.sharing.length < 2) {
+            return { status: 'unread' };
+        }
+        return {
+            status: 'ambiguous',
+            text: ordinal.text,
+            candidates: ordinal.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
+        };
     }
     const ranges = [
         ...getBestAgentReferenceNameRanges(blank(text, ordinal.ranges), tracks, 'with-number-forms'),
