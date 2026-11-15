@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "85c1a5e0ff51c604dc5e399eec8c5cc92168e114730c3a9a3cf107591e83a94b",
+        "cargoLockSha256": "351943cd5aa4a889c19b2530e97de22fcb9263183f140b392d450a1d42e3c6a2",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -9,7 +9,7 @@
             },
             {
                 "path": "Cargo.toml",
-                "sha256": "72e703a4b8c90e8c7e40e31a5c9c6d664cd4801b6b01a48f2225f0150a2cee0e"
+                "sha256": "f42a7621fb6f4a71daa5843d75b766d8567147e2c986e5d2ed31b9cbf2fc610f"
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
@@ -53,7 +53,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "035f6fa152751956685e47513a2eecab7cc447af045b77884e0a6dff22097e96"
+                "sha256": "41dfcba30142de82f0d47880dcfaad4f33c3f40c239d3d314eafcf3377566941"
             },
             {
                 "path": "electron-builder.yml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "ad4b9b7d3c5c959be946b7127fed7c03a1089930f2c44f1cd743e41ce05bf144"
+                "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -491,7 +491,7 @@
             },
             {
                 "name": "bumpalo",
-                "version": "3.20.3",
+                "version": "3.20.4",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -1034,7 +1034,7 @@
             },
             {
                 "name": "ctor",
-                "version": "1.0.13",
+                "version": "1.0.14",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
@@ -2686,7 +2686,7 @@
             },
             {
                 "name": "libloading",
-                "version": "0.9.0",
+                "version": "0.9.1",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "ISC",
                 "legalFiles": [
@@ -2743,6 +2743,32 @@
                     {
                         "label": "LICENSE",
                         "sha256": "d6b63b280f7998e4a5e9e21c7b0d2dbe79426e1b28a75e39e41bb8feae0f8b03"
+                    }
+                ]
+            },
+            {
+                "name": "link-section",
+                "version": "0.19.4",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "Apache-2.0 OR MIT",
+                "legalFiles": [
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae"
+                    },
+                    {
+                        "label": "LICENSE-MIT",
+                        "sha256": "bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae"
+                    },
+                    {
+                        "label": "LICENSE-MIT",
+                        "sha256": "bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3"
                     }
                 ]
             },
@@ -2982,7 +3008,7 @@
             },
             {
                 "name": "mio",
-                "version": "1.2.4",
+                "version": "1.2.5",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [
@@ -4266,7 +4292,7 @@
             },
             {
                 "name": "rubato",
-                "version": "5.0.1",
+                "version": "5.1.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -4517,7 +4543,7 @@
             },
             {
                 "name": "rustls-webpki",
-                "version": "0.103.16",
+                "version": "0.103.17",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "ISC",
                 "legalFiles": [
@@ -8561,17 +8587,6 @@
                 ]
             }
         },
-        "npm:ws@8.22.2": {
-            "source": "https://registry.npmjs.org/ws/-/ws-8.22.2.tgz",
-            "revision": "sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==",
-            "files": [
-                {
-                    "archivePath": "release/dependency-license-proofs/ws-8.22.2.tgz",
-                    "sourcePath": "LICENSE",
-                    "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
-                }
-            ]
-        },
         "cargo:com-scrape-types@0.1.1": {
             "source": "https://crates.io/api/v1/crates/com-scrape-types/0.1.1/download",
             "revision": "sha256:5ce183b975b8fc736a20919c4002717255fbd867df575c792aeefa9a56a73ad0",
@@ -8631,6 +8646,17 @@
                     "Apache-2.0"
                 ]
             }
+        },
+        "npm:ws@8.23.0": {
+            "source": "https://registry.npmjs.org/ws/-/ws-8.23.0.tgz",
+            "revision": "sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==",
+            "files": [
+                {
+                    "archivePath": "release/dependency-license-proofs/ws-8.23.0.tgz",
+                    "sourcePath": "LICENSE",
+                    "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
+                }
+            ]
         }
     }
 }

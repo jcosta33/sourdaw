@@ -64,7 +64,7 @@ fn block_at(offset: usize) -> (Vec<f32>, Vec<f32>) {
 /// `process` returns.
 unsafe fn read_output(ptr: *const f32) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
-    (0..BLOCK).map(|i| *ptr.add(i)).collect()
+    (0..BLOCK).map(|i| unsafe { *ptr.add(i) }).collect()
 }
 
 fn peak(samples: &[f32]) -> f32 {

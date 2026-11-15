@@ -5,13 +5,7 @@ import {
     type ModulatorSnapshot,
 } from '#/utils/handlerContract';
 
-export type SendAutomationRangeSnapshot = {
-    sectionId: string;
-    sectionName: string;
-    startBeat: number;
-    endBeat: number;
-    automationStartBeat: number;
-};
+import { type SendAutomationRangeSnapshot } from '../models/SendAutomationRangeSnapshot';
 
 export type AutomationAppAction =
     | { type: 'addModulator'; payload: { modulator: Omit<ModulatorSnapshot, 'id'>; modulatorId?: string } }

@@ -36,7 +36,7 @@ pub(super) fn finish_yin(
             for tau in min_tau..=max_tau {
                 if cmnd[tau] < threshold {
                     let mut t0 = tau;
-                    while t0 + 1 <= max_tau && cmnd[t0 + 1] < cmnd[t0] {
+                    while t0 < max_tau && cmnd[t0 + 1] < cmnd[t0] {
                         t0 += 1;
                     }
                     pick = Some(t0);

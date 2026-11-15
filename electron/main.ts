@@ -11,6 +11,7 @@
  * the renderer takes its native paths through the surface below.
  */
 import { createRequire } from 'node:module';
+import { totalmem } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import {
@@ -30,6 +31,7 @@ import {
 import {
     registerDialogChannels,
     registerPathChannels,
+    registerSystemChannels,
     registerScanCommand,
     registerNativeMenuChannels,
     registerWindowControlChannels,
@@ -842,6 +844,11 @@ if (isPrimaryApplicationInstance) {
             // also resolves from worker and worklet contexts.
             samplesBaseUrl: `${APP_ORIGIN}/samples`,
             join,
+        });
+        registerSystemChannels({
+            ipcMain,
+            isTrustedFrameUrl: isAllowedFrameUrl,
+            totalMemoryBytes: totalmem,
         });
         registerWindowControlChannels({
             ipcMain,

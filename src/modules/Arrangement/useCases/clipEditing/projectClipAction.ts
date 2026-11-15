@@ -346,6 +346,10 @@ const projectClipActionByActionType: {
     captureScratchPad: keepState,
     commitScratchPad: keepState,
     clearScratchPad: keepState,
+    removeScratchPadSection: keepState,
+    renameScratchPadSection: keepState,
+    reorderScratchPadSection: keepState,
+    setScratchPadSectionColor: keepState,
     createPatternInstance: keepState,
     detachPatternInstance: keepState,
     restorePatternInstanceLink: keepState,
@@ -428,6 +432,9 @@ function lookup<Type extends AppActionType>(
     state: ShiftedOwnerState,
     trackIds: readonly string[]
 ): ShiftedOwnerState | null {
+    if (!Object.hasOwn(projectClipActionByActionType, action.type)) {
+        return keepState(action, state);
+    }
     return projectClipActionByActionType[action.type](action, state, trackIds);
 }
 

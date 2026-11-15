@@ -42,7 +42,7 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
-import { advertisedAnswerCandidateId } from './answerWireFixture';
+import { advertisedAnswerCandidateId, advertisedAnswerSchema } from './answerWireFixture';
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import {
     configureMetricGoalProject,
@@ -54,6 +54,34 @@ import {
 } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
+
+// A committed mute builds a live strip on this context, which jsdom leaves without a stereo panner.
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    function AudioContextWithStereoPanner(options?: AudioContextOptions): AudioContext {
+        return Object.assign(new OriginalAudioContext(options), {
+            currentTime: 0,
+            createStereoPanner: () => ({
+                connect: (destination: unknown) => destination,
+                disconnect: () => undefined,
+                pan: createAudioParam(0),
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithStereoPanner,
+    });
+});
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
@@ -325,10 +353,12 @@ describe('actual current-preview comparison approval', () => {
         }
         expect(getAgentApprovalView({ confirmationId })?.canConfirm).toBe(false);
         agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
-        expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({
+        const refused = await confirmPendingChatActions({ confirmationId });
+        expect(refused).toMatchObject({
             status: 'failed',
             reason: expect.stringMatching(/objective|metric|measure/u),
         });
+        expect(refused).not.toMatchObject({ reason: 'The approved trust mode or risk policy no longer matches.' });
         expect(trackStore.value).toEqual(before.tracks);
         expect(undoHistoryStore.value).toEqual(before.undo);
         expect(captureProjectRevision()).toBe(before.revision);
@@ -2151,5 +2181,678 @@ describe('request figures across a refinement chain', () => {
         expect(metricGoalStateCodec(JSON.stringify(refined))).toEqual(refined);
         expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: [1] }))).toBeNull();
         expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: 'Raise Drums' }))).toBeNull();
+    });
+});
+
+type Quality = {
+    word: string;
+    prompt: string;
+    metricId: string;
+    policyId: string;
+    relation: string;
+    /** The mix-knob value on Drums Trim that carries the subject past the reference. */
+    passing: number;
+    /** A value that raises the subject from its own baseline but leaves it on the wrong side of Bass. */
+    wrongSide: number;
+    shape: (level: number, seconds: number) => AudioBuffer;
+};
+
+const TONE_HZ = 1000;
+
+function tone(amplitude: number, hz: number) {
+    return (time: number) => amplitude * Math.sin(2 * Math.PI * hz * time);
+}
+
+/** A stereo buffer whose channels differ, which the mono-duplicating fixture cannot build. */
+function stereoBuffer(left: (time: number) => number, right: (time: number) => number, seconds: number): AudioBuffer {
+    const buffer = metricGoalAudioBuffer(left, seconds);
+    const data = buffer.getChannelData(1);
+    for (let frame = 0; frame < buffer.length; frame++) {
+        data[frame] = right(frame / buffer.sampleRate);
+    }
+    return buffer;
+}
+
+/** Each shape makes its metric rise with the level, so the measured figures decide every verdict. */
+const SHAPES = {
+    loudness: (level: number, seconds: number) =>
+        metricGoalAudioBuffer(tone(0.1 * 10 ** (level / 20), TONE_HZ), seconds),
+    brightness: (level: number, seconds: number) => metricGoalAudioBuffer(tone(0.3, 500 * 2 ** (level / 6)), seconds),
+    width: (level: number, seconds: number) => {
+        const side = Math.min(1, Math.max(0, level / 12));
+        const left = tone(0.3, TONE_HZ);
+        const right = tone(0.3 * (1 - 2 * side), TONE_HZ);
+        return stereoBuffer(left, right, seconds);
+    },
+    // A gated tone keeps its peak and loses rms as the gate narrows, so crest factor rises with the level.
+    dynamics: (level: number, seconds: number) => {
+        const duty = 10 ** (-level / 10);
+        const wave = tone(0.3, TONE_HZ);
+        return metricGoalAudioBuffer((time) => (time % 0.1 < 0.1 * duty ? wave(time) : 0), seconds);
+    },
+};
+
+const QUALITIES: Quality[] = [
+    {
+        word: 'loudness higher',
+        prompt: 'Make Drums louder than Bass over Chorus',
+        metricId: 'integratedLoudness',
+        policyId: 'integrated-loudness-comparison-v1',
+        relation: 'greater-than-current',
+        passing: 12,
+        wrongSide: 3,
+        shape: SHAPES.loudness,
+    },
+    {
+        word: 'loudness as loud as',
+        prompt: 'Make Drums as loud as Bass over Chorus',
+        metricId: 'integratedLoudness',
+        policyId: 'integrated-loudness-match-v1',
+        relation: 'match-current',
+        passing: 6,
+        wrongSide: 3,
+        shape: SHAPES.loudness,
+    },
+    {
+        word: 'brightness',
+        prompt: 'Make Drums brighter than Bass over Chorus',
+        metricId: 'spectralCentroid',
+        policyId: 'spectral-centroid-comparison-v1',
+        relation: 'greater-than-current',
+        passing: 12,
+        wrongSide: 3,
+        shape: SHAPES.brightness,
+    },
+    {
+        word: 'width',
+        prompt: 'Make Drums wider than Bass over Chorus',
+        metricId: 'sideEnergyFraction',
+        policyId: 'side-energy-fraction-comparison-v1',
+        relation: 'greater-than-current',
+        passing: 12,
+        wrongSide: 3,
+        shape: SHAPES.width,
+    },
+    {
+        word: 'dynamics',
+        prompt: 'Make Drums more dynamic than Bass over Chorus',
+        metricId: 'crestFactor',
+        policyId: 'crest-factor-comparison-v1',
+        relation: 'greater-than-current',
+        passing: 12,
+        wrongSide: 3,
+        shape: SHAPES.dynamics,
+    },
+    {
+        word: 'punch',
+        prompt: 'Make Drums punchier than Bass over Chorus',
+        metricId: 'crestFactor',
+        policyId: 'crest-factor-comparison-v1',
+        relation: 'greater-than-current',
+        passing: 12,
+        wrongSide: 3,
+        shape: SHAPES.dynamics,
+    },
+];
+
+/** The level each track's own metric starts at before any mix knob moves it. */
+const BASE_LEVEL: Record<string, number> = { drums: 0, bass: 6, 'guitar-a': 4, 'guitar-b': 9 };
+
+type ComparisonRun = {
+    quality: Quality;
+    prompt?: string;
+    /** The reference track ids the scripted provider names; two make the reference a group. */
+    reference: 'bass' | 'guitars';
+    measured: string[];
+    value: number;
+};
+
+function renderQuality(quality: Quality, rendered: string[]): void {
+    audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+        rendered.push(input.targetTrackId);
+        const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
+        if (track === undefined) {
+            throw new Error('Actual renderer target is absent.');
+        }
+        const trim = track.devices.reduce((total, device) => total + (device.parameterValues['gain-level'] ?? 0), 0);
+        return quality.shape((BASE_LEVEL[track.id] ?? 0) + trim, (input.endBeat - input.startBeat) / 2);
+    });
+}
+
+function readIntakeSchema(userMessage: string, schemas: Parameters<typeof generateToolPlanningOutcome>[2]) {
+    const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+    const base = selectCreativeInterpretationCall({
+        catalog,
+        modeId: 'edit',
+        targetObjectIds: ['drums'],
+        dimensions: ['processing'],
+    });
+    const schema = schemas.find(
+        (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) => candidate.function.name === base.name
+    );
+    if (schema === undefined) {
+        throw new Error('Expected actual joint selector.');
+    }
+    return { base, schema, catalog };
+}
+
+/** The candidate id of the published scope that groups exactly two tracks. */
+function groupScopeCandidateId(value: unknown): string {
+    const schema = advertisedAnswerSchema(value);
+    const view = JSON.parse(schema.description.slice(schema.description.indexOf('View: {') + 6)) as {
+        scopes: Array<[string, string[]]>;
+    };
+    const properties = schema.parameters.properties as {
+        answer: { anyOf: Array<{ properties?: Record<string, { items?: { enum: string[] } }> }> };
+    };
+    const ids = properties.answer.anyOf.find((branch) => branch.properties !== undefined)?.properties?.scopeCandidateIds
+        ?.items?.enum;
+    const id = ids?.[view.scopes.findIndex((row) => row[1].length === 2)];
+    if (id === undefined) {
+        throw new Error('Expected a published two-track scope.');
+    }
+    return id;
+}
+
+/** Plans one comparative request through the scripted provider, rendering with the quality's shape. */
+async function planComparison(input: ComparisonRun) {
+    const prompt = input.prompt ?? input.quality.prompt;
+    const rendered: string[] = [];
+    renderQuality(input.quality, rendered);
+    const context = getProjectContext();
+    const revision = captureProjectRevision();
+    expect(
+        agentRunLifecycle.create({ runId: RUN_ID, request: prompt, mode: 'apply', createdRevision: revision })
+    ).toEqual({ status: 'created' });
+    agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
+    const before = structuredClone(trackStore.value);
+    const offered: Array<{ metric: string | null; policyId: string | null; relation: string }> = [];
+    let turns = 0;
+    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+        turns += 1;
+        if (turns === 1) {
+            const { base, schema } = readIntakeSchema(userMessage, schemas);
+            const publication = readMetricPublication(schema);
+            for (const objective of publication) {
+                for (const goal of objective.goals) {
+                    offered.push({ metric: goal.metricName, policyId: goal.policyId, relation: goal.relation });
+                }
+            }
+            const objective = publication.find((candidate) =>
+                candidate.goals.some(
+                    (goal) => goal.policyId === input.quality.policyId && goal.relation === input.quality.relation
+                )
+            );
+            if (objective === undefined) {
+                throw new Error(`Expected a published ${input.quality.policyId} ${input.quality.relation} objective.`);
+            }
+            const wire = [schemas, userMessage];
+            const referenceScopeCandidateId =
+                input.reference === 'bass' ? advertisedAnswerCandidateId(wire, 'bass') : groupScopeCandidateId(wire);
+            const call = {
+                ...base,
+                id: 'comparison-intake',
+                arguments: {
+                    ...base.arguments,
+                    answer: null,
+                    metricIntent: {
+                        kind: 'comparative',
+                        uncertainty: 'none',
+                        objectives: [
+                            {
+                                objectiveId: objective.id,
+                                scopeCandidateId: advertisedAnswerCandidateId(wire, 'drums'),
+                                referenceScopeCandidateId,
+                                rangeCandidateId: advertisedAnswerCandidateId(wire, 'Chorus', 'ranges'),
+                            },
+                        ],
+                    },
+                },
+            };
+            expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
+            return { status: 'complete', toolCalls: [call] };
+        }
+        if (turns === 2) {
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'comparison-preview',
+                        name: 'analysis.measure',
+                        arguments: {
+                            subject: 'preview',
+                            scope: { kind: 'tracks', ids: input.measured },
+                            range: { startBeat: 0, endBeat: 4 },
+                            metrics: [input.quality.metricId],
+                            proposal: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'move-drums',
+                                        name: 'setDeviceParameter',
+                                        arguments: { paramId: 'gain-level', value: input.value },
+                                        selector: {
+                                            targetArgument: 'deviceId',
+                                            entity: 'device',
+                                            where: { name: 'Drums Trim' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            };
+        }
+        if (turns === 3) {
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'comparison-proposal',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [],
+                            compiledCallIds: ['comparison-preview'],
+                            plan: metricGoalProviderPlan(prompt, ['drums-trim']),
+                        },
+                    },
+                ],
+            };
+        }
+        throw new Error('Comparison exceeded its scripted route.');
+    });
+    const planned = await parsePromptToActions({
+        prompt,
+        context,
+        projectRevision: revision,
+        streamIdentity: { runId: RUN_ID, requestId: 'comparison-request', cancellationGeneration: 0 },
+        onMeasurementAttempt: agentWorkBudget.admitMeasurement(RUN_ID),
+    });
+    expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
+    const materialized = materializePromptCommandPlan({
+        userText: prompt,
+        runId: RUN_ID,
+        assistantMessageId: 'comparison-assistant',
+        interactionMode: 'apply',
+        trustCeiling: undefined,
+        resume: undefined,
+        onResumedPlanAccepted: undefined,
+        projectRevision: revision,
+        context,
+        result: { ...planned, requiresConfirmation: true, planningOutcome: { kind: 'proposal' } },
+        actionLabels: planned.actions.map((action) => action.type),
+        protectedTargetIds: [],
+    });
+    if (materialized.status !== 'prepared') {
+        await materialized.completion;
+        throw new Error('The actual comparison plan must remain visible.');
+    }
+    const compiled = materialized.compiledActionExecution;
+    const state = metricGoalStateCodec(compiled.metricGoalState);
+    const evaluation = evaluateMetricGoalAdmission({
+        state,
+        commandBatch: compiled.commandBatch,
+        currentRevision: revision,
+    });
+    return { planned, materialized, compiled, state, evaluation, rendered, offered, before, prompt, revision };
+}
+
+type ComparisonPlan = Awaited<ReturnType<typeof planComparison>>;
+
+/** Persists the actual approval card and proves Confirm is refused with nothing written. */
+async function expectConfirmRefused(plan: ComparisonPlan): Promise<void> {
+    const { planned, materialized, compiled, prompt, revision } = plan;
+    if (compiled.agentApproval === null) {
+        throw new Error('Expected an approval card.');
+    }
+    chatStore.set({
+        messages: [{ id: 'comparison-assistant', role: 'assistant', content: 'Comparison plan', timestamp: 1 }],
+        isGenerating: false,
+        enableReasoning: true,
+        chatMode: 'prompt',
+    });
+    const confirmationId = persistPromptActionConfirmation({
+        runId: RUN_ID,
+        prompt,
+        assistantMessageId: 'comparison-assistant',
+        actions: planned.actions,
+        actionLabels: planned.actions.map((action) => action.type),
+        commandEnvelopes: compiled.commandEnvelopes,
+        commandBatch: compiled.commandBatch,
+        agentApproval: compiled.agentApproval,
+        metricGoalState: compiled.metricGoalState,
+        affectedIds: ['drums'],
+        protectedUnchanged: [],
+        groundingBasis: planned.groundingBasis,
+        executionMode: 'atomic',
+        group: materialized.commandGroup,
+        projectRevision: revision,
+        parsedCommandBatch: materialized.parsedCommandBatch,
+        content: prompt,
+    });
+    if (confirmationId === null) {
+        throw new Error('Expected the pending confirmation to persist.');
+    }
+    expect(getAgentApprovalView({ confirmationId })?.canConfirm).toBe(false);
+    agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'waiting-for-approval' });
+    const writesBefore = audio.updateDeviceParam.mock.calls.length;
+    expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({ status: 'failed' });
+    expect(audio.updateDeviceParam.mock.calls.length).toBe(writesBefore);
+    expect(trackStore.value).toEqual(plan.before);
+    expect(captureProjectRevision()).toBe(revision);
+}
+
+describe('comparisons by loudness, brightness, width, dynamics and punch', () => {
+    it.each(QUALITIES)(
+        'measures both subjects and states $word against the reference ($metricId, $relation)',
+        async (quality) => {
+            const plan = await planComparison({
+                quality,
+                reference: 'bass',
+                measured: ['drums', 'bass'],
+                value: quality.passing,
+            });
+            expect(plan.state?.authorities[0]?.goals[0]).toMatchObject({
+                metricId: quality.metricId,
+                relation: quality.relation,
+                targetIds: ['drums'],
+                referenceTargetIds: ['bass'],
+                source: { kind: 'policy', policyId: quality.policyId },
+            });
+            expect(plan.state?.proofs[0]?.preview.targets.map((target) => target.targetId).sort()).toEqual([
+                'bass',
+                'drums',
+            ]);
+            expect(new Set(plan.rendered)).toEqual(new Set(['drums', 'bass']));
+            expect(plan.evaluation).toMatchObject({ status: 'verified' });
+            expect(plan.evaluation.criteria[0]?.reference).toHaveLength(1);
+        }
+    );
+
+    it.each(QUALITIES)('refuses Confirm for $word when only the subject was measured', async (quality) => {
+        const plan = await planComparison({ quality, reference: 'bass', measured: ['drums'], value: quality.passing });
+        expect(new Set(plan.rendered)).toEqual(new Set(['drums']));
+        expect(plan.evaluation).toMatchObject({ status: 'blocked', failure: 'incomparable' });
+        await expectConfirmRefused(plan);
+    });
+
+    it.each(QUALITIES)(
+        'refuses Confirm for $word when the subject rises but stays on the wrong side of the reference',
+        async (quality) => {
+            const plan = await planComparison({
+                quality,
+                reference: 'bass',
+                measured: ['drums', 'bass'],
+                value: quality.wrongSide,
+            });
+            expect(plan.evaluation).toMatchObject({ status: 'blocked', failure: 'out-of-tolerance' });
+            await expectConfirmRefused(plan);
+        }
+    );
+
+    describe('against a reference of several tracks', () => {
+        const brightness = QUALITIES.find((quality) => quality.word === 'brightness')!;
+
+        function configureGuitars(): void {
+            configureMetricGoalProject({
+                label: 'metric comparison guitars test',
+                tracks: [
+                    createTrack({ id: 'master', name: 'Master', kind: 'master' }),
+                    {
+                        ...createTrack({ id: 'drums', name: 'Drums', kind: 'audio' }),
+                        devices: [
+                            {
+                                id: 'drums-trim',
+                                name: 'Drums Trim',
+                                type: 'builtin-gain',
+                                bypassed: false,
+                                parameterValues: { 'gain-level': 0 },
+                            },
+                        ],
+                    },
+                    createTrack({ id: 'guitar-a', name: 'Lead Guitar', kind: 'audio' }),
+                    createTrack({ id: 'guitar-b', name: 'Rhythm Guitar', kind: 'audio' }),
+                ],
+                sections: [{ id: SECTION_ID, name: 'Chorus', startBeat: 0, endBeat: 4, color: '#ffffff' }],
+            });
+        }
+
+        it('passes only when the subject is brighter than every guitar', async () => {
+            configureGuitars();
+            const plan = await planComparison({
+                quality: brightness,
+                prompt: 'Make Drums brighter than the guitars over Chorus',
+                reference: 'guitars',
+                measured: ['drums', 'guitar-a', 'guitar-b'],
+                value: 12,
+            });
+            expect(plan.state?.authorities[0]?.goals[0]?.referenceTargetIds.slice().sort()).toEqual([
+                'guitar-a',
+                'guitar-b',
+            ]);
+            expect(plan.evaluation).toMatchObject({ status: 'verified' });
+        });
+
+        it('refuses Confirm when the subject clears one guitar but not the other', async () => {
+            configureGuitars();
+            const plan = await planComparison({
+                quality: brightness,
+                prompt: 'Make Drums brighter than the guitars over Chorus',
+                reference: 'guitars',
+                measured: ['drums', 'guitar-a', 'guitar-b'],
+                value: 7,
+            });
+            expect(plan.evaluation).toMatchObject({ status: 'blocked', failure: 'out-of-tolerance' });
+            await expectConfirmRefused(plan);
+        });
+    });
+
+    describe('named qualities, names and quotations', () => {
+        async function offeredPolicies(prompt: string, extraTrack: string | null): Promise<string[]> {
+            if (extraTrack !== null) {
+                configureMetricGoalProject({
+                    label: 'metric comparison named track test',
+                    tracks: [
+                        createTrack({ id: 'master', name: 'Master', kind: 'master' }),
+                        createTrack({ id: 'drums', name: 'Drums', kind: 'audio' }),
+                        createTrack({ id: 'named', name: extraTrack, kind: 'audio' }),
+                    ],
+                    sections: [],
+                });
+            }
+            const policies = new Set<string>();
+            let published = false;
+            vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+                const intake = advertisedAnswerSchema([schemas, userMessage]);
+                published = true;
+                for (const objective of readMetricPublication({
+                    function: { description: intake.description, parameters: intake.parameters },
+                })) {
+                    for (const goal of objective.goals) {
+                        if (goal.policyId !== null) {
+                            policies.add(goal.policyId);
+                        }
+                    }
+                }
+                throw new Error('Publication read; planning stops here.');
+            });
+            const revision = captureProjectRevision();
+            expect(
+                agentRunLifecycle.create({ runId: RUN_ID, request: prompt, mode: 'apply', createdRevision: revision })
+            ).toEqual({ status: 'created' });
+            agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
+            await parsePromptToActions({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: revision,
+                streamIdentity: { runId: RUN_ID, requestId: 'comparison-request', cancellationGeneration: 0 },
+                onMeasurementAttempt: agentWorkBudget.admitMeasurement(RUN_ID),
+            });
+            expect(published).toBe(true);
+            return [...policies].sort();
+        }
+
+        const CENTROID = 'spectral-centroid-comparison-v1';
+        const MATCH = 'integrated-loudness-match-v1';
+        const LOUDNESS_HIGHER_LOWER = 'integrated-loudness-comparison-v1';
+        const SIDE_ENERGY = 'side-energy-fraction-comparison-v1';
+        const CREST = 'crest-factor-comparison-v1';
+
+        /** The sorted policy ids a request offers: main's always-published ones plus those it adds. */
+        function offers(...ids: string[]): string[] {
+            return ids.sort();
+        }
+        const LEGACY = [MATCH, CENTROID];
+
+        it.each([
+            [
+                'a track named with a comparative: no loudness policy, the quality outside it',
+                'Make Louder Than Bombs darker',
+                'Louder Than Bombs',
+                offers(...LEGACY),
+            ],
+            [
+                'a track named with a width comparative: no side-energy policy',
+                'Make Drums thicker, like Wider Than Pictures',
+                'Wider Than Pictures',
+                offers(...LEGACY),
+            ],
+            [
+                'a quoted punch word: no crest-factor policy',
+                'Make Drums thicker, as the note says "punchy"',
+                null,
+                offers(...LEGACY),
+            ],
+            [
+                'quoted text: the quoted quality adds nothing, the legacy objectives stand',
+                'Make Drums darker, as the note says "wider than the keys"',
+                null,
+                offers(...LEGACY),
+            ],
+            [
+                'a request that names no quality: the legacy objectives only',
+                'Make Drums thicker',
+                null,
+                offers(...LEGACY),
+            ],
+            ['a bare direction', 'Make Drums louder', null, offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['a negated bare direction', "Don't make Drums brighter", null, offers(...LEGACY)],
+            [
+                'an as-as superlative of loudness',
+                'Make Drums as loud as possible',
+                null,
+                offers(...LEGACY, LOUDNESS_HIGHER_LOWER),
+            ],
+            ['an as-as superlative of width', 'Make Drums as wide as you can', null, offers(...LEGACY, SIDE_ENERGY)],
+            ['an as-as superlative of brightness', 'Make Drums as bright as it gets', null, offers(...LEGACY)],
+            ['an as-as superlative of punch', 'Make Drums as punchy as it can be', null, offers(...LEGACY, CREST)],
+            ['a match with no quality word', 'Match Drums to Bass over Chorus', null, offers(...LEGACY)],
+            ['a synonym the word list lacks', 'Make the vocal sharper than the guitars', null, offers(...LEGACY)],
+        ])('offers exactly the right policies for %s', async (_name, prompt, track, policies) => {
+            expect(await offeredPolicies(prompt, track)).toEqual(policies);
+        });
+
+        it.each([
+            ['a match of volume', 'Match Drums volume to Bass over Chorus', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['the same volume', 'Make Drums the same volume as Bass', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['as loud as a subject', 'Make Drums as loud as Bass', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['as wide as a subject', 'Make Drums as wide as the keys', offers(...LEGACY, SIDE_ENERGY)],
+            ['compared to', 'The guitar is too bright compared to the bass, turn it down', offers(...LEGACY)],
+            ['relative to', 'Make Drums louder relative to Bass', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['versus', 'Drums vs Bass: make Drums wider', offers(...LEGACY, SIDE_ENERGY)],
+            ['compared with', 'Make Drums punchy compared with the snare', offers(...LEGACY, CREST)],
+            ['compare to', "Compare the vocal's brightness to Guitar A", offers(...LEGACY)],
+            ['equal to', "Make the vocal's loudness equal to Guitar A", offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['in comparison to', 'In comparison to Guitar A, make the vocal brighter', offers(...LEGACY)],
+        ])('offers its quality for %s', async (_name, prompt, policies) => {
+            expect(await offeredPolicies(prompt, null)).toEqual(policies);
+        });
+
+        it.each([
+            ['a track name that holds a brightness word', 'Make Dark Side thicker', 'Dark Side'],
+            [
+                'a closed quotation that holds the only brightness word',
+                'Make Drums thicker, as the note says "bright"',
+                null,
+            ],
+        ])('still offers the centroid pair when %s alone names brightness', async (_name, prompt, track) => {
+            expect(await offeredPolicies(prompt, track)).toEqual(offers(...LEGACY));
+        });
+
+        it.each([
+            ['an elision that opens no quotation', "Make 'em brighter than Bass", offers(...LEGACY)],
+            [
+                'a later elision after a loudness word',
+                "Make Drums louder, 'cause the mix is dull",
+                offers(...LEGACY, LOUDNESS_HIGHER_LOWER),
+            ],
+        ])(
+            'offers the centroid pair for %s: the unclosed apostrophe masks nothing',
+            async (_name, prompt, policies) => {
+                expect(await offeredPolicies(prompt, null)).toEqual(policies);
+            }
+        );
+
+        it('keeps the legacy objectives for a comparative track name', async () => {
+            expect(await offeredPolicies('Make Drums brighter than Louder Than Bombs', 'Louder Than Bombs')).toEqual(
+                offers(...LEGACY)
+            );
+        });
+
+        it('keeps the loudness match when the quote scanner misreads an elision', async () => {
+            expect(
+                await offeredPolicies(
+                    "Make the drums punchier, 'cause the mix is soft and the 'Keys' track is bright",
+                    null
+                )
+            ).toContain(MATCH);
+        });
+    });
+});
+
+describe('a request that states no objective confirms without a measured preview', () => {
+    const drums = () => trackStore.value?.tracks.find((track) => track.id === 'drums');
+
+    it.each([
+        {
+            name: 'an exact gain figure',
+            runId: 'confirmable-gain',
+            prompt: 'Set Drums to -6 dB',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', gainDb: -6 } }],
+            landed: () => expect(drums()?.gain).toBeCloseTo(10 ** (-6 / 20), 4),
+        },
+        {
+            name: 'a rename',
+            runId: 'confirmable-rename',
+            prompt: 'Rename Drums to Lead',
+            commands: [{ name: 'renameTrack', arguments: { trackId: 'drums', name: 'Lead' } }],
+            landed: () => expect(drums()?.name).toBe('Lead'),
+        },
+    ])('executes $name on Confirm and writes nothing before it', async ({ prompt, runId, commands, landed }) => {
+        const before = structuredClone(trackStore.value);
+        const card = await proposeLiteralCard({ prompt, runId, commands });
+        expect(trackStore.value).toEqual(before);
+        expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        landed();
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('executes a literal mute on Confirm without a measured preview', async () => {
+        const card = await proposeLiteralCard({
+            prompt: 'Mute Drums',
+            runId: 'confirmable-mute',
+            commands: [{ name: 'muteTrack', arguments: { trackId: 'drums', muted: true } }],
+        });
+        expect(drums()?.muted).toBe(false);
+        expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        expect(drums()?.muted).toBe(true);
     });
 });

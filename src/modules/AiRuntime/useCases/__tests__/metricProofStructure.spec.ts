@@ -125,7 +125,7 @@ describe('metric proof structure', () => {
         const wrong = { ...masterArtifacts, [side]: { ...mixdown, route: 'isolated-subgraph' as const } };
         expect(f.evaluate(makeState(wrong))).toMatchObject({ status: 'blocked', failure: 'incomparable' });
     });
-    it('admits broadcast and pairwise references but rejects a third reference for two targets', () => {
+    it('admits broadcast and pairwise references, and an ordering against every reference, but pairs a match only one-to-one', () => {
         const f = metricGuardFixture();
         const authority = f.state.authorities[0]!;
         const goal = authority.goals[0]!;
@@ -143,19 +143,77 @@ describe('metric proof structure', () => {
                 provenance: { ...provenance, targets: artifacts },
             },
         };
-        function withReferences(referenceTargetIds: string[]) {
+        function withReferences(referenceTargetIds: string[], override: Partial<typeof goal> = {}) {
             return f.bind({
                 ...f.state,
-                authorities: [{ ...authority, goals: [{ ...goal, targetIds: ids.slice(0, 2), referenceTargetIds }] }],
+                authorities: [
+                    {
+                        ...authority,
+                        goals: [{ ...goal, ...override, targetIds: ids.slice(0, 2), referenceTargetIds }],
+                    },
+                ],
                 proofs: [expandedProof],
             });
         }
         expect(f.evaluate(withReferences(ids.slice(2, 3))).status).toBe('verified');
         expect(f.evaluate(withReferences(ids.slice(2, 4))).status).toBe('verified');
-        expect(f.evaluate(withReferences(ids.slice(2, 5)))).toMatchObject({
+        // An ordering holds against every reference figure, however many; a match pairs by index.
+        expect(f.evaluate(withReferences(ids.slice(2, 5))).status).toBe('verified');
+        expect(
+            f.evaluate(withReferences(ids.slice(2, 5), { relation: 'match-current', source: { kind: 'unsupported' } }))
+        ).toMatchObject({
             status: 'blocked',
             failure: 'incomparable',
-            reason: expect.stringContaining('Compatible actual baseline'),
+        });
+    });
+    it('pairs an ordering by index when subjects and references are equal in number, and holds each subject to every reference otherwise', () => {
+        const f = metricGuardFixture();
+        const authority = f.state.authorities[0]!;
+        const goal = authority.goals[0]!;
+        const proof = f.state.proofs[0]!;
+        const provenance = proof.preview.provenance!;
+        const figures: Record<string, number> = { 'subject-a': 5, 'subject-b': 8, 'reference-a': 4, 'reference-b': 6 };
+        const ids = Object.keys(figures);
+        const template = proof.preview.targets[0]!;
+        const targets = ids.map((targetId) => {
+            const entry = template.preview.spectralCentroid!;
+            const measured = { ...entry, value: figures[targetId]! };
+            return { ...template, targetId, preview: { spectralCentroid: measured } };
+        });
+        const evaluateOrdering = (subjects: string[], references: string[]) =>
+            f.evaluate(
+                f.bind({
+                    ...f.state,
+                    authorities: [
+                        { ...authority, goals: [{ ...goal, targetIds: subjects, referenceTargetIds: references }] },
+                    ],
+                    proofs: [
+                        {
+                            ...proof,
+                            preview: {
+                                ...proof.preview,
+                                scope: { kind: 'tracks' as const, ids },
+                                targets,
+                                provenance: {
+                                    ...provenance,
+                                    targets: ids.map((targetId) => ({ ...provenance.targets[0]!, targetId })),
+                                },
+                            },
+                        },
+                    ],
+                })
+            );
+        // 5 > 4 and 8 > 6 pair by index; 5 does not clear 6, which only an every-reference reading would demand.
+        expect(evaluateOrdering(['subject-a', 'subject-b'], ['reference-a', 'reference-b']).status).toBe('verified');
+        expect(evaluateOrdering(['subject-a', 'subject-b'], ['reference-b', 'reference-a'])).toMatchObject({
+            status: 'blocked',
+            failure: 'out-of-tolerance',
+        });
+        // Unequal counts: each subject must clear every reference.
+        expect(evaluateOrdering(['subject-b'], ['reference-a', 'reference-b']).status).toBe('verified');
+        expect(evaluateOrdering(['subject-a'], ['reference-a', 'reference-b'])).toMatchObject({
+            status: 'blocked',
+            failure: 'out-of-tolerance',
         });
     });
     it.each(['before', 'after'] as const)('rejects a rebound prefix with altered %s', (field) => {

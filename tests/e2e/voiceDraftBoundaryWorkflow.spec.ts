@@ -146,6 +146,7 @@ test('native transcript stays a draft until explicit submission and confirmation
                 message: () => refuse('dialog.message'),
             },
             paths: { samplesBase: () => refuse('paths.samplesBase'), join: () => refuse('paths.join') },
+            system: { totalMemoryBytes: async () => 16_000_000_000 },
             voiceDictation: {
                 start: async (sessionId) => {
                     probe.starts.push(sessionId);
