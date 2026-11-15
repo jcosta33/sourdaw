@@ -7,11 +7,14 @@
 //! instead, built here for that render alone and released when it ends.
 //!
 //! The live instance is touched exactly once, by the state read that captures
-//! what the user set on it (`plugins::read_plugin_state_chunk`). That read
-//! does not drain parameter writes still waiting for the live engine to
-//! process them: it refuses while any are pending, and so does the render,
-//! naming that reason, since a state read past them would print settings the
-//! user has already moved. It is never reactivated, re-rated, re-moded or
+//! what the user set on it ([`read_live_state`]). The runtime it reads and the
+//! load it was vetted from are taken from one engine record under one lock: an
+//! instance id is the device's persistent id, so an unload and a reload under
+//! it between two lookups would pair one load's state with another load's
+//! file. The read does not drain parameter writes still waiting for the live
+//! engine to process them: it refuses while any are pending, and so does the
+//! render, naming that reason, since a state read past them would print
+//! settings the user has already moved. It is never reactivated, re-rated, re-moded or
 //! spliced into the render.
 //!
 //! Each offline instance is built the way a load builds one: on the shell's UI
@@ -35,7 +38,7 @@
 use crate::commands::graph::BoundHostedInstance;
 use crate::commands::plugins::{
     activation_refusal_reason, construct_runtime_on_ui_thread, create_hosted_runtime,
-    hold_plugin_runtime_gate, host_backend, read_plugin_state_chunk, HostBackend,
+    hold_plugin_runtime_gate, host_backend, HostBackend, VettedRegistryEntry,
 };
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
@@ -259,8 +262,20 @@ pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), S
     Ok(())
 }
 
-/// How an offline render reads a live instance's state.
-pub(crate) type CaptureState = fn(&str, &AppState) -> Result<Vec<u8>, String>;
+/// How an offline render reads a live instance's state, from the very runtime
+/// whose load the offline instance is built from. The state is the world the
+/// read happens in; production reads the runtime alone ([`read_live_state`]).
+pub(crate) type CaptureState = fn(&SharedHostedPlugin, &AppState) -> Result<Vec<u8>, String>;
+
+/// Read a live engine instance's state chunk: refused, not drained, while its
+/// parameter writes wait for the live engine — what the state save does for
+/// the same instance (`plugins::read_plugin_state_chunk`).
+pub(crate) fn read_live_state(
+    runtime: &SharedHostedPlugin,
+    _state: &AppState,
+) -> Result<Vec<u8>, String> {
+    runtime.get_state_after_pending_parameters_drain(OFFLINE_CONTROL_TIMEOUT)
+}
 
 /// A test's look at every built instance just before the render.
 #[cfg(test)]
@@ -291,7 +306,7 @@ impl OfflinePluginSeams {
     pub(crate) fn production() -> Self {
         Self {
             scan_policy: PluginScanPolicy::platform_defaults(),
-            capture_state: read_plugin_state_chunk,
+            capture_state: read_live_state,
             construct: create_hosted_runtime,
             #[cfg(test)]
             after_build: None,
@@ -437,17 +452,86 @@ impl Drop for OfflinePluginInstances<'_> {
     }
 }
 
-/// Whether the live engine instance under `instance_id` holds parameter
-/// writes its process path has not applied yet. Its state read refuses rather
-/// than drain them, so the render names that refusal itself.
-fn has_pending_parameter_writes(instance_id: &str, state: &AppState) -> Result<bool, String> {
+/// One live engine record as the render read it: the runtime and the load it
+/// was vetted from, taken together under one `engine_plugins` lock.
+struct LiveRecord {
+    instance_id: String,
+    runtime: Arc<SharedHostedPlugin>,
+    load_resolution: VettedRegistryEntry,
+}
+
+/// Take every bound instance's live record under one lock, refusing by name an
+/// instance whose record is gone.
+fn live_records(
+    bound: &[BoundHostedInstance],
+    state: &AppState,
+) -> Result<Vec<LiveRecord>, String> {
     let engine_plugins = state
         .engine_plugins
         .lock()
         .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
-    Ok(engine_plugins
+    bound
+        .iter()
+        .map(|instance| {
+            engine_plugins
+                .get(&instance.instance_id)
+                .map(|record| LiveRecord {
+                    instance_id: instance.instance_id.clone(),
+                    runtime: Arc::clone(&record.runtime),
+                    load_resolution: record.load_resolution.clone(),
+                })
+                .ok_or_else(|| {
+                    refusal(
+                        instance,
+                        "its live instance was unloaded while the render started",
+                    )
+                })
+        })
+        .collect()
+}
+
+/// Give back the render's reference to a live runtime once its state is read.
+///
+/// The reference is dropped under the `engine_plugins` lock while the record
+/// still holds the same runtime, so it cannot be the final one. A runtime its
+/// record no longer holds may be the last reference, and a plugin's teardown
+/// must not run on this worker: it goes to the retirement vec for the sweep.
+fn return_live_runtime(instance_id: &str, runtime: Arc<SharedHostedPlugin>, state: &AppState) {
+    let engine_plugins = match state.engine_plugins.lock() {
+        Ok(engine_plugins) => engine_plugins,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let still_recorded = engine_plugins
         .get(instance_id)
-        .is_some_and(|record| record.runtime.has_pending_parameter_writes()))
+        .is_some_and(|record| Arc::ptr_eq(&record.runtime, &runtime));
+    if still_recorded {
+        drop(runtime);
+        return;
+    }
+    drop(engine_plugins);
+    state.retain_retired_engine_plugin(runtime);
+}
+
+/// Read one live runtime's state for `instance`, refusing by name.
+fn capture_live_state(
+    instance: &BoundHostedInstance,
+    runtime: &SharedHostedPlugin,
+    state: &AppState,
+    seams: &OfflinePluginSeams,
+) -> Result<Vec<u8>, String> {
+    if runtime.has_pending_parameter_writes() {
+        return Err(refusal(
+            instance,
+            "its live state could not be read: the plugin has parameter writes pending that the \
+             live engine has not processed yet",
+        ));
+    }
+    (seams.capture_state)(runtime, state).map_err(|reason| {
+        refusal(
+            instance,
+            &format!("its live state could not be read: {reason}"),
+        )
+    })
 }
 
 /// Leaves every offline instance's processing state when dropped; see
@@ -514,46 +598,31 @@ pub(crate) async fn build_offline_instances<'a>(
         ));
     }
 
+    // Every state is captured before anything is constructed, each from the
+    // runtime its load came with. Every live reference is given back, the ones
+    // after a refusal included.
+    let mut records = live_records(bound, state)?.into_iter();
     let mut captured = Vec::with_capacity(bound.len());
-    for instance in bound {
-        if has_pending_parameter_writes(&instance.instance_id, state)? {
-            return Err(refusal(
-                instance,
-                "its live state could not be read: the plugin has parameter writes pending that \
-                 the live engine has not processed yet",
-            ));
+    let mut refused = None;
+    for (instance, record) in bound.iter().zip(records.by_ref()) {
+        let chunk = capture_live_state(instance, &record.runtime, state, seams);
+        return_live_runtime(&record.instance_id, record.runtime, state);
+        match chunk {
+            Ok(chunk) => captured.push((chunk, record.load_resolution)),
+            Err(reason) => {
+                refused = Some(reason);
+                break;
+            }
         }
-        let chunk = (seams.capture_state)(&instance.instance_id, state).map_err(|reason| {
-            refusal(
-                instance,
-                &format!("its live state could not be read: {reason}"),
-            )
-        })?;
-        captured.push(chunk);
+    }
+    for record in records {
+        return_live_runtime(&record.instance_id, record.runtime, state);
+    }
+    if let Some(reason) = refused {
+        return Err(reason);
     }
 
-    let load_resolutions = {
-        let engine_plugins = state
-            .engine_plugins
-            .lock()
-            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
-        bound
-            .iter()
-            .map(|instance| {
-                engine_plugins
-                    .get(&instance.instance_id)
-                    .map(|record| record.load_resolution.clone())
-                    .ok_or_else(|| {
-                        refusal(
-                            instance,
-                            "its live instance was unloaded while the render started",
-                        )
-                    })
-            })
-            .collect::<Result<Vec<_>, String>>()?
-    };
-
-    for ((instance, chunk), vetted) in bound.iter().zip(captured).zip(load_resolutions) {
+    for (instance, (chunk, vetted)) in bound.iter().zip(captured) {
         let backend =
             host_backend(&vetted.entry.format).map_err(|reason| refusal(instance, &reason))?;
         // The gate spans this instance's vet and construction only: released
