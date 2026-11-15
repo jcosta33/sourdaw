@@ -55,7 +55,6 @@ excessive_precision = "warn"
 if_same_then_else = "warn"
 large_enum_variant = "warn"
 len_without_is_empty = "warn"
-manual_clamp = "warn"
 manual_is_multiple_of = "warn"
 needless_range_loop = "warn"
 neg_cmp_op_on_partial_ord = "warn"
@@ -67,7 +66,10 @@ result_unit_err = "warn"
 too_many_arguments = "warn"
 type_complexity = "warn"
 unnecessary_cast = "warn"
-vec_box = "warn"
+# Rejected: timeline tracks, buses and clips cross the scheduler command ring
+# as boxes, so the audio thread neither reallocates nor copies large structs
+# when one is added or removed.
+vec_box = "allow"
 
 [profile.release]
 opt-level = 3
