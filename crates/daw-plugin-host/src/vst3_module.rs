@@ -185,12 +185,14 @@ mod platform {
     /// CoreFoundation cannot express, which is the only failure it has.
     unsafe fn file_system_url(path: &Path) -> Option<CFURLRef> {
         let bytes = path.as_os_str().as_encoded_bytes();
-        let url = CFURLCreateFromFileSystemRepresentation(
-            std::ptr::null(),
-            bytes.as_ptr(),
-            bytes.len() as isize,
-            true as u8,
-        );
+        let url = unsafe {
+            CFURLCreateFromFileSystemRepresentation(
+                std::ptr::null(),
+                bytes.as_ptr(),
+                bytes.len() as isize,
+                true as u8,
+            )
+        };
         (!url.is_null()).then_some(url)
     }
 
@@ -198,12 +200,14 @@ mod platform {
     /// one longer than a path may be.
     unsafe fn url_file_system_path(url: CFURLRef) -> Option<PathBuf> {
         let mut buffer = [0u8; MAX_FILE_SYSTEM_PATH_BYTES];
-        let written = CFURLGetFileSystemRepresentation(
-            url,
-            true as u8,
-            buffer.as_mut_ptr(),
-            buffer.len() as isize,
-        );
+        let written = unsafe {
+            CFURLGetFileSystemRepresentation(
+                url,
+                true as u8,
+                buffer.as_mut_ptr(),
+                buffer.len() as isize,
+            )
+        };
         if written == 0 {
             return None;
         }
@@ -251,13 +255,15 @@ mod platform {
     /// Wrap a UTF-8 symbol name as a `CFStringRef`, or `None` when
     /// CoreFoundation refuses it.
     unsafe fn symbol_name(name: &[u8]) -> Option<CFStringRef> {
-        let string = CFStringCreateWithBytes(
-            std::ptr::null(),
-            name.as_ptr(),
-            name.len() as isize,
-            kCFStringEncodingUTF8,
-            false as u8,
-        );
+        let string = unsafe {
+            CFStringCreateWithBytes(
+                std::ptr::null(),
+                name.as_ptr(),
+                name.len() as isize,
+                kCFStringEncodingUTF8,
+                false as u8,
+            )
+        };
         if string.is_null() {
             return None;
         }
@@ -265,9 +271,9 @@ mod platform {
     }
 
     unsafe fn function_pointer(bundle: CFBundleRef, name: &[u8]) -> Option<*mut c_void> {
-        let symbol = symbol_name(name)?;
-        let pointer = CFBundleGetFunctionPointerForName(bundle, symbol);
-        CFRelease(symbol as CFTypeRef);
+        let symbol = unsafe { symbol_name(name) }?;
+        let pointer = unsafe { CFBundleGetFunctionPointerForName(bundle, symbol) };
+        unsafe { CFRelease(symbol as CFTypeRef) };
         if pointer.is_null() {
             return None;
         }

@@ -39,13 +39,25 @@ future_incompatible = { level = "deny", priority = -1 }
 unsafe_op_in_unsafe_fn = "warn"
 unused_assignments = "warn"
 
+# Restriction lints weighed for this table and left out:
+# Rejected: indexing_slicing. Bounds-checked indexing is the DSP idiom; the
+# alternative adds a fallible branch to every inner render loop.
+# Rejected: mem_forget. Off-callback leaks are the bounded failure ADR 0020
+# prescribes (retrospective capture, a full shutdown retirement ring), and a
+# VST3 module whose factory is non-discardable is kept resident for the
+# process life on purpose.
+# Rejected: print_stderr. The native shell's tagged diagnostics write to
+# stderr by design; print_stdout appears only in tests.
+# Rejected: exit. Its one site is a test crash-boundary child that skips Drop
+# on purpose, as a terminated native process would.
 [workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
+all ={ level = "deny", priority = -1 }
 dbg_macro = "deny"
 get_unwrap = "deny"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+unreachable = "deny"
 unwrap_used = "deny"
 too_many_arguments = "warn"
 # Rejected: timeline tracks, buses and clips cross the scheduler command ring
