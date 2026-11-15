@@ -9,7 +9,7 @@
             },
             {
                 "path": "Cargo.toml",
-                "sha256": "e0d41dbefe296c435d78563b6c1578f4ceeedf7d83d02a6ea689449992986c37"
+                "sha256": "acec56def2686b5e9925b1afecb5de895597b99d35597dad172cfaa6d135c14e"
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
