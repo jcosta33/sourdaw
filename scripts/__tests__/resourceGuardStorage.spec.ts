@@ -273,7 +273,13 @@ function claimPayloads(root: string): string[] {
     );
 }
 
-async function runMarkedGuard(root: string): Promise<{
+// `provedFileState` gives the child supervisor a file census that proves every storage free, for
+// cases whose subject is the process-list reference check: a real census cannot converge while
+// other work keeps starting short-lived processes.
+async function runMarkedGuard(
+    root: string,
+    census: 'host' | 'provedFileState' = 'host'
+): Promise<{
     result: Awaited<ReturnType<typeof runGuardedCommand>>;
     tempDirectory: string;
     token: string;
@@ -303,7 +309,7 @@ async function runMarkedGuard(root: string): Promise<{
         [
             '--input-type=module',
             '-e',
-            `const {writeFileSync,renameSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(preparedResult)},JSON.stringify(result));renameSync(${JSON.stringify(preparedResult)},${JSON.stringify(resultPath)});`,
+            `const {writeFileSync,renameSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const options=${JSON.stringify(options)};${census === 'provedFileState' ? "options.storageHost={fileState:()=>'dead'};" : ''}const result=await runGuardedCommand(options);writeFileSync(${JSON.stringify(preparedResult)},JSON.stringify(result));renameSync(${JSON.stringify(preparedResult)},${JSON.stringify(resultPath)});`,
         ],
         { stdio: 'ignore' }
     );
@@ -748,6 +754,9 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                     sampled.push(path);
                     return unavailable ? undefined : 99;
                 },
+                // The released refusal is the subject. Real file censuses cannot converge while other
+                // work keeps starting short-lived processes, and would retain the storage instead.
+                storageHost: { fileState: () => 'dead' },
             });
             expect(result.reason).toBe(unavailable ? 'monitor' : 'pressure');
             expect(result.output).toMatch(unavailable ? /disk space could not be measured/ : /disk space below/);
@@ -1015,7 +1024,6 @@ setInterval(() => {}, 1000);
     ] as const)(
         'retains storage for a detached descendant that replaces its environment: $scenario ($program)',
         async ({ scenario, program }) => {
-            const deadline = Date.now() + 15_000;
             const root = fixture();
             const marker = join(root, 'escaped.json');
             const rootMarker = join(root, 'root.pid');
@@ -1112,7 +1120,7 @@ setInterval(() => {}, 1000);
                 if (scenario === 'parent exit') {
                     expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
                 }
-                const interim = await runMarkedGuard(root);
+                const interim = await runMarkedGuard(root, 'provedFileState');
                 expectMarkedRecovery(root, prior, interim, true);
                 prior.push({
                     tempDirectory: interim.tempDirectory,
@@ -1123,8 +1131,7 @@ setInterval(() => {}, 1000);
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
-            await waitForStorageAbandonment([started.tmp], deadline);
-            const recovery = await runMarkedGuard(root);
+            const recovery = await runMarkedGuard(root, 'provedFileState');
             expect(isAlive(started.pid)).toBe(false);
             expectMarkedRecovery(root, prior, recovery);
         },
@@ -4863,7 +4870,10 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                 })
             ).not.toBe(0);
             expect(existsSync(started.tmp)).toBe(true);
-            const recovery = await guarded(root);
+            // Only the retained payload's ownership is the subject here. A real file census cannot
+            // converge while other work keeps starting short-lived processes, and recovery would
+            // silently keep the payload.
+            const recovery = await guarded(root, { storageHost: { fileState: () => 'dead' } });
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
             expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
         },
