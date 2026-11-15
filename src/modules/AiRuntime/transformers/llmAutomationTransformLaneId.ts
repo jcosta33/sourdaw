@@ -3,8 +3,11 @@ import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAct
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type AutomationLaneLookup = { readonly [Type in RuntimeActionType]: (action: ActionOf<Type>) => string | null };
 
-const noAutomationLane = (): string | null => null;
-const payloadLaneId = (
+function noAutomationLane(): string | null {
+    return null;
+}
+
+function payloadLaneId(
     action: ActionOf<
         | 'scaleAutomation'
         | 'stretchAutomation'
@@ -13,7 +16,9 @@ const payloadLaneId = (
         | 'thinAutomation'
         | 'quantizeAutomation'
     >
-): string | null => action.payload.laneId;
+): string | null {
+    return action.payload.laneId;
+}
 
 const automationTransformLaneIdByActionType: AutomationLaneLookup = {
     importStemSet: noAutomationLane,

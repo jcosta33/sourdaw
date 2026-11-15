@@ -16,5 +16,5 @@ export const ConnectedLlmStatusBadge = (): ReactElement | null => {
             void initEngine(modelId, { webLlmDownloadConsent: true });
         }
     };
-    return <LlmStatusBadge status={status ?? { state: 'idle' }} onLoad={loadModel} />;
+    return <LlmStatusBadge status={status} onLoad={loadModel} />;
 };

@@ -60,26 +60,30 @@ const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): React
     // The store moves only once the plugin accepts a change, so while the latest send is in flight the
     // row holds the value it asked for; otherwise a second nudge would start from the stale store value.
     const [pendingValue, setPendingValue] = useState<number | null>(null);
-    const latestSend = useRef(0);
+    const latestSendRef = useRef(0);
+
+    const sendEdit = async (requested: number, send: number): Promise<void> => {
+        try {
+            await editExternalPluginParameter({ instanceId, parameterId: row.id, value: requested });
+        } catch {
+            if (latestSendRef.current === send) {
+                setPendingValue(null);
+                setRefused(true);
+                onAnnounce(`${row.name}: ${REFUSED_MESSAGE}`);
+            }
+            return;
+        }
+        if (latestSendRef.current === send) {
+            setPendingValue(null);
+        }
+    };
 
     const edit = (requested: number): void => {
-        const send = ++latestSend.current;
+        const send = ++latestSendRef.current;
         setRefused(false);
         onAnnounce('');
         setPendingValue(requested);
-        editExternalPluginParameter({ instanceId, parameterId: row.id, value: requested })
-            .then(() => {
-                if (latestSend.current === send) {
-                    setPendingValue(null);
-                }
-            })
-            .catch(() => {
-                if (latestSend.current === send) {
-                    setPendingValue(null);
-                    setRefused(true);
-                    onAnnounce(`${row.name}: ${REFUSED_MESSAGE}`);
-                }
-            });
+        void sendEdit(requested, send);
     };
 
     const value = pendingValue ?? row.value;
@@ -147,15 +151,15 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [announcement, setAnnouncement] = useState('');
     const listRef = useRef<HTMLUListElement>(null);
-    const focusIndexAfterReveal = useRef<number | null>(null);
+    const focusIndexAfterRevealRef = useRef<number | null>(null);
 
     // Revealing a page can unmount the focused Show more button; move focus to the first revealed control.
     useEffect(() => {
-        const index = focusIndexAfterReveal.current;
+        const index = focusIndexAfterRevealRef.current;
         if (index === null) {
             return;
         }
-        focusIndexAfterReveal.current = null;
+        focusIndexAfterRevealRef.current = null;
         listRef.current?.children[index]?.querySelector<HTMLElement>('input')?.focus();
     }, [visibleCount]);
 
@@ -223,7 +227,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                     size="xs"
                     className="self-start"
                     onClick={() => {
-                        focusIndexAfterReveal.current = shown.length;
+                        focusIndexAfterRevealRef.current = shown.length;
                         setVisibleCount(visibleCount + PAGE_SIZE);
                     }}
                 >

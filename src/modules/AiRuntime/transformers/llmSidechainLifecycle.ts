@@ -20,7 +20,9 @@ function isAddSidechainRuntimeAction(action: RuntimeAction): action is AddSidech
     return action.type === 'addSidechainRoute';
 }
 
-const neverInvalidates = (): boolean => false;
+function neverInvalidates(): boolean {
+    return false;
+}
 
 function addDeviceInvalidatesSidechain(action: ActionOf<'addDevice'>, plan: SidechainPlan): boolean {
     return (

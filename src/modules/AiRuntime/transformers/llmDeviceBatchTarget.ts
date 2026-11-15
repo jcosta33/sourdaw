@@ -14,7 +14,9 @@ type DeviceBatchTargetLookup = {
     readonly [Type in RuntimeActionType]: (action: ActionOf<Type>, context: ProjectContext) => DeviceBatchTarget | null;
 };
 
-const noDeviceBatchTarget = (): DeviceBatchTarget | null => null;
+function noDeviceBatchTarget(): DeviceBatchTarget | null {
+    return null;
+}
 
 function existingDeviceTarget(kind: DeviceBatchTarget['kind']) {
     return (
