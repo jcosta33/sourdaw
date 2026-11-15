@@ -631,7 +631,50 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
 
-        it('does not revive a carry the plugin rejected, and warns only once', async () => {
+        it('warns by plugin name when the retire destroys an instance activated with a carry after its read batch', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(true);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            // Undo of the removal restores the carry, which the settled activation consumes.
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            reading.commit([INSTANCE_ID]);
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+        });
+
+        it('warns by plugin name when the retire destroys an instance unloaded and reactivated after its read', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            await unloadPlugin(INSTANCE_ID);
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            reading.commit([INSTANCE_ID]);
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+        });
+
+        it('does not warn for a retired instance activated after its read batch whose restore failed', async () => {
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+            await expect(activate(SAVED_CHUNK)).resolves.toMatchObject({ status: 'failed', stage: 'restore' });
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            expect(externalPluginRestoreFailures.has(INSTANCE_ID)).toBe(true);
+            reading.commit([INSTANCE_ID]);
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('does not revive a carry the plugin rejected', async () => {
             await activateAndEdit(SAVED_CHUNK);
             await unloadPluginCarryingLiveState(INSTANCE_ID);
             const load = Promise.withResolvers<PluginInstance>();
@@ -650,7 +693,11 @@ describe('live plugin state across an app-initiated teardown', () => {
             mocks.setPluginState.mockClear();
             await activate(SAVED_CHUNK);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
-            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+            // The rejection, then the retire destroying what the instance held after the fallback, unread.
+            expect(warnings()).toEqual([
+                expect.stringMatching(new RegExp(`^Unsaved edits in ${PLUGIN_ID} could not be restored`)),
+                expect.stringMatching(new RegExp(`^Unsaved edits in ${PLUGIN_ID} could not be read before unloading`)),
+            ]);
         });
     });
 
