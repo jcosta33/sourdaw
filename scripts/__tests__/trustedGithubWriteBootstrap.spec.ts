@@ -96,6 +96,7 @@ const supersessionPaths = [
     'scripts/canonicalRecord.ts',
     'scripts/evidenceSafety.ts',
     'scripts/githubAppIdentity.ts',
+    'scripts/tokenBearingChildPlacement.ts',
     'scripts/prContract.ts',
 ];
 const retirementPaths = [...supersessionPaths, 'scripts/retirePullRequest.ts', 'scripts/retirementRecord.ts'];

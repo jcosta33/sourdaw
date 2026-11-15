@@ -153,6 +153,7 @@
 //! counted drop.
 
 use crate::commands::crumbs::{self, CrumbsState};
+use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
 use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_dsp::grinder::nam::native_admission::{
@@ -2269,16 +2270,7 @@ impl QueueBudgets {
             queued.retain(|pending| pending.lands_at < start);
         }
         if queued.len() == AUTOMATION_QUEUE_CAPACITY {
-            return Err(format!(
-                "automation-queue-capacity — this parameter's native queue is full: \
-                 {AUTOMATION_QUEUE_CAPACITY} unlanded writes are pending, counting this \
-                 batch and every earlier accepted one; the engine would drop further \
-                 writes silently, so the batch refuses whole. These slots release when \
-                 the engine's progress echo proves earlier writes landed (playback \
-                 passing their stamps frees them for the next batch), when a replace or \
-                 hold cancels the stale writes, or when a locate behind their stamps \
-                 drops them"
-            ));
+            return Err(QueueCapacityRefusal::Automation.to_string());
         }
         queued.push(PendingStamp {
             at_frame: start,
@@ -2303,14 +2295,7 @@ impl QueueBudgets {
     ) -> Result<(), String> {
         let queued = self.device_params.entry(effect_id).or_default();
         if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
-            return Err(format!(
-                "device-param-queue-capacity — this device's pending window is full: \
-                 {DEVICE_PARAM_QUEUE_CAPACITY} changes are charged, counting this batch \
-                 and every earlier accepted one; the engine would drop the writes \
-                 silently, so the batch refuses whole instead. The window frees as the \
-                 engine's progress echo proves earlier changes landed — playback passing \
-                 their stamps releases them for the next batch"
-            ));
+            return Err(QueueCapacityRefusal::DeviceParam.to_string());
         }
         queued.push(DeviceParamStamp {
             param,
@@ -5292,10 +5277,9 @@ pub async fn apply_graph_commands(
                     Some(kind) => format!(" after reporting {kind:?}"),
                     None => String::new(),
                 };
-                return result_json(&GraphApplyResultPayload::rejected(format!(
-                    "engine-not-rendering: the output stream stopped calling back{fault}; the \
-                     engine renders nothing until the stream resumes or it is restarted"
-                )));
+                return result_json(&GraphApplyResultPayload::rejected(
+                    EngineNotRendering::StreamStalled { fault }.to_string(),
+                ));
             }
         }
         // `None` here falls through to the later `engine_guard` below, whose
@@ -5659,23 +5643,6 @@ pub async fn apply_graph_commands(
     result_json(&applied)
 }
 
-/// The wire's fault marker for a `prior` that no longer replays: the stable
-/// prefix of [`map_graph_batch`]'s transport error, and the only thing that
-/// distinguishes a broken seam invariant from an ordinary batch refusal once
-/// both have crossed as an error. `createNativeOfflineGraphBackend.ts` matches
-/// this exact text to rethrow rather than answer `rejected`, so it is part of
-/// the seam contract — never reword one side alone.
-const PRIOR_FAULT_PREFIX: &str = "previously applied commands no longer map";
-
-/// The wire's fault marker for a mapping session this process no longer holds:
-/// the stable prefix of the transport error [`map_graph_batch`] raises when a
-/// caller asks to resume a session that is absent or held at a different
-/// revision. `createNativeOfflineGraphBackend.ts` matches this exact text to
-/// retry once with its full committed history (which re-establishes the
-/// session), so it is a seam contract like [`PRIOR_FAULT_PREFIX`] — never
-/// reword one side alone.
-const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
-
 /// How many offline mapping sessions this process keeps alive at once.
 ///
 /// A session is one backend's probe registry kept across applies so `prior`
@@ -5683,7 +5650,7 @@ const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
 /// stateless path pays). Renders are serialized behind the app's render lock,
 /// so one is the working set; the headroom covers a disposed backend whose
 /// session has not been evicted yet. Eviction is least-recently-used and is
-/// never a fault by itself: an evicted caller gets [`SESSION_FAULT_PREFIX`]
+/// never a fault by itself: an evicted caller gets [`MappingFault::SessionUnknown`]
 /// and re-establishes with its full prior, landing exactly where the
 /// stateless path always was.
 const MAX_MAPPING_SESSIONS: usize = 4;
@@ -5795,7 +5762,7 @@ fn replay_prior_commands(
             &mut AttachedCrumbs::default(),
             levain_banks,
         )
-        .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        .map_err(|reason| MappingFault::PriorNoLongerMaps { reason }.to_string())?;
         commands = rest;
     }
     Ok(())
@@ -5822,7 +5789,7 @@ fn replay_prior_commands(
 /// accepted once, so a registry that no longer takes them is a broken seam
 /// invariant, and reporting it as a refusal of the *incoming* batch would
 /// blame the wrong commands. The wire has one error channel for both, so
-/// [`PRIOR_FAULT_PREFIX`] is what tells them apart on the far side: it is a
+/// [`MappingFault::PriorNoLongerMaps`] is what tells them apart on the far side: it is a
 /// seam contract, not a message, and the TS consumer
 /// (`createNativeOfflineGraphBackend.ts`) matches on it to rethrow instead of
 /// shaping a batch refusal. Change it on both sides or not at all.
@@ -5836,7 +5803,7 @@ fn replay_prior_commands(
 /// session is not held at the stated revision, the call either
 /// *re-establishes* it — `revision == prior.len()`, so the prior *is* the
 /// history and replays exactly as the stateless path — or faults with
-/// [`SESSION_FAULT_PREFIX`], which tells the caller to resend its full prior.
+/// [`MappingFault::SessionUnknown`], which tells the caller to resend its full prior.
 /// No `session` is the stateless behaviour, unchanged.
 pub async fn map_graph_batch(
     prior: Value,
@@ -5885,11 +5852,11 @@ pub async fn map_graph_batch(
                 // Not held, and the prior cannot re-establish it: replaying
                 // `prior` would build a different history than the one
                 // `revision` names. The caller resends its full prior.
-                return Err(format!(
-                    "{SESSION_FAULT_PREFIX}: '{}' is not held at revision {} — resend the full \
-                     prior to re-establish it",
-                    key.session_id, key.revision
-                ));
+                return Err(MappingFault::SessionUnknown {
+                    session_id: key.session_id.clone(),
+                    revision: key.revision,
+                }
+                .to_string());
             }
             resumed
         }
@@ -10065,7 +10032,10 @@ mod tests {
         .expect_err("a prior that no longer maps is a transport fault");
         // Leading, not merely present: the TS consumer keys its rethrow off
         // the prefix, so the marker has to open the message.
-        assert!(fault.starts_with(PRIOR_FAULT_PREFIX), "got: {fault}");
+        assert!(
+            fault.starts_with("previously applied commands no longer map"),
+            "got: {fault}"
+        );
     }
 
     fn session_key(session_id: &str, revision: u64) -> Option<Value> {
@@ -10150,7 +10120,7 @@ mod tests {
             &state,
         ))
         .expect_err("a revision the session never reached is not resumable");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let resumed = block_on_test(map_graph_batch(
             json!([]),
@@ -10179,7 +10149,7 @@ mod tests {
             &state,
         ))
         .expect_err("an unheld session at a nonzero revision faults");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let reestablished = block_on_test(map_graph_batch(
             json!([track_strip("t1")]),
@@ -10228,7 +10198,7 @@ mod tests {
             &state,
         ))
         .expect_err("the least-recently-used session was evicted");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let survivor = block_on_test(map_graph_batch(
             json!([]),

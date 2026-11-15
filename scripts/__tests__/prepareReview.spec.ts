@@ -345,6 +345,7 @@ describe('review prepare', () => {
             'scripts/reviewRiskPolicy.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/savedProjectStatePaths.ts',
+            'scripts/tokenBearingChildPlacement.ts',
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/wasm-artifacts.ts',
             'scripts/wasmToolchainPins.ts',
