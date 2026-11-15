@@ -161,6 +161,32 @@ describe('external plugin tail store', () => {
         emitTailChange({ instance_id: 'gone', tail_samples: 240_000 });
 
         expect(tailOf('gone')).toBeUndefined();
+        // Not held for a load either: a later load of that id seeds its own figure.
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'gone' });
+        expect(tailOf('gone')).toBe(96_000);
+    });
+
+    it('subscribes again on the next activation when subscribing failed', async () => {
+        // The watcher keeps one subscription per process, so this case needs a
+        // watcher that has not subscribed yet; it restores the shared handler
+        // the other cases emit through.
+        const sharedHandler = nativeTailHandler;
+        vi.resetModules();
+        try {
+            const fresh = await import('../activateExternalPlugin');
+            const freshTails = await import('../../../stores/externalPluginTailStore');
+            mocks.subscribeTail.mockClear();
+            mocks.subscribeTail.mockRejectedValueOnce(new Error('desktop bridge unavailable'));
+
+            await fresh.activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+            await fresh.activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-2' });
+
+            expect(mocks.subscribeTail).toHaveBeenCalledTimes(2);
+            emitTailChange({ instance_id: 'inst-2', tail_samples: 240_000 });
+            expect(freshTails.externalPluginTailStore.value?.tailSamplesByInstanceId['inst-2']).toBe(240_000);
+        } finally {
+            nativeTailHandler = sharedHandler;
+        }
     });
 
     it('drops the tail when the instance is unloaded', async () => {
