@@ -403,7 +403,6 @@
     "src/modules/Project/presentations/views/TemplateChooser.tsx": 600,
     "src/modules/Project/stores/arrangementStore.ts": 994,
     "src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts": 2405,
-    "src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts": 688,
     "src/modules/Project/useCases/getAgentProjectModelContract.ts": 600,
     "src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts": 600,
     "src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts": 600,
