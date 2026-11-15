@@ -282,28 +282,6 @@ pub(crate) fn plugin_code_roots_at(store: Option<&Path>) -> Vec<PathBuf> {
     roots
 }
 
-/// Every folder the plugin scan loads code from: the platform's plugin folders,
-/// resolved the way picks are, and every stored plugin folder grant.
-///
-/// A renderer write into any of them plants native code the next scan runs.
-/// A stored grant counts even while it is unavailable: once its folder is back
-/// it is authority again, with whatever was written there in the meantime.
-pub(crate) fn plugin_code_roots() -> Vec<PathBuf> {
-    plugin_code_roots_at(production_store_location().as_deref())
-}
-
-/// [`plugin_code_roots`] over the grant store at `store`, if any.
-pub(crate) fn plugin_code_roots_at(store: Option<&Path>) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = default_plugin_scan_roots()
-        .iter()
-        .map(|root| resolve_forbidden_root(root))
-        .collect();
-    if let Some(location) = store {
-        roots.extend(read_grants(location));
-    }
-    roots
-}
-
 /// Validate a folder the user picked, answering with its canonical path.
 ///
 /// The checks every grant re-runs on every use; [`grant_at`] adds the ones
