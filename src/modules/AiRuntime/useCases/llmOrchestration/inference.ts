@@ -99,7 +99,8 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
 // The general-planning mandatory set of a workflow-shaped request (the workflow selector, the
 // mandatory planning tools, command-index search, catalog discovery, the joint interpretation tool
 // and every workflow action tool) plus exactly one optional or discovered tool, selected below. The
-// brief compiler joins the mandatory set when the request offers it, one tool past this figure. A
+// brief compiler joins the mandatory set when the request offers it and takes that free slot, since
+// mandatory tools are never cut; a brief request plans no prompt-selected command. A
 // request no workflow with capability data can ground is offered no workflow action tool, and a
 // phase that publishes fewer mandatory tools leaves spare capacity, which never admits another
 // command.
