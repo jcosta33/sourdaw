@@ -6,6 +6,11 @@ import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 
 import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipCollection';
 import { isRestorableAlternatives, isRestorableClips } from './isRestorableAlternativeState';
+import {
+    applyRetiredClipLanes,
+    applyRetiredClipRows,
+    retiredClipsTransitionIsAdmissible,
+} from './retiredAlternativeClips';
 
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
@@ -23,10 +28,39 @@ function alternativeStateMatches(track: Track, snapshot: TrackAlternativeStateSn
     return track.alternatives.every((alternative, index) => alternative.id === snapshot.alternatives[index]?.id);
 }
 
+type RetiredClipsTransition =
+    | { readonly kind: 'none' }
+    | {
+          readonly kind: 'move';
+          readonly expected: NonNullable<TrackAlternativeStateSnapshot['retiredClips']>;
+          readonly replacement: NonNullable<TrackAlternativeStateSnapshot['retiredClips']>;
+      }
+    | { readonly kind: 'refused' };
+
+// Entries recorded before deletes retired clip data carry neither side and move
+// nothing; a payload carrying only one side is not one the delete produced.
+function readRetiredClipsTransition(
+    expected: TrackAlternativeStateSnapshot,
+    replacement: TrackAlternativeStateSnapshot
+): RetiredClipsTransition {
+    if (expected.retiredClips === undefined && replacement.retiredClips === undefined) {
+        return { kind: 'none' };
+    }
+    if (
+        expected.retiredClips === undefined ||
+        replacement.retiredClips === undefined ||
+        !retiredClipsTransitionIsAdmissible(expected.retiredClips, replacement.retiredClips)
+    ) {
+        return { kind: 'refused' };
+    }
+    return { kind: 'move', expected: expected.retiredClips, replacement: replacement.retiredClips };
+}
+
 /**
  * Inverse and redo of `deleteTrackAlternative`. Deletion drops the alternative, may
- * promote a different one, and rewrites the track's live clips — all three come back
- * (or go forward again, for redo) together in one guarded write.
+ * promote a different one, rewrites the track's live clips, and retires the MIDI,
+ * satellite and clip-lane rows of the clips the alternative held — all of it comes
+ * back (or goes forward again, for redo) together in one guarded write.
  */
 export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlternativeState'>({
     execute: (action) => {
@@ -69,6 +103,14 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
             }
         }
 
+        const retiredClips = readRetiredClipsTransition(expected, replacement);
+        if (retiredClips.kind === 'refused') {
+            return { status: 'conflict' };
+        }
+        if (retiredClips.kind === 'move' && !applyRetiredClipLanes(retiredClips.expected, retiredClips.replacement)) {
+            return { status: 'conflict' };
+        }
+
         setTrackStoreState({
             ...state,
             tracks: state.tracks.map((candidate) =>
@@ -82,6 +124,9 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
                     : candidate
             ),
         });
+        if (retiredClips.kind === 'move') {
+            applyRetiredClipRows(retiredClips.expected, retiredClips.replacement);
+        }
 
         return { status: 'written' };
     },
