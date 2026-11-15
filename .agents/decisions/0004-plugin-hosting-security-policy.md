@@ -6,7 +6,7 @@ status: accepted
 date: 2026-06-28
 owner: The Sourdaw team
 sources:
-  - .agents/specs/plugin-hosting-clap/spec.md
+    - .agents/specs/plugin-hosting-clap/spec.md
 ---
 
 # 0004 — Make native plugin-hosting security policy explicit
@@ -56,11 +56,11 @@ Native plugin hosting uses explicit security policy:
 
 ## Alternatives considered
 
-| Alternative | Why rejected |
-|---|---|
-| Keep accepting arbitrary scan-root strings from the renderer | It reopens the raw-path command surface that the security hardening task narrowed elsewhere. |
-| Remove broad macOS entitlements immediately | It may break plugin hosting before the runtime/editor policy is implemented and tested. |
-| Keep all broad entitlements globally forever | It makes plugin-hosting risk the default shell posture even when a build or user flow does not need it. |
+| Alternative                                                  | Why rejected                                                                                            |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Keep accepting arbitrary scan-root strings from the renderer | It reopens the raw-path command surface that the security hardening task narrowed elsewhere.            |
+| Remove broad macOS entitlements immediately                  | It may break plugin hosting before the runtime/editor policy is implemented and tested.                 |
+| Keep all broad entitlements globally forever                 | It makes plugin-hosting risk the default shell posture even when a build or user flow does not need it. |
 
 ## Consequences
 
@@ -84,6 +84,10 @@ narrowed at the cutover — `allow-jit` replaces
 `allow-unsigned-executable-memory` and `allow-dyld-environment-variables` is
 dropped — as recorded in `build/entitlements.mac.plist`; the plugin-hosting
 posture this ADR governs is otherwise unchanged.
+
+2026-11-15: the custom-root grant mechanism and its revocation are resolved by
+[ADR 0061](0061-plugin-folders-are-granted-by-a-native-folder-pick.md) — a
+native folder pick in the main process, revocable from settings.
 
 ## Follow-up work
 

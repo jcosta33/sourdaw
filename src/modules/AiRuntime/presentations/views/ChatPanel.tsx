@@ -51,6 +51,7 @@ import { proposeAnswerSuggestion } from '../../useCases/aiPanelActions/proposeAn
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { agentRunCancellation } from '../../useCases/cancelAgentRun';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
+import { chooseVibeBriefReading } from '../../useCases/chooseVibeBriefReading';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { getAgentApprovalView } from '../../useCases/getAgentApprovalView';
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
@@ -177,6 +178,7 @@ const ChatMessageItem = ({
     const { stoppableRunId } = msg;
     // A vibe-run batch card offers Skip, and its Cancel stops the whole run, so it says so.
     const skipAvailable = approval?.skip.available === true;
+    const readings = approval?.readings ?? [];
     const revertRunId = msg.vibeRunRevert?.runId;
 
     return (
@@ -282,6 +284,23 @@ const ChatMessageItem = ({
                                 Skip batch
                             </Button>
                         ) : null}
+                        {readings.map((reading) => (
+                            <Button
+                                key={reading.id}
+                                size="xs"
+                                variant="secondary"
+                                onClick={() => {
+                                    void chooseVibeBriefReading({
+                                        confirmationId: pendingConfirmationId,
+                                        readingId: reading.id,
+                                    });
+                                }}
+                                aria-label={`Plan reading: ${reading.name}`}
+                                className="h-7 gap-1.5 text-[11px]"
+                            >
+                                {reading.name} <span className="opacity-60">{reading.descriptors.join(', ')}</span>
+                            </Button>
+                        ))}
                         <Button
                             size="xs"
                             variant="ghost"
