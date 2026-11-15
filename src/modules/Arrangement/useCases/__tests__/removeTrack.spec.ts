@@ -189,7 +189,6 @@ describe('removeTrack', () => {
             alternatives: [],
             outputId: 'master',
             sends: [],
-            alternatives: [],
             parentId: null,
         };
         vi.mocked(getTrackState).mockReturnValue({
