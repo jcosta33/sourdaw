@@ -248,6 +248,12 @@ async function executeMacroAction(
             delete replayAction.payload.loopOriginBeat;
         }
     }
+    if (replayAction.type === 'addSection') {
+        // Same rule for a reverted section removal: its recorded slot belongs
+        // to the section list it was recorded against, so replay appends like a
+        // fresh public request.
+        delete replayAction.payload.index;
+    }
     if (replayAction.type === 'addSidechainRoute') {
         const recordedRouteId = replayAction.payload.routeId;
         delete replayAction.payload.routeId;
