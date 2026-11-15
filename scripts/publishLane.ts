@@ -87,6 +87,7 @@ import {
     writeLaneStack,
 } from './stackedLanes.ts';
 import { assertObservableTestInstructions } from './testInstructions.ts';
+import { withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 export { canonicalPath, containsPath };
 
@@ -242,6 +243,8 @@ export function ensureModelLabelArgs(model: string): string[] {
         'label',
         'create',
         modelLabelName(model),
+        '--repo',
+        REQUIRED_REPOSITORY,
         '--color',
         MODEL_LABEL_COLOR,
         '--description',
@@ -494,7 +497,7 @@ export function derivedProjectFromSubject(subject: string): string | undefined {
  * rides along because it is what the authorship fence reads.
  */
 export function labelListArgs(): string[] {
-    return ['label', 'list', '--limit', '200', '--json', 'name,description'];
+    return ['label', 'list', '--repo', REQUIRED_REPOSITORY, '--limit', '200', '--json', 'name,description'];
 }
 
 export function labelRowsFromListing(rows: unknown): LabelRow[] {
@@ -2233,18 +2236,7 @@ export function shellPort(
                 })
             ),
         cwd: () => cwd,
-        issueExists: (issue) => {
-            const result = spawnSync(executables.gh, issueLookupArgs(issue), {
-                cwd: primaryRoot,
-                env: session.env,
-                encoding: 'utf8',
-                shell: false,
-            });
-            if (result.error !== undefined) {
-                throw result.error;
-            }
-            return issueExistsFromLookup(issue, result);
-        },
+        issueExists: (issue) => lookupIssueExists(executables.gh, issue, primaryRoot, session.env),
         aheadBehind: (lane, baseSha, headSha) => {
             const output = spawnCapture(
                 executables.git,
@@ -2522,6 +2514,18 @@ type IssueLookup = { number?: number; isPullRequest?: boolean };
 
 export function issueLookupArgs(issue: number): string[] {
     return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', ISSUE_LOOKUP_JQ];
+}
+
+/** Asks GitHub whether the issue exists; a missing issue is an answer, any other failure throws. */
+function lookupIssueExists(gh: string, issue: number, cwd: string, env: NodeJS.ProcessEnv): boolean {
+    const args = issueLookupArgs(issue);
+    const result = withGhChildLocation(gh, args, cwd, env, (location) =>
+        spawnSync(gh, args, { cwd: location.cwd, env: location.env, encoding: 'utf8', shell: false })
+    );
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return issueExistsFromLookup(issue, result);
 }
 
 export function issueExistsFromLookup(

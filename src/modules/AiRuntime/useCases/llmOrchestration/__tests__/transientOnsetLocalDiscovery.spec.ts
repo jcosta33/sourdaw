@@ -5,13 +5,12 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../../models/AgentToolCatalogNames';
 import { createCreativeInterpretationToolSchema } from '../../../models/CreativeInterpretation';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import { getAgentToolCatalogSchemas } from '../../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
-import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
+import { generateToolPlanningOutcome } from '../inference';
 
 registerDeviceEnginePorts();
 
@@ -120,9 +119,9 @@ describe('run-owned transient discovery in the existing local free slot', () => 
             await generateToolPlanningOutcome('system', prompt, tools(prompt));
             expect(names()).toContain('agent.catalog.discover');
             expect(names()).not.toContain(READ);
-            // No workflow capability grounds the request, so the offer stops short of the budget by the
-            // workflow action tools.
-            expect(names()).toHaveLength(WEBLLM_TOOL_BUDGET - WORKFLOW_ACTION_TOOL_NAMES.size);
+            // No workflow capability grounds the request and no brief is offered: the selector, the nine
+            // planning tools, command-index search, catalog discovery and the interpretation tool, plus the one slot.
+            expect(names()).toHaveLength(MANDATORY_PLANNING_TOOL_NAMES.length + 5);
             expect(MANDATORY_PLANNING_TOOL_NAMES).toHaveLength(9);
             expect(
                 getAgentToolCatalogSchemas().find((tool) => tool.function.name === 'agent.catalog.discover')?.function
@@ -168,7 +167,7 @@ describe('run-owned transient discovery in the existing local free slot', () => 
             });
             expect(names(0)).not.toContain(READ);
             expect(names(1)).toContain(READ);
-            expect(names(1)).toHaveLength(WEBLLM_TOOL_BUDGET - WORKFLOW_ACTION_TOOL_NAMES.size);
+            expect(names(1)).toHaveLength(MANDATORY_PLANNING_TOOL_NAMES.length + 5);
             expect(names(1).filter((name) => !names(0).includes(name))).toEqual([READ]);
         }
     );

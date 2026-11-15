@@ -38,7 +38,7 @@ thread_local! {
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATIONS.with(|count| count.set(count.get() + 1));
-        System.alloc(layout)
+        unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -47,7 +47,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if layout.size() == BUDGET_SAMPLE_BYTES {
             BUDGET_SAMPLE_FREES.with(|count| count.set(count.get() + 1));
         }
-        System.dealloc(ptr, layout)
+        unsafe { System.dealloc(ptr, layout) }
     }
 }
 
