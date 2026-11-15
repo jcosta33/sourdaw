@@ -3,8 +3,9 @@
 use crate::commands::graph::{self, StripReportPayload};
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
-    plugin_file_fingerprint, plugin_file_path, FileFingerprint, PersistedPluginEntry,
-    PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt, RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
+    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
+    RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker::{self, ScanFailure};
@@ -1034,6 +1035,13 @@ fn rescan_did_not_finish(name: &str, path: &str, reason: &str) -> String {
     )
 }
 
+/// The refusal recorded once the retry a timeout earned has timed out as well.
+fn rescan_timed_out_twice(name: &str, path: &str, reason: &str) -> String {
+    format!(
+        "Plugin '{name}' at {path} could not be checked: {reason} on two attempts, so it will not be checked again this session. Rescan the folder it lives in."
+    )
+}
+
 fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) -> String {
     format!(
         "Plugin '{}' could not be loaded from its last known location {}: {reason}. It has been moved, removed or replaced since it was scanned — reinstall it there, or scan the folder it lives in now.",
@@ -1093,8 +1101,9 @@ impl<Rescan> Resolution<Rescan> {
 /// The rescan is injected so the resolution order can be tested without a real
 /// CLAP file and a child process; production passes [`rescan_plugin_file`].
 ///
-/// Step 3 happens at most once per registry key per process, and the store
-/// holds that record — see `PluginRegistryStore::claim_rescan`. Nothing above
+/// Step 3 happens at most once per registry key per process, plus one retry
+/// when its helper timed out, and the store holds that record — see
+/// `PluginRegistryStore::claim_rescan`. Nothing above
 /// this function bounds how often a miss is asked for: `activateExternalPlugin`
 /// drops its in-flight guard when activation fails, and the frontend rebuilds a
 /// project's live strip on every transport start, firing one activation per
@@ -1359,7 +1368,8 @@ struct TargetedRescan<'a> {
 /// On refusal a changed hit's stale rows leave the registry, so the next load
 /// of any of them reaches the recorded refusal rather than the file. An
 /// inconclusive rescan is not a refusal: this load is refused, but nothing is
-/// recorded and a changed hit's stale rows stay, so the next load rescans.
+/// recorded and a changed hit's stale rows stay, so the next load rescans —
+/// once: a retry that times out too is recorded as a refusal.
 /// Either way the attempt is settled last, once what it decided is visible:
 /// settling is what wakes the loads waiting on this key.
 fn rescan_and_publish(
@@ -1373,19 +1383,18 @@ fn rescan_and_publish(
 ) -> Result<VettedRegistryEntry, String> {
     let rescanned = authorize_plugin_file(scan_policy, target.path, target.format)
         .map_err(RescanFailure::Verdict)
-        .and_then(|authorized| {
-            rescan_holding_still(&authorized, &target, rescan)
-                .map(|(rescanned, fingerprint)| (authorized, rescanned, fingerprint))
-        });
-    let (authorized, rescanned, fingerprint) = match rescanned {
+        .and_then(|authorized| rescan_holding_still(&authorized, &target, rescan));
+    let (rescanned, fingerprint) = match rescanned {
         Ok(rescanned) => rescanned,
         Err(RescanFailure::Inconclusive(reason)) => {
-            attempt.inconclusive();
-            return Err(rescan_did_not_finish(
-                target.name,
-                &target.path.display().to_string(),
-                &reason,
-            ));
+            let path = target.path.display().to_string();
+            let repeated = rescan_timed_out_twice(target.name, &path, &reason);
+            return Err(match attempt.inconclusive(repeated.clone()) {
+                InconclusiveOutcome::RetryAllowed => {
+                    rescan_did_not_finish(target.name, &path, &reason)
+                }
+                InconclusiveOutcome::GaveUp => repeated,
+            });
         }
         Err(RescanFailure::Verdict(reason)) => {
             let refusal = describe_refusal(&reason);
@@ -1420,9 +1429,6 @@ fn rescan_and_publish(
             }
         }
     }
-    // A completed, published rescan of this very file is direct evidence that
-    // whatever quarantined it in a full scan no longer happens.
-    registry_store.clear_quarantine(&authorized);
     // Settled only once the entry is in the registry and its lock released:
     // settling wakes every load waiting on this key, and each one resolves
     // again straight away, so a waiter woken before the insert would find no
@@ -6718,8 +6724,9 @@ mod tests {
     /// from it and the updated plugin stayed unloadable for the session.
     ///
     /// Mutation this catches: settling an inconclusive rescan with
-    /// `attempt.refuse`, or dropping the changed hit's stale rows on it — the
-    /// second load then answers from the record and never rescans.
+    /// `attempt.refuse` — the second load then answers from the record and
+    /// never rescans — or dropping the changed hit's stale row, which the
+    /// registry assertion between the loads observes.
     #[test]
     fn a_changed_hit_whose_rescan_times_out_is_rescanned_on_the_next_load() {
         let plugins = LoadFixtureRoot::create("vetting-timeout-not-recorded");
@@ -6747,6 +6754,16 @@ mod tests {
             recording_rescan_failing(&log, Err(a_helper_timeout())),
         )
         .expect_err("a check that did not finish must refuse this load");
+        assert_eq!(
+            state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .get("aaaa1111")
+                .map(|entry| entry.path.clone()),
+            Some(published[0].path.clone()),
+            "the changed hit's row stays, so the next load vets it as a hit again"
+        );
         load_vetted(
             &plugins,
             &state,
@@ -6766,6 +6783,134 @@ mod tests {
             "a timeout records nothing, so the next load rescans"
         );
         assert_eq!(logged(&log, "construct"), 1);
+    }
+
+    /// Activation reruns on every transport start, so a helper that keeps
+    /// timing out must not cost a ten-second child process each time: one
+    /// retry, then the refusal is recorded like any other.
+    ///
+    /// Mutation this catches: `inconclusive` recording nothing on the retry
+    /// too, or `claim_rescan` granting past the mark — the third load then
+    /// rescans.
+    #[test]
+    fn a_rescan_that_times_out_twice_is_recorded_and_not_tried_a_third_time() {
+        let plugins = LoadFixtureRoot::create("vetting-timeout-bounded");
+        let state = AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(
+                plugins.root.join("plugin-registry.json"),
+            )),
+            ..AppState::default()
+        };
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
+        std::fs::write(&published[0].path, "a freshly updated plugin binary")
+            .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        let loads: Vec<String> = (0..3)
+            .map(|_| {
+                load_vetted(
+                    &plugins,
+                    &state,
+                    &NoWindowHost,
+                    &log,
+                    recording_rescan_failing(&log, Err(a_helper_timeout())),
+                )
+                .expect_err("a check that never finishes must refuse every load")
+            })
+            .collect();
+
+        assert_eq!(
+            logged(&log, "rescan"),
+            2,
+            "one rescan and one retry; the third load answers from the record"
+        );
+        assert!(
+            loads[0].contains("try loading it again"),
+            "the first timeout invites a retry, got: {}",
+            loads[0]
+        );
+        assert!(
+            loads[1].contains("two attempts")
+                && loads[1].contains("Rescan the folder")
+                && !loads[1].contains("moved, removed or replaced"),
+            "the second timeout says it timed out twice, got: {}",
+            loads[1]
+        );
+        assert_eq!(
+            loads[2], loads[1],
+            "the third load gets the recorded refusal"
+        );
+    }
+
+    /// A rescan that finishes clears what an earlier timeout earned, so the
+    /// next change to the file is a fresh case with its own retry.
+    ///
+    /// Mutation this catches: `resolved` leaving the timeout mark in place,
+    /// which makes the later timeout the key's second and records it.
+    #[test]
+    fn a_rescan_that_finishes_clears_the_timeout_it_followed() {
+        let plugins = LoadFixtureRoot::create("vetting-timeout-then-success");
+        let state = AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(
+                plugins.root.join("plugin-registry.json"),
+            )),
+            ..AppState::default()
+        };
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
+        let path = published[0].path.clone();
+        std::fs::write(&path, "the first update").expect("the plugin should be updated");
+        let log = vetting_log();
+
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan_failing(&log, Err(a_helper_timeout())),
+        )
+        .expect_err("the first check does not finish");
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("the retry finishes and loads");
+        std::fs::write(&path, "a second, longer update to the plugin")
+            .expect("the plugin should be updated again");
+        let later = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan_failing(&log, Err(a_helper_timeout())),
+        )
+        .expect_err("the new change's check does not finish either");
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("the new change gets its own retry");
+
+        assert!(
+            later.contains("try loading it again"),
+            "a timeout after a success is a first timeout, got: {later}"
+        );
+        assert_eq!(logged(&log, "rescan"), 4);
     }
 
     /// The same plugin's stale row must also still fail vetting after a
@@ -11125,15 +11270,17 @@ mod tests {
         next_launch
     }
 
-    /// A full scan quarantines a path whose helper crashed or hung. A targeted
-    /// rescan of that path that completes and publishes is direct evidence it
-    /// no longer does, so the quarantine goes.
+    /// A scan quarantines a path whose helper crashed or hung, and the crash
+    /// can come from the instance pass the targeted rescan never runs. A
+    /// descriptor read that succeeds therefore disproves nothing, and clearing
+    /// the quarantine would let the next ordinary scan spawn the helper that
+    /// hangs.
     ///
-    /// Mutation this catches: dropping the `clear_quarantine` call on
+    /// Mutation this catches: clearing the quarantine of the scanned path on
     /// `rescan_and_publish`'s success path.
     #[test]
-    fn a_successful_rescan_clears_the_quarantine_of_the_path_it_scanned() {
-        let fixture = PersistedRegistryFixture::create("activation-rescan-clears-quarantine");
+    fn a_successful_rescan_leaves_the_quarantine_of_the_path_it_scanned() {
+        let fixture = PersistedRegistryFixture::create("activation-rescan-keeps-quarantine-ok");
         let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
         fixture.persist("aaaa1111", &plugin_path);
         let store = quarantined_in_a_previous_launch(&fixture, &plugin_path);
@@ -11159,8 +11306,8 @@ mod tests {
         .expect("a quarantined plugin whose rescan succeeds must resolve");
 
         assert!(
-            store.is_quarantined(&plugin_path).is_none(),
-            "a rescan that completed disproves the quarantine"
+            store.is_quarantined(&plugin_path).is_some(),
+            "a descriptor read that succeeded does not disprove a quarantine"
         );
     }
 

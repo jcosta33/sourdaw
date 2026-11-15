@@ -342,6 +342,9 @@ impl PersistedPluginEntry {
 enum ResolutionOutcome {
     /// A caller is inside this key's rescan right now.
     InProgress,
+    /// The rescan's helper ran out of time once, which decided nothing about
+    /// the plugin. The next claim is granted, and is the key's last.
+    TimedOutOnce,
     /// The rescan ran and the plugin was not there, with the refusal it
     /// produced.
     Refused(String),
@@ -364,7 +367,8 @@ struct StoredRegistry {
     /// [`PluginRegistryStore::apply_completed_scan_removals`].
     entries: BTreeMap<String, PersistedPluginEntry>,
     /// One entry per registry key whose miss this process has already tried to
-    /// resolve. Bounds the targeted rescan to once per key per process; see
+    /// resolve. Bounds the targeted rescan to once per key per process, plus
+    /// one retry when the first attempt's helper timed out; see
     /// [`PluginRegistryStore::claim_rescan`].
     resolutions: HashMap<String, ResolutionOutcome>,
     /// How many callers are parked in [`PluginRegistryStore::wait_for_rescan`]
@@ -392,19 +396,20 @@ struct StoredRegistry {
     quarantine_touched: BTreeSet<String>,
 }
 
-/// The verdict on a caller's request to run the one targeted rescan a registry
-/// key gets per process.
+/// The verdict on a caller's request to run the targeted rescan a registry key
+/// gets per process: one, plus one retry when the first one's helper timed out.
 pub enum RescanClaim<'a> {
-    /// Nobody has rescanned this key yet. The caller owns the attempt and must
-    /// settle it.
+    /// Nobody has rescanned this key yet, or its only rescan timed out and this
+    /// is the retry. The caller owns the attempt and must settle it.
     Granted(RescanAttempt<'a>),
-    /// A rescan already ran this process and refused, with this message.
+    /// A rescan already ran this process and refused, or timed out twice, with
+    /// this message.
     Refused(String),
     /// Another caller is inside this key's rescan right now.
     InProgress,
 }
 
-/// The one rescan a registry key gets this process, held while it runs.
+/// The rescan a registry key gets this process, held while it runs.
 ///
 /// Settle it with [`RescanAttempt::refuse`], [`RescanAttempt::resolved`] or
 /// [`RescanAttempt::inconclusive`].
@@ -414,7 +419,18 @@ pub enum RescanClaim<'a> {
 pub struct RescanAttempt<'a> {
     store: &'a PluginRegistryStore,
     plugin_id: String,
+    /// Whether this attempt is the retry a timeout earned.
+    after_timeout: bool,
     settled: bool,
+}
+
+/// What a timed-out rescan left the key with.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InconclusiveOutcome {
+    /// Nothing was decided about the plugin; the next load may rescan once.
+    RetryAllowed,
+    /// The retry timed out too, and the key now answers with a refusal.
+    GaveUp,
 }
 
 impl RescanAttempt<'_> {
@@ -430,14 +446,29 @@ impl RescanAttempt<'_> {
         self.store.rescan_settled.notify_all();
     }
 
-    /// The rescan could not reach a verdict — its helper ran out of time. The
-    /// load that ran it is refused, but nothing is recorded, so the next load
-    /// of the same id rescans instead of answering from a refusal the plugin
-    /// never earned.
-    pub fn inconclusive(mut self) {
+    /// The rescan could not reach a verdict — its helper ran out of time. A
+    /// timeout says nothing about the plugin, so the first one records no
+    /// refusal and the next load of the same id may rescan once more. A
+    /// rescan that is already that retry and times out again records
+    /// `repeated_refusal`: activation reruns on every transport start, and an
+    /// unbounded retry is a ten-second helper per Play.
+    pub fn inconclusive(mut self, repeated_refusal: String) -> InconclusiveOutcome {
         self.settled = true;
-        self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        let outcome = if self.after_timeout {
+            self.store.lock_stored().resolutions.insert(
+                self.plugin_id.clone(),
+                ResolutionOutcome::Refused(repeated_refusal),
+            );
+            InconclusiveOutcome::GaveUp
+        } else {
+            self.store
+                .lock_stored()
+                .resolutions
+                .insert(self.plugin_id.clone(), ResolutionOutcome::TimedOutOnce);
+            InconclusiveOutcome::RetryAllowed
+        };
         self.store.rescan_settled.notify_all();
+        outcome
     }
 
     /// The rescan found the plugin. Nothing is recorded: the entry is in the
@@ -454,7 +485,15 @@ impl Drop for RescanAttempt<'_> {
         if self.settled {
             return;
         }
-        self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        let mut stored = self.store.lock_stored();
+        if self.after_timeout {
+            stored
+                .resolutions
+                .insert(self.plugin_id.clone(), ResolutionOutcome::TimedOutOnce);
+        } else {
+            stored.resolutions.remove(&self.plugin_id);
+        }
+        drop(stored);
         self.store.rescan_settled.notify_all();
     }
 }
@@ -687,7 +726,10 @@ impl PluginRegistryStore {
         stored.quarantine_touched.extend(removed_keys);
     }
 
-    /// Claim the one targeted rescan a registry key gets this process.
+    /// Claim the targeted rescan a registry key gets this process: one, and
+    /// one more only when the first one's helper timed out, which decided
+    /// nothing about the plugin. A key whose retry times out as well answers
+    /// with a recorded refusal like any other.
     ///
     /// The in-memory registry is the only thing bounding how often activation
     /// asks for a plugin it cannot resolve, and it bounds nothing: the frontend
@@ -706,13 +748,14 @@ impl PluginRegistryStore {
     /// flight — must load both, not fail one because the other got there first.
     pub fn claim_rescan(&self, plugin_id: &str) -> RescanClaim<'_> {
         let mut stored = self.lock_stored();
-        match stored.resolutions.get(plugin_id) {
+        let after_timeout = match stored.resolutions.get(plugin_id) {
             Some(ResolutionOutcome::Refused(reason)) => {
                 return RescanClaim::Refused(reason.clone())
             }
             Some(ResolutionOutcome::InProgress) => return RescanClaim::InProgress,
-            None => {}
-        }
+            Some(ResolutionOutcome::TimedOutOnce) => true,
+            None => false,
+        };
         stored
             .resolutions
             .insert(plugin_id.to_string(), ResolutionOutcome::InProgress);
@@ -721,6 +764,7 @@ impl PluginRegistryStore {
         RescanClaim::Granted(RescanAttempt {
             store: self,
             plugin_id: plugin_id.to_string(),
+            after_timeout,
             settled: false,
         })
     }
