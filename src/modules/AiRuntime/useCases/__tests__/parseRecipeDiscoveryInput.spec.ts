@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+
+import { RECIPE_DISCOVERY_TOOL_NAME } from '../../models/AgentToolCatalogNames';
+import { getAgentToolCatalogSchemas } from '../agentToolCatalog';
 import { parseRecipeDiscoveryInput } from '../parseRecipeDiscoveryInput';
+
+registerDeviceEnginePorts();
 
 const ROLES = ['vocal', 'drums', 'bass'];
 
@@ -21,13 +28,53 @@ function accepted(argumentsValue: unknown) {
 }
 
 describe('parseRecipeDiscoveryInput', () => {
-    // Red when a call naming nothing to search by is admitted as a search of everything.
+    // Red when a call the advertised schema admits is refused, or a bare call is not a browse.
     it.each([
         ['no argument at all', {}],
         ['only a limit', { limit: 4 }],
         ['only a target', { targetId: 'track-1' }],
-    ])('refuses %s, naming the three ways to search', (_label, argumentsValue) => {
-        expect(refusal(argumentsValue)).toBe('recipe.discover requires descriptors, presetTerms or a role');
+        ['a target and a limit', { targetId: 'track-1', limit: 4 }],
+    ])('accepts %s as a browse of the preset recipes', (_label, argumentsValue) => {
+        expect(accepted(argumentsValue)).toMatchObject({ descriptors: [], presetTerms: [] });
+    });
+
+    // Red when the parser and the advertised schema stop agreeing on what a call may carry.
+    it('accepts every minimal shape the advertised recipe.discover schema admits', () => {
+        const parameters = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === RECIPE_DISCOVERY_TOOL_NAME
+        )?.function.parameters as {
+            properties: Record<string, { type: string; enum?: string[]; minimum?: number }>;
+            required: string[];
+        };
+        const validValue = (property: { type: string; enum?: string[]; minimum?: number }): unknown => {
+            if (property.enum !== undefined) {
+                return property.enum[0];
+            }
+            return { array: ['x'], string: 'x', integer: property.minimum }[property.type];
+        };
+        const entries = Object.entries(parameters.properties).map(([key, property]) => [key, validValue(property)]);
+        const shapes = [
+            Object.fromEntries(entries.filter(([key]) => parameters.required.includes(String(key)))),
+            ...entries.map((entry) => Object.fromEntries([entry])),
+        ];
+
+        expect(shapes).toHaveLength(entries.length + 1);
+        for (const shape of shapes) {
+            expect(parseRecipeDiscoveryInput(shape, getMixRecipeCatalog().roles).status).toBe('valid');
+        }
+    });
+
+    it.each([
+        ['null descriptors', { descriptors: null }],
+        ['null presetTerms', { presetTerms: null }],
+        ['null role', { role: null }],
+        ['null targetId', { targetId: null }],
+        ['null limit', { limit: null }],
+        ['limit 0', { limit: 0 }],
+        ['limit 9', { limit: 9 }],
+        ['empty descriptors', { descriptors: [] }],
+    ])('refuses %s', (_label, argumentsValue) => {
+        expect(parseRecipeDiscoveryInput(argumentsValue, ROLES).status).toBe('invalid');
     });
 
     it.each([
@@ -71,7 +118,7 @@ describe('parseRecipeDiscoveryInput', () => {
         expect(refusal({ presetTerms: ['hall'], presetNames: ['hall'] })).toContain('strict discovery contract');
     });
 
-    it('still refuses a role outside the catalog', () => {
+    it('refuses a role outside the catalog', () => {
         expect(refusal({ role: 'choir' })).toContain('catalog roles');
     });
 });

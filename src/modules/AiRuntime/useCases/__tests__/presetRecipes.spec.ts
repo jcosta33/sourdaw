@@ -578,7 +578,11 @@ describe('preset recipes', () => {
         // Red when an expansion of a descriptor-less recipe retains a metric expectation the approval could promise.
         it('derives no metric expectation to promise, where an authored recipe retains its own', () => {
             setTracks([createTrack({ id: 'source-1', name: 'FX Return' })]);
-            offerRecipes(handBuiltRecipe(chainOf(factoryPreset('fx-eq-mid-forward')), []));
+            const authored = {
+                ...handBuiltRecipe(chainOf(factoryPreset('fx-eq-mid-forward')), []),
+                metrics: [{ metric: 'spectralCentroid', direction: 'increase' }],
+            } as MixRecipe;
+            offerRecipes(authored);
             const expandRecipe = (recipeId: string) =>
                 executeRecipeExpansion({
                     call: { id: 'call-1', name: 'recipe.expand', arguments: { recipeId, targetId: 'source-1' } },
@@ -594,7 +598,20 @@ describe('preset recipes', () => {
 
             expect(fromPreset.receipt.status).toBe('success');
             expect(fromPreset.metricRecipe).toBeUndefined();
-            expect(fromAuthored.metricRecipe?.expectations).toEqual([]);
+            expect(fromAuthored.metricRecipe?.expectations).toEqual([
+                { metric: 'spectralCentroid', band: null, direction: 'increase' },
+            ]);
+        });
+
+        // Red when a target alone stops browsing the preset recipes serving the target's own role.
+        it('lists preset recipes serving the role of a target named alone', () => {
+            setLeadVocal();
+
+            const listed = discoverAll([], null, 'lead-vocal-1').data.candidates;
+
+            expect(listed.map((entry) => entry.id)).toContain('preset:fx-eq-vocal-presence');
+            expect(listed.every((entry) => entry.origin !== undefined)).toBe(true);
+            expect(listed.every((entry) => entry.roles.length === 0 || entry.roles.includes('vocal'))).toBe(true);
         });
 
         it('is matched case-insensitively and by a word of a hyphenated tag', () => {

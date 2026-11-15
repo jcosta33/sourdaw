@@ -208,7 +208,7 @@ function getRecipeDiscoverySchema(): ToolSchema {
     const roles = getMixRecipeCatalog().roles;
     return tool(
         RECIPE_DISCOVERY_TOOL_NAME,
-        "Find mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range. A candidate with an origin is a factory chain preset: its descriptor (null when its tags name none) and roles are the preset author's tags, and each range is the single value the preset stores. Pass descriptors, presetTerms or role.",
+        "Find mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range. A candidate with an origin is a factory chain preset: its descriptor (null when its tags name none) and roles are the preset author's tags, and each range is the single value the preset stores. With no terms it lists factory presets.",
         {
             descriptors: {
                 type: 'array',

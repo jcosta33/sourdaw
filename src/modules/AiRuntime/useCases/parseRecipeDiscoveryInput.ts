@@ -103,12 +103,6 @@ export function parseRecipeDiscoveryInput(
             reason: `recipe.discover limit must be an integer from ${String(MIN_LIMIT)} to ${String(MAX_LIMIT)}`,
         };
     }
-    if (descriptors.length === 0 && presetTerms.length === 0 && argumentsValue.role === undefined) {
-        return {
-            status: 'invalid',
-            reason: 'recipe.discover requires descriptors, presetTerms or a role',
-        };
-    }
     return {
         status: 'valid',
         input: {

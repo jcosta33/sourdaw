@@ -659,7 +659,6 @@ describe('recipe.discover', () => {
         ['too many descriptors', { descriptors: ['warm', 'bright', 'tight', 'punchy', 'wide'] }],
         ['a limit above the maximum', { descriptors: ['warmer'], limit: 9 }],
         ['a role outside the catalog', { descriptors: ['warmer'], role: 'choir' }],
-        ['no descriptors, presetTerms or role', { limit: 4 }],
         ['preset terms above the maximum', { presetTerms: ['a', 'b', 'c', 'd', 'e'] }],
     ])('fails with invalid-tool-arguments for %s', async (_label, args) => {
         const receipt = await runRecipeDiscovery('loop-invalid', args);
