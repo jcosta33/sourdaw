@@ -11,6 +11,7 @@ import { carriedExternalPluginStates } from '../carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
+import { markExternalPluginRestoreFailure } from '../markExternalPluginRestoreFailure';
 import { readExternalPluginStatesBeforeEngineRetire } from '../readExternalPluginStatesBeforeEngineRetire';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { restorePluginState } from '../restorePluginState';
@@ -195,6 +196,37 @@ describe('live plugin state across an app-initiated teardown', () => {
             await activate(SAVED_CHUNK);
 
             expect(carriedExternalPluginStates.size).toBe(0);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('carries nothing and warns nothing when the read returns no bytes', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.getPluginState.mockResolvedValueOnce(new Uint8Array());
+
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            expect(carriedExternalPluginStates.size).toBe(0);
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('carries nothing when a restore failure is marked while the read is pending', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const heldRead = Promise.withResolvers<Uint8Array>();
+            mocks.getPluginState.mockReturnValueOnce(heldRead.promise);
+            // Answer however the case ends, so a held read cannot leak into later cases.
+            onTestFinished(() => heldRead.resolve(LIVE_BYTES));
+
+            const teardown = unloadPluginCarryingLiveState(INSTANCE_ID);
+            await vi.waitFor(() => expect(mocks.getPluginState).toHaveBeenCalledOnce());
+            markExternalPluginRestoreFailure(INSTANCE_ID);
+            heldRead.resolve(LIVE_BYTES);
+            await teardown;
+
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
+            expect(carriedExternalPluginStates.size).toBe(0);
+            await activate(SAVED_CHUNK);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
 
@@ -505,6 +537,32 @@ describe('live plugin state across an app-initiated teardown', () => {
             ]);
             expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
             expect(carriedExternalPluginStates.size).toBe(0);
+        });
+
+        it('keeps the carry for the next activation when the instance is forgotten while the carried restore is pending', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            const heldRestore = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(heldRestore.promise);
+            // Release the held restore however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldRestore.resolve());
+
+            const superseded = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+            // An engine retire forgets the instance without bumping the activation epoch.
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+            heldRestore.resolve();
+
+            await expect(superseded).resolves.toMatchObject({
+                status: 'failed',
+                stage: 'restore',
+                reason: expect.stringContaining('superseded'),
+            });
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(true);
+            mocks.setPluginState.mockClear();
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
         });
 
         it('drops a carry for a different plugin on the same instance id', async () => {
