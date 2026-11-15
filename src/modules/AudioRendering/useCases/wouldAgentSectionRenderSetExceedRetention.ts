@@ -1,5 +1,4 @@
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
-
+import { type RenderProjectSectionJobSnapshot } from '../events/audioRenderingAppActions';
 import { type AgentSectionRenderArtifact } from '../models/AgentSectionRenderArtifact';
 import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../models/AgentSectionRenderRetentionPolicy';
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';

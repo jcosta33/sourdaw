@@ -70,8 +70,13 @@ planted `objects/info/alternates` store. Config-defined hooks (`hook.<name>.even
 `hook.<name>.command`) take a lane-chosen name, so a token-bearing Git child refuses to start while
 the config it reads defines any `hook.*` key. Transports are an allowlist of `https` and `file`;
 `ext::`, `ssh`, and `git` are each refused by their own override. These keep their value as
-defence in depth beside the isolated directory. The GitHub CLI holds the token and runs Git itself
-only to read remote names when a command omits `--repo`; that runs no config-selected program.
+defence in depth beside the isolated directory. The GitHub CLI holds the token and starts Git
+itself, so every token-bearing `gh` child starts in a fresh empty directory that Git cannot climb
+out of, with inherited repository routing removed: any Git it runs finds no repository and reads no
+repository config. Each such call therefore names its repository with `--repo` or an explicit API
+path. The one exception is the exact checkout repository query (`gh repo view --json nameWithOwner
+--jq .nameWithOwner`), which reads remote names in the caller's repository with `git remote -v` and
+`git config --get-regexp`; those read config but start no config-selected program.
 Keeping the token secret from same-account processes is outside this
 boundary. Every Git-read environment
 ignores replace refs. The

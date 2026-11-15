@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
-
+import { type RenderProjectSectionJobSnapshot } from '../../events/audioRenderingAppActions';
 import { retryAgentProjectSectionRenders } from '../retryAgentProjectSectionRenders';
 
 const mocks = vi.hoisted(() => ({ renderSections: vi.fn() }));
