@@ -310,7 +310,7 @@ export async function verifyTransportMutations(options: {
     }
 }
 
-function childEnvironment(): NodeJS.ProcessEnv {
+function childEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const environment: NodeJS.ProcessEnv = {};
     for (const name of [
         'PATH',
@@ -322,8 +322,8 @@ function childEnvironment(): NodeJS.ProcessEnv {
         'CARGO_HOME',
         'CARGO_INCREMENTAL',
     ]) {
-        if (process.env[name] !== undefined) {
-            environment[name] = process.env[name];
+        if (source[name] !== undefined) {
+            environment[name] = source[name];
         }
     }
     return environment;
@@ -429,27 +429,37 @@ async function proveIsolatedTransport(context: {
     return proof;
 }
 
-async function hostedProbe(): Promise<void> {
-    const root = resolvePath(import.meta.dirname, '..');
+export async function hostedProbe(
+    context: {
+        root: string;
+        environment: NodeJS.ProcessEnv;
+        platform: NodeJS.Platform;
+    } = {
+        root: resolvePath(import.meta.dirname, '..'),
+        environment: process.env,
+        platform: process.platform,
+    }
+): Promise<void> {
+    const { root, environment, platform } = context;
     const evidencePath = join(root, '.agents/artifacts/native-transport-mutations');
     mkdirSync(evidencePath, { recursive: true });
     const record: Record<string, unknown> = {
         format: 'native-transport-mutations-v1',
-        headSha: process.env.HEAD_SHA,
-        integrationSha: process.env.GITHUB_SHA,
-        runId: process.env.GITHUB_RUN_ID,
-        runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+        headSha: environment.HEAD_SHA,
+        integrationSha: environment.GITHUB_SHA,
+        runId: environment.GITHUB_RUN_ID,
+        runAttempt: environment.GITHUB_RUN_ATTEMPT,
         result: 'incomplete',
         restored: false,
     };
     const save = () => writeFileSync(join(evidencePath, 'summary.json'), `${JSON.stringify(record, null, 2)}\n`);
     const output = (value: string) => {
-        if (process.env.GITHUB_OUTPUT === undefined) {
+        if (environment.GITHUB_OUTPUT === undefined) {
             throw new Error('Missing GitHub output file');
         }
-        appendFileSync(process.env.GITHUB_OUTPUT, `${value}\n`);
+        appendFileSync(environment.GITHUB_OUTPUT, `${value}\n`);
     };
-    const env = childEnvironment();
+    const env = childEnvironment(environment);
     const git = async (...args: string[]) => {
         const result = await runCommand('git', args, root, env);
         if (result.code !== 0 || result.signal !== null || result.failure !== undefined) {
@@ -469,18 +479,18 @@ async function hostedProbe(): Promise<void> {
     save();
     try {
         if (
-            process.env.GITHUB_ACTIONS !== 'true' ||
-            process.platform !== 'darwin' ||
-            process.env.GITHUB_JOB !== 'native-macos' ||
-            process.env.GITHUB_WORKSPACE === undefined ||
-            realpathSync(process.env.GITHUB_WORKSPACE) !== realpathSync(root)
+            environment.GITHUB_ACTIONS !== 'true' ||
+            platform !== 'darwin' ||
+            environment.GITHUB_JOB !== 'native-macos' ||
+            environment.GITHUB_WORKSPACE === undefined ||
+            realpathSync(environment.GITHUB_WORKSPACE) !== realpathSync(root)
         ) {
             throw new Error('Expected clean native-macos integration checkout and immutable event SHAs');
         }
         const { head, base } = assertNativeSourceBinding({
-            head: process.env.HEAD_SHA,
-            base: process.env.BASE_SHA,
-            integration: process.env.GITHUB_SHA,
+            head: environment.HEAD_SHA,
+            base: environment.BASE_SHA,
+            integration: environment.GITHUB_SHA,
             checkout: await git('rev-parse', 'HEAD'),
             status: await git('status', '--porcelain'),
         });
@@ -490,7 +500,12 @@ async function hostedProbe(): Promise<void> {
         ) {
             throw new Error('Event commits were not fetched by the isolated checkout');
         }
-        if ((await git('diff', '--name-only', base, head, '--', SOURCE)) === '') {
+        // An advanced event base can contain main-only changes absent from the feature.
+        const featureBase = await git('merge-base', '--all', base, head);
+        if (!/^[a-f0-9]{40}$/u.test(featureBase)) {
+            throw new Error('Expected one immutable merge base for native source scope');
+        }
+        if ((await git('diff', '--name-only', featureBase, head, '--', SOURCE)) === '') {
             record.result = 'not-scheduled';
             record.reason = 'owning source unchanged';
             record.restored = true;
