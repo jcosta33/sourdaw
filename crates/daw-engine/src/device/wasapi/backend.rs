@@ -946,12 +946,27 @@ impl StreamRuntime {
                         samples * self.format.bytes_per_sample(),
                     );
                 },
-                SampleLayout::I16 => unsafe {
+                SampleLayout::I16 => {
                     let out = buffer.cast::<i16>();
                     for (index, sample) in interleaved.iter().enumerate() {
-                        *out.add(index) = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16;
+                        let value = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16;
+                        // SAFETY: `interleaved` is `scratch[..samples]` with
+                        // `samples = frames * channels`, so `index < samples`.
+                        // The `GetBuffer(frames)` area spans `frames *
+                        // nBlockAlign` bytes, and a 16-bit PCM format has
+                        // `nBlockAlign` equal to `channels * 2` (set so in
+                        // `engine_format_blob`, and required of 16-bit PCM by
+                        // `WAVEFORMATEX`), i.e. `samples` `i16`s, so the
+                        // offset stays inside that one allocation.
+                        let slot = unsafe { out.add(index) };
+                        // SAFETY: `slot` is inside the `GetBuffer` area, which
+                        // is valid for writes of `samples` `i16`s until the
+                        // `ReleaseBuffer` below and which nothing else accesses
+                        // meanwhile. WASAPI documents no alignment for that
+                        // pointer, and `write_unaligned` requires none.
+                        unsafe { slot.write_unaligned(value) };
                     }
-                },
+                }
             }
 
             // SAFETY: `render_client` is a live interface on this
