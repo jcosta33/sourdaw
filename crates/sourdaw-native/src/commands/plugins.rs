@@ -7376,6 +7376,83 @@ mod tests {
         );
     }
 
+    /// The after-fingerprint closes the window over the instance pass as well
+    /// as the descriptor read: a file replaced while its instance was being
+    /// inspected was read by the descriptor helper, but the capabilities
+    /// published beside it came from a different file.
+    ///
+    /// Mutation this catches: taking the after-fingerprint before the
+    /// per-descriptor instance loop rather than after it.
+    #[test]
+    fn a_candidate_swapped_during_its_instance_pass_is_not_recorded() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("scan-swapped-in-instance-pass");
+        let plugin_path = root.join("Swapped.clap");
+        std::fs::write(&plugin_path, b"the plugin the helpers read").expect("fixture written");
+        let state = state_with_registry_file(&root);
+
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            fake_successful_descriptor_scan,
+            |_format, path: &Path, _plugin_id, _timeout| {
+                // The instance helper has inspected the file; now something
+                // else replaces it.
+                let replacement = path.with_extension("replacement");
+                std::fs::write(&replacement, b"a file no helper ever read")
+                    .expect("replacement written");
+                std::fs::rename(&replacement, path).expect("replacement renamed over");
+                Ok(scanner::ScannedInstance::default())
+            },
+        ))
+        .expect("the scan itself succeeds");
+
+        let path_text = plugin_path.display().to_string();
+        assert!(
+            scan.plugins.is_empty(),
+            "the swapped file's rows must not be published"
+        );
+        assert!(
+            scan.errors
+                .iter()
+                .any(|error| error.starts_with(&format!("{path_text}:"))
+                    && error.contains("changed while it was being scanned")),
+            "the scan must say which file changed, got: {:?}",
+            scan.errors
+        );
+        assert!(
+            !state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .values()
+                .any(|entry| entry.path == path_text),
+            "no registry entry may point at the swapped file"
+        );
+        let next_launch = PluginRegistryStore::at(root.join("plugin-registry.json"));
+        next_launch.hydrate_into(
+            &Mutex::new(HashMap::new()),
+            &PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+        );
+        let persisted = next_launch.last_known_entry(&scanner::stable_id(&plugin_path));
+        let quarantined = state.plugin_registry_store.is_quarantined(&plugin_path);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            persisted.is_none(),
+            "no row may be persisted for the swapped file"
+        );
+        assert!(
+            quarantined.is_none() && scan.quarantined.is_empty(),
+            "a file that changed is not a helper that failed, and is not quarantined"
+        );
+    }
+
     /// The defect (#3505): every scan spawned a descriptor helper and an
     /// instance helper for every candidate, so a settled plugin folder paid the
     /// whole per-candidate cost again on every run and a large one could not
@@ -9626,6 +9703,134 @@ mod tests {
                 .expect("registry lock")
                 .contains_key("aaaa1111"),
             "the rewritten row hydrates on the next launch"
+        );
+    }
+
+    /// A miss rescans its last known location, and that location is
+    /// re-authorized before the scan worker is pointed at it: a persisted row
+    /// whose file has become a symlink to somewhere outside the policy must
+    /// not send a helper to read it.
+    ///
+    /// Mutation this catches: dropping the authorization from
+    /// `rescan_and_publish` on the miss route, which hands the symlink to the
+    /// rescan.
+    #[cfg(unix)]
+    #[test]
+    fn a_miss_whose_last_known_path_is_a_symlink_outside_the_policy_is_refused() {
+        let fixture = PersistedRegistryFixture::create("activation-miss-symlink");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let outside = fixture.root.join("Outside.clap");
+        std::fs::write(&outside, b"code outside the policy").expect("outside file written");
+        std::fs::remove_file(&plugin_path).expect("the scanned file is removed");
+        std::os::unix::fs::symlink(&outside, &plugin_path).expect("the symlink is created");
+
+        let rescans = std::cell::Cell::new(0);
+        let error = resolve_registry_entry(
+            &Mutex::new(HashMap::new()),
+            &fixture.store(),
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                rescans.set(rescans.get() + 1);
+                Err(format!("unexpected rescan of {}", path.display()))
+            },
+        )
+        .expect_err("a last known path symlinked outside the policy must not resolve");
+
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Vendor Reverb' could not be loaded from its last known location {}: Unauthorized plugin scan path",
+                plugin_path.display()
+            )),
+            "the refusal must name the plugin, the path and the policy's reason, got: {error}"
+        );
+        assert_eq!(
+            rescans.get(),
+            0,
+            "nothing outside the policy may be rescanned"
+        );
+    }
+
+    /// The miss route's authorization covers the module inside a bundle as
+    /// well as the bundle: the module is the file the scan worker opens.
+    ///
+    /// Mutation this catches: dropping the module's authorization from
+    /// `authorize_plugin_file`, or the whole authorization from the miss
+    /// route — either hands the bundle to the rescan.
+    #[cfg(unix)]
+    #[test]
+    fn a_miss_whose_bundle_module_is_a_symlink_outside_the_policy_is_refused() {
+        let fixture = PersistedRegistryFixture::create("activation-miss-bundle-module");
+        let bundle = fixture.root.join("plugins").join("Bundled.vst3");
+        // The bundle is a directory before its module is asked for: a path
+        // that is not one is its own module, and the symlink would then be
+        // the bundle path itself — refused by the first check, never the
+        // module's.
+        std::fs::create_dir_all(bundle.join("Contents")).expect("the bundle directory is created");
+        let module = scanned_binary_location(&vst3_bundle_row(&bundle))
+            .expect("this platform names where a VST3 bundle's module belongs");
+        std::fs::create_dir_all(module.parent().expect("the module sits inside the bundle"))
+            .expect("the bundle's module directory is created");
+        std::fs::write(&module, b"the module the scan read").expect("the module is written");
+        assert!(
+            module.starts_with(&bundle) && module != bundle && bundle.is_dir(),
+            "the module must sit inside a real bundle directory, or this test never reaches the \
+             module check: {}",
+            module.display()
+        );
+        assert_eq!(
+            plugin_file_path(&bundle, "vst3"),
+            Some(module.clone()),
+            "the bundle must resolve to its module, or this test never reaches the module check"
+        );
+        let plugin = ScannedPlugin {
+            path: bundle.display().to_string(),
+            format: "vst3".to_string(),
+            name: "Bundled".to_string(),
+            ..scanned("aaaa1111", "0123456789ABCDEF0123456789ABCDEF", "vst3")
+        };
+        fixture.store().persist(&[ScanRow {
+            keys: vec!["aaaa1111".to_string()],
+            fingerprint: scanned_file_fingerprint(&plugin),
+            plugin,
+        }]);
+        // Replaced after the scan recorded it, so hydration refuses the row
+        // and the activation takes the miss route.
+        let outside = fixture.root.join("Outside.module");
+        std::fs::write(&outside, b"code outside the policy").expect("outside file written");
+        std::fs::remove_file(&module).expect("the module is removed");
+        std::os::unix::fs::symlink(&outside, &module).expect("the module symlink is created");
+
+        let rescans = std::cell::Cell::new(0);
+        let registry = Mutex::new(HashMap::new());
+        let error = resolve_registry_entry(
+            &registry,
+            &fixture.store(),
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                rescans.set(rescans.get() + 1);
+                Err(format!("unexpected rescan of {}", path.display()))
+            },
+        )
+        .expect_err("a bundle whose module is symlinked outside the policy must not resolve");
+
+        assert!(
+            registry.lock().expect("registry lock").is_empty(),
+            "the row must not have hydrated, or this test is not on the miss route"
+        );
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Bundled' could not be loaded from its last known location {}: Unauthorized plugin scan path",
+                bundle.display()
+            )),
+            "the refusal must name the plugin, the bundle and the policy's reason, got: {error}"
+        );
+        assert_eq!(
+            rescans.get(),
+            0,
+            "nothing outside the policy may be rescanned"
         );
     }
 
