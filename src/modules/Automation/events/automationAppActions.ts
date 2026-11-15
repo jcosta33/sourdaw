@@ -251,8 +251,7 @@ export type AutomationAppAction =
           /** Inverse of the automation transform handlers (reverse/scale/stretch/thin/
            *  quantize/invert). Restores a lane's `points` to a snapshot captured
            *  pre-execute. Emitted only by those handlers' `describe()` — not invoked
-           *  directly. Keep mirrored in src/utils/handlerContract.ts and
-           *  AiRuntime/models/RuntimeAction.ts. */
+           *  directly. Keep mirrored in AiRuntime/models/RuntimeAction.ts. */
           type: 'restoreAutomationLanePoints';
           payload: {
               laneId: string;
