@@ -286,6 +286,7 @@ export const semanticDiffClassificationByActionType: {
     discardCreatedCompGroup: NONE,
     restoreTrackAlternativeState: NONE,
     restoreScratchPadState: NONE,
+    // The segments replace the clip and play the same source, which strip silence never rewrites.
     stripSilence: { created: true, replacement: true },
     restoreStripSilenceState: NONE,
     detectTempo: NONE,
