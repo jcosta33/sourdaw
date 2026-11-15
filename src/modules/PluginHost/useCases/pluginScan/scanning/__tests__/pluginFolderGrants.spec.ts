@@ -42,7 +42,7 @@ function plugin(path: string): ScannedPlugin {
 describe('plugin folder grants', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        pluginScanStore.set({ ...defaultPluginScanState });
+        pluginScanStore.set(defaultPluginScanState);
     });
 
     describe('refreshPluginFolderGrants', () => {

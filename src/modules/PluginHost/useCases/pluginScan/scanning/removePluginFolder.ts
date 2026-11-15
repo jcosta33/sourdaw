@@ -1,5 +1,5 @@
 import { revokePluginFolderGrant } from '../../../repositories/pluginBridge/revokePluginFolderGrant';
-import { pluginScanStore } from '../../../stores/pluginScanStore';
+import { type GrantedPluginFolder, pluginScanStore } from '../../../stores/pluginScanStore';
 
 import { getState } from './helpers';
 import { refreshPluginFolderGrants } from './refreshPluginFolderGrants';
@@ -15,6 +15,22 @@ function isWithinFolder(path: string, folder: string): boolean {
         return path.startsWith(folder);
     }
     return path.startsWith(`${folder}/`) || path.startsWith(`${folder}\\`);
+}
+
+/**
+ * The folder list once `folder` is revoked. A successful refresh already
+ * restated the list; otherwise the revoke still succeeded, so the folder is
+ * gone even though the rest of the list could not be restated.
+ */
+function foldersAfterRevoke(
+    grantedFolders: GrantedPluginFolder[],
+    folder: string,
+    refreshed: boolean
+): GrantedPluginFolder[] {
+    if (refreshed) {
+        return grantedFolders;
+    }
+    return grantedFolders.filter((granted) => granted.path !== folder);
 }
 
 /**
@@ -38,11 +54,7 @@ export async function removePluginFolder(folder: string): Promise<RemovePluginFo
     const state = getState();
     pluginScanStore.set({
         ...state,
-        // The revoke succeeded, so the folder is gone whether or not the
-        // refresh could restate the rest of the list.
-        grantedFolders: refresh.refreshed
-            ? state.grantedFolders
-            : state.grantedFolders.filter((granted) => granted.path !== folder),
+        grantedFolders: foldersAfterRevoke(state.grantedFolders, folder, refresh.refreshed),
         scannedPlugins: state.scannedPlugins.filter((plugin) => !isWithinFolder(plugin.path, folder)),
     });
     return { removed: true };

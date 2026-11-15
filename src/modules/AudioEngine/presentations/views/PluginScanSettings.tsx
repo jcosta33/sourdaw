@@ -45,11 +45,13 @@ export const PluginScanSettings = (): ReactElement | null => {
         if (!hasPluginScanning) {
             return;
         }
-        void refreshPluginFolderGrants().then((outcome) => {
+        const showRefreshFailure = async (): Promise<void> => {
+            const outcome = await refreshPluginFolderGrants();
             if (!outcome.refreshed) {
                 setFolderError(outcome.reason);
             }
-        });
+        };
+        void showRefreshFailure();
     }, [hasPluginScanning]);
 
     if (!hasPluginScanning) {

@@ -510,6 +510,9 @@ mod tests {
         }
     }
 
+    /// One refusal case: its label, the candidate folder, and the refusal it must produce.
+    type RefusalCase = (&'static str, PathBuf, fn(&PluginFolderRefusal) -> bool);
+
     #[test]
     fn plugin_folder_validator_refuses_what_cannot_be_a_plugin_folder() {
         let tree = TempTree::create("refusals");
@@ -517,7 +520,7 @@ mod tests {
         let file = tree.path("plugin.clap");
         write(&file, b"not a folder");
 
-        let cases: Vec<(&str, PathBuf, fn(&PluginFolderRefusal) -> bool)> = vec![
+        let cases: Vec<RefusalCase> = vec![
             ("empty", PathBuf::new(), |refusal| {
                 matches!(refusal, PluginFolderRefusal::Empty)
             }),
