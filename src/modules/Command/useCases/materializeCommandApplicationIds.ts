@@ -1,22 +1,14 @@
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { COMMAND_APPLICATION_ID_RULES } from '../models/CommandApplicationIdRule';
+import {
+    type CommandApplicationDefaults,
+    type MaterializedCommandApplicationIds,
+} from '../models/MaterializedCommandApplicationIds';
 import { type CommandApplicationAssignedId } from '../models/VersionedCommandEnvelope';
 
 import { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
-
-type MaterializedCommandApplicationIds = {
-    action: AppAction;
-    applicationAssignedIds: readonly CommandApplicationAssignedId[];
-};
-
-/**
- * Application defaults are drawn from pools shared by the whole session — the next track colour is
- * taken from a palette that advances on every draw. Only a command that can reach the project may
- * draw one; a caller that compiles a command to measure it passes `false` and leaves the pool where
- * it found it.
- */
-type CommandApplicationDefaults = { reserveApplicationDefaults: boolean };
+import { materializeTrackCreationIds } from './materializeTrackCreationIds';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -89,60 +81,6 @@ function materializeImportedStemIds(
         }
     }
     return { action, applicationAssignedIds };
-}
-
-function materializeTrackCreationIds(
-    action: Extract<AppAction, { type: 'addTrack' }>,
-    defaults: CommandApplicationDefaults
-): MaterializedCommandApplicationIds {
-    const cloned = structuredClone(action);
-    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
-    let changed = false;
-    if (!cloned.payload.id) {
-        cloned.payload.id = `track-command-${crypto.randomUUID()}`;
-        changed = true;
-        applicationAssignedIds.push({ argument: 'id', value: cloned.payload.id });
-    }
-    if (cloned.payload.id && !applicationAssignedIds.some((entry) => entry.argument === 'id')) {
-        applicationAssignedIds.push({ argument: 'id', value: cloned.payload.id });
-    }
-    if (!cloned.payload.initialAlternativeId) {
-        cloned.payload.initialAlternativeId = `alternative-command-${crypto.randomUUID()}`;
-        changed = true;
-        applicationAssignedIds.push({
-            argument: 'initialAlternativeId',
-            value: cloned.payload.initialAlternativeId,
-        });
-    }
-    if (
-        cloned.payload.initialAlternativeId &&
-        !applicationAssignedIds.some((entry) => entry.argument === 'initialAlternativeId')
-    ) {
-        applicationAssignedIds.push({
-            argument: 'initialAlternativeId',
-            value: cloned.payload.initialAlternativeId,
-        });
-    }
-    if (cloned.payload.kind === 'midi' && !cloned.payload.initialDeviceId) {
-        cloned.payload.initialDeviceId = `device-command-${crypto.randomUUID()}`;
-        changed = true;
-        applicationAssignedIds.push({ argument: 'initialDeviceId', value: cloned.payload.initialDeviceId });
-    }
-    if (
-        cloned.payload.kind === 'midi' &&
-        cloned.payload.initialDeviceId &&
-        !applicationAssignedIds.some((entry) => entry.argument === 'initialDeviceId')
-    ) {
-        applicationAssignedIds.push({ argument: 'initialDeviceId', value: cloned.payload.initialDeviceId });
-    }
-    if (cloned.payload.color === undefined && defaults.reserveApplicationDefaults) {
-        const color = commandTrackDefaultsPort.reserveTrackColor();
-        if (color !== undefined) {
-            cloned.payload.color = color;
-            changed = true;
-        }
-    }
-    return { action: changed ? cloned : action, applicationAssignedIds };
 }
 
 function materializeBusCreationIds(
@@ -527,6 +465,10 @@ const applicationIdMaterializerByActionType: {
     captureScratchPad: materializeByIdRule,
     commitScratchPad: materializeByIdRule,
     clearScratchPad: materializeByIdRule,
+    removeScratchPadSection: materializeByIdRule,
+    renameScratchPadSection: materializeByIdRule,
+    reorderScratchPadSection: materializeByIdRule,
+    setScratchPadSectionColor: materializeByIdRule,
     createPatternInstance: materializeByIdRule,
     detachPatternInstance: materializeByIdRule,
     restorePatternInstanceLink: materializeByIdRule,

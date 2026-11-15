@@ -35,7 +35,7 @@ unsafe extern "C" fn entry_get_factory(factory_id: *const c_char) -> *const c_vo
     if factory_id.is_null() {
         return ptr::null();
     }
-    let id = CStr::from_ptr(factory_id);
+    let id = unsafe { CStr::from_ptr(factory_id) };
     if id == CLAP_PLUGIN_FACTORY_ID {
         return &raw const factory::FACTORY as *const c_void;
     }

@@ -343,18 +343,19 @@ fn channel_mask(channels: u16) -> u32 {
 /// Returns the blob (always — its rate and channel count seed the ladder
 /// even when its layout is not renderable) and the parsed report.
 unsafe fn parse_mix_format(raw: *const WAVEFORMATEX) -> (Vec<u8>, MixFormatReport) {
-    let header = std::ptr::read_unaligned(raw);
+    let header = unsafe { std::ptr::read_unaligned(raw) };
     let total_len = std::mem::size_of::<WAVEFORMATEX>() + usize::from(header.cbSize);
-    let bytes = std::slice::from_raw_parts(raw.cast::<u8>(), total_len).to_vec();
+    let bytes = unsafe { std::slice::from_raw_parts(raw.cast::<u8>(), total_len) }.to_vec();
 
     let renderable = match header.wFormatTag {
         WAVE_FORMAT_TAG_IEEE_FLOAT if header.wBitsPerSample == 32 => Some(SampleLayout::F32),
         WAVE_FORMAT_TAG_PCM if header.wBitsPerSample == 16 => Some(SampleLayout::I16),
         WAVE_FORMAT_TAG_EXTENSIBLE if total_len >= std::mem::size_of::<WAVEFORMATEXTENSIBLE>() => {
-            let extensible = std::ptr::read_unaligned(raw.cast::<WAVEFORMATEXTENSIBLE>());
+            let extensible =
+                unsafe { std::ptr::read_unaligned(raw.cast::<WAVEFORMATEXTENSIBLE>()) };
             // Copies, not references: the struct is packed, and a reference
             // to an unaligned field is undefined behavior (E0793).
-            let valid_bits = { extensible.Samples.wValidBitsPerSample };
+            let valid_bits = unsafe { extensible.Samples.wValidBitsPerSample };
             let sub_format = { extensible.SubFormat };
             if sub_format == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT && header.wBitsPerSample == 32 {
                 Some(SampleLayout::F32)

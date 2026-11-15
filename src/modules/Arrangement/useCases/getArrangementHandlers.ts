@@ -59,7 +59,11 @@ import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
 import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
 import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';
+import { handleRemoveScratchPadSection } from '../handlers/scratchPad/handleRemoveScratchPadSection';
+import { handleRenameScratchPadSection } from '../handlers/scratchPad/handleRenameScratchPadSection';
+import { handleReorderScratchPadSection } from '../handlers/scratchPad/handleReorderScratchPadSection';
 import { handleRestoreScratchPadState } from '../handlers/scratchPad/handleRestoreScratchPadState';
+import { handleSetScratchPadSectionColor } from '../handlers/scratchPad/handleSetScratchPadSectionColor';
 import { handleReplaceOriginalMidiTakeRow } from '../handlers/takeLane/replaceOriginalMidiTakeRow';
 import { handleSelectTake } from '../handlers/takeLane/selectTake';
 import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
@@ -211,6 +215,10 @@ export function getArrangementHandlers() {
         removeGainEnvelopePoint: handleRemoveGainEnvelopePoint,
         resetClipGainEnvelope: handleResetClipGainEnvelope,
         clearScratchPad: handleClearScratchPad,
+        removeScratchPadSection: handleRemoveScratchPadSection,
+        renameScratchPadSection: handleRenameScratchPadSection,
+        reorderScratchPadSection: handleReorderScratchPadSection,
+        setScratchPadSectionColor: handleSetScratchPadSectionColor,
         commitScratchPad: handleCommitScratchPad,
         consolidateAllTracks: handleConsolidateAllTracks,
         bounceToNewTrack: handleBounceToNewTrack,

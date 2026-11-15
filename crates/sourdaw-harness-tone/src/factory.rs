@@ -42,7 +42,7 @@ unsafe extern "C" fn create_plugin(
     if plugin_id.is_null() {
         return ptr::null();
     }
-    let requested = CStr::from_ptr(plugin_id);
+    let requested = unsafe { CStr::from_ptr(plugin_id) };
     if requested.to_bytes_with_nul() != PLUGIN_ID {
         return ptr::null();
     }

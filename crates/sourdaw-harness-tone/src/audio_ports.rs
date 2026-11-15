@@ -41,13 +41,15 @@ unsafe extern "C" fn get(
     for (slot, byte) in name.iter_mut().zip(label.iter()) {
         *slot = *byte as c_char;
     }
-    *info = clap_audio_port_info {
-        id: MAIN_PORT_ID,
-        name,
-        flags: CLAP_AUDIO_PORT_IS_MAIN,
-        channel_count: STEREO_CHANNEL_COUNT,
-        port_type: CLAP_PORT_STEREO.as_ptr(),
-        in_place_pair: CLAP_INVALID_ID,
+    unsafe {
+        *info = clap_audio_port_info {
+            id: MAIN_PORT_ID,
+            name,
+            flags: CLAP_AUDIO_PORT_IS_MAIN,
+            channel_count: STEREO_CHANNEL_COUNT,
+            port_type: CLAP_PORT_STEREO.as_ptr(),
+            in_place_pair: CLAP_INVALID_ID,
+        }
     };
     true
 }

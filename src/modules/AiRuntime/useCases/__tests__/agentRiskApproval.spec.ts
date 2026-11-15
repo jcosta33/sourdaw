@@ -42,7 +42,7 @@ registerDeviceEnginePorts();
 const baseCollaborationState = structuredClone(collaborationStore.value!);
 const executeSetTrackGain = vi.fn();
 
-function createBatch(projectRevision: string) {
+function createBatch(projectRevision: string, intent = 'Set the vocal gain') {
     const action = {
         type: 'setTrackGain' as const,
         payload: { expectedGain: 0.8, gain: 0.7, trackId: 'track-vocal' },
@@ -90,7 +90,7 @@ function createBatch(projectRevision: string) {
             playheadPosition: 0,
         },
         group: { groupId: 'group-risk-approval', groupLabel: 'Set vocal gain' },
-        intent: 'Set the vocal gain',
+        intent,
         projectRevision,
         runId: 'run-risk-approval',
     });
@@ -272,6 +272,7 @@ describe('agent risk approval', () => {
         expect(approval).toEqual({
             schemaVersion: 1,
             metricGoalState,
+            explicitApprovalRequired: true,
             actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: revision,
             targetFingerprints: { 'track-vocal': targetFingerprint },
@@ -424,6 +425,77 @@ describe('agent risk approval', () => {
         expect(approval.policy.decision).toBe('allow');
         expect(validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision })).toEqual({
             status: 'valid',
+        });
+    });
+
+    describe('an allow batch whose approval metric admission escalates to confirm', () => {
+        const GENERIC_MISMATCH = 'The approved trust mode or risk policy no longer matches.';
+        // The request states a true-peak figure no command accounts for, so metric admission blocks it.
+        const UNACCOUNTED_FIGURE = 'Set the vocal gain while keeping true peak below -1 dBTP';
+
+        function escalatedApproval() {
+            const revision = captureProjectRevision();
+            const { commandBatch } = createBatch(revision, UNACCOUNTED_FIGURE);
+            const approval = compileAgentRiskApproval({
+                commandBatch,
+                requireExplicitApproval: false,
+                metricGoalState: literalGoalState(commandBatch),
+            });
+            return { revision, commandBatch, approval };
+        }
+
+        it('reports the metric reason at validation, not a policy mismatch', () => {
+            const { revision, commandBatch, approval } = escalatedApproval();
+            expect(approval.policy.decision).toBe('confirm');
+            expect(approval.policy.reasons).not.toContain('The planning workflow requires explicit confirmation.');
+            const outcome = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
+            expect(outcome).toMatchObject({ status: 'invalid', reason: expect.stringContaining('-1 dBTP') });
+            expect(outcome).not.toMatchObject({ reason: GENERIC_MISMATCH });
+        });
+
+        it('still refuses an approval whose policy genuinely changed', () => {
+            const { revision, commandBatch, approval } = escalatedApproval();
+            for (const policy of [
+                { ...approval.policy, reasons: [...approval.policy.reasons, 'An added reason.'] },
+                { ...approval.policy, requiredTrustMode: 'destructive-commit' as const },
+                { ...approval.policy, decision: 'allow' as const },
+            ]) {
+                expect(
+                    validateAgentRiskApproval({
+                        approval: { ...approval, policy },
+                        commandBatch,
+                        currentRevision: revision,
+                    })
+                ).toEqual({ status: 'invalid', reason: GENERIC_MISMATCH, stale: false });
+            }
+        });
+
+        it('validates a stored approval that predates the recorded input as it always did', () => {
+            const revision = captureProjectRevision();
+            const { commandBatch } = createBatch(revision);
+            const approval = compileAgentRiskApproval({
+                commandBatch,
+                metricGoalState: literalGoalState(commandBatch),
+            });
+            const { explicitApprovalRequired: _recorded, ...legacy } = approval;
+            expect(legacy).not.toHaveProperty('explicitApprovalRequired');
+            expect(validateAgentRiskApproval({ approval: legacy, commandBatch, currentRevision: revision })).toEqual({
+                status: 'valid',
+            });
+        });
+
+        it('validates a batch compiled with explicit confirmation required', () => {
+            const revision = captureProjectRevision();
+            const { commandBatch } = createBatch(revision);
+            const approval = compileAgentRiskApproval({
+                commandBatch,
+                requireExplicitApproval: true,
+                metricGoalState: literalGoalState(commandBatch),
+            });
+            expect(approval.policy.reasons).toContain('The planning workflow requires explicit confirmation.');
+            expect(validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision })).toEqual({
+                status: 'valid',
+            });
         });
     });
 

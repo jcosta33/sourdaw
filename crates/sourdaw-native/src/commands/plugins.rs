@@ -3,7 +3,8 @@
 use crate::commands::graph::{self, StripReportPayload};
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, FileFingerprint, PersistedPluginEntry,
+    PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker::{self, ScanFailure};
@@ -176,10 +177,10 @@ pub(crate) struct ExclusiveGateHold {
 /// which is the only way a test in another module can observe that a caller of
 /// [`hold_plugin_runtime_gate`] really waits.
 #[cfg(test)]
-pub(crate) async fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
+pub(crate) fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
     let serial = serialize_against_exclusive_gate_holds();
     ExclusiveGateHold {
-        _gate: PLUGIN_RUNTIME_GATE.write().await,
+        _gate: crate::block_on_test(PLUGIN_RUNTIME_GATE.write()),
         _serial: serial,
     }
 }
@@ -369,9 +370,24 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
 /// every launch, a document this build's own scan wrote.
 pub(crate) const SCANNED_PLUGIN_KEY_CAPACITY: usize = 2;
 
+/// The fingerprint a scan took of each file it read, keyed by the path its
+/// plugins were scanned at (`ScannedPlugin::path`).
+///
+/// Taken while the file's helpers ran, never after the walk: see
+/// [`ScanRow`]. A path missing from it is a file the scan could not vouch
+/// for, and its rows carry no fingerprint.
+type ScanFingerprints = HashMap<String, FileFingerprint>;
+
+/// A candidate path as [`ScanFingerprints`] keys it: the spelling
+/// `scanner::scanned_bundle_plugins` writes into `ScannedPlugin::path`.
+fn scanned_path_key(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 /// The one keying rule, so the in-memory lookup table and the persisted
-/// registry cannot come to disagree about which keys resolve a plugin.
-fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
+/// registry cannot come to disagree about which keys resolve a plugin — or
+/// about which file's fingerprint stands beside them.
+fn key_scanned_plugins(plugins: &[ScannedPlugin], fingerprints: &ScanFingerprints) -> Vec<ScanRow> {
     let claimed_primary_keys: HashSet<&str> =
         plugins.iter().map(|plugin| plugin.id.as_str()).collect();
     let mut claimed_descriptor_keys = HashSet::new();
@@ -395,6 +411,7 @@ fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
             ScanRow {
                 keys,
                 plugin: plugin.clone(),
+                fingerprint: fingerprints.get(&plugin.path).copied(),
             }
         })
         .collect()
@@ -402,11 +419,18 @@ fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
 
 /// Build the lookup table `load_plugin` resolves against, under
 /// [`key_scanned_plugins`]'s keys.
-fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginRegistryEntry> {
-    key_scanned_plugins(plugins)
+///
+/// Each entry carries the fingerprint the scan took of its file while reading
+/// it — the same value `persist` writes — and a load compares the file against
+/// it before it opens anything.
+fn index_scanned_plugins(
+    plugins: &[ScannedPlugin],
+    fingerprints: &ScanFingerprints,
+) -> HashMap<String, PluginRegistryEntry> {
+    key_scanned_plugins(plugins, fingerprints)
         .into_iter()
         .flat_map(|row| {
-            let entry = PluginRegistryEntry::from_scanned(&row.plugin);
+            let entry = PluginRegistryEntry::from_scanned(&row.plugin, row.fingerprint);
             row.keys.into_iter().map(move |key| (key, entry.clone()))
         })
         .collect()
@@ -433,6 +457,7 @@ fn publish_scan_results_in_registry(
     scanned_paths: &[PathBuf],
     scan_complete: bool,
     plugins: &[ScannedPlugin],
+    fingerprints: &ScanFingerprints,
 ) {
     let survives_this_scan = |path: &Path| {
         if scan_complete {
@@ -443,11 +468,12 @@ fn publish_scan_results_in_registry(
 
     registry_store.apply_completed_scan_removals(survives_this_scan);
 
+    let indexed = index_scanned_plugins(plugins, fingerprints);
     let mut registry = plugin_registry
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     registry.retain(|_, entry| survives_this_scan(Path::new(&entry.path)));
-    registry.extend(index_scanned_plugins(plugins));
+    registry.extend(indexed);
 }
 
 /// Read the registry file into the in-memory registry, once per process.
@@ -474,8 +500,12 @@ async fn hydrate_plugin_registry(state: &AppState) {
 /// registry holds only the columns activation reads. Rows this scan did not
 /// produce — another root's, hydrated earlier — are already in the store's
 /// persisted view and survive the union `persist` performs.
-async fn persist_scanned_plugins(state: &AppState, plugins: &[ScannedPlugin]) {
-    let rows = key_scanned_plugins(plugins);
+async fn persist_scanned_plugins(
+    state: &AppState,
+    plugins: &[ScannedPlugin],
+    fingerprints: &ScanFingerprints,
+) {
+    let rows = key_scanned_plugins(plugins, fingerprints);
     let registry_store = Arc::clone(&state.plugin_registry_store);
     if let Err(error) = tokio::task::spawn_blocking(move || registry_store.persist(&rows)).await {
         eprintln!("[Plugin] Could not save the plugin scan registry: {error}");
@@ -634,7 +664,7 @@ async fn scan_plugins_with_backend(
     let registry_store = Arc::clone(&state.plugin_registry_store);
 
     let deadline = start + budget.walk;
-    let (plugins, errors, notices, scanned_paths, scan_complete, authorized_paths) =
+    let (plugins, fingerprints, errors, notices, scanned_paths, scan_complete, authorized_paths) =
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             // Authorization is filesystem work — an existence check, a symlink
@@ -682,6 +712,7 @@ async fn scan_plugins_with_backend(
                 .map(|candidate| candidate.path.clone())
                 .collect();
             let mut plugins = Vec::new();
+            let mut fingerprints = ScanFingerprints::new();
             let mut scanned_paths = Vec::new();
             for candidate in candidates {
                 if !covers_a_whole_candidate(deadline, budget) {
@@ -713,13 +744,24 @@ async fn scan_plugins_with_backend(
                 // A candidate the user is explicitly retrying is never reused:
                 // asking for the retry is asking for the helper to run.
                 if !retried_from_quarantine {
-                    if let Some(rows) = registry_store.reusable_rows(&candidate.path, &scan_policy)
+                    if let Some((rows, fingerprint)) =
+                        registry_store.reusable_rows(&candidate.path, &scan_policy)
                     {
+                        fingerprints.insert(scanned_path_key(&candidate.path), fingerprint);
                         plugins.extend(rows);
                         continue;
                     }
                 }
 
+                // Fingerprinted before the descriptor helper reads the file and
+                // again once its last inspection has finished, so the
+                // fingerprint recorded is one the file held for every read this
+                // scan made of it. Taken at publish instead, after the walk, it
+                // would describe whatever sits at the path by then — a
+                // replacement no helper ever read, which every later load would
+                // then vet as the scanned file.
+                let wire_name = candidate.format.wire_name();
+                let before = plugin_file_fingerprint(&candidate.path, wire_name);
                 match scan_descriptor(candidate.format, &candidate.path, budget.candidate) {
                     // One bundle may declare several plugins — CLAP's factory is
                     // count/index shaped — and each gets its own inspection and
@@ -753,7 +795,22 @@ async fn scan_plugins_with_backend(
                                 &candidate.path,
                             );
                         }
-                        plugins.extend(scanner::scanned_bundle_plugins(&candidate.path, bundle));
+                        let after = plugin_file_fingerprint(&candidate.path, wire_name);
+                        match before.filter(|before| Some(*before) == after) {
+                            Some(fingerprint) => {
+                                fingerprints.insert(scanned_path_key(&candidate.path), fingerprint);
+                                plugins.extend(scanner::scanned_bundle_plugins(
+                                    &candidate.path,
+                                    bundle,
+                                ));
+                            }
+                            // Not quarantined: nothing about the helper
+                            // failed, and the next scan reads the file afresh.
+                            None => scan_errors.push(format!(
+                                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
+                                candidate.path.display()
+                            )),
+                        }
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
@@ -776,6 +833,7 @@ async fn scan_plugins_with_backend(
             });
             (
                 plugins,
+                fingerprints,
                 scan_errors,
                 notices,
                 scanned_paths,
@@ -796,8 +854,9 @@ async fn scan_plugins_with_backend(
         &scanned_paths,
         scan_complete,
         &plugins,
+        &fingerprints,
     );
-    persist_scanned_plugins(state, &plugins).await;
+    persist_scanned_plugins(state, &plugins, &fingerprints).await;
 
     let quarantined: Vec<QuarantinedPlugin> = state
         .plugin_registry_store
@@ -906,12 +965,21 @@ pub async fn is_scan_path_authorized(path: String) -> Result<bool, String> {
 
 // ── Activation-time registry resolution ─────────────────────────────────
 
-/// How long the one targeted rescan an activation miss is allowed may run.
+/// How long the one targeted rescan an activation miss or a changed registry
+/// hit is allowed may run.
 ///
 /// It is a single file through the same bounded child-process worker a full
 /// scan uses, so this only has to cover one plugin's descriptor read — and it
 /// is a user waiting on a plugin they asked for, not a background sweep.
 const TARGETED_RESCAN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a load waits for another load's rescan of the same key.
+///
+/// The rescan it waits on is bounded by [`TARGETED_RESCAN_TIMEOUT`]; the
+/// margin covers that rescan's fingerprinting and publish around the child
+/// process, so a waiter never gives up on a rescan that is about to answer.
+const RESCAN_WAIT_TIMEOUT: Duration =
+    TARGETED_RESCAN_TIMEOUT.saturating_add(Duration::from_secs(2));
 
 fn read_registry_entry(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
@@ -936,14 +1004,40 @@ fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) 
     )
 }
 
+/// A registry entry a load may open, and the fingerprint its file had when it
+/// was vetted.
+///
+/// The fingerprint is not optional here, which is the point of the type: every
+/// route out of [`resolve_registry_entry`] has just compared the file against a
+/// fingerprint or taken a fresh one, and the load compares it once more
+/// immediately before the plugin's code is opened
+/// ([`construct_runtime_on_ui_thread`]).
+#[derive(Clone, Debug)]
+struct VettedRegistryEntry {
+    entry: PluginRegistryEntry,
+    fingerprint: FileFingerprint,
+}
+
+/// What one pass of registry resolution produced.
+enum Resolution<Rescan> {
+    Settled(Result<VettedRegistryEntry, String>),
+    /// Another caller holds this key's rescan. The rescan comes back unused,
+    /// with the refusal to give if waiting for that caller does not settle it.
+    RescanInProgress {
+        rescan: Rescan,
+        busy: String,
+    },
+}
+
 /// Resolve the id a saved project recorded to the registry entry that activates
-/// it.
+/// it, vetted against the file it will load.
 ///
 /// Three steps, in order, and the order is the point:
 ///
 /// 1. hydrate the persisted registry, so a relaunched app resolves a saved
 ///    project's plugins with no scan at all;
-/// 2. read the registry;
+/// 2. read the registry, and vet a hit against the file on disk
+///    ([`vet_registry_hit`]);
 /// 3. on a miss, rescan the plugin's last known location — once, bounded, one
 ///    file — and take the result if the file is still a loadable plugin.
 ///
@@ -975,95 +1069,357 @@ fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) 
 /// Queueing behind the permit instead would park a blocking-pool thread for up
 /// to the sweep's full duration; refusing on contention instead would record a
 /// negative verdict that has nothing to do with the plugin.
-fn resolve_registry_entry(
+///
+/// A second load of the same key while the first one's rescan runs waits for
+/// that rescan, bounded by [`RESCAN_WAIT_TIMEOUT`], and then resolves once more
+/// — finding the entry the first load published, or the refusal it recorded.
+/// It never starts a rescan of its own while the first is running, and it
+/// waits only once: a key still in progress after that refuses as busy.
+fn resolve_registry_entry<Rescan>(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
-    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
-) -> Result<PluginRegistryEntry, String> {
+    rescan: Rescan,
+) -> Result<VettedRegistryEntry, String>
+where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+{
     registry_store.hydrate_into(plugin_registry, scan_policy);
 
+    let (rescan, busy) = match resolve_registry_entry_once(
+        plugin_registry,
+        registry_store,
+        scan_policy,
+        plugin_id,
+        rescan,
+    ) {
+        Resolution::Settled(result) => return result,
+        Resolution::RescanInProgress { rescan, busy } => (rescan, busy),
+    };
+    if !registry_store.wait_for_rescan(plugin_id, Instant::now() + RESCAN_WAIT_TIMEOUT) {
+        return Err(busy);
+    }
+    match resolve_registry_entry_once(
+        plugin_registry,
+        registry_store,
+        scan_policy,
+        plugin_id,
+        rescan,
+    ) {
+        Resolution::Settled(result) => result,
+        Resolution::RescanInProgress { busy, .. } => Err(busy),
+    }
+}
+
+/// One pass of [`resolve_registry_entry`]'s steps 2 and 3, over a hydrated
+/// registry.
+fn resolve_registry_entry_once<Rescan>(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    registry_store: &PluginRegistryStore,
+    scan_policy: &PluginScanPolicy,
+    plugin_id: &str,
+    rescan: Rescan,
+) -> Resolution<Rescan>
+where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+{
     if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
-        return Ok(entry);
+        return vet_registry_hit(
+            plugin_registry,
+            registry_store,
+            scan_policy,
+            plugin_id,
+            entry,
+            rescan,
+        );
     }
 
     let Some(last_known) = registry_store.last_known_entry(plugin_id) else {
-        return Err(format!(
+        return Resolution::Settled(Err(format!(
             "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
-        ));
+        )));
     };
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Err(reason),
+        RescanClaim::Refused(reason) => return Resolution::Settled(Err(reason)),
         RescanClaim::InProgress => {
-            return Err(format!(
-                "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
-                last_known.plugin.name, last_known.plugin.path
-            ));
+            return Resolution::RescanInProgress {
+                rescan,
+                busy: format!(
+                    "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
+                    last_known.plugin.name, last_known.plugin.path
+                ),
+            };
         }
     };
 
-    let last_known_path = PathBuf::from(&last_known.plugin.path);
-    // The rescan reads the path the policy resolved and authorized, which is the
-    // only path the checks above actually looked at. It also carries the
-    // persisted descriptor id: a requested key that no longer matches a row —
-    // the path re-spelled, the vendor renamed a plugin — still names a plugin
-    // to the persisted row, and that is the one to load.
-    let rescanned = match scan_policy
-        .authorize_scan_root(&last_known_path)
-        .and_then(|authorized| {
-            rescan(
-                &last_known.plugin.format,
-                &authorized,
-                plugin_id,
-                &last_known.plugin.descriptor_id,
+    // The rescan carries the persisted descriptor id: a requested key that no
+    // longer matches a row — the path re-spelled, the vendor renamed a plugin —
+    // still names a plugin to the persisted row, and that is the one to load.
+    Resolution::Settled(rescan_and_publish(
+        plugin_registry,
+        registry_store,
+        scan_policy,
+        attempt,
+        TargetedRescan {
+            plugin_id,
+            path: Path::new(&last_known.plugin.path),
+            format: &last_known.plugin.format,
+            last_known_descriptor_id: &last_known.plugin.descriptor_id,
+            replaces_rows_at: None,
+        },
+        |reason| plugin_gone_from_last_known_path(&last_known, reason),
+        rescan,
+    ))
+}
+
+/// Vet a registry hit against the file it names before anything opens it.
+///
+/// A registry entry is a claim a scan made about a file, possibly in another
+/// session, and a load opens the plugin's code in this process — so the claim
+/// is checked at the moment it is acted on, not only when it was made:
+///
+/// 1. the path, and the module inside a bundle that the loader actually opens,
+///    are re-authorized through the scan policy's own check, so a plugin
+///    replaced by a symlink to somewhere the policy does not cover is refused;
+/// 2. the file is fingerprinted, and a fingerprint equal to the one the entry
+///    recorded loads with no further work;
+/// 3. anything else — a different file, a rewritten one, an entry nobody
+///    fingerprinted — gets the same one bounded rescan a miss gets, through the
+///    same per-key claim, so a refusal is recorded and the next load of the
+///    same id answers from it instead of spawning again.
+fn vet_registry_hit<Rescan>(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    registry_store: &PluginRegistryStore,
+    scan_policy: &PluginScanPolicy,
+    plugin_id: &str,
+    entry: PluginRegistryEntry,
+    rescan: Rescan,
+) -> Resolution<Rescan>
+where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+{
+    let authorized = match authorize_plugin_file(scan_policy, Path::new(&entry.path), &entry.format)
+    {
+        Ok(authorized) => authorized,
+        Err(reason) => {
+            return Resolution::Settled(Err(format!(
+                "Plugin '{}' will not be loaded from {}: {reason}",
+                entry.name, entry.path
+            )));
+        }
+    };
+
+    let live = plugin_file_fingerprint(&authorized, &entry.format);
+    if let Some(fingerprint) = live.filter(|live| Some(*live) == entry.scanned_fingerprint) {
+        return Resolution::Settled(Ok(VettedRegistryEntry {
+            entry: PluginRegistryEntry {
+                path: authorized.display().to_string(),
+                ..entry
+            },
+            fingerprint,
+        }));
+    }
+
+    let attempt = match registry_store.claim_rescan(plugin_id) {
+        RescanClaim::Granted(attempt) => attempt,
+        RescanClaim::Refused(reason) => return Resolution::Settled(Err(reason)),
+        RescanClaim::InProgress => {
+            return Resolution::RescanInProgress {
+                rescan,
+                busy: format!(
+                    "Plugin '{}' is already being checked at {}. Try again once that finishes.",
+                    entry.name, entry.path
+                ),
+            };
+        }
+    };
+
+    Resolution::Settled(rescan_and_publish(
+        plugin_registry,
+        registry_store,
+        scan_policy,
+        attempt,
+        TargetedRescan {
+            plugin_id,
+            path: &authorized,
+            format: &entry.format,
+            last_known_descriptor_id: &entry.descriptor_id,
+            replaces_rows_at: Some(&entry.path),
+        },
+        |reason| {
+            format!(
+                "Plugin '{}' at {} has changed since it was scanned and could not be checked again: {reason}. Rescan the folder it lives in.",
+                entry.name, entry.path
             )
-        }) {
+        },
+        rescan,
+    ))
+}
+
+/// The policy-authorized path of a plugin, after authorizing the file inside
+/// it that a loader opens as well.
+///
+/// The second check is not redundant with the first. The policy refuses a path
+/// with a symlink component, and a bundle directory with no symlink in its own
+/// path can still hold a module that is one — and the module is the file that
+/// is opened.
+fn authorize_plugin_file(
+    scan_policy: &PluginScanPolicy,
+    path: &Path,
+    format: &str,
+) -> Result<PathBuf, String> {
+    let authorized = scan_policy.authorize_scan_root(path)?;
+    if let Some(module) = plugin_file_path(&authorized, format) {
+        if module != authorized {
+            scan_policy.authorize_scan_root(&module)?;
+        }
+    }
+    Ok(authorized)
+}
+
+/// What one targeted rescan is asked to look at, and for whom.
+struct TargetedRescan<'a> {
+    /// The registry key the load asked for.
+    plugin_id: &'a str,
+    /// The file to rescan, before authorization.
+    path: &'a Path,
+    format: &'a str,
+    last_known_descriptor_id: &'a str,
+    /// The path a vetted registry hit pointed at, whose rows the rescan
+    /// replaces on success and removes on refusal. `None` for a miss, whose
+    /// rescan only ever adds rows.
+    replaces_rows_at: Option<&'a str>,
+}
+
+/// Run a granted targeted rescan and publish its outcome: the one body a miss
+/// and a changed registry hit both go through.
+///
+/// The rescan reads the path the policy resolved and authorized, which is the
+/// only path the checks actually looked at.
+///
+/// On success the requested key is published first, so the saved project
+/// resolves; the plugin's own keys follow by the same rule
+/// `key_scanned_plugins` follows. A miss adds them only where nothing else
+/// already resolves, so nothing that resolves today stops resolving. A changed
+/// hit replaces the rows that pointed at the file it rescanned, which are the
+/// stale answers the rescan exists to correct. The requested key is carried
+/// into the persisted row too: it is what the saved project actually recorded,
+/// and dropping it would send the next launch back through this rescan.
+///
+/// On refusal a changed hit's stale rows leave the registry, so the next load
+/// of any of them reaches the recorded refusal rather than the file. Either
+/// way the attempt is settled last, once what it decided is visible: settling
+/// is what wakes the loads waiting on this key.
+fn rescan_and_publish(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    registry_store: &PluginRegistryStore,
+    scan_policy: &PluginScanPolicy,
+    attempt: RescanAttempt<'_>,
+    target: TargetedRescan<'_>,
+    describe_refusal: impl FnOnce(&str) -> String,
+    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+) -> Result<VettedRegistryEntry, String> {
+    let rescanned = authorize_plugin_file(scan_policy, target.path, target.format)
+        .and_then(|authorized| rescan_holding_still(&authorized, &target, rescan));
+    let (rescanned, fingerprint) = match rescanned {
         Ok(rescanned) => rescanned,
         Err(reason) => {
-            let refusal = plugin_gone_from_last_known_path(&last_known, &reason);
+            let refusal = describe_refusal(&reason);
+            if let Some(stale_path) = target.replaces_rows_at {
+                lock_registry(plugin_registry).retain(|_, entry| entry.path != stale_path);
+            }
             attempt.refuse(refusal.clone());
             return Err(refusal);
         }
     };
-    attempt.resolved();
 
-    // The requested key first, so the saved project resolves; the plugin's own
-    // keys additively, which is the same rule `key_scanned_plugins` follows —
-    // nothing that resolves today stops resolving. The requested key is carried
-    // into the persisted row too: it is what the saved project actually
-    // recorded, and dropping it would send the next launch back through this
-    // rescan.
-    let entry = PluginRegistryEntry::from_scanned(&rescanned);
-    let mut keys = vec![plugin_id.to_string()];
+    let entry = PluginRegistryEntry::from_scanned(&rescanned, Some(fingerprint));
+    let mut keys = vec![target.plugin_id.to_string()];
     {
-        let mut registry = plugin_registry
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        registry.insert(plugin_id.to_string(), entry.clone());
+        let mut registry = lock_registry(plugin_registry);
+        registry.insert(target.plugin_id.to_string(), entry.clone());
         for own_key in [&rescanned.id, &rescanned.descriptor_id] {
             if own_key.is_empty() || keys.contains(own_key) {
                 continue;
             }
             keys.push(own_key.clone());
-            registry
-                .entry(own_key.clone())
-                .or_insert_with(|| entry.clone());
+            let replaces = |held: &PluginRegistryEntry| {
+                target
+                    .replaces_rows_at
+                    .is_some_and(|stale_path| held.path == stale_path)
+            };
+            match registry.get(own_key) {
+                Some(held) if !replaces(held) => {}
+                _ => {
+                    registry.insert(own_key.clone(), entry.clone());
+                }
+            }
         }
     }
+    // Settled only once the entry is in the registry and its lock released:
+    // settling wakes every load waiting on this key, and each one resolves
+    // again straight away, so a waiter woken before the insert would find no
+    // entry and start a rescan of its own.
+    attempt.resolved();
     registry_store.persist(&[ScanRow {
         keys,
         plugin: rescanned,
+        fingerprint: Some(fingerprint),
     }]);
 
-    Ok(entry)
+    Ok(VettedRegistryEntry { entry, fingerprint })
 }
 
-/// The one bounded rescan an activation miss gets: a single file, through the
-/// same child-process worker the full scan uses, so the application process
-/// still never loads a plugin entry point during discovery.
+/// Rescan an authorized file and return the fingerprint it held throughout.
+///
+/// Fingerprinted before the rescan and again after it, and refused unless the
+/// two agree: a file replaced while the scan worker read it would otherwise be
+/// published with a descriptor read from one file and a fingerprint taken from
+/// another, and every later load would vet the second file against the first
+/// file's answer.
+fn rescan_holding_still(
+    authorized: &Path,
+    target: &TargetedRescan<'_>,
+    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+) -> Result<(ScannedPlugin, FileFingerprint), String> {
+    let before = plugin_file_fingerprint(authorized, target.format);
+    let rescanned = rescan(
+        target.format,
+        authorized,
+        target.plugin_id,
+        target.last_known_descriptor_id,
+    )?;
+    let after = plugin_file_fingerprint(authorized, target.format);
+    match (before, after) {
+        (Some(before), Some(after)) if before == after => Ok((rescanned, after)),
+        (_, None) => Err(format!(
+            "the file at {} cannot be read",
+            authorized.display()
+        )),
+        _ => Err(format!(
+            "the file at {} changed while it was being checked",
+            authorized.display()
+        )),
+    }
+}
+
+/// The registry, recovered rather than refused when poisoned — see
+/// [`read_registry_entry`].
+fn lock_registry(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+) -> std::sync::MutexGuard<'_, HashMap<String, PluginRegistryEntry>> {
+    plugin_registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The one bounded rescan an activation miss or a changed registry hit gets: a
+/// single file, through the same child-process worker the full scan uses, so
+/// the application process still never loads a plugin entry point during
+/// discovery.
 ///
 /// Parameter metadata is not re-read. Activation does not need it, and it is a
 /// second child process for a user who is waiting.
@@ -1129,13 +1485,28 @@ fn pick_rescanned_bundle_row<'a>(
         })
 }
 
+/// How a load's targeted rescan reads one file: [`rescan_plugin_file`] in
+/// production, a double in a test. `Send + 'static` because it runs on the
+/// blocking pool.
+trait PluginRescan:
+    FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String> + Send + 'static
+{
+}
+
+impl<Rescan> PluginRescan for Rescan where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String> + Send + 'static
+{
+}
+
 /// Resolve on the blocking pool: hydration reads the registry file and the
 /// targeted rescan waits on a child process, and neither belongs on an async
 /// runtime worker.
 async fn resolve_plugin_registry_entry(
     plugin_id: &str,
     state: &AppState,
-) -> Result<PluginRegistryEntry, String> {
+    scan_policy: PluginScanPolicy,
+    rescan: impl PluginRescan,
+) -> Result<VettedRegistryEntry, String> {
     let plugin_registry = Arc::clone(&state.plugin_registry);
     let registry_store = Arc::clone(&state.plugin_registry_store);
     let plugin_id = plugin_id.to_string();
@@ -1143,9 +1514,9 @@ async fn resolve_plugin_registry_entry(
         resolve_registry_entry(
             &plugin_registry,
             &registry_store,
-            &PluginScanPolicy::platform_defaults(),
+            &scan_policy,
             &plugin_id,
-            rescan_plugin_file,
+            rescan,
         )
     })
     .await
@@ -1349,16 +1720,51 @@ impl<Constructor> RuntimeConstructor for Constructor where
 /// the UI thread does block on, the engine lock and the stores, the worker does
 /// not hold here. The hop's own deadline only bounds the wait for the UI thread
 /// to *start*; a module that takes seconds to open is waited out.
+///
+/// Inside the hop, immediately before the plugin's code is opened, the path is
+/// authorized through the scan policy once more and the file fingerprinted
+/// once more, and the load is refused unless the path still authorizes to the
+/// very path resolution vetted and the file is still the one it vetted.
+/// Resolution can wait on a rescan and the hop on the UI thread, and a file
+/// replaced in either wait — by a rewrite, or by a symlink to a file outside
+/// the policy's roots, which a fingerprint alone follows without noticing —
+/// would otherwise be opened on the strength of a check made against its
+/// predecessor. What remains is the window between this stat and the loader's
+/// own open: CFBundle, `dlopen` and `LoadLibrary` all take a path rather than a
+/// descriptor, so no check this side of them can be made against the very file
+/// they open.
 fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
     ui: &Ui,
     backend: HostBackend,
-    path: String,
-    descriptor_id: String,
+    scan_policy: PluginScanPolicy,
+    vetted: VettedRegistryEntry,
     sample_rate: f64,
     create_runtime: impl RuntimeConstructor,
 ) -> Result<HostedRuntime, String> {
     call_on_ui_thread(ui, move || {
-        create_runtime(backend, &path, &descriptor_id, sample_rate)
+        let VettedRegistryEntry { entry, fingerprint } = vetted;
+        let authorized = authorize_plugin_file(&scan_policy, Path::new(&entry.path), &entry.format)
+            .map_err(|reason| {
+                format!(
+                    "Plugin '{}' will not be loaded from {}: {reason}",
+                    entry.name, entry.path
+                )
+            })?;
+        if authorized != Path::new(&entry.path) {
+            return Err(format!(
+                "Plugin '{}' will not be loaded from {}: it now resolves to {}, not the location that was checked.",
+                entry.name,
+                entry.path,
+                authorized.display()
+            ));
+        }
+        if plugin_file_fingerprint(Path::new(&entry.path), &entry.format) != Some(fingerprint) {
+            return Err(format!(
+                "Plugin '{}' at {} changed after it was checked and before it was opened. Load it again to check it afresh.",
+                entry.name, entry.path
+            ));
+        }
+        create_runtime(backend, &entry.path, &entry.descriptor_id, sample_rate)
     })?
 }
 
@@ -1392,6 +1798,8 @@ pub async fn load_plugin(
         instance_id,
         windows_host,
         state,
+        PluginScanPolicy::platform_defaults(),
+        rescan_plugin_file,
         create_hosted_runtime,
     )
     .await
@@ -1401,8 +1809,12 @@ pub async fn load_plugin(
 /// one whose editor-support ask records its caller — without loading a real
 /// plugin library, the same way [`scan_plugins_with_backend`]'s
 /// `scan_descriptor`/`scan_instance` let a scan test inject a scan outcome.
-/// Production reaches this only through [`load_plugin`], which always supplies
-/// [`create_hosted_runtime`].
+/// `scan_policy` and `rescan` are parameters for the same reason: the registry
+/// entry is vetted against a policy over a test's own folder, and a changed
+/// file's rescan is a double rather than a child process. Production reaches
+/// this only through [`load_plugin`], which always supplies the platform
+/// policy, [`rescan_plugin_file`] and [`create_hosted_runtime`]; nothing lets a
+/// load skip the vetting itself.
 ///
 /// Holds no lock of its own: the runtime and lifecycle guards live inside
 /// [`load_plugin_under_runtime_gate`] and are gone by the time this resumes,
@@ -1412,11 +1824,20 @@ async fn load_plugin_with_backend(
     instance_id: PluginInstanceId,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
+    scan_policy: PluginScanPolicy,
+    rescan: impl PluginRescan,
     create_runtime: impl RuntimeConstructor,
 ) -> Result<PluginInstance, String> {
-    let instance =
-        load_plugin_under_runtime_gate(plugin_id, instance_id, windows_host, state, create_runtime)
-            .await?;
+    let instance = load_plugin_under_runtime_gate(
+        plugin_id,
+        instance_id,
+        windows_host,
+        state,
+        scan_policy,
+        rescan,
+        create_runtime,
+    )
+    .await?;
 
     if instance.engine_plugin_id.is_some() {
         // A load is the moment the process is about to want the memory a
@@ -1451,6 +1872,8 @@ async fn load_plugin_under_runtime_gate(
     instance_id: PluginInstanceId,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
+    scan_policy: PluginScanPolicy,
+    rescan: impl PluginRescan,
     create_runtime: impl RuntimeConstructor,
 ) -> Result<PluginInstance, String> {
     // The rate is decided before anything is resolved, locked or constructed:
@@ -1466,7 +1889,9 @@ async fn load_plugin_under_runtime_gate(
     // is a fair `RwLock`, so one queued writer (`unload_all_plugin_runtimes`,
     // which the quit path runs) blocks behind the rescan and every later reader
     // blocks behind the writer.
-    let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
+    let vetted =
+        resolve_plugin_registry_entry(&plugin_id.0, state, scan_policy.clone(), rescan).await?;
+    let entry = vetted.entry.clone();
     let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(state, &instance_id.0)?;
@@ -1507,14 +1932,13 @@ async fn load_plugin_under_runtime_gate(
             plugin_id.0
         ));
     }
-    let descriptor_id = entry.descriptor_id.clone();
 
     // Constructed on the shell's UI thread: see `construct_runtime_on_ui_thread`.
     let mut wrapper = construct_runtime_on_ui_thread(
         windows_host,
         backend,
-        entry.path.clone(),
-        descriptor_id,
+        scan_policy,
+        vetted,
         sample_rate,
         create_runtime,
     )?;
@@ -1923,7 +2347,7 @@ struct EngineRegistration {
 /// critical section — see the block in [`load_plugin_under_runtime_gate`].
 enum EngineHandover {
     Registered(EngineRegistration),
-    Refused(RegistrationRefusal),
+    Refused(Box<RegistrationRefusal>),
     NoEngine(HostedRuntime),
 }
 
@@ -1942,11 +2366,11 @@ struct RegistrationRefusal {
 impl RegistrationRefusal {
     /// A refusal that arrived before the runtime moved into the shared owner,
     /// so it never left the caller's hands.
-    fn parked(reason: String, runtime: HostedRuntime) -> Self {
-        Self {
+    fn parked(reason: String, runtime: HostedRuntime) -> Box<Self> {
+        Box::new(Self {
             reason,
             runtime: Some(runtime),
-        }
+        })
     }
 
     /// A refusal that arrived after the move, taking the runtime back out of
@@ -1968,19 +2392,19 @@ impl RegistrationRefusal {
     /// would leave the final drop, and with it the plugin's teardown, to that
     /// other holder's thread, where neither format allows it. Retired, it is
     /// freed by the next sweep, on the shell's UI thread.
-    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>, state: &AppState) -> Self {
+    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>, state: &AppState) -> Box<Self> {
         match Arc::try_unwrap(shared) {
-            Ok(owner) => Self {
+            Ok(owner) => Box::new(Self {
                 reason,
                 runtime: Some(owner.into_inner()),
-            },
+            }),
             Err(shared) => {
                 shared.retire();
                 state.retain_retired_engine_plugin(shared);
-                Self {
+                Box::new(Self {
                     reason,
                     runtime: None,
-                }
+                })
             }
         }
     }
@@ -2014,7 +2438,7 @@ fn register_runtime_with_engine(
     parameters: &[PluginParameter],
     has_gui: bool,
     chain_kind: DeviceKind,
-) -> Result<EngineRegistration, RegistrationRefusal> {
+) -> Result<EngineRegistration, Box<RegistrationRefusal>> {
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
     // Kept as a guard because handing one to the engine is unrecoverable: it
@@ -2997,7 +3421,9 @@ pub async fn set_plugin_bypass(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::plugin_registry_store::{scanned_binary_location, scanned_file_path};
+    use crate::host::plugin_registry_store::{
+        scanned_binary_location, scanned_file_fingerprint, scanned_file_path,
+    };
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::plugin_window::PluginEditorWindow;
     use crate::host::ui_thread::{UiThread, UiThreadTask};
@@ -3245,18 +3671,12 @@ mod tests {
     /// resolved from the running engine — never anything the caller supplied.
     #[test]
     fn load_plugin_activates_with_no_rate_from_the_caller() {
+        let plugins = LoadFixtureRoot::create("load-plugin-activates-with-no-rate-from-the-caller");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(8);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         let observed_rate = Arc::new(Mutex::new(None));
         let observed = Arc::clone(&observed_rate);
@@ -3266,6 +3686,8 @@ mod tests {
             PluginInstanceId("caller-supplies-no-rate".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, sample_rate| {
                 *observed.lock().expect("observed rate lock is free") = Some(sample_rate);
                 let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
@@ -3894,6 +4316,7 @@ mod tests {
     /// load fails forever with a lock error" — a state no user action clears.
     #[test]
     fn load_plugin_reads_past_a_poisoned_registry_lock() {
+        let plugins = LoadFixtureRoot::create("load-plugin-reads-past-a-poisoned-registry-lock");
         let state = AppState::default();
 
         let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -3906,25 +4329,25 @@ mod tests {
         assert!(poisoning.is_err());
         assert!(state.plugin_registry.is_poisoned());
 
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
-        let error = crate::block_on_test(load_plugin(
+        let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("poisoned-registry-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
+            create_hosted_runtime,
         ))
         .expect_err("a fake plugin path cannot load");
 
         assert!(
-            error.starts_with("Failed to load CLAP plugin at /plugins/aaaa1111.clap:"),
+            error.starts_with(&format!(
+                "Failed to load CLAP plugin at {}:",
+                published[0].path
+            )),
             "the load must get past the registry read and fail at the library, got: {error}"
         );
     }
@@ -4182,18 +4605,13 @@ mod tests {
     /// path's post-move refusal happens with a plugin that activated properly.
     #[test]
     fn a_load_the_engine_refuses_tears_its_runtime_down_holding_no_lock() {
+        let plugins =
+            LoadFixtureRoot::create("a-load-the-engine-refuses-tears-its-runtime-down-holding-no-");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
         take_teardown_events();
@@ -4203,6 +4621,8 @@ mod tests {
             PluginInstanceId("refused-by-the-engine".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
@@ -4285,18 +4705,13 @@ mod tests {
     /// owes it.
     #[test]
     fn a_load_whose_editor_ask_never_reached_the_shell_tears_down_off_the_runtime_gate() {
+        let plugins =
+            LoadFixtureRoot::create("a-load-whose-editor-ask-never-reached-the-shell-tears-down-o");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
         take_teardown_events();
@@ -4306,6 +4721,8 @@ mod tests {
             PluginInstanceId("editor-ask-unanswered".to_string()),
             &ScriptedUiWindowHost::refusing_the_editor_ask(),
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
@@ -4379,18 +4796,13 @@ mod tests {
     /// held at the moment it was installed.
     #[test]
     fn a_load_installs_the_host_request_wake_with_the_engine_lock_free() {
+        let plugins =
+            LoadFixtureRoot::create("a-load-installs-the-host-request-wake-with-the-engine-lock-f");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         let installs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let engine_free_at_install = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -4400,6 +4812,8 @@ mod tests {
             PluginInstanceId("wake-installed".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             {
                 let observed_state = Arc::clone(&state);
                 let installs = Arc::clone(&installs);
@@ -4445,16 +4859,13 @@ mod tests {
     /// two modules away.
     #[test]
     fn a_loaded_instrument_registers_its_generator_kind() {
+        let plugins = LoadFixtureRoot::create("a-loaded-instrument-registers-its-generator-kind");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
+        plugins.publish(
+            &state,
             &[ScannedPlugin {
                 category: "instrument".to_string(),
                 ..scanned("instrument1111", "com.vendor.synth", "clap")
@@ -4466,6 +4877,8 @@ mod tests {
             PluginInstanceId("instrument-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper = ClapWrapper::new_engine_owned_command_fixture(
                     "Synth Fixture",
@@ -4739,15 +5152,10 @@ mod tests {
     /// failure to the musician.
     #[test]
     fn a_load_with_no_engine_refuses_a_plugin_that_never_activated_rather_than_parking_it() {
+        let plugins =
+            LoadFixtureRoot::create("a-load-with-no-engine-refuses-a-plugin-that-never-activated-");
         let state = Arc::new(AppState::default());
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         let lease_held_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
         take_teardown_events();
@@ -4757,6 +5165,8 @@ mod tests {
             PluginInstanceId("never-activated-dormant".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             {
                 let lease_held = Arc::clone(&lease_held_at_teardown);
                 move |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4835,18 +5245,13 @@ mod tests {
     /// runtime gate guard is gone.
     #[test]
     fn a_load_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let plugins =
+            LoadFixtureRoot::create("a-load-sweeps-retired-runtimes-only-after-releasing-the-runt");
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         take_teardown_events();
 
@@ -4855,6 +5260,8 @@ mod tests {
             PluginInstanceId("fixture-a".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
@@ -4890,6 +5297,8 @@ mod tests {
             PluginInstanceId("fixture-b".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false);
@@ -4921,18 +5330,13 @@ mod tests {
     /// A, and its own runtime gate guard is what must be gone first.
     #[test]
     fn a_keyed_unload_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let plugins =
+            LoadFixtureRoot::create("a-keyed-unload-sweeps-retired-runtimes-only-after-releasing-");
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         take_teardown_events();
 
@@ -4941,6 +5345,8 @@ mod tests {
             PluginInstanceId("fixture-a".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
@@ -4967,6 +5373,8 @@ mod tests {
             PluginInstanceId("fixture-c".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false);
@@ -5017,19 +5425,14 @@ mod tests {
     /// whose sweep can reach it.
     #[test]
     fn the_quit_cascade_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let plugins =
+            LoadFixtureRoot::create("the-quit-cascade-sweeps-retired-runtimes-only-after-releasin");
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
         take_teardown_events();
 
@@ -5038,6 +5441,8 @@ mod tests {
             PluginInstanceId("fixture-a".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
@@ -5064,6 +5469,8 @@ mod tests {
             PluginInstanceId("fixture-d".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false);
@@ -5172,24 +5579,22 @@ mod tests {
     /// the exact message pins the call site.
     #[test]
     fn load_plugin_refuses_at_the_hosted_session_ceiling_before_loading_the_library() {
+        let plugins =
+            LoadFixtureRoot::create("load-plugin-refuses-at-the-hosted-session-ceiling-before-loa");
         let state = AppState::default();
         for index in 0..HOSTED_PLUGIN_RESERVE {
             insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
         }
-        publish_scan_results_in_registry(
-            &state.plugin_registry,
-            &state.plugin_registry_store,
-            &[],
-            &[],
-            true,
-            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
-        );
+        plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
-        let error = crate::block_on_test(load_plugin(
+        let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("over-ceiling-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
+            create_hosted_runtime,
         ))
         .expect_err("a load at the hosted session ceiling must refuse");
 
@@ -5273,26 +5678,24 @@ mod tests {
     /// The registry row the load-path tests resolve. The format is `clap`
     /// because the runtime they inject is a CLAP fixture; nothing else in the
     /// row reaches the plugin, whose construction the test replaces.
-    fn register_editor_support_fixture(state: &AppState) {
-        state
-            .plugin_registry
-            .lock()
-            .expect("plugin registry lock should be available")
-            .insert(
-                "editor-support-fixture".to_string(),
-                PluginRegistryEntry {
-                    path: "/plugins/editor-support-fixture.clap".to_string(),
-                    stable_id: "editor-support-fixture".to_string(),
-                    descriptor_id: "com.sourdaw.editor-support-fixture".to_string(),
-                    format: "clap".to_string(),
-                    name: "Editor Support Fixture".to_string(),
-                    num_inputs: 2,
-                    num_outputs: 2,
-                    has_custom_ui: true,
-                    capability_metadata_reason: None,
-                    chain_kind: DeviceKind::Effect,
-                },
-            );
+    fn register_editor_support_fixture(plugins: &LoadFixtureRoot, state: &AppState) {
+        plugins.insert_entry(
+            state,
+            "editor-support-fixture".to_string(),
+            PluginRegistryEntry {
+                path: "/plugins/editor-support-fixture.clap".to_string(),
+                stable_id: "editor-support-fixture".to_string(),
+                descriptor_id: "com.sourdaw.editor-support-fixture".to_string(),
+                format: "clap".to_string(),
+                name: "Editor Support Fixture".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: true,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
     }
 
     /// The load path's own routing, one level deeper than the helper test
@@ -5302,8 +5705,10 @@ mod tests {
     /// so the assertion is the plugin's own observation of its caller.
     #[test]
     fn loading_a_plugin_asks_its_editor_support_on_the_shells_ui_thread() {
+        let plugins =
+            LoadFixtureRoot::create("loading-a-plugin-asks-its-editor-support-on-the-shells-ui-th");
         let state = AppState::default();
-        register_editor_support_fixture(&state);
+        register_editor_support_fixture(&plugins, &state);
         let wrapper = ClapWrapper::new_engine_owned_command_fixture(
             "Editor Support Fixture",
             Vec::new(),
@@ -5321,6 +5726,8 @@ mod tests {
             PluginInstanceId("editor-support-instance".to_string()),
             &windows,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 slot.lock()
                     .expect("fixture runtime slot")
@@ -5357,26 +5764,29 @@ mod tests {
 
     /// Register one fixture row per hosted format, so a load test can name the
     /// format it is loading.
-    fn register_thread_fixture(state: &AppState, plugin_id: &str, format: &str) {
-        state
-            .plugin_registry
-            .lock()
-            .expect("plugin registry lock should be available")
-            .insert(
-                plugin_id.to_string(),
-                PluginRegistryEntry {
-                    path: format!("/plugins/{plugin_id}.{format}"),
-                    stable_id: plugin_id.to_string(),
-                    descriptor_id: "0123456789ABCDEF0123456789ABCDEF".to_string(),
-                    format: format.to_string(),
-                    name: "Thread Fixture".to_string(),
-                    num_inputs: 2,
-                    num_outputs: 2,
-                    has_custom_ui: false,
-                    capability_metadata_reason: None,
-                    chain_kind: DeviceKind::Effect,
-                },
-            );
+    fn register_thread_fixture(
+        plugins: &LoadFixtureRoot,
+        state: &AppState,
+        plugin_id: &str,
+        format: &str,
+    ) {
+        plugins.insert_entry(
+            state,
+            plugin_id.to_string(),
+            PluginRegistryEntry {
+                path: format!("/plugins/{plugin_id}.{format}"),
+                stable_id: plugin_id.to_string(),
+                descriptor_id: "0123456789ABCDEF0123456789ABCDEF".to_string(),
+                format: format.to_string(),
+                name: "Thread Fixture".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: false,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
     }
 
     /// A fixture runtime whose teardown appends the thread it ran on to the
@@ -5408,10 +5818,12 @@ mod tests {
     /// shell's UI thread, whichever format the registry names.
     #[test]
     fn loading_a_plugin_constructs_its_runtime_on_the_shells_ui_thread() {
+        let plugins =
+            LoadFixtureRoot::create("loading-a-plugin-constructs-its-runtime-on-the-shells-ui-thr");
         for format in ["vst3", "clap"] {
             let state = AppState::default();
             let plugin_id = format!("thread-fixture-{format}");
-            register_thread_fixture(&state, &plugin_id, format);
+            register_thread_fixture(&plugins, &state, &plugin_id, format);
             let windows = DedicatedUiWindowHost::start();
             let constructed_on = Arc::new(Mutex::new(Vec::new()));
             let log = Arc::clone(&constructed_on);
@@ -5421,6 +5833,8 @@ mod tests {
                 PluginInstanceId(format!("{plugin_id}-instance")),
                 &windows,
                 &state,
+                plugins.scan_policy(),
+                unexpected_rescan,
                 move |_backend, _path, _descriptor_id, _sample_rate| {
                     log.lock()
                         .expect("construction log")
@@ -5448,8 +5862,10 @@ mod tests {
     /// `terminate` and module exit (VST3), all main-thread work.
     #[test]
     fn unloading_a_plugin_tears_its_runtime_down_on_the_shells_ui_thread() {
+        let plugins =
+            LoadFixtureRoot::create("unloading-a-plugin-tears-its-runtime-down-on-the-shells-ui-t");
         let state = AppState::default();
-        register_thread_fixture(&state, "thread-fixture-unload", "vst3");
+        register_thread_fixture(&plugins, &state, "thread-fixture-unload", "vst3");
         let windows = DedicatedUiWindowHost::start();
         let (runtime, torn_down_on) = runtime_recording_teardown(true);
 
@@ -5458,6 +5874,8 @@ mod tests {
             PluginInstanceId("thread-fixture-unload-instance".to_string()),
             &windows,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
         ))
         .expect("the fixture plugin should load");
@@ -5485,8 +5903,10 @@ mod tests {
     /// the shell's UI thread too: a refusal is a teardown like any other.
     #[test]
     fn a_refused_load_tears_its_runtime_down_on_the_shells_ui_thread() {
+        let plugins =
+            LoadFixtureRoot::create("a-refused-load-tears-its-runtime-down-on-the-shells-ui-threa");
         let state = AppState::default();
-        register_thread_fixture(&state, "thread-fixture-refused", "vst3");
+        register_thread_fixture(&plugins, &state, "thread-fixture-refused", "vst3");
         let windows = DedicatedUiWindowHost::start();
         let (runtime, torn_down_on) = runtime_recording_teardown(false);
 
@@ -5495,6 +5915,8 @@ mod tests {
             PluginInstanceId("thread-fixture-refused-instance".to_string()),
             &windows,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
         ))
         .expect_err("a plugin that never activated must not load");
@@ -5512,8 +5934,10 @@ mod tests {
     /// it.
     #[test]
     fn a_refused_load_whose_teardown_hop_never_lands_retires_the_runtime() {
+        let plugins =
+            LoadFixtureRoot::create("a-refused-load-whose-teardown-hop-never-lands-retires-the-ru");
         let state = AppState::default();
-        register_thread_fixture(&state, "thread-fixture-deferred", "vst3");
+        register_thread_fixture(&plugins, &state, "thread-fixture-deferred", "vst3");
         let (runtime, torn_down_on) = runtime_recording_teardown(false);
 
         crate::block_on_test(load_plugin_with_backend(
@@ -5521,6 +5945,8 @@ mod tests {
             PluginInstanceId("thread-fixture-deferred-instance".to_string()),
             &ScriptedUiWindowHost::new(&[true, false]),
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
         ))
         .expect_err("a plugin that never activated must not load");
@@ -5586,8 +6012,10 @@ mod tests {
     /// instance behind.
     #[test]
     fn a_load_whose_editor_support_lend_never_lands_refuses_the_plugin() {
+        let plugins =
+            LoadFixtureRoot::create("a-load-whose-editor-support-lend-never-lands-refuses-the-plu");
         let state = AppState::default();
-        register_editor_support_fixture(&state);
+        register_editor_support_fixture(&plugins, &state);
         let wrapper = ClapWrapper::new_engine_owned_command_fixture(
             "Editor Support Fixture",
             Vec::new(),
@@ -5604,6 +6032,8 @@ mod tests {
             PluginInstanceId("lend-refused-instance".to_string()),
             &ScriptedUiWindowHost::refusing_the_editor_ask(),
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
             move |_backend, _path, _descriptor_id, _sample_rate| {
                 slot.lock()
                     .expect("fixture runtime slot")
@@ -5641,32 +6071,35 @@ mod tests {
     /// point for an id this host invented.
     #[test]
     fn load_plugin_refuses_a_clap_entry_with_no_descriptor_id() {
+        let plugins =
+            LoadFixtureRoot::create("load-plugin-refuses-a-clap-entry-with-no-descriptor-id");
         let state = AppState::default();
-        state
-            .plugin_registry
-            .lock()
-            .expect("plugin registry lock should be available")
-            .insert(
-                "clap-without-descriptor-id".to_string(),
-                PluginRegistryEntry {
-                    path: "/plugins/no-descriptor-id.clap".to_string(),
-                    stable_id: "clap-without-descriptor-id".to_string(),
-                    descriptor_id: String::new(),
-                    format: "clap".to_string(),
-                    name: "Nameless".to_string(),
-                    num_inputs: 2,
-                    num_outputs: 2,
-                    has_custom_ui: false,
-                    capability_metadata_reason: None,
-                    chain_kind: DeviceKind::Effect,
-                },
-            );
+        let path = plugins.insert_entry(
+            &state,
+            "clap-without-descriptor-id".to_string(),
+            PluginRegistryEntry {
+                path: "/plugins/no-descriptor-id.clap".to_string(),
+                stable_id: "clap-without-descriptor-id".to_string(),
+                descriptor_id: String::new(),
+                format: "clap".to_string(),
+                name: "Nameless".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: false,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
 
-        let result = crate::block_on_test(load_plugin(
+        let result = crate::block_on_test(load_plugin_with_backend(
             PluginId("clap-without-descriptor-id".to_string()),
             PluginInstanceId("clap-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
+            create_hosted_runtime,
         ));
 
         let error = result.expect_err("a registry entry with no CLAP id must not load");
@@ -5675,8 +6108,10 @@ mod tests {
         // "this entry carries no CLAP id" from "the file would not load".
         assert_eq!(
             error,
-            "CLAP plugin /plugins/no-descriptor-id.clap reports no descriptor id in the registry \
-             entry for clap-without-descriptor-id. Rescan the plugin directory."
+            format!(
+                "CLAP plugin {path} reports no descriptor id in the registry \
+                 entry for clap-without-descriptor-id. Rescan the plugin directory."
+            )
         );
         assert!(
             !state
@@ -5735,6 +6170,1196 @@ mod tests {
         let root = unique_temp_scan_root(test_name);
         std::fs::create_dir_all(&root).expect("temp scan root should be created");
         std::fs::canonicalize(&root).expect("a directory that was just created resolves")
+    }
+
+    /// A real plugin folder for the load-path tests: every registry entry a
+    /// load resolves is vetted against the file it names, through a scan policy,
+    /// before anything is constructed. So the rows these tests publish name
+    /// real files under a canonical temp root, and the load is handed a policy
+    /// over exactly that root — the platform defaults are the developer's real
+    /// plugin folders, which no test may depend on or write into.
+    struct LoadFixtureRoot {
+        root: PathBuf,
+    }
+
+    impl LoadFixtureRoot {
+        fn create(test_name: &str) -> Self {
+            Self {
+                root: created_temp_scan_root(test_name),
+            }
+        }
+
+        fn scan_policy(&self) -> PluginScanPolicy {
+            PluginScanPolicy::with_allowed_roots(vec![self.root.clone()])
+        }
+
+        /// A file under the root named like `fake_path`'s last component,
+        /// with contents of its own so no two fixtures share a fingerprint.
+        fn plugin_file(&self, fake_path: &str) -> String {
+            let file_name = Path::new(fake_path)
+                .file_name()
+                .expect("a fixture path names a file");
+            let path = self.root.join(file_name);
+            std::fs::write(&path, format!("plugin bytes for {}", path.display()))
+                .expect("the fixture plugin file should be written");
+            path.display().to_string()
+        }
+
+        /// Publish scanned rows the way a completed scan does, each moved onto
+        /// a real file first so the scan's fingerprint is a real one.
+        fn publish(&self, state: &AppState, plugins: &[ScannedPlugin]) -> Vec<ScannedPlugin> {
+            let plugins: Vec<ScannedPlugin> = plugins
+                .iter()
+                .map(|plugin| ScannedPlugin {
+                    path: self.plugin_file(&plugin.path),
+                    ..plugin.clone()
+                })
+                .collect();
+            publish_scan_results_in_registry(
+                &state.plugin_registry,
+                &state.plugin_registry_store,
+                &[],
+                &[],
+                true,
+                &plugins,
+                &fixture_fingerprints(&plugins),
+            );
+            plugins
+        }
+
+        /// Insert a registry row directly, moved onto a real file and carrying
+        /// that file's fingerprint, as a scan would have recorded it. Returns
+        /// the row's path.
+        fn insert_entry(
+            &self,
+            state: &AppState,
+            key: impl Into<String>,
+            entry: PluginRegistryEntry,
+        ) -> String {
+            let path = self.plugin_file(&entry.path);
+            let scanned_fingerprint = plugin_file_fingerprint(Path::new(&path), &entry.format);
+            assert!(
+                scanned_fingerprint.is_some(),
+                "a fixture file that was just written must fingerprint"
+            );
+            state
+                .plugin_registry
+                .lock()
+                .expect("plugin registry lock should be available")
+                .insert(
+                    key.into(),
+                    PluginRegistryEntry {
+                        path: path.clone(),
+                        scanned_fingerprint,
+                        ..entry
+                    },
+                );
+            path
+        }
+    }
+
+    /// The fingerprints a scan would have taken of these plugins' files while
+    /// reading them: for a fixture, the files as they stand now.
+    fn fixture_fingerprints(plugins: &[ScannedPlugin]) -> ScanFingerprints {
+        plugins
+            .iter()
+            .filter_map(|plugin| {
+                scanned_file_fingerprint(plugin)
+                    .map(|fingerprint| (plugin.path.clone(), fingerprint))
+            })
+            .collect()
+    }
+
+    impl Drop for LoadFixtureRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// The rescan a load of an unchanged plugin file must never reach.
+    fn unexpected_rescan(
+        _format: &str,
+        path: &Path,
+        _plugin_id: &str,
+        _descriptor_id: &str,
+    ) -> Result<ScannedPlugin, String> {
+        panic!(
+            "an unchanged plugin file must load without a rescan, but {} was rescanned",
+            path.display()
+        )
+    }
+
+    // ── Vetting a registry entry before its file is opened ──
+
+    /// What a vetting test observed, in the order it happened: each rescan
+    /// with the path it was handed, and each construction with the path the
+    /// runtime would have opened.
+    type VettingLog = Arc<Mutex<Vec<(&'static str, String)>>>;
+
+    fn vetting_log() -> VettingLog {
+        Arc::new(Mutex::new(Vec::new()))
+    }
+
+    fn logged(log: &VettingLog, event: &str) -> usize {
+        log.lock()
+            .expect("vetting log")
+            .iter()
+            .filter(|(logged, _)| *logged == event)
+            .count()
+    }
+
+    /// A rescan double that records its call and answers with the plugin the
+    /// file now declares, at the path it was handed — which is what
+    /// `rescan_plugin_file` returns.
+    fn recording_rescan(log: &VettingLog, answer: Result<(), String>) -> impl PluginRescan {
+        let log = Arc::clone(log);
+        move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            log.lock()
+                .expect("vetting log")
+                .push(("rescan", path.display().to_string()));
+            answer.map(|()| ScannedPlugin {
+                id: plugin_id.to_string(),
+                name: "Rescanned Reverb".to_string(),
+                format: format.to_string(),
+                path: path.display().to_string(),
+                descriptor_id: descriptor_id.to_string(),
+                ..scanned(plugin_id, descriptor_id, format)
+            })
+        }
+    }
+
+    /// A construction double that records the path it was handed and returns
+    /// an activated fixture runtime.
+    fn recording_construction(log: &VettingLog) -> impl RuntimeConstructor {
+        let log = Arc::clone(log);
+        move |_backend: HostBackend, path: &str, _descriptor_id: &str, _sample_rate: f64| {
+            log.lock()
+                .expect("vetting log")
+                .push(("construct", path.to_string()));
+            Ok(HostedRuntime::from(
+                ClapWrapper::new_engine_owned_command_fixture("Vetted Fixture", Vec::new(), false),
+            ))
+        }
+    }
+
+    fn load_vetted(
+        plugins: &LoadFixtureRoot,
+        state: &AppState,
+        windows_host: &dyn PluginWindowHost,
+        log: &VettingLog,
+        rescan: impl PluginRescan,
+    ) -> Result<PluginInstance, String> {
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId(format!("vetted-instance-{}", logged(log, "construct"))),
+            windows_host,
+            state,
+            plugins.scan_policy(),
+            rescan,
+            recording_construction(log),
+        ))
+    }
+
+    /// The baseline the vetting must not tax: an unchanged file loads straight
+    /// from its registry entry, with no helper process.
+    ///
+    /// Mutation this catches: treating every hit as changed — comparing
+    /// against a fingerprint taken from a different file than the scan's, or
+    /// adding a field to the fingerprint that moves without the plugin
+    /// changing — which spawns a scan worker on every load.
+    #[test]
+    fn an_unchanged_plugin_file_loads_without_a_rescan() {
+        let plugins = LoadFixtureRoot::create("vetting-unchanged");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let log = vetting_log();
+
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("an unchanged plugin file must load");
+
+        assert_eq!(
+            *log.lock().expect("vetting log"),
+            [("construct", published[0].path.clone())],
+            "an unchanged file is constructed once, from its own path, with no rescan"
+        );
+    }
+
+    /// The defect behind #6570: an in-memory registry hit went straight to the
+    /// loader with no look at the file, so a plugin rewritten since its scan was
+    /// opened in this process on the strength of the old file's descriptor.
+    ///
+    /// Mutation this catches: returning the registry hit unvetted from
+    /// `resolve_registry_entry` — the construction then runs with no rescan
+    /// before it.
+    #[test]
+    fn a_plugin_file_changed_since_its_scan_is_rescanned_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-changed-length");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = published[0].path.clone();
+        std::fs::write(
+            &path,
+            "a longer plugin binary than the one that was scanned",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("a changed plugin that rescans cleanly must load");
+
+        assert_eq!(
+            *log.lock().expect("vetting log"),
+            [("rescan", path.clone()), ("construct", path.clone())],
+            "the changed file is rescanned once, and only then constructed"
+        );
+        assert_eq!(
+            state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .get("aaaa1111")
+                .expect("the rescanned row must be published")
+                .name,
+            "Rescanned Reverb",
+            "the load proceeds with the rescanned entry, which replaced the stale one"
+        );
+    }
+
+    /// A replacement made to look unchanged: same length, same modification
+    /// time, a different file renamed over the scanned one. Size and age alone
+    /// cannot see it; the file's identity does.
+    ///
+    /// Mutation this catches: dropping `identity` from the fingerprint
+    /// comparison, which loads the replacement without a rescan.
+    #[test]
+    fn a_different_file_with_the_same_size_and_age_is_rescanned() {
+        let plugins = LoadFixtureRoot::create("vetting-same-size-and-age");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = PathBuf::from(&published[0].path);
+        let original = std::fs::metadata(&path).expect("the scanned file is there");
+        let original_modified = original.modified().expect("its mtime is readable");
+
+        let replacement = path.with_extension("replacement");
+        let same_length = vec![b'x'; original.len() as usize];
+        std::fs::write(&replacement, same_length).expect("the replacement is written");
+        std::fs::File::options()
+            .write(true)
+            .open(&replacement)
+            .and_then(|file| file.set_modified(original_modified))
+            .expect("the replacement's mtime is set to the original's");
+        std::fs::rename(&replacement, &path).expect("the replacement is renamed over");
+
+        let replaced = std::fs::metadata(&path).expect("the replacement is there");
+        assert_eq!(
+            (replaced.len(), replaced.modified().expect("mtime")),
+            (original.len(), original_modified),
+            "the replacement must match on size and age, or this test proves nothing"
+        );
+
+        let log = vetting_log();
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("a replacement that rescans cleanly must load");
+
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "a different file under the scanned name must be rescanned"
+        );
+    }
+
+    /// A scanned plugin replaced by a symlink to a file the policy does not
+    /// cover is a load from outside the native-owned roots, and is refused
+    /// before anything is opened or scanned.
+    ///
+    /// Mutation this catches: dropping the policy re-authorization from
+    /// `vet_registry_hit`. The symlink's target then fingerprints as a changed
+    /// file, and the rescan double is asked to read it.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_replaced_by_a_symlink_outside_the_policy_is_refused() {
+        let plugins = LoadFixtureRoot::create("vetting-symlink");
+        let outside = LoadFixtureRoot::create("vetting-symlink-outside");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = published[0].path.clone();
+        let target = outside.plugin_file("/plugins/Elsewhere.clap");
+        std::fs::remove_file(&path).expect("the scanned file is removed");
+        std::os::unix::fs::symlink(&target, &path).expect("the symlink is created");
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a plugin symlinked outside the policy must not load");
+
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Plugin aaaa1111' will not be loaded from {path}:"
+            )),
+            "the refusal must name the plugin and the path, got: {error}"
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "nothing may be rescanned or constructed from a refused path"
+        );
+    }
+
+    /// A changed hit whose rescan refuses records that refusal, exactly as a
+    /// miss does: the frontend re-asks on every transport start, and each ask
+    /// would otherwise be one more scan-worker child process.
+    ///
+    /// Mutation this catches: rescanning a changed hit outside the per-key
+    /// claim, or leaving the stale rows in the registry and never recording
+    /// the refusal — either way the second load rescans again.
+    #[test]
+    fn a_changed_hit_whose_rescan_refuses_is_not_rescanned_again() {
+        let plugins = LoadFixtureRoot::create("vetting-refusal-recorded");
+        let state = AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(
+                plugins.root.join("plugin-registry.json"),
+            )),
+            ..AppState::default()
+        };
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
+        std::fs::write(
+            &published[0].path,
+            "a plugin that no longer declares itself",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        let first = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Err("no plugin declared".to_string())),
+        )
+        .expect_err("a changed plugin whose rescan refuses must not load");
+        let second = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Err("no plugin declared".to_string())),
+        )
+        .expect_err("a recorded refusal must still refuse");
+
+        assert_eq!(logged(&log, "rescan"), 1, "the refusal is recorded once");
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
+        assert_eq!(
+            second, first,
+            "the second load answers with the recorded refusal"
+        );
+    }
+
+    /// A shell whose UI thread changes the plugin file the moment the
+    /// construction hop lands — after every check resolution made, and before
+    /// the plugin's code is opened.
+    struct FileChangingUiWindowHost {
+        change: Box<dyn Fn() + Send + Sync>,
+    }
+
+    impl UiThread for FileChangingUiWindowHost {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+            (self.change)();
+            task.run();
+            Ok(())
+        }
+    }
+
+    impl PluginWindowHost for FileChangingUiWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Err("This host cannot create plugin editor windows".to_string())
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
+
+    /// The last check before the open: a file changed after resolution vetted
+    /// it, while the load waited for the UI thread, is refused rather than
+    /// opened on the strength of its predecessor's check.
+    ///
+    /// Mutation this catches: dropping the fingerprint comparison inside
+    /// `construct_runtime_on_ui_thread`'s hop, which constructs the rewritten
+    /// file.
+    #[test]
+    fn a_plugin_file_changed_after_vetting_is_refused_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-pre-open");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = published[0].path.clone();
+        let rewritten = path.clone();
+        let windows = FileChangingUiWindowHost {
+            change: Box::new(move || {
+                std::fs::write(&rewritten, "a plugin rewritten while the load waited")
+                    .expect("the plugin should be rewritten");
+            }),
+        };
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &windows,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a file changed after vetting must not be opened");
+
+        assert_eq!(
+            error,
+            format!(
+                "Plugin 'Plugin aaaa1111' at {path} changed after it was checked and before it was opened. Load it again to check it afresh."
+            )
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "the unchanged file vetted with no rescan, and the changed one is never constructed"
+        );
+    }
+
+    /// The last authorization before the open: a plugin moved outside the
+    /// policy's roots while the load waited for the UI thread, and symlinked
+    /// back at the path that was vetted, is refused. Its fingerprint cannot see
+    /// this — a rename keeps the file's identity, size and age, and the stat
+    /// follows the link to the very same file.
+    ///
+    /// Mutation this catches: dropping the scan-policy authorization from
+    /// `construct_runtime_on_ui_thread`'s hop, which constructs the plugin
+    /// through the symlink from outside every root.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_swapped_for_a_symlink_after_vetting_is_refused_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-pre-open-symlink");
+        let outside = created_temp_scan_root("vetting-pre-open-symlink-outside");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = published[0].path.clone();
+        let vetted = PathBuf::from(&path);
+        let moved = outside.join(vetted.file_name().expect("the plugin file has a name"));
+        let windows = FileChangingUiWindowHost {
+            change: Box::new(move || {
+                std::fs::rename(&vetted, &moved).expect("the plugin should move outside the root");
+                std::os::unix::fs::symlink(&moved, &vetted)
+                    .expect("the moved plugin should be linked back at its vetted path");
+            }),
+        };
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &windows,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a plugin reached through a symlink out of the roots must not be opened");
+
+        assert!(
+            std::fs::symlink_metadata(&path)
+                .expect("the vetted path should still exist")
+                .file_type()
+                .is_symlink(),
+            "the hop must have landed on the swapped-in symlink"
+        );
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Plugin aaaa1111' will not be loaded from {path}: "
+            )),
+            "the refusal names the plugin and the path it was refused at: {error}"
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "the unchanged file vetted with no rescan, and the swapped one is never constructed"
+        );
+    }
+
+    /// A bundle whose own path holds no symlink can still hold a module that
+    /// is one, and the module is the file a loader opens. Re-authorizing only
+    /// the bundle path would load code from outside the native-owned roots.
+    ///
+    /// Mutation this catches: dropping the module's authorization from
+    /// `authorize_plugin_file`. The module's target then fingerprints as a
+    /// changed file and the rescan double is asked to read it.
+    #[cfg(unix)]
+    #[test]
+    fn a_bundle_whose_module_is_a_symlink_outside_the_policy_is_refused() {
+        let plugins = LoadFixtureRoot::create("vetting-bundle-module-symlink");
+        let outside = LoadFixtureRoot::create("vetting-bundle-module-outside");
+        let state = AppState::default();
+        let bundle = plugins.root.join("Bundled.vst3");
+        // The bundle is a directory before its module is asked for: a path
+        // that is not one is its own module, and the symlink would then be
+        // the bundle path itself — refused by the first check, never the
+        // module's.
+        std::fs::create_dir_all(bundle.join("Contents")).expect("the bundle directory is created");
+        let module = scanned_binary_location(&vst3_bundle_row(&bundle))
+            .expect("this platform names where a VST3 bundle's module belongs");
+        std::fs::create_dir_all(module.parent().expect("the module sits inside the bundle"))
+            .expect("the bundle's module directory is created");
+        let target = outside.plugin_file("/plugins/Elsewhere.module");
+        std::os::unix::fs::symlink(&target, &module).expect("the module symlink is created");
+        assert!(
+            module.starts_with(&bundle) && module != bundle && bundle.is_dir(),
+            "the module must sit inside a real bundle directory, or this test never reaches the \
+             module check: {}",
+            module.display()
+        );
+        assert_eq!(
+            plugin_file_path(&bundle, "vst3"),
+            Some(module.clone()),
+            "the bundle must resolve to its module, or this test never reaches the module check"
+        );
+        let bundle_path = bundle.display().to_string();
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "aaaa1111".to_string(),
+                PluginRegistryEntry {
+                    path: bundle_path.clone(),
+                    stable_id: "aaaa1111".to_string(),
+                    descriptor_id: "0123456789ABCDEF0123456789ABCDEF".to_string(),
+                    format: "vst3".to_string(),
+                    name: "Bundled".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: false,
+                    capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
+                    scanned_fingerprint: plugin_file_fingerprint(&bundle, "vst3"),
+                },
+            );
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a bundle whose module is symlinked outside the policy must not load");
+
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Bundled' will not be loaded from {bundle_path}:"
+            )),
+            "the refusal must name the plugin and the bundle, got: {error}"
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "nothing may be rescanned or constructed from a refused bundle"
+        );
+    }
+
+    /// A file replaced while its targeted rescan read it: the descriptor the
+    /// rescan returned came from one file and the fingerprint would come from
+    /// another, and every later load would vet the second against the first's
+    /// answer. Refused, and recorded like any other rescan refusal.
+    ///
+    /// Mutation this catches: accepting any pair of fingerprints around the
+    /// rescan in `rescan_holding_still`, which publishes the replacement's
+    /// fingerprint beside the read file's descriptor and constructs it.
+    #[test]
+    fn a_plugin_file_changed_during_its_rescan_is_refused_and_recorded() {
+        let plugins = LoadFixtureRoot::create("vetting-changed-during-rescan");
+        let state = AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(
+                plugins.root.join("plugin-registry.json"),
+            )),
+            ..AppState::default()
+        };
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
+        let path = PathBuf::from(&published[0].path);
+        std::fs::write(&path, "an update the next load has to rescan")
+            .expect("the plugin should be updated in place");
+        let log = vetting_log();
+        let replacing_rescan = |log: &VettingLog| {
+            let read = recording_rescan(log, Ok(()));
+            move |format: &str, rescanned: &Path, plugin_id: &str, descriptor_id: &str| {
+                let row = read(format, rescanned, plugin_id, descriptor_id);
+                let replacement = rescanned.with_extension("replacement");
+                std::fs::write(&replacement, "a file the rescan never read")
+                    .expect("the replacement is written");
+                std::fs::rename(&replacement, rescanned).expect("the replacement is renamed over");
+                row
+            }
+        };
+
+        let first = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            replacing_rescan(&log),
+        )
+        .expect_err("a file replaced during its rescan must not load");
+        let second = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            replacing_rescan(&log),
+        )
+        .expect_err("the recorded refusal must still refuse");
+
+        assert!(
+            first.contains(&format!(
+                "the file at {} changed while it was being checked",
+                path.display()
+            )),
+            "the refusal must say the file changed during the check, got: {first}"
+        );
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
+        assert_eq!(logged(&log, "rescan"), 1, "the refusal is recorded once");
+        assert_eq!(
+            second, first,
+            "the second load answers with the recorded refusal"
+        );
+    }
+
+    /// How long any step of a concurrent-load test may take before the test
+    /// fails rather than hangs.
+    const CONCURRENT_LOAD_DEADLINE: Duration = Duration::from_secs(30);
+
+    /// A rescan double that tells the test it has started, holds until the
+    /// test releases it, and then answers like [`recording_rescan`].
+    ///
+    /// The hold is bounded: a release that never comes — the test panicked
+    /// before sending it — ends at the deadline, and a dropped release (see
+    /// [`ReleaseOnDrop`]) ends it at once, so the double never parks its
+    /// thread for the life of the test process.
+    fn held_rescan(
+        log: &VettingLog,
+        answer: Result<(), String>,
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) -> impl PluginRescan {
+        let answer_with = recording_rescan(log, answer);
+        move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            // The test may already have given up and dropped its receiver.
+            let _ = started.send(());
+            let _ = release.recv_timeout(CONCURRENT_LOAD_DEADLINE);
+            answer_with(format, path, plugin_id, descriptor_id)
+        }
+    }
+
+    /// Releases a [`held_rescan`] when dropped, so a test that panics before
+    /// its explicit release still lets the held thread finish.
+    struct ReleaseOnDrop(std::sync::mpsc::Sender<()>);
+
+    impl ReleaseOnDrop {
+        fn release(&self) {
+            let _ = self.0.send(());
+        }
+    }
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+
+    fn join_before<T>(handle: std::thread::JoinHandle<T>, deadline: Instant, what: &str) -> T {
+        while !handle.is_finished() {
+            assert!(Instant::now() < deadline, "{what} did not finish in time");
+            std::thread::yield_now();
+        }
+        handle
+            .join()
+            .unwrap_or_else(|_| panic!("{what} should not panic"))
+    }
+
+    fn spawn_load(
+        state: &Arc<AppState>,
+        scan_policy: &PluginScanPolicy,
+        log: &VettingLog,
+        instance_id: &str,
+        rescan: impl PluginRescan,
+    ) -> std::thread::JoinHandle<Result<PluginInstance, String>> {
+        let state = Arc::clone(state);
+        let scan_policy = scan_policy.clone();
+        let log = Arc::clone(log);
+        let instance_id = instance_id.to_string();
+        std::thread::spawn(move || {
+            crate::block_on_test(load_plugin_with_backend(
+                PluginId("aaaa1111".to_string()),
+                PluginInstanceId(instance_id),
+                &NoWindowHost,
+                &state,
+                scan_policy,
+                rescan,
+                recording_construction(&log),
+            ))
+        })
+    }
+
+    /// Two loads of "aaaa1111" on two threads: the first one's rescan is held
+    /// until the second load is parked waiting on it — observed on the store,
+    /// not timed — and only then released.
+    ///
+    /// The second load is handed a rescan double of its own, so a second
+    /// rescan would show in the log rather than hide. Every wait is bounded
+    /// and the held rescan is released on every exit, panics included.
+    ///
+    /// The second load must also finish within [`WAKE_ALLOWANCE`] of the
+    /// release. A waiter nobody wakes still loads — it re-resolves when its
+    /// own wait times out, `RESCAN_WAIT_TIMEOUT` later — so without this bound
+    /// a lost wake-up would pass as a slow test.
+    fn load_twice_while_the_first_rescan_runs(
+        state: &Arc<AppState>,
+        scan_policy: PluginScanPolicy,
+        log: &VettingLog,
+        answer: Result<(), String>,
+    ) -> (
+        Result<PluginInstance, String>,
+        Result<PluginInstance, String>,
+    ) {
+        let deadline = Instant::now() + CONCURRENT_LOAD_DEADLINE;
+        let (started_sender, started) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        let release = ReleaseOnDrop(release_sender);
+
+        let first = spawn_load(
+            state,
+            &scan_policy,
+            log,
+            "first-concurrent-instance",
+            held_rescan(log, answer.clone(), started_sender, release_receiver),
+        );
+        started
+            .recv_timeout(CONCURRENT_LOAD_DEADLINE)
+            .expect("the first load's rescan should start");
+        let second = spawn_load(
+            state,
+            &scan_policy,
+            log,
+            "second-concurrent-instance",
+            recording_rescan(log, answer),
+        );
+
+        while state.plugin_registry_store.rescan_waiters("aaaa1111") == 0 && !second.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the second load neither waited on the rescan nor finished"
+            );
+            std::thread::yield_now();
+        }
+        release.release();
+        let released = Instant::now();
+        while !second.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the second load did not finish in time"
+            );
+            std::thread::yield_now();
+        }
+        let waited = released.elapsed();
+
+        let loads = (
+            join_before(first, deadline, "the first load"),
+            join_before(second, deadline, "the second load"),
+        );
+        assert!(
+            waited < WAKE_ALLOWANCE,
+            "the waiting load finished {waited:?} after the rescan was released: it was not woken when the rescan settled"
+        );
+        loads
+    }
+
+    /// How soon a waiting load must finish once the rescan it waits on is
+    /// released: far inside `RESCAN_WAIT_TIMEOUT`, which is what a waiter
+    /// nobody woke would take, and loose enough for a loaded CI runner.
+    const WAKE_ALLOWANCE: Duration = Duration::from_secs(3);
+
+    /// Settling a rescan wakes the loads waiting on it, and a woken load
+    /// resolves again at once — so the attempt must not settle until the
+    /// rescanned entry is in the registry. Holding the registry lock pins the
+    /// rescan between its answer and its publish; a waiter must still see the
+    /// rescan in progress there.
+    ///
+    /// Mutation this catches: calling `RescanAttempt::resolved` before the
+    /// entry is inserted, which announces the rescan settled while a waiter
+    /// re-resolving would find no entry and start a rescan of its own.
+    #[test]
+    fn a_rescan_is_not_settled_before_its_entry_is_published() {
+        let plugins = LoadFixtureRoot::create("vetting-settle-after-publish");
+        let state = Arc::new(AppState::default());
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a longer plugin binary than the one that was scanned",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+        let deadline = Instant::now() + CONCURRENT_LOAD_DEADLINE;
+        let (started_sender, started) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        let release = ReleaseOnDrop(release_sender);
+
+        let load = spawn_load(
+            &state,
+            &plugins.scan_policy(),
+            &log,
+            "settle-after-publish-instance",
+            held_rescan(&log, Ok(()), started_sender, release_receiver),
+        );
+        started
+            .recv_timeout(CONCURRENT_LOAD_DEADLINE)
+            .expect("the load's rescan should start");
+        let registry = state
+            .plugin_registry
+            .lock()
+            .expect("registry lock should be available");
+        release.release();
+        let settled_unpublished = state
+            .plugin_registry_store
+            .wait_for_rescan("aaaa1111", Instant::now() + Duration::from_secs(1));
+        drop(registry);
+        let loaded = join_before(load, deadline, "the load");
+
+        assert!(
+            !settled_unpublished,
+            "the rescan was settled while its entry could not yet be in the registry"
+        );
+        loaded.expect("the rescanned plugin must load once its entry is published");
+        assert_eq!(logged(&log, "rescan"), 1);
+    }
+
+    /// Two loads of one changed plugin at once — two devices of the same
+    /// plugin, a strip rebuilt while an activation is in flight — both load,
+    /// on the strength of one rescan: the second waits for the first's rescan
+    /// and then vets the entry it published.
+    ///
+    /// Mutation this catches: answering a hit's `RescanClaim::InProgress`
+    /// with the busy refusal straight away, which fails the second load.
+    #[test]
+    fn a_second_load_of_a_changed_plugin_waits_for_the_first_ones_rescan() {
+        let plugins = LoadFixtureRoot::create("vetting-concurrent-changed");
+        let state = Arc::new(AppState::default());
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a longer plugin binary than the one that was scanned",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        let (first, second) =
+            load_twice_while_the_first_rescan_runs(&state, plugins.scan_policy(), &log, Ok(()));
+
+        first.expect("the load that rescanned must load");
+        second.expect("the load that waited for that rescan must load too");
+        assert_eq!(logged(&log, "rescan"), 1, "one rescan serves both loads");
+        assert_eq!(logged(&log, "construct"), 2, "both loads construct");
+    }
+
+    /// The waiting load gets the refusal the first load's rescan recorded,
+    /// word for word, and starts no rescan of its own. The row is persisted,
+    /// as every scanned row is in production: a refused hit drops its stale
+    /// registry row, so the waiter re-resolves as a miss and reaches the
+    /// recorded refusal through the persisted last known location.
+    ///
+    /// Mutation this catches: the immediate busy refusal on
+    /// `RescanClaim::InProgress`, which answers the second load with "already
+    /// being checked" rather than the reason the plugin was refused.
+    #[test]
+    fn a_second_load_of_a_changed_plugin_gets_the_first_ones_refusal() {
+        let plugins = LoadFixtureRoot::create("vetting-concurrent-refused");
+        let state = Arc::new(state_with_registry_file(&plugins.root));
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
+        std::fs::write(
+            &published[0].path,
+            "a plugin that no longer declares itself",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        let (first, second) = load_twice_while_the_first_rescan_runs(
+            &state,
+            plugins.scan_policy(),
+            &log,
+            Err("no plugin declared".to_string()),
+        );
+
+        let first = first.expect_err("a changed plugin whose rescan refuses must not load");
+        let second = second.expect_err("the load that waited must not load either");
+        assert_eq!(
+            second, first,
+            "the waiting load answers with the recorded refusal"
+        );
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "the refusal comes from one rescan"
+        );
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
+    }
+
+    /// The same wait on the miss route: two loads of a plugin whose persisted
+    /// row hydration refused, so neither finds it in the registry, both load
+    /// from one rescan of its last known location.
+    ///
+    /// Mutation this catches: answering a miss's `RescanClaim::InProgress`
+    /// with the busy refusal straight away.
+    #[test]
+    fn a_second_load_of_a_missing_plugin_waits_for_the_first_ones_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-concurrent-miss");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+        let state = Arc::new(state_with_registry_file(&fixture.root));
+        let log = vetting_log();
+
+        let (first, second) =
+            load_twice_while_the_first_rescan_runs(&state, fixture.scan_policy(), &log, Ok(()));
+
+        first.expect("the load that rescanned must load");
+        second.expect("the load that waited for that rescan must load too");
+        assert!(
+            state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .get("aaaa1111")
+                .is_some_and(|entry| entry.name == "Rescanned Reverb"),
+            "the entry both loads used is the rescanned one, not a hydrated row"
+        );
+        assert_eq!(logged(&log, "rescan"), 1, "one rescan serves both loads");
+        assert_eq!(logged(&log, "construct"), 2, "both loads construct");
+    }
+
+    /// Load by an explicit registry key, for a test that addresses one plugin
+    /// under more than one of its keys.
+    fn load_vetted_by_key(
+        plugins: &LoadFixtureRoot,
+        state: &AppState,
+        plugin_id: &str,
+        log: &VettingLog,
+        rescan: impl PluginRescan,
+    ) -> Result<PluginInstance, String> {
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId(plugin_id.to_string()),
+            PluginInstanceId(format!("vetted-instance-{}", logged(log, "construct"))),
+            &NoWindowHost,
+            state,
+            plugins.scan_policy(),
+            rescan,
+            recording_construction(log),
+        ))
+    }
+
+    /// The entry a changed hit's rescan publishes carries the fingerprint the
+    /// rescan took, so the next load of the same id vets it as unchanged.
+    ///
+    /// Mutation this catches: publishing the rescanned entry with no
+    /// fingerprint, which sends every later load back through a rescan.
+    #[test]
+    fn a_rescanned_hit_loads_again_without_another_rescan() {
+        let plugins = LoadFixtureRoot::create("vetting-rescanned-hit-keeps-fingerprint");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(&published[0].path, "an update the next load has to rescan")
+            .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        for _ in 0..2 {
+            load_vetted(
+                &plugins,
+                &state,
+                &NoWindowHost,
+                &log,
+                recording_rescan(&log, Ok(())),
+            )
+            .expect("a changed plugin that rescans cleanly must load");
+        }
+
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "the second load vets the rescanned entry"
+        );
+        assert_eq!(logged(&log, "construct"), 2, "both loads construct");
+    }
+
+    /// An entry nobody fingerprinted is a mismatch, never a pass: it gets the
+    /// one rescan before anything is constructed from it.
+    ///
+    /// Mutation this catches: letting a missing recorded fingerprint match any
+    /// live one, which constructs the file unchecked.
+    #[test]
+    fn an_entry_with_no_recorded_fingerprint_is_rescanned_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-unfingerprinted-entry");
+        let state = AppState::default();
+        let path = plugins.insert_entry(
+            &state,
+            "aaaa1111",
+            PluginRegistryEntry {
+                path: "/plugins/Unfingerprinted.clap".to_string(),
+                stable_id: "aaaa1111".to_string(),
+                descriptor_id: "com.vendor.reverb".to_string(),
+                format: "clap".to_string(),
+                name: "Unfingerprinted".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: false,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
+        state
+            .plugin_registry
+            .lock()
+            .expect("registry lock")
+            .get_mut("aaaa1111")
+            .expect("the entry was inserted")
+            .scanned_fingerprint = None;
+        let log = vetting_log();
+
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("an entry that rescans cleanly must load");
+
+        assert_eq!(
+            *log.lock().expect("vetting log"),
+            [("rescan", path.clone()), ("construct", path)],
+            "the unfingerprinted entry is rescanned once, and only then constructed"
+        );
+    }
+
+    /// A refused changed-hit rescan takes every row that pointed at the stale
+    /// file out of the registry, not only the key that was asked for: the
+    /// plugin's other key would otherwise reach the file again through a
+    /// claim of its own and spawn a second rescan of a file already refused.
+    ///
+    /// Mutation this catches: leaving the stale rows in the registry on
+    /// refusal.
+    #[test]
+    fn a_refused_hit_rescan_removes_the_stale_rows_under_every_key() {
+        let plugins = LoadFixtureRoot::create("vetting-refusal-removes-every-key");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a plugin that no longer declares itself",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        load_vetted_by_key(
+            &plugins,
+            &state,
+            "aaaa1111",
+            &log,
+            recording_rescan(&log, Err("no plugin declared".to_string())),
+        )
+        .expect_err("a changed plugin whose rescan refuses must not load");
+        load_vetted_by_key(
+            &plugins,
+            &state,
+            "com.vendor.reverb",
+            &log,
+            recording_rescan(&log, Err("no plugin declared".to_string())),
+        )
+        .expect_err("the same plugin by its other key must still refuse");
+
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "the other key makes no second rescan"
+        );
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
     }
 
     /// AC-001: a candidate already quarantined must not be handed to a scan
@@ -6321,6 +7946,164 @@ mod tests {
             recording_instance_scan(Arc::clone(instance_calls)),
         ))
         .expect("a scan over an authorized fixture root should succeed")
+    }
+
+    /// A candidate replaced after its helper read it, while the walk was still
+    /// running, must not be recorded at all. The fingerprint used to be taken
+    /// after the walk, from whatever sat at the path by then, so the
+    /// replacement was recorded as the scanned file and every later load
+    /// vetted it as unchanged and opened it in process — a file no helper had
+    /// ever read.
+    ///
+    /// Mutation this catches: fingerprinting at publish or persist again, or
+    /// dropping the comparison of the before-and-after fingerprints, which
+    /// publishes and persists the swapped file's rows. Quarantining the change
+    /// fails the last assertion: nothing about the helper failed.
+    #[test]
+    fn a_candidate_swapped_after_its_helper_read_it_is_not_recorded() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("scan-swapped-candidate");
+        let plugin_path = root.join("Swapped.clap");
+        std::fs::write(&plugin_path, b"the plugin the helper reads").expect("fixture written");
+        let state = state_with_registry_file(&root);
+
+        let swapped_path = plugin_path.clone();
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, _timeout| {
+                // The helper has read the file; now something else replaces it.
+                let replacement = swapped_path.with_extension("replacement");
+                std::fs::write(&replacement, b"a file no helper ever read")
+                    .expect("replacement written");
+                std::fs::rename(&replacement, path).expect("replacement renamed over");
+                Ok(vec![descriptor("com.vendor.swapped")])
+            },
+            fake_successful_instance_scan,
+        ))
+        .expect("the scan itself succeeds");
+
+        let path_text = plugin_path.display().to_string();
+        assert!(
+            scan.plugins.is_empty(),
+            "the swapped file's rows must not be published"
+        );
+        assert!(
+            scan.errors
+                .iter()
+                .any(|error| error.starts_with(&format!("{path_text}:"))
+                    && error.contains("changed while it was being scanned")),
+            "the scan must say which file changed, got: {:?}",
+            scan.errors
+        );
+        assert!(
+            !state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .values()
+                .any(|entry| entry.path == path_text),
+            "no registry entry may point at the swapped file"
+        );
+        let next_launch = PluginRegistryStore::at(root.join("plugin-registry.json"));
+        next_launch.hydrate_into(
+            &Mutex::new(HashMap::new()),
+            &PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+        );
+        let persisted = next_launch.last_known_entry(&scanner::stable_id(&plugin_path));
+        let quarantined = state.plugin_registry_store.is_quarantined(&plugin_path);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            persisted.is_none(),
+            "no row may be persisted for the swapped file"
+        );
+        assert!(
+            quarantined.is_none() && scan.quarantined.is_empty(),
+            "a file that changed is not a helper that failed, and is not quarantined"
+        );
+    }
+
+    /// The after-fingerprint closes the window over the instance pass as well
+    /// as the descriptor read: a file replaced while its instance was being
+    /// inspected was read by the descriptor helper, but the capabilities
+    /// published beside it came from a different file.
+    ///
+    /// Mutation this catches: taking the after-fingerprint before the
+    /// per-descriptor instance loop rather than after it.
+    #[test]
+    fn a_candidate_swapped_during_its_instance_pass_is_not_recorded() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("scan-swapped-in-instance-pass");
+        let plugin_path = root.join("Swapped.clap");
+        std::fs::write(&plugin_path, b"the plugin the helpers read").expect("fixture written");
+        let state = state_with_registry_file(&root);
+
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            fake_successful_descriptor_scan,
+            |_format, path: &Path, _plugin_id, _timeout| {
+                // The instance helper has inspected the file; now something
+                // else replaces it.
+                let replacement = path.with_extension("replacement");
+                std::fs::write(&replacement, b"a file no helper ever read")
+                    .expect("replacement written");
+                std::fs::rename(&replacement, path).expect("replacement renamed over");
+                Ok(scanner::ScannedInstance::default())
+            },
+        ))
+        .expect("the scan itself succeeds");
+
+        let path_text = plugin_path.display().to_string();
+        assert!(
+            scan.plugins.is_empty(),
+            "the swapped file's rows must not be published"
+        );
+        assert!(
+            scan.errors
+                .iter()
+                .any(|error| error.starts_with(&format!("{path_text}:"))
+                    && error.contains("changed while it was being scanned")),
+            "the scan must say which file changed, got: {:?}",
+            scan.errors
+        );
+        assert!(
+            !state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .values()
+                .any(|entry| entry.path == path_text),
+            "no registry entry may point at the swapped file"
+        );
+        let next_launch = PluginRegistryStore::at(root.join("plugin-registry.json"));
+        next_launch.hydrate_into(
+            &Mutex::new(HashMap::new()),
+            &PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+        );
+        let persisted = next_launch.last_known_entry(&scanner::stable_id(&plugin_path));
+        let quarantined = state.plugin_registry_store.is_quarantined(&plugin_path);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            persisted.is_none(),
+            "no row may be persisted for the swapped file"
+        );
+        assert!(
+            quarantined.is_none() && scan.quarantined.is_empty(),
+            "a file that changed is not a helper that failed, and is not quarantined"
+        );
     }
 
     /// The defect (#3505): every scan spawned a descriptor helper and an
@@ -6938,6 +8721,7 @@ mod tests {
         };
         state.plugin_registry_store.persist(&[ScanRow {
             keys: vec![uninspected.id.clone()],
+            fingerprint: scanned_file_fingerprint(&uninspected),
             plugin: uninspected,
         }]);
 
@@ -7307,49 +9091,55 @@ mod tests {
     /// from executing anything.
     #[test]
     fn load_plugin_refuses_a_vst3_entry_with_no_descriptor_id() {
+        let plugins =
+            LoadFixtureRoot::create("load-plugin-refuses-a-vst3-entry-with-no-descriptor-id");
         let state = AppState::default();
-        state
-            .plugin_registry
-            .lock()
-            .expect("plugin registry lock should be available")
-            .insert(
-                "vst3-fixture".to_string(),
-                PluginRegistryEntry {
-                    path: "/plugins/should-not-be-loaded.vst3".to_string(),
-                    stable_id: "vst3-fixture".to_string(),
-                    descriptor_id: String::new(),
-                    format: "vst3".to_string(),
-                    name: "Nameless VST3".to_string(),
-                    num_inputs: 0,
-                    num_outputs: 0,
-                    has_custom_ui: false,
-                    capability_metadata_reason: Some(
-                        scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
-                    ),
-                    chain_kind: DeviceKind::Effect,
-                },
-            );
+        let path = plugins.insert_entry(
+            &state,
+            "vst3-fixture".to_string(),
+            PluginRegistryEntry {
+                path: "/plugins/should-not-be-loaded.vst3".to_string(),
+                stable_id: "vst3-fixture".to_string(),
+                descriptor_id: String::new(),
+                format: "vst3".to_string(),
+                name: "Nameless VST3".to_string(),
+                num_inputs: 0,
+                num_outputs: 0,
+                has_custom_ui: false,
+                capability_metadata_reason: Some(
+                    scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                ),
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
 
-        let result = crate::block_on_test(load_plugin(
+        let result = crate::block_on_test(load_plugin_with_backend(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
+            create_hosted_runtime,
         ));
 
         match result {
             Err(error) => assert_eq!(
                 error,
-                "VST3 plugin /plugins/should-not-be-loaded.vst3 reports no descriptor id in the registry entry for vst3-fixture. Rescan the plugin directory."
+                format!("VST3 plugin {path} reports no descriptor id in the registry entry for vst3-fixture. Rescan the plugin directory.")
             ),
             Ok(instance) => panic!("a VST3 row with no class id unexpectedly loaded: {instance:?}"),
         }
         insert_engine_owned_fixture(&state, "vst3-instance", vec![1, 2, 3]);
-        let duplicate = crate::block_on_test(load_plugin(
+        let duplicate = crate::block_on_test(load_plugin_with_backend(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
+            create_hosted_runtime,
         ));
         assert_eq!(
             duplicate.unwrap_err(),
@@ -7363,6 +9153,8 @@ mod tests {
     /// been given two different stories about one file.
     #[test]
     fn every_refused_format_names_itself_and_its_reason_at_activation() {
+        let plugins =
+            LoadFixtureRoot::create("every-refused-format-names-itself-and-its-reason-at-activati");
         for (plugin_id, path, format, expected) in [
             (
                 "vst2-refusal",
@@ -7378,33 +9170,34 @@ mod tests {
             ),
         ] {
             let state = AppState::default();
-            state
-                .plugin_registry
-                .lock()
-                .expect("plugin registry lock should be available")
-                .insert(
-                    plugin_id.to_string(),
-                    PluginRegistryEntry {
-                        path: path.to_string(),
-                        stable_id: plugin_id.to_string(),
-                        descriptor_id: String::new(),
-                        format: format.to_string(),
-                        name: "Refused".to_string(),
-                        num_inputs: 0,
-                        num_outputs: 0,
-                        has_custom_ui: false,
-                        capability_metadata_reason: Some(
-                            scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
-                        ),
-                        chain_kind: DeviceKind::Effect,
-                    },
-                );
+            plugins.insert_entry(
+                &state,
+                plugin_id.to_string(),
+                PluginRegistryEntry {
+                    path: path.to_string(),
+                    stable_id: plugin_id.to_string(),
+                    descriptor_id: String::new(),
+                    format: format.to_string(),
+                    name: "Refused".to_string(),
+                    num_inputs: 0,
+                    num_outputs: 0,
+                    has_custom_ui: false,
+                    capability_metadata_reason: Some(
+                        scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                    ),
+                    chain_kind: DeviceKind::Effect,
+                    scanned_fingerprint: None,
+                },
+            );
 
-            let result = crate::block_on_test(load_plugin(
+            let result = crate::block_on_test(load_plugin_with_backend(
                 PluginId(plugin_id.to_string()),
                 PluginInstanceId(format!("{plugin_id}-instance")),
                 &NoWindowHost,
                 &state,
+                plugins.scan_policy(),
+                unexpected_rescan,
+                create_hosted_runtime,
             ));
 
             match result {
@@ -7470,34 +9263,36 @@ mod tests {
     /// A format the registry has never carried is still not silently accepted.
     #[test]
     fn an_unrecognised_format_is_refused_by_name() {
+        let plugins = LoadFixtureRoot::create("an-unrecognised-format-is-refused-by-name");
         let state = AppState::default();
-        state
-            .plugin_registry
-            .lock()
-            .expect("plugin registry lock should be available")
-            .insert(
-                "unknown-format".to_string(),
-                PluginRegistryEntry {
-                    path: "/plugins/Vendor.mystery".to_string(),
-                    stable_id: "unknown-format".to_string(),
-                    descriptor_id: String::new(),
-                    format: "mystery".to_string(),
-                    name: "Mystery".to_string(),
-                    num_inputs: 0,
-                    num_outputs: 0,
-                    has_custom_ui: false,
-                    capability_metadata_reason: Some(
-                        scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
-                    ),
-                    chain_kind: DeviceKind::Effect,
-                },
-            );
+        plugins.insert_entry(
+            &state,
+            "unknown-format".to_string(),
+            PluginRegistryEntry {
+                path: "/plugins/Vendor.mystery".to_string(),
+                stable_id: "unknown-format".to_string(),
+                descriptor_id: String::new(),
+                format: "mystery".to_string(),
+                name: "Mystery".to_string(),
+                num_inputs: 0,
+                num_outputs: 0,
+                has_custom_ui: false,
+                capability_metadata_reason: Some(
+                    scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
+                ),
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
 
-        let result = crate::block_on_test(load_plugin(
+        let result = crate::block_on_test(load_plugin_with_backend(
             PluginId("unknown-format".to_string()),
             PluginInstanceId("unknown-instance".to_string()),
             &NoWindowHost,
             &state,
+            plugins.scan_policy(),
+            unexpected_rescan,
+            create_hosted_runtime,
         ));
 
         assert_eq!(result.unwrap_err(), "Unknown plugin format: mystery");
@@ -8341,25 +10136,27 @@ mod tests {
         }
 
         fn persist(&self, plugin_id: &str, path: &Path) {
+            let plugin = ScannedPlugin {
+                id: plugin_id.to_string(),
+                name: "Vendor Reverb".to_string(),
+                vendor: "Vendor".to_string(),
+                format: "clap".to_string(),
+                category: "effect".to_string(),
+                path: path.display().to_string(),
+                version: "1.0.0".to_string(),
+                descriptor_id: "com.vendor.reverb".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                num_parameters: 0,
+                has_custom_ui: true,
+                parameters: Some(Vec::new()),
+                parameter_metadata_reason: None,
+                capability_metadata_reason: None,
+            };
             self.store().persist(&[ScanRow {
                 keys: vec![plugin_id.to_string()],
-                plugin: ScannedPlugin {
-                    id: plugin_id.to_string(),
-                    name: "Vendor Reverb".to_string(),
-                    vendor: "Vendor".to_string(),
-                    format: "clap".to_string(),
-                    category: "effect".to_string(),
-                    path: path.display().to_string(),
-                    version: "1.0.0".to_string(),
-                    descriptor_id: "com.vendor.reverb".to_string(),
-                    num_inputs: 2,
-                    num_outputs: 2,
-                    num_parameters: 0,
-                    has_custom_ui: true,
-                    parameters: Some(Vec::new()),
-                    parameter_metadata_reason: None,
-                    capability_metadata_reason: None,
-                },
+                fingerprint: scanned_file_fingerprint(&plugin),
+                plugin,
             }]);
         }
     }
@@ -8390,7 +10187,8 @@ mod tests {
                 panic!("a hydrated registry must resolve without rescanning {path:?}")
             },
         )
-        .expect("the persisted plugin must resolve in a new session");
+        .expect("the persisted plugin must resolve in a new session")
+        .entry;
 
         assert_eq!(entry.path, plugin_path.display().to_string());
         assert_eq!(entry.descriptor_id, "com.vendor.reverb");
@@ -8448,7 +10246,8 @@ mod tests {
                 })
             },
         )
-        .expect("a plugin still at its last known path must resolve");
+        .expect("a plugin still at its last known path must resolve")
+        .entry;
 
         assert_eq!(entry.name, "Vendor Reverb 2");
         assert_eq!(rescans.get(), 1, "the miss gets one rescan, not a sweep");
@@ -8476,6 +10275,266 @@ mod tests {
                 .expect("the rescan result must have been saved")
                 .name,
             "Vendor Reverb 2"
+        );
+    }
+
+    /// A row persisted before file identity was recorded must not be trusted
+    /// on size and age alone, and must not be thrown away either: it is still
+    /// the plugin's last known location. It hydrates nothing, resolves through
+    /// the one targeted rescan, and is rewritten with the identity so the next
+    /// launch hydrates it.
+    ///
+    /// Mutation this catches: treating an absent `file_identity` as a match,
+    /// which hydrates the old row and resolves with no rescan; or bumping the
+    /// schema version, which drops the row and refuses with "no scanned
+    /// location is recorded".
+    #[test]
+    fn a_row_persisted_without_file_identity_rescans_once_and_records_it() {
+        let fixture = PersistedRegistryFixture::create("activation-row-without-identity");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let location = fixture.root.join("plugin-registry.json");
+        let mut document: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&location).expect("the registry file was written"),
+        )
+        .expect("the registry file is JSON");
+        let entries = document["entries"]
+            .as_object_mut()
+            .expect("the document has entries");
+        for row in entries.values_mut() {
+            row.as_object_mut()
+                .expect("a row is an object")
+                .remove("file_identity")
+                .expect("this build writes file_identity, so the fixture removes it");
+        }
+        std::fs::write(
+            &location,
+            serde_json::to_vec(&document).expect("JSON writes"),
+        )
+        .expect("the old-format document is written back");
+
+        let store = fixture.store();
+        let registry = Mutex::new(HashMap::new());
+        store.hydrate_into(&registry, &fixture.scan_policy());
+        assert!(
+            registry.lock().expect("registry lock").is_empty(),
+            "a row with no recorded identity must not hydrate"
+        );
+        assert!(
+            store.last_known_entry("aaaa1111").is_some(),
+            "the row must stay as the plugin's last known location"
+        );
+
+        let rescans = std::cell::Cell::new(0);
+        let entry = resolve_registry_entry(
+            &registry,
+            &store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |format, path, plugin_id, descriptor_id| {
+                rescans.set(rescans.get() + 1);
+                Ok(ScannedPlugin {
+                    format: format.to_string(),
+                    path: path.display().to_string(),
+                    descriptor_id: descriptor_id.to_string(),
+                    ..scanned(plugin_id, descriptor_id, format)
+                })
+            },
+        )
+        .expect("the plugin is still at its last known location");
+        assert_eq!(rescans.get(), 1, "the old row resolves through one rescan");
+        assert_eq!(entry.entry.path, plugin_path.display().to_string());
+
+        let next_launch = fixture.store();
+        let next_launch_registry = Mutex::new(HashMap::new());
+        next_launch.hydrate_into(&next_launch_registry, &fixture.scan_policy());
+        assert!(
+            next_launch
+                .last_known_entry("aaaa1111")
+                .expect("the rescanned row was persisted")
+                .file_identity
+                .is_some(),
+            "the rescan must persist the identity the old row lacked"
+        );
+        assert!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .contains_key("aaaa1111"),
+            "the rewritten row hydrates on the next launch"
+        );
+    }
+
+    /// A miss rescans its last known location, and that location is
+    /// re-authorized before the scan worker is pointed at it: a persisted row
+    /// whose file has become a symlink to somewhere outside the policy must
+    /// not send a helper to read it.
+    ///
+    /// Mutation this catches: dropping the authorization from
+    /// `rescan_and_publish` on the miss route, which hands the symlink to the
+    /// rescan.
+    #[cfg(unix)]
+    #[test]
+    fn a_miss_whose_last_known_path_is_a_symlink_outside_the_policy_is_refused() {
+        let fixture = PersistedRegistryFixture::create("activation-miss-symlink");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let outside = fixture.root.join("Outside.clap");
+        std::fs::write(&outside, b"code outside the policy").expect("outside file written");
+        std::fs::remove_file(&plugin_path).expect("the scanned file is removed");
+        std::os::unix::fs::symlink(&outside, &plugin_path).expect("the symlink is created");
+
+        let rescans = std::cell::Cell::new(0);
+        let error = resolve_registry_entry(
+            &Mutex::new(HashMap::new()),
+            &fixture.store(),
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                rescans.set(rescans.get() + 1);
+                Err(format!("unexpected rescan of {}", path.display()))
+            },
+        )
+        .expect_err("a last known path symlinked outside the policy must not resolve");
+
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Vendor Reverb' could not be loaded from its last known location {}: Unauthorized plugin scan path",
+                plugin_path.display()
+            )),
+            "the refusal must name the plugin, the path and the policy's reason, got: {error}"
+        );
+        assert_eq!(
+            rescans.get(),
+            0,
+            "nothing outside the policy may be rescanned"
+        );
+    }
+
+    /// The miss route's authorization covers the module inside a bundle as
+    /// well as the bundle: the module is the file the scan worker opens.
+    ///
+    /// Mutation this catches: dropping the module's authorization from
+    /// `authorize_plugin_file`, or the whole authorization from the miss
+    /// route — either hands the bundle to the rescan.
+    #[cfg(unix)]
+    #[test]
+    fn a_miss_whose_bundle_module_is_a_symlink_outside_the_policy_is_refused() {
+        let fixture = PersistedRegistryFixture::create("activation-miss-bundle-module");
+        let bundle = fixture.root.join("plugins").join("Bundled.vst3");
+        // The bundle is a directory before its module is asked for: a path
+        // that is not one is its own module, and the symlink would then be
+        // the bundle path itself — refused by the first check, never the
+        // module's.
+        std::fs::create_dir_all(bundle.join("Contents")).expect("the bundle directory is created");
+        let module = scanned_binary_location(&vst3_bundle_row(&bundle))
+            .expect("this platform names where a VST3 bundle's module belongs");
+        std::fs::create_dir_all(module.parent().expect("the module sits inside the bundle"))
+            .expect("the bundle's module directory is created");
+        std::fs::write(&module, b"the module the scan read").expect("the module is written");
+        assert!(
+            module.starts_with(&bundle) && module != bundle && bundle.is_dir(),
+            "the module must sit inside a real bundle directory, or this test never reaches the \
+             module check: {}",
+            module.display()
+        );
+        assert_eq!(
+            plugin_file_path(&bundle, "vst3"),
+            Some(module.clone()),
+            "the bundle must resolve to its module, or this test never reaches the module check"
+        );
+        let plugin = ScannedPlugin {
+            path: bundle.display().to_string(),
+            format: "vst3".to_string(),
+            name: "Bundled".to_string(),
+            ..scanned("aaaa1111", "0123456789ABCDEF0123456789ABCDEF", "vst3")
+        };
+        fixture.store().persist(&[ScanRow {
+            keys: vec!["aaaa1111".to_string()],
+            fingerprint: scanned_file_fingerprint(&plugin),
+            plugin,
+        }]);
+        // Replaced after the scan recorded it, so hydration refuses the row
+        // and the activation takes the miss route.
+        let outside = fixture.root.join("Outside.module");
+        std::fs::write(&outside, b"code outside the policy").expect("outside file written");
+        std::fs::remove_file(&module).expect("the module is removed");
+        std::os::unix::fs::symlink(&outside, &module).expect("the module symlink is created");
+
+        let rescans = std::cell::Cell::new(0);
+        let registry = Mutex::new(HashMap::new());
+        let error = resolve_registry_entry(
+            &registry,
+            &fixture.store(),
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                rescans.set(rescans.get() + 1);
+                Err(format!("unexpected rescan of {}", path.display()))
+            },
+        )
+        .expect_err("a bundle whose module is symlinked outside the policy must not resolve");
+
+        assert!(
+            registry.lock().expect("registry lock").is_empty(),
+            "the row must not have hydrated, or this test is not on the miss route"
+        );
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Bundled' could not be loaded from its last known location {}: Unauthorized plugin scan path",
+                bundle.display()
+            )),
+            "the refusal must name the plugin, the bundle and the policy's reason, got: {error}"
+        );
+        assert_eq!(
+            rescans.get(),
+            0,
+            "nothing outside the policy may be rescanned"
+        );
+    }
+
+    /// The entry a miss's rescan publishes carries the fingerprint the rescan
+    /// took, so the next activation of the same id hits and vets it with no
+    /// second rescan.
+    ///
+    /// Mutation this catches: publishing the rescanned entry with no
+    /// fingerprint, which sends the next activation back through a rescan.
+    #[test]
+    fn a_rescanned_miss_resolves_again_without_another_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-rescanned-miss");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+
+        let store = fixture.store();
+        let registry = Mutex::new(HashMap::new());
+        let rescans = std::cell::Cell::new(0);
+        let rescan = |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            rescans.set(rescans.get() + 1);
+            Ok::<ScannedPlugin, String>(ScannedPlugin {
+                format: format.to_string(),
+                path: path.display().to_string(),
+                descriptor_id: descriptor_id.to_string(),
+                ..scanned(plugin_id, descriptor_id, format)
+            })
+        };
+
+        for _ in 0..2 {
+            resolve_registry_entry(
+                &registry,
+                &store,
+                &fixture.scan_policy(),
+                "aaaa1111",
+                rescan,
+            )
+            .expect("a plugin still at its last known path must resolve");
+        }
+
+        assert_eq!(
+            rescans.get(),
+            1,
+            "the second activation vets the rescanned entry"
         );
     }
 
@@ -8565,7 +10624,10 @@ mod tests {
 
     #[test]
     fn a_scanned_plugin_resolves_by_its_path_hash() {
-        let registry = index_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let registry = index_scanned_plugins(
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
+        );
 
         let entry = registry.get("aaaa1111").expect("path hash resolves");
         assert_eq!(entry.path, "/plugins/aaaa1111.clap");
@@ -8582,7 +10644,10 @@ mod tests {
     /// or keying a plugin an extra way without raising the constant.
     #[test]
     fn key_scanned_plugins_fills_the_capacity_the_registry_row_cap_multiplies_by() {
-        let rows = key_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let rows = key_scanned_plugins(
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
+        );
 
         let [row] = rows.as_slice() else {
             panic!("one scanned plugin is one row, got {}", rows.len());
@@ -8598,7 +10663,10 @@ mod tests {
 
     #[test]
     fn the_same_plugin_also_resolves_by_its_descriptor_id_after_it_moves() {
-        let registry = index_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let registry = index_scanned_plugins(
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
+        );
 
         // A project that recorded the descriptor id survives the file moving,
         // because the descriptor id does not encode the path.
@@ -8613,10 +10681,13 @@ mod tests {
         // Contrived collision: one plugin's descriptor id equals another's path
         // hash. The path hash is the primary key and must win, or an existing
         // project would silently start resolving to a different plugin.
-        let registry = index_scanned_plugins(&[
-            scanned("collides", "unrelated.id", "clap"),
-            scanned("bbbb2222", "collides", "clap"),
-        ]);
+        let registry = index_scanned_plugins(
+            &[
+                scanned("collides", "unrelated.id", "clap"),
+                scanned("bbbb2222", "collides", "clap"),
+            ],
+            &ScanFingerprints::new(),
+        );
 
         let entry = registry.get("collides").expect("primary key survives");
         assert_eq!(
@@ -8652,6 +10723,7 @@ mod tests {
             &[],
             true,
             &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
         );
 
         let registry = plugin_registry
@@ -8667,10 +10739,13 @@ mod tests {
     fn a_plugin_with_no_descriptor_id_is_indexed_once() {
         // VST3 and AU carry no CLAP descriptor, and an empty id must never
         // become a key that every such plugin fights over.
-        let registry = index_scanned_plugins(&[
-            scanned("cccc3333", "", "vst3"),
-            scanned("dddd4444", "", "au"),
-        ]);
+        let registry = index_scanned_plugins(
+            &[
+                scanned("cccc3333", "", "vst3"),
+                scanned("dddd4444", "", "au"),
+            ],
+            &ScanFingerprints::new(),
+        );
 
         assert_eq!(registry.len(), 2);
         assert!(!registry.contains_key(""));
