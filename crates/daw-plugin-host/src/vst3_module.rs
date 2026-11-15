@@ -1536,6 +1536,55 @@ mod tests {
         drop(old_build);
     }
 
+    /// Size and age alone would read this replacement as the same file: only
+    /// the file's identity tells the new build from the resident one.
+    #[cfg(unix)]
+    #[test]
+    fn a_same_size_same_age_replacement_is_told_apart_by_file_identity() {
+        let fixture = FixtureDirectory::new("replaced-same-size");
+        let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let cache = fingerprint_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let loads = AtomicUsize::new(0);
+        let fingerprint = || module_file_fingerprint(&module_file);
+        let load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let old_build = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("the fake loads");
+        let original_modified = fs::metadata(&module_file)
+            .and_then(|metadata| metadata.modified())
+            .expect("the original's age is readable");
+        let staged = fixture.write(Path::new("staged-update"), b"build 2");
+        fs::File::options()
+            .write(true)
+            .open(&staged)
+            .and_then(|file| file.set_modified(original_modified))
+            .expect("the replacement takes the original's age");
+        fs::rename(&staged, &module_file).expect("the replacement is renamed over the original");
+        let replaced = fs::metadata(&module_file).expect("the replacement is readable");
+        assert_eq!(replaced.len(), b"build 1".len() as u64);
+        assert_eq!(
+            replaced
+                .modified()
+                .expect("the replacement's age is readable"),
+            original_modified
+        );
+
+        let reopened = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load);
+
+        assert!(
+            reopened.is_err(),
+            "a new file with the old size and age must not share the resident image"
+        );
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
+        drop(old_build);
+    }
+
     #[test]
     fn a_replaced_module_file_loads_fresh_once_the_old_image_is_released() {
         let fixture = FixtureDirectory::new("replaced-released");
