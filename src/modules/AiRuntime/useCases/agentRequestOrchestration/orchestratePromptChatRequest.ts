@@ -563,12 +563,16 @@ async function completeRevertedRun(input: {
         committedRevision: captureProjectRevision(),
         completesRun: runIsLive(),
     });
-    // The undo wrote, so a resumed decision is settled by it even when the run was cancelled meanwhile.
-    request.options?.onResumedPlanAccepted?.();
     const undone = `Undid the last committed change:\n\n${reverted.labels.map((label) => `- ${label}`).join('\n')}`;
     updateChatMessage(assistantMessageId, {
         content: reverted.warning === null ? undone : `${undone}\n\nWarning: ${reverted.warning}`,
     });
+    try {
+        request.options?.onResumedPlanAccepted?.();
+    } catch (error) {
+        // The undo already landed and is recorded, so a decision that cannot be selected must not fail its run.
+        logger.error(new Error('Resumed undo landed but its decision could not be selected', { cause: error }));
+    }
 }
 
 async function dispatchPromptPlan(input: {

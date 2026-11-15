@@ -1101,15 +1101,15 @@ describe('relative to the last commit', () => {
                 }
             );
 
-            it('asks which track a name two tracks share means, naming the question the user sees', async () => {
-                addTrack(createTrack('track-lead-a', 'Lead'), 'audio');
-                addTrack(createTrack('track-lead-b', 'Lead'), 'audio');
+            it('asks which track a stretch two differently named tracks read equally means', async () => {
+                addTrack(createTrack('track-lead-guitar', 'Lead Guitar'), 'audio');
+                addTrack(createTrack('track-guitar-lead', 'Guitar Lead'), 'audio');
                 scriptProvider([[VOCALS_DOWN_3_DB]]);
                 await commitVocalsDown3Db();
 
                 await expectAnsweredWithoutChange(
-                    'Lead too',
-                    '"Lead" names more than one track. 1. Which track should take the last change: Lead?'
+                    'Lead Guitar Lead too',
+                    '"Lead Guitar Lead" names more than one track. 1. Which track should take the last change: Lead Guitar or Guitar Lead?'
                 );
             });
         });
@@ -2556,6 +2556,32 @@ describe('relative to the last commit', () => {
                 expect(decibelsOf('track-vocals')).toBe(level);
             }
         );
+
+        it('keeps a landed resumed undo truthful when its source run is cancelled before the decision is selected', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            seedPausedDecisionRun('apply');
+            const record = agentRunLifecycle.recordCommittedWork.bind(agentRunLifecycle);
+            vi.spyOn(agentRunLifecycle, 'recordCommittedWork').mockImplementation((input) => {
+                const recorded = record(input);
+                agentRunLifecycle.cancel({ runId: PAUSED_SOURCE_RUN, reason: 'Cancelled while the undo ran.' });
+                return recorded;
+            });
+
+            const result = await resumePausedDecision();
+
+            const replacement = agentRunStore.value?.runs.findLast(
+                (run) => run.request === 'undo that' && run.runId !== PAUSED_SOURCE_RUN
+            );
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'The replacement planning attempt was not admitted.',
+            });
+            expect(decibelsOf('track-vocals')).toBe(0);
+            expect(replacement?.committedWork).toHaveLength(1);
+            expect(lastAssistantMessage()?.content).toMatch(/^Undid the last committed change/u);
+            expect(lastAssistantMessage()?.error).toBeUndefined();
+        });
 
         it('lists every command of an undone confirmed batch', async () => {
             scriptProvider([[{ name: 'setTrackGain', arguments: { trackId: 'track-keys', deltaDb: -2 } }, MUTE_BASS]]);
