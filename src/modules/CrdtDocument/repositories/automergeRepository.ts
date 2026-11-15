@@ -133,7 +133,10 @@ function createSnapshotTransactionOverlapError(id: DocId): Error {
 }
 
 function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>): boolean {
-    const previousHeads = getHeads(previous);
+    return retainsActiveFrontier(replacement, getHeads(previous));
+}
+
+function retainsActiveFrontier(replacement: Doc<unknown>, previousHeads: Heads): boolean {
     const replacementHeads = getHeads(replacement);
     const unreachedHeads = new Set(previousHeads);
     for (const head of replacementHeads) {
@@ -1080,13 +1083,30 @@ class AutomergeRepository {
         return saveIncremental(doc);
     }
 
+    /** Capture persistence bytes without consuming a handle-local serialization cursor. */
+    captureDocIncremental(id: DocId, previousHeads: Heads): { chunk: Uint8Array; heads: Heads } | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        const heads = getHeads(doc);
+        const frontier = retainsActiveFrontier(doc, previousHeads) ? previousHeads : [];
+        return { chunk: Uint8Array.from(saveSince(doc, frontier)), heads };
+    }
+
     /** Serialize all documents as a bundle. */
     saveAll(): DocumentBundle {
+        return this.captureFullBundle().bundle;
+    }
+
+    private captureFullBundle(): { bundle: DocumentBundle; headsByDoc: Map<DocId, Heads> } {
         const bundle: DocumentBundle = new Map();
+        const headsByDoc = new Map<DocId, Heads>();
         for (const [id, doc] of this.docs) {
+            headsByDoc.set(id, getHeads(doc));
             bundle.set(id, save(doc));
         }
-        return bundle;
+        return { bundle, headsByDoc };
     }
 
     /** Inspect one captured root document without installing it as live or worker-shadow state. */
@@ -1122,8 +1142,8 @@ class AutomergeRepository {
      * `saveSince` deltas for documents it already holds, full saves for ones it
      * does not — and lets the worker run the expensive full encode.
      *
-     * `saveSince` does not consume Automerge's incremental cursor, so the
-     * coordinator's `saveDocIncremental` chunking is unaffected.
+     * Persistence receives the exact captured frontier with these bytes;
+     * generic exports retain their bundle-only contract.
      *
      * Failure semantics match `mergeBundle`: a worker crash, a stale replica or
      * an unexpected response degrades to the synchronous `saveAll()` with a
@@ -1131,6 +1151,10 @@ class AutomergeRepository {
      * bundle, and any downstream persistence failure surfaces unchanged.
      */
     async saveAllOffThread(): Promise<DocumentBundle> {
+        return (await this.capturePersistenceBundle()).bundle;
+    }
+
+    async capturePersistenceBundle(): Promise<{ bundle: DocumentBundle; headsByDoc: Map<DocId, Heads> }> {
         const shadowHeads = crdtWorkerState.shadowHeads;
         if (!shadowHeads) {
             return this.seedWorkerShadowFromMainThread();
@@ -1151,7 +1175,7 @@ class AutomergeRepository {
             // every lineage replacement — `createProject`, `insertDoc`, a
             // branch-switch `replaceDoc` — reseeds instead, without each
             // mutation site having to remember to invalidate.
-            if (!replicaHeads || getMissingDeps(doc, replicaHeads).length > 0) {
+            if (!replicaHeads || !retainsActiveFrontier(doc, replicaHeads)) {
                 seeds.push([id, save(doc)]);
                 continue;
             }
@@ -1164,7 +1188,7 @@ class AutomergeRepository {
             response = await invokeWorker({ type: 'compactShadow', seeds, deltas, removedDocIds, expectedHeads });
         } catch (error) {
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous full save:', error);
-            return this.saveAll();
+            return this.captureFullBundle();
         }
 
         if (response.type === 'compactStale') {
@@ -1172,16 +1196,16 @@ class AutomergeRepository {
                 reason: response.reason,
             });
             crdtWorkerState.shadowHeads = null;
-            return this.saveAll();
+            return this.captureFullBundle();
         }
         if (response.type !== 'compacted') {
             logger.warn('[AutomergeRepository] Unexpected CRDT worker response for compactShadow:', response.type);
             crdtWorkerState.shadowHeads = null;
-            return this.saveAll();
+            return this.captureFullBundle();
         }
 
         crdtWorkerState.shadowHeads = new Map<DocId, Heads>(expectedHeads);
-        return new Map<DocId, Uint8Array>(response.bundle);
+        return { bundle: new Map<DocId, Uint8Array>(response.bundle), headsByDoc: new Map(expectedHeads) };
     }
 
     /**
@@ -1189,17 +1213,14 @@ class AutomergeRepository {
      * to the worker so the next compaction can run off-thread. The reseed is
      * fire-and-forget — the caller's bundle never waits on it.
      */
-    private seedWorkerShadowFromMainThread(): DocumentBundle {
-        const bundle = this.saveAll();
-        const capturedHeads = new Map<DocId, Heads>();
-        for (const [id, doc] of this.docs) {
-            capturedHeads.set(id, getHeads(doc));
-        }
+    private seedWorkerShadowFromMainThread(): { bundle: DocumentBundle; headsByDoc: Map<DocId, Heads> } {
+        const captured = this.captureFullBundle();
+        const { bundle, headsByDoc } = captured;
 
         invokeWorker({ type: 'loadBundle', bundle: Array.from(bundle.entries()), retainShadow: true })
             .then((response) => {
                 if (response.type === 'loaded') {
-                    crdtWorkerState.shadowHeads = capturedHeads;
+                    crdtWorkerState.shadowHeads = headsByDoc;
                 }
                 return null;
             })
@@ -1208,7 +1229,7 @@ class AutomergeRepository {
                 return null;
             });
 
-        return bundle;
+        return captured;
     }
 
     isMutationBlockedBySnapshotTransaction(id: DocId, snapshotTransaction?: object): boolean {

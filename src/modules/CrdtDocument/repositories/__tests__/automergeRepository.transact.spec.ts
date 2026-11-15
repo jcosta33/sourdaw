@@ -4,7 +4,18 @@
  * because the bugs under test are about the actual binary change graph and the
  * rAF-deferred write ordering — both of which a mock would paper over.
  */
-import { init, change, clone, load, loadIncremental, save, merge, getChanges, getHeads, view } from '@automerge/automerge';
+import {
+    init,
+    change,
+    clone,
+    load,
+    loadIncremental,
+    save,
+    merge,
+    getChanges,
+    getHeads,
+    view,
+} from '@automerge/automerge';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import {
@@ -56,13 +67,23 @@ describe('AutomergeRepository mutation ownership', () => {
         automergeRepository.createProject('p');
         const baseline = automergeRepository.saveDoc('root')!;
         const heads = automergeRepository.getHeads('root')!;
-        const snapshots = await automergeRepository.transactSnapshot(async (owner) => {
-            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => { doc.pending = true; }, undefined, owner);
+        const snapshots = await automergeRepository.transactSnapshot((owner) => {
+            automergeRepository.changeDoc(
+                'root',
+                (doc: Record<string, unknown>) => {
+                    doc.pending = true;
+                },
+                undefined,
+                owner
+            );
+            return Promise.resolve();
         });
         const captured = automergeRepository.captureDocIncremental('root', heads)!;
         expect(loadIncremental(load(baseline), captured.chunk)).toEqual(automergeRepository.getDoc('root'));
         automergeRepository.restoreSnapshot(snapshots.before);
-        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => { doc.successor = true; });
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.successor = true;
+        });
         const afterRollback = automergeRepository.captureDocIncremental('root', captured.heads)!;
         // A descendant frontier is no longer reachable after rollback; the capture conservatively includes the base.
         expect(loadIncremental(init(), afterRollback.chunk)).toEqual(automergeRepository.getDoc('root'));
@@ -71,17 +92,19 @@ describe('AutomergeRepository mutation ownership', () => {
     it('refuses descendant heads known to the native backend but outside the current active history', () => {
         automergeRepository.createProject('p');
         const original = automergeRepository.getDoc<Record<string, unknown>>('root')!;
-        const descendant = change(clone(original), (doc) => { doc.future = true; });
+        const descendant = change(clone(original), (doc) => {
+            doc.future = true;
+        });
         const rolledBack = clone(view(descendant, getHeads(original)));
         automergeRepository.replaceDocInLineage('root', rolledBack);
         const captured = automergeRepository.captureDocIncremental('root', getHeads(descendant))!;
         expect(loadIncremental(init(), captured.chunk)).toEqual(rolledBack);
         expect(captured.heads).toEqual(getHeads(rolledBack));
-        expect(repositoryUnrelatedCapture()).toEqual(rolledBack);
-        function repositoryUnrelatedCapture() {
-            const unrelated = change(init<Record<string, unknown>>(), (doc) => { doc.foreign = true; });
-            return loadIncremental(init(), automergeRepository.captureDocIncremental('root', getHeads(unrelated))!.chunk);
-        }
+        const unrelated = change(init<Record<string, unknown>>(), (doc) => {
+            doc.foreign = true;
+        });
+        const foreignFrontier = automergeRepository.captureDocIncremental('root', getHeads(unrelated))!;
+        expect(loadIncremental(init(), foreignFrontier.chunk)).toEqual(rolledBack);
     });
     it('attributes direct repository mutations to each exact storage transaction owner', () => {
         automergeRepository.createProject('p');

@@ -1,4 +1,13 @@
-import { change, free, getChangesSince, getHeads, getMissingDeps, init, load, loadIncremental } from '@automerge/automerge';
+import {
+    change,
+    free,
+    getChangesSince,
+    getHeads,
+    getMissingDeps,
+    init,
+    load,
+    loadIncremental,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
@@ -213,6 +222,11 @@ describe('persistCrdtProject', () => {
 
     it('retains exact Automerge bytes across repeated aborts, reloads them, and persists the next delta once', async () => {
         automergeRepository.createProject('project');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.baseline = 'already captured';
+        });
+        const baselineHeads = automergeRepository.getHeads('root')!;
+        expect(baselineHeads).toHaveLength(1);
 
         const baseCompaction = compactProject();
         const baseSave = await persistence.waitForTransaction('readwrite', 1);
@@ -258,7 +272,9 @@ describe('persistCrdtProject', () => {
             beforePublication: () => undefined,
             onPublished: () => undefined,
         });
-        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'saveDocIncremental');
+        const expectedDocument = automergeRepository.getDoc('root')!;
+        const expectedHeads = getHeads(expectedDocument);
+        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'captureDocIncremental');
 
         const firstAttempt = persistCrdtProject();
         const firstTransaction = await persistence.waitForTransaction('readwrite', 2);
@@ -273,7 +289,12 @@ describe('persistCrdtProject', () => {
         try {
             // Replay alone also accepts a redundant full history. This chunk must require its durable baseline.
             expect(getMissingDeps(withoutBaseline, []).length).toBeGreaterThan(0);
+            expect(getMissingDeps(withoutBaseline, baselineHeads)).toEqual(baselineHeads);
             expect(withoutBaseline.firstEdit).toBeUndefined();
+            console.info('Queue incremental omitted captured baseline:', {
+                baselineHeads,
+                capturedHeads: expectedHeads,
+            });
         } finally {
             free(withoutBaseline);
         }
@@ -311,6 +332,8 @@ describe('persistCrdtProject', () => {
         await expect(automergeRepository.loadAll({ bundle: firstBundle, shouldCommit: () => true })).resolves.toBe(
             true
         );
+        expect(automergeRepository.getDoc('root')).toEqual(expectedDocument);
+        expect(automergeRepository.getHeads('root')).toEqual(expectedHeads);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
             firstEdit: 'retained-after-worker',
         });

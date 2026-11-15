@@ -42,6 +42,8 @@ type PendingIncrementalChunk = {
 type PendingFullSnapshot = {
     generation: number;
     bundle: DocumentBundle;
+    /** Absent on compatible HMR snapshots captured before explicit export frontiers. */
+    headsByDoc?: Map<DocId, string[]>;
 };
 
 const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
@@ -62,6 +64,8 @@ type CrdtPersistenceQueueState = {
     operationTail: Promise<void>;
     pendingChunks: PendingIncrementalChunk[];
     pendingFullSnapshot: PendingFullSnapshot | null;
+    /** Progress of bytes retained by this queue, independent of native document handles and durable commit. */
+    exportFrontiers: Map<DocId, string[]>;
     persistedBaseDocIds: Set<DocId>;
     authority: CrdtPersistenceAuthority | null;
     activeRootLineage: string;
@@ -89,6 +93,7 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
         operationTail: Promise.resolve(),
         pendingChunks: [],
         pendingFullSnapshot: null,
+        exportFrontiers: new Map(),
         persistedBaseDocIds: new Set<DocId>([DOC_PREFIX_ROOT]),
         authority: null,
         activeRootLineage: DEFAULT_CRDT_ROOT_LINEAGE,
@@ -121,6 +126,7 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     persistenceState.persistenceAbortController = new AbortController();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
+    persistenceState.exportFrontiers = new Map();
     persistenceState.persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
     persistenceState.authority = null;
     persistenceState.activeRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
@@ -143,6 +149,12 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
         () => undefined,
         () => undefined
     );
+}
+
+// Version-seven queue bytes and its in-flight tail remain valid. Older captures
+// have no trustworthy frontier metadata, so their first capture is conservative.
+if (!(persistenceState.exportFrontiers instanceof Map)) {
+    persistenceState.exportFrontiers = new Map();
 }
 
 type RootLineageTransitionOperation = {
@@ -472,6 +484,7 @@ function revokePersistenceGeneration(): number {
     previousAbortController.abort();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
+    persistenceState.exportFrontiers.clear();
     crdtProjectCompactionState.incrementalSaveCount = 0;
     return persistenceState.persistenceGeneration;
 }
@@ -796,17 +809,19 @@ async function persistIncrementalCrdtProject(
     sessionUndoWitnessStampPort.stamp();
 
     for (const id of activeDocIds) {
-        const chunk = automergeRepository.saveDocIncremental(id);
-        if (!chunk || chunk.length === 0) {
+        const captured = automergeRepository.captureDocIncremental(id, persistenceState.exportFrontiers.get(id) ?? []);
+        if (!captured) {
             continue;
         }
-
-        persistenceState.pendingChunks.push({
-            generation,
-            id,
-            chunk: new Uint8Array(chunk),
-            inFlight: false,
-        });
+        if (captured.chunk.length > 0) {
+            persistenceState.pendingChunks.push({
+                generation,
+                id,
+                chunk: captured.chunk,
+                inFlight: false,
+            });
+        }
+        persistenceState.exportFrontiers.set(id, captured.heads);
     }
 
     await flushPendingChunks(generation, attempt);
@@ -833,8 +848,7 @@ async function compactCrdtProject(
         return;
     }
 
-    // A failed full save may have advanced Automerge's incremental cursor, so
-    // retry its captured bytes before any later incremental serialization.
+    // Retry the exact owned bytes before capturing any later state.
     const failedSnapshot =
         persistenceState.pendingFullSnapshot?.generation === generation ? persistenceState.pendingFullSnapshot : null;
     await flushPendingFullSnapshot(generation, attempt);
@@ -850,25 +864,25 @@ async function compactCrdtProject(
     if (failedSnapshot) {
         // CC-8 — the full re-encode runs in the CRDT worker; it degrades to a
         // synchronous main-thread save if the worker's replica is unusable.
-        const currentBundle = await automergeRepository.saveAllOffThread();
+        const captured = await automergeRepository.capturePersistenceBundle();
         if (generation !== persistenceState.persistenceGeneration) {
             return;
         }
-        if (areDocumentBundlesEqual(failedSnapshot.bundle, currentBundle)) {
+        if (areDocumentBundlesEqual(failedSnapshot.bundle, captured.bundle)) {
             return;
         }
 
         await persistFullSnapshot(
             {
                 generation,
-                bundle: currentBundle,
+                ...captured,
             },
             attempt
         );
         return;
     }
 
-    const bundle = await automergeRepository.saveAllOffThread();
+    const captured = await automergeRepository.capturePersistenceBundle();
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -876,7 +890,7 @@ async function compactCrdtProject(
     await persistFullSnapshot(
         {
             generation,
-            bundle,
+            ...captured,
         },
         attempt
     );
@@ -892,6 +906,7 @@ async function flushPendingFullSnapshot(generation: number, attempt: Persistence
         // An obsolete full bundle can contain a document removed since the
         // failed attempt. Supersede it before retrying so a crash cannot leave
         // the deleted document as the latest durable state.
+        persistenceState.exportFrontiers.clear();
         persistenceState.pendingFullSnapshot = null;
         return;
     }
@@ -908,6 +923,9 @@ async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: Persis
     const generationSignal = persistenceState.persistenceAbortController.signal;
     let currentPending = pending;
     persistenceState.pendingFullSnapshot = currentPending;
+    if (currentPending.headsByDoc) {
+        persistenceState.exportFrontiers = new Map(currentPending.headsByDoc);
+    }
 
     try {
         while (currentPending.generation === persistenceState.persistenceGeneration) {
@@ -954,13 +972,17 @@ async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: Persis
             if (currentPending.generation !== persistenceState.persistenceGeneration) {
                 return;
             }
-            const mergedBundle = automergeRepository.saveAll();
+            const captured = await automergeRepository.capturePersistenceBundle();
+            if (currentPending.generation !== persistenceState.persistenceGeneration) {
+                return;
+            }
             persistenceState.authority = result.authority;
             currentPending = {
                 ...currentPending,
-                bundle: mergedBundle,
+                ...captured,
             };
             persistenceState.pendingFullSnapshot = currentPending;
+            persistenceState.exportFrontiers = new Map(captured.headsByDoc);
         }
     } catch (error: unknown) {
         if (pending.generation !== persistenceState.persistenceGeneration) {
@@ -1118,6 +1140,7 @@ function prunePendingChunks(generation: number): void {
         const pending = persistenceState.pendingChunks[index];
         if (pending && pending.generation === generation && !pending.inFlight && !activeDocIds.has(pending.id)) {
             persistenceState.pendingChunks.splice(index, 1);
+            persistenceState.exportFrontiers.delete(pending.id);
         }
     }
 }
