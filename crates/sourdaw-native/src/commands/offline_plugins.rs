@@ -281,6 +281,10 @@ pub(crate) fn read_live_state(
 #[cfg(test)]
 pub(crate) type AfterBuild = Box<dyn Fn(&[Arc<SharedHostedPlugin>]) + Send + Sync>;
 
+/// A test's change to the live records between the mapping and the build.
+#[cfg(test)]
+pub(crate) type AfterMapping = Box<dyn Fn(&AppState) + Send + Sync>;
+
 /// How an offline render builds a runtime once its file is vetted.
 pub(crate) type ConstructRuntime =
     fn(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String>;
@@ -299,7 +303,7 @@ pub(crate) struct OfflinePluginSeams {
     /// Run once the batch is mapped against the hosted instances and before
     /// any is built, so a test can change the live records in between.
     #[cfg(test)]
-    pub(crate) after_mapping: Option<Box<dyn Fn(&AppState) + Send + Sync>>,
+    pub(crate) after_mapping: Option<AfterMapping>,
     /// Run for each instance once it is constructed and the runtime gate is
     /// free again, just before its live state is restored into it.
     #[cfg(test)]
