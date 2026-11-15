@@ -2,6 +2,12 @@
   "version": 1,
   "entries": [
     {
+      "spec": "tests/e2e/agentVibeRun.spec.ts",
+      "owners": [
+        "AiRuntime"
+      ]
+    },
+    {
       "spec": "tests/e2e/bacteriaCulturesSearchTestId.spec.ts",
       "owners": [
         "Bacteria"
@@ -249,6 +255,7 @@
     }
   ],
   "owners": [
+    "AiRuntime",
     "Bacteria",
     "BrowserAi",
     "Crust",
