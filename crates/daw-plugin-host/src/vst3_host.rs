@@ -619,27 +619,38 @@ impl IHostApplicationTrait for Vst3HostApplication {
         if name.is_null() {
             return kInvalidArgument;
         }
-        write_string128(&mut *name, HOST_NAME);
+        write_string128(unsafe { &mut *name }, HOST_NAME);
         kResultOk
     }
 
+    /// Creates the two classes the format has a host create on a plugin's
+    /// behalf, `IMessage` and `IAttributeList`, typed as the interface `iid`
+    /// names. The created object holds one reference, the caller's.
     unsafe fn createInstance(
         &self,
         cid: *mut TUID,
-        _iid: *mut TUID,
+        iid: *mut TUID,
         obj: *mut *mut c_void,
     ) -> tresult {
-        if cid.is_null() || obj.is_null() {
+        if cid.is_null() || iid.is_null() || obj.is_null() {
             return kInvalidArgument;
         }
-        if !tuid_matches(&*cid, &IMessage::IID) {
-            return kNotImplemented;
-        }
-        let Some(message) = ComWrapper::new(Vst3Message::default()).to_com_ptr::<IMessage>() else {
+        unsafe { *obj = std::ptr::null_mut() };
+        let created = if tuid_matches(unsafe { &*cid }, &IMessage::IID) {
+            ComWrapper::new(Vst3Message::default()).to_com_ptr::<FUnknown>()
+        } else if tuid_matches(unsafe { &*cid }, &IAttributeList::IID) {
+            ComWrapper::new(Vst3AttributeList::default()).to_com_ptr::<FUnknown>()
+        } else {
+            None
+        };
+        let Some(created) = created else {
             return kNotImplemented;
         };
-        *obj = message.into_raw() as *mut c_void;
-        kResultOk
+        // `queryInterface` takes the caller's reference on success; dropping
+        // `created` then releases the construction reference, which frees the
+        // object when the caller asked for an interface it does not have.
+        let unknown = created.as_ptr();
+        unsafe { ((*(*unknown).vtbl).queryInterface)(unknown, iid, obj) }
     }
 }
 
@@ -673,13 +684,13 @@ impl IPlugInterfaceSupportTrait for Vst3HostApplication {
         ];
         if supported
             .iter()
-            .any(|candidate| tuid_matches(&*_iid, candidate))
+            .any(|candidate| tuid_matches(unsafe { &*_iid }, candidate))
         {
             return kResultOk;
         }
         // Only Linux advertises a run loop, for the same reason the frame only
         // answers `queryInterface` for one there.
-        if cfg!(target_os = "linux") && tuid_matches(&*_iid, &IRunLoop::IID) {
+        if cfg!(target_os = "linux") && tuid_matches(unsafe { &*_iid }, &IRunLoop::IID) {
             return kResultOk;
         }
         kResultFalse
@@ -737,10 +748,13 @@ enum AttributeValue {
     Int(i64),
     Float(f64),
     String(Vec<u16>),
-    Binary(Vec<u8>),
+    /// Boxed so the bytes `getBinary` points into never move while the
+    /// attribute is stored, however the map around them changes.
+    Binary(Box<[u8]>),
 }
 
-/// The host's `IAttributeList`, handed out as part of an `IMessage`.
+/// The host's `IAttributeList`, handed out as part of an `IMessage` or created
+/// standalone through `IHostApplication::createInstance`.
 ///
 /// Locks, and cannot not: it is a keyed map the plugin writes and reads through
 /// a shared reference, and both halves of the plugin may hold one at once. The
@@ -752,10 +766,6 @@ enum AttributeValue {
 #[derive(Default)]
 pub struct Vst3AttributeList {
     entries: Mutex<BTreeMap<Vec<u8>, AttributeValue>>,
-    /// The last binary value handed out through `getBinary`, which returns a
-    /// borrowed pointer the caller reads before the next call. Held so that
-    /// pointer stays valid for exactly that long.
-    borrowed_binary: Mutex<Vec<u8>>,
 }
 
 impl Class for Vst3AttributeList {
@@ -799,7 +809,7 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         match self.get(id) {
             Some(AttributeValue::Int(stored)) => {
-                *value = stored;
+                unsafe { *value = stored };
                 kResultOk
             }
             _ => kResultFalse,
@@ -816,7 +826,7 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         match self.get(id) {
             Some(AttributeValue::Float(stored)) => {
-                *value = stored;
+                unsafe { *value = stored };
                 kResultOk
             }
             _ => kResultFalse,
@@ -829,9 +839,9 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         let mut units = Vec::new();
         let mut cursor = string;
-        while *cursor != 0 {
-            units.push(*cursor);
-            cursor = cursor.add(1);
+        while unsafe { *cursor } != 0 {
+            units.push(unsafe { *cursor });
+            cursor = unsafe { cursor.add(1) };
         }
         self.set(id, AttributeValue::String(units))
     }
@@ -845,8 +855,8 @@ impl IAttributeListTrait for Vst3AttributeList {
         };
         let capacity = (size_in_bytes as usize / 2).saturating_sub(1);
         let length = stored.len().min(capacity);
-        std::ptr::copy_nonoverlapping(stored.as_ptr(), string, length);
-        *string.add(length) = 0;
+        unsafe { std::ptr::copy_nonoverlapping(stored.as_ptr(), string, length) };
+        unsafe { *string.add(length) = 0 };
         kResultOk
     }
 
@@ -854,8 +864,9 @@ impl IAttributeListTrait for Vst3AttributeList {
         if data.is_null() {
             return kInvalidArgument;
         }
-        let bytes = std::slice::from_raw_parts(data as *const u8, size_in_bytes as usize).to_vec();
-        self.set(id, AttributeValue::Binary(bytes))
+        let bytes =
+            unsafe { std::slice::from_raw_parts(data as *const u8, size_in_bytes as usize) };
+        self.set(id, AttributeValue::Binary(bytes.into()))
     }
 
     unsafe fn getBinary(
@@ -867,15 +878,20 @@ impl IAttributeListTrait for Vst3AttributeList {
         if data.is_null() || size_in_bytes.is_null() {
             return kInvalidArgument;
         }
-        let Some(AttributeValue::Binary(stored)) = self.get(id) else {
-            return kResultFalse;
-        };
-        let Ok(mut borrowed) = self.borrowed_binary.lock() else {
+        let Some(key) = attribute_key(id) else {
             return kInvalidArgument;
         };
-        *borrowed = stored;
-        *data = borrowed.as_ptr() as *const c_void;
-        *size_in_bytes = borrowed.len() as uint32;
+        let Ok(entries) = self.entries.lock() else {
+            return kInvalidArgument;
+        };
+        // The pointer is borrowed from the stored attribute, as the SDK's own
+        // list lends it: valid until that attribute is replaced or the list is
+        // released.
+        let Some(AttributeValue::Binary(stored)) = entries.get(&key) else {
+            return kResultFalse;
+        };
+        unsafe { *data = stored.as_ptr() as *const c_void };
+        unsafe { *size_in_bytes = stored.len() as uint32 };
         kResultOk
     }
 }
@@ -920,7 +936,7 @@ impl IMessageTrait for Vst3Message {
         *stored = if id.is_null() {
             None
         } else {
-            Some(CStr::from_ptr(id).to_owned())
+            Some(unsafe { CStr::from_ptr(id) }.to_owned())
         };
     }
 
@@ -994,6 +1010,23 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use vst3::com_scrape_types::Unknown;
+    use vst3::Steinberg::kNoInterface;
+
+    thread_local! {
+        static ATTRIBUTE_LIST_DROPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Counted per thread: each test runs on its own, and a COM release frees
+    /// its object synchronously on the releasing thread.
+    impl Drop for Vst3AttributeList {
+        fn drop(&mut self) {
+            ATTRIBUTE_LIST_DROPS.with(|drops| drops.set(drops.get() + 1));
+        }
+    }
+
+    fn attribute_list_drops() -> usize {
+        ATTRIBUTE_LIST_DROPS.with(|drops| drops.get())
+    }
 
     fn drained(state: &Vst3HostState) -> Vec<HostParameterUpdate> {
         let mut buffer = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
@@ -1368,12 +1401,160 @@ mod tests {
         let application = Vst3HostApplication;
         let mut cid: TUID = [7; 16];
         let mut iid: TUID = [7; 16];
-        let mut object: *mut c_void = std::ptr::null_mut();
+        let mut object: *mut c_void = std::ptr::dangling_mut::<u8>() as *mut c_void;
 
         assert_eq!(
             unsafe { application.createInstance(&mut cid, &mut iid, &mut object) },
             kNotImplemented
         );
+        assert!(
+            object.is_null(),
+            "a refused creation leaves no stale pointer behind"
+        );
+    }
+
+    fn create_instance(cid: &Guid, iid: &Guid) -> (tresult, *mut c_void) {
+        let application = Vst3HostApplication;
+        let mut cid = tuid_from_guid(cid);
+        let mut iid = tuid_from_guid(iid);
+        let mut object: *mut c_void = std::ptr::dangling_mut::<u8>() as *mut c_void;
+        let created = unsafe { application.createInstance(&mut cid, &mut iid, &mut object) };
+        (created, object)
+    }
+
+    /// A plugin builds stream attributes and message payloads in a standalone
+    /// list it asks the host for. The list is the caller's: it arrives holding
+    /// the one reference the caller releases, and that release frees it.
+    #[test]
+    fn the_host_creates_a_standalone_attribute_list_the_caller_owns() {
+        let drops_before = attribute_list_drops();
+        let (created, object) = create_instance(&IAttributeList::IID, &IAttributeList::IID);
+
+        assert_eq!(created, kResultOk);
+        let list = unsafe { ComPtr::<IAttributeList>::from_raw(object as *mut IAttributeList) }
+            .expect("the created object is an attribute list");
+        let key = CString::new("value").expect("a literal has no null byte");
+        unsafe {
+            assert_eq!(list.setInt(key.as_ptr(), -12), kResultOk);
+            let mut integer = 0i64;
+            assert_eq!(list.getInt(key.as_ptr(), &mut integer), kResultOk);
+            assert_eq!(integer, -12);
+
+            assert_eq!(list.setFloat(key.as_ptr(), 0.25), kResultOk);
+            let mut float = 0.0f64;
+            assert_eq!(list.getFloat(key.as_ptr(), &mut float), kResultOk);
+            assert_eq!(float, 0.25);
+
+            let text: Vec<u16> = "hi\0".encode_utf16().collect();
+            assert_eq!(list.setString(key.as_ptr(), text.as_ptr()), kResultOk);
+            let mut read = [0u16; 8];
+            assert_eq!(
+                list.getString(key.as_ptr(), read.as_mut_ptr(), 16),
+                kResultOk
+            );
+            assert_eq!(read_string128_prefix(&read), "hi");
+
+            let payload = [4u8, 5, 6];
+            assert_eq!(
+                list.setBinary(key.as_ptr(), payload.as_ptr() as *const c_void, 3),
+                kResultOk
+            );
+            let mut data: *const c_void = std::ptr::null();
+            let mut size: uint32 = 0;
+            assert_eq!(
+                list.getBinary(key.as_ptr(), &mut data, &mut size),
+                kResultOk
+            );
+            assert_eq!(
+                std::slice::from_raw_parts(data as *const u8, size as usize),
+                &payload
+            );
+        }
+        assert_eq!(
+            attribute_list_drops(),
+            drops_before,
+            "the caller still holds it"
+        );
+
+        drop(list);
+        assert_eq!(
+            attribute_list_drops(),
+            drops_before + 1,
+            "releasing the caller's one reference frees the list"
+        );
+    }
+
+    /// COM hands back the interface the caller named, not the one the class
+    /// happens to implement first: `FUnknown` is always answerable.
+    #[test]
+    fn the_host_answers_the_interface_a_creation_names() {
+        let (created, object) = create_instance(&IMessage::IID, &FUnknown::IID);
+        assert_eq!(created, kResultOk);
+        let unknown = unsafe { ComPtr::<FUnknown>::from_raw(object as *mut FUnknown) }
+            .expect("the created object is an FUnknown");
+        assert!(unknown.cast::<IMessage>().is_some());
+
+        let (created, object) = create_instance(&IAttributeList::IID, &FUnknown::IID);
+        assert_eq!(created, kResultOk);
+        let unknown = unsafe { ComPtr::<FUnknown>::from_raw(object as *mut FUnknown) }
+            .expect("the created object is an FUnknown");
+        assert!(unknown.cast::<IAttributeList>().is_some());
+    }
+
+    /// A class the host creates, asked for an interface it does not have, is
+    /// refused the COM way and leaves nothing allocated.
+    #[test]
+    fn the_host_refuses_an_interface_the_created_class_lacks() {
+        let drops_before = attribute_list_drops();
+        let (created, object) = create_instance(&IAttributeList::IID, &IMessage::IID);
+        assert_eq!(created, kNoInterface);
+        assert!(object.is_null());
+        assert_eq!(
+            attribute_list_drops(),
+            drops_before + 1,
+            "the list built for the refused request is freed"
+        );
+
+        let (created, object) = create_instance(&IMessage::IID, &IAttributeList::IID);
+        assert_eq!(created, kNoInterface);
+        assert!(object.is_null());
+    }
+
+    /// The pointer `getBinary` returns stays readable for as long as the
+    /// attribute it came from, as the SDK's own list keeps it: a plugin reading
+    /// two payloads out of one message must not find the first freed.
+    #[test]
+    fn a_binary_read_stays_valid_across_a_read_of_another_key() {
+        let list = Vst3AttributeList::default();
+        let first = CString::new("first").expect("a literal has no null byte");
+        let second = CString::new("second").expect("a literal has no null byte");
+
+        unsafe {
+            list.setBinary(first.as_ptr(), [1u8, 2, 3].as_ptr() as *const c_void, 3);
+            list.setBinary(second.as_ptr(), [9u8; 64].as_ptr() as *const c_void, 64);
+
+            let mut first_data: *const c_void = std::ptr::null();
+            let mut first_size: uint32 = 0;
+            assert_eq!(
+                list.getBinary(first.as_ptr(), &mut first_data, &mut first_size),
+                kResultOk
+            );
+            let mut second_data: *const c_void = std::ptr::null();
+            let mut second_size: uint32 = 0;
+            assert_eq!(
+                list.getBinary(second.as_ptr(), &mut second_data, &mut second_size),
+                kResultOk
+            );
+
+            assert_eq!(
+                std::slice::from_raw_parts(first_data as *const u8, first_size as usize),
+                &[1, 2, 3]
+            );
+            assert_eq!(
+                std::slice::from_raw_parts(second_data as *const u8, second_size as usize),
+                &[9u8; 64]
+            );
+        }
     }
 
     /// Answering "supported" to everything sends plugins down paths this host

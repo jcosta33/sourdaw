@@ -386,17 +386,23 @@ pub struct QuarantinedPlugin {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// The sixteen hex digits of a SHA-256 digest's first eight bytes, read
+/// big-endian.
+fn hex_id_from_digest(digest: [u8; 32]) -> String {
+    let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = digest;
+    format!(
+        "{:016x}",
+        u64::from_be_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
+    )
+}
+
 /// Compute a stable, version-independent ID for a plugin path.
 /// Uses the first 8 bytes of SHA-256 of the canonical path string.
 /// Safe to persist in project files — deterministic across Rust versions and builds.
 pub fn stable_id(path: &Path) -> String {
     let mut hasher = Sha256::new();
     hasher.update(path.to_string_lossy().as_bytes());
-    let digest = hasher.finalize();
-    format!(
-        "{:016x}",
-        u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
-    )
+    hex_id_from_digest(hasher.finalize().into())
 }
 
 /// Why Sourdaw will not load a plugin of a format it recognises.
@@ -755,11 +761,7 @@ pub fn bundle_sibling_id(path: &Path, descriptor_id: &str) -> String {
     // pair's concatenation.
     hasher.update([0]);
     hasher.update(descriptor_id.as_bytes());
-    let digest = hasher.finalize();
-    format!(
-        "{:016x}",
-        u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
-    )
+    hex_id_from_digest(hasher.finalize().into())
 }
 
 /// [`scanned_plugin`] with the id the caller already decided, so the one-plugin
@@ -1460,20 +1462,22 @@ unsafe fn owned_c_string(value: *const i8) -> String {
     if value.is_null() {
         return String::new();
     }
-    CStr::from_ptr(value).to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(value) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The bundle's plugin factory, or why it cannot be reached.
 unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, String> {
     let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
     let factory_ptr = match entry_ref.get_factory {
-        Some(get_factory) => get_factory(factory_id),
+        Some(get_factory) => unsafe { get_factory(factory_id) },
         None => return Err("CLAP entry has no factory lookup".to_string()),
     };
     if factory_ptr.is_null() {
         return Err("CLAP entry returned no plugin factory".to_string());
     }
-    Ok(&*(factory_ptr as *const clap_plugin_factory))
+    Ok(unsafe { &*(factory_ptr as *const clap_plugin_factory) })
 }
 
 /// Every descriptor the factory declares, in factory order.
@@ -1487,7 +1491,7 @@ unsafe fn factory_plugin_descriptors(
     factory: &clap_plugin_factory,
 ) -> Result<Vec<&clap_sys::plugin::clap_plugin_descriptor>, String> {
     let count = match factory.get_plugin_count {
-        Some(get_plugin_count) => get_plugin_count(factory),
+        Some(get_plugin_count) => unsafe { get_plugin_count(factory) },
         None => return Err("CLAP factory has no plugin count".to_string()),
     };
     if count == 0 {
@@ -1502,11 +1506,11 @@ unsafe fn factory_plugin_descriptors(
     };
     let mut descriptors = Vec::with_capacity(count as usize);
     for index in 0..count {
-        let descriptor = get_descriptor(factory, index);
+        let descriptor = unsafe { get_descriptor(factory, index) };
         if descriptor.is_null() {
             return Err("CLAP factory returned a null descriptor".to_string());
         }
-        descriptors.push(&*descriptor);
+        descriptors.push(unsafe { &*descriptor });
     }
     Ok(descriptors)
 }
@@ -1559,7 +1563,7 @@ unsafe fn extract_parameters_from_extension(
     parameters: &clap_plugin_params,
 ) -> Result<Vec<ScannedParameterDescriptor>, String> {
     let count = match parameters.count {
-        Some(count) => count(plugin),
+        Some(count) => unsafe { count(plugin) },
         None => return Err("CLAP parameter extension has no count callback".to_string()),
     };
     if count > MAX_SCANNED_PARAMETER_DESCRIPTORS {
@@ -1573,8 +1577,8 @@ unsafe fn extract_parameters_from_extension(
     let mut metadata_bytes = 0usize;
     let mut descriptors = Vec::with_capacity(count as usize);
     for index in 0..count {
-        let mut info: clap_param_info = mem::zeroed();
-        if !get_info(plugin, index, &mut info) {
+        let mut info: clap_param_info = unsafe { mem::zeroed() };
+        if !unsafe { get_info(plugin, index, &mut info) } {
             return Err("CLAP parameter extension returned incomplete metadata".to_string());
         }
         if info.id == CLAP_INVALID_ID || !ids.insert(info.id) {
@@ -1588,8 +1592,8 @@ unsafe fn extract_parameters_from_extension(
         {
             return Err("CLAP parameter metadata has invalid numeric bounds".to_string());
         }
-        let name = bounded_parameter_name(&info.name)?;
-        let module = bounded_parameter_module(&info.module)?;
+        let name = unsafe { bounded_parameter_name(&info.name) }?;
+        let module = unsafe { bounded_parameter_module(&info.module) }?;
         metadata_bytes = metadata_bytes.saturating_add(
             name.len() + module.as_ref().map_or(0, String::len) + std::mem::size_of::<u32>() + 32,
         );
@@ -1627,7 +1631,7 @@ unsafe fn audio_channel_count(
     is_input: bool,
 ) -> Result<u32, String> {
     let count = match audio_ports.count {
-        Some(count) => count(plugin, is_input),
+        Some(count) => unsafe { count(plugin, is_input) },
         None => return Err("CLAP audio-ports extension has no count callback".to_string()),
     };
     if count > MAX_SCANNED_AUDIO_PORTS {
@@ -1640,8 +1644,8 @@ unsafe fn audio_channel_count(
 
     let mut channels: u32 = 0;
     for index in 0..count {
-        let mut info: clap_audio_port_info = mem::zeroed();
-        if !get(plugin, index, is_input, &mut info) {
+        let mut info: clap_audio_port_info = unsafe { mem::zeroed() };
+        if !unsafe { get(plugin, index, is_input, &mut info) } {
             return Err("CLAP audio-ports extension returned incomplete port info".to_string());
         }
         channels = channels.saturating_add(info.channel_count);
@@ -1664,14 +1668,14 @@ unsafe fn extract_audio_channels(
         *const std::os::raw::c_char,
     ) -> *const std::ffi::c_void,
 ) -> Result<Option<ScannedAudioChannelCounts>, String> {
-    let extension = get_extension(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr());
+    let extension = unsafe { get_extension(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr()) };
     if extension.is_null() {
         return Ok(None);
     }
-    let audio_ports = &*(extension as *const clap_plugin_audio_ports);
+    let audio_ports = unsafe { &*(extension as *const clap_plugin_audio_ports) };
     Ok(Some(ScannedAudioChannelCounts {
-        inputs: audio_channel_count(plugin, audio_ports, true)?,
-        outputs: audio_channel_count(plugin, audio_ports, false)?,
+        inputs: unsafe { audio_channel_count(plugin, audio_ports, true) }?,
+        outputs: unsafe { audio_channel_count(plugin, audio_ports, false) }?,
     }))
 }
 
@@ -1683,7 +1687,7 @@ unsafe fn extract_instance_metadata_from_factory(
     entry_ref: &clap_plugin_entry,
     plugin_id: &str,
 ) -> Result<ScannedInstance, String> {
-    let factory = plugin_factory(entry_ref)?;
+    let factory = unsafe { plugin_factory(entry_ref) }?;
     if plugin_id.is_empty() {
         return Err("CLAP instance inspection has no plugin id to instantiate".to_string());
     }
@@ -1694,17 +1698,17 @@ unsafe fn extract_instance_metadata_from_factory(
         Some(create_plugin) => create_plugin,
         None => return Err("CLAP factory has no plugin creation callback".to_string()),
     };
-    let plugin = create_plugin(factory, &host, plugin_id.as_ptr());
+    let plugin = unsafe { create_plugin(factory, &host, plugin_id.as_ptr()) };
     if plugin.is_null() {
         return Err("CLAP factory could not create a metadata instance".to_string());
     }
-    let plugin_ref = &*plugin;
+    let plugin_ref = unsafe { &*plugin };
     let destroy = plugin_ref.destroy;
     let result = (|| {
         let init = plugin_ref
             .init
             .ok_or_else(|| "CLAP metadata instance has no init callback".to_string())?;
-        if !init(plugin) {
+        if !unsafe { init(plugin) } {
             return Err("CLAP metadata instance initialization failed".to_string());
         }
         // No extension lookup at all: the plugin can declare no parameters, no
@@ -1722,30 +1726,34 @@ unsafe fn extract_instance_metadata_from_factory(
             });
         };
 
-        let parameters_extension = get_extension(plugin, CLAP_EXT_PARAMS.as_ptr());
+        let parameters_extension = unsafe { get_extension(plugin, CLAP_EXT_PARAMS.as_ptr()) };
         let parameters = if parameters_extension.is_null() {
             Vec::new()
         } else {
-            extract_parameters_from_extension(
-                plugin,
-                &*(parameters_extension as *const clap_plugin_params),
-            )?
+            unsafe {
+                extract_parameters_from_extension(
+                    plugin,
+                    &*(parameters_extension as *const clap_plugin_params),
+                )
+            }?
         };
 
         Ok(ScannedInstance {
             parameters,
             capabilities: ScannedInstanceCapabilities {
-                audio_channels: extract_audio_channels(plugin, get_extension)?,
+                audio_channels: unsafe { extract_audio_channels(plugin, get_extension) }?,
                 // Presence is the whole query. Nothing is called through the
                 // extension: the scan worker never creates a window, and
                 // `clap.gui` being there is exactly what the runtime host
                 // (`ClapWrapper::has_gui`) treats as "this plugin has an editor".
-                has_custom_ui: Some(!get_extension(plugin, CLAP_EXT_GUI.as_ptr()).is_null()),
+                has_custom_ui: Some(
+                    !unsafe { get_extension(plugin, CLAP_EXT_GUI.as_ptr()) }.is_null(),
+                ),
             },
         })
     })();
     if let Some(destroy) = destroy {
-        destroy(plugin);
+        unsafe { destroy(plugin) };
     } else {
         return Err("CLAP metadata instance has no destroy callback".to_string());
     }
@@ -1764,11 +1772,15 @@ pub(crate) unsafe fn owned_feature_list(features: *const *const i8) -> Vec<Strin
     let mut collected = Vec::new();
     let mut index = 0;
     loop {
-        let feature = *features.add(index);
+        let feature = unsafe { *features.add(index) };
         if feature.is_null() {
             break;
         }
-        collected.push(CStr::from_ptr(feature).to_string_lossy().into_owned());
+        collected.push(
+            unsafe { CStr::from_ptr(feature) }
+                .to_string_lossy()
+                .into_owned(),
+        );
         index += 1;
     }
     collected
@@ -1780,11 +1792,11 @@ unsafe fn descriptor_metadata(
     descriptor: &clap_sys::plugin::clap_plugin_descriptor,
 ) -> Result<ClapDescriptorMetadata, String> {
     let metadata = ClapDescriptorMetadata {
-        name: owned_c_string(descriptor.name),
-        vendor: owned_c_string(descriptor.vendor),
-        id: owned_c_string(descriptor.id),
-        version: owned_c_string(descriptor.version),
-        features: owned_feature_list(descriptor.features),
+        name: unsafe { owned_c_string(descriptor.name) },
+        vendor: unsafe { owned_c_string(descriptor.vendor) },
+        id: unsafe { owned_c_string(descriptor.id) },
+        version: unsafe { owned_c_string(descriptor.version) },
+        features: unsafe { owned_feature_list(descriptor.features) },
         parameters: None,
         parameter_metadata_reason: None,
         capabilities: None,
@@ -1800,10 +1812,10 @@ unsafe fn descriptor_metadata(
 unsafe fn extract_from_factory(
     entry_ref: &clap_plugin_entry,
 ) -> Result<Vec<ClapDescriptorMetadata>, String> {
-    let factory = plugin_factory(entry_ref)?;
-    factory_plugin_descriptors(factory)?
+    let factory = unsafe { plugin_factory(entry_ref) }?;
+    unsafe { factory_plugin_descriptors(factory) }?
         .into_iter()
-        .map(|descriptor| descriptor_metadata(descriptor))
+        .map(|descriptor| unsafe { descriptor_metadata(descriptor) })
         .collect()
 }
 
@@ -1891,17 +1903,21 @@ mod instance_metadata_tests {
         };
         let name = b"Gain\0";
         let module = b"Dynamics\0";
-        std::ptr::copy_nonoverlapping(
-            name.as_ptr() as *const c_char,
-            parameter.name.as_mut_ptr(),
-            name.len(),
-        );
-        std::ptr::copy_nonoverlapping(
-            module.as_ptr() as *const c_char,
-            parameter.module.as_mut_ptr(),
-            module.len(),
-        );
-        *info = parameter;
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr() as *const c_char,
+                parameter.name.as_mut_ptr(),
+                name.len(),
+            )
+        };
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                module.as_ptr() as *const c_char,
+                parameter.module.as_mut_ptr(),
+                module.len(),
+            )
+        };
+        unsafe { *info = parameter };
         true
     }
 
@@ -1922,15 +1938,17 @@ mod instance_metadata_tests {
         if info.is_null() {
             return false;
         }
-        *info = clap_param_info {
-            id: 8,
-            flags: 0,
-            cookie: std::ptr::null_mut(),
-            name: [b'x' as c_char; CLAP_NAME_SIZE],
-            module: [0; CLAP_PATH_SIZE],
-            min_value: 0.0,
-            max_value: 1.0,
-            default_value: 0.5,
+        unsafe {
+            *info = clap_param_info {
+                id: 8,
+                flags: 0,
+                cookie: std::ptr::null_mut(),
+                name: [b'x' as c_char; CLAP_NAME_SIZE],
+                module: [0; CLAP_PATH_SIZE],
+                min_value: 0.0,
+                max_value: 1.0,
+                default_value: 0.5,
+            }
         };
         true
     }
@@ -1967,12 +1985,14 @@ mod instance_metadata_tests {
             default_value: 0.5,
         };
         let name = b"Duplicate\0";
-        std::ptr::copy_nonoverlapping(
-            name.as_ptr() as *const c_char,
-            parameter.name.as_mut_ptr(),
-            name.len(),
-        );
-        *info = parameter;
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr() as *const c_char,
+                parameter.name.as_mut_ptr(),
+                name.len(),
+            )
+        };
+        unsafe { *info = parameter };
         true
     }
 
@@ -1992,7 +2012,7 @@ mod instance_metadata_tests {
 
     unsafe extern "C" fn test_plugin_destroy(plugin: *const clap_plugin) {
         DESTROY_CALLS.fetch_add(1, Ordering::Relaxed);
-        drop(Box::from_raw(plugin as *mut clap_plugin));
+        drop(unsafe { Box::from_raw(plugin as *mut clap_plugin) });
     }
 
     unsafe extern "C" fn test_plugin_activate(
@@ -2039,13 +2059,15 @@ mod instance_metadata_tests {
             (false, 0) => 2,
             _ => return false,
         };
-        *info = clap_audio_port_info {
-            id: index,
-            name: [0; CLAP_NAME_SIZE],
-            flags: 0,
-            channel_count,
-            port_type: std::ptr::null(),
-            in_place_pair: CLAP_INVALID_ID,
+        unsafe {
+            *info = clap_audio_port_info {
+                id: index,
+                name: [0; CLAP_NAME_SIZE],
+                flags: 0,
+                channel_count,
+                port_type: std::ptr::null(),
+                in_place_pair: CLAP_INVALID_ID,
+            }
         };
         true
     }
@@ -2084,7 +2106,7 @@ mod instance_metadata_tests {
         if extension_id.is_null() {
             return std::ptr::null();
         }
-        let extension_id = CStr::from_ptr(extension_id);
+        let extension_id = unsafe { CStr::from_ptr(extension_id) };
         if extension_id == CLAP_EXT_PARAMS {
             return &raw const TEST_PARAMETERS as *const c_void;
         }
@@ -2231,8 +2253,10 @@ mod instance_metadata_tests {
         _host: *const clap_host,
         plugin_id: *const c_char,
     ) -> *const clap_plugin {
-        *LAST_CREATED_ID.lock().unwrap() = CStr::from_ptr(plugin_id).to_string_lossy().into_owned();
-        test_factory_create_plugin(std::ptr::null(), std::ptr::null(), std::ptr::null())
+        *LAST_CREATED_ID.lock().unwrap() = unsafe { CStr::from_ptr(plugin_id) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { test_factory_create_plugin(std::ptr::null(), std::ptr::null(), std::ptr::null()) }
     }
 
     static BUNDLE_FACTORY: clap_plugin_factory = clap_plugin_factory {

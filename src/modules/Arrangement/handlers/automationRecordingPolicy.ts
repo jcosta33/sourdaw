@@ -1,16 +1,8 @@
-import {
-    type AppAction,
-    type AutomationRecordingPolicy,
-    type HandlerSessionActionEntry,
-} from '#/utils/handlerContract';
+import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
-/** The policy an action carries, or `undefined` for every action that cannot carry one. */
-export function getActionAutomationRecordingPolicy(action: AppAction): AutomationRecordingPolicy | undefined {
-    if (action.type === 'setDeviceParameter' || action.type === 'setTrackGain' || action.type === 'setTrackPan') {
-        return action.payload.automationRecordingPolicy;
-    }
-    return undefined;
-}
+import { getActionAutomationRecordingPolicy } from './automationRecordingPolicyByActionType';
+
+export { getActionAutomationRecordingPolicy };
 
 /**
  * A persisted entry is replayable only when its inverse and redo agree with the
