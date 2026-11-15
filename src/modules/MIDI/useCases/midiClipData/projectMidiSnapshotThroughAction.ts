@@ -463,6 +463,9 @@ function lookup<Type extends AppActionType>(
     clipId: string,
     snapshot: ProjectedMidiSnapshot
 ): ProjectedMidiSnapshot {
+    if (!Object.hasOwn(midiSnapshotByActionType, action.type)) {
+        return unchangedSnapshot(action, clipId, snapshot);
+    }
     return midiSnapshotByActionType[action.type](action, clipId, snapshot);
 }
 

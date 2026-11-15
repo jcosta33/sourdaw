@@ -97,7 +97,11 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         })) ?? [];
     let takePriorActions = priorActions;
     let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
-    if (priorActions.some((action) => changesTempoByActionType[action.type])) {
+    if (
+        priorActions.some(
+            (action) => Object.hasOwn(changesTempoByActionType, action.type) && changesTempoByActionType[action.type]
+        )
+    ) {
         if (!projected.tracks) {
             return false;
         }

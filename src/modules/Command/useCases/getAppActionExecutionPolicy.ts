@@ -173,5 +173,8 @@ export function getAppActionExecutionPolicy(actionType: string): AppActionExecut
             reason: registration.confirmation.reason,
         };
     }
+    if (!Object.hasOwn(executionPolicyByActionType, actionType)) {
+        return defaultPolicy;
+    }
     return executionPolicyByActionType[actionType] ?? defaultPolicy;
 }

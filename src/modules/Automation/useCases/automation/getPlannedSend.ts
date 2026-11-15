@@ -458,6 +458,9 @@ function lookup<Type extends AppActionType>(
     busId: string,
     send: PlannedSend | undefined
 ): PlannedSend | undefined {
+    if (!Object.hasOwn(plannedSendByActionType, action.type)) {
+        return unchangedSend(action, trackId, busId, send);
+    }
     return plannedSendByActionType[action.type](action, trackId, busId, send);
 }
 

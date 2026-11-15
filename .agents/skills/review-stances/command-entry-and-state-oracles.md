@@ -142,6 +142,14 @@ src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integ
    Require real remove/rename-then-add batches to agree in raw tracks, projection and recorded names through
    Undo/Redo/Undo; restoring the append-only planner must fail. Singleton-only operations remain rejected in
    multi-action batches.
+10. **An untrusted action type reaches a per-action lookup before the registry rejects it (#6599).** Failure: a
+    record indexed by `action.type` turns a retired, misspelt or inherited-name type (`constructor`, `toString`,
+    `__proto__`) from a persisted batch, undo entry, saved macro or model output into a TypeError or an
+    `Object.prototype` member, so the batch fails on a lookup instead of the kernel's no-handler rejection. The
+    admission loop materializes admission-mode handlers over earlier raw actions before that check, which is
+    where a new table is first reached. Probe: through `executeAppActionBatch`, feed such a type (a `JSON.parse`
+    literal) ahead of an admission-mode action (`splitClip`, `setTempo`) and assert `rejected` with `No registered
+handler for action: <type>`; reverting a lookup's own-property guard must fail it.
 
 ## Relocated
 

@@ -403,6 +403,9 @@ const restoredMidiOwnerIdsByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>): readonly string[] {
+    if (!Object.hasOwn(restoredMidiOwnerIdsByActionType, action.type)) {
+        return noOwnerIds();
+    }
     return restoredMidiOwnerIdsByActionType[action.type](action);
 }
 
