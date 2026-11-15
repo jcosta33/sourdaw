@@ -1,10 +1,11 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { type ListRestoreSlot, isValidListRestoreSlot } from '../../models/ListRestoreSlot';
 import { addSection } from '../../useCases/marker/sectionOperations/addSection';
 import { getMarkerState } from '../../useCases/timelineQueries';
 
 type AddSectionAction = {
-    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string; index?: number };
+    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string } & ListRestoreSlot;
 };
 
 // Mirror of handleDuplicateClip's ensureTargetClipId: the inverse needs the
@@ -19,20 +20,16 @@ function ensureSectionId(action: AddSectionAction): string {
     return sectionId;
 }
 
-const MALFORMED_INDEX_REASON = 'Section slot must be a non-negative integer.';
-
-// executeAppAction (undo/redo replay included) never calls validate, so execute enforces the same rule.
-function isValidSectionIndex(index: number | undefined): boolean {
-    return index === undefined || (Number.isInteger(index) && index >= 0);
-}
+const MALFORMED_SLOT_REASON = 'Section slot must be a non-negative integer index with string neighbour ids.';
 
 export const handleAddSection = createHandler<'addSection'>({
     // Singleton keeps addSection out of multi-action batches, as it was before it gained a validator.
     batchExecution: 'singleton',
-    validate: (action) => isValidSectionIndex(action.payload.index),
+    // executeAppAction (undo/redo replay included) never calls validate, so execute enforces the same rule.
+    validate: (action) => isValidListRestoreSlot(action.payload),
     execute: (action) => {
-        if (!isValidSectionIndex(action.payload.index)) {
-            return { status: 'conflict', reason: MALFORMED_INDEX_REASON };
+        if (!isValidListRestoreSlot(action.payload)) {
+            return { status: 'conflict', reason: MALFORMED_SLOT_REASON };
         }
         const changed = addSection(
             action.payload.startBeat,
@@ -40,7 +37,11 @@ export const handleAddSection = createHandler<'addSection'>({
             action.payload.name,
             ensureSectionId(action),
             action.payload.color,
-            action.payload.index
+            {
+                index: action.payload.index,
+                beforeId: action.payload.beforeId,
+                afterId: action.payload.afterId,
+            }
         );
         if (!changed) {
             return { status: 'no-write' };

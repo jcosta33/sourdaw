@@ -5396,37 +5396,73 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(readdirSync(join(root, 'storage')).filter((name) => name !== '.claims')).toEqual([]);
     });
 
-    it('still reports leak and records a receipt when a process survives forced cleanup', async () => {
-        const root = fixture();
-        const pidPath = join(root, 'survivor.pid');
-        const realKill = process.kill.bind(process);
-        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-            if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-                return true;
-            }
-            return realKill(pid, signal);
-        });
-        let survivor: number | undefined;
-        try {
-            const { code, lines, result } = await runCli(root, {
-                args: [
-                    '-e',
-                    `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(c.pid))`,
-                ],
+    it.each(['available', 'unavailable'] as const)(
+        'still reports leak and records a receipt when a process survives forced cleanup with %s snapshot metadata',
+        async (snapshotStatus) => {
+            const root = fixture();
+            const pidPath = join(root, 'survivor.pid');
+            const realKill = process.kill.bind(process);
+            const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+                if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+                    throw Object.assign(new Error('fixture signal denial message'), { code: 'EPERM' });
+                }
+                return realKill(pid, signal);
             });
-            survivor = Number(readFileSync(pidPath, 'utf8'));
-            expect(result?.reason).toBe('leak');
-            expect(result?.retainedStorage).toBeUndefined();
-            expect(code).toBe(1);
-            expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
-            expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
-        } finally {
-            killSpy.mockRestore();
-            if (survivor !== undefined) {
-                childPids.add(survivor);
+            let survivor: number | undefined;
+            const metadataSnapshot = {
+                status: 'available' as const,
+                rows: [{ pid: 501, parentPid: 502, processGroupId: 503, uid: 504, state: 'S', start: 'fixture start' }],
+                truncated: false,
+            };
+            try {
+                const { code, lines, result } = await runCli(root, {
+                    args: [
+                        '-e',
+                        `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(process.argv[1],String(c.pid))`,
+                        pidPath,
+                    ],
+                    processSnapshot: () =>
+                        snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' },
+                });
+                survivor = Number(readFileSync(pidPath, 'utf8'));
+                expect(isAlive(survivor)).toBe(true);
+                expect(result?.reason).toBe('leak');
+                expect(result?.retainedStorage).toBeUndefined();
+                expect(code).toBe(1);
+                expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
+                expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe(
+                    'leak'
+                );
+                const diagnosticLine = result?.output
+                    .split('\n')
+                    .find((line) => line.startsWith('guard cleanup diagnostic: '));
+                expect(diagnosticLine).toBeDefined();
+                if (diagnosticLine === undefined) {
+                    throw new Error('guard cleanup diagnostic missing');
+                }
+                const diagnostic = JSON.parse(diagnosticLine.slice('guard cleanup diagnostic: '.length));
+                expect(diagnostic.treeExitProved).toBe(false);
+                expect(diagnostic.lastObservation.census).toBe('available');
+                expect(diagnostic.lastObservation.blockedBy).toBe('process-group');
+                expect(diagnostic.lastObservation.processGroupProbe.state).toBe('present');
+                expect(diagnostic.signalFailures).toContainEqual(
+                    expect.objectContaining({ pid: survivor, signal: 'SIGTERM', errno: 'EPERM' })
+                );
+                expect(diagnostic.signalFailures.length).toBeLessThanOrEqual(16);
+                expect(diagnostic.metadataAtReport.processGroup).toEqual(
+                    snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' }
+                );
+                expect(diagnosticLine).not.toContain('SOURDAW_PROCESS_SESSION=');
+                expect(diagnosticLine).not.toContain('fixture signal denial message');
+            } finally {
+                killSpy.mockRestore();
+                if (survivor !== undefined) {
+                    childPids.add(survivor);
+                }
             }
-        }
-    }, 30_000);
+        },
+        30_000
+    );
 
     it('reclaims retained storage on a later guarded run once provable and keeps what it cannot prove free', async () => {
         const root = fixture();
