@@ -46,6 +46,7 @@ const STATIC_ANALYSIS_CONFIG = new Set([
     'eslint.config.mjs',
     'eslint.size-baseline.d.mts',
     'eslint.size-baseline.mjs',
+    'eslint-suppressions.json',
     'knip.json',
     'oxlint.craft-baseline.d.mts',
     'oxlint.craft-baseline.mjs',

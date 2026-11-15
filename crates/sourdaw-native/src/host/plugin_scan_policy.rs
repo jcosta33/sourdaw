@@ -202,14 +202,10 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
     }
 
     #[cfg(target_os = "windows")]
-    {
-        if let Some(local_app_data) = dirs::data_local_dir() {
-            paths.push(local_app_data.join(r"Programs\Common\VST3"));
-        }
-
-        paths.push(PathBuf::from(r"C:\Program Files\Common Files\VST3"));
-        paths.push(PathBuf::from(r"C:\Program Files\Common Files\CLAP"));
-    }
+    paths.extend(windows_scan_roots(
+        dirs::data_local_dir().as_deref(),
+        windows_known_folders::program_files_common().as_deref(),
+    ));
 
     #[cfg(target_os = "linux")]
     {
@@ -229,6 +225,57 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
     }
 
     paths
+}
+
+/// The Windows plugin folders, from the two shell known folders both formats
+/// name them by: `FOLDERID_LocalAppData` for the per-user ones and
+/// `FOLDERID_ProgramFilesCommon` — what `%COMMONPROGRAMFILES%` expands to — for
+/// the machine-wide ones.
+///
+/// Known folders, never a drive literal: Windows need not be installed on `C:`,
+/// and an administrator can relocate Program Files. Never environment variables
+/// either: the process environment is whatever launched Sourdaw, and a scan root
+/// is an authority the native layer owns (see the security policy, section 1).
+/// A folder the shell cannot name is left out rather than guessed.
+///
+/// Pure over the folders it is handed, so the rule is tested on every host and
+/// only the shell query is Windows code.
+#[cfg(any(target_os = "windows", test))]
+fn windows_scan_roots(
+    local_app_data: Option<&Path>,
+    program_files_common: Option<&Path>,
+) -> Vec<PathBuf> {
+    let per_user = local_app_data.map(|folder| folder.join("Programs").join("Common"));
+    [per_user.as_deref(), program_files_common]
+        .into_iter()
+        .flatten()
+        .flat_map(|common| [common.join("VST3"), common.join("CLAP")])
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+mod windows_known_folders {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use std::path::PathBuf;
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{
+        FOLDERID_ProgramFilesCommon, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+    };
+
+    /// `FOLDERID_ProgramFilesCommon`, the folder the VST3 SDK's own Windows
+    /// host module resolves its machine-wide plug-in folder from.
+    pub(super) fn program_files_common() -> Option<PathBuf> {
+        // SAFETY: the out-pointer is shell-allocated on success and released
+        // with `CoTaskMemFree` exactly once, after its contents are copied.
+        unsafe {
+            let folder =
+                SHGetKnownFolderPath(&FOLDERID_ProgramFilesCommon, KF_FLAG_DEFAULT, None).ok()?;
+            let path = PathBuf::from(OsString::from_wide(folder.as_wide()));
+            CoTaskMemFree(Some(folder.as_ptr().cast_const().cast()));
+            Some(path)
+        }
+    }
 }
 
 fn normalize_path_lexically(path: &Path) -> PathBuf {
@@ -331,11 +378,16 @@ mod tests {
         {
             let local_app_data =
                 dirs::data_local_dir().expect("a Windows account should have local app data");
-            let per_user = priority_of(&roots, &local_app_data.join(r"Programs\Common\VST3"));
-            let machine_wide =
-                priority_of(&roots, Path::new(r"C:\Program Files\Common Files\VST3"));
+            let common_files = windows_known_folders::program_files_common()
+                .expect("Windows should name its common program files folder");
+            let per_user_common = local_app_data.join("Programs").join("Common");
+            let per_user_vst3 = priority_of(&roots, &per_user_common.join("VST3"));
+            let per_user_clap = priority_of(&roots, &per_user_common.join("CLAP"));
+            let machine_wide_vst3 = priority_of(&roots, &common_files.join("VST3"));
+            let machine_wide_clap = priority_of(&roots, &common_files.join("CLAP"));
 
-            assert!(per_user < machine_wide);
+            assert!(per_user_vst3 < machine_wide_vst3);
+            assert!(per_user_clap < machine_wide_clap);
         }
 
         #[cfg(target_os = "linux")]
@@ -352,6 +404,56 @@ mod tests {
             assert!(distribution < site);
             assert!(distribution_64 < site_64);
         }
+    }
+
+    /// Both formats define the machine-wide folder as `%COMMONPROGRAMFILES%`,
+    /// so a machine whose Program Files lives on another drive keeps its plugins
+    /// there, and the roots have to follow the folder rather than assume `C:`.
+    #[test]
+    fn windows_machine_wide_roots_follow_the_common_program_files_folder() {
+        let common_files = Path::new(r"D:\Program Files\Common Files");
+
+        let roots = windows_scan_roots(None, Some(common_files));
+
+        assert_eq!(
+            roots,
+            vec![common_files.join("VST3"), common_files.join("CLAP")]
+        );
+    }
+
+    /// CLAP defines `%LOCALAPPDATA%\Programs\Common\CLAP` beside the per-user
+    /// VST3 folder, and both outrank the machine-wide copies.
+    #[test]
+    fn windows_per_user_roots_cover_both_formats_ahead_of_the_machine_wide_ones() {
+        let local_app_data = Path::new(r"E:\Users\musician\AppData\Local");
+        let common_files = Path::new(r"D:\Program Files\Common Files");
+        let per_user_common = local_app_data.join("Programs").join("Common");
+
+        let roots = windows_scan_roots(Some(local_app_data), Some(common_files));
+
+        assert_eq!(
+            roots,
+            vec![
+                per_user_common.join("VST3"),
+                per_user_common.join("CLAP"),
+                common_files.join("VST3"),
+                common_files.join("CLAP"),
+            ]
+        );
+    }
+
+    /// A folder the shell cannot name is absent from the roots, never replaced
+    /// by a guess at where it usually is.
+    #[test]
+    fn a_windows_folder_the_shell_cannot_name_contributes_no_root() {
+        let local_app_data = Path::new(r"E:\Users\musician\AppData\Local");
+        let per_user_common = local_app_data.join("Programs").join("Common");
+
+        assert_eq!(
+            windows_scan_roots(Some(local_app_data), None),
+            vec![per_user_common.join("VST3"), per_user_common.join("CLAP")]
+        );
+        assert!(windows_scan_roots(None, None).is_empty());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use crate::host::native_bridge::SharedHostedPlugin;
-use crate::host::ui_thread::UiThread;
+use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::ScannedPlugin;
@@ -808,18 +808,35 @@ fn take_released_retired_runtimes<Runtime>(
 /// would park every concurrent `retain_retired_engine_plugin` (i.e. every
 /// unload) for the whole teardown, so the released entries are taken out under
 /// the lock, the guard is released, and only then are they dropped.
-fn sweep_retired_runtimes<Runtime>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>) {
-    let released_runtimes = {
-        let mut retired_runtimes = match retired_runtimes.lock() {
-            Ok(retired_runtimes) => retired_runtimes,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        take_released_retired_runtimes(&mut retired_runtimes)
-    };
+///
+/// The teardown itself runs on the shell's UI thread, because both formats bind
+/// it to the main thread: CLAP marks `deactivate` and `destroy` `[main-thread]`,
+/// and VST3 binds `setActive`, `terminate` and the module's exit to the UI
+/// thread. A sweep whose hop never lands puts the runtimes back, so the next
+/// sweep tries again; tearing them down here instead would make the plugin's
+/// teardown the crash a Qt-based plugin turns an off-thread call into.
+fn sweep_retired_runtimes<Runtime, Ui>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>, ui: &Ui)
+where
+    Runtime: Send + Sync + 'static,
+    Ui: UiThread + ?Sized,
+{
+    let released_runtimes =
+        take_released_retired_runtimes(&mut locked_or_poisoned(retired_runtimes));
+    if released_runtimes.is_empty() {
+        return;
+    }
 
-    // Guard released. Plugin teardown runs here, on this non-RT thread, with the
-    // retirement mutex free.
-    drop(released_runtimes);
+    // Guard released. Plugin teardown runs with the retirement mutex free.
+    if let Err((unreleased, reason)) = release_on_ui_thread(ui, released_runtimes) {
+        eprintln!(
+            "[Plugin] {} retired runtime(s) kept for the next sweep: {reason}",
+            unreleased.len()
+        );
+        let mut retired_runtimes = locked_or_poisoned(retired_runtimes);
+        for runtime in unreleased {
+            retain_runtime_once(&mut retired_runtimes, runtime);
+        }
+    }
 }
 
 impl AppState {
@@ -941,8 +958,10 @@ impl AppState {
     /// plugin's memory is about to be wanted again, plus the terminal one — and
     /// frees only runtimes the scheduler has demonstrably released. Teardown
     /// runs with the retirement mutex free; see `sweep_retired_runtimes`.
-    pub fn sweep_retired_engine_plugins(&self) {
-        sweep_retired_runtimes(&self.retired_engine_plugins);
+    ///
+    /// `ui` is the thread that teardown runs on; see `sweep_retired_runtimes`.
+    pub fn sweep_retired_engine_plugins<Ui: UiThread + ?Sized>(&self, ui: &Ui) {
+        sweep_retired_runtimes(&self.retired_engine_plugins, ui);
     }
 }
 
@@ -1300,7 +1319,7 @@ mod tests {
                 retirement_lock_was_free: Arc::clone(&retirement_lock_was_free),
             }));
 
-        sweep_retired_runtimes(&retired_runtimes);
+        sweep_retired_runtimes(&retired_runtimes, &NoWindowHost);
 
         assert!(
             retirement_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),
@@ -1418,6 +1437,93 @@ mod tests {
         );
     }
 
+    /// A retired runtime whose teardown records the thread it ran on.
+    fn retired_runtime_recording_teardown(
+        state: &AppState,
+    ) -> Arc<Mutex<Vec<std::thread::ThreadId>>> {
+        let torn_down_on = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&torn_down_on);
+        let mut wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "UI-thread teardown fixture",
+            Vec::new(),
+            false,
+        );
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            log.lock()
+                .expect("teardown log")
+                .push(std::thread::current().id());
+        }));
+        state.retain_retired_engine_plugin(Arc::new(SharedHostedPlugin::new(wrapper.into())));
+        torn_down_on
+    }
+
+    /// The sweep is a plugin's teardown — CLAP `deactivate` and `destroy`, VST3
+    /// `setActive(false)`, `terminate` and module exit — and both formats bind
+    /// it to the main thread, so it runs on the shell's UI thread whichever
+    /// thread swept.
+    #[test]
+    fn a_sweep_tears_released_runtimes_down_on_the_shells_ui_thread() {
+        let state = AppState::default();
+        let torn_down_on = retired_runtime_recording_teardown(&state);
+        let windows = crate::host::plugin_window::testing::DedicatedUiWindowHost::start();
+
+        state.sweep_retired_engine_plugins(&windows);
+
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
+        assert_eq!(
+            *torn_down_on.lock().expect("teardown log"),
+            [windows.thread_id]
+        );
+        assert!(state
+            .retired_engine_plugins
+            .lock()
+            .expect("retirement lock")
+            .is_empty());
+    }
+
+    /// A sweep that cannot reach the UI thread must neither tear the runtime
+    /// down where it stands nor lose it: it stays retired for the next sweep.
+    #[test]
+    fn a_sweep_that_cannot_reach_the_ui_thread_keeps_the_runtime_for_the_next_one() {
+        struct Unreachable;
+        impl UiThread for Unreachable {
+            fn is_ui_thread(&self) -> bool {
+                false
+            }
+            fn run_on_ui_thread(
+                &self,
+                _task: &Arc<crate::host::ui_thread::UiThreadTask>,
+            ) -> Result<(), String> {
+                Err("the shell's UI thread is wedged".to_string())
+            }
+        }
+        let state = AppState::default();
+        let torn_down_on = retired_runtime_recording_teardown(&state);
+
+        state.sweep_retired_engine_plugins(&Unreachable);
+
+        assert!(
+            torn_down_on.lock().expect("teardown log").is_empty(),
+            "an unreachable UI thread must not turn into a teardown on this one"
+        );
+        assert_eq!(
+            state
+                .retired_engine_plugins
+                .lock()
+                .expect("retirement lock")
+                .len(),
+            1,
+            "the runtime must still be retired, for the next sweep to free"
+        );
+
+        state.sweep_retired_engine_plugins(&NoWindowHost);
+        assert_eq!(torn_down_on.lock().expect("teardown log").len(), 1);
+    }
+
     /// Load/unload cycling is what accumulates retirements, so the sweep has to
     /// hold across repeats, not just once.
     ///
@@ -1441,7 +1547,7 @@ mod tests {
 
             // The scheduler still holds this one, exactly as it does between
             // the queued removal and the audio thread dropping the slot.
-            state.sweep_retired_engine_plugins();
+            state.sweep_retired_engine_plugins(&NoWindowHost);
             assert_eq!(
                 state
                     .retired_engine_plugins
@@ -1453,7 +1559,7 @@ mod tests {
             );
 
             drop(runtime);
-            state.sweep_retired_engine_plugins();
+            state.sweep_retired_engine_plugins(&NoWindowHost);
             assert!(
                 state
                     .retired_engine_plugins
