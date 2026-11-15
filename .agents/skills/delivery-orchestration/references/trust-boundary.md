@@ -67,8 +67,8 @@ config file, `GIT_CONFIG_PARAMETERS`, a further numbered entry, or `GIT_EXEC_PAT
 its global options are an allowlist that excludes `--config-env` and `--exec-path`. A child counts
 as credential-holding whenever anything installs a helper: any key case, a URL-scoped
 `credential.<url>.helper`, `--config-env`, or environment config. A child is Git when the command
-its caller names is `git`, with any `.exe` suffix and in any case, whatever name the launcher's
-trusted path resolves to.
+its caller names is `git`, with any `.exe` suffix and in any case, or is exactly the launcher's
+trusted Git path, whatever that path's file name.
 Working-tree and object commands (status, diff, merge, show) need lane config but no token, and
 run in the lane or primary without it.
 

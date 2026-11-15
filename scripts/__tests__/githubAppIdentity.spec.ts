@@ -2188,4 +2188,45 @@ describe('git children the launcher resolves to git.exe', () => {
             );
         });
     });
+
+    it.each([
+        [
+            'spawnCapture',
+            (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+                spawnCapture(command, args, options);
+            },
+        ],
+        [
+            'spawnCaptureBytes',
+            (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+                spawnCaptureBytes(command, args, options);
+            },
+        ],
+        [
+            'spawnRun',
+            (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+                spawnRun(command, args, options);
+            },
+        ],
+    ])('%s treats the absolute trusted git path as git whatever its file name', (_label, spawn) => {
+        // The launcher hands children the real path of the git it found, which need not be named git.
+        withLinkedGit('trusted-scm', ({ root, git }) => {
+            const record = join(root, 'token.record');
+            const recordingProbe = [
+                '-c',
+                `alias.probe=!printf '[%s]' "$GH_TOKEN" > ${JSON.stringify(record)}`,
+                'probe',
+            ];
+            const tokenEnv = { ...githubChildEnv(sentinel, join(root, 'gh-config')), [TRUSTED_GIT_PATH_ENV]: git };
+
+            spawn(git, recordingProbe, { cwd: root, env: tokenEnv });
+            expect(readFileSync(record, 'utf8')).toBe('[]');
+            expect(() =>
+                spawn(git, credentialArgs(root), {
+                    cwd: root,
+                    env: { ...githubAuthorizationGitEnv(), [TRUSTED_GIT_PATH_ENV]: git },
+                })
+            ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+        });
+    });
 });
