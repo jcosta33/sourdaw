@@ -16,6 +16,9 @@ export type AnswerSuggestion = {
     roleSource: 'argument' | 'target';
 };
 
+/** Why a Prompt Bar request runs in the agent chat: it writes a production brief, or runs as successive batches. */
+export type ChatHandOffReason = 'brief' | 'scheduled-batches';
+
 /**
  * Why one planning attempt produced no executable batch, or that it produced one. Every planning
  * result carries a kind, so a caller never has to infer "nothing matched" from an empty action list
@@ -37,6 +40,12 @@ export type PlanningOutcome =
      * commit's revert group as one group, through the AI history's revert, never by new commands.
      */
     | { kind: 'revert'; runId: string; revertGroupId: string }
+    /**
+     * A Prompt Bar request that plans a production brief or a list needing more than one batch runs in
+     * the agent chat instead, where each card is approved on its own. Only a planner asked for a chat
+     * hand-off returns it, and it carries no batch: the chat plans the request again in its thread.
+     */
+    | { kind: 'chat-hand-off'; reason: ChatHandOffReason }
     /**
      * `searchedIntents` names what the run looked up before claiming the catalog cannot do this, so
      * a user reading the refusal can see whether it was looked for under the words they would use.

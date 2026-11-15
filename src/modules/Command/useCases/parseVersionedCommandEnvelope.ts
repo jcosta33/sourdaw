@@ -1,3 +1,7 @@
+import { type AppActionType } from '#/utils/handlerContract';
+
+import { COMMAND_APPLICATION_ID_RULES } from '../models/CommandApplicationIdRule';
+import { commandRequiresSeedByActionType } from '../models/StochasticOperationPolicy';
 import {
     VERSIONED_COMMAND_SCHEMA_VERSION,
     type CommandApplicationAssignedId,
@@ -13,19 +17,19 @@ import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { getVersionedCommandReferencedTargets } from './getVersionedCommandReferencedTargets';
-import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
     { status: 'valid'; envelope: VersionedCommandEnvelope } | { status: 'invalid'; reason: string };
 
-const STOCHASTIC_OPERATIONS = new Set([
-    'generateChordProgression',
-    'generateDrumPattern',
-    'generateMelody',
-    'humanizeNotes',
-]);
+function isKnownActionType(operation: string): operation is AppActionType {
+    return Object.hasOwn(commandRequiresSeedByActionType, operation);
+}
+
+function isStochasticOperation(operation: string): boolean {
+    return isKnownActionType(operation) && commandRequiresSeedByActionType[operation];
+}
 
 const ENVELOPE_KEYS = [
     'schemaVersion',
@@ -325,7 +329,7 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     if (value.seed !== null && !isFiniteNumber(value.seed)) {
         return { status: 'invalid', reason: 'Command seed is invalid' };
     }
-    if (STOCHASTIC_OPERATIONS.has(value.operation) && value.seed === null) {
+    if (isStochasticOperation(value.operation) && value.seed === null) {
         return { status: 'invalid', reason: 'Stochastic commands require an explicit seed' };
     }
     if (

@@ -17,7 +17,11 @@
 //! That layer is the one that can see a **one-sample** error; the windowed
 //! envelope below cannot, and the mutation table in the PR shows the split.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use daw_dsp::bacteria::engine::BacteriaEngine;
 

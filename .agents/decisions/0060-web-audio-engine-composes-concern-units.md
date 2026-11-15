@@ -1,6 +1,6 @@
 ---
 type: adr
-id: 0059
+id: 0060
 title: The web audio engine composes concern units behind a repository seam
 status: accepted
 date: 2026-11-14
@@ -13,7 +13,7 @@ sources:
     - docs/01-dependency-injection.md
 ---
 
-# 0059 - The web audio engine composes concern units behind a repository seam
+# 0060 - The web audio engine composes concern units behind a repository seam
 
 ## Context
 

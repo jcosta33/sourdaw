@@ -11,6 +11,15 @@ pub struct Envelope {
     sample_rate: f32,
 }
 
+/// The four settings of an [`Envelope`]: times in seconds, sustain a level.
+#[derive(Clone, Copy)]
+pub struct AdsrTimes {
+    pub attack: f32,
+    pub decay: f32,
+    pub sustain: f32,
+    pub release: f32,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum EnvState {
     Idle,

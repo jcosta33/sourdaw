@@ -153,6 +153,7 @@
 //! counted drop.
 
 use crate::commands::crumbs::{self, CrumbsState};
+use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
 use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_dsp::grinder::nam::native_admission::{
@@ -2269,16 +2270,7 @@ impl QueueBudgets {
             queued.retain(|pending| pending.lands_at < start);
         }
         if queued.len() == AUTOMATION_QUEUE_CAPACITY {
-            return Err(format!(
-                "automation-queue-capacity — this parameter's native queue is full: \
-                 {AUTOMATION_QUEUE_CAPACITY} unlanded writes are pending, counting this \
-                 batch and every earlier accepted one; the engine would drop further \
-                 writes silently, so the batch refuses whole. These slots release when \
-                 the engine's progress echo proves earlier writes landed (playback \
-                 passing their stamps frees them for the next batch), when a replace or \
-                 hold cancels the stale writes, or when a locate behind their stamps \
-                 drops them"
-            ));
+            return Err(QueueCapacityRefusal::Automation.to_string());
         }
         queued.push(PendingStamp {
             at_frame: start,
@@ -2303,14 +2295,7 @@ impl QueueBudgets {
     ) -> Result<(), String> {
         let queued = self.device_params.entry(effect_id).or_default();
         if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
-            return Err(format!(
-                "device-param-queue-capacity — this device's pending window is full: \
-                 {DEVICE_PARAM_QUEUE_CAPACITY} changes are charged, counting this batch \
-                 and every earlier accepted one; the engine would drop the writes \
-                 silently, so the batch refuses whole instead. The window frees as the \
-                 engine's progress echo proves earlier changes landed — playback passing \
-                 their stamps releases them for the next batch"
-            ));
+            return Err(QueueCapacityRefusal::DeviceParam.to_string());
         }
         queued.push(DeviceParamStamp {
             param,
@@ -2527,7 +2512,7 @@ fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
         return Err("gain is negative".to_string());
     }
     let folded = stored as f32 * vca_multiplier;
-    if !(folded > 0.0) {
+    if folded.is_nan() || folded <= 0.0 {
         return Ok(0.0);
     }
     Ok(folded.min(fader_max_gain()))
@@ -2940,16 +2925,30 @@ struct MappedDevice {
     scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
+/// What mapping a device reads from the batch around it and what it extends:
+/// the stream's rate, the ids the engine already owns, the Crumbs and Levain
+/// banks the batch attaches, and the ops the batch is building.
+struct MapEnv<'a> {
+    sample_rate: f32,
+    engine_owned_devices: &'a HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &'a mut AttachedCrumbs,
+    levain_banks: &'a mut LevainBankStore,
+    ops: &'a mut Vec<GraphCommand>,
+}
+
 fn map_device(
     device: &DevicePayload,
     registry: &mut GraphRegistry,
     contributes_audio: bool,
-    sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &mut AttachedCrumbs,
-    levain_banks: &mut LevainBankStore,
-    ops: &mut Vec<GraphCommand>,
+    env: MapEnv<'_>,
 ) -> Result<Option<MappedDevice>, String> {
+    let MapEnv {
+        sample_rate,
+        engine_owned_devices,
+        attached_crumbs,
+        levain_banks,
+        ops,
+    } = env;
     if registry.devices.contains_key(&device.id) {
         return Err(format!("device id '{}' is already in a chain", device.id));
     }
@@ -3627,12 +3626,14 @@ fn map_batch(
             registry,
             samples,
             batch.timeline_lease.as_deref(),
-            sample_rate,
-            engine_owned_devices,
-            &mut *attached_crumbs,
-            levain_banks,
+            MapEnv {
+                sample_rate,
+                engine_owned_devices,
+                attached_crumbs: &mut *attached_crumbs,
+                levain_banks: &mut *levain_banks,
+                ops: &mut ops,
+            },
             &mut budgets,
-            &mut ops,
             &mut touched,
         ) {
             refusals.push(format!("commands[{index}]: {reason}"));
@@ -3694,14 +3695,17 @@ fn map_command(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     timeline_lease: Option<&str>,
-    sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &mut AttachedCrumbs,
-    levain_banks: &mut LevainBankStore,
+    env: MapEnv<'_>,
     budgets: &mut QueueBudgets,
-    ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
 ) -> Result<(), String> {
+    let MapEnv {
+        sample_rate,
+        engine_owned_devices,
+        attached_crumbs,
+        levain_banks,
+        ops,
+    } = env;
     match command {
         GraphCommandPayload::CreateTrackStrip {
             track_id,
@@ -3758,11 +3762,13 @@ fn map_command(
                     device,
                     registry,
                     *contributes_audio,
-                    sample_rate,
-                    engine_owned_devices,
-                    &mut *attached_crumbs,
-                    levain_banks,
-                    ops,
+                    MapEnv {
+                        sample_rate,
+                        engine_owned_devices,
+                        attached_crumbs: &mut *attached_crumbs,
+                        levain_banks: &mut *levain_banks,
+                        ops: &mut *ops,
+                    },
                 )?
                 else {
                     continue;
@@ -3867,11 +3873,13 @@ fn map_command(
                     device,
                     registry,
                     *contributes_audio,
-                    sample_rate,
-                    engine_owned_devices,
-                    &mut *attached_crumbs,
-                    levain_banks,
-                    ops,
+                    MapEnv {
+                        sample_rate,
+                        engine_owned_devices,
+                        attached_crumbs: &mut *attached_crumbs,
+                        levain_banks: &mut *levain_banks,
+                        ops: &mut *ops,
+                    },
                 )?
                 else {
                     continue;
@@ -4075,11 +4083,13 @@ fn map_command(
                 device,
                 registry,
                 strip.contributes_audio,
-                sample_rate,
-                engine_owned_devices,
-                &mut *attached_crumbs,
-                levain_banks,
-                ops,
+                MapEnv {
+                    sample_rate,
+                    engine_owned_devices,
+                    attached_crumbs: &mut *attached_crumbs,
+                    levain_banks: &mut *levain_banks,
+                    ops: &mut *ops,
+                },
             )?
             else {
                 return Ok(());
@@ -4311,12 +4321,14 @@ fn map_command(
                 registry,
                 samples,
                 timeline_lease,
-                sample_rate,
-                engine_owned_devices,
-                attached_crumbs,
-                levain_banks,
+                MapEnv {
+                    sample_rate,
+                    engine_owned_devices,
+                    attached_crumbs: &mut *attached_crumbs,
+                    levain_banks: &mut *levain_banks,
+                    ops: &mut *ops,
+                },
                 budgets,
-                ops,
                 touched,
             )?;
             let request = next_native_nam_request()?;
@@ -4738,55 +4750,53 @@ fn map_parameter_write(
         _ => {}
     }
 
-    let (strip, automation_target, value_law): (
-        &StripEntry,
-        AutomationTarget,
-        fn(f64, &StripEntry) -> Result<f32, String>,
-    ) = match target {
-        StripParameterTargetPayload::TrackFader { track_id } => {
-            let strip = strip_for(track_id)?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
-                StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
-            };
-            (strip, target, |value, strip| {
-                fader_gain(value, strip.vca_multiplier)
-            })
-        }
-        StripParameterTargetPayload::TrackPan { track_id } => {
-            let strip = strip_for(track_id)?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
-                StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
-            };
-            (strip, target, |value, _| pan_position(value))
-        }
-        StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
-            let strip = strip_for(track_id)?;
-            if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
-                return Err(format!(
-                    "write-parameter: '{track_id}' has no send to '{bus_id}'"
-                ));
+    type ValueLaw = fn(f64, &StripEntry) -> Result<f32, String>;
+    let (strip, automation_target, value_law): (&StripEntry, AutomationTarget, ValueLaw) =
+        match target {
+            StripParameterTargetPayload::TrackFader { track_id } => {
+                let strip = strip_for(track_id)?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
+                    StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
+                };
+                (strip, target, |value, strip| {
+                    fader_gain(value, strip.vca_multiplier)
+                })
             }
-            let destination = registry
-                .strips
-                .get(bus_id)
-                .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackSendLevel {
-                    track_id: strip.native_id,
-                    bus_id: destination.native_id,
-                },
-                StripKind::Bus => AutomationTarget::BusSendLevel {
-                    source_bus_id: strip.native_id,
-                    bus_id: destination.native_id,
-                },
-            };
-            (strip, target, |value, _| send_level(value))
-        }
-        StripParameterTargetPayload::TrackMuteGate { .. }
-        | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
-    };
+            StripParameterTargetPayload::TrackPan { track_id } => {
+                let strip = strip_for(track_id)?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
+                    StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
+                };
+                (strip, target, |value, _| pan_position(value))
+            }
+            StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
+                let strip = strip_for(track_id)?;
+                if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
+                    return Err(format!(
+                        "write-parameter: '{track_id}' has no send to '{bus_id}'"
+                    ));
+                }
+                let destination = registry
+                    .strips
+                    .get(bus_id)
+                    .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackSendLevel {
+                        track_id: strip.native_id,
+                        bus_id: destination.native_id,
+                    },
+                    StripKind::Bus => AutomationTarget::BusSendLevel {
+                        source_bus_id: strip.native_id,
+                        bus_id: destination.native_id,
+                    },
+                };
+                (strip, target, |value, _| send_level(value))
+            }
+            StripParameterTargetPayload::TrackMuteGate { .. }
+            | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
+        };
 
     let automation_write = match write {
         ParameterWritePayload::RampTo {
@@ -4994,7 +5004,7 @@ fn map_schedule_clip(
 /// the same one the renderer holds, applied per channel.
 pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
     let bytes_per_frame = 4 * channels;
-    if pcm_len % bytes_per_frame != 0 {
+    if !pcm_len.is_multiple_of(bytes_per_frame) {
         return Err(format!(
             "PCM byte length {pcm_len} is not a whole number of {channels}-channel f32 frames"
         ));
@@ -5292,10 +5302,9 @@ pub async fn apply_graph_commands(
                     Some(kind) => format!(" after reporting {kind:?}"),
                     None => String::new(),
                 };
-                return result_json(&GraphApplyResultPayload::rejected(format!(
-                    "engine-not-rendering: the output stream stopped calling back{fault}; the \
-                     engine renders nothing until the stream resumes or it is restarted"
-                )));
+                return result_json(&GraphApplyResultPayload::rejected(
+                    EngineNotRendering::StreamStalled { fault }.to_string(),
+                ));
             }
         }
         // `None` here falls through to the later `engine_guard` below, whose
@@ -5396,7 +5405,7 @@ pub async fn apply_graph_commands(
     // Lock order, here and in `map_graph_batch` and `render_graph_offline`:
     // timeline samples first, then levain banks. All three sites take both, and
     // a site that took them the other way round would deadlock against these.
-    let mut samples = state
+    let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
@@ -5659,23 +5668,6 @@ pub async fn apply_graph_commands(
     result_json(&applied)
 }
 
-/// The wire's fault marker for a `prior` that no longer replays: the stable
-/// prefix of [`map_graph_batch`]'s transport error, and the only thing that
-/// distinguishes a broken seam invariant from an ordinary batch refusal once
-/// both have crossed as an error. `createNativeOfflineGraphBackend.ts` matches
-/// this exact text to rethrow rather than answer `rejected`, so it is part of
-/// the seam contract — never reword one side alone.
-const PRIOR_FAULT_PREFIX: &str = "previously applied commands no longer map";
-
-/// The wire's fault marker for a mapping session this process no longer holds:
-/// the stable prefix of the transport error [`map_graph_batch`] raises when a
-/// caller asks to resume a session that is absent or held at a different
-/// revision. `createNativeOfflineGraphBackend.ts` matches this exact text to
-/// retry once with its full committed history (which re-establishes the
-/// session), so it is a seam contract like [`PRIOR_FAULT_PREFIX`] — never
-/// reword one side alone.
-const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
-
 /// How many offline mapping sessions this process keeps alive at once.
 ///
 /// A session is one backend's probe registry kept across applies so `prior`
@@ -5683,7 +5675,7 @@ const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
 /// stateless path pays). Renders are serialized behind the app's render lock,
 /// so one is the working set; the headroom covers a disposed backend whose
 /// session has not been evicted yet. Eviction is least-recently-used and is
-/// never a fault by itself: an evicted caller gets [`SESSION_FAULT_PREFIX`]
+/// never a fault by itself: an evicted caller gets [`MappingFault::SessionUnknown`]
 /// and re-establishes with its full prior, landing exactly where the
 /// stateless path always was.
 const MAX_MAPPING_SESSIONS: usize = 4;
@@ -5795,7 +5787,7 @@ fn replay_prior_commands(
             &mut AttachedCrumbs::default(),
             levain_banks,
         )
-        .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        .map_err(|reason| MappingFault::PriorNoLongerMaps { reason }.to_string())?;
         commands = rest;
     }
     Ok(())
@@ -5822,7 +5814,7 @@ fn replay_prior_commands(
 /// accepted once, so a registry that no longer takes them is a broken seam
 /// invariant, and reporting it as a refusal of the *incoming* batch would
 /// blame the wrong commands. The wire has one error channel for both, so
-/// [`PRIOR_FAULT_PREFIX`] is what tells them apart on the far side: it is a
+/// [`MappingFault::PriorNoLongerMaps`] is what tells them apart on the far side: it is a
 /// seam contract, not a message, and the TS consumer
 /// (`createNativeOfflineGraphBackend.ts`) matches on it to rethrow instead of
 /// shaping a batch refusal. Change it on both sides or not at all.
@@ -5836,7 +5828,7 @@ fn replay_prior_commands(
 /// session is not held at the stated revision, the call either
 /// *re-establishes* it — `revision == prior.len()`, so the prior *is* the
 /// history and replays exactly as the stateless path — or faults with
-/// [`SESSION_FAULT_PREFIX`], which tells the caller to resend its full prior.
+/// [`MappingFault::SessionUnknown`], which tells the caller to resend its full prior.
 /// No `session` is the stateless behaviour, unchanged.
 pub async fn map_graph_batch(
     prior: Value,
@@ -5885,11 +5877,11 @@ pub async fn map_graph_batch(
                 // Not held, and the prior cannot re-establish it: replaying
                 // `prior` would build a different history than the one
                 // `revision` names. The caller resends its full prior.
-                return Err(format!(
-                    "{SESSION_FAULT_PREFIX}: '{}' is not held at revision {} — resend the full \
-                     prior to re-establish it",
-                    key.session_id, key.revision
-                ));
+                return Err(MappingFault::SessionUnknown {
+                    session_id: key.session_id.clone(),
+                    revision: key.revision,
+                }
+                .to_string());
             }
             resumed
         }
@@ -8166,7 +8158,7 @@ mod tests {
         )
         .unwrap();
         let mut overflow = vec![hold.clone()];
-        overflow.extend(std::iter::repeat(step.clone()).take(33));
+        overflow.extend(std::iter::repeat_n(step.clone(), 33));
         let before = registry.batches_sent;
         assert!(admit_and_send(
             &mut registry,
@@ -10065,7 +10057,10 @@ mod tests {
         .expect_err("a prior that no longer maps is a transport fault");
         // Leading, not merely present: the TS consumer keys its rethrow off
         // the prefix, so the marker has to open the message.
-        assert!(fault.starts_with(PRIOR_FAULT_PREFIX), "got: {fault}");
+        assert!(
+            fault.starts_with("previously applied commands no longer map"),
+            "got: {fault}"
+        );
     }
 
     fn session_key(session_id: &str, revision: u64) -> Option<Value> {
@@ -10150,7 +10145,7 @@ mod tests {
             &state,
         ))
         .expect_err("a revision the session never reached is not resumable");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let resumed = block_on_test(map_graph_batch(
             json!([]),
@@ -10179,7 +10174,7 @@ mod tests {
             &state,
         ))
         .expect_err("an unheld session at a nonzero revision faults");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let reestablished = block_on_test(map_graph_batch(
             json!([track_strip("t1")]),
@@ -10228,7 +10223,7 @@ mod tests {
             &state,
         ))
         .expect_err("the least-recently-used session was evicted");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let survivor = block_on_test(map_graph_batch(
             json!([]),
@@ -16415,11 +16410,13 @@ mod tests {
             &device,
             &mut GraphRegistry::default(),
             true,
-            48_000.0,
-            &HashMap::new(),
-            &mut AttachedCrumbs::default(),
-            &mut LevainBankStore::default(),
-            &mut ops,
+            MapEnv {
+                sample_rate: 48_000.0,
+                engine_owned_devices: &HashMap::new(),
+                attached_crumbs: &mut AttachedCrumbs::default(),
+                levain_banks: &mut LevainBankStore::default(),
+                ops: &mut ops,
+            },
         )
         .expect_err("a non-finite mod-assignment amount must refuse");
 
@@ -18236,7 +18233,9 @@ mod tests {
             .await
             .unwrap();
         let decoded: Vec<_> = output
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
             .collect();
         assert!(decoded.iter().all(|value| value.is_finite()));
@@ -18469,7 +18468,12 @@ mod tests {
         let mut oracle = daw_dsp::toaster::transient::TransientShaper::new(48_000.0);
         oracle.set_attack(1.5);
         oracle.set_sustain(0.25);
-        for (dry, frame) in unity.chunks_exact(2).zip(shaped.chunks_exact(2)) {
+        for (dry, frame) in unity
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(shaped.as_chunks::<2>().0.iter())
+        {
             assert_eq!(dry, &[0.5, 0.5]);
             let expected = oracle.process(0.5);
             assert_eq!(frame, &[expected, expected]);
@@ -18560,7 +18564,7 @@ mod tests {
         .unwrap();
         let mut scalar = daw_dsp::toaster::transient::TransientShaper::new(48000.0);
         scalar.set_sustain(0.25);
-        for (frame, pair) in rendered.chunks_exact(2).enumerate() {
+        for (frame, pair) in rendered.as_chunks::<2>().0.iter().enumerate() {
             scalar.set_attack(if frame < 512 { 1.5 } else { 2.0 });
             let expected = scalar.process(0.5);
             assert_eq!(

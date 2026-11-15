@@ -16,11 +16,13 @@ import {
 } from '#/utils/handlerContract';
 
 import {
+    AppActionAdmissionRefusedError,
     AppActionCommittedError,
     AppActionConflictError,
     AppActionNotDispatchedError,
 } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
+import { undoEntryStoresCommandIdByActionType } from '../models/UndoEntryCommandIdPolicy';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 import {
     registerActionReplayCapability,
@@ -30,6 +32,7 @@ import {
 import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
+import { admitAppAction } from './admitAppAction';
 import { appendAbortFailures } from './appendAbortFailures';
 import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
@@ -44,7 +47,6 @@ import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumen
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
-import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
@@ -310,14 +312,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             // The repair action itself is the one admitted route through this
             // gate while it holds; everything else is still refused.
-            if (getProjectMutationAdmissionFailure(action)) {
-                throw new AppActionConflictError(action.type);
+            const admission = admitAppAction(action);
+            if (!admission.admitted) {
+                throw new AppActionAdmissionRefusedError(action.type);
             }
-
-            const production_brief_admission = productionBriefAdmissionPort.capture([action]);
-            if (!production_brief_admission.allowsCurrent()) {
-                throw new AppActionConflictError(action.type);
-            }
+            // The commit re-asks the footprint captured at this preflight.
+            const production_brief_admission = { allowsCurrent: admission.briefAllowsCurrent };
 
             options?.observeMaterializedAction?.(structuredClone(action));
             if (handler.isNoop?.(action)) {
@@ -612,9 +612,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             undoResult.inverseAction ?? null,
                             options?.source ?? 'manual',
                             undoResult.redoAction,
-                            action.type === 'removeClip' || action.type === 'splitClip'
-                                ? command.envelope.commandId
-                                : undefined
+                            undoEntryStoresCommandIdByActionType[action.type] ? command.envelope.commandId : undefined
                         );
                         const previousEntry = undoStore.value?.past.at(-1);
                         if (

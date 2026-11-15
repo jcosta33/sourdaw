@@ -151,3 +151,9 @@ impl CustomWaveshaper {
         // LUT persists — no state to reset
     }
 }
+
+impl Default for CustomWaveshaper {
+    fn default() -> Self {
+        Self::new()
+    }
+}

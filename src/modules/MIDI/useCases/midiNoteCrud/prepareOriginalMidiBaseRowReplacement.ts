@@ -1,6 +1,6 @@
-import { type OriginalMidiBaseRowReplacementPayload } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type OriginalMidiBaseRowReplacementPayload } from '../../events/midiAppActions';
 import { type MidiStoreState } from '../../stores/midiStore';
 import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 

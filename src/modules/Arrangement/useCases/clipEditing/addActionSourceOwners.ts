@@ -21,8 +21,9 @@ function addSplitGapOwners(
 ): void {
     const gaps = (oldLane?.baseGapAudioSources ?? []).concat(nextLane?.baseGapAudioSources ?? []);
     for (const gap of gaps) {
-        const matches = (row: typeof gap) =>
-            row.clipId === gap.clipId && row.startBeat === gap.startBeat && row.endBeat === gap.endBeat;
+        function matches(row: typeof gap): boolean {
+            return row.clipId === gap.clipId && row.startBeat === gap.startBeat && row.endBeat === gap.endBeat;
+        }
         if (
             !valuesEqual(
                 oldLane?.baseGapAudioSources?.find(matches) ?? null,
@@ -54,8 +55,9 @@ function addSplitRegionAndGapOwners(
 ): void {
     const regions = (oldLane?.activeCompRegions ?? []).concat(nextLane?.activeCompRegions ?? []);
     for (const region of regions) {
-        const matches = (row: typeof region) =>
-            row.takeId === region.takeId && row.startBeat === region.startBeat && row.endBeat === region.endBeat;
+        function matches(row: typeof region): boolean {
+            return row.takeId === region.takeId && row.startBeat === region.startBeat && row.endBeat === region.endBeat;
+        }
         if (
             !valuesEqual(
                 oldLane?.activeCompRegions.find(matches) ?? null,
@@ -483,6 +485,10 @@ const addActionSourceOwnersByActionType: {
     captureScratchPad: addNoOwners,
     commitScratchPad: addNoOwners,
     clearScratchPad: addNoOwners,
+    removeScratchPadSection: addNoOwners,
+    renameScratchPadSection: addNoOwners,
+    reorderScratchPadSection: addNoOwners,
+    setScratchPadSectionColor: addNoOwners,
     createPatternInstance: addNoOwners,
     detachPatternInstance: addNoOwners,
     restorePatternInstanceLink: addNoOwners,

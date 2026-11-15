@@ -1,23 +1,25 @@
-import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
-import { describeProductionBriefChange } from '#/modules/Project/useCases';
-import {
-    formatGainDb,
-    resolveLevelFields,
-    resolveSendLevelFields,
-    SEND_LEVEL_LAW,
-    TRACK_FADER_LAW,
-} from '#/utils/audioLevelLaw';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
-import { PROPOSAL_DECIBEL_FORMAT } from '../transformers/proposalDecibelFormat';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { describePlannedAction } from './describePlannedAction';
+import { describeExactAddedDevice } from './exactActionDescriptions/describeExactAddedDevice';
+import { describeExactAddedSend } from './exactActionDescriptions/describeExactAddedSend';
+import { describeExactAdjustmentRegion } from './exactActionDescriptions/describeExactAdjustmentRegion';
+import { describeExactDeviceParameter } from './exactActionDescriptions/describeExactDeviceParameter';
+import { describeExactImportStemSet } from './exactActionDescriptions/describeExactImportStemSet';
+import { describeExactProductionBrief } from './exactActionDescriptions/describeExactProductionBrief';
+import { describeExactRemovedDevice } from './exactActionDescriptions/describeExactRemovedDevice';
+import { describeExactSectionRender } from './exactActionDescriptions/describeExactSectionRender';
+import { describeExactSendAutomation } from './exactActionDescriptions/describeExactSendAutomation';
+import { describeExactTrackGain } from './exactActionDescriptions/describeExactTrackGain';
+import { describeExactTrackGainRange } from './exactActionDescriptions/describeExactTrackGainRange';
+import { describeExactTrackOutput } from './exactActionDescriptions/describeExactTrackOutput';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 
@@ -46,276 +48,435 @@ const riskRank = {
     unclassified: 6,
 } as const;
 
-function formatParameterValue(value: number, unit: string): string {
-    if (unit === ':1') {
-        return `${String(value)}:1`;
-    }
-    if (unit) {
-        return `${String(value)} ${unit}`;
-    }
-    return String(value);
+type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
+
+type ExactActionDescriber<Type extends AppActionType> = (
+    action: ActionOf<Type>,
+    context: ProjectContext,
+    actions: readonly AppAction[]
+) => string;
+
+/** What the planned-action reading says about an action the card has no more exact words for. */
+function describeAsPlanned(action: AppAction, context: ProjectContext): string {
+    return describePlannedAction({ action, context });
 }
 
-function formatDescriptorParameterValue(value: number, unit: string, choices?: readonly string[]): string {
-    const choice = Number.isInteger(value) ? choices?.[value] : undefined;
-    if (choice) {
-        return `"${choice}" (${String(value)})`;
-    }
-    return formatParameterValue(value, unit);
-}
-
-/**
- * The confirmation prose's dB readout. The conversion and the `-∞` branch come
- * from the shared level law rather than from a fourth copy of the arithmetic
- * here — a confirmation sentence free to drift from the strip the user is
- * about to look at is worse than no sentence. Its precision is the refined
- * card's diff's: two trimmed decimals, since prose wants `0 dB`, not the
- * mixer's `0.0 dB`.
- */
-function formatDecibelsFromGain(value: number): string {
-    return `${formatGainDb(value, PROPOSAL_DECIBEL_FORMAT)} dB`;
-}
-
-/**
- * A level a command asked for in one of three forms, as the decibel figure it
- * lands on. The request is resolved against the level it is measured from —
- * the same measurement the handler makes — because a relative request states
- * a change, not a destination, and a confirmation that echoed the change as
- * though it were the destination would name a level the user never gets.
- * `null` when the request cannot land at all, so the caller can say what it
- * knows rather than invent a figure.
- */
-function formatRequestedLevel(
-    fields: { linear?: number; absoluteDb?: number; deltaDb?: number },
-    current: number,
-    law: typeof TRACK_FADER_LAW
-): string | null {
-    const requested = resolveLevelFields(fields, current, law);
-    return requested.ok ? formatDecibelsFromGain(requested.linear) : null;
-}
-
-function resolveActionTrackName(trackId: string, actions: readonly AppAction[], context: ProjectContext): string {
-    const existing = context.tracks.find((track) => track.id === trackId);
-    if (existing) {
-        return existing.name;
-    }
-    const created = actions.find((action) => action.type === 'createBus' && action.payload.busId === trackId);
-    return created?.type === 'createBus' ? created.payload.name : trackId;
-}
-
-function resolveActionDeviceName(deviceId: string, actions: readonly AppAction[], context: ProjectContext): string {
-    const existing = context.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
-    if (existing) {
-        return existing.name ?? existing.type;
-    }
-    const created = actions.find((action) => action.type === 'addDevice' && action.payload.deviceId === deviceId);
-    if (created?.type === 'addDevice') {
-        return getPluginById(created.payload.deviceType)?.name ?? created.payload.deviceType;
-    }
-    return deviceId;
-}
-
-function describeDeviceParameterAction(
-    action: Extract<AppAction, { type: 'setDeviceParameter' }>,
-    context: ProjectContext
-): string | null {
-    const matchingTracks = context.tracks.filter((track) =>
-        track.devices.some((device) => device.id === action.payload.deviceId)
-    );
-    let owner = matchingTracks.length === 1 ? matchingTracks[0] : undefined;
-    if (action.payload.expectedTrackId !== undefined) {
-        owner = matchingTracks.find((candidate) => candidate.id === action.payload.expectedTrackId);
-    }
-    const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
-    const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
-    const previousValue = action.payload.expectedValue ?? parameter?.value;
-    if (!owner || !device || !parameter || previousValue === undefined) {
+function describeExactBus(action: ActionOf<'createBus'>): string | null {
+    if (!action.payload.busId) {
         return null;
     }
-    const deviceName = device.name ?? device.type;
-    return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
+    const gain = action.payload.initialGain === 1 ? ' at unity gain' : '';
+    return `Create bus "${action.payload.name}" (${action.payload.busId})${gain}`;
 }
 
-/**
- * A brief write, read against the brief the request was planned on, so the card lists each entry it
- * adds or removes rather than one opaque "set the brief".
- */
-function describeProductionBriefAction(
-    action: Extract<AppAction, { type: 'setProductionBrief' }>,
-    context: ProjectContext
-): string {
-    const label = `Update the production brief from revision ${String(action.payload.expectedRevision)}`;
-    const lines = describeProductionBriefChange({
-        before: context.productionBrief,
-        after: action.payload.brief,
-        trackNames: Object.fromEntries(context.tracks.map((track) => [track.id, track.name])),
-        sectionNames: Object.fromEntries((context.sections ?? []).map((section) => [section.id, section.name])),
-    });
-    if (lines === null) {
-        return label;
-    }
-    if (lines.length === 0) {
-        return `${label}: no entry changes`;
-    }
-    return `${label}: ${lines.join('; ')}`;
-}
+// Every action type states how its card line is worded: a new action does not compile until it does.
+const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActionDescriber<Type> } = {
+    importStemSet: describeExactImportStemSet,
+    discardImportedStemSet: describeAsPlanned,
+    addTrack: describeAsPlanned,
+    removeTrack: describeAsPlanned,
+    discardCreatedTrack: describeAsPlanned,
+    restoreTrack: describeAsPlanned,
+    restoreClip: describeAsPlanned,
+    discardDuplicatedClip: describeAsPlanned,
+    removeAllTracks: describeAsPlanned,
+    renameTrack: describeAsPlanned,
+    createTrackAlternative: describeAsPlanned,
+    switchTrackAlternative: describeAsPlanned,
+    renameTrackAlternative: describeAsPlanned,
+    deleteTrackAlternative: describeAsPlanned,
+    selectTrack: describeAsPlanned,
+    muteTrack: describeAsPlanned,
+    soloTrack: describeAsPlanned,
+    selectTake: describeAsPlanned,
+    replaceOriginalMidiTakeRow: describeAsPlanned,
+    replaceOriginalMidiBaseRow: describeAsPlanned,
+    toggleSoloSafe: describeAsPlanned,
+    setSoloSafe: describeAsPlanned,
+    restoreSoloSafe: describeAsPlanned,
+    armTrack: describeAsPlanned,
+    freezeTrack: describeAsPlanned,
+    unfreezeTrack: describeAsPlanned,
+    restoreFreezeState: describeAsPlanned,
+    flattenTrack: describeAsPlanned,
+    bounceInPlace: describeAsPlanned,
+    reorderTrack: describeAsPlanned,
+    setTempo: describeAsPlanned,
+    restoreTempoEdit: describeAsPlanned,
+    editTempoMap: describeAsPlanned,
+    restoreTempoMapEdit: describeAsPlanned,
+    setTimeSignature: describeAsPlanned,
+    setPlayback: describeAsPlanned,
+    togglePlayback: describeAsPlanned,
+    stopPlayback: describeAsPlanned,
+    toggleRecording: describeAsPlanned,
+    setMasterGain: describeAsPlanned,
+    restoreMasterGain: describeAsPlanned,
+    toggleLoop: describeAsPlanned,
+    toggleMetronome: describeAsPlanned,
+    setMetronomeVolume: describeAsPlanned,
+    setLoopRegion: describeAsPlanned,
+    setLoopEnabled: describeAsPlanned,
+    setMetronomeEnabled: describeAsPlanned,
+    restoreLoopRegion: describeAsPlanned,
+    addClip: describeAsPlanned,
+    moveClip: describeAsPlanned,
+    restoreClipPlacement: describeAsPlanned,
+    duplicateClip: describeAsPlanned,
+    duplicateClipToNextBar: describeAsPlanned,
+    duplicateTrack: describeAsPlanned,
+    removeClip: describeAsPlanned,
+    renameClip: describeAsPlanned,
+    splitClip: describeAsPlanned,
+    restoreClipSplitState: describeAsPlanned,
+    trimClipStart: describeAsPlanned,
+    trimClipEnd: describeAsPlanned,
+    restoreAudioClipStartTrim: describeAsPlanned,
+    restoreAudioClipSlip: describeAsPlanned,
+    slipClipContent: describeAsPlanned,
+    drawClip: describeAsPlanned,
+    discardDrawnClip: describeAsPlanned,
+    restoreDrawnClip: describeAsPlanned,
+    duplicateClipAt: describeAsPlanned,
+    moveClips: describeAsPlanned,
+    restoreClipMoves: describeAsPlanned,
+    addDevice: (action, context, actions) =>
+        describeExactAddedDevice(action, context, actions) ?? describeAsPlanned(action, context),
+    bypassDevice: describeAsPlanned,
+    removeDevice: (action, context) =>
+        describeExactRemovedDevice(action, context) ?? describeAsPlanned(action, context),
+    restoreDevice: describeAsPlanned,
+    reorderDevices: describeAsPlanned,
+    setDeviceParameter: (action, context, actions) =>
+        describeExactDeviceParameter(action, context, actions) ?? describeAsPlanned(action, context),
+    setExternalPluginState: describeAsPlanned,
+    setDeviceState: describeAsPlanned,
+    setFermenterPatch: describeAsPlanned,
+    setGrandBouleDeviceState: describeAsPlanned,
+    createBus: (action, context) => describeExactBus(action) ?? describeAsPlanned(action, context),
+    createFolder: describeAsPlanned,
+    setSend: describeAsPlanned,
+    setWorkspaceMode: describeAsPlanned,
+    openPreferencesDialog: describeAsPlanned,
+    openMixer: describeAsPlanned,
+    closeMixer: describeAsPlanned,
+    toggleSidebar: describeAsPlanned,
+    toggleInspector: describeAsPlanned,
+    toggleChatPanel: describeAsPlanned,
+    setTrackInput: describeAsPlanned,
+    restoreTrackInput: describeAsPlanned,
+    setEditingTool: describeAsPlanned,
+    setMarqueeSelection: describeAsPlanned,
+    addMarker: describeAsPlanned,
+    removeMarker: describeAsPlanned,
+    setMarkerColor: describeAsPlanned,
+    addSection: describeAsPlanned,
+    removeSection: describeAsPlanned,
+    renameSection: describeAsPlanned,
+    renameMarker: describeAsPlanned,
+    moveMarker: describeAsPlanned,
+    moveSection: describeAsPlanned,
+    resizeSection: describeAsPlanned,
+    setSectionColor: describeAsPlanned,
+    reorderSection: describeAsPlanned,
+    navigateSection: describeAsPlanned,
+    rehearseSection: describeAsPlanned,
+    restoreSectionBeats: describeAsPlanned,
+    setClipGainEnvelope: describeAsPlanned,
+    toggleClipGainEnvelope: describeAsPlanned,
+    addGainEnvelopePoint: describeAsPlanned,
+    removeGainEnvelopePoint: describeAsPlanned,
+    resetClipGainEnvelope: describeAsPlanned,
+    addModulator: describeAsPlanned,
+    removeModulator: describeAsPlanned,
+    updateModulator: describeAsPlanned,
+    addMapping: describeAsPlanned,
+    removeMapping: describeAsPlanned,
+    addAutomationLane: describeAsPlanned,
+    automateSendRange: describeAsPlanned,
+    automateSendRanges: (action, context) => describeExactSendAutomation(action) ?? describeAsPlanned(action, context),
+    removeSendAutomationRanges: describeAsPlanned,
+    renderProjectSections: (action, context) =>
+        describeExactSectionRender(action) ?? describeAsPlanned(action, context),
+    removeRenderedProjectSections: describeAsPlanned,
+    automateTrackGainRange: (action, context) =>
+        describeExactTrackGainRange(action) ?? describeAsPlanned(action, context),
+    automateParameterRange: describeAsPlanned,
+    removeTrackGainAutomationRange: describeAsPlanned,
+    removeSendAutomationRange: describeAsPlanned,
+    removeAutomationLane: describeAsPlanned,
+    setAutomationLaneEnabled: describeAsPlanned,
+    addAutomationPoint: describeAsPlanned,
+    quantizeNotes: describeAsPlanned,
+    removeShortMidiOverlaps: describeAsPlanned,
+    createDrumPreviewBranches: describeAsPlanned,
+    deleteDrumPreviewBranches: describeAsPlanned,
+    copyMidiArticulations: describeAsPlanned,
+    restoreMidiClipNotes: describeAsPlanned,
+    quantizeNoteLengths: describeAsPlanned,
+    transposeNotes: describeAsPlanned,
+    humanizeNotes: describeAsPlanned,
+    invertNotes: describeAsPlanned,
+    retrogradeNotes: describeAsPlanned,
+    scaleVelocities: describeAsPlanned,
+    scaleAllVelocities: describeAsPlanned,
+    setAllVelocities: describeAsPlanned,
+    setTrackGain: (action, context, actions) =>
+        describeExactTrackGain(action, actions) ?? describeAsPlanned(action, context),
+    setTrackPan: describeAsPlanned,
+    setTrackColor: describeAsPlanned,
+    copyClip: describeAsPlanned,
+    cutClip: describeAsPlanned,
+    pasteClip: describeAsPlanned,
+    setClipFade: describeAsPlanned,
+    importMidiFile: describeAsPlanned,
+    normalizeClip: describeAsPlanned,
+    reverseClip: describeAsPlanned,
+    restoreReversedClip: describeAsPlanned,
+    glueClips: describeAsPlanned,
+    restoreClipGlueState: describeAsPlanned,
+    setCompRegion: describeAsPlanned,
+    removeCompRegion: describeAsPlanned,
+    restoreCompRegionInterval: describeAsPlanned,
+    nudgeClip: describeAsPlanned,
+    crossfadeClips: describeAsPlanned,
+    restoreCrossfadeClips: describeAsPlanned,
+    setClipGain: describeAsPlanned,
+    setClipColor: describeAsPlanned,
+    lockClip: describeAsPlanned,
+    consolidateSelection: describeAsPlanned,
+    bounceSelection: describeAsPlanned,
+    seekPlayhead: describeAsPlanned,
+    setPunchIn: describeAsPlanned,
+    setPunchOut: describeAsPlanned,
+    setPunchEnabled: describeAsPlanned,
+    restorePunchRegion: describeAsPlanned,
+    togglePunch: describeAsPlanned,
+    toggleCountIn: describeAsPlanned,
+    setCountInBars: describeAsPlanned,
+    togglePreRoll: describeAsPlanned,
+    setPreRollBars: describeAsPlanned,
+    zoomTracksVertical: describeAsPlanned,
+    addTimeSignatureChange: describeAsPlanned,
+    removeTimeSignatureChange: describeAsPlanned,
+    setTrackOutput: (action, context, actions) =>
+        describeExactTrackOutput(action, context, actions) ?? describeAsPlanned(action, context),
+    addSend: describeExactAddedSend,
+    removeSend: describeAsPlanned,
+    removeAutomationPoint: describeAsPlanned,
+    setAutomationMode: describeAsPlanned,
+    hideTrack: describeAsPlanned,
+    disableTrack: describeAsPlanned,
+    restoreTrackDisabled: describeAsPlanned,
+    setTrackHeight: describeAsPlanned,
+    setSnapValue: describeAsPlanned,
+    zoomToFit: describeAsPlanned,
+    zoomToSelection: describeAsPlanned,
+    exportProject: describeAsPlanned,
+    saveProject: describeAsPlanned,
+    newProject: describeAsPlanned,
+    importAudioFile: describeAsPlanned,
+    exportMidi: describeAsPlanned,
+    foldTrack: describeAsPlanned,
+    groupTracks: describeAsPlanned,
+    ungroupTracks: describeAsPlanned,
+    scaleAutomation: describeAsPlanned,
+    stretchAutomation: describeAsPlanned,
+    invertAutomation: describeAsPlanned,
+    reverseAutomation: describeAsPlanned,
+    thinAutomation: describeAsPlanned,
+    quantizeAutomation: describeAsPlanned,
+    restoreAutomationLanePoints: describeAsPlanned,
+    restoreAutomationPointPresence: describeAsPlanned,
+    loadPreset: describeAsPlanned,
+    restorePresetDeviceChain: describeAsPlanned,
+    savePreset: describeAsPlanned,
+    generateDrumPattern: describeAsPlanned,
+    generateMelody: describeAsPlanned,
+    generateChordProgression: describeAsPlanned,
+    setClipLoop: describeAsPlanned,
+    restoreClipLoop: describeAsPlanned,
+    setClipLoopLength: describeAsPlanned,
+    restoreClipLoopLength: describeAsPlanned,
+    createGrooveTemplate: describeAsPlanned,
+    renameGrooveTemplate: describeAsPlanned,
+    restoreGrooveTemplateName: describeAsPlanned,
+    deleteGrooveTemplate: describeAsPlanned,
+    restoreDeletedGrooveTemplate: describeAsPlanned,
+    assignGrooveTemplate: describeAsPlanned,
+    restoreGrooveAssignment: describeAsPlanned,
+    extractGroove: describeAsPlanned,
+    applyGroove: describeAsPlanned,
+    setClipStretchMode: describeAsPlanned,
+    setClipStretchRatio: describeAsPlanned,
+    restoreClipStretchState: describeAsPlanned,
+    fitClipToBeats: describeAsPlanned,
+    analyzeMix: describeAsPlanned,
+    autoFixMix: describeAsPlanned,
+    enableMpe: describeAsPlanned,
+    disableMpe: describeAsPlanned,
+    getLatencyReport: describeAsPlanned,
+    createCollabSession: describeAsPlanned,
+    joinCollabSession: describeAsPlanned,
+    leaveCollabSession: describeAsPlanned,
+    scanPlugins: describeAsPlanned,
+    loadExternalPlugin: describeAsPlanned,
+    audioToMidi: describeAsPlanned,
+    commitPitchEdit: describeAsPlanned,
+    restoreClipFileId: describeAsPlanned,
+    muteClip: describeAsPlanned,
+    clearSolos: describeAsPlanned,
+    restoreTrackSoloStates: describeAsPlanned,
+    setTrackNotes: describeAsPlanned,
+    deleteTime: describeAsPlanned,
+    insertTime: describeAsPlanned,
+    duplicateTimeRange: describeAsPlanned,
+    restoreTimeOperationState: describeAsPlanned,
+    restoreTrackHeights: describeAsPlanned,
+    restoreTrackGroupMemberships: describeAsPlanned,
+    restoreTracks: describeAsPlanned,
+    restoreTrackClipStates: describeAsPlanned,
+    discardCreatedTracks: describeAsPlanned,
+    discardCreatedCompGroup: describeAsPlanned,
+    restoreTrackAlternativeState: describeAsPlanned,
+    restoreScratchPadState: describeAsPlanned,
+    stripSilence: describeAsPlanned,
+    restoreStripSilenceState: describeAsPlanned,
+    detectTempo: describeAsPlanned,
+    detectKey: describeAsPlanned,
+    consolidateAllTracks: describeAsPlanned,
+    arpeggiate: describeAsPlanned,
+    addSidechainRoute: describeAsPlanned,
+    removeSidechainRoute: describeAsPlanned,
+    bounceToNewTrack: describeAsPlanned,
+    saveTrackTemplate: describeAsPlanned,
+    loadTrackTemplate: describeAsPlanned,
+    deleteTrackTemplate: describeAsPlanned,
+    createProjectFromTemplate: describeAsPlanned,
+    setProductionBrief: describeExactProductionBrief,
+    repairProjectData: describeAsPlanned,
+    createVcaGroup: describeAsPlanned,
+    assignToVca: describeAsPlanned,
+    removeFromVca: describeAsPlanned,
+    setVcaGain: describeAsPlanned,
+    restoreLegacyVcaState: describeAsPlanned,
+    setMidiOutput: describeAsPlanned,
+    clearMidiOutput: describeAsPlanned,
+    restoreMidiOutput: describeAsPlanned,
+    addNotes: describeAsPlanned,
+    completeMidi: describeAsPlanned,
+    variationMidi: describeAsPlanned,
+    generateBassline: describeAsPlanned,
+    replayGeneratedMidi: describeAsPlanned,
+    stemSeparate: describeAsPlanned,
+    autoOrganizeProject: describeAsPlanned,
+    addChordEvent: describeAsPlanned,
+    moveChordEvent: describeAsPlanned,
+    updateChordEvent: describeAsPlanned,
+    removeChordEvent: describeAsPlanned,
+    toggleChordTrack: describeAsPlanned,
+    clearChordTrack: describeAsPlanned,
+    restoreChordTrackState: describeAsPlanned,
+    clearAllMidiMappings: describeAsPlanned,
+    completeMidiLearn: describeAsPlanned,
+    removeMidiMapping: describeAsPlanned,
+    restoreMidiLearnMappings: describeAsPlanned,
+    toggleScratchPad: describeAsPlanned,
+    captureScratchPad: describeAsPlanned,
+    commitScratchPad: describeAsPlanned,
+    clearScratchPad: describeAsPlanned,
+    removeScratchPadSection: describeAsPlanned,
+    renameScratchPadSection: describeAsPlanned,
+    reorderScratchPadSection: describeAsPlanned,
+    setScratchPadSectionColor: describeAsPlanned,
+    createPatternInstance: describeAsPlanned,
+    detachPatternInstance: describeAsPlanned,
+    restorePatternInstanceLink: describeAsPlanned,
+    startMacroRecording: describeAsPlanned,
+    stopMacroRecording: describeAsPlanned,
+    playMacro: describeAsPlanned,
+    deleteMacro: describeAsPlanned,
+    renameMacro: describeAsPlanned,
+    undo: describeAsPlanned,
+    redo: describeAsPlanned,
+    toggleUndoTree: describeAsPlanned,
+    labelUndoBranch: describeAsPlanned,
+    detectSongStructure: describeAsPlanned,
+    createProjectVersion: describeAsPlanned,
+    restoreProjectVersion: describeAsPlanned,
+    createVersionBranch: describeAsPlanned,
+    generateFill: describeAsPlanned,
+    generateAllTransitions: describeAsPlanned,
+    compareToReference: describeAsPlanned,
+    toggleControlRoomMono: describeAsPlanned,
+    toggleControlRoomDim: describeAsPlanned,
+    switchMonitor: describeAsPlanned,
+    getMentorTips: describeAsPlanned,
+    searchSamples: describeAsPlanned,
+    createCompGroup: describeAsPlanned,
+    togglePunchRecording: describeAsPlanned,
+    toggleLoopRecord: describeAsPlanned,
+    triggerScene: describeAsPlanned,
+    nextSetlistItem: describeAsPlanned,
+    previousSetlistItem: describeAsPlanned,
+    createAdjustmentLayer: describeAsPlanned,
+    removeAdjustmentLayer: describeAsPlanned,
+    toggleAdjustmentLayer: describeAsPlanned,
+    setLayerParameter: describeAsPlanned,
+    setLayerMix: describeAsPlanned,
+    addAdjustmentRegion: (action, context) =>
+        describeExactAdjustmentRegion(action) ?? describeAsPlanned(action, context),
+    removeAdjustmentRegion: describeAsPlanned,
+    moveAdjustmentRegion: describeAsPlanned,
+    setLayerFades: describeAsPlanned,
+    setLayerAffectedTracks: describeAsPlanned,
+    setLayerInsertionIndex: describeAsPlanned,
+    restoreAdjustmentLayerMutation: describeAsPlanned,
+    detectTransients: describeAsPlanned,
+    quantizeTransients: describeAsPlanned,
+    openElasticEditor: describeAsPlanned,
+    closeElasticEditor: describeAsPlanned,
+    elasticSetSensitivity: describeAsPlanned,
+    elasticAddMarker: describeAsPlanned,
+    elasticRemoveMarker: describeAsPlanned,
+    elasticToggleMarkerLock: describeAsPlanned,
+    elasticSetTool: describeAsPlanned,
+    toggleNodeView: describeAsPlanned,
+    setControlSurface: describeAsPlanned,
+    addCvOutput: describeAsPlanned,
+    removeCvOutput: describeAsPlanned,
+    connectPush: describeAsPlanned,
+    disconnectPush: describeAsPlanned,
+    exportDawProject: describeAsPlanned,
+    importDawProject: describeAsPlanned,
+    loadRaveModel: describeAsPlanned,
+    setRaveBlend: describeAsPlanned,
+    enableWarping: describeAsPlanned,
+    setWarpAlgorithm: describeAsPlanned,
+    setWarpPitchShift: describeAsPlanned,
+    setYeastProcessorParam: describeAsPlanned,
+    setYeastArpPattern: describeAsPlanned,
+    setYeastProcessorBypass: describeAsPlanned,
+    addYeastProcessor: describeAsPlanned,
+    removeYeastProcessor: describeAsPlanned,
+    reorderYeastProcessor: describeAsPlanned,
+    commitRecording: describeAsPlanned,
+    discardRecording: describeAsPlanned,
+    restoreRecording: describeAsPlanned,
+    appendOverdubControllers: describeAsPlanned,
+    removeOverdubControllers: describeAsPlanned,
+};
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
-    if (action.type === 'setProductionBrief') {
-        return describeProductionBriefAction(action, context);
-    }
-    if (action.type === 'importStemSet') {
-        const stems = action.payload.stems
-            .map((stem) => {
-                let pan = 'center';
-                if (stem.trackPan < 0) {
-                    pan = `${String(stem.trackPan)} pan`;
-                } else if (stem.trackPan > 0) {
-                    pan = `+${String(stem.trackPan)} pan`;
-                }
-                return `${stem.trackName} (${stem.role}, ${String(stem.trackGain)} gain, ${pan})`;
-            })
-            .join(', ');
-        const sourceTempos = [...new Set(action.payload.stems.map((stem) => stem.sourceTempo))];
-        const tempoSource =
-            sourceTempos.length === 1
-                ? `every ${String(sourceTempos[0])} BPM source`
-                : `sources at ${sourceTempos.map(String).join('/')} BPM`;
-        return `Import ${String(action.payload.stems.length)} stems into folder "${action.payload.groupName}" at ${String(action.payload.projectTempo)} BPM: ${stems}; time-stretch ${tempoSource} to ${String(action.payload.projectTempo)} BPM`;
-    }
-    if (
-        action.type === 'addAdjustmentRegion' &&
-        action.payload.expectedLayer &&
-        action.payload.sourceRegionId &&
-        action.payload.sourceSection &&
-        action.payload.targetSection
-    ) {
-        const sourceRegion = action.payload.expectedLayer.regions.find(
-            (region) => region.id === action.payload.sourceRegionId
-        );
-        const tracks = (action.payload.expectedTracks ?? [])
-            .map((track) => `"${track.trackName}" (${track.trackId})`)
-            .join(', ');
-        if (sourceRegion) {
-            return `Copy ${action.payload.expectedLayer.effectType} layer "${action.payload.expectedLayer.name}" (${action.payload.layerId}) on ${tracks} from "${action.payload.sourceSection.name}" (${action.payload.sourceSection.id}) region ${sourceRegion.id} beats ${String(sourceRegion.startBeat)}–${String(sourceRegion.endBeat)} to "${action.payload.targetSection.name}" (${action.payload.targetSection.id}) as ${action.payload.regionId ?? 'application-assigned region'} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}, blend ${String(action.payload.blend ?? 1)}, fades ${String(action.payload.fadeInBeats ?? 0.25)}/${String(action.payload.fadeOutBeats ?? 0.25)} beats; preserve layer parameters and mix`;
-        }
-    }
-    if (action.type === 'removeDevice') {
-        const owner = context.tracks.find((track) =>
-            track.devices.some((device) => device.id === action.payload.deviceId)
-        );
-        const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
-        if (owner && device) {
-            return `Remove device "${device.name ?? device.type}" (${device.id}, ${device.type}) from "${owner.name}" (${owner.id})`;
-        }
-    }
-    if (action.type === 'createBus' && action.payload.busId) {
-        const gain = action.payload.initialGain === 1 ? ' at unity gain' : '';
-        return `Create bus "${action.payload.name}" (${action.payload.busId})${gain}`;
-    }
-    if (action.type === 'addDevice' && action.payload.deviceId) {
-        const trackName = resolveActionTrackName(action.payload.trackId, actions, context);
-        const deviceName = getPluginById(action.payload.deviceType)?.name ?? action.payload.deviceType;
-        let anchor = 'at the end of the chain';
-        if (action.payload.afterDeviceId) {
-            const anchorName = resolveActionDeviceName(action.payload.afterDeviceId, actions, context);
-            anchor = `after "${anchorName}" (${action.payload.afterDeviceId})`;
-        }
-        return `Insert "${deviceName}" (${action.payload.deviceId}, ${action.payload.deviceType}) on "${trackName}" (${action.payload.trackId}) ${anchor}`;
-    }
-    if (action.type === 'setTrackOutput') {
-        const source = context.tracks.find((track) => track.id === action.payload.trackId);
-        const existingTarget = context.tracks.find((track) => track.id === action.payload.outputId);
-        const createdTarget = actions.find(
-            (candidate) => candidate.type === 'createBus' && candidate.payload.busId === action.payload.outputId
-        );
-        const targetName =
-            existingTarget?.name ?? (createdTarget?.type === 'createBus' ? createdTarget.payload.name : null);
-        if (source && targetName) {
-            const previousOutput = action.payload.expectedOutputId ?? source.outputId ?? 'master';
-            return `Route "${source.name}" (${source.id}) from ${previousOutput} to "${targetName}" (${action.payload.outputId})`;
-        }
-    }
-    if (action.type === 'setDeviceParameter') {
-        const description = describeDeviceParameterAction(action, context);
-        if (description) {
-            return description;
-        }
-        const createdDevice = actions.find(
-            (candidate) => candidate.type === 'addDevice' && candidate.payload.deviceId === action.payload.deviceId
-        );
-        if (createdDevice?.type === 'addDevice' && action.payload.expectedValue !== undefined) {
-            const trackName = resolveActionTrackName(createdDevice.payload.trackId, actions, context);
-            const descriptor = getPluginById(createdDevice.payload.deviceType);
-            const parameter = descriptor?.parameters.find((candidate) => candidate.id === action.payload.paramId);
-            if (parameter) {
-                return `Set "${trackName}" (${createdDevice.payload.trackId}) device "${descriptor?.name ?? createdDevice.payload.deviceType}" (${action.payload.deviceId}, ${createdDevice.payload.deviceType}) parameter "${parameter.name}" (${parameter.id}) from ${formatDescriptorParameterValue(action.payload.expectedValue, parameter.unit, parameter.choices)} to ${formatDescriptorParameterValue(action.payload.value, parameter.unit, parameter.choices)}`;
-            }
-        }
-    }
-    if (action.type === 'addSend') {
-        const sourceName = resolveActionTrackName(action.payload.trackId, actions, context);
-        const busName = resolveActionTrackName(action.payload.busId, actions, context);
-        const tap = action.payload.preFader === true ? 'pre-fader' : 'post-fader';
-        // The send does not exist yet, so a relative request is measured from
-        // the full copy of the signal it taps, as the handler measures it.
-        const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
-        const at = level.ok ? ` at ${formatDecibelsFromGain(level.linear)}` : '';
-        return `Create ${tap} send from "${sourceName}" (${action.payload.trackId}) to "${busName}" (${action.payload.busId})${at}`;
-    }
-    if (action.type === 'setTrackGain') {
-        const createdTrack = actions.find(
-            (candidate) => candidate.type === 'createBus' && candidate.payload.busId === action.payload.trackId
-        );
-        if (createdTrack?.type === 'createBus') {
-            const landing = formatRequestedLevel(
-                {
-                    linear: action.payload.gain,
-                    absoluteDb: action.payload.gainDb,
-                    deltaDb: action.payload.deltaDb,
-                },
-                action.payload.expectedGain,
-                TRACK_FADER_LAW
-            );
-            if (landing !== null) {
-                return `Set "${createdTrack.payload.name}" (${action.payload.trackId}) fader from ${formatDecibelsFromGain(action.payload.expectedGain)} to ${landing}`;
-            }
-        }
-    }
-    if (action.type === 'automateSendRanges' && action.payload.ranges && action.payload.expectedTracks) {
-        const targets = action.payload.expectedTracks
-            .map(
-                (track) =>
-                    `"${track.trackName}" (${track.trackId}) ${formatDecibelsFromGain(track.sendLevel)}→${String(action.payload.targetLevelDb)} dB`
-            )
-            .join(', ');
-        const ranges = action.payload.ranges
-            .map(
-                (range) =>
-                    `"${range.sectionName}" (${range.sectionId}) ramp beats ${String(range.automationStartBeat)}–${String(range.endBeat)}`
-            )
-            .join(', ');
-        return `Automate sends to "${action.payload.busName ?? action.payload.busId}" (${action.payload.busId}) over the final ${String(action.payload.tailBars)} bars: ${targets}; ${ranges}; restore base levels at each section end`;
-    }
-    if (action.type === 'renderProjectSections' && action.payload.jobs) {
-        const jobs = action.payload.jobs
-            .map(
-                (job) =>
-                    `"${job.sectionName}" (${job.sectionId}) beats ${String(job.startBeat)}–${String(job.endBeat)} as ${job.jobId} at ${String(job.sampleRate)} Hz with ${String(job.tailSeconds)} s tail`
-            )
-            .join(', ');
-        return `Render ${jobs} into session-owned artifacts; undo removes them and redo renders fresh artifacts`;
-    }
-    if (action.type === 'automateTrackGainRange' && action.payload.expectedTracks) {
-        const targets = action.payload.expectedTracks
-            .map(
-                (track) =>
-                    `"${track.trackName}" (${track.trackId}) ${String(track.gain)}→${String(track.gain * 10 ** (action.payload.gainDb / 20))}`
-            )
-            .join(', ');
-        return `Lift ${targets} by ${String(action.payload.gainDb)} dB only in ${action.payload.sectionName} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}`;
-    }
-    return describePlannedAction({ action, context });
+    return lookupExact(action, context, actions);
+}
+
+function lookupExact<Type extends AppActionType>(
+    action: ActionOf<Type>,
+    context: ProjectContext,
+    actions: readonly AppAction[]
+): string {
+    return exactDescriberByActionType[action.type](action, context, actions);
 }
 
 /**

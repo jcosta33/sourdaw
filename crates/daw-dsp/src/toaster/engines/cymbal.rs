@@ -59,8 +59,8 @@ impl CymbalEngine {
         self.shimmer_phase = 0.0;
 
         // Compute per-oscillator frequencies from ratios
-        for i in 0..8 {
-            self.freqs[i] = self.base_freq * RATIOS[i];
+        for (freq, ratio) in self.freqs.iter_mut().zip(RATIOS) {
+            *freq = self.base_freq * ratio;
         }
 
         let safe_decay = self.decay.max(0.001);

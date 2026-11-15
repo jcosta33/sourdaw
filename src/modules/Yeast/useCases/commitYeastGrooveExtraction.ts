@@ -1,6 +1,6 @@
 import { executeAppAction, isAppActionConflictError } from '#/modules/Command/useCases';
+import { type GrooveTemplateActionSnapshot } from '#/modules/MIDI/events';
 import { getGrooveExtractionActionErrorCode } from '#/modules/MIDI/useCases';
-import { type GrooveTemplateActionSnapshot } from '#/utils/handlerContract';
 
 type CommitYeastGrooveExtractionInput = {
     clipId: string;

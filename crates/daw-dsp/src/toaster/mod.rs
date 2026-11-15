@@ -129,7 +129,10 @@ impl ToasterInstance {
 
         let mut scrubbed = sanitize_block(&mut left_buf[..size]);
         scrubbed += sanitize_block(&mut right_buf[..size]);
-        for channel in pad_outputs[..pad_output_len].chunks_exact_mut(MAX_BLOCK_SIZE) {
+        for channel in pad_outputs[..pad_output_len]
+            .as_chunks_mut::<MAX_BLOCK_SIZE>()
+            .0
+        {
             scrubbed += sanitize_block(&mut channel[..size]);
         }
         self.nan_flush_count += scrubbed as u64;

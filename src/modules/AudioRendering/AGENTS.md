@@ -8,7 +8,7 @@ Owns audio export encoding (WAV, MP3, FLAC, Vorbis, Opus), export normalization 
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. The module exports no events.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. `events/index.ts` exports only the section render job snapshot other modules read.
 
 ## Key Subsystems
 

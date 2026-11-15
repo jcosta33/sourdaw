@@ -36,7 +36,7 @@ pub(super) fn finish_yin(
             for tau in min_tau..=max_tau {
                 if cmnd[tau] < threshold {
                     let mut t0 = tau;
-                    while t0 + 1 <= max_tau && cmnd[t0 + 1] < cmnd[t0] {
+                    while t0 < max_tau && cmnd[t0 + 1] < cmnd[t0] {
                         t0 += 1;
                     }
                     pick = Some(t0);
@@ -82,9 +82,9 @@ pub(super) fn finish_yin(
         let periodicity = match profile {
             YinProfile::FirstThreshold { .. } => {
                 let mut min_val = f32::MAX;
-                for tau in min_tau..=max_tau {
-                    if cmnd[tau] < min_val {
-                        min_val = cmnd[tau];
+                for &value in cmnd.iter().take(max_tau + 1).skip(min_tau) {
+                    if value < min_val {
+                        min_val = value;
                     }
                 }
                 1.0 - min_val.clamp(0.0, 1.0)

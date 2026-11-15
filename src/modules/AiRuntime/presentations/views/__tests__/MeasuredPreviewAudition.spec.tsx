@@ -36,7 +36,7 @@ vi.mock('../../../useCases/getMeasuredPreviewAuditionView', () => ({
     },
 }));
 
-const input = { confirmationId: 'pending', selectedIntentGroupIds: ['gain', 'trim'] };
+const input = { confirmationId: 'pending', selectedIntentGroupIds: ['gain', 'trim'], surface: 'chat' as const };
 
 describe('connected measured audition controls', () => {
     beforeEach(() => {
@@ -59,6 +59,7 @@ describe('connected measured audition controls', () => {
             targetId: 'drums',
             side: 'baseline',
             selectedIntentGroupIds: ['gain', 'trim'],
+            surface: 'chat',
         });
         await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Proposal' })));
         expect(mocks.start).toHaveBeenLastCalledWith({
@@ -66,6 +67,7 @@ describe('connected measured audition controls', () => {
             targetId: 'drums',
             side: 'preview',
             selectedIntentGroupIds: ['gain', 'trim'],
+            surface: 'chat',
         });
     });
 
@@ -79,9 +81,16 @@ describe('connected measured audition controls', () => {
         expect(mocks.start).not.toHaveBeenCalled();
     });
 
-    it('retires only its own confirmation when the connected view unmounts', () => {
+    it('retires only what its own surface started for its confirmation when the connected view unmounts', () => {
         const view = render(<MeasuredPreviewAudition {...input} />);
         view.unmount();
-        expect(mocks.stop).toHaveBeenCalledWith({ confirmationId: 'pending' });
+        expect(mocks.stop).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'pending', surface: 'chat' });
+    });
+
+    // Red when a target change stops only this surface's audition, leaving the other surface's playing.
+    it('stops the proposal whichever surface started it when the target changes', () => {
+        render(<MeasuredPreviewAudition {...input} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Audition target' }), { target: { value: 'drums' } });
+        expect(mocks.stop).toHaveBeenLastCalledWith({ confirmationId: 'pending' });
     });
 });

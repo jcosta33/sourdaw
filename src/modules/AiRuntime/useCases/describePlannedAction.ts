@@ -1,408 +1,562 @@
 import { markerStore } from '#/modules/Arrangement/stores';
 import { describeAction } from '#/modules/Command/useCases';
-import { describeShortMidiOverlapRemoval, projectShortMidiOverlapRemoval } from '#/modules/MIDI/useCases';
-import { createPunchRegionPatch } from '#/modules/Transport/useCases';
-import { formatDecibels, formatGainDb, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type ProjectContext } from '../models/ProjectContext';
-import { getMidiArticulationSemanticChanges } from '../transformers/getMidiArticulationSemanticChanges';
+import { findContextClip } from '../transformers/findContextClip';
+
+import { describeAddedDevice } from './plannedActionDescriptions/describeAddedDevice';
+import { describeArpeggio } from './plannedActionDescriptions/describeArpeggio';
+import { describeClipLoopLength } from './plannedActionDescriptions/describeClipLoopLength';
+import { describeCopiedArticulations } from './plannedActionDescriptions/describeCopiedArticulations';
+import { describeDrumPreviewBranches } from './plannedActionDescriptions/describeDrumPreviewBranches';
+import { describeGluedClips } from './plannedActionDescriptions/describeGluedClips';
+import { describeMovedClip } from './plannedActionDescriptions/describeMovedClip';
+import { describeNormalizedClip } from './plannedActionDescriptions/describeNormalizedClip';
+import { describeParameterRange } from './plannedActionDescriptions/describeParameterRange';
+import { describePunchEdge } from './plannedActionDescriptions/describePunchEdge';
+import { describePunchEnabled } from './plannedActionDescriptions/describePunchEnabled';
+import { describeSendRange } from './plannedActionDescriptions/describeSendRange';
+import { describeShortOverlapRemoval } from './plannedActionDescriptions/describeShortOverlapRemoval';
+import { describeSidechainRoute } from './plannedActionDescriptions/describeSidechainRoute';
+import { describeTrackGain } from './plannedActionDescriptions/describeTrackGain';
 
 type DescribePlannedActionInput = {
     action: AppAction;
     context: ProjectContext;
 };
 
-/**
- * What a fader request will do, in the units it was asked in.
- *
- * A linear request reads back as the amplitude it stated; a decibel request
- * reads back in decibels, and a relative one also states where the fader is
- * now and where it lands, because "by 2 dB" alone does not tell a musician
- * whether the result clears the ceiling.
- */
-function describeTrackGainRequest(
-    target: string,
-    currentGain: number,
-    payload: { gain?: number; gainDb?: number; deltaDb?: number }
+type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
+
+type ContextClip = NonNullable<ReturnType<typeof findContextClip>>;
+
+/** What the action registry says about an action no planned-action reading words more exactly. */
+function describeFromRegistry(action: AppAction): string {
+    return describeAction(action);
+}
+
+function describeOnClip(
+    action: AppAction,
+    clipId: string,
+    context: ProjectContext,
+    describe: (clip: ContextClip) => string
 ): string {
-    if (payload.gain !== undefined) {
-        return `Set ${target} gain to ${String(payload.gain)}`;
-    }
-    const requested = resolveLevelFields(
-        { absoluteDb: payload.gainDb, deltaDb: payload.deltaDb },
-        currentGain,
-        TRACK_FADER_LAW
-    );
-    if (!requested.ok) {
-        return `Set ${target} gain: ${requested.reason}`;
-    }
-    const landing = `${formatGainDb(requested.linear, { trimTrailingZeros: true })} dB`;
-    if (payload.deltaDb === undefined) {
-        return `Set ${target} gain to ${landing}`;
-    }
-    const sign = payload.deltaDb > 0 ? '+' : '';
-    const change = `${sign}${formatDecibels(payload.deltaDb, { trimTrailingZeros: true })} dB`;
-    return `Set ${target} gain by ${change} (from ${formatGainDb(currentGain, { trimTrailingZeros: true })} dB to ${landing})`;
+    const clip = findContextClip(context, clipId);
+    return clip ? describe(clip) : describeAction(action);
 }
 
-type ParameterRangePayload = Extract<AppAction, { type: 'automateParameterRange' }>['payload'];
-
-function describeRangeTarget(payload: ParameterRangePayload): string {
-    if (payload.valueDb !== undefined) {
-        return `at ${formatDecibels(payload.valueDb, { trimTrailingZeros: true })} dB`;
-    }
-    if (payload.deltaDb !== undefined) {
-        const sign = payload.deltaDb > 0 ? '+' : '';
-        return `by ${sign}${formatDecibels(payload.deltaDb, { trimTrailingZeros: true })} dB`;
-    }
-    return `at ${String(payload.value)}`;
+function describeClipTarget(context: ProjectContext, clipId: string): string {
+    const clip = findContextClip(context, clipId);
+    return clip ? ` clip "${clip.name}"` : ' clip';
 }
 
-/** Where the range lies, in the words it was asked in and, once resolved, in beats. */
-function describeRangeSpan(payload: ParameterRangePayload): string {
-    const { range } = payload;
-    let asked = `beats ${String(range.startBeat)}–${String(range.endBeat)}`;
-    if (range.section !== undefined && range.barsBefore !== undefined) {
-        asked = `the ${String(range.barsBefore)} ${range.barsBefore === 1 ? 'bar' : 'bars'} before "${range.section}"`;
-    } else if (range.section !== undefined) {
-        asked = `"${range.section}"`;
-    } else if (range.startBar !== undefined) {
-        asked = `bars ${String(range.startBar)}–${String(range.endBar)}`;
+function formatSigned(value: number): string {
+    if (value > 0) {
+        return `+${String(value)}`;
     }
-    if (payload.startBeat === undefined || payload.endBeat === undefined || range.startBeat !== undefined) {
-        return asked;
-    }
-    return `${asked} (beats ${String(payload.startBeat)}–${String(payload.endBeat)})`;
+    return String(value);
 }
 
-function describeRamps(payload: ParameterRangePayload): string {
-    const rampIn = payload.rampIn ?? 0;
-    const rampOut = payload.rampOut ?? 0;
-    if (rampIn === 0 && rampOut === 0) {
-        return 'with no ramps';
+function describeTrackPan(action: ActionOf<'setTrackPan'>, context: ProjectContext): string {
+    const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+    if (!track) {
+        return describeAction(action);
     }
-    return `ramping in over ${String(rampIn)} and out over ${String(rampOut)} beats`;
+    return `Set track "${track.name}" (${track.id}) pan to ${formatSigned(action.payload.pan)}`;
 }
 
-function describeParameterRange(payload: ParameterRangePayload, context: ProjectContext): string {
-    const track = context.tracks.find((candidate) => candidate.id === payload.trackId);
-    const target = track ? `track "${track.name}" (${track.id})` : payload.trackId;
-    return `Automate ${target} ${payload.parameterId} ${describeRangeTarget(payload)} across ${describeRangeSpan(payload)}, ${describeRamps(payload)}; the curve outside the range is unchanged`;
+function describeMutedTrack(action: ActionOf<'muteTrack'>, context: ProjectContext): string {
+    const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+    if (!track) {
+        return describeAction(action);
+    }
+    const verb = action.payload.muted ? 'Mute' : 'Unmute';
+    return `${verb} track "${track.name}" (${track.id}) (muted=${String(action.payload.muted)})`;
+}
+
+function describeRemovedTrack(action: ActionOf<'removeTrack'>, context: ProjectContext): string {
+    const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+    return track ? `Remove track "${track.name}"` : describeAction(action);
+}
+
+function describeRemovedClip(action: ActionOf<'removeClip'>, context: ProjectContext): string {
+    return describeOnClip(action, action.payload.clipId, context, (clip) => `Remove clip "${clip.name}"`);
+}
+
+function describeRemovedMarker(action: ActionOf<'removeMarker'>): string {
+    const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
+    if (!marker) {
+        return describeAction(action);
+    }
+    return `Remove marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id})`;
+}
+
+function describeMarkerColor(action: ActionOf<'setMarkerColor'>): string {
+    const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
+    if (!marker) {
+        return describeAction(action);
+    }
+    const color = resolveMarkerColorName(action.payload.color) ?? action.payload.color;
+    return `Set marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id}) color to ${color}`;
+}
+
+function describeRemovedSection(action: ActionOf<'removeSection'>): string {
+    const section = markerStore.value?.sections.find((candidate) => candidate.id === action.payload.sectionId);
+    if (!section) {
+        return describeAction(action);
+    }
+    return `Remove section "${section.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
+}
+
+function describeRenamedSection(action: ActionOf<'renameSection'>): string {
+    const section = markerStore.value?.sections.find((candidate) => candidate.id === action.payload.sectionId);
+    if (!section) {
+        return describeAction(action);
+    }
+    return `Rename section "${section.name}" to "${action.payload.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
+}
+
+type PlannedActionDescriber<Type extends AppActionType> = (action: ActionOf<Type>, context: ProjectContext) => string;
+
+// Every action type states how it is described: a new action does not compile until it does.
+const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDescriber<Type> } = {
+    importStemSet: describeFromRegistry,
+    discardImportedStemSet: describeFromRegistry,
+    addTrack: describeFromRegistry,
+    removeTrack: describeRemovedTrack,
+    discardCreatedTrack: describeFromRegistry,
+    restoreTrack: describeFromRegistry,
+    restoreClip: describeFromRegistry,
+    discardDuplicatedClip: describeFromRegistry,
+    removeAllTracks: describeFromRegistry,
+    renameTrack: describeFromRegistry,
+    createTrackAlternative: describeFromRegistry,
+    switchTrackAlternative: describeFromRegistry,
+    renameTrackAlternative: describeFromRegistry,
+    deleteTrackAlternative: describeFromRegistry,
+    selectTrack: describeFromRegistry,
+    muteTrack: describeMutedTrack,
+    soloTrack: describeFromRegistry,
+    selectTake: describeFromRegistry,
+    replaceOriginalMidiTakeRow: describeFromRegistry,
+    replaceOriginalMidiBaseRow: describeFromRegistry,
+    toggleSoloSafe: describeFromRegistry,
+    setSoloSafe: describeFromRegistry,
+    restoreSoloSafe: describeFromRegistry,
+    armTrack: describeFromRegistry,
+    freezeTrack: describeFromRegistry,
+    unfreezeTrack: describeFromRegistry,
+    restoreFreezeState: describeFromRegistry,
+    flattenTrack: describeFromRegistry,
+    bounceInPlace: describeFromRegistry,
+    reorderTrack: describeFromRegistry,
+    setTempo: describeFromRegistry,
+    restoreTempoEdit: describeFromRegistry,
+    editTempoMap: describeFromRegistry,
+    restoreTempoMapEdit: describeFromRegistry,
+    setTimeSignature: describeFromRegistry,
+    setPlayback: describeFromRegistry,
+    togglePlayback: describeFromRegistry,
+    stopPlayback: describeFromRegistry,
+    toggleRecording: describeFromRegistry,
+    setMasterGain: describeFromRegistry,
+    restoreMasterGain: describeFromRegistry,
+    toggleLoop: describeFromRegistry,
+    toggleMetronome: describeFromRegistry,
+    setMetronomeVolume: describeFromRegistry,
+    setLoopRegion: describeFromRegistry,
+    setLoopEnabled: describeFromRegistry,
+    setMetronomeEnabled: describeFromRegistry,
+    restoreLoopRegion: describeFromRegistry,
+    addClip: describeFromRegistry,
+    moveClip: describeMovedClip,
+    restoreClipPlacement: describeFromRegistry,
+    duplicateClip: describeFromRegistry,
+    duplicateClipToNextBar: describeFromRegistry,
+    duplicateTrack: describeFromRegistry,
+    removeClip: describeRemovedClip,
+    renameClip: describeFromRegistry,
+    splitClip: describeFromRegistry,
+    restoreClipSplitState: describeFromRegistry,
+    trimClipStart: describeFromRegistry,
+    trimClipEnd: describeFromRegistry,
+    restoreAudioClipStartTrim: describeFromRegistry,
+    restoreAudioClipSlip: describeFromRegistry,
+    slipClipContent: describeFromRegistry,
+    drawClip: describeFromRegistry,
+    discardDrawnClip: describeFromRegistry,
+    restoreDrawnClip: describeFromRegistry,
+    duplicateClipAt: describeFromRegistry,
+    moveClips: describeFromRegistry,
+    restoreClipMoves: describeFromRegistry,
+    addDevice: (action, context) => describeAddedDevice(action, context) ?? describeAction(action),
+    bypassDevice: describeFromRegistry,
+    removeDevice: describeFromRegistry,
+    restoreDevice: describeFromRegistry,
+    reorderDevices: describeFromRegistry,
+    setDeviceParameter: describeFromRegistry,
+    setExternalPluginState: describeFromRegistry,
+    setDeviceState: describeFromRegistry,
+    setFermenterPatch: describeFromRegistry,
+    setGrandBouleDeviceState: describeFromRegistry,
+    createBus: describeFromRegistry,
+    createFolder: describeFromRegistry,
+    setSend: describeFromRegistry,
+    setWorkspaceMode: describeFromRegistry,
+    openPreferencesDialog: describeFromRegistry,
+    openMixer: describeFromRegistry,
+    closeMixer: describeFromRegistry,
+    toggleSidebar: describeFromRegistry,
+    toggleInspector: describeFromRegistry,
+    toggleChatPanel: describeFromRegistry,
+    setTrackInput: describeFromRegistry,
+    restoreTrackInput: describeFromRegistry,
+    setEditingTool: describeFromRegistry,
+    setMarqueeSelection: describeFromRegistry,
+    addMarker: describeFromRegistry,
+    removeMarker: describeRemovedMarker,
+    setMarkerColor: describeMarkerColor,
+    addSection: (action) =>
+        `Add section "${action.payload.name}" from beat ${String(action.payload.startBeat)} to beat ${String(action.payload.endBeat)}`,
+    removeSection: describeRemovedSection,
+    renameSection: describeRenamedSection,
+    renameMarker: describeFromRegistry,
+    moveMarker: describeFromRegistry,
+    moveSection: describeFromRegistry,
+    resizeSection: describeFromRegistry,
+    setSectionColor: describeFromRegistry,
+    reorderSection: describeFromRegistry,
+    navigateSection: describeFromRegistry,
+    rehearseSection: describeFromRegistry,
+    restoreSectionBeats: describeFromRegistry,
+    setClipGainEnvelope: describeFromRegistry,
+    toggleClipGainEnvelope: describeFromRegistry,
+    addGainEnvelopePoint: describeFromRegistry,
+    removeGainEnvelopePoint: describeFromRegistry,
+    resetClipGainEnvelope: describeFromRegistry,
+    addModulator: describeFromRegistry,
+    removeModulator: describeFromRegistry,
+    updateModulator: describeFromRegistry,
+    addMapping: describeFromRegistry,
+    removeMapping: describeFromRegistry,
+    addAutomationLane: describeFromRegistry,
+    automateSendRange: describeSendRange,
+    automateSendRanges: describeFromRegistry,
+    removeSendAutomationRanges: describeFromRegistry,
+    renderProjectSections: describeFromRegistry,
+    removeRenderedProjectSections: describeFromRegistry,
+    automateTrackGainRange: describeFromRegistry,
+    automateParameterRange: describeParameterRange,
+    removeTrackGainAutomationRange: describeFromRegistry,
+    removeSendAutomationRange: describeFromRegistry,
+    removeAutomationLane: describeFromRegistry,
+    setAutomationLaneEnabled: describeFromRegistry,
+    addAutomationPoint: describeFromRegistry,
+    quantizeNotes: (action, context) =>
+        describeOnClip(
+            action,
+            action.payload.clipId,
+            context,
+            (clip) => `Quantize notes in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`
+        ),
+    removeShortMidiOverlaps: (action) => describeShortOverlapRemoval(action) ?? describeAction(action),
+    createDrumPreviewBranches: describeDrumPreviewBranches,
+    deleteDrumPreviewBranches: describeFromRegistry,
+    copyMidiArticulations: (action, context) => describeCopiedArticulations(action, context) ?? describeAction(action),
+    restoreMidiClipNotes: describeFromRegistry,
+    quantizeNoteLengths: (action, context) =>
+        describeOnClip(
+            action,
+            action.payload.clipId,
+            context,
+            (clip) =>
+                `Quantize note lengths in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`
+        ),
+    transposeNotes: (action, context) =>
+        describeOnClip(
+            action,
+            action.payload.clipId,
+            context,
+            (clip) =>
+                `Transpose notes in "${clip.name}" (${clip.id}) by ${formatSigned(action.payload.semitones)} semitones`
+        ),
+    humanizeNotes: describeFromRegistry,
+    invertNotes: (action, context) =>
+        describeOnClip(action, action.payload.clipId, context, (clip) => `Invert notes in "${clip.name}" (${clip.id})`),
+    retrogradeNotes: (action, context) =>
+        describeOnClip(
+            action,
+            action.payload.clipId,
+            context,
+            (clip) => `Retrograde notes in "${clip.name}" (${clip.id})`
+        ),
+    scaleVelocities: describeFromRegistry,
+    scaleAllVelocities: (action, context) =>
+        describeOnClip(
+            action,
+            action.payload.clipId,
+            context,
+            (clip) => `Scale note velocities in "${clip.name}" (${clip.id}) by ×${String(action.payload.factor)}`
+        ),
+    setAllVelocities: (action, context) =>
+        describeOnClip(
+            action,
+            action.payload.clipId,
+            context,
+            (clip) => `Set note velocities in "${clip.name}" (${clip.id}) to ${String(action.payload.velocity)}`
+        ),
+    setTrackGain: (action, context) => describeTrackGain(action, context) ?? describeAction(action),
+    setTrackPan: describeTrackPan,
+    setTrackColor: describeFromRegistry,
+    copyClip: describeFromRegistry,
+    cutClip: describeFromRegistry,
+    pasteClip: describeFromRegistry,
+    setClipFade: describeFromRegistry,
+    importMidiFile: describeFromRegistry,
+    normalizeClip: describeNormalizedClip,
+    reverseClip: describeFromRegistry,
+    restoreReversedClip: describeFromRegistry,
+    glueClips: describeGluedClips,
+    restoreClipGlueState: describeFromRegistry,
+    setCompRegion: describeFromRegistry,
+    removeCompRegion: describeFromRegistry,
+    restoreCompRegionInterval: describeFromRegistry,
+    nudgeClip: describeFromRegistry,
+    crossfadeClips: describeFromRegistry,
+    restoreCrossfadeClips: describeFromRegistry,
+    setClipGain: describeFromRegistry,
+    setClipColor: describeFromRegistry,
+    lockClip: describeFromRegistry,
+    consolidateSelection: describeFromRegistry,
+    bounceSelection: describeFromRegistry,
+    seekPlayhead: describeFromRegistry,
+    setPunchIn: (action, context) => describePunchEdge(action, context, 'in') ?? describeAction(action),
+    setPunchOut: (action, context) => describePunchEdge(action, context, 'out') ?? describeAction(action),
+    setPunchEnabled: describePunchEnabled,
+    restorePunchRegion: describeFromRegistry,
+    togglePunch: describeFromRegistry,
+    toggleCountIn: describeFromRegistry,
+    setCountInBars: describeFromRegistry,
+    togglePreRoll: describeFromRegistry,
+    setPreRollBars: describeFromRegistry,
+    zoomTracksVertical: describeFromRegistry,
+    addTimeSignatureChange: describeFromRegistry,
+    removeTimeSignatureChange: describeFromRegistry,
+    setTrackOutput: describeFromRegistry,
+    addSend: describeFromRegistry,
+    removeSend: describeFromRegistry,
+    removeAutomationPoint: describeFromRegistry,
+    setAutomationMode: describeFromRegistry,
+    hideTrack: describeFromRegistry,
+    disableTrack: describeFromRegistry,
+    restoreTrackDisabled: describeFromRegistry,
+    setTrackHeight: describeFromRegistry,
+    setSnapValue: describeFromRegistry,
+    zoomToFit: describeFromRegistry,
+    zoomToSelection: describeFromRegistry,
+    exportProject: describeFromRegistry,
+    saveProject: describeFromRegistry,
+    newProject: describeFromRegistry,
+    importAudioFile: describeFromRegistry,
+    exportMidi: describeFromRegistry,
+    foldTrack: describeFromRegistry,
+    groupTracks: describeFromRegistry,
+    ungroupTracks: describeFromRegistry,
+    scaleAutomation: describeFromRegistry,
+    stretchAutomation: describeFromRegistry,
+    invertAutomation: describeFromRegistry,
+    reverseAutomation: describeFromRegistry,
+    thinAutomation: describeFromRegistry,
+    quantizeAutomation: describeFromRegistry,
+    restoreAutomationLanePoints: describeFromRegistry,
+    restoreAutomationPointPresence: describeFromRegistry,
+    loadPreset: describeFromRegistry,
+    restorePresetDeviceChain: describeFromRegistry,
+    savePreset: describeFromRegistry,
+    generateDrumPattern: describeFromRegistry,
+    generateMelody: describeFromRegistry,
+    generateChordProgression: describeFromRegistry,
+    setClipLoop: describeFromRegistry,
+    restoreClipLoop: describeFromRegistry,
+    setClipLoopLength: (action, context) => describeClipLoopLength(action, context) ?? describeAction(action),
+    restoreClipLoopLength: describeFromRegistry,
+    createGrooveTemplate: describeFromRegistry,
+    renameGrooveTemplate: describeFromRegistry,
+    restoreGrooveTemplateName: describeFromRegistry,
+    deleteGrooveTemplate: describeFromRegistry,
+    restoreDeletedGrooveTemplate: describeFromRegistry,
+    assignGrooveTemplate: describeFromRegistry,
+    restoreGrooveAssignment: describeFromRegistry,
+    extractGroove: describeFromRegistry,
+    applyGroove: describeFromRegistry,
+    setClipStretchMode: (action, context) =>
+        `Set${describeClipTarget(context, action.payload.clipId)} stretch mode to ${action.payload.mode}`,
+    setClipStretchRatio: (action, context) =>
+        `Set${describeClipTarget(context, action.payload.clipId)} stretch ratio to ${String(action.payload.ratio)}×`,
+    restoreClipStretchState: describeFromRegistry,
+    fitClipToBeats: (action, context) =>
+        `Fit${describeClipTarget(context, action.payload.clipId)} to ${String(action.payload.targetBeats)} beats`,
+    analyzeMix: describeFromRegistry,
+    autoFixMix: describeFromRegistry,
+    enableMpe: describeFromRegistry,
+    disableMpe: describeFromRegistry,
+    getLatencyReport: describeFromRegistry,
+    createCollabSession: describeFromRegistry,
+    joinCollabSession: describeFromRegistry,
+    leaveCollabSession: describeFromRegistry,
+    scanPlugins: describeFromRegistry,
+    loadExternalPlugin: describeFromRegistry,
+    audioToMidi: describeFromRegistry,
+    commitPitchEdit: describeFromRegistry,
+    restoreClipFileId: describeFromRegistry,
+    muteClip: describeFromRegistry,
+    clearSolos: describeFromRegistry,
+    restoreTrackSoloStates: describeFromRegistry,
+    setTrackNotes: describeFromRegistry,
+    deleteTime: describeFromRegistry,
+    insertTime: describeFromRegistry,
+    duplicateTimeRange: describeFromRegistry,
+    restoreTimeOperationState: describeFromRegistry,
+    restoreTrackHeights: describeFromRegistry,
+    restoreTrackGroupMemberships: describeFromRegistry,
+    restoreTracks: describeFromRegistry,
+    restoreTrackClipStates: describeFromRegistry,
+    discardCreatedTracks: describeFromRegistry,
+    discardCreatedCompGroup: describeFromRegistry,
+    restoreTrackAlternativeState: describeFromRegistry,
+    restoreScratchPadState: describeFromRegistry,
+    stripSilence: describeFromRegistry,
+    restoreStripSilenceState: describeFromRegistry,
+    detectTempo: describeFromRegistry,
+    detectKey: describeFromRegistry,
+    consolidateAllTracks: describeFromRegistry,
+    arpeggiate: (action) => describeArpeggio(action) ?? describeAction(action),
+    addSidechainRoute: (action, context) => describeSidechainRoute(action, context, 'Add') ?? describeAction(action),
+    removeSidechainRoute: (action, context) =>
+        describeSidechainRoute(action, context, 'Remove') ?? describeAction(action),
+    bounceToNewTrack: describeFromRegistry,
+    saveTrackTemplate: describeFromRegistry,
+    loadTrackTemplate: describeFromRegistry,
+    deleteTrackTemplate: describeFromRegistry,
+    createProjectFromTemplate: describeFromRegistry,
+    setProductionBrief: describeFromRegistry,
+    repairProjectData: describeFromRegistry,
+    createVcaGroup: describeFromRegistry,
+    assignToVca: describeFromRegistry,
+    removeFromVca: describeFromRegistry,
+    setVcaGain: describeFromRegistry,
+    restoreLegacyVcaState: describeFromRegistry,
+    setMidiOutput: describeFromRegistry,
+    clearMidiOutput: describeFromRegistry,
+    restoreMidiOutput: describeFromRegistry,
+    addNotes: describeFromRegistry,
+    completeMidi: describeFromRegistry,
+    variationMidi: describeFromRegistry,
+    generateBassline: describeFromRegistry,
+    replayGeneratedMidi: describeFromRegistry,
+    stemSeparate: describeFromRegistry,
+    autoOrganizeProject: describeFromRegistry,
+    addChordEvent: describeFromRegistry,
+    moveChordEvent: describeFromRegistry,
+    updateChordEvent: describeFromRegistry,
+    removeChordEvent: describeFromRegistry,
+    toggleChordTrack: describeFromRegistry,
+    clearChordTrack: describeFromRegistry,
+    restoreChordTrackState: describeFromRegistry,
+    clearAllMidiMappings: describeFromRegistry,
+    completeMidiLearn: describeFromRegistry,
+    removeMidiMapping: describeFromRegistry,
+    restoreMidiLearnMappings: describeFromRegistry,
+    toggleScratchPad: describeFromRegistry,
+    captureScratchPad: describeFromRegistry,
+    commitScratchPad: describeFromRegistry,
+    clearScratchPad: describeFromRegistry,
+    removeScratchPadSection: describeFromRegistry,
+    renameScratchPadSection: describeFromRegistry,
+    reorderScratchPadSection: describeFromRegistry,
+    setScratchPadSectionColor: describeFromRegistry,
+    createPatternInstance: describeFromRegistry,
+    detachPatternInstance: describeFromRegistry,
+    restorePatternInstanceLink: describeFromRegistry,
+    startMacroRecording: describeFromRegistry,
+    stopMacroRecording: describeFromRegistry,
+    playMacro: describeFromRegistry,
+    deleteMacro: describeFromRegistry,
+    renameMacro: describeFromRegistry,
+    undo: describeFromRegistry,
+    redo: describeFromRegistry,
+    toggleUndoTree: describeFromRegistry,
+    labelUndoBranch: describeFromRegistry,
+    detectSongStructure: describeFromRegistry,
+    createProjectVersion: describeFromRegistry,
+    restoreProjectVersion: describeFromRegistry,
+    createVersionBranch: describeFromRegistry,
+    generateFill: describeFromRegistry,
+    generateAllTransitions: describeFromRegistry,
+    compareToReference: describeFromRegistry,
+    toggleControlRoomMono: describeFromRegistry,
+    toggleControlRoomDim: describeFromRegistry,
+    switchMonitor: describeFromRegistry,
+    getMentorTips: describeFromRegistry,
+    searchSamples: describeFromRegistry,
+    createCompGroup: describeFromRegistry,
+    togglePunchRecording: describeFromRegistry,
+    toggleLoopRecord: describeFromRegistry,
+    triggerScene: describeFromRegistry,
+    nextSetlistItem: describeFromRegistry,
+    previousSetlistItem: describeFromRegistry,
+    createAdjustmentLayer: describeFromRegistry,
+    removeAdjustmentLayer: describeFromRegistry,
+    toggleAdjustmentLayer: describeFromRegistry,
+    setLayerParameter: describeFromRegistry,
+    setLayerMix: describeFromRegistry,
+    addAdjustmentRegion: describeFromRegistry,
+    removeAdjustmentRegion: describeFromRegistry,
+    moveAdjustmentRegion: describeFromRegistry,
+    setLayerFades: describeFromRegistry,
+    setLayerAffectedTracks: describeFromRegistry,
+    setLayerInsertionIndex: describeFromRegistry,
+    restoreAdjustmentLayerMutation: describeFromRegistry,
+    detectTransients: describeFromRegistry,
+    quantizeTransients: describeFromRegistry,
+    openElasticEditor: describeFromRegistry,
+    closeElasticEditor: describeFromRegistry,
+    elasticSetSensitivity: describeFromRegistry,
+    elasticAddMarker: describeFromRegistry,
+    elasticRemoveMarker: describeFromRegistry,
+    elasticToggleMarkerLock: describeFromRegistry,
+    elasticSetTool: describeFromRegistry,
+    toggleNodeView: describeFromRegistry,
+    setControlSurface: describeFromRegistry,
+    addCvOutput: describeFromRegistry,
+    removeCvOutput: describeFromRegistry,
+    connectPush: describeFromRegistry,
+    disconnectPush: describeFromRegistry,
+    exportDawProject: describeFromRegistry,
+    importDawProject: describeFromRegistry,
+    loadRaveModel: describeFromRegistry,
+    setRaveBlend: describeFromRegistry,
+    enableWarping: describeFromRegistry,
+    setWarpAlgorithm: describeFromRegistry,
+    setWarpPitchShift: describeFromRegistry,
+    setYeastProcessorParam: describeFromRegistry,
+    setYeastArpPattern: describeFromRegistry,
+    setYeastProcessorBypass: describeFromRegistry,
+    addYeastProcessor: describeFromRegistry,
+    removeYeastProcessor: describeFromRegistry,
+    reorderYeastProcessor: describeFromRegistry,
+    commitRecording: describeFromRegistry,
+    discardRecording: describeFromRegistry,
+    restoreRecording: describeFromRegistry,
+    appendOverdubControllers: describeFromRegistry,
+    removeOverdubControllers: describeFromRegistry,
+};
+
+function lookup<Type extends AppActionType>(action: ActionOf<Type>, context: ProjectContext): string {
+    return describerByActionType[action.type](action, context);
 }
 
 export function describePlannedAction({ action, context }: DescribePlannedActionInput): string {
-    if (action.type === 'setPunchEnabled') {
-        const verb = action.payload.enabled ? 'Enable' : 'Disable';
-        const region = `${String(context.punchInBeat)}–${String(context.punchOutBeat)}`;
-        if (action.payload.enabled) {
-            return `${verb} Transport Punch In/Out until changed; during playback with an armed track, recording starts at punch-in beat ${String(context.punchInBeat)} and stops at punch-out beat ${String(context.punchOutBeat)}; punch region remains beats ${region}; background capture is unchanged`;
-        }
-        return `${verb} Transport Punch In/Out until changed; armed-track playback will no longer start and stop recording at punch region beats ${region}; punch region remains beats ${region}; background capture is unchanged`;
-    }
-    if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
-        const current = { punchInBeat: context.punchInBeat, punchOutBeat: context.punchOutBeat };
-        const edge = action.type === 'setPunchIn' ? 'in' : 'out';
-        const patch = createPunchRegionPatch({ current, beat: action.payload.beat, edge });
-        if (patch !== null) {
-            const next = { ...current, ...patch };
-            const enabledState = context.punchInEnabled ? 'enabled' : 'disabled';
-            if (action.type === 'setPunchIn') {
-                let oppositeChange = `punch-out remains at beat ${String(current.punchOutBeat)}`;
-                if (next.punchOutBeat !== current.punchOutBeat) {
-                    oppositeChange = `punch-out moves from beat ${String(current.punchOutBeat)} to ${String(next.punchOutBeat)}`;
-                }
-                return `Set punch-in to beat ${String(action.payload.beat)}; ${oppositeChange}; resulting region ${String(next.punchInBeat)}–${String(next.punchOutBeat)}; punch recording remains ${enabledState}`;
-            }
-
-            let oppositeChange = `punch-in remains at beat ${String(current.punchInBeat)}`;
-            if (next.punchInBeat !== current.punchInBeat) {
-                oppositeChange = `punch-in moves from beat ${String(current.punchInBeat)} to ${String(next.punchInBeat)}`;
-            }
-            return `Set punch-out to beat ${String(action.payload.beat)}; ${oppositeChange}; resulting region ${String(next.punchInBeat)}–${String(next.punchOutBeat)}; punch recording remains ${enabledState}`;
-        }
-    }
-    if (action.type === 'setClipLoopLength') {
-        for (const track of context.tracks) {
-            const clip = track.clips.find((candidate) => candidate.id === action.payload.clipId);
-            if (!clip) {
-                continue;
-            }
-            const previous =
-                clip.loopLength === undefined
-                    ? `the implicit clip duration of ${String(clip.endBeat - clip.startBeat)} beats`
-                    : `${String(clip.loopLength)} beats`;
-            const loopState = clip.loopEnabled
-                ? 'clip looping remains enabled'
-                : 'clip looping remains disabled, so this stored length is dormant until looping is enabled';
-            return `Set clip "${clip.name}" (${clip.id}) on track "${track.name}" (${track.id}) loop length from ${previous} to ${String(action.payload.loopLength)} beats; ${loopState}; clip range remains beats ${String(clip.startBeat)}–${String(clip.endBeat)}`;
-        }
-    }
-    if (action.type === 'setTrackGain' || action.type === 'setTrackPan' || action.type === 'muteTrack') {
-        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        if (track) {
-            const target = `track "${track.name}" (${track.id})`;
-            if (action.type === 'setTrackGain') {
-                return describeTrackGainRequest(target, track.gain, action.payload);
-            }
-            if (action.type === 'setTrackPan') {
-                let pan = String(action.payload.pan);
-                if (action.payload.pan > 0) {
-                    pan = `+${pan}`;
-                }
-                return `Set ${target} pan to ${pan}`;
-            }
-            const verb = action.payload.muted ? 'Mute' : 'Unmute';
-            return `${verb} ${target} (muted=${String(action.payload.muted)})`;
-        }
-    }
-    if (action.type === 'automateParameterRange') {
-        return describeParameterRange(action.payload, context);
-    }
-    if (action.type === 'automateSendRange') {
-        const targetDescriptions = (action.payload.expectedSends ?? []).map((send) => {
-            const track = context.tracks.find((candidate) => candidate.id === send.trackId);
-            const lowered = send.level * 10 ** (-action.payload.reductionDb / 20);
-            const target = track ? `"${track.name}" (${track.id})` : send.trackId;
-            return `${target} ${String(send.level)}→${String(lowered)}`;
-        });
-        const busName = action.payload.busName ?? action.payload.busId;
-        const range =
-            action.payload.startBeat === undefined || action.payload.endBeat === undefined
-                ? action.payload.sectionName
-                : `${action.payload.sectionName} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}`;
-        return `Lower sends to "${busName}" (${action.payload.busId}) by ${String(action.payload.reductionDb)} dB only in ${range}: ${targetDescriptions.join(', ')}`;
-    }
-    if (action.type === 'addDevice') {
-        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        const deviceType = context.availableDeviceTypes?.find(
-            (candidate) => candidate.id === action.payload.deviceType
-        );
-        const anchor = track?.devices.find((candidate) => candidate.id === action.payload.afterDeviceId);
-        if (track && deviceType && action.payload.deviceId) {
-            const anchorDescription = anchor
-                ? ` after "${anchor.name ?? anchor.type}" (${anchor.id})`
-                : ' at the end of the chain';
-            return `Insert "${deviceType.name}" (${action.payload.deviceId}) on track "${track.name}" (${track.id})${anchorDescription}`;
-        }
-    }
-    if (action.type === 'removeTrack') {
-        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        if (track) {
-            return `Remove track "${track.name}"`;
-        }
-    }
-    if (action.type === 'removeClip') {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        if (clip) {
-            return `Remove clip "${clip.name}"`;
-        }
-    }
-    if (action.type === 'glueClips') {
-        const sources = action.payload.clipIds.flatMap((clipId) => {
-            for (const track of context.tracks) {
-                const clip = track.clips.find((candidate) => candidate.id === clipId);
-                if (clip) {
-                    return [
-                        {
-                            description: `"${clip.name}" (${clip.id}, beats ${String(clip.startBeat)}–${String(clip.endBeat)})`,
-                            track,
-                        },
-                    ];
-                }
-            }
-            return [];
-        });
-        const sourceTrack = sources[0]?.track;
-        if (
-            sources.length === action.payload.clipIds.length &&
-            sourceTrack &&
-            sources.every((source) => source.track.id === sourceTrack.id)
-        ) {
-            return `Glue MIDI clips ${sources.map((source) => source.description).join(' and ')} on MIDI track "${sourceTrack.name}" (${sourceTrack.id})`;
-        }
-        return 'Glue MIDI clips';
-    }
-    if (action.type === 'moveClip') {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        if (clip && track) {
-            return `Move clip "${clip.name}" to track "${track.name}" at beat ${String(action.payload.startBeat)}`;
-        }
-        return `Move clip to beat ${String(action.payload.startBeat)}`;
-    }
-    if (action.type === 'normalizeClip') {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const target = clip ? ` clip "${clip.name}"` : ' clip';
-        const mode = action.payload.mode ?? 'peak';
-        if (mode === 'peak') {
-            return `Normalize${target} using peak measurement`;
-        }
-        const targetDb = action.payload.targetDb ?? -14;
-        if (mode === 'lufs') {
-            return `Normalize${target} to ${String(targetDb)} LUFS`;
-        }
-        return `Normalize${target} to ${String(targetDb)} dB RMS`;
-    }
-    if (action.type === 'setClipStretchRatio') {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const target = clip ? ` clip "${clip.name}"` : ' clip';
-        return `Set${target} stretch ratio to ${String(action.payload.ratio)}×`;
-    }
-    if (action.type === 'setClipStretchMode') {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const target = clip ? ` clip "${clip.name}"` : ' clip';
-        return `Set${target} stretch mode to ${action.payload.mode}`;
-    }
-    if (action.type === 'fitClipToBeats') {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const target = clip ? ` clip "${clip.name}"` : ' clip';
-        return `Fit${target} to ${String(action.payload.targetBeats)} beats`;
-    }
-    if (action.type === 'removeMarker') {
-        const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
-        if (marker) {
-            return `Remove marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id})`;
-        }
-    }
-    if (action.type === 'setMarkerColor') {
-        const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
-        if (marker) {
-            const color = resolveMarkerColorName(action.payload.color) ?? action.payload.color;
-            return `Set marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id}) color to ${color}`;
-        }
-    }
-    if (action.type === 'addSection') {
-        return `Add section "${action.payload.name}" from beat ${String(action.payload.startBeat)} to beat ${String(action.payload.endBeat)}`;
-    }
-    if (action.type === 'removeSection' || action.type === 'renameSection') {
-        const section = markerStore.value?.sections.find((candidate) => candidate.id === action.payload.sectionId);
-        if (section) {
-            if (action.type === 'removeSection') {
-                return `Remove section "${section.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
-            }
-            return `Rename section "${section.name}" to "${action.payload.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
-        }
-    }
-    if (action.type === 'removeShortMidiOverlaps') {
-        const projected = projectShortMidiOverlapRemoval({
-            notes: action.payload.expectedNotes,
-            tempo: action.payload.expectedTempo,
-            maximumOverlapMs: action.payload.maximumOverlapMs,
-        });
-        if (projected) {
-            return describeShortMidiOverlapRemoval({
-                trackId: action.payload.expectedTrackId,
-                trackName: action.payload.trackName,
-                clipId: action.payload.clipId,
-                clipName: action.payload.clipName,
-                maximumOverlapMs: action.payload.maximumOverlapMs,
-                shortenedNotes: projected.shortenedNotes,
-            });
-        }
-    }
-    if (
-        action.type === 'arpeggiate' &&
-        action.payload.expectedTrackId &&
-        action.payload.trackName &&
-        action.payload.clipName &&
-        action.payload.expectedNotes &&
-        action.payload.addedNotes
-    ) {
-        return `Track "${action.payload.trackName}" (${action.payload.expectedTrackId}), clip "${action.payload.clipName}" (${action.payload.clipId}): add ${String(action.payload.addedNotes.length)} syncopated offbeat eighth-note arpeggio notes; preserve ${String(action.payload.expectedNotes.length)} source notes, absolute voicing, velocities, expression, and harmonic boundaries`;
-    }
-    if (action.type === 'createDrumPreviewBranches') {
-        const candidates = action.payload.candidates
-            .map(
-                (candidate) =>
-                    `"${candidate.branchName}" (${candidate.branchId}, ${candidate.rootDocId}, ${candidate.recipe})`
-            )
-            .join(', ');
-        return `Create exactly three preview branches for "${action.payload.sectionName}" (${action.payload.sectionId}, beats ${String(action.payload.sectionStartBeat)}–${String(action.payload.sectionEndBeat)}): ${candidates}; preserve Kick track "${action.payload.kick.trackName}" (${action.payload.kick.trackId}) clip "${action.payload.kick.clipName}" (${action.payload.kick.clipId}) exactly; vary only Snare clip "${action.payload.snare.clipName}" (${action.payload.snare.clipId}) and Hi-Hat clip "${action.payload.hiHat.clipName}" (${action.payload.hiHat.clipId}); keep the source branch active and unchanged`;
-    }
-    if (
-        action.type === 'quantizeNotes' ||
-        action.type === 'transposeNotes' ||
-        action.type === 'invertNotes' ||
-        action.type === 'retrogradeNotes' ||
-        action.type === 'quantizeNoteLengths' ||
-        action.type === 'scaleAllVelocities' ||
-        action.type === 'setAllVelocities'
-    ) {
-        const clip = context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        if (clip) {
-            if (action.type === 'quantizeNotes') {
-                return `Quantize notes in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`;
-            }
-            if (action.type === 'transposeNotes') {
-                let signedSemitones = String(action.payload.semitones);
-                if (action.payload.semitones > 0) {
-                    signedSemitones = `+${signedSemitones}`;
-                }
-                return `Transpose notes in "${clip.name}" (${clip.id}) by ${signedSemitones} semitones`;
-            }
-            if (action.type === 'invertNotes') {
-                return `Invert notes in "${clip.name}" (${clip.id})`;
-            }
-            if (action.type === 'retrogradeNotes') {
-                return `Retrograde notes in "${clip.name}" (${clip.id})`;
-            }
-            if (action.type === 'quantizeNoteLengths') {
-                return `Quantize note lengths in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`;
-            }
-            if (action.type === 'scaleAllVelocities') {
-                return `Scale note velocities in "${clip.name}" (${clip.id}) by ×${String(action.payload.factor)}`;
-            }
-            return `Set note velocities in "${clip.name}" (${clip.id}) to ${String(action.payload.velocity)}`;
-        }
-    }
-    if (action.type === 'copyMidiArticulations') {
-        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        const source = track?.clips.find((clip) => clip.id === action.payload.sourceClipId);
-        const target = track?.clips.find((clip) => clip.id === action.payload.targetClipId);
-        const changes = getMidiArticulationSemanticChanges({
-            notePairs: action.payload.notePairs,
-            sourceNotes: action.payload.expectedSourceNotes,
-            targetNotes: action.payload.expectedTargetNotes,
-        });
-        if (track && source && target && changes && changes.length > 0) {
-            const noteChanges = changes
-                .map((change) => {
-                    const current = change.currentTargetArticulation ?? 'none';
-                    const sourceValue = change.sourceArticulation ?? 'none';
-                    return `target note ${change.targetNoteId} from ${change.sourceNoteId} articulation ${current} → ${sourceValue}`;
-                })
-                .join('; ');
-            return `Track "${track.name}" (${track.id}): "${source.name}" (${source.id}) → "${target.name}" (${target.id}); ${noteChanges}; preserve target pitches, velocities, timing, and expression`;
-        }
-    }
-
-    if (action.type === 'addSidechainRoute' || action.type === 'removeSidechainRoute') {
-        const source = context.tracks.find((track) => track.id === action.payload.sourceTrackId);
-        const target = context.tracks.find((track) => track.id === action.payload.targetTrackId);
-        if (source && target) {
-            const operation = action.type === 'addSidechainRoute' ? 'Add' : 'Remove';
-            const targetDevice = target.devices.find((device) => device.id === action.payload.targetDeviceId);
-            if (targetDevice) {
-                return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id}) device "${targetDevice.name ?? targetDevice.type}" (${targetDevice.id}, ${targetDevice.type})`;
-            }
-            return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id})`;
-        }
-    }
-    return describeAction(action);
+    return lookup(action, context);
 }

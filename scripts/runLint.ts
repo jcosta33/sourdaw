@@ -61,12 +61,13 @@ const HEAP_FLAG = /--max[-_]old[-_]space[-_]size(?:=|\s+)(\d+)/;
  * today it cannot, which is #2678, and until that lands this command does not
  * complete under the guard from a cold cache.
  */
-export function eslintEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function eslintEnvironment(source: NodeJS.ProcessEnv, fix = false): NodeJS.ProcessEnv {
     const current = source.NODE_OPTIONS ?? '';
+    const environment = { ...source, SOURDAW_LINT_COFIX: fix ? '1' : '0' };
     if (HEAP_FLAG.test(current)) {
-        return source;
+        return environment;
     }
-    return { ...source, NODE_OPTIONS: `${current} --max-old-space-size=${ESLINT_HEAP_MIB}`.trim() };
+    return { ...environment, NODE_OPTIONS: `${current} --max-old-space-size=${ESLINT_HEAP_MIB}`.trim() };
 }
 
 /**
@@ -86,6 +87,14 @@ export function lintThreads(source: NodeJS.ProcessEnv = process.env): string {
     return source.SOURDAW_LINT_THREADS ?? '2';
 }
 
+/**
+ * Existing violations of promoted rules, counted per file and rule. Naming the file explicitly
+ * makes ESLint refuse to run when it is missing instead of silently reporting no suppressions,
+ * and ESLint fails a run whose linted files hold fewer violations than recorded, so the file
+ * only shrinks through `--prune-suppressions`.
+ */
+export const ESLINT_SUPPRESSIONS_FILE = 'eslint-suppressions.json';
+
 export function buildEslintArgv(
     options: Pick<Options, 'fix' | 'full'>,
     eslintTargets: string[],
@@ -98,9 +107,11 @@ export function buildEslintArgv(
         `--concurrency=${lintConcurrency(env)}`,
         '--cache',
         '--cache-location',
-        'node_modules/.cache/eslint/',
+        options.fix ? 'node_modules/.cache/eslint/cofix/' : 'node_modules/.cache/eslint/check/',
         '--cache-strategy',
         'content',
+        '--suppressions-location',
+        ESLINT_SUPPRESSIONS_FILE,
         ...(options.fix ? ['--fix'] : []),
         ...eslintTargets,
     ];
@@ -142,8 +153,25 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
     }
 }
 
+function checkPublicPlugins(targets: string[]): void {
+    runStep('oxlint-plugins', [
+        'exec',
+        'oxlint',
+        '--config=.oxlint-plugins.json',
+        '--quiet',
+        `--threads=${lintThreads()}`,
+        '--format=agent',
+        ...targets,
+    ]);
+}
+
 export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
-export const FULL_ESLINT_TARGETS = ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'electron/**/*.ts'] as const;
+export const FULL_ESLINT_TARGETS = [
+    'src/**/*.{ts,tsx}',
+    'scripts/**/*.ts',
+    'electron/**/*.ts',
+    'scripts/lint/sourdaw.mjs',
+] as const;
 
 function main(): number {
     try {
@@ -154,13 +182,26 @@ function main(): number {
         runStep('oxlint', [
             'exec',
             'oxlint',
+            // Focused JS tooling can be intentionally excluded from this pass
+            // while remaining covered by the public plugins and ESLint.
+            '--no-error-on-unmatched-pattern',
             '--quiet',
             `--threads=${lintThreads()}`,
             '--format=agent',
             ...(options.fix ? ['--fix'] : []),
             ...targets,
         ]);
-        runStep('eslint', buildEslintArgv(options, eslintTargets), eslintEnvironment(process.env));
+        if (!options.fix) {
+            // Check mode uses Oxlint for public JS rules. Fix mode keeps them
+            // with Prettier so relocated diagnostics and their fixes converge.
+            checkPublicPlugins(eslintTargets);
+        }
+        runStep('eslint', buildEslintArgv(options, eslintTargets), eslintEnvironment(process.env, options.fix));
+        if (options.fix) {
+            // Preserve Oxlint's parser and target-admission contracts on the
+            // final bytes without introducing another writer or fix loop.
+            checkPublicPlugins(eslintTargets);
+        }
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);

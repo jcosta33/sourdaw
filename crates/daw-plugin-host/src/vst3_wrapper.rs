@@ -2248,7 +2248,9 @@ fn fill_process_context(target: &mut ProcessContext, source: HostTransport, samp
         state |= StatesAndFlags_::kPlaying;
     }
 
-    target.state = state as u32;
+    // The flag constants are `c_int` on Windows and `c_uint` elsewhere, while
+    // the field is always `u32`; reinterpreting the bytes is the same bits.
+    target.state = u32::from_ne_bytes(state.to_ne_bytes());
     target.sampleRate = sample_rate;
     target.projectTimeSamples = (source.song_pos_seconds * sample_rate) as i64;
     target.projectTimeMusic = source.song_pos_beats;

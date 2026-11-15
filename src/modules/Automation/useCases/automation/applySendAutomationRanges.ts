@@ -1,5 +1,4 @@
-import { type SendAutomationRangeSnapshot } from '#/utils/handlerContract';
-
+import { type SendAutomationRangeSnapshot } from '../../models/SendAutomationRangeSnapshot';
 import { buildSendAutomationRangesLane } from '../../services/buildSendAutomationRangesLane';
 import { automationStore } from '../../stores/automationStore';
 

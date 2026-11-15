@@ -1,18 +1,29 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { measuredPreviewAuditionRuntime } from '../services/measuredPreviewAuditionRuntime';
+import {
+    measuredPreviewAuditionRuntime,
+    type MeasuredPreviewAuditionOperation,
+} from '../services/measuredPreviewAuditionRuntime';
 import { measuredPreviewAuditionStore } from '../stores/measuredPreviewAuditionStore';
+
+type StopInput = {
+    confirmationId?: string;
+    operationId?: string;
+    /** Named by a surface that is going away: it stops only the audition that surface started. */
+    surface?: MeasuredPreviewAuditionOperation['surface'];
+};
 
 /** Stop only the named application-owned audition, synchronously before awaiting restoration. */
 export function stopMeasuredPreviewAudition(
-    input: { confirmationId?: string; operationId?: string } = {}
+    input: StopInput = {}
 ): Promise<{ status: 'idle' | 'stopped' } | { status: 'restore-failed'; reason: string }> {
     const runtime = measuredPreviewAuditionRuntime;
     const operation = input.operationId === undefined ? runtime.current : runtime.operations.get(input.operationId);
     if (
         operation === null ||
         operation === undefined ||
-        (input.confirmationId !== undefined && operation.confirmationId !== input.confirmationId)
+        (input.confirmationId !== undefined && operation.confirmationId !== input.confirmationId) ||
+        (input.surface !== undefined && operation.surface !== input.surface)
     ) {
         return Promise.resolve({ status: 'idle' });
     }

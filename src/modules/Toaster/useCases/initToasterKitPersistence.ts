@@ -2,6 +2,7 @@ import { wasToasterKitExplicitlyCommitted } from '../models/ToasterKitCommitMark
 import { toasterStore } from '../stores/toasterStore';
 
 import { commitToasterKit } from './commitToasterKit';
+import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
 
 /**
  * Mirror every Toaster kit edit into project truth.
@@ -27,10 +28,12 @@ import { commitToasterKit } from './commitToasterKit';
  */
 export function initToasterKitPersistence(): () => void {
     const committedKits = new Map<string, unknown>();
+    const episodes = toasterRefusalEpisodes;
 
     return toasterStore.subscribe((instances) => {
         if (!instances) {
             committedKits.clear();
+            episodes.endAll();
             return;
         }
 
@@ -41,7 +44,7 @@ export function initToasterKitPersistence(): () => void {
             if (previous === undefined || previous === state.kit || wasToasterKitExplicitlyCommitted(state.kit)) {
                 continue;
             }
-            commitToasterKit(deviceId);
+            commitToasterKit(deviceId, episodes);
         }
 
         // Drop devices that are gone, so a device id reused by a later load is
@@ -49,6 +52,7 @@ export function initToasterKitPersistence(): () => void {
         for (const deviceId of committedKits.keys()) {
             if (!(deviceId in instances)) {
                 committedKits.delete(deviceId);
+                episodes.end(deviceId);
             }
         }
     });

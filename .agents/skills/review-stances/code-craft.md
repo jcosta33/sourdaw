@@ -18,17 +18,24 @@ findings without a concrete break ("I'd prefer if") are discarded.
    under the matching rule id in `oxlint.craft-baseline.mjs` on the head. A listed file is the finding: no
    check goes red, so the reviewer is the check, citing the rule id and `docs/07-conventions.md`.
    `{ ...record, field }` and `fn(...args)` are legal.
-2. **A craft construct in an unlisted file reaches a green Lint job.** Runs: CI; the reviewer reads the
-   `Lint` job on the head. Input: any probe-1 construct in a file not listed for its rule. The `Lint` job
-   must report the plugin's message for that rule (for a conditional spread, "Do not spread a conditional
-   or logical expression"). A green `Lint` over such a hunk means the rule does not match that syntactic
-   form: name the form and carry it to probe 6 as a missing `invalid` row in
-   `scripts/oxlintCraft/__tests__/plugin.spec.ts`.
+2. **A craft construct in an unlisted file reaches a green Lint job.** Runs: CI; first establish the
+   `Lint` job's actual checked merge ref, source and relevant rule configuration and severity. Input: any
+   probe-1 construct in a file not listed for its rule. A checked tree containing both the added source
+   and current enforcing configuration must report the plugin's message (for a conditional spread,
+   "Do not spread a conditional or logical expression"). Only a green `Lint` on that combined tree
+   means the rule does not match that syntactic form: name the form and carry it to probe 6 as a missing
+   `invalid` row in `scripts/oxlintCraft/__tests__/plugin.spec.ts`.
 3. **The diff widens a lint baseline instead of complying.** `oxlint.craft-baseline.mjs` and
    `eslint.size-baseline.mjs` only burn down: "No path is ever added". `craftBaseline.spec.ts` checks only
    rule keys, sort order, duplicates and existence, so a sorted, unique added path passes it. Input:
    `git diff <merge-base> <head> -- oxlint.craft-baseline.mjs eslint.size-baseline.mjs`. Any added path is
    the finding; a removed path whose file still violates the rule must turn the `Lint` job red on the head.
+   Compare each changed file's actual integrated source with its recorded ceiling in
+   `scripts/lintSizeCeilings.json`, and require `scripts/__tests__/lintSizeBaseline.spec.ts` to observe
+   that combined version. #6618 and #6493 each grew the parser while a passing older checked tree
+   omitted the parallel growth; the integrated source exceeded its unchanged ceiling. A passing
+   older tree is no witness for the combined size. Extract a coherent responsibility to comply;
+   never raise the ceiling or compress blank lines to hide growth.
 4. **A `className` pile on a `ui/` primitive instead of a variant.** No lint rule observes this. Input: a
    call site that passes a run of layout or colour utilities (`className="h-8 px-3 …"`) to a primitive
    imported from `src/components/ui/`. The finding quotes `src/components/AGENTS.md` ("Do not pile Tailwind
@@ -63,3 +70,19 @@ findings without a concrete break ("I'd prefer if") are discarded.
    that skips the ESLint leg or removes the configuration's required default-export exception must fail.
    Widening that exception to ordinary or nested modules must fail their default-export probes. Removing
    a typed helper or recursive traversal must fail the affected invalid custom-rule fixtures.
+9. **Parallel source and rule promotion share no enforcing witness.** #6537 promoted
+   `promise/always-return` to error while #6594's passing `Lint` checked an older merge tree where it
+   still warned. Input: an unbaselined `.then(() => {})` must fail with `promise(always-return)` under
+   the promoted error configuration. The same requirement covers helper arrows from #6593 and
+   `const noExtraTargets = (): readonly string[] => [];` from #6616: unbaselined witnesses must fail
+   `func-style` under #6537's promotion. The non-nullable store status fallback
+   `status ?? { state: 'idle' }` from #6628 must fail `typescript/no-unnecessary-condition`, also
+   promoted by #6537. Refs named `latestSend` or `focusIndexAfterReveal` without the `Ref` suffix
+   (#6594) must fail `@eslint-react/naming-convention-ref-name` under #6540's promotion. #6594's
+   checked tree preceded that promotion; #6540's enforcing checked tree omitted the Inspector source.
+   The non-strict ruleset can admit independently green source and promotion heads (#6676).
+   Before approving a rule promotion or baseline shrink, require current-integrated-tree CI `Lint`
+   or an exact focused diagnostic for the relevant overlap; the checked tree must contain both the
+   added source and current enforcing configuration. Refresh that witness when either relevant
+   source or enforcing configuration changes. An older `--quiet` warning pass proves neither
+   combined compliance nor a missing rule visitor.

@@ -870,6 +870,25 @@ pub(crate) fn instance_is_attached(state: &CrumbsState, instance_id: &str) -> bo
         .is_some_and(|instance| matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }))
 }
 
+/// A refused Crumbs create. `syncCrumbsNativeInstances.ts` matches the
+/// `already exists` text to treat a duplicate create as success (ADR 0059).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CrumbsCreateRefusal {
+    AlreadyExists { instance_id: String },
+}
+
+impl std::fmt::Display for CrumbsCreateRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyExists { instance_id } => {
+                write!(f, "Crumbs instance '{instance_id}' already exists")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CrumbsCreateRefusal {}
+
 /// Create a new crumbs engine instance.
 ///
 /// Takes no sample rate: the sampler records the engine's own input tap and
@@ -924,7 +943,7 @@ pub async fn create_crumbs(
     // otherwise the insert below replaces the first ledger entry and strands
     // its slot.
     if instances.contains_key(&instance_id) {
-        return Err(format!("Crumbs instance '{instance_id}' already exists"));
+        return Err(CrumbsCreateRefusal::AlreadyExists { instance_id }.to_string());
     }
 
     ensure_crumbs_capture_headroom(&instances)?;
@@ -2023,6 +2042,17 @@ fn classify_sample(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[test]
+    fn already_exists_refusal_carries_the_text_typescript_matches() {
+        assert_eq!(
+            super::CrumbsCreateRefusal::AlreadyExists {
+                instance_id: "d-crumbs".into()
+            }
+            .to_string(),
+            "Crumbs instance 'd-crumbs' already exists"
+        );
+    }
+
     use super::*;
 
     use std::sync::Condvar;
@@ -2135,7 +2165,7 @@ pub(crate) mod tests {
         fn feed(&mut self, value: f32) {
             self.driver.service_owner_commands();
             let mut input = [0.0f32; 1024];
-            for frame in input.chunks_exact_mut(2) {
+            for frame in input.as_chunks_mut::<2>().0 {
                 frame[0] = value;
                 frame[1] = value / 2.0;
             }
@@ -2867,27 +2897,6 @@ pub(crate) mod tests {
             CrumbsEngineSlot::Attached { plugin_id, .. } => plugin_id,
             CrumbsEngineSlot::Dormant(_) => {
                 panic!("instance '{instance_id}' should be attached to the engine")
-            }
-        }
-    }
-
-    /// The writes an instance has parked, or a panic if it is not dormant.
-    fn parked_writes<T>(
-        state: &CrumbsState,
-        instance_id: &str,
-        read: impl FnOnce(&DormantCrumbsWrites) -> T,
-    ) -> T {
-        let instances = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available");
-        let instance = instances
-            .get(instance_id)
-            .unwrap_or_else(|| panic!("instance '{instance_id}' should own a map entry"));
-        match &instance.engine_slot {
-            CrumbsEngineSlot::Dormant(writes) => read(writes),
-            CrumbsEngineSlot::Attached { .. } => {
-                panic!("instance '{instance_id}' should still be dormant")
             }
         }
     }

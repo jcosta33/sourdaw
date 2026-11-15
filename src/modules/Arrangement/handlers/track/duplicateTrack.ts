@@ -4,6 +4,8 @@ import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
+import { activateCreatedTrackHostedPlugins } from '../../useCases/device/activateCreatedTrackHostedPlugins';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
@@ -48,6 +50,8 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
             return { status: 'conflict' };
         }
         const guard = pendingDuplicateGuards.get(action);
+        // The use case's return value predates its own device copy; the store holds the committed track.
+        const committed = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
         if (guard) {
             // Finalize from the committed store track: the use case's return
             // value predates its own step that copies devices, sends, and
@@ -57,7 +61,6 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
             // the guard expects exactly what the duplication cloned onto the
             // copies' new clip ids — requiring absence would make the
             // duplicate's own undo conflict on what it itself created.
-            const committed = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
             if (committed) {
                 const clipIds = collectTrackClipIds(committed);
                 guard.entityJson = JSON.stringify(committed);
@@ -65,7 +68,11 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
                 guard.clipAutomationLanesJson = serializeClipScopedAutomationLanes(clipIds);
             }
         }
-        return { status: 'written' };
+        if (!committed || collectHostedPluginInstances(committed).length === 0) {
+            return { status: 'written' };
+        }
+        const activate = () => activateCreatedTrackHostedPlugins(track.id);
+        return { status: 'written', afterCommit: activate, afterAmbiguousCommit: activate };
     },
     describe: (action) => {
         const targetTrackId = ensureTargetTrackId(action);

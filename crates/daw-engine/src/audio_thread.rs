@@ -57,6 +57,9 @@ const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// Hands a take's completion service to the capture reclaimer worker.
+type CaptureServiceSender = Sender<Box<dyn CaptureCompletionService>>;
+
 /// Completion work for one native take, visited only off the audio callbacks.
 /// Implementations retain pending work on contention and must never reenter the
 /// engine from `engine_stopped`, which can run while its owner holds its lock.
@@ -168,7 +171,7 @@ impl CapturePeriodObservation {
 }
 
 struct CaptureServiceAdoption {
-    sender: Sender<Box<dyn CaptureCompletionService>>,
+    sender: CaptureServiceSender,
     // Device-backed workers stop with the output callback. A detached fixture
     // has no callback and owns its worker shutdown here instead.
     detached_shutdown: Option<Sender<()>>,
@@ -637,7 +640,7 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
 /// capture completion. Adoption occurs on the control thread, never on RT.
 fn spawn_capture_feed_reclaimer(
     mut retired: Consumer<CaptureFeed>,
-) -> Result<(Sender<()>, Sender<Box<dyn CaptureCompletionService>>), String> {
+) -> Result<(Sender<()>, CaptureServiceSender), String> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (adopt_tx, adopt_rx) = mpsc::channel::<Box<dyn CaptureCompletionService>>();
     thread::Builder::new()
@@ -1778,7 +1781,7 @@ struct OwnedDeviceStreams {
 
 impl Drop for OwnedDeviceStreams {
     fn drop(&mut self) {
-        drop(self.capture.take());
+        self.capture = None;
         if let Some(pending) = &self.pending_capture {
             pending.active.store(false, Ordering::Release);
             pending.observation.closed();
@@ -6505,7 +6508,7 @@ mod compensation_render_alloc_guards {
     }
 
     impl NoteRecordingPlugin {
-        fn new() -> (Box<dyn NativePlugin>, Arc<ReceivedNoteLog>) {
+        fn with_log() -> (Box<dyn NativePlugin>, Arc<ReceivedNoteLog>) {
             let received = Arc::new(ReceivedNoteLog::new());
             let plugin = Box::new(Self {
                 processed: 0,
@@ -6611,7 +6614,7 @@ mod compensation_render_alloc_guards {
             is_playing: true,
             ..TransportState::default()
         }));
-        let (instrument, received) = NoteRecordingPlugin::new();
+        let (instrument, received) = NoteRecordingPlugin::with_log();
         harness.send(GraphCommand::AddHostedPlugin(
             EFFECT_ID,
             instrument,

@@ -15,7 +15,6 @@ import {
     assertRequiredRepository,
     authenticateRole,
     authenticateTrackerAuthor,
-    gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
     isAuthorBotNodeId,
     REQUIRED_BASE_BRANCH,
@@ -25,6 +24,7 @@ import {
     spawnRun,
     type MintPermissions,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import {
     assertConventionalSubject,
     assertPullRequestBody,
@@ -4025,7 +4025,13 @@ export function shellPort(
             if (options.gitToken !== undefined) {
                 const helperDir =
                     options.helperDir ?? fail('authenticated git fetch requires a credential helper directory');
-                shell.run('git', gitAuthenticatedArgs(options.gitToken, helperDir, fetchArgs));
+                const repository: GitRunner = {
+                    capture: (args) => shell.capture('git', args),
+                    run: (args) => shell.run('git', args),
+                };
+                withIsolatedGitTransport(repository, { token: options.gitToken, helperDir }, (transport) => {
+                    transport.run(fetchArgs);
+                });
             } else {
                 shell.run('git', fetchArgs);
             }

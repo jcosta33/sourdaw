@@ -1,8 +1,13 @@
+import { createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
+
 import { crumbsStore, type CrumbsState } from '../stores/crumbsStore';
 import { hasUnsettledCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 
 import { commitCrumbsDeviceState } from './commitCrumbsDeviceState';
 import { liveCrumbsMirrorPass } from './crumbsDeviceStateMirror';
+
+/** A baseline no `playbackKey` can equal, so the next unheld pass for the device commits. */
+const UNCOMMITTED_BASELINE = '';
 
 /** The two fields the chunk carries, flattened to one comparable key. */
 function playbackKey(state: CrumbsState): string {
@@ -30,6 +35,18 @@ function playbackKey(state: CrumbsState): string {
  */
 export function initCrumbsDeviceStatePersistence(): () => void {
     const committed = new Map<string, string>();
+    const episodes = createUserAppActionRefusalEpisodes({
+        onAdmitted: (deviceId) => {
+            if (hasUnsettledCrumbsPairedReconcile(deviceId)) {
+                // #4764: the store's sample is still the stale local one. Forget the committed
+                // baseline instead of writing: no playback key equals it, so the pair's release
+                // replay of `mirrorPass` sees a change and commits the settled state.
+                committed.set(deviceId, UNCOMMITTED_BASELINE);
+                return;
+            }
+            commitCrumbsDeviceState(deviceId, episodes);
+        },
+    });
 
     const mirrorPass = (deviceId: string, state: CrumbsState): void => {
         const previous = committed.get(deviceId);
@@ -49,13 +66,14 @@ export function initCrumbsDeviceStatePersistence(): () => void {
         if (previous === undefined || previous === current) {
             return;
         }
-        commitCrumbsDeviceState(deviceId);
+        commitCrumbsDeviceState(deviceId, episodes);
     };
     liveCrumbsMirrorPass.current = mirrorPass;
 
     const unsubscribe = crumbsStore.subscribe((instances) => {
         if (!instances) {
             committed.clear();
+            episodes.endAll();
             return;
         }
 
@@ -68,6 +86,7 @@ export function initCrumbsDeviceStatePersistence(): () => void {
         for (const deviceId of committed.keys()) {
             if (!(deviceId in instances)) {
                 committed.delete(deviceId);
+                episodes.end(deviceId);
             }
         }
     });

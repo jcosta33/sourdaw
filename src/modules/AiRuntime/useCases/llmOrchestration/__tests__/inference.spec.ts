@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
@@ -21,10 +22,12 @@ import {
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { projectOpenAiStrictToolSchema } from '../../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
-import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
+import { cloudSession, type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
+import { getActiveModelId } from '../../../repositories/webLlm/getActiveModelId';
 import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
+import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
@@ -34,6 +37,7 @@ import {
     ANALYSIS_MEASURE_TOOL_NAME,
     BRIEF_COMPILE_TOOL_NAME,
     getAgentToolCatalogSchemas,
+    MANDATORY_PLANNING_TOOL_NAMES,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -56,6 +60,8 @@ registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
+    /** Resolve the chain through the real route resolution instead of `backendChain`. */
+    routedBackendChain: { value: false },
     failRemoteDisclosure: { value: false },
     generateCloudToolCalls: vi.fn(),
     generateWebLlmToolCalls: vi.fn(),
@@ -64,16 +70,22 @@ const mocks = vi.hoisted(() => ({
     initWebLlmEngine: vi.fn(),
     isWebLlmLoaded: vi.fn(),
     llmStatus: { value: { state: 'idle' } },
-    llmStatusSet: vi.fn(),
+    llmStatusSet: vi.fn<(status: { state: string }) => void>(),
     logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     providerStartFailure: { value: null as 'openai' | 'webllm' | null },
+    /** How the next compiled request is spoiled before the attempt sends it, if at all. */
+    spoiledRequest: { value: null as 'unavailable' | 'missing-user-message' | null },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
-vi.mock('../backendResolution/getBackendChain', () => ({
-    getBackendChain: () => mocks.backendChain.value,
-}));
+vi.mock('../backendResolution/getBackendChain', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../backendResolution/getBackendChain')>();
+    return {
+        getBackendChain: (requirements: Parameters<typeof actual.getBackendChain>[0]) =>
+            mocks.routedBackendChain.value ? actual.getBackendChain(requirements) : mocks.backendChain.value,
+    };
+});
 
 vi.mock('../../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
     generateCloudToolCalls: mocks.generateCloudToolCalls,
@@ -126,6 +138,28 @@ vi.mock('../../modelProviderProtocol', async (importOriginal) => {
             const protocol = actual.createModelProviderProtocol(input);
             return {
                 ...protocol,
+                compileRequest: (request: Parameters<typeof protocol.compileRequest>[0]) => {
+                    const compiled = protocol.compileRequest(request);
+                    const spoiled = mocks.spoiledRequest.value;
+                    mocks.spoiledRequest.value = null;
+                    if (spoiled === 'unavailable') {
+                        return {
+                            status: 'unavailable' as const,
+                            failure: {
+                                code: 'tools-unavailable',
+                                correlationId: request.correlationId,
+                                safeMessage: 'The provider does not support tool calls.',
+                                retryable: false,
+                                partialOutputDisposition: 'none' as const,
+                            },
+                        };
+                    }
+                    if (spoiled === 'missing-user-message' && compiled.status === 'ready') {
+                        const messages = compiled.request.messages.filter((message) => message.role !== 'user');
+                        return { ...compiled, request: { ...compiled.request, messages } };
+                    }
+                    return compiled;
+                },
                 start: (request: Parameters<typeof protocol.start>[0]) => {
                     if (mocks.providerStartFailure.value === input.provider) {
                         mocks.providerStartFailure.value = null;
@@ -166,6 +200,17 @@ const compatibleRuntime: OpenAiCompatibleCloudRuntime = {
     strict_tool_schemas: false,
 };
 
+const supportedWebGpuReport = {
+    capability: 'supported' as const,
+    webGpu: { status: 'supported' as const },
+    webGpuTier: 'not-measured' as const,
+    crossOriginIsolated: true,
+    workerAvailable: true,
+    opfsAvailable: true,
+    inference: { status: 'not-measured' as const, reason: 'not-requested' as const },
+    detectedAt: 0,
+};
+
 /** A published catalog in the shape production hands the schema builder. */
 function jointInterpretationSchema(): ToolSchema {
     const context = getProjectContext();
@@ -194,6 +239,7 @@ describe('generateToolPlanningOutcome', () => {
         vi.clearAllMocks();
         agentRunLifecycle.clear();
         mocks.backendChain.value = [];
+        mocks.routedBackendChain.value = false;
         mocks.failRemoteDisclosure.value = false;
         mocks.getCloudProviderInfo.mockReturnValue({
             provider: 'openai',
@@ -204,6 +250,8 @@ describe('generateToolPlanningOutcome', () => {
         mocks.usesStrictCloudToolSchemas.mockReturnValue(false);
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.providerStartFailure.value = null;
+        mocks.spoiledRequest.value = null;
+        mocks.llmStatus.value = { state: 'idle' };
     });
 
     afterEach(() => {
@@ -1950,7 +1998,7 @@ describe('generateToolPlanningOutcome', () => {
 
         // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
         // The reference comparison is offered only while the user has a reference loaded, and none is
-        // loaded here; the brief only to a hosted chat request that asks for it, which this is not.
+        // loaded here; the brief only to a chat request that asks for it, which this is not.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
             new Set([
                 ...planningContract
@@ -1965,11 +2013,26 @@ describe('generateToolPlanningOutcome', () => {
         // Production appends the creative interpretation schema to that list on every run.
         const productionSchemas = [...schemas, jointInterpretationSchema()];
 
-        await expect(generateToolPlanningOutcome('system', 'plan a command', productionSchemas)).resolves.toMatchObject(
-            {
-                status: 'complete',
-            }
-        );
+        // A kept workflow capability makes the request workflow-shaped, the offer the budget is the
+        // ceiling for.
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'plan a command',
+                productionSchemas,
+                undefined,
+                'plan a command',
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                'plan a command',
+                { keptCapabilityIds: ['drum-routing'] }
+            )
+        ).resolves.toMatchObject({
+            status: 'complete',
+        });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
         const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
@@ -2068,8 +2131,14 @@ describe('generateToolPlanningOutcome', () => {
             const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
 
             // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
-            // the one prompt-selected slot, which keeps project.discover for these prompts.
-            expect(advertisedNames).toHaveLength(35);
+            // the one prompt-selected slot, which keeps project.discover for these prompts. No workflow
+            // capability grounds these requests, so no workflow action tool is offered and the brief is not
+            // offered: the selector, the nine planning tools, command-index search, catalog discovery and the
+            // interpretation tool, plus the one slot.
+            expect(advertisedNames).toHaveLength(MANDATORY_PLANNING_TOOL_NAMES.length + 5);
+            for (const workflowActionToolName of WORKFLOW_ACTION_TOOL_NAMES) {
+                expect(advertisedNames).not.toContain(workflowActionToolName);
+            }
             expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
@@ -2155,6 +2224,104 @@ describe('generateToolPlanningOutcome', () => {
             properties: {
                 document: { type: 'string', description: expect.stringContaining('Valid complete document JSON text') },
             },
+        });
+    });
+
+    describe('the answering status each chain attempt publishes', () => {
+        const generatingStatuses = () =>
+            mocks.llmStatusSet.mock.calls
+                .map(([status]: [{ state: string }]) => status)
+                .filter((status) => status.state === 'generating');
+
+        afterEach(async () => {
+            await cloudSession.clear();
+            aiBackendPreferenceStore.set('auto');
+            capabilityStore.set({ phase: 'idle' });
+        });
+
+        // Red when the status is published once before the chain instead of per attempt.
+        it('republishes the answering backend when the hosted attempt falls through to the local model', async () => {
+            mocks.backendChain.value = ['cloud', 'webllm'];
+            mocks.generateCloudToolCalls.mockRejectedValue(new Error('The hosted endpoint is unreachable.'));
+            mocks.generateWebLlmToolCalls.mockResolvedValue({
+                status: 'complete',
+                toolCalls: [{ id: 'browser-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)
+            ).resolves.toMatchObject({ status: 'complete' });
+
+            expect(generatingStatuses()).toEqual([
+                { state: 'generating', backend: 'cloud', provider: 'openai', modelId: 'hosted-model' },
+                { state: 'generating', backend: 'webllm', modelId: getActiveModelId() },
+            ]);
+        });
+
+        // Red when automatic routing lets a configured hosted provider answer after the local model fails.
+        it('publishes only the local model under automatic routing with a hosted provider configured', async () => {
+            mocks.routedBackendChain.value = true;
+            aiBackendPreferenceStore.set('auto');
+            capabilityStore.set({ phase: 'done', report: supportedWebGpuReport });
+            await cloudSession.replace_runtime(compatibleRuntime);
+            mocks.generateWebLlmToolCalls.mockRejectedValue(new Error('The local engine stopped.'));
+
+            // The failure reaches the caller as the provider-neutral model failure.
+            await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).rejects.toThrow(
+                'The model provider request failed.'
+            );
+
+            expect(generatingStatuses()).toEqual([
+                { state: 'generating', backend: 'webllm', modelId: getActiveModelId() },
+            ]);
+            expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
+        });
+
+        // Red when a refused attempt leaves the badge naming a model with nothing running.
+        it.each([
+            {
+                label: 'its compiled request is unavailable',
+                spoiled: 'unavailable' as const,
+                reason: 'The provider does not support tool calls.',
+            },
+            {
+                label: 'its request is missing required messages',
+                spoiled: 'missing-user-message' as const,
+                reason: 'The model provider request is missing required messages.',
+            },
+        ])('settles the answering status when an attempt is refused because $label', async ({ spoiled, reason }) => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.spoiledRequest.value = spoiled;
+
+            await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toEqual({
+                status: 'rejected',
+                reason,
+            });
+
+            expect(generatingStatuses()).toEqual([
+                { state: 'generating', backend: 'webllm', modelId: getActiveModelId() },
+            ]);
+            expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
+                state: 'ready',
+                backend: 'webllm',
+                modelId: getActiveModelId(),
+            });
+            expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+        });
+
+        // Red when a refusal before the local engine loaded drops the status the turn started from.
+        it('restores the previous status when an attempt is refused before the local engine loaded', async () => {
+            const previous = { state: 'error', message: 'The last request failed.' };
+            mocks.llmStatus.value = previous;
+            mocks.isWebLlmLoaded.mockReturnValue(false);
+            mocks.backendChain.value = ['webllm'];
+            mocks.spoiledRequest.value = 'unavailable';
+
+            await expect(
+                generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)
+            ).resolves.toMatchObject({ status: 'rejected' });
+
+            expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(previous);
         });
     });
 

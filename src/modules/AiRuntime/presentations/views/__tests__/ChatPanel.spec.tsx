@@ -1,8 +1,16 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import {
+    compileVersionedCommandBatchEnvelope,
+    createVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
+    serializeVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
+
 import { type ChatMessage } from '../../../models/Chat';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPendingEffectRecoveryPolicy';
+import { digestCommandBatchContent } from '../../../useCases/digestCommandBatchContent';
 import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
 
@@ -68,16 +76,22 @@ vi.mock('../../../useCases/aiPanelActions/proposeAnswerSuggestion', () => ({
 // A real subscribed presentation store; planning, approval and mutation remain separate use-case ports.
 vi.mock('../../../stores/pendingActionConfirmationStore', async () => {
     const { createStore } = await import('#/infra/store/createStore');
-    const pendingActionConfirmationStore = createStore<{ confirmations: Array<{ id: string }> }>({
+    type Snapshot = { commandBatch?: unknown; metricGoalState?: string };
+    const pendingActionConfirmationStore = createStore<{
+        confirmations: Array<{ id: string; approvalSnapshot: Snapshot }>;
+    }>({
         initialData: { confirmations: [] },
     });
     return {
         pendingActionConfirmationStore,
         clearPendingActionConfirmations: () => pendingActionConfirmationStore.set({ confirmations: [] }),
-        proposePendingActionConfirmation: (input: { id: string }) => {
+        getPendingActionConfirmation: (id: string) =>
+            pendingActionConfirmationStore.value?.confirmations.find((confirmation) => confirmation.id === id) ?? null,
+        proposePendingActionConfirmation: (input: { id: string } & Snapshot) => {
             const confirmations = pendingActionConfirmationStore.value?.confirmations ?? [];
+            const approvalSnapshot = { commandBatch: input.commandBatch, metricGoalState: input.metricGoalState };
             pendingActionConfirmationStore.set({
-                confirmations: [...confirmations, { id: input.id }],
+                confirmations: [...confirmations, { id: input.id, approvalSnapshot }],
             });
             return { id: input.id };
         },
@@ -104,7 +118,8 @@ vi.mock('remark-gfm', () => ({
     default: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: retainedPreviewMocks.cache,
     playCachedAudioBufferPreview: retainedPreviewMocks.play,
     releasePreviewAudioBuffer: retainedPreviewMocks.release,
@@ -118,6 +133,21 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 
 vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
     settleRetainedSectionRenderManualReview: retainedPreviewMocks.settle,
+}));
+
+// The shared comparison's own behaviour is `measuredPreviewAuditionSurfaces.spec.tsx`'s; here, what the card mounts.
+const auditionMock = vi.hoisted(() => vi.fn());
+vi.mock('../MeasuredPreviewAudition', () => ({
+    MeasuredPreviewAudition: (props: { confirmationId: string; surface: string }) => {
+        auditionMock(props);
+        return (
+            <section
+                aria-label="Measured audio comparison"
+                data-confirmation-id={props.confirmationId}
+                data-surface={props.surface}
+            />
+        );
+    },
 }));
 
 vi.mock('../../components/ChatComposer', () => ({
@@ -263,12 +293,20 @@ function createRetainedReview(input: {
     };
 }
 
-function usePendingChatState(state: {
-    messages: ChatMessage[];
-    isGenerating: boolean;
-    chatMode: 'prompt' | 'chat';
-    enableReasoning: boolean;
-}): void {
+type ProposalSnapshot = Pick<
+    Parameters<typeof proposePendingActionConfirmation>[0],
+    'commandBatch' | 'metricGoalState'
+>;
+
+function usePendingChatState(
+    state: {
+        messages: ChatMessage[];
+        isGenerating: boolean;
+        chatMode: 'prompt' | 'chat';
+        enableReasoning: boolean;
+    },
+    snapshot: ProposalSnapshot = {}
+): void {
     for (const message of state.messages) {
         if (
             message.pendingActionConfirmationStatus !== 'proposed' ||
@@ -283,6 +321,7 @@ function usePendingChatState(state: {
             actions: [{ type: 'setTempo', payload: { bpm: 120 } }],
             actionLabels: ['Set tempo to 120'],
             projectRevision: 'chat-presentation-revision',
+            ...snapshot,
         });
     }
     function usePendingFixtureStore(store: unknown) {
@@ -533,6 +572,160 @@ describe('ChatPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Cancel pending actions' }));
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+    });
+
+    describe('measured comparison on a proposal card', () => {
+        function measuredCardState(): Parameters<typeof usePendingChatState>[0] {
+            return {
+                messages: [
+                    {
+                        id: 'measured-card',
+                        role: 'assistant',
+                        content: 'Make the drums punchier',
+                        timestamp: 1,
+                        isCommandAction: true,
+                        pendingActionConfirmationId: 'measured-confirmation',
+                        pendingActionConfirmationStatus: 'proposed',
+                    },
+                ],
+                isGenerating: false,
+                chatMode: 'prompt',
+                enableReasoning: false,
+            };
+        }
+        function approval(overrides: { status?: string }) {
+            return {
+                confirmationId: 'measured-confirmation',
+                status: 'proposed',
+                canConfirm: true,
+                metricGoals: { status: 'verified', reason: null, criteria: [] },
+                rePreview: { available: false, reason: null },
+                skip: { available: false, reason: null },
+                intentGroups: [{ id: 'gain' }, { id: 'trim' }],
+                // A goal proof measured the batch; the card's own preview figures stay empty.
+                measuredPreview: null,
+                ...overrides,
+            };
+        }
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'measured-run',
+            batchId: 'measured-batch',
+            projectId: 'measured-project',
+            baseRevision: 'chat-presentation-revision',
+            intent: 'Match Drums loudness to Bass over Chorus',
+            commands: [
+                serializeVersionedCommandEnvelope({
+                    ...createVersionedCommandEnvelope({
+                        action: { type: 'setTrackGain', payload: { trackId: 'drums', gain: 0.8, expectedGain: 1 } },
+                        availableDeviceVersions: {},
+                        expectedEffect: 'Set Drums gain to 0.8.',
+                        normalizedProjectRevision: 'chat-presentation-revision',
+                        objectReferences: [{ argument: 'trackId', id: 'drums', scope: 'stable' }],
+                        parameterUnits: [
+                            { argument: 'gain', unit: 'linear-gain' },
+                            { argument: 'expectedGain', unit: 'linear-gain' },
+                        ],
+                        reason: 'Set Drums gain to 0.8.',
+                        time: [],
+                    }),
+                    commandId: '44444444-4444-4444-8444-444444444441',
+                }),
+            ],
+        });
+        function batchContentHash(): string {
+            const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+            if (parsed.status === 'invalid') {
+                throw new Error(parsed.reason);
+            }
+            return digestCommandBatchContent(parsed.envelope);
+        }
+        /** A metric-goal state holding one goal proof whose preview measured the batch `hash` names. */
+        function goalProofState(hash: string): string {
+            const retained = (contentAddress: string) => ({ route: 'isolated-subgraph', artifact: { contentAddress } });
+            return JSON.stringify({
+                schemaVersion: 1,
+                authorities: [],
+                steps: [],
+                binding: null,
+                proofs: [
+                    {
+                        receiptDigest: 'measure-receipt',
+                        preview: {
+                            scope: { kind: 'tracks', ids: ['drums'] },
+                            range: { startBeat: 0, endBeat: 8, sectionId: null },
+                            targets: [
+                                { targetId: 'drums', targetKind: 'track', baseline: {}, preview: {}, deltas: {} },
+                            ],
+                            batchContentHash: hash,
+                            revision: 'chat-presentation-revision',
+                            provenance: {
+                                origin: 'planner',
+                                callId: 'measure-1',
+                                turn: 1,
+                                runId: 'measured-run',
+                                targets: [
+                                    {
+                                        targetId: 'drums',
+                                        baseline: retained('baseline-pcm'),
+                                        preview: retained('preview-pcm'),
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+
+        // Red when the card gates on the approval's preview figures instead of the audition's retained proofs.
+        it('mounts the shared comparison for every intent group of a proposal its goal proof measured', () => {
+            usePendingChatState(measuredCardState(), {
+                commandBatch,
+                metricGoalState: goalProofState(batchContentHash()),
+            });
+            metricApprovalMock.mockReturnValue(approval({}));
+
+            render(<ChatPanel />);
+
+            const comparison = screen.getByRole('region', { name: 'Measured audio comparison' });
+            expect(comparison).toHaveAttribute('data-confirmation-id', 'measured-confirmation');
+            expect(comparison).toHaveAttribute('data-surface', 'chat');
+            expect(auditionMock).toHaveBeenLastCalledWith({
+                confirmationId: 'measured-confirmation',
+                selectedIntentGroupIds: ['gain', 'trim'],
+                surface: 'chat',
+            });
+        });
+
+        it.each([
+            { label: 'without a measured proof', proof: () => undefined, overrides: {} },
+            {
+                label: 'whose proof measured another batch',
+                proof: () => goalProofState('another-batch'),
+                overrides: {},
+            },
+            {
+                label: 'no longer proposed',
+                proof: () => goalProofState(batchContentHash()),
+                overrides: { status: 'invalidated' },
+            },
+        ])('offers no comparison on a card $label', ({ proof, overrides }) => {
+            usePendingChatState(measuredCardState(), { commandBatch, metricGoalState: proof() });
+            metricApprovalMock.mockReturnValue(approval(overrides));
+
+            render(<ChatPanel />);
+
+            expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeInTheDocument();
+            expect(screen.queryByRole('region', { name: 'Measured audio comparison' })).not.toBeInTheDocument();
+            expect(auditionMock).not.toHaveBeenCalled();
+        });
+    });
+
+    it('shows the shell-supplied route badge in its header while AI is available', () => {
+        render(<ChatPanel routeBadge={<span role="status">Answering with Browser · Pro</span>} />);
+
+        expect(screen.getByRole('status')).toHaveTextContent('Answering with Browser · Pro');
+        expect(screen.queryByText('AI Not Available')).not.toBeInTheDocument();
     });
 
     it('offers Skip batch and Stop run on a vibe batch card, skipping that card on activation', () => {

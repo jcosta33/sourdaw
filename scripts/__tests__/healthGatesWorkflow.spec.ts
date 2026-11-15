@@ -62,7 +62,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -1645,6 +1645,17 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     for (const name of ['Test the audio crates', 'Lint the native crate', 'Test the native crate']) {
         expect(recordAt(stepNamed(nativeConsumer, name), 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
     }
+
+    const windowsConsumer = jobAt(consumer, 'native-windows');
+    const windowsLint = stepNamed(windowsConsumer, 'Lint the Windows audio crates');
+    expect(windowsLint.run).toBe(
+        'cargo clippy --package daw-engine --package daw-plugin-host --all-targets --all-features'
+    );
+    expect(recordAt(windowsLint, 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
+    const windowsNames = arrayAt(windowsConsumer, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(windowsNames.indexOf('Lint the Windows audio crates')).toBeLessThan(
+        windowsNames.indexOf('Test the audio crates')
+    );
 }
 
 type WorkflowSet = {

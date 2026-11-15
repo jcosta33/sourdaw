@@ -25,7 +25,7 @@ fn fixture_pcm(frames: usize) -> Vec<f32> {
 }
 
 unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
-    std::slice::from_raw_parts(ptr, frames).to_vec()
+    unsafe { std::slice::from_raw_parts(ptr, frames) }.to_vec()
 }
 
 fn peak(samples: &[f32]) -> f32 {

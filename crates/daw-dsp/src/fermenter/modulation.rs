@@ -1,6 +1,6 @@
-/// Modulation matrix — flat slot-based architecture.
-/// Phase 1: hardwired routes (env→filter, LFO→pitch).
-/// Future: full user-configurable mod matrix.
+//! Modulation matrix — flat slot-based architecture.
+//! Phase 1: hardwired routes (env→filter, LFO→pitch).
+//! Future: full user-configurable mod matrix.
 
 pub const MAX_MOD_SLOTS: usize = 32;
 
@@ -73,16 +73,16 @@ impl ModMatrix {
 
     /// Evaluate all active slots and accumulate contributions.
     /// Returns (filter_cutoff_mod, filter_res_mod, pitch_mod, level_mod, reverb_mod).
-    pub fn evaluate(
-        &self,
-        amp_env: f32,
-        filter_env: f32,
-        lfo1: f32,
-        lfo2: f32,
-        velocity: f32,
-        mseg: f32,
-        step_seq: f32,
-    ) -> ModOutput {
+    pub fn evaluate(&self, sources: ModSourceValues) -> ModOutput {
+        let ModSourceValues {
+            amp_env,
+            filter_env,
+            lfo1,
+            lfo2,
+            velocity,
+            mseg,
+            step_seq,
+        } = sources;
         let mut out = ModOutput::default();
 
         for i in 0..self.active_count {
@@ -115,6 +115,24 @@ impl ModMatrix {
         }
 
         out
+    }
+}
+
+/// The current value of every [`ModSource`], read once per control block.
+#[derive(Clone, Copy)]
+pub struct ModSourceValues {
+    pub amp_env: f32,
+    pub filter_env: f32,
+    pub lfo1: f32,
+    pub lfo2: f32,
+    pub velocity: f32,
+    pub mseg: f32,
+    pub step_seq: f32,
+}
+
+impl Default for ModMatrix {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

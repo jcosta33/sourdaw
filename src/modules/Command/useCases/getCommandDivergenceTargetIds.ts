@@ -1,5 +1,5 @@
 import { getDeviceAutomationOwnerId } from '#/utils/automationDeviceTarget';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isRecordedIntentPath } from './isRecordedIntentPath';
@@ -16,57 +16,436 @@ export const COMMAND_COUNT_IN_TARGET_ID = '@project/transport/count-in';
 export const COMMAND_PRE_ROLL_TARGET_ID = '@project/transport/pre-roll';
 export const COMMAND_TIME_SIGNATURE_MAP_TARGET_ID = '@project/transport/time-signature-map';
 
-function getProjectSlotTargetId(action: AppAction): string | null {
-    switch (action.type) {
-        case 'addMarker':
-        case 'removeMarker':
-        case 'setMarkerColor':
-            return COMMAND_MARKERS_TARGET_ID;
-        case 'addSection':
-        case 'removeSection':
-        case 'renameSection':
-            return COMMAND_SECTIONS_TARGET_ID;
-        case 'setLoopEnabled':
-        case 'setLoopRegion':
-        case 'restoreLoopRegion':
-        case 'toggleLoop':
-            return COMMAND_LOOP_TARGET_ID;
-        case 'setPunchEnabled':
-        case 'setPunchIn':
-        case 'setPunchOut':
-        case 'restorePunchRegion':
-        case 'togglePunch':
-            return COMMAND_PUNCH_TARGET_ID;
-        case 'setMetronomeEnabled':
-        case 'setMetronomeVolume':
-        case 'toggleMetronome':
-            return COMMAND_METRONOME_TARGET_ID;
-        case 'setCountInBars':
-        case 'toggleCountIn':
-            return COMMAND_COUNT_IN_TARGET_ID;
-        case 'setPreRollBars':
-        case 'togglePreRoll':
-            return COMMAND_PRE_ROLL_TARGET_ID;
-        case 'addTimeSignatureChange':
-        case 'removeTimeSignatureChange':
-            return COMMAND_TIME_SIGNATURE_MAP_TARGET_ID;
-        default:
-            return null;
-    }
+type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
+
+function targetOf(targetId: string) {
+    return (): readonly string[] => [targetId];
 }
+
+function noExtraTargets(): readonly string[] {
+    return [];
+}
+const markersTarget = targetOf(COMMAND_MARKERS_TARGET_ID);
+const sectionsTarget = targetOf(COMMAND_SECTIONS_TARGET_ID);
+const loopTarget = targetOf(COMMAND_LOOP_TARGET_ID);
+const punchTarget = targetOf(COMMAND_PUNCH_TARGET_ID);
+const metronomeTarget = targetOf(COMMAND_METRONOME_TARGET_ID);
+const countInTarget = targetOf(COMMAND_COUNT_IN_TARGET_ID);
+const preRollTarget = targetOf(COMMAND_PRE_ROLL_TARGET_ID);
+const timeSignatureMapTarget = targetOf(COMMAND_TIME_SIGNATURE_MAP_TARGET_ID);
+const tempoTarget = targetOf(COMMAND_TEMPO_TARGET_ID);
+const timeSignatureTarget = targetOf(COMMAND_TIME_SIGNATURE_TARGET_ID);
+const masterGainTarget = targetOf(COMMAND_MASTER_GAIN_TARGET_ID);
 
 /**
  * A device parameter key (`<deviceId>:<paramId>`) is not an object reference, so the owning device
  * a lane or range write reads is named here instead: removing it must classify as a deleted target.
  */
-function getParameterDeviceTargetId(action: AppAction): string | null {
-    switch (action.type) {
-        case 'addAutomationLane':
-        case 'automateParameterRange':
-            return getDeviceAutomationOwnerId(action.payload.parameterId);
-        default:
-            return null;
+function parameterDeviceTarget(action: ActionOf<'addAutomationLane' | 'automateParameterRange'>): readonly string[] {
+    const ownerId = getDeviceAutomationOwnerId(action.payload.parameterId);
+    if (ownerId) {
+        return [ownerId];
     }
+    return [];
+}
+
+/** Targets an action names beyond the object references its arguments carry. */
+const extraTargetsByActionType: {
+    readonly [Type in AppActionType]: (action: ActionOf<Type>) => readonly string[];
+} = {
+    importStemSet: noExtraTargets,
+    discardImportedStemSet: noExtraTargets,
+    addTrack: noExtraTargets,
+    removeTrack: noExtraTargets,
+    discardCreatedTrack: noExtraTargets,
+    restoreTrack: noExtraTargets,
+    restoreClip: noExtraTargets,
+    discardDuplicatedClip: noExtraTargets,
+    removeAllTracks: noExtraTargets,
+    renameTrack: noExtraTargets,
+    createTrackAlternative: noExtraTargets,
+    switchTrackAlternative: noExtraTargets,
+    renameTrackAlternative: noExtraTargets,
+    deleteTrackAlternative: noExtraTargets,
+    selectTrack: noExtraTargets,
+    muteTrack: noExtraTargets,
+    soloTrack: noExtraTargets,
+    selectTake: noExtraTargets,
+    replaceOriginalMidiTakeRow: noExtraTargets,
+    replaceOriginalMidiBaseRow: noExtraTargets,
+    toggleSoloSafe: noExtraTargets,
+    setSoloSafe: noExtraTargets,
+    restoreSoloSafe: noExtraTargets,
+    armTrack: noExtraTargets,
+    freezeTrack: noExtraTargets,
+    unfreezeTrack: noExtraTargets,
+    restoreFreezeState: noExtraTargets,
+    flattenTrack: noExtraTargets,
+    bounceInPlace: noExtraTargets,
+    reorderTrack: noExtraTargets,
+    setTempo: tempoTarget,
+    restoreTempoEdit: noExtraTargets,
+    editTempoMap: noExtraTargets,
+    restoreTempoMapEdit: noExtraTargets,
+    setTimeSignature: timeSignatureTarget,
+    setPlayback: noExtraTargets,
+    togglePlayback: noExtraTargets,
+    stopPlayback: noExtraTargets,
+    toggleRecording: noExtraTargets,
+    setMasterGain: masterGainTarget,
+    restoreMasterGain: masterGainTarget,
+    toggleLoop: loopTarget,
+    toggleMetronome: metronomeTarget,
+    setMetronomeVolume: metronomeTarget,
+    setLoopRegion: loopTarget,
+    setLoopEnabled: loopTarget,
+    setMetronomeEnabled: metronomeTarget,
+    restoreLoopRegion: loopTarget,
+    addClip: noExtraTargets,
+    moveClip: noExtraTargets,
+    restoreClipPlacement: noExtraTargets,
+    duplicateClip: noExtraTargets,
+    duplicateClipToNextBar: noExtraTargets,
+    duplicateTrack: noExtraTargets,
+    removeClip: noExtraTargets,
+    renameClip: noExtraTargets,
+    splitClip: noExtraTargets,
+    restoreClipSplitState: noExtraTargets,
+    trimClipStart: noExtraTargets,
+    trimClipEnd: noExtraTargets,
+    restoreAudioClipStartTrim: noExtraTargets,
+    restoreAudioClipSlip: noExtraTargets,
+    slipClipContent: noExtraTargets,
+    drawClip: noExtraTargets,
+    discardDrawnClip: noExtraTargets,
+    restoreDrawnClip: noExtraTargets,
+    duplicateClipAt: noExtraTargets,
+    moveClips: noExtraTargets,
+    restoreClipMoves: noExtraTargets,
+    addDevice: noExtraTargets,
+    bypassDevice: noExtraTargets,
+    removeDevice: noExtraTargets,
+    restoreDevice: noExtraTargets,
+    reorderDevices: noExtraTargets,
+    setDeviceParameter: noExtraTargets,
+    setExternalPluginState: noExtraTargets,
+    setDeviceState: noExtraTargets,
+    setFermenterPatch: noExtraTargets,
+    setGrandBouleDeviceState: noExtraTargets,
+    createBus: noExtraTargets,
+    createFolder: noExtraTargets,
+    setSend: noExtraTargets,
+    setWorkspaceMode: noExtraTargets,
+    openPreferencesDialog: noExtraTargets,
+    openMixer: noExtraTargets,
+    closeMixer: noExtraTargets,
+    toggleSidebar: noExtraTargets,
+    toggleInspector: noExtraTargets,
+    toggleChatPanel: noExtraTargets,
+    setTrackInput: noExtraTargets,
+    restoreTrackInput: noExtraTargets,
+    setEditingTool: noExtraTargets,
+    setMarqueeSelection: noExtraTargets,
+    addMarker: markersTarget,
+    removeMarker: markersTarget,
+    setMarkerColor: markersTarget,
+    addSection: sectionsTarget,
+    removeSection: sectionsTarget,
+    renameSection: sectionsTarget,
+    renameMarker: noExtraTargets,
+    moveMarker: noExtraTargets,
+    moveSection: noExtraTargets,
+    resizeSection: noExtraTargets,
+    setSectionColor: noExtraTargets,
+    reorderSection: noExtraTargets,
+    navigateSection: noExtraTargets,
+    rehearseSection: noExtraTargets,
+    restoreSectionBeats: noExtraTargets,
+    setClipGainEnvelope: noExtraTargets,
+    toggleClipGainEnvelope: noExtraTargets,
+    addGainEnvelopePoint: noExtraTargets,
+    removeGainEnvelopePoint: noExtraTargets,
+    resetClipGainEnvelope: noExtraTargets,
+    addModulator: noExtraTargets,
+    removeModulator: noExtraTargets,
+    updateModulator: noExtraTargets,
+    addMapping: noExtraTargets,
+    removeMapping: noExtraTargets,
+    addAutomationLane: parameterDeviceTarget,
+    automateSendRange: noExtraTargets,
+    automateSendRanges: noExtraTargets,
+    removeSendAutomationRanges: noExtraTargets,
+    renderProjectSections: noExtraTargets,
+    removeRenderedProjectSections: noExtraTargets,
+    automateTrackGainRange: noExtraTargets,
+    automateParameterRange: parameterDeviceTarget,
+    removeTrackGainAutomationRange: noExtraTargets,
+    removeSendAutomationRange: noExtraTargets,
+    removeAutomationLane: noExtraTargets,
+    setAutomationLaneEnabled: noExtraTargets,
+    addAutomationPoint: noExtraTargets,
+    quantizeNotes: noExtraTargets,
+    removeShortMidiOverlaps: noExtraTargets,
+    createDrumPreviewBranches: noExtraTargets,
+    deleteDrumPreviewBranches: noExtraTargets,
+    copyMidiArticulations: noExtraTargets,
+    restoreMidiClipNotes: noExtraTargets,
+    quantizeNoteLengths: noExtraTargets,
+    transposeNotes: noExtraTargets,
+    humanizeNotes: noExtraTargets,
+    invertNotes: noExtraTargets,
+    retrogradeNotes: noExtraTargets,
+    scaleVelocities: noExtraTargets,
+    scaleAllVelocities: noExtraTargets,
+    setAllVelocities: noExtraTargets,
+    setTrackGain: noExtraTargets,
+    setTrackPan: noExtraTargets,
+    setTrackColor: noExtraTargets,
+    copyClip: noExtraTargets,
+    cutClip: noExtraTargets,
+    pasteClip: noExtraTargets,
+    setClipFade: noExtraTargets,
+    importMidiFile: noExtraTargets,
+    normalizeClip: noExtraTargets,
+    reverseClip: noExtraTargets,
+    restoreReversedClip: noExtraTargets,
+    glueClips: noExtraTargets,
+    restoreClipGlueState: noExtraTargets,
+    setCompRegion: noExtraTargets,
+    removeCompRegion: noExtraTargets,
+    restoreCompRegionInterval: noExtraTargets,
+    nudgeClip: noExtraTargets,
+    crossfadeClips: noExtraTargets,
+    restoreCrossfadeClips: noExtraTargets,
+    setClipGain: noExtraTargets,
+    setClipColor: noExtraTargets,
+    lockClip: noExtraTargets,
+    consolidateSelection: noExtraTargets,
+    bounceSelection: noExtraTargets,
+    seekPlayhead: noExtraTargets,
+    setPunchIn: punchTarget,
+    setPunchOut: punchTarget,
+    setPunchEnabled: punchTarget,
+    restorePunchRegion: punchTarget,
+    togglePunch: punchTarget,
+    toggleCountIn: countInTarget,
+    setCountInBars: countInTarget,
+    togglePreRoll: preRollTarget,
+    setPreRollBars: preRollTarget,
+    zoomTracksVertical: noExtraTargets,
+    addTimeSignatureChange: timeSignatureMapTarget,
+    removeTimeSignatureChange: timeSignatureMapTarget,
+    setTrackOutput: noExtraTargets,
+    addSend: noExtraTargets,
+    removeSend: noExtraTargets,
+    removeAutomationPoint: noExtraTargets,
+    setAutomationMode: noExtraTargets,
+    hideTrack: noExtraTargets,
+    disableTrack: noExtraTargets,
+    restoreTrackDisabled: noExtraTargets,
+    setTrackHeight: noExtraTargets,
+    setSnapValue: noExtraTargets,
+    zoomToFit: noExtraTargets,
+    zoomToSelection: noExtraTargets,
+    exportProject: noExtraTargets,
+    saveProject: noExtraTargets,
+    newProject: noExtraTargets,
+    importAudioFile: noExtraTargets,
+    exportMidi: noExtraTargets,
+    foldTrack: noExtraTargets,
+    groupTracks: noExtraTargets,
+    ungroupTracks: noExtraTargets,
+    scaleAutomation: noExtraTargets,
+    stretchAutomation: noExtraTargets,
+    invertAutomation: noExtraTargets,
+    reverseAutomation: noExtraTargets,
+    thinAutomation: noExtraTargets,
+    quantizeAutomation: noExtraTargets,
+    restoreAutomationLanePoints: noExtraTargets,
+    restoreAutomationPointPresence: noExtraTargets,
+    loadPreset: noExtraTargets,
+    restorePresetDeviceChain: noExtraTargets,
+    savePreset: noExtraTargets,
+    generateDrumPattern: noExtraTargets,
+    generateMelody: noExtraTargets,
+    generateChordProgression: noExtraTargets,
+    setClipLoop: noExtraTargets,
+    restoreClipLoop: noExtraTargets,
+    setClipLoopLength: noExtraTargets,
+    restoreClipLoopLength: noExtraTargets,
+    createGrooveTemplate: noExtraTargets,
+    renameGrooveTemplate: noExtraTargets,
+    restoreGrooveTemplateName: noExtraTargets,
+    deleteGrooveTemplate: noExtraTargets,
+    restoreDeletedGrooveTemplate: noExtraTargets,
+    assignGrooveTemplate: noExtraTargets,
+    restoreGrooveAssignment: noExtraTargets,
+    extractGroove: noExtraTargets,
+    applyGroove: noExtraTargets,
+    setClipStretchMode: noExtraTargets,
+    setClipStretchRatio: noExtraTargets,
+    restoreClipStretchState: noExtraTargets,
+    fitClipToBeats: noExtraTargets,
+    analyzeMix: noExtraTargets,
+    autoFixMix: noExtraTargets,
+    enableMpe: noExtraTargets,
+    disableMpe: noExtraTargets,
+    getLatencyReport: noExtraTargets,
+    createCollabSession: noExtraTargets,
+    joinCollabSession: noExtraTargets,
+    leaveCollabSession: noExtraTargets,
+    scanPlugins: noExtraTargets,
+    loadExternalPlugin: noExtraTargets,
+    audioToMidi: noExtraTargets,
+    commitPitchEdit: noExtraTargets,
+    restoreClipFileId: noExtraTargets,
+    muteClip: noExtraTargets,
+    clearSolos: noExtraTargets,
+    restoreTrackSoloStates: noExtraTargets,
+    setTrackNotes: noExtraTargets,
+    deleteTime: noExtraTargets,
+    insertTime: noExtraTargets,
+    duplicateTimeRange: noExtraTargets,
+    restoreTimeOperationState: noExtraTargets,
+    restoreTrackHeights: noExtraTargets,
+    restoreTrackGroupMemberships: noExtraTargets,
+    restoreTracks: noExtraTargets,
+    restoreTrackClipStates: noExtraTargets,
+    discardCreatedTracks: noExtraTargets,
+    discardCreatedCompGroup: noExtraTargets,
+    restoreTrackAlternativeState: noExtraTargets,
+    restoreScratchPadState: noExtraTargets,
+    stripSilence: noExtraTargets,
+    restoreStripSilenceState: noExtraTargets,
+    detectTempo: noExtraTargets,
+    detectKey: noExtraTargets,
+    consolidateAllTracks: noExtraTargets,
+    arpeggiate: noExtraTargets,
+    addSidechainRoute: noExtraTargets,
+    removeSidechainRoute: noExtraTargets,
+    bounceToNewTrack: noExtraTargets,
+    saveTrackTemplate: noExtraTargets,
+    loadTrackTemplate: noExtraTargets,
+    deleteTrackTemplate: noExtraTargets,
+    createProjectFromTemplate: noExtraTargets,
+    setProductionBrief: noExtraTargets,
+    repairProjectData: noExtraTargets,
+    createVcaGroup: noExtraTargets,
+    assignToVca: noExtraTargets,
+    removeFromVca: noExtraTargets,
+    setVcaGain: noExtraTargets,
+    restoreLegacyVcaState: noExtraTargets,
+    setMidiOutput: noExtraTargets,
+    clearMidiOutput: noExtraTargets,
+    restoreMidiOutput: noExtraTargets,
+    addNotes: noExtraTargets,
+    completeMidi: noExtraTargets,
+    variationMidi: noExtraTargets,
+    generateBassline: noExtraTargets,
+    replayGeneratedMidi: noExtraTargets,
+    stemSeparate: noExtraTargets,
+    autoOrganizeProject: noExtraTargets,
+    addChordEvent: noExtraTargets,
+    moveChordEvent: noExtraTargets,
+    updateChordEvent: noExtraTargets,
+    removeChordEvent: noExtraTargets,
+    toggleChordTrack: noExtraTargets,
+    clearChordTrack: noExtraTargets,
+    restoreChordTrackState: noExtraTargets,
+    clearAllMidiMappings: noExtraTargets,
+    completeMidiLearn: noExtraTargets,
+    removeMidiMapping: noExtraTargets,
+    restoreMidiLearnMappings: noExtraTargets,
+    toggleScratchPad: noExtraTargets,
+    captureScratchPad: noExtraTargets,
+    commitScratchPad: noExtraTargets,
+    clearScratchPad: noExtraTargets,
+    removeScratchPadSection: noExtraTargets,
+    renameScratchPadSection: noExtraTargets,
+    reorderScratchPadSection: noExtraTargets,
+    setScratchPadSectionColor: noExtraTargets,
+    createPatternInstance: noExtraTargets,
+    detachPatternInstance: noExtraTargets,
+    restorePatternInstanceLink: noExtraTargets,
+    startMacroRecording: noExtraTargets,
+    stopMacroRecording: noExtraTargets,
+    playMacro: noExtraTargets,
+    deleteMacro: noExtraTargets,
+    renameMacro: noExtraTargets,
+    undo: noExtraTargets,
+    redo: noExtraTargets,
+    toggleUndoTree: noExtraTargets,
+    labelUndoBranch: noExtraTargets,
+    detectSongStructure: noExtraTargets,
+    createProjectVersion: noExtraTargets,
+    restoreProjectVersion: noExtraTargets,
+    createVersionBranch: noExtraTargets,
+    generateFill: noExtraTargets,
+    generateAllTransitions: noExtraTargets,
+    compareToReference: noExtraTargets,
+    toggleControlRoomMono: noExtraTargets,
+    toggleControlRoomDim: noExtraTargets,
+    switchMonitor: noExtraTargets,
+    getMentorTips: noExtraTargets,
+    searchSamples: noExtraTargets,
+    createCompGroup: noExtraTargets,
+    togglePunchRecording: noExtraTargets,
+    toggleLoopRecord: noExtraTargets,
+    triggerScene: noExtraTargets,
+    nextSetlistItem: noExtraTargets,
+    previousSetlistItem: noExtraTargets,
+    createAdjustmentLayer: noExtraTargets,
+    removeAdjustmentLayer: noExtraTargets,
+    toggleAdjustmentLayer: noExtraTargets,
+    setLayerParameter: noExtraTargets,
+    setLayerMix: noExtraTargets,
+    addAdjustmentRegion: noExtraTargets,
+    removeAdjustmentRegion: noExtraTargets,
+    moveAdjustmentRegion: noExtraTargets,
+    setLayerFades: noExtraTargets,
+    setLayerAffectedTracks: noExtraTargets,
+    setLayerInsertionIndex: noExtraTargets,
+    restoreAdjustmentLayerMutation: noExtraTargets,
+    detectTransients: noExtraTargets,
+    quantizeTransients: noExtraTargets,
+    openElasticEditor: noExtraTargets,
+    closeElasticEditor: noExtraTargets,
+    elasticSetSensitivity: noExtraTargets,
+    elasticAddMarker: noExtraTargets,
+    elasticRemoveMarker: noExtraTargets,
+    elasticToggleMarkerLock: noExtraTargets,
+    elasticSetTool: noExtraTargets,
+    toggleNodeView: noExtraTargets,
+    setControlSurface: noExtraTargets,
+    addCvOutput: noExtraTargets,
+    removeCvOutput: noExtraTargets,
+    connectPush: noExtraTargets,
+    disconnectPush: noExtraTargets,
+    exportDawProject: noExtraTargets,
+    importDawProject: noExtraTargets,
+    loadRaveModel: noExtraTargets,
+    setRaveBlend: noExtraTargets,
+    enableWarping: noExtraTargets,
+    setWarpAlgorithm: noExtraTargets,
+    setWarpPitchShift: noExtraTargets,
+    setYeastProcessorParam: noExtraTargets,
+    setYeastArpPattern: noExtraTargets,
+    setYeastProcessorBypass: noExtraTargets,
+    addYeastProcessor: noExtraTargets,
+    removeYeastProcessor: noExtraTargets,
+    reorderYeastProcessor: noExtraTargets,
+    commitRecording: noExtraTargets,
+    discardRecording: noExtraTargets,
+    restoreRecording: noExtraTargets,
+    appendOverdubControllers: noExtraTargets,
+    removeOverdubControllers: noExtraTargets,
+};
+
+function getExtraTargetIds<Type extends AppActionType>(action: ActionOf<Type>): readonly string[] {
+    if (!Object.hasOwn(extraTargetsByActionType, action.type)) {
+        return noExtraTargets();
+    }
+    return extraTargetsByActionType[action.type](action);
 }
 
 export function getCommandDivergenceTargetIds(input: {
@@ -85,20 +464,8 @@ export function getCommandDivergenceTargetIds(input: {
                 }
             }
         }
-        const parameterDeviceTargetId = getParameterDeviceTargetId(action);
-        if (parameterDeviceTargetId) {
-            targetIds.add(parameterDeviceTargetId);
-        }
-        if (action.type === 'setTempo') {
-            targetIds.add(COMMAND_TEMPO_TARGET_ID);
-        } else if (action.type === 'setTimeSignature') {
-            targetIds.add(COMMAND_TIME_SIGNATURE_TARGET_ID);
-        } else if (action.type === 'setMasterGain' || action.type === 'restoreMasterGain') {
-            targetIds.add(COMMAND_MASTER_GAIN_TARGET_ID);
-        }
-        const projectSlotTargetId = getProjectSlotTargetId(action);
-        if (projectSlotTargetId) {
-            targetIds.add(projectSlotTargetId);
+        for (const extraTargetId of getExtraTargetIds(action)) {
+            targetIds.add(extraTargetId);
         }
     }
     return [...targetIds];

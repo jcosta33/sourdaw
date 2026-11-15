@@ -38,13 +38,13 @@ thread_local! {
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATIONS.with(|count| count.set(count.get() + 1));
-        System.alloc(layout)
+        unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         DEALLOCATIONS.with(|count| count.set(count.get() + 1));
         DEALLOCATED_BYTES.with(|bytes| bytes.set(bytes.get() + layout.size()));
-        System.dealloc(ptr, layout)
+        unsafe { System.dealloc(ptr, layout) }
     }
 }
 
@@ -305,7 +305,9 @@ fn levain_staged_tables_equal_what_build_lut_stores_entry_for_entry() {
         let (lut_words, arena) =
             built_tables(&placements, u32::from(articulations), u32::from(mics));
         let builder_lut: Vec<(u32, u32)> = lut_words
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| (pair[0], pair[1]))
             .collect();
         let stored_lut: Vec<(u32, u32)> = built_lut

@@ -1,4 +1,4 @@
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
+import { type RenderProjectSectionJobSnapshot } from '../events/audioRenderingAppActions';
 
 import { getAgentSectionRenderArtifacts } from './getAgentSectionRenderArtifacts';
 
