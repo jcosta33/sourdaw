@@ -444,6 +444,35 @@ describe('the plan’s audible claim', () => {
             ]);
         });
 
+        it.each([
+            {
+                label: 'differ only in end beat',
+                first: { startBeat: 0, endBeat: 4, sectionId: null },
+                second: { startBeat: 0, endBeat: 8, sectionId: null },
+            },
+            {
+                label: 'differ only in start beat',
+                first: { startBeat: 0, endBeat: 8, sectionId: null },
+                second: { startBeat: 4, endBeat: 8, sectionId: null },
+            },
+        ])('lists one metric over two ranges that $label once per range', ({ first, second }) => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [
+                    over(first, [loudness(compared('LUFS', 1.5), -12.5)]),
+                    over(second, [loudness(compared('LUFS', 0.8), -13.2)]),
+                ],
+            });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error('Expected both ranges to be claimed.');
+            }
+            expect(claim.metrics.map((metric) => [metric.range, metric.delta.value])).toEqual([
+                [first, 1.5],
+                [second, 0.8],
+            ]);
+        });
+
         it('never claims from a proof of another batch', () => {
             proposeCard({
                 gain: 0.7,
