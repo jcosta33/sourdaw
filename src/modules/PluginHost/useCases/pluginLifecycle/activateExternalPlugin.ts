@@ -62,15 +62,16 @@ function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 
 
 /**
  * The live state a teardown carried for this instance, when it came from the
- * same plugin. Taking it advances the slot, so a teardown read from before this
- * activation cannot plant a carry on the instance it brings back.
+ * same plugin. Every activation advances the slot here, carry or not, so a
+ * teardown read from before this activation cannot plant a carry on the
+ * instance it brings back.
  */
 function takeCarriedState(instanceId: string, pluginId: string): CarriedExternalPluginState | undefined {
+    carriedExternalPluginStateFence.advanceSlot(instanceId);
     const carried = carriedExternalPluginStates.get(instanceId);
     if (carried === undefined) {
         return undefined;
     }
-    carriedExternalPluginStateFence.advanceSlot(instanceId);
     if (carried.pluginId !== pluginId) {
         carriedExternalPluginStates.delete(instanceId);
         return undefined;

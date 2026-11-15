@@ -556,6 +556,22 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
 
+        it('plants no carry on an instance a plain unload and carry-less reactivation brought back', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            await unloadPlugin(INSTANCE_ID);
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            reading.commit([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            // A later plain unload restores the project chunk, not the stale read.
+            await unloadPlugin(INSTANCE_ID);
+            mocks.setPluginState.mockClear();
+            await activate(SAVED_CHUNK);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
         it('does not revive a carry the plugin rejected, and warns only once', async () => {
             await activateAndEdit(SAVED_CHUNK);
             await unloadPluginCarryingLiveState(INSTANCE_ID);
