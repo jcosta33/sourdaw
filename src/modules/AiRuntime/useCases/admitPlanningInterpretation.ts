@@ -90,9 +90,10 @@ function admitCreativeInterpretationWithMetricIntent(
         return { status: 'rejected' as const, reason: BRIEF_REQUIRES_NON_ACOUSTIC };
     }
     if (metricIntent === undefined || metricIntent === null) {
-        return selectsAgentDecidedTarget(result.authority)
-            ? { status: 'rejected' as const, reason: AGENT_DECIDED_REQUIRES_ACOUSTIC_INTENT }
-            : { ...result, kind: 'creative' as const };
+        if (selectsAgentDecidedTarget(result.authority)) {
+            return { status: 'rejected' as const, reason: AGENT_DECIDED_REQUIRES_ACOUSTIC_INTENT };
+        }
+        return { ...result, kind: 'creative' as const };
     }
     if (input.metric === undefined) {
         return { status: 'rejected' as const, reason: 'Metric interpretation has no captured catalog.' };

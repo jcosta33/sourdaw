@@ -22,8 +22,9 @@ import { isSilentVibeRunCell } from '../validators/isSilentVibeRunCell';
 
 import { resolveRoleFamily } from './canonicalRoleFamilies';
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
-import { findPlannableTrackExclusion, readBriefProtectedTrackIds } from './findPlannableTrackExclusion';
+import { findPlannableTrackExclusion } from './findPlannableTrackExclusion';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
+import { readBriefProtectedTrackIds } from './readBriefProtectedTrackIds';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];

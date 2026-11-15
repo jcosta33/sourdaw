@@ -16,6 +16,7 @@ import { type ProjectContext, type ProjectContextClip } from '../models/ProjectC
 import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES, type SemanticCommandListRoleFamily } from '../models/SemanticCommandList';
 import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
+import { findNamedRoleFamilies } from './agentReference/findNamedRoleFamilies';
 import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
 import { getExplicitClipProtection } from './agentReference/getExplicitlyProtectedClips';
 import { hasExplicitTrackSelection } from './agentReference/hasExplicitTrackSelection';
@@ -23,9 +24,9 @@ import { normalizeAgentReferenceText } from './agentReference/normalizeAgentRefe
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { protectionSlots, type Range } from './agentReference/readProtectionSlots';
 import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
-import { findNamedRoleFamilies } from './agentReference/roleFamilyWords';
-import { findPlannableTrackExclusion, readBriefProtectedTrackIds } from './findPlannableTrackExclusion';
+import { findPlannableTrackExclusion } from './findPlannableTrackExclusion';
 import { maskTrackReferences } from './maskTrackReferences';
+import { readBriefProtectedTrackIds } from './readBriefProtectedTrackIds';
 
 /**
  * Provisional ceilings on what one admitted creation slot may produce. They sit below the

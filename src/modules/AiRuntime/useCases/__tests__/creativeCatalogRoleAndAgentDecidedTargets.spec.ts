@@ -86,6 +86,22 @@ function targetFor(catalog: CreativeInterpretationCatalog, trackId: string): Cre
 
 type MetricKind = 'literal' | 'non-acoustic' | 'perceptual' | 'comparative';
 
+function metricIntentFor(kind: MetricKind | null, objectiveId: string) {
+    if (kind === null) {
+        return null;
+    }
+    const objectives = [];
+    if (kind === 'perceptual' || kind === 'comparative') {
+        objectives.push({
+            objectiveId,
+            scopeCandidateId: null,
+            referenceScopeCandidateId: null,
+            rangeCandidateId: null,
+        });
+    }
+    return { kind, uncertainty: 'none', objectives };
+}
+
 /** One joint planning interpretation editing exactly `trackId`'s processing, with or without metric intent. */
 function admitEdit(input: {
     prompt: string;
@@ -103,24 +119,7 @@ function admitEdit(input: {
     if (unsupported === undefined) {
         throw new Error('Expected the published unsupported objective.');
     }
-    const acoustic = input.kind === 'perceptual' || input.kind === 'comparative';
-    const metricIntent =
-        input.kind === null
-            ? null
-            : {
-                  kind: input.kind,
-                  uncertainty: 'none',
-                  objectives: acoustic
-                      ? [
-                            {
-                                objectiveId: unsupported.id,
-                                scopeCandidateId: null,
-                                referenceScopeCandidateId: null,
-                                rangeCandidateId: null,
-                            },
-                        ]
-                      : [],
-              };
+    const metricIntent = metricIntentFor(input.kind, unsupported.id);
     return admitPlanningInterpretation({
         creative,
         answer,
@@ -198,7 +197,7 @@ describe('creative catalog agent-decided targets', () => {
 
         const admission = admitEdit({ prompt, trackId: chosen, kind: 'perceptual' });
         expect(admission).toMatchObject({ status: 'admitted', kind: 'creative' });
-        if (admission.status !== 'admitted' || !('authority' in admission)) {
+        if (admission.status !== 'admitted' || admission.kind !== 'creative' || !('authority' in admission)) {
             throw new Error('Expected admitted creative authority.');
         }
         expect(admission.authority.targets).toEqual([
@@ -264,10 +263,14 @@ describe('creative catalog agent-decided targets', () => {
 describe('persisted creative authority provenance', () => {
     it('decodes every provenance a stored authority may carry and refuses an unknown one', () => {
         const admission = admitEdit({ prompt: 'polish the low end', trackId: 'track-bass-di', kind: 'perceptual' });
-        if (admission.status !== 'admitted' || !('metricAuthority' in admission) || !admission.metricAuthority) {
+        if (admission.status !== 'admitted' || !('metricAuthority' in admission)) {
             throw new Error('Expected admitted metric authority.');
         }
         const { metricAuthority } = admission;
+        const { creativeAuthority } = metricAuthority;
+        if (creativeAuthority === null) {
+            throw new Error('Expected the metric authority to carry creative authority.');
+        }
         const stored = (provenance: string) =>
             JSON.stringify({
                 schemaVersion: 1,
@@ -275,8 +278,8 @@ describe('persisted creative authority provenance', () => {
                     {
                         ...metricAuthority,
                         creativeAuthority: {
-                            ...metricAuthority.creativeAuthority,
-                            targets: metricAuthority.creativeAuthority?.targets.map((target) => ({
+                            ...creativeAuthority,
+                            targets: creativeAuthority.targets.map((target) => ({
                                 ...target,
                                 provenance,
                             })),
