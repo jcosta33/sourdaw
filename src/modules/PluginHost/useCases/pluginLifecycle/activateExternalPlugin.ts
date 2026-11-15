@@ -7,7 +7,11 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
-import { carriedExternalPluginStates, type CarriedExternalPluginState } from './carriedExternalPluginStates';
+import {
+    carriedExternalPluginStateFence,
+    carriedExternalPluginStates,
+    type CarriedExternalPluginState,
+} from './carriedExternalPluginStates';
 import { clearExternalPluginRestoreFailure } from './clearExternalPluginRestoreFailure';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -56,12 +60,17 @@ function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 
     });
 }
 
-/** The live state a teardown carried for this instance, when it came from the same plugin. */
+/**
+ * The live state a teardown carried for this instance, when it came from the
+ * same plugin. Taking it advances the slot, so a teardown read from before this
+ * activation cannot plant a carry on the instance it brings back.
+ */
 function takeCarriedState(instanceId: string, pluginId: string): CarriedExternalPluginState | undefined {
     const carried = carriedExternalPluginStates.get(instanceId);
     if (carried === undefined) {
         return undefined;
     }
+    carriedExternalPluginStateFence.advanceSlot(instanceId);
     if (carried.pluginId !== pluginId) {
         carriedExternalPluginStates.delete(instanceId);
         return undefined;
@@ -95,6 +104,7 @@ async function restoreCarriedState(
         return 'restored';
     }
     carriedExternalPluginStates.delete(instanceId);
+    carriedExternalPluginStateFence.advanceSlot(instanceId);
     logger.warn(`External plugin ${pluginId} instance ${instanceId} rejected its carried live state: ${rejection}`);
     notifyUser(`Unsaved edits in ${pluginId} could not be restored after the plugin was reloaded.`, 'warning');
     return 'rejected';

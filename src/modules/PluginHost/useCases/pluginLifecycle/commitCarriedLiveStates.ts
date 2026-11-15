@@ -12,7 +12,10 @@ import type { TeardownStateReads } from './readLiveStatesForTeardown';
  *
  * A batch that started before the carries were dropped belongs to the project
  * that drop retired, so it is discarded whole: no carry, and no warning about
- * edits the outgoing project no longer offers to keep.
+ * edits the outgoing project no longer offers to keep. A read whose instance's
+ * carry slot moved on since it started is skipped, neither carried nor
+ * warned about: a newer teardown, activation or rejected restore already
+ * decided that slot.
  */
 export function commitCarriedLiveStates(reads: TeardownStateReads, tornDownInstanceIds: Iterable<string>): void {
     if (reads.generation !== carriedExternalPluginStateFence.generation()) {
@@ -20,10 +23,15 @@ export function commitCarriedLiveStates(reads: TeardownStateReads, tornDownInsta
     }
     const lostPlugins = new Set<string>();
     for (const instanceId of tornDownInstanceIds) {
-        const read = reads.byInstanceId.get(instanceId);
-        if (read?.status === 'carried') {
+        const stamped = reads.byInstanceId.get(instanceId);
+        if (stamped === undefined || stamped.slotVersion !== carriedExternalPluginStateFence.slotVersion(instanceId)) {
+            continue;
+        }
+        const { read } = stamped;
+        if (read.status === 'carried') {
             carriedExternalPluginStates.set(instanceId, { pluginId: read.pluginId, stateChunk: read.stateChunk });
-        } else if (read?.status === 'lost') {
+            carriedExternalPluginStateFence.advanceSlot(instanceId);
+        } else if (read.status === 'lost') {
             lostPlugins.add(read.pluginId);
         }
     }

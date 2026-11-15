@@ -48,6 +48,8 @@ const PLUGIN_ID = 'synth';
 const SAVED_CHUNK = 'c2F2ZWQ=';
 const SAVED_BYTES = new Uint8Array([115, 97, 118, 101, 100]);
 const LIVE_BYTES = new Uint8Array([108, 105, 118, 101]);
+// "newer": live state the plugin reached after an earlier read.
+const NEWER_LIVE_BYTES = new Uint8Array([110, 101, 119, 101, 114]);
 const OTHER_INSTANCE_ID = 'inst-2';
 // "live-2": the second instance's own live state, distinct from the first's.
 const OTHER_LIVE_BYTES = new Uint8Array([108, 105, 118, 101, 45, 50]);
@@ -520,6 +522,60 @@ describe('live plugin state across an app-initiated teardown', () => {
             await activate(SAVED_CHUNK);
             expect(warnings()).toEqual([]);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+    });
+
+    describe('engine retire racing the same instance id', () => {
+        it('keeps the newer carry a removal wrote after the retire read', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            mocks.getPluginState.mockResolvedValue(NEWER_LIVE_BYTES);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            reading.commit([INSTANCE_ID]);
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, NEWER_LIVE_BYTES]]);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('plants no carry on the instance a reactivation brought back', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            reading.commit([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            // A later plain unload restores the project chunk, not the stale read.
+            await unloadPlugin(INSTANCE_ID);
+            mocks.setPluginState.mockClear();
+            await activate(SAVED_CHUNK);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('does not revive a carry the plugin rejected, and warns only once', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            const load = Promise.withResolvers<PluginInstance>();
+            mocks.loadPlugin.mockReturnValueOnce(load.promise);
+            mocks.setPluginState.mockRejectedValueOnce(new Error('chunk rejected'));
+
+            const reactivation = activate(SAVED_CHUNK);
+            const pendingReading = readExternalPluginStatesBeforeEngineRetire();
+            load.resolve(pluginInstance());
+            await expect(reactivation).resolves.toEqual({ status: 'active' });
+            const reading = await pendingReading;
+            reading.commit([INSTANCE_ID]);
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+            mocks.setPluginState.mockClear();
+            await activate(SAVED_CHUNK);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
         });
     });
 

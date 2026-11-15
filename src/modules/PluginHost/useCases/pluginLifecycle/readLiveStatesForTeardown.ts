@@ -21,6 +21,12 @@ type TeardownStateRead =
 
 const NOTHING: TeardownStateRead = { status: 'nothing' };
 
+type StampedTeardownStateRead = Readonly<{
+    read: TeardownStateRead;
+    /** The instance's carry-slot version when its read started. */
+    slotVersion: number;
+}>;
+
 /**
  * The carry an activation still in flight is restoring. The activation keeps
  * the entry until it settles, so a removal landing first carries it forward
@@ -59,12 +65,28 @@ async function readLiveState(instanceId: string): Promise<TeardownStateRead> {
     return { status: 'carried', pluginId, stateChunk: bytesToBase64(bytes) };
 }
 
+/**
+ * Stamped when the read itself starts, not when its batch does: a scheduled
+ * read waits for the instance's lifecycle turn, and a carry an activation took
+ * while it waited is the one this read then sees as being restored.
+ */
+async function readStampedLiveState(instanceId: string): Promise<StampedTeardownStateRead> {
+    const slotVersion = carriedExternalPluginStateFence.slotVersion(instanceId);
+    return { read: await readLiveState(instanceId), slotVersion };
+}
+
 /** A read still pending at the deadline counts as lost; its late answer is ignored. */
-function withinTeardownBudget(instanceId: string, read: Promise<TeardownStateRead>): Promise<TeardownStateRead> {
+function withinTeardownBudget(
+    instanceId: string,
+    read: Promise<StampedTeardownStateRead>
+): Promise<StampedTeardownStateRead> {
     const pluginId = loadedExternalInstancePluginIds.get(instanceId);
-    const timedOut: TeardownStateRead = pluginId === undefined ? NOTHING : { status: 'lost', pluginId };
+    const timedOut: StampedTeardownStateRead = {
+        read: pluginId === undefined ? NOTHING : { status: 'lost', pluginId },
+        slotVersion: carriedExternalPluginStateFence.slotVersion(instanceId),
+    };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<TeardownStateRead>((resolve) => {
+    const deadline = new Promise<StampedTeardownStateRead>((resolve) => {
         timer = setTimeout(() => resolve(timedOut), TEARDOWN_STATE_READ_TIMEOUT_MS);
     });
     return Promise.race([read, deadline]).finally(() => clearTimeout(timer));
@@ -77,17 +99,22 @@ function withinTeardownBudget(instanceId: string, read: Promise<TeardownStateRea
  * own native call still holds the native control gate, so a later native unload
  * or retire of that same instance can still block.
  */
-function readForOrdering(instanceId: string, ordering: 'inside-lifecycle' | 'scheduled'): Promise<TeardownStateRead> {
+function readForOrdering(
+    instanceId: string,
+    ordering: 'inside-lifecycle' | 'scheduled'
+): Promise<StampedTeardownStateRead> {
     if (ordering === 'inside-lifecycle') {
-        return readLiveState(instanceId);
+        return readStampedLiveState(instanceId);
     }
-    return serializePluginLifecycle(instanceId, () => withinTeardownBudget(instanceId, readLiveState(instanceId)));
+    return serializePluginLifecycle(instanceId, () =>
+        withinTeardownBudget(instanceId, readStampedLiveState(instanceId))
+    );
 }
 
 export type TeardownStateReads = Readonly<{
     /** The carry generation the batch started in. */
     generation: number;
-    byInstanceId: ReadonlyMap<string, TeardownStateRead>;
+    byInstanceId: ReadonlyMap<string, StampedTeardownStateRead>;
 }>;
 
 /**
