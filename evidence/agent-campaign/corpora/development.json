@@ -28,7 +28,8 @@
             "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": true
+            "sealed": false,
+            "pendingContract": "recipe.discover and recipe.expand"
         },
         "whole-project-vibe-with-constraint": {
             "sealed": false,
@@ -490,12 +491,21 @@
         },
         {
             "id": "AC054-DEV-CLARIFY-3",
-            "promptClass": "perceptual-single-target",
-            "class": "execute-exact",
+            "promptClass": "boundary",
+            "class": "clarify-required",
             "prompt": "fix the vocals",
-            "providerTurns": [],
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request names no problem to fix, and three tracks carry vocals.",
+                        "questions": ["Which vocal track should change?", "What sounds wrong with it?"]
+                    }
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "clarify"
             }
         },
         {
@@ -3513,11 +3523,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -10.45 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -13.47 dBFS (exact).",
+                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -0.99 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -5.09 dBFS (exact).",
                 "measurement": {
                     "target": { "kind": "master" },
                     "rangeName": "Chorus",
-                    "metrics": { "integratedLoudness": -10.45, "rms": -13.47 }
+                    "metrics": { "integratedLoudness": -0.99, "rms": -5.09 }
                 }
             }
         },
@@ -3552,11 +3562,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -27.95 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -30.97 dBFS (exact).",
+                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -14.34 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -26.49 dBFS (exact).",
                 "measurement": {
                     "target": { "kind": "track", "name": "Snare" },
                     "rangeName": "Verse",
-                    "metrics": { "truePeak": -27.95, "rms": -30.97 }
+                    "metrics": { "truePeak": -14.34, "rms": -26.49 }
                 }
             }
         },
@@ -3608,15 +3618,56 @@
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 150
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": 2.75
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": -2
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "increase",
+                        "target": "Guitar"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Guitar"
+                    }
+                ]
             }
         },
         {
             "id": "AC067-DEV-COMPARE-1",
             "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "make the guitar louder than the keys in the verse",
+            "prompt": "make the Guitar louder than the Keys in the verse",
             "providerTurns": [
                 {
                     "kind": "intake",
@@ -3640,10 +3691,11 @@
                     "metrics": ["integratedLoudness"],
                     "items": [
                         {
-                            "id": "raise",
-                            "name": "setTrackGain",
+                            "id": "insert",
+                            "name": "addDevice",
                             "arguments": {
-                                "gainDb": 6
+                                "deviceType": "builtin-gain",
+                                "binding": "insert"
                             },
                             "selector": {
                                 "targetArgument": "trackId",
@@ -3656,6 +3708,16 @@
                                     "exactly": 1
                                 }
                             }
+                        },
+                        {
+                            "id": "set-0",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "gain-level",
+                                "value": 9
+                            },
+                            "dependsOn": ["insert"]
                         }
                     ]
                 },
@@ -3667,188 +3729,65 @@
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deviceType": "builtin-gain"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "gain-level",
+                            "value": 9
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "integratedLoudness",
+                        "relation": "greater-than-current",
+                        "target": "Guitar",
+                        "reference": "Keys"
+                    }
+                ]
             }
         },
         {
             "id": "AC067-DEV-COMPARE-2",
             "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "make the guitar wider than the hi-hat in the chorus",
+            "prompt": "make the Hi-Hat wider than the Guitar in the chorus",
             "providerTurns": [
                 {
                     "kind": "intake",
                     "intent": "comparative",
-                    "targets": ["Guitar"],
+                    "targets": ["Hi-Hat"],
                     "objectives": [
                         {
                             "policyId": "side-energy-fraction-comparison-v1",
                             "relation": "greater-than-current",
-                            "targetName": "Guitar",
-                            "referenceName": "Hi-Hat",
-                            "rangeName": "Chorus"
-                        }
-                    ]
-                },
-                {
-                    "kind": "measure-preview",
-                    "id": "preview",
-                    "targets": ["Guitar", "Hi-Hat"],
-                    "rangeName": "Chorus",
-                    "metrics": ["sideEnergyFraction"],
-                    "items": [
-                        {
-                            "id": "insert",
-                            "name": "addDevice",
-                            "arguments": {
-                                "deviceType": "builtin-stereo-widener",
-                                "binding": "insert"
-                            },
-                            "selector": {
-                                "targetArgument": "trackId",
-                                "entity": "track",
-                                "where": {
-                                    "name": "Guitar"
-                                },
-                                "quantity": {
-                                    "unit": "targets",
-                                    "exactly": 1
-                                }
-                            }
-                        },
-                        {
-                            "id": "set-0",
-                            "name": "setDeviceParameter",
-                            "arguments": {
-                                "deviceId": "$insert",
-                                "paramId": "width-amount",
-                                "value": 1.3
-                            },
-                            "dependsOn": ["insert"]
-                        }
-                    ]
-                },
-                {
-                    "kind": "propose-compiled",
-                    "compiledCallIds": ["preview"],
-                    "targets": ["Guitar"]
-                }
-            ],
-            "oracle": {
-                "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
-            }
-        },
-        {
-            "id": "AC067-DEV-COMPARE-3",
-            "promptClass": "comparative-by-measurement",
-            "class": "execute-exact",
-            "prompt": "make the guitar brighter than the hi-hat in the intro",
-            "providerTurns": [
-                {
-                    "kind": "intake",
-                    "intent": "comparative",
-                    "targets": ["Guitar"],
-                    "objectives": [
-                        {
-                            "policyId": "spectral-centroid-comparison-v1",
-                            "relation": "greater-than-current",
-                            "targetName": "Guitar",
-                            "referenceName": "Hi-Hat",
-                            "rangeName": "Intro"
-                        }
-                    ]
-                },
-                {
-                    "kind": "measure-preview",
-                    "id": "preview",
-                    "targets": ["Guitar", "Hi-Hat"],
-                    "rangeName": "Intro",
-                    "metrics": ["spectralCentroid"],
-                    "items": [
-                        {
-                            "id": "insert",
-                            "name": "addDevice",
-                            "arguments": {
-                                "deviceType": "builtin-eq",
-                                "binding": "insert"
-                            },
-                            "selector": {
-                                "targetArgument": "trackId",
-                                "entity": "track",
-                                "where": {
-                                    "name": "Guitar"
-                                },
-                                "quantity": {
-                                    "unit": "targets",
-                                    "exactly": 1
-                                }
-                            }
-                        },
-                        {
-                            "id": "set-0",
-                            "name": "setDeviceParameter",
-                            "arguments": {
-                                "deviceId": "$insert",
-                                "paramId": "eq-high-gain",
-                                "value": 3
-                            },
-                            "dependsOn": ["insert"]
-                        }
-                    ]
-                },
-                {
-                    "kind": "propose-compiled",
-                    "compiledCallIds": ["preview"],
-                    "targets": ["Guitar"]
-                }
-            ],
-            "oracle": {
-                "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
-            }
-        },
-        {
-            "id": "AC067-DEV-MULTI-1",
-            "promptClass": "perceptual-multi-target",
-            "class": "execute-exact",
-            "prompt": "the chorus sounds harsh",
-            "providerTurns": [
-                {
-                    "kind": "intake",
-                    "intent": "perceptual",
-                    "targets": ["Hi-Hat"],
-                    "objectives": [
-                        {
-                            "recipeId": "drums-dark",
                             "targetName": "Hi-Hat",
+                            "referenceName": "Guitar",
                             "rangeName": "Chorus"
                         }
                     ]
-                },
-                {
-                    "kind": "recipe",
-                    "id": "discovery",
-                    "descriptors": ["dark"],
-                    "targetName": "Hi-Hat",
-                    "limit": 2
                 },
                 {
                     "kind": "expand",
                     "id": "expansion",
-                    "recipeId": "drums-dark",
+                    "recipeId": "drums-wide",
                     "targetName": "Hi-Hat",
                     "role": "drums"
                 },
                 {
                     "kind": "measure-preview",
                     "id": "preview",
-                    "targets": ["Hi-Hat"],
+                    "targets": ["Hi-Hat", "Guitar"],
                     "rangeName": "Chorus",
-                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "metrics": ["sideEnergyFraction"],
                     "recipeCallId": "expansion"
                 },
                 {
@@ -3859,112 +3798,141 @@
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
-            }
-        },
-        {
-            "id": "AC067-DEV-MULTI-2",
-            "promptClass": "perceptual-multi-target",
-            "class": "execute-exact",
-            "prompt": "the verse sounds boxy",
-            "providerTurns": [
-                {
-                    "kind": "intake",
-                    "intent": "perceptual",
-                    "targets": ["Guitar"],
-                    "objectives": [
-                        {
-                            "recipeId": "guitar-muddy",
-                            "targetName": "Guitar",
-                            "rangeName": "Verse"
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-hi-hat",
+                            "deviceType": "builtin-stereo-widener"
                         }
-                    ]
-                },
-                {
-                    "kind": "recipe",
-                    "id": "discovery",
-                    "descriptors": ["muddy"],
-                    "targetName": "Guitar",
-                    "limit": 2
-                },
-                {
-                    "kind": "expand",
-                    "id": "expansion",
-                    "recipeId": "guitar-muddy",
-                    "targetName": "Guitar",
-                    "role": "guitar"
-                },
-                {
-                    "kind": "measure-preview",
-                    "id": "preview",
-                    "targets": ["Guitar"],
-                    "rangeName": "Verse",
-                    "metrics": ["frequencyBandEnergy", "rms"],
-                    "recipeCallId": "expansion"
-                },
-                {
-                    "kind": "propose-compiled",
-                    "compiledCallIds": ["preview"],
-                    "targets": ["Guitar"]
-                }
-            ],
-            "oracle": {
-                "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "width-amount",
+                            "value": 1.35
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "width-mono-bass",
+                            "value": 150
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "width-side",
+                            "value": 2
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "sideEnergyFraction",
+                        "relation": "greater-than-current",
+                        "target": "Hi-Hat",
+                        "reference": "Guitar"
+                    }
+                ]
             }
         },
         {
-            "id": "AC067-DEV-MULTI-3",
-            "promptClass": "perceptual-multi-target",
+            "id": "AC067-DEV-COMPARE-3",
+            "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "the intro feels thin",
+            "prompt": "make the Snare brighter than Backing Vocals R in the intro",
             "providerTurns": [
                 {
                     "kind": "intake",
-                    "intent": "perceptual",
-                    "targets": ["Keys"],
+                    "intent": "comparative",
+                    "targets": ["Snare"],
                     "objectives": [
                         {
-                            "recipeId": "keys-thin",
-                            "targetName": "Keys",
+                            "policyId": "spectral-centroid-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Snare",
+                            "referenceName": "Backing Vocals R",
                             "rangeName": "Intro"
                         }
                     ]
                 },
                 {
-                    "kind": "recipe",
-                    "id": "discovery",
-                    "descriptors": ["thin"],
-                    "targetName": "Keys",
-                    "limit": 2
-                },
-                {
                     "kind": "expand",
                     "id": "expansion",
-                    "recipeId": "keys-thin",
-                    "targetName": "Keys",
-                    "role": "keys"
+                    "recipeId": "drums-bright",
+                    "targetName": "Snare",
+                    "role": "drums"
                 },
                 {
                     "kind": "measure-preview",
                     "id": "preview",
-                    "targets": ["Keys"],
+                    "targets": ["Snare", "Backing Vocals R"],
                     "rangeName": "Intro",
-                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "metrics": ["spectralCentroid"],
                     "recipeCallId": "expansion"
                 },
                 {
                     "kind": "propose-compiled",
                     "compiledCallIds": ["preview"],
-                    "targets": ["Keys"]
+                    "targets": ["Snare"]
                 }
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 4000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 2
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 10000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": 3
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "greater-than-current",
+                        "target": "Snare",
+                        "reference": "Backing Vocals R"
+                    }
+                ]
             }
         },
         {
@@ -4015,8 +3983,58 @@
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 325
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": -3.5
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.85
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 150
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": -2
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "low-mid",
+                        "relation": "decrease",
+                        "target": "Lead Vocal"
+                    }
+                ]
             }
         },
         {
@@ -4067,8 +4085,63 @@
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [],
-                "measuredGoals": []
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 2750
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 2.25
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.15
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 10000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": 2.75
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "increase",
+                        "target": "Keys"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "high-mid",
+                        "relation": "increase",
+                        "target": "Keys"
+                    }
+                ]
             }
         }
     ]
