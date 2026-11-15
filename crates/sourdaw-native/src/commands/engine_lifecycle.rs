@@ -177,7 +177,7 @@ pub async fn retire_native_engine(
     // it behind the handle above, which may or may not have happened by now.
     // A runtime still held simply survives this sweep and is freed by the
     // next one, exactly as `sweep_retired_engine_plugins` intends.
-    state.sweep_retired_engine_plugins();
+    state.sweep_retired_engine_plugins(windows_host);
 
     RetireNativeEngineResult::of(RetireOutcome::Retired, retired_instance_ids)
 }
@@ -703,7 +703,7 @@ mod tests {
         );
 
         drop(scheduler_clone);
-        state.sweep_retired_engine_plugins();
+        state.sweep_retired_engine_plugins(&NoWindowHost);
 
         assert_eq!(
             retired_runtime_count(&state),

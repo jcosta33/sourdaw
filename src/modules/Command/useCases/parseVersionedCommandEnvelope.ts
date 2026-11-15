@@ -1,3 +1,4 @@
+import { COMMAND_APPLICATION_ID_RULES } from '../models/CommandApplicationIdRule';
 import {
     VERSIONED_COMMAND_SCHEMA_VERSION,
     type CommandApplicationAssignedId,
@@ -13,7 +14,6 @@ import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { getVersionedCommandReferencedTargets } from './getVersionedCommandReferencedTargets';
-import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 

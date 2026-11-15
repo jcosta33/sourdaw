@@ -36,6 +36,8 @@ vi.mock('#/modules/Command/useCases', () => ({
         throw new Error('Unexpected replay-authority reset in this device UI fixture');
     },
     getExecutableAppActionEffect: vi.fn(() => null),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: vi.fn(),

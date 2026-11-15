@@ -914,7 +914,7 @@ async function main() {
     for (const row of rows) {
         if (!row.warmVerify?.ok || !row.lateVerify?.ok) {
             failures.push(
-                `${row.id}: occupancy — warm-up "${row.warmVerify?.detail}"; after run "${row.lateVerify?.detail}"`
+                `${row.id}: occupancy — warm-up "${row.warmVerify?.detail ?? 'not run'}"; after run "${row.lateVerify?.detail ?? 'not run'}"`
             );
         }
         if (!(row.wallRatio <= WALL_RATIO_TOLERANCE)) {
@@ -1033,7 +1033,7 @@ async function main() {
         rows.filter((row) => row.costSite !== 'audio-thread')
     );
 
-    const harness = rows[0]?.harnessFloor;
+    const harness = rows.at(0)?.harnessFloor;
     if (harness) {
         console.log(
             `harness floor (two clock reads, no render): floor ${us(harness.floor)}us, median ${us(harness.median)}us`
@@ -1064,7 +1064,7 @@ async function main() {
                     `tick ${us(d.tickCostMs)}us (${pct(d.tickCostMs)}), idle ${us(d.idleCostMs)}us, ` +
                     `amortised mean ${us(d.amortisedMeanMs)}us (${pct(d.amortisedMeanMs)})${row.medianTrustworthy ? '' : ' [unreliable calibration]'}`
             );
-            console.log(`  ${''.padEnd(10)} period from ${row.dutyCycleSource}`);
+            console.log(`  ${''.padEnd(10)} period from ${row.dutyCycleSource ?? 'unknown'}`);
         }
         console.log('');
     }
@@ -1076,7 +1076,7 @@ async function main() {
     // present is exactly the kind of number this instrument exists to refuse:
     // it would read as a project figure while silently omitting devices.
     const referenceMemberIds = [...REFERENCE_PROJECT_AUDIO_THREAD, ...REFERENCE_PROJECT_WORKER].map(([id]) => id);
-    const referenceMissing = [...new Set(referenceMemberIds.filter((id) => byId[id] === undefined))];
+    const referenceMissing = [...new Set(referenceMemberIds.filter((id) => !Object.hasOwn(byId, id)))];
     /** @type {ReferenceProjectRecord | null} */
     let referenceProjectJson = null;
     if (referenceMissing.length > 0) {
@@ -1161,8 +1161,8 @@ async function main() {
     for (const row of rows) {
         const c = row.calibration;
         console.log(`  ${row.id}  [${row.costSite}]`);
-        console.log(`      warm-up  : ${row.warmVerify?.detail}`);
-        console.log(`      after run: ${row.lateVerify?.detail}`);
+        console.log(`      warm-up  : ${row.warmVerify?.detail ?? 'not run'}`);
+        console.log(`      after run: ${row.lateVerify?.detail ?? 'not run'}`);
         console.log(`      load     : ${row.note}`);
         console.log(
             `      clock    : ${c.segments} in-window segments, ${sig2(c.medianTicksPerMs)} ticks/ms median, ` +

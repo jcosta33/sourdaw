@@ -214,6 +214,8 @@ vi.mock('#/modules/Command/useCases', () => ({
 
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),

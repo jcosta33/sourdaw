@@ -8,13 +8,13 @@ import {
     assertTrustedExecutingBlob,
     authenticateRole,
     GITHUB_HTTPS_REMOTE,
-    gitAuthenticatedArgs,
     githubAuthorizationGitEnv,
     originMainBlob,
     spawnCapture,
     spawnRun,
     type GhSession,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import {
     checkedNativeParentCompletion,
     nativeParentInspectionInvocation,
@@ -484,12 +484,16 @@ export function syncParentShellPort(input: {
     const capture = input.capture ?? spawnCapture;
     const run = input.run ?? spawnRun;
     const local = (args: string[]) => capture(gitPath, args, { cwd: lane, env: localEnv });
+    const primaryGit: GitRunner = {
+        capture: (args) => capture(gitPath, args, { cwd: primaryRoot, env: session.env }),
+        run: (args) => run(gitPath, args, { cwd: primaryRoot, env: session.env }),
+    };
+    const credential = { token: session.env.GH_TOKEN ?? '', helperDir: session.configDir };
     const fetch = (ref: string) =>
-        run(
-            gitPath,
-            gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', session.configDir, ['fetch', GITHUB_HTTPS_REMOTE, ref]),
-            { cwd: primaryRoot, env: session.env }
-        );
+        withIsolatedGitTransport(primaryGit, credential, (transport) => {
+            transport.run(['fetch', GITHUB_HTTPS_REMOTE, ref]);
+            return transport.capture(['rev-parse', '--verify', 'FETCH_HEAD^{commit}']);
+        });
     const disabledHooks = join(session.configDir, 'disabled-hooks');
     mkdirSync(disabledHooks, { recursive: true });
     return {
@@ -512,11 +516,7 @@ export function syncParentShellPort(input: {
             parseStackParents(capture(ghPath, stackParentQuery(branch), { cwd: primaryRoot, env: session.env })),
         isAncestor: (ancestor, descendant) => isAncestorCommit(lane, ancestor, descendant, localEnv, gitPath),
         fetchParent: (_branch, expectedHead) => {
-            fetch(expectedHead);
-            const fetched = capture(gitPath, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'], {
-                cwd: primaryRoot,
-                env: localEnv,
-            });
+            const fetched = fetch(expectedHead);
             if (fetched !== expectedHead) {
                 fail('stack parent moved during fetch');
             }

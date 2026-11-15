@@ -25,7 +25,12 @@ import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi/pr
 import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 
+import { hostedBackendQuestionIdentity } from '../../../models/Preferences';
+import { admitHostedBackendQuestion } from '../../../useCases/admitHostedBackendQuestion';
+import { forgetHostedBackendQuestion } from '../../../useCases/forgetHostedBackendQuestion';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
+
+import { type HostedBackendQuestion, HostedBackendQuestionPrompt } from './HostedBackendQuestionPrompt';
 
 type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
 type HostedProviderAuthentication = 'api-key' | 'none';
@@ -135,6 +140,7 @@ export const AiSection = (): ReactElement => {
     );
     const [configurationError, setConfigurationError] = useState<string | null>(null);
     const [configurationPending, setConfigurationPending] = useState(false);
+    const [backendQuestion, setBackendQuestion] = useState<HostedBackendQuestion | null>(null);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
     const selectedBackend = getSelectedBackend({
@@ -176,6 +182,25 @@ export const AiSection = (): ReactElement => {
         }
         return { type: 'enabled', budgetTokens: Number(thinkingBudget) };
     };
+    // Automatic never sends a request to a hosted provider, so a provider saved under it would go
+    // unused without a word; the user is asked once per provider whether to select it. The selector
+    // stays editable while a save is pending, so it is read as it is when the save completes.
+    // A shown question always names the provider currently saved, so every save drops it first.
+    const askToSelectHostedProvider = (): void => {
+        setBackendQuestion(null);
+        if ((aiBackendPreferenceStore.value ?? 'auto') !== 'auto' || !hostedProvidersAvailable) {
+            return;
+        }
+        const identity = hostedBackendQuestionIdentity({ provider, baseUrl });
+        if (admitHostedBackendQuestion(identity)) {
+            setBackendQuestion({ identity, providerLabel: getProviderLabel(provider) });
+        }
+    };
+    const selectAskedHostedProvider = (question: HostedBackendQuestion): void => {
+        setAiBackendPreference('cloud');
+        forgetHostedBackendQuestion(question.identity);
+        setBackendQuestion(null);
+    };
     const saveHostedProvider = async (): Promise<void> => {
         setConfigurationPending(true);
         try {
@@ -190,6 +215,7 @@ export const AiSection = (): ReactElement => {
             });
             setConfigurationError(null);
             setApiKey('');
+            askToSelectHostedProvider();
         } catch (error) {
             setConfigurationError(error instanceof Error ? error.message : 'Hosted provider configuration failed');
         } finally {
@@ -200,6 +226,7 @@ export const AiSection = (): ReactElement => {
         setConfigurationPending(true);
         try {
             await removeCloudProvider();
+            setBackendQuestion(null);
             setConfigurationError(null);
             setApiKey('');
         } catch (error) {
@@ -484,6 +511,17 @@ export const AiSection = (): ReactElement => {
                         <p className="mt-1.5 text-[10px] text-destructive" role="alert">
                             {configurationError}
                         </p>
+                    ) : null}
+                    {backendQuestion !== null && backendPreference === 'auto' ? (
+                        <HostedBackendQuestionPrompt
+                            providerLabel={backendQuestion.providerLabel}
+                            onKeep={() => {
+                                setBackendQuestion(null);
+                            }}
+                            onUse={() => {
+                                selectAskedHostedProvider(backendQuestion);
+                            }}
+                        />
                     ) : null}
 
                     <Row justify="between" className="mt-2">
