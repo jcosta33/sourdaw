@@ -29,6 +29,10 @@ unsafe extern "C" fn count(_plugin: *const clap_plugin) -> u32 {
     1
 }
 
+/// # Safety
+/// `info`, when non-null, must be valid and aligned for a write of one
+/// `clap_param_info`, as `clap/ext/params.h` requires of the host's
+/// `get_info` argument.
 unsafe extern "C" fn get_info(
     _plugin: *const clap_plugin,
     index: u32,
@@ -41,6 +45,9 @@ unsafe extern "C" fn get_info(
     for (slot, byte) in name.iter_mut().zip(b"Level\0".iter()) {
         *slot = *byte as c_char;
     }
+    // SAFETY: `info` is non-null (checked above) and, per this function's
+    // `# Safety` contract, valid and aligned for one `clap_param_info` write;
+    // the type is `Copy`, so the overwritten value needs no drop.
     unsafe {
         *info = clap_param_info {
             id: LEVEL_PARAM_ID,
@@ -56,6 +63,10 @@ unsafe extern "C" fn get_info(
     true
 }
 
+/// # Safety
+/// `plugin` must satisfy `tone_from_plugin`'s `# Safety` contract, and
+/// `out_value`, when non-null, must be valid and aligned for one `f64` write,
+/// as `clap/ext/params.h` requires of the host's `get_value` arguments.
 unsafe extern "C" fn get_value(
     plugin: *const clap_plugin,
     param_id: clap_id,
@@ -64,8 +75,13 @@ unsafe extern "C" fn get_value(
     if out_value.is_null() || param_id != LEVEL_PARAM_ID {
         return false;
     }
+    // SAFETY: this function's `# Safety` contract passes on
+    // `tone_from_plugin`'s own requirement on `plugin` unchanged.
     match unsafe { tone_from_plugin(plugin) } {
         Some(tone) => {
+            // SAFETY: `out_value` is non-null (checked above) and, per this
+            // function's `# Safety` contract, valid and aligned for one `f64`
+            // write.
             unsafe { *out_value = tone.level() };
             true
         }
@@ -73,6 +89,10 @@ unsafe extern "C" fn get_value(
     }
 }
 
+/// # Safety
+/// `out_buffer`, when non-null, must be valid for writes of
+/// `out_buffer_capacity` consecutive `c_char`s, as `clap/ext/params.h`
+/// requires of the host's `value_to_text` arguments.
 unsafe extern "C" fn value_to_text(
     _plugin: *const clap_plugin,
     param_id: clap_id,
@@ -89,12 +109,30 @@ unsafe extern "C" fn value_to_text(
         return false;
     }
     for (index, byte) in bytes.iter().enumerate() {
-        unsafe { *out_buffer.add(index) = *byte as c_char };
+        // SAFETY: `index < bytes.len()` and `bytes.len() + 1 <=
+        // out_buffer_capacity` (checked above), so the offset stays inside
+        // the `out_buffer_capacity`-element allocation this function's
+        // `# Safety` contract guarantees.
+        let slot = unsafe { out_buffer.add(index) };
+        // SAFETY: `slot` is in bounds of that host buffer (see above), which
+        // the `# Safety` contract makes valid for `c_char` writes.
+        unsafe { *slot = *byte as c_char };
     }
-    unsafe { *out_buffer.add(bytes.len()) = 0 };
+    // SAFETY: `bytes.len() < out_buffer_capacity` (checked above), so the
+    // terminator offset stays inside the host buffer the `# Safety` contract
+    // guarantees.
+    let terminator = unsafe { out_buffer.add(bytes.len()) };
+    // SAFETY: `terminator` is in bounds of that host buffer (see above), which
+    // the `# Safety` contract makes valid for `c_char` writes.
+    unsafe { *terminator = 0 };
     true
 }
 
+/// # Safety
+/// `param_value_text`, when non-null, must point to a NUL-terminated C string
+/// that stays live and unmodified for the call, and `out_value`, when
+/// non-null, must be valid and aligned for one `f64` write, as
+/// `clap/ext/params.h` requires of the host's `text_to_value` arguments.
 unsafe extern "C" fn text_to_value(
     _plugin: *const clap_plugin,
     param_id: clap_id,
@@ -104,11 +142,17 @@ unsafe extern "C" fn text_to_value(
     if param_id != LEVEL_PARAM_ID || param_value_text.is_null() || out_value.is_null() {
         return false;
     }
+    // SAFETY: `param_value_text` is non-null (checked above) and, per this
+    // function's `# Safety` contract, NUL-terminated and unmodified for the
+    // call; `text` does not outlive the call.
     let Ok(text) = unsafe { CStr::from_ptr(param_value_text) }.to_str() else {
         return false;
     };
     match text.trim().parse::<f64>() {
         Ok(value) => {
+            // SAFETY: `out_value` is non-null (checked above) and, per this
+            // function's `# Safety` contract, valid and aligned for one `f64`
+            // write.
             unsafe { *out_value = value };
             true
         }
@@ -124,12 +168,21 @@ unsafe extern "C" fn text_to_value(
 /// alone is enough; nothing here needs a lock on top of it. Because this can
 /// run on the audio thread, `apply_parameter_events` must stay allocation-
 /// and lock-free. No output events: this plugin never raises one of its own.
+///
+/// # Safety
+/// `plugin` must satisfy `tone_from_plugin`'s `# Safety` contract and `in_`
+/// must satisfy `apply_parameter_events`'s, as `clap/ext/params.h` requires
+/// of the host's `flush` arguments.
 unsafe extern "C" fn flush(
     plugin: *const clap_plugin,
     in_: *const clap_input_events,
     _out: *const clap_output_events,
 ) {
+    // SAFETY: this function's `# Safety` contract passes on
+    // `tone_from_plugin`'s requirement on `plugin` unchanged.
     if let Some(tone) = unsafe { tone_from_plugin(plugin) } {
+        // SAFETY: this function's `# Safety` contract passes on
+        // `apply_parameter_events`'s requirement on `in_` unchanged.
         unsafe { apply_parameter_events(tone, in_) };
     }
 }
