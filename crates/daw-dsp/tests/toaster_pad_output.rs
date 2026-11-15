@@ -177,7 +177,7 @@ fn hit_energy(engine_type: usize, decay: f32, sample_rate: f32, open: bool) -> f
 /// narrow-range engines live in the audit spec.
 #[test]
 fn every_engine_renders_a_longer_tail_at_maximum_decay_than_at_minimum() {
-    for engine_type in 0..DrumEngineType::COUNT {
+    for (engine_type, engine_name) in ENGINE_NAMES.iter().enumerate() {
         if engine_type == MODAL_ENGINE || engine_type == CR78_DRUM_ENGINE {
             continue; // total energy is the wrong observable here; checked below
         }
@@ -192,7 +192,7 @@ fn every_engine_renders_a_longer_tail_at_maximum_decay_than_at_minimum() {
                 long > short * 1.2,
                 "{}{} at {sample_rate} Hz must ring longer at decay 1.0 than at 0.0: \
                  short={short}, long={long}",
-                ENGINE_NAMES[engine_type],
+                engine_name,
                 if open { " (open)" } else { "" },
             );
         }

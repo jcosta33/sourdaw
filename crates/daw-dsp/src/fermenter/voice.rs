@@ -1,14 +1,14 @@
 /// Single synthesizer voice — owns oscillator, filter, envelopes, LFO.
 use super::additive::AdditiveEngine;
 use super::chaos::{LorenzMod, PerlinMod};
-use super::envelope::Envelope;
+use super::envelope::{AdsrTimes, Envelope};
 use super::filter::{
     fast_tanh, DiodeLadder, FilterMode, FormantFilter, MoogLadder, Ms20Filter, SemFilter, SvfFilter,
 };
 use super::fm::FmEngine;
 use super::granular::GranularEngine;
 use super::lfo::{Lfo, LfoShape};
-use super::modulation::ModMatrix;
+use super::modulation::{ModMatrix, ModSourceValues};
 use super::mseg::Mseg;
 use super::noise::NoiseGen;
 use super::oscillator::{PolyBlepOsc, UnisonOsc, Wavetable, WavetableOsc};
@@ -504,19 +504,11 @@ impl Voice {
     }
 
     /// Update envelope time/level parameters without restarting them.
-    pub fn set_envelopes(
-        &mut self,
-        amp_a: f32,
-        amp_d: f32,
-        amp_s: f32,
-        amp_r: f32,
-        filt_a: f32,
-        filt_d: f32,
-        filt_s: f32,
-        filt_r: f32,
-    ) {
-        self.amp_env.set_params(amp_a, amp_d, amp_s, amp_r);
-        self.filter_env.set_params(filt_a, filt_d, filt_s, filt_r);
+    pub fn set_envelopes(&mut self, amp: AdsrTimes, filter: AdsrTimes) {
+        self.amp_env
+            .set_params(amp.attack, amp.decay, amp.sustain, amp.release);
+        self.filter_env
+            .set_params(filter.attack, filter.decay, filter.sustain, filter.release);
     }
 
     /// Render a block of samples into the output buffers.
@@ -624,15 +616,15 @@ impl Voice {
             let seq_val = self.step_seq.tick(p.seq_rate, p.sample_rate);
 
             // Modulation (control-rate is fine at 128-sample blocks = ~344 Hz)
-            let mods = p.mod_matrix.evaluate(
-                amp,
-                filt_env,
-                lfo_val,
-                0.0,
-                self.velocity,
-                mseg_val,
-                seq_val,
-            );
+            let mods = p.mod_matrix.evaluate(ModSourceValues {
+                amp_env: amp,
+                filter_env: filt_env,
+                lfo1: lfo_val,
+                lfo2: 0.0,
+                velocity: self.velocity,
+                mseg: mseg_val,
+                step_seq: seq_val,
+            });
 
             // Step seq pitch modulation
             let seq_pitch_mod = if has_seq_pitch {
@@ -978,7 +970,7 @@ impl Voice {
 
 #[cfg(test)]
 mod tests {
-    use super::{note_frequency, FilterMode, ModMatrix, Voice, VoiceParams, Wavetable};
+    use super::{note_frequency, AdsrTimes, FilterMode, ModMatrix, Voice, VoiceParams, Wavetable};
 
     /// The sampler's source buffer is one second of 440 Hz sampled at 44.1 kHz,
     /// so tests render at that rate and read pitch directly off the playback.
@@ -1002,7 +994,20 @@ mod tests {
     /// then the KS excitation the string engine needs.
     fn sounding_voice(engine: u8, note: u8) -> Voice {
         let mut voice = Voice::new(SAMPLE_RATE);
-        voice.set_envelopes(0.001, 5.0, 1.0, 0.3, 0.001, 5.0, 0.0, 0.3);
+        voice.set_envelopes(
+            AdsrTimes {
+                attack: 0.001,
+                decay: 5.0,
+                sustain: 1.0,
+                release: 0.3,
+            },
+            AdsrTimes {
+                attack: 0.001,
+                decay: 5.0,
+                sustain: 0.0,
+                release: 0.3,
+            },
+        );
         voice.note_on(note, 0, 0.8, note_frequency(note), SAMPLE_RATE);
         voice.set_engine(engine, SAMPLE_RATE);
         if engine == 3 {

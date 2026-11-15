@@ -172,7 +172,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:ce680ad6639d40da5baa584ebc892b81bbd72e77cd25b8db5a644ae584d037dc:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:519a84fb0bf2a4259294aea2789f567d3c02ea526bcc5169843221a1aa3b858e:release/dependency-license-proofs.json"
+                "sha256:def4ba51cc9874ae77fe9333e28a4573060c9d21b0f6aca92d075524b6527828:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1225,14 +1225,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:256ab7b660aa577a416bca50523096298b8093bbc9b3d975131220533a092937:grand-boule-native-rust",
+                "tracked-set-sha256:e5d22ea017ba20b5e6a2d0e7a75218e65b8535080500fd0ab34fed07b05c6d90:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:33535e3e0c7d019b07cac0548c48f37842900656659d9d50c6c6b8a01edc873e:grand-boule-project-state",
+                "tracked-set-sha256:43fd5c865499974fb8cef4f133842bb7b6c177536cba30460316bc232392c33d:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:88850d0cd229f166563a451b2df7dc4bcc90b9e3691aa2f008f484daebc1c6d6:grand-boule-release-proof"
+                "tracked-set-sha256:f5696c7cabf2ddc890ea889ecf2c8060e1a86f8d76e2743282c99bbb5067d451:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1380,13 +1380,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:c8232d69742c5f7cd2b0d0e5c73de7d395ab1d0918f732d3a23073f8c6097b75",
-                "daw-wasm-decoder sha256:8be6171ef8a10b9f72549c7cde14cf7240ed17cd63eef6ebe0a92fb39f266754",
-                "proof-chamber sha256:fcdb52bfdcfc0effe822980da55baaa24c53258e1a9731da652187fefe35a1e4",
-                "scoring sha256:ab9abb6c8d416cd5d0b2ebcb0b643cc562b30432ca84820c20e5c9b6cdb71539"
+                "daw-dsp sha256:13a7f01b7c05e1f1487a415633324585dd3c5d8bf8c65b812ff6140796499729",
+                "daw-wasm-decoder sha256:882bf63722376749af1d9b5f690be6e496871be2cb68aaa6251d2d93a9d5d62a",
+                "proof-chamber sha256:ace5bea07e7b4aa03fbbc1ad71765bdb4e32270ef114c8f2c99e48f1bf3b04b9",
+                "scoring sha256:45cb23d3a8322179c73c7fd138f2155525bf8db0a8f7fda72d73bc16f83e1cd0"
             ],
             "digests": [
-                "sha256:ce0b6109f4cdf80cac83144f7846fa5dcf5c99cc0d372b5dac558c4f4fd410a4:public/wasm/manifest.json"
+                "sha256:55f43986ffdc62f7a41014b901a0cb076f90ea61851b48c32cfd895220c6929c:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1908,7 +1908,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "72e703a4b8c90e8c7e40e31a5c9c6d664cd4801b6b01a48f2225f0150a2cee0e"
+            "sha256": "4072a809c24e5a5bbd779dda2b9c6c8d094b0160f12567b4421646b3cccb71a4"
         },
         {
             "path": "Cargo.lock",
@@ -1920,7 +1920,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "ce0b6109f4cdf80cac83144f7846fa5dcf5c99cc0d372b5dac558c4f4fd410a4"
+            "sha256": "55f43986ffdc62f7a41014b901a0cb076f90ea61851b48c32cfd895220c6929c"
         }
     ],
     "externalReferences": [

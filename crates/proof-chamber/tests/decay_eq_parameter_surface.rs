@@ -35,7 +35,11 @@
 //! under all six writes, which is what makes the `structural` gap row in
 //! `src/utils/nativeDspEngineGaps.ts` a measurement rather than an opinion.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::ProofChamberInstance;
 
@@ -382,7 +386,7 @@ fn each_band_lengthens_its_own_part_of_the_spectrum() {
     for sample_rate in SAMPLE_RATES {
         for (algorithm, engine) in SHAPING_ENGINES {
             let neutral = render(sample_rate, algorithm, &[]);
-            for band in 0..6 {
+            for (band, band_freq) in BAND_FREQS.iter().enumerate() {
                 let context = format!("{engine} @{sample_rate}");
                 let neutral_t60 = band_t60_or_panic(&neutral, band, &context);
 
@@ -392,7 +396,7 @@ fn each_band_lengthens_its_own_part_of_the_spectrum() {
                     boosted_t60 > neutral_t60 * 1.15,
                     "{context}: band {band} ({} Hz) at {MAX_MULT}x must decay slower than at \
                      {NEUTRAL_MULT}x — T60 {boosted_t60:.3} s against {neutral_t60:.3} s",
-                    BAND_FREQS[band]
+                    band_freq
                 );
 
                 // The cut side is measured as level rather than as slope, for
@@ -407,7 +411,7 @@ fn each_band_lengthens_its_own_part_of_the_spectrum() {
                     "{context}: band {band} ({} Hz) at {MIN_MULT}x must have less energy left a \
                      second into the tail than at {NEUTRAL_MULT}x — {cut_level:.1} dB against \
                      {neutral_level:.1} dB",
-                    BAND_FREQS[band]
+                    band_freq
                 );
             }
         }
@@ -462,7 +466,7 @@ fn a_band_does_not_drag_the_far_side_of_the_spectrum_with_it() {
     for sample_rate in SAMPLE_RATES {
         for (algorithm, engine) in SHAPING_ENGINES {
             let neutral = render(sample_rate, algorithm, &[]);
-            for band in 0..6 {
+            for (band, band_freq) in BAND_FREQS.iter().enumerate() {
                 let dragged = render(sample_rate, algorithm, &band_write(band, MAX_MULT));
                 let context = format!("{engine} @{sample_rate}");
 
@@ -474,10 +478,10 @@ fn a_band_does_not_drag_the_far_side_of_the_spectrum_with_it() {
                     own > 0.1,
                     "{context}: dragging band {band} ({} Hz) to {MAX_MULT}x consumed only \
                      {own:.4} of its own headroom, so the comparison below says nothing",
-                    BAND_FREQS[band]
+                    band_freq
                 );
 
-                for other in 0_usize..6 {
+                for (other, other_freq) in BAND_FREQS.iter().enumerate() {
                     if octaves_between(band, other) < MIN_ISOLATED_OCTAVES {
                         continue;
                     }
@@ -490,8 +494,8 @@ fn a_band_does_not_drag_the_far_side_of_the_spectrum_with_it() {
                         "{context}: dragging band {band} ({} Hz) changed distant band {other} \
                          ({} Hz) by {elsewhere:.4} of a share against its own {own:.4} — the \
                          curve is not band-limited",
-                        BAND_FREQS[band],
-                        BAND_FREQS[other]
+                        band_freq,
+                        other_freq
                     );
                 }
             }
@@ -505,7 +509,7 @@ fn a_band_does_not_drag_the_far_side_of_the_spectrum_with_it() {
 #[test]
 fn the_curve_is_monotonic_across_its_declared_travel() {
     for (algorithm, engine) in SHAPING_ENGINES {
-        for band in 0..6 {
+        for (band, band_freq) in BAND_FREQS.iter().enumerate() {
             let mut previous = f64::NEG_INFINITY;
             for multiplier in [MIN_MULT, 0.5, NEUTRAL_MULT, 2.0, MAX_MULT] {
                 let rendered = render(48_000.0, algorithm, &band_write(band, multiplier));
@@ -519,7 +523,7 @@ fn the_curve_is_monotonic_across_its_declared_travel() {
                     "{engine}: band {band} ({} Hz) must have more left a second into the tail at \
                      {multiplier}x than at the setting below it — {level:.1} dB after \
                      {previous:.1} dB",
-                    BAND_FREQS[band]
+                    band_freq
                 );
                 previous = level;
             }

@@ -1,8 +1,8 @@
-/// Vintage character processing — applies era-appropriate degradation.
-///
-/// 1970s: Downsampled to ~20kHz, dark/noisy modulation, limited bandwidth
-/// 1980s: Full rate, dark modulation character, 15kHz bandwidth
-/// Modern: Full bandwidth, clean modulation
+//! Vintage character processing — applies era-appropriate degradation.
+//!
+//! 1970s: Downsampled to ~20kHz, dark/noisy modulation, limited bandwidth
+//! 1980s: Full rate, dark modulation character, 15kHz bandwidth
+//! Modern: Full bandwidth, clean modulation
 
 /// Vintage mode processor applied to the reverb output.
 pub struct VintageProcessor {

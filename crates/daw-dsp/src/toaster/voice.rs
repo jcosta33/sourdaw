@@ -129,6 +129,12 @@ impl SvfFilter {
     }
 }
 
+impl Default for SvfFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Exponential decay envelope used for amplitude shaping.
 pub struct ExpDecayEnv {
     pub value: f32,
@@ -160,6 +166,12 @@ impl ExpDecayEnv {
 
     pub fn is_active(&self) -> bool {
         self.value > 1e-6
+    }
+}
+
+impl Default for ExpDecayEnv {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

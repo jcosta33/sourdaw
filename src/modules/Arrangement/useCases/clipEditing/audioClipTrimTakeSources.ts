@@ -1,6 +1,6 @@
-import { type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';

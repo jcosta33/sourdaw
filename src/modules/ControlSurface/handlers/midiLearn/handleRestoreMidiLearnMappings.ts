@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type MidiLearnMappingsActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type MidiLearnMappingsActionSnapshot } from '../../events/controlSurfaceAppActions';
 import {
     midiLearnStore,
     type MidiLearnState,

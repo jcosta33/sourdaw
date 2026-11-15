@@ -29,7 +29,7 @@ impl SmoothedParam {
     }
 
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn next_value(&mut self) -> f32 {
         self.current = self.coeff * self.current + (1.0 - self.coeff) * self.target;
         self.current
     }

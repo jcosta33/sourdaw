@@ -19,8 +19,8 @@ impl StepSequencer {
     pub fn new() -> Self {
         // Default: alternating pattern
         let mut steps = [0.5f32; SEQ_STEPS];
-        for i in 0..SEQ_STEPS {
-            steps[i] = if i % 2 == 0 { 0.8 } else { 0.2 };
+        for (i, step) in steps.iter_mut().enumerate() {
+            *step = if i % 2 == 0 { 0.8 } else { 0.2 };
         }
         Self {
             steps,
@@ -69,5 +69,11 @@ impl StepSequencer {
 
         // Map from 0..1 to -1..1 for modulation
         self.output * 2.0 - 1.0
+    }
+}
+
+impl Default for StepSequencer {
+    fn default() -> Self {
+        Self::new()
     }
 }

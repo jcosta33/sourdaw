@@ -101,7 +101,9 @@ fn render(sample_rate: f32, vintage: f32, silent: bool) -> Measurement {
     }
 
     let mono: Vec<f32> = output
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| (pair[0] + pair[1]) * 0.5)
         .collect();
     let high_passed: Vec<f32> = mono.windows(2).map(|pair| pair[1] - pair[0]).collect();

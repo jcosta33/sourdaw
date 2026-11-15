@@ -41,7 +41,7 @@ pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// Sized from measurement, and the measurement is enforced rather than trusted:
 /// `the_response_limit_admits_the_stated_worst_case_parameter_list` serializes
-/// a parameter list at [`MAX_RESPONSE_PARAMETERS`], every descriptor maximal (a
+/// a parameter list at `MAX_RESPONSE_PARAMETERS`, every descriptor maximal (a
 /// 128-byte name beside a 128-byte module — the scanner's own text caps — plus
 /// a full-width id, three full-width floats and four booleans), and fails the
 /// moment the compact JSON outgrows this bound or loses its headroom.
@@ -67,6 +67,7 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 /// (`the_response_limit_admits_the_stated_worst_case_parameter_list`) that
 /// list serializes to 7,542,027 bytes compact, and the byte cap is the
 /// smallest power of two that keeps at least twofold headroom above it.
+#[cfg(test)]
 const MAX_RESPONSE_PARAMETERS: usize = 16_384;
 
 /// The refusal for a response whose compact serialization measures past

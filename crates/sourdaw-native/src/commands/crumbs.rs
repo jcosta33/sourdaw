@@ -2165,7 +2165,7 @@ pub(crate) mod tests {
         fn feed(&mut self, value: f32) {
             self.driver.service_owner_commands();
             let mut input = [0.0f32; 1024];
-            for frame in input.chunks_exact_mut(2) {
+            for frame in input.as_chunks_mut::<2>().0 {
                 frame[0] = value;
                 frame[1] = value / 2.0;
             }
@@ -2897,27 +2897,6 @@ pub(crate) mod tests {
             CrumbsEngineSlot::Attached { plugin_id, .. } => plugin_id,
             CrumbsEngineSlot::Dormant(_) => {
                 panic!("instance '{instance_id}' should be attached to the engine")
-            }
-        }
-    }
-
-    /// The writes an instance has parked, or a panic if it is not dormant.
-    fn parked_writes<T>(
-        state: &CrumbsState,
-        instance_id: &str,
-        read: impl FnOnce(&DormantCrumbsWrites) -> T,
-    ) -> T {
-        let instances = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available");
-        let instance = instances
-            .get(instance_id)
-            .unwrap_or_else(|| panic!("instance '{instance_id}' should own a map entry"));
-        match &instance.engine_slot {
-            CrumbsEngineSlot::Dormant(writes) => read(writes),
-            CrumbsEngineSlot::Attached { .. } => {
-                panic!("instance '{instance_id}' should still be dormant")
             }
         }
     }

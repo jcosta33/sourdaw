@@ -1,9 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { prepareMidiClipFanOutState } from '#/modules/MIDI/useCases';
-import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type ClipGlueActionSnapshot } from '../../events/arrangementClipAppActions';
 import { type ResolvedClip } from '../../models/ResolvedClip';
 import { type Clip, type Track } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';

@@ -93,18 +93,13 @@ impl ModalMode {
 }
 
 /// Preset IDs for quick modal configurations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ModalPreset {
+    #[default]
     Tabla,
     Bongo,
     Woodblock,
     Metal,
-}
-
-impl Default for ModalPreset {
-    fn default() -> Self {
-        Self::Tabla
-    }
 }
 
 pub struct ModalEngine {

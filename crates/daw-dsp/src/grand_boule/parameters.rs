@@ -89,7 +89,7 @@ pub fn temperament_offset_cents(temperament: Temperament, midi_note: u8) -> f32 
 /// Convert a MIDI note number to a 1-indexed piano key (A0 = 1 .. C8 = 88).
 /// Returns `None` if the note lies outside the piano range.
 pub fn midi_to_key(midi_note: u8) -> Option<u32> {
-    if midi_note < MIDI_A0 || midi_note > MIDI_C8 {
+    if !(MIDI_A0..=MIDI_C8).contains(&midi_note) {
         return None;
     }
     Some((midi_note - MIDI_A0) as u32 + 1)

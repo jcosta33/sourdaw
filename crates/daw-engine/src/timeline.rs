@@ -1549,13 +1549,24 @@ pub(crate) trait CompensationDevices {
 
 /// What one removal hands back to the retirement channel, so the audio thread
 /// never runs a destructor.
+///
+/// The boxes are held only so their destructor runs on the control-thread
+/// reclaimer, which is why the fields are never read.
 pub(crate) enum RetiredTimelineObject {
-    Track(Box<TimelineTrack>),
-    Bus(Box<TimelineBus>),
-    Clip(Box<TimelineClip>),
+    Track {
+        _track: Box<TimelineTrack>,
+    },
+    Bus {
+        _bus: Box<TimelineBus>,
+    },
+    Clip {
+        _clip: Box<TimelineClip>,
+    },
     /// A compensation delay a refused send, a removed send, or a replaced
     /// device latency gave up. Its ring is heap like any other buffer here.
-    Delay(Box<CompensationDelay>),
+    Delay {
+        _delay: Box<CompensationDelay>,
+    },
 }
 
 /// One strip in the render sequence. Tracks and buses share an order so a
@@ -1593,6 +1604,7 @@ const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
 /// ride `setTargetAtTime(target, now, 0.005)`, and the native gate has to glide
 /// on the same curve: a hard step silences at a block boundary with a click
 /// the web side does not have (issue #2126).
+#[cfg(test)]
 const GATE_TIME_CONSTANT_SEC: f32 = 0.005;
 
 /// The fraction of the remaining distance one frame covers:
@@ -2471,8 +2483,8 @@ impl TimelineGraph {
                 in_degree[dest] += 1;
             });
         }
-        for node in 0..count {
-            if in_degree[node] == 0 {
+        for (node, &degree) in in_degree.iter().enumerate().take(count) {
+            if degree == 0 {
                 ready.push(node);
             }
         }
@@ -2579,8 +2591,8 @@ impl TimelineGraph {
         track_summing_depth[..track_count].fill(0);
 
         let mut master_depth = 0;
-        for order_index in 0..mix_order.len() {
-            let (arrival, output) = match mix_order[order_index] {
+        for node in mix_order.iter() {
+            let (arrival, output) = match *node {
                 MixNode::Track(index) => {
                     // Everything routed into this track's input has already
                     // been visited, so its own chain starts from the deepest of
@@ -2746,8 +2758,8 @@ impl TimelineGraph {
             bus.clear_input(frames);
         }
 
-        for order_index in 0..mix_order.len() {
-            match mix_order[order_index] {
+        for node in mix_order.iter() {
+            match *node {
                 MixNode::Track(index) => {
                     let left = &mut scratch_left[..frames];
                     let right = &mut scratch_right[..frames];
@@ -3011,6 +3023,12 @@ impl TimelineGraph {
             count += 1;
         }
         count
+    }
+}
+
+impl Default for TimelineGraph {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

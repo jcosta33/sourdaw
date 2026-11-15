@@ -1,10 +1,7 @@
-import {
-    type AppAction,
-    type RetiredTakeLaneSnapshot,
-    type TakeReKeyLaneTransitionSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';

@@ -111,9 +111,9 @@ impl VoiceStreamBuffer {
 
         let write_pos = (self.read_pos + self.available) % self.capacity;
 
-        for i in 0..to_write {
+        for (i, &sample) in left.iter().enumerate().take(to_write) {
             let pos = (write_pos + i) % self.capacity;
-            self.buffer_left[pos] = left[i];
+            self.buffer_left[pos] = sample;
             if self.is_stereo {
                 self.buffer_right[pos] = right.get(i).copied().unwrap_or(0.0);
             }

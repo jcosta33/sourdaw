@@ -162,6 +162,12 @@ impl AutoArticulation {
     }
 }
 
+impl Default for AutoArticulation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Ensemble timing simulation
 // ---------------------------------------------------------------------------
@@ -213,6 +219,12 @@ impl EnsembleTiming {
         let delay_seconds = attack_spread_fraction(note) * self.attack_spread_ms / 1000.0;
         // The float-to-int cast saturates: a negative or NaN spread is no delay.
         (delay_seconds * sample_rate).round() as u32
+    }
+}
+
+impl Default for EnsembleTiming {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
