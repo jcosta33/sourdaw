@@ -44,6 +44,29 @@ function readVerdict(episode: OpenEpisode): 'stale' | 'admitted' | 'refused' {
     return isAppActionAdmitted(episode.action) ? 'admitted' : 'refused';
 }
 
+type EpisodeMaps = { open: Map<string, OpenEpisode>; delivering: Map<string, OpenEpisode> };
+
+/** Delivers each admitted episode no close has withdrawn since, reopening one the gate refuses again. */
+function runDeliveries(
+    maps: EpisodeMaps,
+    admitted: [string, OpenEpisode][],
+    onAdmitted: ((key: string) => void) | undefined
+): void {
+    for (const [key, episode] of admitted) {
+        if (maps.delivering.get(key) !== episode) {
+            continue;
+        }
+        maps.delivering.delete(key);
+        const verdict = readVerdict(episode);
+        if (verdict === 'admitted') {
+            onAdmitted?.(key);
+        } else if (verdict === 'refused') {
+            // Refused again before delivery: the episode never ended.
+            maps.open.set(key, episode);
+        }
+    }
+}
+
 function warnRefused(action: AppAction): void {
     notifyUser(
         `${describeAppActionRefusal(action.type)} Further edits to this device are not saved until the project can be changed.`,
@@ -70,19 +93,7 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
 
     function deliverAdmitted(admitted: [string, OpenEpisode][]): void {
         queueMicrotask(() => {
-            for (const [key, episode] of admitted) {
-                if (delivering.get(key) !== episode) {
-                    continue;
-                }
-                delivering.delete(key);
-                const verdict = readVerdict(episode);
-                if (verdict === 'admitted') {
-                    onAdmitted?.(key);
-                } else if (verdict === 'refused') {
-                    // Refused again before delivery: the episode never ended.
-                    open.set(key, episode);
-                }
-            }
+            runDeliveries({ open, delivering }, admitted, onAdmitted);
             syncSubscription();
         });
     }
