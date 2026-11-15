@@ -4159,15 +4159,11 @@ process.stdout.write(catalog);
             const sentinelPid = sentinel.pid;
             childPids.add(sentinelPid);
             await waitUntil(() => existsSync(ready));
-            const { bin } = darwinCensusFixture(
-                root,
-                {
-                    holder: sentinelPid,
-                    childPath: join(root, 'child.pid'),
-                    ...(start === undefined ? {} : { starts: { [sentinelPid]: start } }),
-                },
-                { listed: '[]', lsof: 'if(scoped)forkAndExit();' }
-            );
+            const values: Record<string, unknown> = { holder: sentinelPid, childPath: join(root, 'child.pid') };
+            if (start !== undefined) {
+                values.starts = { [sentinelPid]: start };
+            }
+            const { bin } = darwinCensusFixture(root, values, { listed: '[]', lsof: 'if(scoped)forkAndExit();' });
             const invocations = [1, 2].map(() =>
                 spawnSync(join(bin, 'lsof'), ['-p', String(sentinelPid)], { encoding: 'utf8' })
             );
