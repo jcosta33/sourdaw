@@ -814,10 +814,25 @@
                 "src/utils/handlerContract.ts"
             ],
             "rules": {
-                "max-lines": "warn",
-                "max-lines-per-function": "warn",
-                "max-depth": "warn",
-                "complexity": "warn"
+                "max-lines": [
+                    "warn",
+                    {
+                        "max": 600,
+                        "skipBlankLines": true,
+                        "skipComments": true
+                    }
+                ],
+                "max-lines-per-function": [
+                    "warn",
+                    {
+                        "max": 100,
+                        "skipBlankLines": true,
+                        "skipComments": true,
+                        "IIFEs": true
+                    }
+                ],
+                "max-depth": ["warn", 4],
+                "complexity": ["warn", 20]
             }
         },
         {

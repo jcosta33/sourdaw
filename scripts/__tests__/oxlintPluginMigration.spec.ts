@@ -12,6 +12,7 @@ import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
 
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
 import {
+    lintBaselineMigratedRules,
     lintLegacyCoreRule,
     lintMigratedFile,
     lintMigratedRules,
@@ -286,9 +287,13 @@ describe('production Oxlint public-plugin migration', () => {
         if (!isRecord(config) || !Array.isArray(config.overrides)) {
             throw new Error('The public Oxlint config has no overrides');
         }
-        const baselines = config.overrides.filter(
-            (entry: unknown) => isRecord(entry) && isRecord(entry.rules) && entry.rules['max-lines'] === 'warn'
-        );
+        const baselines = config.overrides.filter((entry: unknown) => {
+            if (!isRecord(entry) || !isRecord(entry.rules)) {
+                return false;
+            }
+            const setting = entry.rules['max-lines'];
+            return (Array.isArray(setting) ? setting[0] : setting) === 'warn';
+        });
         expect(baselines).toHaveLength(1);
         const baseline = baselines[0];
         if (!isRecord(baseline) || !isRecord(baseline.rules)) {
@@ -296,12 +301,38 @@ describe('production Oxlint public-plugin migration', () => {
         }
         expect(baseline.files).toEqual(sizeBaselineFiles);
         expect(baseline.rules).toEqual({
-            'max-lines': 'warn',
-            'max-lines-per-function': 'warn',
-            'max-depth': 'warn',
-            complexity: 'warn',
+            'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
+            'max-lines-per-function': ['warn', { max: 100, skipBlankLines: true, skipComments: true, IIFEs: true }],
+            'max-depth': ['warn', 4],
+            complexity: ['warn', 20],
         });
     });
+
+    it.each(
+        coreMigrationCases
+            .map((fixture, index) => ({ ...fixture, index }))
+            .filter(({ rule }) => ['max-lines', 'max-lines-per-function', 'max-depth', 'complexity'].includes(rule))
+    )(
+        'preserves baseline warning boundary for $rule (frozen case $index)',
+        ({ rule, invalid, valid }) => {
+            expect(sizeBaselineFiles).toContain('scripts/resourceGuard.ts');
+            const rejected = lintBaselineMigratedRules(invalid);
+            const warnings = rejected.messages.filter((message) => message.ruleId === `eslint/${rule}`);
+            expect(warnings, rejected.output).not.toEqual([]);
+            expect(
+                warnings.map((message) => message.severity),
+                rejected.output
+            ).toEqual(warnings.map(() => 'warning'));
+            expect(rejected.status, rejected.output).toBe(0);
+            const accepted = lintBaselineMigratedRules(valid);
+            expect(
+                accepted.messages.filter((message) => message.ruleId === `eslint/${rule}`),
+                accepted.output
+            ).toEqual([]);
+            expect(accepted.status, accepted.output).toBe(0);
+        },
+        120_000
+    );
 
     it.each(coreMigrationCases)(
         'honors the original explicit disable ID for $rule',

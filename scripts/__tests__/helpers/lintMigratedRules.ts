@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
 import { type Linter } from 'eslint';
@@ -33,14 +34,14 @@ export function withLintFixture<Result>(code: string, filename: string, inspect:
     }
 }
 
-function lintOxlintFixture(fixture: string, config: string, fix: boolean) {
+function lintOxlintFixture(fixture: string, config: string, fix: boolean, root = process.cwd()) {
     const args = [`--config=${config}`, '--threads=2', '--format=json'];
     if (fix) {
         args.push('--fix');
     }
     args.push(fixture);
     const result = spawnSync(resolve('node_modules/.bin/oxlint'), args, {
-        cwd: process.cwd(),
+        cwd: root,
         encoding: 'utf8',
         timeout: 60_000,
     });
@@ -65,7 +66,7 @@ function lintOxlintFixture(fixture: string, config: string, fix: boolean) {
         messages,
         status: result.status,
         output: result.stdout + result.stderr,
-        text: readFileSync(fixture, 'utf8'),
+        text: readFileSync(resolve(root, fixture), 'utf8'),
     };
 }
 
@@ -77,6 +78,27 @@ export function lintMigratedRules(code: string, filename = 'src/app/example.ts',
 /** Read-only probe of a real baseline path, so literal warning scopes are exercised. */
 export function lintMigratedFile(filename: string) {
     return lintOxlintFixture(resolve(filename), '.oxlint-plugins.json', false);
+}
+
+/** Exercise the complete production policy at its literal baseline path without editing source. */
+export function lintBaselineMigratedRules(code: string) {
+    const root = mkdtempSync(join(tmpdir(), 'lint-warning-policy-'));
+    const config = resolve('.oxlint-plugins.json');
+    const copiedConfig = join(root, '.oxlint-plugins.json');
+    const fixture = 'scripts/resourceGuard.ts';
+    try {
+        copyFileSync(config, copiedConfig);
+        mkdirSync(join(root, 'scripts'));
+        symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+        symlinkSync(resolve('scripts/lint'), join(root, 'scripts/lint'), 'dir');
+        writeFileSync(join(root, fixture), code);
+        if (!readFileSync(config).equals(readFileSync(copiedConfig))) {
+            throw new Error('The isolated fixture must retain identical production config bytes');
+        }
+        return lintOxlintFixture(fixture, '.oxlint-plugins.json', false, root);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
 }
 
 /** Probe a stock native candidate independently when its semantics prevent migration. */

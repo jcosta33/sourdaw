@@ -64,7 +64,10 @@ The core IDs remain valid in inline directives. TypeScript-only ceilings, test a
 exemptions, and every size warning path retain their original ordering and severity.
 The literal native warning paths mirror `eslint.size-baseline.mjs`; the integration
 spec asserts exact equality, so editing the canonical burn-down list requires updating
-the native config in the same change. Warnings continue to report instead of being disabled.
+the native config in the same change. Warning overrides repeat the complete option tuples:
+Oxlint resets severity-only overrides to rule defaults. Preserve the 600/100/4/20 ceilings,
+blank-line and comment skipping, and IIFE checks alongside warning severity. Warnings
+continue to report instead of being disabled.
 
 For `--fix`, the native Oxlint pass runs first, then ESLint owns all remaining fixes
 in one existing fix loop. The runner explicitly selects this mode before loading
