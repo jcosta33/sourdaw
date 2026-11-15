@@ -104,6 +104,15 @@ describe('lint ledger crossing decision', () => {
             crossing: ['src/c.ts'],
         },
         {
+            name: 'an oxlint string holding an escaped quote before a comment marker',
+            main: ['src/c.ts'],
+            pullRequest: ['src/c.ts'],
+            ledgers: {
+                [OXC]: '{ "overrides": [{ "files": ["./src/c.ts"], "rules": { "r": ["error", { "pattern": "a\\"// b" }] } }] }',
+            },
+            crossing: ['src/c.ts'],
+        },
+        {
             name: 'a glob entry is not a literal path',
             main: ['src/d.ts'],
             pullRequest: ['src/d.ts'],
@@ -303,6 +312,21 @@ describe('lint ledger crossing decision', () => {
         );
     });
 
+    it('skips oxlint overrides without rules and non-string file entries while binding the rest', () => {
+        const ledger = {
+            [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"] }, "note", { "files": [5, "./src/x.ts"], "rules": { "r": "off" } }] }',
+        };
+        expect(lintLedgerCrossingPaths(['src/x.ts'], ['src/x.ts'], unchanged(ledger))).toEqual(['src/x.ts']);
+    });
+
+    it.each([SUP, CEIL])('fails closed when %s holds an array instead of a path map', (name) => {
+        const good = { [name]: '{}' };
+        const array = { [name]: '["src/x.ts"]' };
+        expect(() => lintLedgerCrossingPaths([], [], { base: good, main: array, head: good })).toThrow(
+            `lint ledger ${name} in main is not valid JSON`
+        );
+    });
+
     it('sorts and deduplicates the crossing paths', () => {
         const ledger = JSON.stringify({ 'src/z.ts': {}, 'src/a.ts': {} });
         expect(
@@ -318,11 +342,18 @@ describe('lint ledger crossing decision', () => {
         const paths = Array.from({ length: 12 }, (_, index) => `src/f${String(index).padStart(2, '0')}.ts`);
         const message = lintLedgerCrossingRefusal(7, { mergeBase: 'abc123', paths });
         expect(message).toContain('PR #7');
-        expect(message).toContain('merge base abc123');
+        expect(message).toContain('lint-ledger-bound files since merge base abc123');
         expect(message).toContain('src/f09.ts and 2 more');
         expect(message).not.toContain('src/f10.ts');
         expect(message).toContain('merge current main into the lane and publish');
         expect(lintLedgerCrossingRefusal(7, { mergeBase: 'abc123', paths: [] })).toBeUndefined();
+    });
+
+    it('names a single crossing path in the singular without a remainder', () => {
+        expect(lintLedgerCrossingRefusal(7, { mergeBase: 'abc123', paths: ['src/a.ts'] })).toBe(
+            'PR #7 and main both changed lint-ledger-bound file since merge base abc123: src/a.ts; ' +
+                'merge current main into the lane and publish so a fresh Gate measures the combination'
+        );
     });
 });
 
