@@ -296,6 +296,10 @@ pub(crate) struct OfflinePluginSeams {
     /// put one in a state no real plugin can be made to reach on cue.
     #[cfg(test)]
     pub(crate) after_build: Option<AfterBuild>,
+    /// Run once the batch is mapped against the hosted instances and before
+    /// any is built, so a test can change the live records in between.
+    #[cfg(test)]
+    pub(crate) after_mapping: Option<Box<dyn Fn(&AppState) + Send + Sync>>,
     /// Run for each instance once it is constructed and the runtime gate is
     /// free again, just before its live state is restored into it.
     #[cfg(test)]
@@ -310,6 +314,8 @@ impl OfflinePluginSeams {
             construct: create_hosted_runtime,
             #[cfg(test)]
             after_build: None,
+            #[cfg(test)]
+            after_mapping: None,
             #[cfg(test)]
             before_restore: None,
         }
@@ -461,7 +467,9 @@ struct LiveRecord {
 }
 
 /// Take every bound instance's live record under one lock, refusing by name an
-/// instance whose record is gone.
+/// instance whose record is gone, or is no longer the plugin the batch was
+/// mapped against — an unload and a reload under the same id can land between
+/// the mapping and this read, and could be another plugin or an instrument.
 fn live_records(
     bound: &[BoundHostedInstance],
     state: &AppState,
@@ -473,19 +481,26 @@ fn live_records(
     bound
         .iter()
         .map(|instance| {
-            engine_plugins
-                .get(&instance.instance_id)
-                .map(|record| LiveRecord {
-                    instance_id: instance.instance_id.clone(),
-                    runtime: Arc::clone(&record.runtime),
-                    load_resolution: record.load_resolution.clone(),
-                })
-                .ok_or_else(|| {
-                    refusal(
-                        instance,
-                        "its live instance was unloaded while the render started",
-                    )
-                })
+            let Some(record) = engine_plugins.get(&instance.instance_id) else {
+                return Err(refusal(
+                    instance,
+                    "its live instance was unloaded while the render started",
+                ));
+            };
+            let mapped_under = record.engine_plugin_id == instance.engine_plugin_id
+                && record.chain_kind == instance.chain_kind
+                && record.name == instance.plugin_name;
+            if !mapped_under {
+                return Err(refusal(
+                    instance,
+                    "its live instance was replaced while the render started",
+                ));
+            }
+            Ok(LiveRecord {
+                instance_id: instance.instance_id.clone(),
+                runtime: Arc::clone(&record.runtime),
+                load_resolution: record.load_resolution.clone(),
+            })
         })
         .collect()
 }

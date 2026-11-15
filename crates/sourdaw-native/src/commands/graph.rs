@@ -2931,7 +2931,9 @@ struct HostedInstance {
     plugin_name: String,
 }
 
-/// One instance an offline render bound, as the render builds it.
+/// One instance an offline render bound, as the render builds it, with the
+/// identity it was mapped under: the build refuses a live record that no longer
+/// carries it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BoundHostedInstance {
     pub(crate) instance_id: String,
@@ -2939,6 +2941,7 @@ pub(crate) struct BoundHostedInstance {
     pub(crate) device_id: String,
     pub(crate) plugin_name: String,
     pub(crate) engine_plugin_id: usize,
+    pub(crate) chain_kind: DeviceKind,
 }
 
 impl HostedInstances {
@@ -3043,6 +3046,7 @@ impl HostedInstances {
                     device_id: device_id.clone(),
                     plugin_name: instance.plugin_name.clone(),
                     engine_plugin_id: instance.device.engine_plugin_id,
+                    chain_kind: instance.device.chain_kind,
                 })
             })
             .collect()
@@ -6365,6 +6369,10 @@ pub(crate) async fn render_graph_offline_with(
     // A render cancelled before it starts builds no plugin instance.
     if render.control().is_cancelled() {
         return Err(render.cancelled());
+    }
+    #[cfg(test)]
+    if let Some(after_mapping) = &seams.after_mapping {
+        after_mapping(state);
     }
     let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams).await?;
     let (left, right) =
@@ -14508,6 +14516,7 @@ mod tests {
                 device_id: "d-plugin".to_string(),
                 plugin_name: "Pro-Q Fixture".to_string(),
                 engine_plugin_id: 1_007,
+                chain_kind: DeviceKind::Effect,
             }]
         );
 
