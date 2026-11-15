@@ -478,12 +478,12 @@ export function tokenFreeGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
- * A child is git when the caller asked for git or the path it starts names git: the launcher's
- * trusted path is `git.exe` on Windows and may resolve through a link to another name, and a
- * caller may pass that resolved path as the command itself.
+ * A child is git by the command the caller named, never by the trusted path it resolves to: the
+ * launcher's path is `git.exe` on Windows and may resolve through a link to another name. A caller
+ * that passes the resolved path itself names git with its platform suffix and in any case.
  */
-function isGitChild(command: string, childCommand: string): boolean {
-    return executableName(command) === 'git' || executableName(childCommand) === 'git';
+function isGitChild(command: string): boolean {
+    return executableName(command) === 'git';
 }
 
 function childEnvironment(isGit: boolean, env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
@@ -912,7 +912,7 @@ function assertTokenBearingGitChildIsHookFree(
     cwd: string,
     env: NodeJS.ProcessEnv
 ): void {
-    if (!isGitChild(command, childCommand) || !isTokenBearingGitChild(args, env)) {
+    if (!isGitChild(command) || !isTokenBearingGitChild(args, env)) {
         return;
     }
     if (installsCredentialHelper(args, env)) {
@@ -943,7 +943,7 @@ export function spawnCaptureBytes(command: string, args: string[], options: Capt
     const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
         spawnSync(childCommand, args, {
             cwd: location.cwd,
-            env: childEnvironment(isGitChild(command, childCommand), location.env),
+            env: childEnvironment(isGitChild(command), location.env),
             // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
             // Overflow still throws through result.error rather than returning a partial capture.
             maxBuffer: maxBufferBytes,
@@ -982,7 +982,7 @@ export function spawnRun(
     const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
         spawnSync(childCommand, args, {
             cwd: location.cwd,
-            env: childEnvironment(isGitChild(command, childCommand), location.env),
+            env: childEnvironment(isGitChild(command), location.env),
             // Captured stderr keeps a failing child's own words in the thrown error (#4344).
             stdio: ['inherit', 'inherit', 'pipe'],
             maxBuffer: 64 * 1024 * 1024,
