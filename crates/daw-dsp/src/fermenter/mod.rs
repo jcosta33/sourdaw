@@ -588,7 +588,12 @@ mod tests {
 
         let left_ptr = instance.process(128);
         let right_ptr = instance.get_right_ptr();
+        // SAFETY: `left_ptr` is `left_buf`, which `FermenterInstance::new`
+        // allocates at `FERMENTER_BLOCK_FRAMES` (128) initialised samples and
+        // nothing resizes; `instance` is not mutated while the slice lives.
         let left = unsafe { std::slice::from_raw_parts(left_ptr, 128) };
+        // SAFETY: `right_ptr` is the separate `right_buf`, sized and held
+        // exactly as `left_buf` above.
         let right = unsafe { std::slice::from_raw_parts(right_ptr, 128) };
         let peak = left
             .iter()

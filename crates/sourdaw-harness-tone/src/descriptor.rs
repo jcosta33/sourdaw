@@ -33,6 +33,10 @@ static FEATURE_STEREO: &[u8] = b"stereo\0";
 /// pointer fields.
 struct StaticCStrList<const N: usize>([*const c_char; N]);
 
+// SAFETY: every element of every `StaticCStrList` value is either null or the
+// `as_ptr()` of a `'static` byte string (see `FEATURES`), so the pointees are
+// immutable for the program's lifetime and shared reads from any thread
+// cannot race.
 unsafe impl<const N: usize> Sync for StaticCStrList<N> {}
 
 static FEATURES: StaticCStrList<3> = StaticCStrList([

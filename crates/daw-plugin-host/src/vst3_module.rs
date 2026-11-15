@@ -183,27 +183,42 @@ mod platform {
     ///
     /// `CFURLCreateFromFileSystemRepresentation` returns null for a path
     /// CoreFoundation cannot express, which is the only failure it has.
+    ///
+    /// # Safety
+    /// No pointer precondition; the returned URL follows CoreFoundation's
+    /// create rule, so the caller owns it and must `CFRelease` it exactly once.
     unsafe fn file_system_url(path: &Path) -> Option<CFURLRef> {
         let bytes = path.as_os_str().as_encoded_bytes();
-        let url = CFURLCreateFromFileSystemRepresentation(
-            std::ptr::null(),
-            bytes.as_ptr(),
-            bytes.len() as isize,
-            true as u8,
-        );
+        // SAFETY: `bytes` is a live slice whose length is passed beside it, and
+        // a null allocator selects the default one, as the API documents.
+        let url = unsafe {
+            CFURLCreateFromFileSystemRepresentation(
+                std::ptr::null(),
+                bytes.as_ptr(),
+                bytes.len() as isize,
+                true as u8,
+            )
+        };
         (!url.is_null()).then_some(url)
     }
 
     /// The path a URL names, or `None` when it names no file-system location or
     /// one longer than a path may be.
+    ///
+    /// # Safety
+    /// `url` must be a live `CFURLRef`.
     unsafe fn url_file_system_path(url: CFURLRef) -> Option<PathBuf> {
         let mut buffer = [0u8; MAX_FILE_SYSTEM_PATH_BYTES];
-        let written = CFURLGetFileSystemRepresentation(
-            url,
-            true as u8,
-            buffer.as_mut_ptr(),
-            buffer.len() as isize,
-        );
+        // SAFETY: `url` is live by this fn's contract, and the buffer is a live
+        // local array whose length is passed beside it.
+        let written = unsafe {
+            CFURLGetFileSystemRepresentation(
+                url,
+                true as u8,
+                buffer.as_mut_ptr(),
+                buffer.len() as isize,
+            )
+        };
         if written == 0 {
             return None;
         }
@@ -223,24 +238,31 @@ mod platform {
     /// `None` whenever CoreFoundation declines: not a bundle it recognises, or
     /// a bundle whose named executable is not there to point at.
     pub fn bundle_executable_path(bundle: &Path) -> Option<PathBuf> {
-        unsafe {
-            let url = file_system_url(bundle)?;
-            let bundle_ref = CFBundleCreate(std::ptr::null(), url);
-            CFRelease(url as CFTypeRef);
-            if bundle_ref.is_null() {
-                return None;
-            }
-
-            let executable_url = CFBundleCopyExecutableURL(bundle_ref);
-            CFRelease(bundle_ref as CFTypeRef);
-            if executable_url.is_null() {
-                return None;
-            }
-
-            let executable = url_file_system_path(executable_url);
-            CFRelease(executable_url as CFTypeRef);
-            executable
+        // SAFETY: `file_system_url` has no pointer precondition; the URL it
+        // returns is owned here and released below.
+        let url = unsafe { file_system_url(bundle) }?;
+        // SAFETY: `url` is the live URL just created; null selects the default
+        // allocator.
+        let bundle_ref = unsafe { CFBundleCreate(std::ptr::null(), url) };
+        // SAFETY: `url` came from a create call, so this is its one release.
+        unsafe { CFRelease(url as CFTypeRef) };
+        if bundle_ref.is_null() {
+            return None;
         }
+
+        // SAFETY: `bundle_ref` is the non-null bundle `CFBundleCreate` returned.
+        let executable_url = unsafe { CFBundleCopyExecutableURL(bundle_ref) };
+        // SAFETY: `bundle_ref` came from a create call, so this is its one release.
+        unsafe { CFRelease(bundle_ref as CFTypeRef) };
+        if executable_url.is_null() {
+            return None;
+        }
+
+        // SAFETY: `executable_url` is the non-null URL a copy call just returned.
+        let executable = unsafe { url_file_system_path(executable_url) };
+        // SAFETY: `executable_url` came from a copy call, so this is its one release.
+        unsafe { CFRelease(executable_url as CFTypeRef) };
+        executable
     }
 
     /// A loaded `.vst3` CFBundle whose `bundleEntry` has returned true.
@@ -250,24 +272,42 @@ mod platform {
 
     /// Wrap a UTF-8 symbol name as a `CFStringRef`, or `None` when
     /// CoreFoundation refuses it.
+    ///
+    /// # Safety
+    /// No pointer precondition; the returned string follows CoreFoundation's
+    /// create rule, so the caller owns it and must `CFRelease` it exactly once.
     unsafe fn symbol_name(name: &[u8]) -> Option<CFStringRef> {
-        let string = CFStringCreateWithBytes(
-            std::ptr::null(),
-            name.as_ptr(),
-            name.len() as isize,
-            kCFStringEncodingUTF8,
-            false as u8,
-        );
+        // SAFETY: `name` is a live slice whose length is passed beside it, and
+        // a null allocator selects the default one.
+        let string = unsafe {
+            CFStringCreateWithBytes(
+                std::ptr::null(),
+                name.as_ptr(),
+                name.len() as isize,
+                kCFStringEncodingUTF8,
+                false as u8,
+            )
+        };
         if string.is_null() {
             return None;
         }
         Some(string)
     }
 
+    /// The address of an exported function, or `None` when the bundle has none
+    /// by that name.
+    ///
+    /// # Safety
+    /// `bundle` must be a live `CFBundleRef`.
     unsafe fn function_pointer(bundle: CFBundleRef, name: &[u8]) -> Option<*mut c_void> {
-        let symbol = symbol_name(name)?;
-        let pointer = CFBundleGetFunctionPointerForName(bundle, symbol);
-        CFRelease(symbol as CFTypeRef);
+        // SAFETY: `symbol_name` has no pointer precondition; the string it
+        // returns is owned here and released below.
+        let symbol = unsafe { symbol_name(name) }?;
+        // SAFETY: `bundle` is live by this fn's contract and `symbol` is the
+        // non-null string just created.
+        let pointer = unsafe { CFBundleGetFunctionPointerForName(bundle, symbol) };
+        // SAFETY: `symbol` came from a create call, so this is its one release.
+        unsafe { CFRelease(symbol as CFTypeRef) };
         if pointer.is_null() {
             return None;
         }
@@ -281,57 +321,77 @@ mod platform {
         /// the host it is not usable, and every later call would be made into a
         /// module that said so.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
-            unsafe {
-                let Some(url) = file_system_url(bundle_path) else {
-                    return Err(format!(
-                        "VST3 bundle path is not a usable URL: {}",
-                        bundle_path.display()
-                    ));
-                };
-                let bundle = CFBundleCreate(std::ptr::null(), url);
-                CFRelease(url as CFTypeRef);
-                if bundle.is_null() {
-                    return Err(format!(
-                        "Not a loadable VST3 bundle: {}",
-                        bundle_path.display()
-                    ));
-                }
-
-                let mut error: CFErrorRef = std::ptr::null_mut();
-                if CFBundleLoadExecutableAndReturnError(bundle, &mut error) == 0 {
-                    if !error.is_null() {
-                        CFRelease(error as CFTypeRef);
-                    }
-                    CFRelease(bundle as CFTypeRef);
-                    return Err(format!(
-                        "VST3 bundle executable could not be loaded: {}",
-                        bundle_path.display()
-                    ));
-                }
-
-                let Some(entry) = function_pointer(bundle, b"bundleEntry") else {
-                    CFBundleUnloadExecutable(bundle);
-                    CFRelease(bundle as CFTypeRef);
-                    return Err(format!(
-                        "VST3 bundle exports no bundleEntry: {}",
-                        bundle_path.display()
-                    ));
-                };
-                let entry: BundleEntry = std::mem::transmute(entry);
-                if !entry(bundle) {
-                    CFBundleUnloadExecutable(bundle);
-                    CFRelease(bundle as CFTypeRef);
-                    return Err(format!(
-                        "VST3 bundle refused initialization: {}",
-                        bundle_path.display()
-                    ));
-                }
-
-                Ok(Self { bundle })
+            // SAFETY: `file_system_url` has no pointer precondition; the URL it
+            // returns is owned here and released below.
+            let Some(url) = (unsafe { file_system_url(bundle_path) }) else {
+                return Err(format!(
+                    "VST3 bundle path is not a usable URL: {}",
+                    bundle_path.display()
+                ));
+            };
+            // SAFETY: `url` is the live URL just created; null selects the
+            // default allocator.
+            let bundle = unsafe { CFBundleCreate(std::ptr::null(), url) };
+            // SAFETY: `url` came from a create call, so this is its one release.
+            unsafe { CFRelease(url as CFTypeRef) };
+            if bundle.is_null() {
+                return Err(format!(
+                    "Not a loadable VST3 bundle: {}",
+                    bundle_path.display()
+                ));
             }
+
+            let mut error: CFErrorRef = std::ptr::null_mut();
+            // SAFETY: `bundle` is the non-null bundle just created and `error`
+            // is a live local the call may fill with an owned error.
+            let loaded = unsafe { CFBundleLoadExecutableAndReturnError(bundle, &mut error) };
+            if loaded == 0 {
+                if !error.is_null() {
+                    // SAFETY: a non-null `error` is one the call created for
+                    // the caller to release, and this is its one release.
+                    unsafe { CFRelease(error as CFTypeRef) };
+                }
+                // SAFETY: `bundle` came from a create call and is released once.
+                unsafe { CFRelease(bundle as CFTypeRef) };
+                return Err(format!(
+                    "VST3 bundle executable could not be loaded: {}",
+                    bundle_path.display()
+                ));
+            }
+
+            // SAFETY: `bundle` is live; this fn holds its one reference.
+            let Some(entry) = (unsafe { function_pointer(bundle, b"bundleEntry") }) else {
+                // SAFETY: `bundle` is live and its executable was loaded above.
+                unsafe { CFBundleUnloadExecutable(bundle) };
+                // SAFETY: `bundle` came from a create call and is released once.
+                unsafe { CFRelease(bundle as CFTypeRef) };
+                return Err(format!(
+                    "VST3 bundle exports no bundleEntry: {}",
+                    bundle_path.display()
+                ));
+            };
+            // SAFETY: `entry` is the non-null address of the module's exported
+            // `bundleEntry`, whose VST3 signature is `bool (CFBundleRef)`.
+            let entry: BundleEntry = unsafe { std::mem::transmute(entry) };
+            // SAFETY: the executable is loaded and `bundle` is its own live
+            // bundle ref, the one argument `bundleEntry` takes.
+            if !unsafe { entry(bundle) } {
+                // SAFETY: `bundle` is live and its executable was loaded above.
+                unsafe { CFBundleUnloadExecutable(bundle) };
+                // SAFETY: `bundle` came from a create call and is released once.
+                unsafe { CFRelease(bundle as CFTypeRef) };
+                return Err(format!(
+                    "VST3 bundle refused initialization: {}",
+                    bundle_path.display()
+                ));
+            }
+
+            Ok(Self { bundle })
         }
 
         pub fn plugin_factory_entry(&self) -> Option<*mut c_void> {
+            // SAFETY: `self.bundle` is the live bundle this value owns the one
+            // reference to until `Drop`.
             unsafe {
                 function_pointer(
                     self.bundle,
@@ -343,14 +403,20 @@ mod platform {
 
     impl Drop for LoadedModule {
         fn drop(&mut self) {
-            unsafe {
-                if let Some(exit) = function_pointer(self.bundle, b"bundleExit") {
-                    let exit: BundleExit = std::mem::transmute(exit);
-                    exit();
-                }
-                CFBundleUnloadExecutable(self.bundle);
-                CFRelease(self.bundle as CFTypeRef);
+            // SAFETY: `self.bundle` is live: this value holds its one reference
+            // until the release at the end of this drop.
+            if let Some(exit) = unsafe { function_pointer(self.bundle, b"bundleExit") } {
+                // SAFETY: `exit` is the non-null address of the module's exported
+                // `bundleExit`, whose VST3 signature is `bool ()`.
+                let exit: BundleExit = unsafe { std::mem::transmute(exit) };
+                // SAFETY: only a module whose `bundleEntry` succeeded is ever
+                // built, so this is the paired exit, made while still loaded.
+                unsafe { exit() };
             }
+            // SAFETY: `self.bundle` is live and its executable was loaded by `open`.
+            unsafe { CFBundleUnloadExecutable(self.bundle) };
+            // SAFETY: the one reference `open` took from `CFBundleCreate`.
+            unsafe { CFRelease(self.bundle as CFTypeRef) };
         }
     }
 }
@@ -387,12 +453,13 @@ mod platform {
     /// Free rather than a method because `open` must resolve `InitDll` *before*
     /// a `LoadedModule` exists — see there for why.
     fn symbol_in<T>(library: &Library, name: &[u8]) -> Option<T> {
-        unsafe {
-            library
-                .get::<T>(name)
-                .ok()
-                .map(|symbol| std::ptr::read(&*symbol as *const T))
-        }
+        // SAFETY: `library` is loaded for the borrow's duration and `name` is
+        // NUL-terminated at every call site; each caller names as `T` the
+        // signature VST3 documents for that export.
+        let symbol = unsafe { library.get::<T>(name) }.ok()?;
+        // SAFETY: `symbol` dereferences to a live, initialised `T` (the export's
+        // address), and `T` is a `Copy` pointer type at every call site.
+        Some(unsafe { std::ptr::read(&*symbol as *const T) })
     }
 
     impl LoadedModule {
@@ -416,6 +483,9 @@ mod platform {
                 bundle_path.display()
             );
             for candidate in candidates {
+                // SAFETY: loading runs the module's DLL initialisers; this is
+                // instantiation, which the crate runs only on the host UI thread
+                // or in the scan worker child, the places plugin code may run.
                 let library = match unsafe {
                     Library::load_with_flags(candidate.as_path(), SEARCH_ONLY_TRUSTED_DIRECTORIES)
                 } {
@@ -427,6 +497,8 @@ mod platform {
                 };
 
                 if let Some(init) = symbol_in::<InitDll>(&library, b"InitDll\0") {
+                    // SAFETY: `init` is the module's exported `InitDll`, read from
+                    // `library`, which stays loaded across this call.
                     if !unsafe { init() } {
                         drop(library);
                         return Err(format!(
@@ -454,6 +526,8 @@ mod platform {
         /// absent, which is what makes `ExitDll` the paired call here.
         fn drop(&mut self) {
             if let Some(exit) = self.symbol::<ExitDll>(b"ExitDll\0") {
+                // SAFETY: `exit` is the exported `ExitDll` of `self.library`,
+                // which unloads only after this body; init succeeded or was absent.
                 unsafe { exit() };
             }
         }
@@ -479,12 +553,13 @@ mod platform {
     /// Free rather than a method because `open` must resolve `ModuleEntry`
     /// *before* a `LoadedModule` exists — see there for why.
     fn symbol_in<T>(library: &Library, name: &[u8]) -> Option<T> {
-        unsafe {
-            library
-                .get::<T>(name)
-                .ok()
-                .map(|symbol| std::ptr::read(&*symbol as *const T))
-        }
+        // SAFETY: `library` is loaded for the borrow's duration and `name` is
+        // NUL-terminated at every call site; each caller names as `T` the
+        // signature VST3 documents for that export.
+        let symbol = unsafe { library.get::<T>(name) }.ok()?;
+        // SAFETY: `symbol` dereferences to a live, initialised `T` (the export's
+        // address), and `T` is a `Copy` pointer type at every call site.
+        Some(unsafe { std::ptr::read(&*symbol as *const T) })
     }
 
     impl LoadedModule {
@@ -503,6 +578,9 @@ mod platform {
                     bundle_path.display()
                 ));
             };
+            // SAFETY: loading runs the module's initialisers; this is
+            // instantiation, which the crate runs only on the host UI thread or
+            // in the scan worker child, the places plugin code may run.
             let library = unsafe { Library::new(&candidate) }
                 .map_err(|error| format!("Cannot load {}: {error}", candidate.display()))?;
             let handle = library.into_raw();
@@ -517,6 +595,8 @@ mod platform {
                     candidate.display()
                 ));
             };
+            // SAFETY: `entry` is the exported `ModuleEntry` of `library`, still
+            // loaded, and `handle` is that library's own `dlopen` handle.
             if !unsafe { entry(handle) } {
                 drop(library);
                 return Err(format!(
@@ -541,6 +621,8 @@ mod platform {
         /// which is what makes `ModuleExit` the paired call here.
         fn drop(&mut self) {
             if let Some(exit) = self.symbol::<ModuleExit>(b"ModuleExit\0") {
+                // SAFETY: `exit` is the exported `ModuleExit` of `self.library`,
+                // which unloads only after this body; `ModuleEntry` returned true.
                 unsafe { exit() };
             }
         }
@@ -579,9 +661,15 @@ pub struct Vst3Module {
     host: Vst3HostContext,
 }
 
-// SAFETY: a VST3 factory is required by the format to be callable from the
-// host's threads, and this type hands out only `&self` access to it.
+// SAFETY: the fields are a factory COM pointer, the platform module handle and
+// the host context. A wrapper may carry its `Arc` to another thread but never
+// touches it there (it is held only for `Drop`); the factory is called only by
+// construction and scanning, and the last `Arc` drops with its wrapper on the
+// host UI thread (the crate's lifecycle contract), so exit and unload run there.
 unsafe impl Send for Vst3Module {}
+// SAFETY: `&Vst3Module` exposes only `factory()`, whose callers are wrapper
+// construction and the scanner, both on the thread that opened the module;
+// sharing the `Arc` itself touches only Rust's atomic count, not COM state.
 unsafe impl Sync for Vst3Module {}
 
 impl Vst3Module {
@@ -613,8 +701,15 @@ impl Vst3Module {
                 bundle_path.display()
             ));
         };
+        // SAFETY: `entry` is the non-null address of the module's exported
+        // `GetPluginFactory`, whose VST3 signature is `IPluginFactory* ()`.
         let get_plugin_factory: GetPluginFactory = unsafe { std::mem::transmute(entry) };
-        let factory = unsafe { ComPtr::from_raw(get_plugin_factory()) }.ok_or_else(|| {
+        // SAFETY: the module is loaded and entered (`platform` is alive), which
+        // is the only precondition `GetPluginFactory` has.
+        let raw_factory = unsafe { get_plugin_factory() };
+        // SAFETY: `GetPluginFactory` returns null or an owned reference to a
+        // live factory, which `from_raw` adopts without an extra AddRef.
+        let factory = unsafe { ComPtr::from_raw(raw_factory) }.ok_or_else(|| {
             format!(
                 "VST3 module returned no plugin factory: {}",
                 bundle_path.display()
@@ -707,6 +802,9 @@ fn set_host_context(
     let Some(factory3) = factory.cast::<vst3::Steinberg::IPluginFactory3>() else {
         return;
     };
+    // SAFETY: `factory3` is a live reference from `queryInterface`; the only
+    // caller, `Vst3Module::load`, passes the non-null `FUnknown` of the module's
+    // own host context, a field dropped after the factory.
     unsafe {
         use vst3::Steinberg::IPluginFactory3Trait;
         factory3.setHostContext(host_context);
@@ -727,7 +825,11 @@ pub fn factory_is_non_discardable(factory: &ComPtr<IPluginFactory>) -> bool {
 /// The factory's own `PFactoryInfo`, or `None` when it refuses to describe
 /// itself.
 pub fn factory_info(factory: &ComPtr<IPluginFactory>) -> Option<PFactoryInfo> {
+    // SAFETY: `PFactoryInfo` is a plain C struct of byte arrays and an
+    // integer, for which all-zero bytes are a valid value.
     let mut info: PFactoryInfo = unsafe { std::mem::zeroed() };
+    // SAFETY: the `ComPtr` holds a reference on a live factory, and `info` is a
+    // local the plugin writes for the call's duration only.
     let result = unsafe { factory.getFactoryInfo(&mut info) };
     if result != vst3::Steinberg::kResultOk {
         return None;

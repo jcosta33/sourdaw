@@ -766,6 +766,10 @@ fn terminate_process_tree(child: &mut Child) {
     unsafe extern "C" {
         fn kill(pid: i32, signal: i32) -> i32;
     }
+    // SAFETY: `kill` is declared with POSIX `int kill(pid_t, int)`'s
+    // signature (`pid_t` is `i32` on every supported unix) and touches no
+    // memory of ours; the negative pid names the group `run_bounded` gave the
+    // helper with `process_group(0)`, which the unreaped child still holds.
     unsafe {
         let _ = kill(-(child.id() as i32), 9);
     }
@@ -1253,6 +1257,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn process_is_gone_within(pid: i32, window: Duration) -> bool {
         let deadline = Instant::now() + window;
         loop {
+            // SAFETY: `libc::kill` takes plain integers and touches no memory
+            // of ours; signal 0 only probes whether `pid` exists.
             let probe = unsafe { libc::kill(pid, 0) };
             let gone =
                 probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);

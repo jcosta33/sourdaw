@@ -494,6 +494,9 @@ impl Vst3HostState {
                 MessageTarget::Component
             };
             slot.state.store(SLOT_EMPTY, Ordering::Release);
+            // SAFETY: `raw` is null or the pointer `defer_message` stored from
+            // `ComPtr::into_raw`, which carries one reference; the READY->WRITING
+            // exchange above and the swap to null mean this call alone adopts it.
             if let Some(message) = unsafe { ComPtr::from_raw(raw) } {
                 taken.push(PendingMessage { target, message });
             }
@@ -619,27 +622,53 @@ impl IHostApplicationTrait for Vst3HostApplication {
         if name.is_null() {
             return kInvalidArgument;
         }
-        write_string128(&mut *name, HOST_NAME);
+        // SAFETY: `name` was null-checked above; the IHostApplication contract has
+        // the plugin pass a writable `String128` that outlives this call.
+        let name = unsafe { &mut *name };
+        write_string128(name, HOST_NAME);
         kResultOk
     }
 
+    /// Creates the two classes the format has a host create on a plugin's
+    /// behalf, `IMessage` and `IAttributeList`, typed as the interface `iid`
+    /// names. The created object holds one reference, the caller's.
     unsafe fn createInstance(
         &self,
         cid: *mut TUID,
-        _iid: *mut TUID,
+        iid: *mut TUID,
         obj: *mut *mut c_void,
     ) -> tresult {
-        if cid.is_null() || obj.is_null() {
+        if cid.is_null() || iid.is_null() || obj.is_null() {
             return kInvalidArgument;
         }
-        if !tuid_matches(&*cid, &IMessage::IID) {
-            return kNotImplemented;
-        }
-        let Some(message) = ComWrapper::new(Vst3Message::default()).to_com_ptr::<IMessage>() else {
+        // SAFETY: `obj` was null-checked above and is the plugin's writable
+        // out-parameter for this call.
+        unsafe { *obj = std::ptr::null_mut() };
+        // SAFETY: `cid` was null-checked above and points at the plugin's TUID,
+        // alive for this call.
+        let cid = unsafe { &*cid };
+        let created = if tuid_matches(cid, &IMessage::IID) {
+            ComWrapper::new(Vst3Message::default()).to_com_ptr::<FUnknown>()
+        } else if tuid_matches(cid, &IAttributeList::IID) {
+            ComWrapper::new(Vst3AttributeList::default()).to_com_ptr::<FUnknown>()
+        } else {
+            None
+        };
+        let Some(created) = created else {
             return kNotImplemented;
         };
-        *obj = message.into_raw() as *mut c_void;
-        kResultOk
+        // `queryInterface` takes the caller's reference on success; dropping
+        // `created` then releases the construction reference, which frees the
+        // object when the caller asked for an interface it does not have.
+        let unknown = created.as_ptr();
+        // SAFETY: `created` owns a live object, so `unknown` and its vtable are
+        // valid for as long as `created` lives, which is to the end of this fn.
+        let vtbl = unsafe { (*unknown).vtbl };
+        // SAFETY: `vtbl` was just read from the live object above.
+        let query_interface = unsafe { (*vtbl).queryInterface };
+        // SAFETY: `iid` and `obj` were null-checked above and are the plugin's
+        // valid TUID and out-parameter; `unknown` is live (see above).
+        unsafe { query_interface(unknown, iid, obj) }
     }
 }
 
@@ -671,15 +700,18 @@ impl IPlugInterfaceSupportTrait for Vst3HostApplication {
             IPlugView::IID,
             IPlugFrame::IID,
         ];
+        // SAFETY: `_iid` was null-checked above and points at the plugin's TUID,
+        // alive for this call.
+        let iid = unsafe { &*_iid };
         if supported
             .iter()
-            .any(|candidate| tuid_matches(&*_iid, candidate))
+            .any(|candidate| tuid_matches(iid, candidate))
         {
             return kResultOk;
         }
         // Only Linux advertises a run loop, for the same reason the frame only
         // answers `queryInterface` for one there.
-        if cfg!(target_os = "linux") && tuid_matches(&*_iid, &IRunLoop::IID) {
+        if cfg!(target_os = "linux") && tuid_matches(iid, &IRunLoop::IID) {
             return kResultOk;
         }
         kResultFalse
@@ -737,10 +769,13 @@ enum AttributeValue {
     Int(i64),
     Float(f64),
     String(Vec<u16>),
-    Binary(Vec<u8>),
+    /// Boxed so the bytes `getBinary` points into never move while the
+    /// attribute is stored, however the map around them changes.
+    Binary(Box<[u8]>),
 }
 
-/// The host's `IAttributeList`, handed out as part of an `IMessage`.
+/// The host's `IAttributeList`, handed out as part of an `IMessage` or created
+/// standalone through `IHostApplication::createInstance`.
 ///
 /// Locks, and cannot not: it is a keyed map the plugin writes and reads through
 /// a shared reference, and both halves of the plugin may hold one at once. The
@@ -752,10 +787,6 @@ enum AttributeValue {
 #[derive(Default)]
 pub struct Vst3AttributeList {
     entries: Mutex<BTreeMap<Vec<u8>, AttributeValue>>,
-    /// The last binary value handed out through `getBinary`, which returns a
-    /// borrowed pointer the caller reads before the next call. Held so that
-    /// pointer stays valid for exactly that long.
-    borrowed_binary: Mutex<Vec<u8>>,
 }
 
 impl Class for Vst3AttributeList {
@@ -766,6 +797,8 @@ fn attribute_key(id: AttrID) -> Option<Vec<u8>> {
     if id.is_null() {
         return None;
     }
+    // SAFETY: `id` was null-checked above; the IAttributeList contract has the
+    // plugin pass a NUL-terminated `AttrID` string that outlives this call.
     Some(unsafe { CStr::from_ptr(id) }.to_bytes().to_vec())
 }
 
@@ -799,7 +832,9 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         match self.get(id) {
             Some(AttributeValue::Int(stored)) => {
-                *value = stored;
+                // SAFETY: `value` was null-checked above and is the plugin's
+                // writable `i64` out-parameter for this call.
+                unsafe { *value = stored };
                 kResultOk
             }
             _ => kResultFalse,
@@ -816,7 +851,9 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         match self.get(id) {
             Some(AttributeValue::Float(stored)) => {
-                *value = stored;
+                // SAFETY: `value` was null-checked above and is the plugin's
+                // writable `f64` out-parameter for this call.
+                unsafe { *value = stored };
                 kResultOk
             }
             _ => kResultFalse,
@@ -829,9 +866,16 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         let mut units = Vec::new();
         let mut cursor = string;
-        while *cursor != 0 {
-            units.push(*cursor);
-            cursor = cursor.add(1);
+        // SAFETY: `string` was null-checked above and the SDK contract makes it
+        // a NUL-terminated UTF-16 string, so every read up to and including the
+        // terminator is in bounds; `cursor` never advances past the terminator.
+        while unsafe { *cursor } != 0 {
+            // SAFETY: the loop condition just read this unit and found it not
+            // the terminator, so it is in bounds.
+            units.push(unsafe { *cursor });
+            // SAFETY: the unit at `cursor` is not the terminator, so one past it
+            // is still inside the string (at most the terminator).
+            cursor = unsafe { cursor.add(1) };
         }
         self.set(id, AttributeValue::String(units))
     }
@@ -845,8 +889,15 @@ impl IAttributeListTrait for Vst3AttributeList {
         };
         let capacity = (size_in_bytes as usize / 2).saturating_sub(1);
         let length = stored.len().min(capacity);
-        std::ptr::copy_nonoverlapping(stored.as_ptr(), string, length);
-        *string.add(length) = 0;
+        // SAFETY: `string` was null-checked and the plugin owns `size_in_bytes`
+        // of room; `length <= capacity` leaves room for `length` units plus the
+        // terminator. `stored` is host-owned, so the ranges cannot overlap.
+        unsafe { std::ptr::copy_nonoverlapping(stored.as_ptr(), string, length) };
+        // SAFETY: `length <= size_in_bytes / 2 - 1`, so index `length` is inside
+        // the plugin's buffer.
+        let terminator = unsafe { string.add(length) };
+        // SAFETY: `terminator` is the in-bounds slot computed above.
+        unsafe { *terminator = 0 };
         kResultOk
     }
 
@@ -854,8 +905,12 @@ impl IAttributeListTrait for Vst3AttributeList {
         if data.is_null() {
             return kInvalidArgument;
         }
-        let bytes = std::slice::from_raw_parts(data as *const u8, size_in_bytes as usize).to_vec();
-        self.set(id, AttributeValue::Binary(bytes))
+        // SAFETY: `data` was null-checked above and the IAttributeList contract
+        // has the plugin pass `size_in_bytes` readable bytes; the slice is copied
+        // by `set` before this call returns.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(data as *const u8, size_in_bytes as usize) };
+        self.set(id, AttributeValue::Binary(bytes.into()))
     }
 
     unsafe fn getBinary(
@@ -867,15 +922,24 @@ impl IAttributeListTrait for Vst3AttributeList {
         if data.is_null() || size_in_bytes.is_null() {
             return kInvalidArgument;
         }
-        let Some(AttributeValue::Binary(stored)) = self.get(id) else {
-            return kResultFalse;
-        };
-        let Ok(mut borrowed) = self.borrowed_binary.lock() else {
+        let Some(key) = attribute_key(id) else {
             return kInvalidArgument;
         };
-        *borrowed = stored;
-        *data = borrowed.as_ptr() as *const c_void;
-        *size_in_bytes = borrowed.len() as uint32;
+        let Ok(entries) = self.entries.lock() else {
+            return kInvalidArgument;
+        };
+        // The pointer is borrowed from the stored attribute, as the SDK's own
+        // list lends it: valid until that attribute is replaced or the list is
+        // released.
+        let Some(AttributeValue::Binary(stored)) = entries.get(&key) else {
+            return kResultFalse;
+        };
+        // SAFETY: `data` was null-checked above and is the plugin's writable
+        // out-parameter for this call.
+        unsafe { *data = stored.as_ptr() as *const c_void };
+        // SAFETY: `size_in_bytes` was null-checked above and is the plugin's
+        // writable out-parameter for this call.
+        unsafe { *size_in_bytes = stored.len() as uint32 };
         kResultOk
     }
 }
@@ -920,7 +984,9 @@ impl IMessageTrait for Vst3Message {
         *stored = if id.is_null() {
             None
         } else {
-            Some(CStr::from_ptr(id).to_owned())
+            // SAFETY: `id` is non-null on this branch; the IMessage contract has
+            // the plugin pass a NUL-terminated string that outlives this call.
+            Some(unsafe { CStr::from_ptr(id) }.to_owned())
         };
     }
 
@@ -994,6 +1060,23 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use vst3::com_scrape_types::Unknown;
+    use vst3::Steinberg::kNoInterface;
+
+    thread_local! {
+        static ATTRIBUTE_LIST_DROPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Counted per thread: each test runs on its own, and a COM release frees
+    /// its object synchronously on the releasing thread.
+    impl Drop for Vst3AttributeList {
+        fn drop(&mut self) {
+            ATTRIBUTE_LIST_DROPS.with(|drops| drops.set(drops.get() + 1));
+        }
+    }
+
+    fn attribute_list_drops() -> usize {
+        ATTRIBUTE_LIST_DROPS.with(|drops| drops.get())
+    }
 
     fn drained(state: &Vst3HostState) -> Vec<HostParameterUpdate> {
         let mut buffer = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
@@ -1189,6 +1272,7 @@ mod tests {
         let handler_state = std::sync::Arc::new(Vst3HostState::default());
         let handler = Vst3ComponentHandler::new(std::sync::Arc::clone(&handler_state));
 
+        // SAFETY: `handler` is a live local; `performEdit` takes plain values.
         let refusal = unsafe { handler.performEdit(1, f64::NAN) };
 
         assert_eq!(refusal, kInvalidArgument);
@@ -1206,11 +1290,15 @@ mod tests {
         let handler_state = std::sync::Arc::new(Vst3HostState::default());
         let handler = Vst3ComponentHandler::new(std::sync::Arc::clone(&handler_state));
 
-        unsafe {
-            assert_eq!(handler.beginEdit(4), kResultOk);
-            assert_eq!(handler.performEdit(4, 0.6), kResultOk);
-            assert_eq!(handler.endEdit(4), kResultOk);
-        }
+        // SAFETY: `handler` is a live local; `beginEdit` takes a plain value.
+        let begun = unsafe { handler.beginEdit(4) };
+        assert_eq!(begun, kResultOk);
+        // SAFETY: `handler` is a live local; `performEdit` takes plain values.
+        let performed = unsafe { handler.performEdit(4, 0.6) };
+        assert_eq!(performed, kResultOk);
+        // SAFETY: `handler` is a live local; `endEdit` takes a plain value.
+        let ended = unsafe { handler.endEdit(4) };
+        assert_eq!(ended, kResultOk);
 
         assert_eq!(
             observed_events(&handler_state),
@@ -1238,6 +1326,8 @@ mod tests {
     /// handed it through `setComponentHandler`, queried for
     /// `IComponentHandler2` like any plugin does.
     fn handler2(context: &Vst3HostContext) -> ComPtr<IComponentHandler2> {
+        // SAFETY: the context owns the handler, so `component_handler()` is a live
+        // COM object for the whole call.
         let queried = unsafe {
             IComponentHandler::query_interface(
                 context.component_handler(),
@@ -1245,6 +1335,8 @@ mod tests {
             )
         };
         let raw = queried.expect("the handler answers queryInterface for IComponentHandler2");
+        // SAFETY: `query_interface` returned `raw` carrying one reference for the
+        // caller, which the new `ComPtr` takes over.
         unsafe { ComPtr::from_raw(raw as *mut IComponentHandler2) }
             .expect("the queried pointer is an IComponentHandler2")
     }
@@ -1260,6 +1352,7 @@ mod tests {
         let handler2 = handler2(&context);
 
         assert!(!context.state.take_state_dirty(), "flag starts clear");
+        // SAFETY: `handler2` holds a live reference to the context's handler.
         assert_eq!(unsafe { handler2.setDirty(1) }, kResultOk);
 
         assert_eq!(
@@ -1275,6 +1368,7 @@ mod tests {
 
         // Clearing must re-arm rather than disarm, or only a session's first
         // plugin edit would ever reach the project.
+        // SAFETY: `handler2` holds a live reference to the context's handler.
         assert_eq!(unsafe { handler2.setDirty(1) }, kResultOk);
         assert!(
             context.state.take_state_dirty(),
@@ -1291,6 +1385,7 @@ mod tests {
         let (context, requests) = context_with_request_log();
         let handler2 = handler2(&context);
 
+        // SAFETY: `handler2` holds a live reference to the context's handler.
         assert_eq!(unsafe { handler2.setDirty(0) }, kResultOk);
 
         assert!(requests.lock().expect("request log").is_empty());
@@ -1304,6 +1399,7 @@ mod tests {
         let context = Vst3HostContext::new();
         let handler2 = handler2(&context);
 
+        // SAFETY: `handler2` holds a live reference to the context's handler.
         assert_eq!(unsafe { handler2.setDirty(1) }, kResultOk);
 
         assert!(context.state.take_state_dirty());
@@ -1318,14 +1414,15 @@ mod tests {
         let (context, requests) = context_with_request_log();
         let handler2 = handler2(&context);
 
-        unsafe {
-            assert_eq!(
-                handler2.requestOpenEditor(std::ptr::null()),
-                kNotImplemented
-            );
-            assert_eq!(handler2.startGroupEdit(), kNotImplemented);
-            assert_eq!(handler2.finishGroupEdit(), kNotImplemented);
-        }
+        // SAFETY: `handler2` is live; `requestOpenEditor` ignores its name argument.
+        let open = unsafe { handler2.requestOpenEditor(std::ptr::null()) };
+        assert_eq!(open, kNotImplemented);
+        // SAFETY: `handler2` is live; `startGroupEdit` takes no arguments.
+        let start = unsafe { handler2.startGroupEdit() };
+        assert_eq!(start, kNotImplemented);
+        // SAFETY: `handler2` is live; `finishGroupEdit` takes no arguments.
+        let finish = unsafe { handler2.finishGroupEdit() };
+        assert_eq!(finish, kNotImplemented);
 
         assert!(requests.lock().expect("request log").is_empty());
         assert!(!context.state.take_state_dirty());
@@ -1336,6 +1433,7 @@ mod tests {
         let mut name: String128 = [0; 128];
         let application = Vst3HostApplication;
 
+        // SAFETY: `name` is a live, writable `String128` local.
         assert_eq!(unsafe { application.getName(&mut name) }, kResultOk);
         assert_eq!(read_string128(&name), "Sourdaw");
     }
@@ -1349,17 +1447,25 @@ mod tests {
         let mut iid = tuid_from_guid(&IMessage::IID);
         let mut object: *mut c_void = std::ptr::null_mut();
 
+        // SAFETY: `cid`, `iid` and `object` are live, writable locals.
         let created = unsafe {
             application.createInstance(&mut cid, &mut iid, &mut object as *mut *mut c_void)
         };
 
         assert_eq!(created, kResultOk);
         assert!(!object.is_null());
+        // SAFETY: `createInstance` succeeded for the IMessage iid, so `object` is
+        // an IMessage carrying the one reference the caller now owns.
         let message = unsafe { ComPtr::<IMessage>::from_raw(object as *mut IMessage) }
             .expect("the created object is a message");
         let id = CString::new("sourdaw.test").expect("a literal has no null byte");
+        // SAFETY: `message` is live and `id` is a NUL-terminated CString.
         unsafe { message.setMessageID(id.as_ptr()) };
-        let read = unsafe { CStr::from_ptr(message.getMessageID()) };
+        // SAFETY: `message` is live.
+        let read_ptr = unsafe { message.getMessageID() };
+        // SAFETY: `read_ptr` points at the message's stored CString, set above and
+        // alive as long as `message`.
+        let read = unsafe { CStr::from_ptr(read_ptr) };
         assert_eq!(read, id.as_c_str());
     }
 
@@ -1368,12 +1474,178 @@ mod tests {
         let application = Vst3HostApplication;
         let mut cid: TUID = [7; 16];
         let mut iid: TUID = [7; 16];
-        let mut object: *mut c_void = std::ptr::null_mut();
+        let mut object: *mut c_void = std::ptr::dangling_mut::<u8>() as *mut c_void;
 
-        assert_eq!(
-            unsafe { application.createInstance(&mut cid, &mut iid, &mut object) },
-            kNotImplemented
+        // SAFETY: `cid`, `iid` and `object` are live, writable locals.
+        let created = unsafe { application.createInstance(&mut cid, &mut iid, &mut object) };
+        assert_eq!(created, kNotImplemented);
+        assert!(
+            object.is_null(),
+            "a refused creation leaves no stale pointer behind"
         );
+    }
+
+    fn create_instance(cid: &Guid, iid: &Guid) -> (tresult, *mut c_void) {
+        let application = Vst3HostApplication;
+        let mut cid = tuid_from_guid(cid);
+        let mut iid = tuid_from_guid(iid);
+        let mut object: *mut c_void = std::ptr::dangling_mut::<u8>() as *mut c_void;
+        // SAFETY: `cid`, `iid` and `object` are live, writable locals.
+        let created = unsafe { application.createInstance(&mut cid, &mut iid, &mut object) };
+        (created, object)
+    }
+
+    /// A plugin builds stream attributes and message payloads in a standalone
+    /// list it asks the host for. The list is the caller's: it arrives holding
+    /// the one reference the caller releases, and that release frees it.
+    #[test]
+    fn the_host_creates_a_standalone_attribute_list_the_caller_owns() {
+        let drops_before = attribute_list_drops();
+        let (created, object) = create_instance(&IAttributeList::IID, &IAttributeList::IID);
+
+        assert_eq!(created, kResultOk);
+        // SAFETY: `createInstance` succeeded for the IAttributeList iid, so `object`
+        // is an IAttributeList carrying the one reference the caller now owns.
+        let list = unsafe { ComPtr::<IAttributeList>::from_raw(object as *mut IAttributeList) }
+            .expect("the created object is an attribute list");
+        let key = CString::new("value").expect("a literal has no null byte");
+        // SAFETY: `list` is live and `key` is a NUL-terminated CString.
+        let set_int = unsafe { list.setInt(key.as_ptr(), -12) };
+        assert_eq!(set_int, kResultOk);
+        let mut integer = 0i64;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `integer` is a writable local.
+        let got_int = unsafe { list.getInt(key.as_ptr(), &mut integer) };
+        assert_eq!(got_int, kResultOk);
+        assert_eq!(integer, -12);
+
+        // SAFETY: `list` is live and `key` is a NUL-terminated CString.
+        let set_float = unsafe { list.setFloat(key.as_ptr(), 0.25) };
+        assert_eq!(set_float, kResultOk);
+        let mut float = 0.0f64;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `float` is a writable local.
+        let got_float = unsafe { list.getFloat(key.as_ptr(), &mut float) };
+        assert_eq!(got_float, kResultOk);
+        assert_eq!(float, 0.25);
+
+        let text: Vec<u16> = "hi\0".encode_utf16().collect();
+        // SAFETY: `list` is live, `key` is NUL-terminated, `text` ends in a NUL unit.
+        let set_string = unsafe { list.setString(key.as_ptr(), text.as_ptr()) };
+        assert_eq!(set_string, kResultOk);
+        let mut read = [0u16; 8];
+        // SAFETY: `list` is live, `key` is NUL-terminated, `read` holds the 16
+        // bytes passed as the size.
+        let got_string = unsafe { list.getString(key.as_ptr(), read.as_mut_ptr(), 16) };
+        assert_eq!(got_string, kResultOk);
+        assert_eq!(read_string128_prefix(&read), "hi");
+
+        let payload = [4u8, 5, 6];
+        // SAFETY: `list` is live, `key` is NUL-terminated, `payload` has 3 readable bytes.
+        let set_binary =
+            unsafe { list.setBinary(key.as_ptr(), payload.as_ptr() as *const c_void, 3) };
+        assert_eq!(set_binary, kResultOk);
+        let mut data: *const c_void = std::ptr::null();
+        let mut size: uint32 = 0;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `data` and `size` are
+        // writable locals.
+        let got_binary = unsafe { list.getBinary(key.as_ptr(), &mut data, &mut size) };
+        assert_eq!(got_binary, kResultOk);
+        // SAFETY: `getBinary` lent `data` / `size` from the stored attribute, which
+        // lives as long as `list` and is not replaced before this read.
+        let bytes = unsafe { std::slice::from_raw_parts(data as *const u8, size as usize) };
+        assert_eq!(bytes, &payload);
+        assert_eq!(
+            attribute_list_drops(),
+            drops_before,
+            "the caller still holds it"
+        );
+
+        drop(list);
+        assert_eq!(
+            attribute_list_drops(),
+            drops_before + 1,
+            "releasing the caller's one reference frees the list"
+        );
+    }
+
+    /// COM hands back the interface the caller named, not the one the class
+    /// happens to implement first: `FUnknown` is always answerable.
+    #[test]
+    fn the_host_answers_the_interface_a_creation_names() {
+        let (created, object) = create_instance(&IMessage::IID, &FUnknown::IID);
+        assert_eq!(created, kResultOk);
+        // SAFETY: `createInstance` succeeded for the FUnknown iid, so `object` is
+        // an FUnknown carrying the one reference the caller now owns.
+        let unknown = unsafe { ComPtr::<FUnknown>::from_raw(object as *mut FUnknown) }
+            .expect("the created object is an FUnknown");
+        assert!(unknown.cast::<IMessage>().is_some());
+
+        let (created, object) = create_instance(&IAttributeList::IID, &FUnknown::IID);
+        assert_eq!(created, kResultOk);
+        // SAFETY: `createInstance` succeeded for the FUnknown iid, so `object` is
+        // an FUnknown carrying the one reference the caller now owns.
+        let unknown = unsafe { ComPtr::<FUnknown>::from_raw(object as *mut FUnknown) }
+            .expect("the created object is an FUnknown");
+        assert!(unknown.cast::<IAttributeList>().is_some());
+    }
+
+    /// A class the host creates, asked for an interface it does not have, is
+    /// refused the COM way and leaves nothing allocated.
+    #[test]
+    fn the_host_refuses_an_interface_the_created_class_lacks() {
+        let drops_before = attribute_list_drops();
+        let (created, object) = create_instance(&IAttributeList::IID, &IMessage::IID);
+        assert_eq!(created, kNoInterface);
+        assert!(object.is_null());
+        assert_eq!(
+            attribute_list_drops(),
+            drops_before + 1,
+            "the list built for the refused request is freed"
+        );
+
+        let (created, object) = create_instance(&IMessage::IID, &IAttributeList::IID);
+        assert_eq!(created, kNoInterface);
+        assert!(object.is_null());
+    }
+
+    /// The pointer `getBinary` returns stays readable for as long as the
+    /// attribute it came from, as the SDK's own list keeps it: a plugin reading
+    /// two payloads out of one message must not find the first freed.
+    #[test]
+    fn a_binary_read_stays_valid_across_a_read_of_another_key() {
+        let list = Vst3AttributeList::default();
+        let first = CString::new("first").expect("a literal has no null byte");
+        let second = CString::new("second").expect("a literal has no null byte");
+
+        // SAFETY: `list` is live, `first` is NUL-terminated, the array has 3 bytes.
+        unsafe { list.setBinary(first.as_ptr(), [1u8, 2, 3].as_ptr() as *const c_void, 3) };
+        // SAFETY: `list` is live, `second` is NUL-terminated, the array has 64 bytes.
+        unsafe { list.setBinary(second.as_ptr(), [9u8; 64].as_ptr() as *const c_void, 64) };
+
+        let mut first_data: *const c_void = std::ptr::null();
+        let mut first_size: uint32 = 0;
+        // SAFETY: `list` is live, `first` is NUL-terminated, the outputs are
+        // writable locals.
+        let first_read =
+            unsafe { list.getBinary(first.as_ptr(), &mut first_data, &mut first_size) };
+        assert_eq!(first_read, kResultOk);
+        let mut second_data: *const c_void = std::ptr::null();
+        let mut second_size: uint32 = 0;
+        // SAFETY: `list` is live, `second` is NUL-terminated, the outputs are
+        // writable locals.
+        let second_read =
+            unsafe { list.getBinary(second.as_ptr(), &mut second_data, &mut second_size) };
+        assert_eq!(second_read, kResultOk);
+
+        // SAFETY: `first_data` / `first_size` were lent by the stored attribute,
+        // which lives as long as `list` and is not replaced.
+        let first_bytes =
+            unsafe { std::slice::from_raw_parts(first_data as *const u8, first_size as usize) };
+        assert_eq!(first_bytes, &[1, 2, 3]);
+        // SAFETY: `second_data` / `second_size` were lent by the stored attribute,
+        // which lives as long as `list` and is not replaced.
+        let second_bytes =
+            unsafe { std::slice::from_raw_parts(second_data as *const u8, second_size as usize) };
+        assert_eq!(second_bytes, &[9u8; 64]);
     }
 
     /// Answering "supported" to everything sends plugins down paths this host
@@ -1384,32 +1656,30 @@ mod tests {
         let as_tuid = tuid_from_guid;
 
         let supported = as_tuid(&IComponentHandler::IID);
-        assert_eq!(
-            unsafe { application.isPlugInterfaceSupported(&supported) },
-            kResultOk
-        );
+        // SAFETY: `supported` is a live TUID local.
+        let supported_answer = unsafe { application.isPlugInterfaceSupported(&supported) };
+        assert_eq!(supported_answer, kResultOk);
 
         // `IComponentHandler2` is the interface `setDirty` arrives through. A
         // plugin that asks before using it must be told it exists, or it will
         // never make the call however well the handler implements it.
         let handler2 = as_tuid(&IComponentHandler2::IID);
-        assert_eq!(
-            unsafe { application.isPlugInterfaceSupported(&handler2) },
-            kResultOk
-        );
+        // SAFETY: `handler2` is a live TUID local.
+        let handler2_answer = unsafe { application.isPlugInterfaceSupported(&handler2) };
+        assert_eq!(handler2_answer, kResultOk);
 
         // The editor path is implemented, so a plugin that asks whether it can
         // put a view up gets a true answer rather than a refusal.
         let view = as_tuid(&IPlugView::IID);
-        assert_eq!(
-            unsafe { application.isPlugInterfaceSupported(&view) },
-            kResultOk
-        );
+        // SAFETY: `view` is a live TUID local.
+        let view_answer = unsafe { application.isPlugInterfaceSupported(&view) };
+        assert_eq!(view_answer, kResultOk);
 
         let wayland = as_tuid(&vst3::Steinberg::IWaylandHost::IID);
+        // SAFETY: `wayland` is a live TUID local.
+        let wayland_answer = unsafe { application.isPlugInterfaceSupported(&wayland) };
         assert_eq!(
-            unsafe { application.isPlugInterfaceSupported(&wayland) },
-            kResultFalse,
+            wayland_answer, kResultFalse,
             "no Wayland embedding path is implemented, and claiming one would be a lie"
         );
     }
@@ -1427,10 +1697,9 @@ mod tests {
         } else {
             kResultFalse
         };
-        assert_eq!(
-            unsafe { application.isPlugInterfaceSupported(&run_loop) },
-            expected
-        );
+        // SAFETY: `run_loop` is a live TUID local.
+        let answer = unsafe { application.isPlugInterfaceSupported(&run_loop) };
+        assert_eq!(answer, expected);
     }
 
     #[test]
@@ -1456,42 +1725,50 @@ mod tests {
         let list = Vst3AttributeList::default();
         let key = CString::new("value").expect("a literal has no null byte");
 
-        unsafe {
-            assert_eq!(list.setInt(key.as_ptr(), -12), kResultOk);
-            let mut integer = 0i64;
-            assert_eq!(list.getInt(key.as_ptr(), &mut integer), kResultOk);
-            assert_eq!(integer, -12);
+        // SAFETY: `list` is live and `key` is a NUL-terminated CString.
+        let set_int = unsafe { list.setInt(key.as_ptr(), -12) };
+        assert_eq!(set_int, kResultOk);
+        let mut integer = 0i64;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `integer` is a writable local.
+        let got_int = unsafe { list.getInt(key.as_ptr(), &mut integer) };
+        assert_eq!(got_int, kResultOk);
+        assert_eq!(integer, -12);
 
-            assert_eq!(list.setFloat(key.as_ptr(), 0.5), kResultOk);
-            let mut float = 0.0f64;
-            assert_eq!(list.getFloat(key.as_ptr(), &mut float), kResultOk);
-            assert_eq!(float, 0.5);
+        // SAFETY: `list` is live and `key` is a NUL-terminated CString.
+        let set_float = unsafe { list.setFloat(key.as_ptr(), 0.5) };
+        assert_eq!(set_float, kResultOk);
+        let mut float = 0.0f64;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `float` is a writable local.
+        let got_float = unsafe { list.getFloat(key.as_ptr(), &mut float) };
+        assert_eq!(got_float, kResultOk);
+        assert_eq!(float, 0.5);
 
-            let text: Vec<u16> = "hi\0".encode_utf16().collect();
-            assert_eq!(list.setString(key.as_ptr(), text.as_ptr()), kResultOk);
-            let mut read = [0u16; 8];
-            assert_eq!(
-                list.getString(key.as_ptr(), read.as_mut_ptr(), 16),
-                kResultOk
-            );
-            assert_eq!(read_string128_prefix(&read), "hi");
+        let text: Vec<u16> = "hi\0".encode_utf16().collect();
+        // SAFETY: `list` is live, `key` is NUL-terminated, `text` ends in a NUL unit.
+        let set_string = unsafe { list.setString(key.as_ptr(), text.as_ptr()) };
+        assert_eq!(set_string, kResultOk);
+        let mut read = [0u16; 8];
+        // SAFETY: `list` is live, `key` is NUL-terminated, `read` holds the 16
+        // bytes passed as the size.
+        let got_string = unsafe { list.getString(key.as_ptr(), read.as_mut_ptr(), 16) };
+        assert_eq!(got_string, kResultOk);
+        assert_eq!(read_string128_prefix(&read), "hi");
 
-            let payload = [1u8, 2, 3];
-            assert_eq!(
-                list.setBinary(key.as_ptr(), payload.as_ptr() as *const c_void, 3),
-                kResultOk
-            );
-            let mut data: *const c_void = std::ptr::null();
-            let mut size: uint32 = 0;
-            assert_eq!(
-                list.getBinary(key.as_ptr(), &mut data, &mut size),
-                kResultOk
-            );
-            assert_eq!(
-                std::slice::from_raw_parts(data as *const u8, size as usize),
-                &payload
-            );
-        }
+        let payload = [1u8, 2, 3];
+        // SAFETY: `list` is live, `key` is NUL-terminated, `payload` has 3 readable bytes.
+        let set_binary =
+            unsafe { list.setBinary(key.as_ptr(), payload.as_ptr() as *const c_void, 3) };
+        assert_eq!(set_binary, kResultOk);
+        let mut data: *const c_void = std::ptr::null();
+        let mut size: uint32 = 0;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `data` and `size` are
+        // writable locals.
+        let got_binary = unsafe { list.getBinary(key.as_ptr(), &mut data, &mut size) };
+        assert_eq!(got_binary, kResultOk);
+        // SAFETY: `getBinary` lent `data` / `size` from the stored attribute, which
+        // lives as long as `list` and is not replaced before this read.
+        let bytes = unsafe { std::slice::from_raw_parts(data as *const u8, size as usize) };
+        assert_eq!(bytes, &payload);
     }
 
     fn read_string128_prefix(value: &[u16]) -> String {
@@ -1507,14 +1784,15 @@ mod tests {
         let list = Vst3AttributeList::default();
         let key = CString::new("value").expect("a literal has no null byte");
 
-        unsafe {
-            list.setInt(key.as_ptr(), 3);
-            let mut float = 99.0f64;
-            assert_eq!(list.getFloat(key.as_ptr(), &mut float), kResultFalse);
-            assert_eq!(
-                float, 99.0,
-                "a refused read leaves the caller's value alone"
-            );
-        }
+        // SAFETY: `list` is live and `key` is a NUL-terminated CString.
+        unsafe { list.setInt(key.as_ptr(), 3) };
+        let mut float = 99.0f64;
+        // SAFETY: `list` is live, `key` is NUL-terminated, `float` is a writable local.
+        let got_float = unsafe { list.getFloat(key.as_ptr(), &mut float) };
+        assert_eq!(got_float, kResultFalse);
+        assert_eq!(
+            float, 99.0,
+            "a refused read leaves the caller's value alone"
+        );
     }
 }

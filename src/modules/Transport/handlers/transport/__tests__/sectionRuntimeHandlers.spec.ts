@@ -67,11 +67,11 @@ beforeEach(() => {
 });
 
 describe('handleNavigateSection', () => {
-    it('uses the captured gesture beat when the playing transport store snapshot is stale', () => {
+    it('uses the captured gesture beat when the playing transport store snapshot is stale', async () => {
         expect(transportStore.value).toMatchObject({ isPlaying: true, playheadPosition: 0 });
         atPlayhead(20);
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
+        await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
 
         expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(32);
         expect(captureGestureBeat).toHaveBeenCalledTimes(1);
@@ -88,10 +88,10 @@ describe('handleNavigateSection', () => {
         { playhead: 16, direction: 'previous' as const, target: 4 },
         { playhead: 20, direction: 'previous' as const, target: 16 },
         { playhead: 50, direction: 'previous' as const, target: 32 },
-    ])('moves $direction from playhead $playhead in musical order', ({ playhead, direction, target }) => {
+    ])('moves $direction from playhead $playhead in musical order', async ({ playhead, direction, target }) => {
         atPlayhead(playhead);
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
+        await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
 
         if (target === null) {
             expect(seekPlayhead).not.toHaveBeenCalled();
@@ -102,10 +102,10 @@ describe('handleNavigateSection', () => {
         expect(setLoopRegion).not.toHaveBeenCalled();
     });
 
-    it('does nothing when the project has no sections', () => {
+    it('does nothing when the project has no sections', async () => {
         withSections([]);
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
+        await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
 
         expect(readMusicalRange).not.toHaveBeenCalled();
         expect(seekPlayhead).not.toHaveBeenCalled();

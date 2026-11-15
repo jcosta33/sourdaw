@@ -1056,7 +1056,9 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
             const exclusive = mocks.previewEngine?.beginExclusiveAudioPreviewIntent();
             expect(exclusive?.isCurrent()).toBe(true);
-            act(() => vi.advanceTimersByTime(1_000));
+            act(() => {
+                vi.advanceTimersByTime(1_000);
+            });
             expect(mocks.playAuditionNote).not.toHaveBeenCalled();
             expect(exclusive?.isCurrent()).toBe(true);
         });
