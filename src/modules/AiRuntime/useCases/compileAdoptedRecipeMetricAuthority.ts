@@ -24,7 +24,7 @@ type AdoptedRecipeMetricAuthority =
  * measurable expectation of each authored recipe adopted, on its own track, over the whole
  * arrangement, judged across that recipe's own step, so the preview measures what each recipe
  * promises and Confirm waits for it. A factory preset states none, since choosing a named preset is a
- * literal choice with nothing to predict, and a target carrying no audio, an empty track or a bus no audible track feeds, has nothing to measure; a
+ * literal choice with nothing to predict, and a target proven silent, an empty track or a bus nothing audible feeds, has nothing to measure; a
  * batch with no goal left stays literal, and a mixed batch carries the goals of its authored pairs
  * alone. Every recipe still forms a step, so the last prefix ends at the whole batch.
  */

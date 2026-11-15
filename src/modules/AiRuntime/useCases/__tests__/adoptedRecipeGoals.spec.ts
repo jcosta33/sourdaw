@@ -219,6 +219,47 @@ function routeSourcesToBuses(): void {
     });
 }
 
+type Track = ReturnType<typeof createTrack>;
+
+/** Re-routes after the first commit so bus-b is fed only by what `rewire` builds: bass no longer outputs to it. */
+function rewireBusB(rewire: (tracks: readonly Track[]) => Track[]): void {
+    landProjectEdit(() => {
+        const state = trackStore.value;
+        if (state === null) {
+            throw new TypeError('Expected project tracks');
+        }
+        trackStore.set({
+            ...state,
+            tracks: rewire(
+                state.tracks.map((track) => {
+                    if (track.id !== 'track-bass') {
+                        return track;
+                    }
+                    const { outputId: _removed, ...rest } = track;
+                    return rest;
+                })
+            ),
+        });
+    });
+}
+
+async function repeatBusRecipeOnBusB(): Promise<void> {
+    await suggest('bus-warm', 'bus-a', 'bus');
+    await expect(confirmPendingChatActions({ confirmationId: onlyCard().id })).resolves.toEqual({
+        status: 'executed',
+    });
+}
+
+function expectBusBGoalsKeptPendingMeasurement(): void {
+    const card = onlyCard();
+    const state = goalState(card);
+    const [authority] = state.authorities;
+    expect(authority).toMatchObject({ origin: 'last-commit-recipe', kind: 'perceptual' });
+    expect(authority?.goals.map((goal) => goal.targetIds)).toEqual([['bus-b'], ['bus-b']]);
+    expect(state.proofs.length).toBeGreaterThan(0);
+    expect(getAgentApprovalView({ confirmationId: card.id })?.metricGoals.status).toBe('verified');
+}
+
 /** A renderer that moves every figure the way the recipe says it must not: the shelves act inverted. */
 function renderAgainstRecipe(input: RenderInput): AudioBuffer {
     const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
@@ -364,5 +405,45 @@ describe("an adopted recipe proposal is verified against the recipe's own expect
         const [authority] = goalState(onlyCard()).authorities;
         expect(authority).toMatchObject({ kind: 'perceptual' });
         expect([...new Set(authority?.goals.flatMap((goal) => goal.targetIds))]).toEqual(['bus-b']);
+    });
+
+    it('keeps the goals of a bus fed only through a send from a track with clips', async () => {
+        routeSourcesToBuses();
+        await repeatBusRecipeOnBusB();
+        rewireBusB((tracks) =>
+            tracks.map((track) =>
+                track.id === VOCAL_ID ? { ...track, sends: [{ busId: 'bus-b', level: 1, preFader: false }] } : track
+            )
+        );
+
+        await sendChatMessage('do the same to the Bus B');
+
+        expectBusBGoalsKeptPendingMeasurement();
+    });
+
+    it('keeps the goals of a bus fed through another bus that a track with clips feeds', async () => {
+        routeSourcesToBuses();
+        await repeatBusRecipeOnBusB();
+        rewireBusB((tracks) => tracks.map((track) => (track.id === 'bus-a' ? { ...track, outputId: 'bus-b' } : track)));
+
+        await sendChatMessage('do the same to the Bus B');
+
+        expectBusBGoalsKeptPendingMeasurement();
+    });
+
+    it('keeps the goals of a bus whose only feeder is a folder, whose audio comes through its children', async () => {
+        routeSourcesToBuses();
+        await repeatBusRecipeOnBusB();
+        rewireBusB((tracks) => [
+            ...tracks,
+            {
+                ...createTrack({ id: 'folder-feed', name: 'Feed', kind: 'folder' }),
+                outputId: 'bus-b',
+            },
+        ]);
+
+        await sendChatMessage('do the same to the Bus B');
+
+        expectBusBGoalsKeptPendingMeasurement();
     });
 });

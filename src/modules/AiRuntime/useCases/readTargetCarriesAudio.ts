@@ -1,8 +1,12 @@
 import { type ProjectContext } from '../models/ProjectContext';
 
 /**
- * Whether a target has audio to measure: a track holding a clip, or a bus fed, through an output or a
- * send, by a track that does, however many buses deep. The visited set bounds a routing cycle.
+ * Whether a target may have audio to measure; false only when it is proven silent. A track holding a
+ * clip carries audio, and so does a folder, whose children reach it through a parent link this context
+ * does not carry. A bus carries audio when a track that does feeds it, through an output or a send,
+ * however many buses deep. The visited set bounds a routing cycle. Reading silence wrongly drops the
+ * recipe's goals and admits an unverified change, while reading audio wrongly only shows a silent
+ * preview that blocks Confirm, so every unknown resolves to audio.
  */
 export function readTargetCarriesAudio(
     context: Pick<ProjectContext, 'tracks'>,
@@ -16,7 +20,7 @@ export function readTargetCarriesAudio(
     if (target === undefined) {
         return false;
     }
-    if (target.clips.length > 0) {
+    if (target.kind === 'folder' || target.clips.length > 0) {
         return true;
     }
     const seen = new Set(visited).add(targetId);
