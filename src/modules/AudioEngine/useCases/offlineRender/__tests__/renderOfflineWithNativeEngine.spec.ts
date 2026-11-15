@@ -24,7 +24,8 @@ import {
 import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
-import { renderOfflineWithNativeEngine } from '../renderOfflineWithNativeEngine';
+import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
+import { renderOfflineWithNativeEngine, type NativeOfflineRenderInput } from '../renderOfflineWithNativeEngine';
 
 registerDeviceEnginePorts();
 
@@ -667,5 +668,309 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
                 write: { shape: 'step', value: 9, time: 0.005 },
             },
         ]);
+    });
+});
+
+/** The beat→seconds law every case here renders under: 120 BPM, no map. */
+const halfSecondPerBeat: NativeOfflineRenderInput['projectPpqEndpoints'] = ({ startPpq, endPpq, sampleRate }) => {
+    const startSeconds = startPpq * 0.5;
+    const endSeconds = endPpq * 0.5;
+    return {
+        startSamples: startSeconds * sampleRate,
+        endSamples: endSeconds * sampleRate,
+        durationSamples: (endSeconds - startSeconds) * sampleRate,
+        startSeconds,
+        endSeconds,
+        durationSeconds: endSeconds - startSeconds,
+    };
+};
+
+/** A render of one audio track carrying `devices`, at 48 kHz, over `frames`. */
+function renderOneTrack(input: {
+    transport: NativeGraphTransport;
+    frames: number;
+    devices: Device[];
+    hostedPluginRuntime?: NativeOfflineHostedRuntime;
+    abortSignal?: AbortSignal;
+}) {
+    const audio = createTrack({ id: 'audio-1', name: 'Vocals', automationMode: 'read', devices: input.devices });
+    return renderOfflineWithNativeEngine({
+        transport: input.transport,
+        sampleRate: 48_000,
+        frameCount: input.frames,
+        durationSeconds: input.frames / 48_000,
+        masterGainValue: 1,
+        defaultTempo: 120,
+        changes: [],
+        projectPpqEndpoints: halfSecondPerBeat,
+        resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+        renderableTracks: [audio],
+        scheduledTracks: [audio],
+        contributingTrackIds: new Set(['audio-1']),
+        soloGatedByTrackId: new Map(),
+        vcaMultiplierByTrackId: new Map(),
+        ...(input.hostedPluginRuntime ? { hostedPluginRuntime: input.hostedPluginRuntime } : {}),
+        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+    });
+}
+
+describe('renderOfflineWithNativeEngine — a loaded hosted effect (#4592)', () => {
+    /** The plugin's own published ceiling, which every stamped value is held to. */
+    const PUBLISHED_CEILING = 0.6;
+
+    const hostedReverb: Device = {
+        id: 'plugin-1',
+        name: 'Valhalla',
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalPluginId: 'valhalla',
+        externalInstanceId: 'instance-1',
+    };
+
+    const loadedEffect: NativeOfflineHostedRuntime = {
+        loadedInstanceIds: new Set(['instance-1']),
+        onDesktopRuntime: true,
+        pluginKind: () => 'effect',
+    };
+
+    /** A ride on the plugin's parameter 7: 0.2 at beat 0, then 0.9 from beat 1 (0.5 s). */
+    const mixRide: StoredAutomationLane = {
+        id: 'lane-mix',
+        trackId: 'audio-1',
+        parameterId: 'plugin-1:7',
+        parameterName: 'Mix',
+        points: [
+            { beat: 0, value: 0.2, curve: 'step', tension: 0 },
+            { beat: 1, value: 0.9, curve: 'step', tension: 0 },
+        ],
+        enabled: true,
+        visible: true,
+        collapsed: false,
+        objects: [],
+        minValue: 0,
+        maxValue: 1,
+    };
+
+    beforeEach(() => {
+        vi.stubGlobal('AudioBuffer', StubAudioBuffer);
+        offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = (instanceId, parameterId) =>
+            instanceId === 'instance-1' && parameterId === '7';
+        offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => Math.min(value, PUBLISHED_CEILING);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        automationStore.set({ lanes: [] });
+        offlineDeviceParameterLawState.quantiseValue = null;
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
+        offlineDeviceParameterLawState.clampExternalPluginValue = null;
+    });
+
+    function deviceWrites(commands: readonly NativeGraphWireCommand[]) {
+        return commands.filter(
+            (command): command is Extract<NativeGraphWireCommand, { kind: 'write-device-parameter' }> =>
+                command.kind === 'write-device-parameter'
+        );
+    }
+
+    it('puts the hosted device on its strip, naming the instance the engine prints it from', async () => {
+        const frames = 48_000;
+        const { transport, commands } = capturingTransport(frames);
+
+        const result = await renderOneTrack({
+            transport,
+            frames,
+            devices: [hostedReverb],
+            hostedPluginRuntime: loadedEffect,
+        });
+
+        expect(result.outcome).toBe('rendered');
+        const strip = commands.find(
+            (command): command is Extract<NativeGraphWireCommand, { kind: 'create-track-strip' }> =>
+                command.kind === 'create-track-strip' && command.trackId === 'audio-1'
+        );
+        expect(strip?.devices).toEqual([
+            {
+                id: 'plugin-1',
+                name: 'Valhalla',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'valhalla',
+                externalInstanceId: 'instance-1',
+            },
+        ]);
+    });
+
+    it('stamps the hosted parameter ride on that device at its frames, held to the plugin’s own law', async () => {
+        const frames = 48_000;
+        const { transport, commands } = capturingTransport(frames);
+        automationStore.set({ lanes: [mixRide] });
+
+        const result = await renderOneTrack({
+            transport,
+            frames,
+            devices: [hostedReverb],
+            hostedPluginRuntime: loadedEffect,
+        });
+
+        expect(result.outcome).toBe('rendered');
+        const target = { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'plugin-1', parameterId: '7' };
+        // The step at beat 1 (0.5 s) rides the device slew the live writer
+        // stamps too: one tick part-way, then the plugin's ceiling.
+        expect(deviceWrites(commands)).toEqual([
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: 0.2, time: 0 } },
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: 0.48, time: 0.5 } },
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: PUBLISHED_CEILING, time: 0.51 } },
+        ]);
+    });
+
+    it('declines by name when the capture carries no hosted law for an automated hosted lane', async () => {
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
+        offlineDeviceParameterLawState.clampExternalPluginValue = null;
+        const { transport, commands } = capturingTransport(480);
+        automationStore.set({ lanes: [mixRide] });
+
+        const result = await renderOneTrack({
+            transport,
+            frames: 480,
+            devices: [hostedReverb],
+            hostedPluginRuntime: loadedEffect,
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation lane "Mix" on track "Vocals" names a device parameter the native render cannot carry',
+        });
+        expect(commands).toEqual([]);
+    });
+
+    it('stamps nothing for a hosted device the shared predicate does not admit, and declines its ride', async () => {
+        const { transport, commands } = capturingTransport(480);
+        automationStore.set({ lanes: [mixRide] });
+
+        const result = await renderOneTrack({
+            transport,
+            frames: 480,
+            devices: [hostedReverb],
+            hostedPluginRuntime: { ...loadedEffect, pluginKind: () => 'instrument' },
+        });
+
+        expect(result.outcome).toBe('declined');
+        expect(deviceWrites(commands)).toEqual([]);
+    });
+});
+
+describe('renderOfflineWithNativeEngine — Cancel during the native render (#4592)', () => {
+    /**
+     * A transport whose render waits until cancelled, then rejects the way the
+     * native side does — with the IPC prefix the desktop bridge adds in front.
+     */
+    function cancellableTransport(
+        frames: number,
+        cancelledFailure = new Error(
+            "Error invoking remote method 'sourdaw:invoke:render_graph_offline': " +
+                'Error: offline-render-cancelled: the render was cancelled'
+        )
+    ) {
+        const renderIds: (string | undefined)[] = [];
+        const cancels: string[] = [];
+        let cancelRender: () => void = () => {};
+        let finishRender: () => void = () => {};
+        const base = capturingTransport(frames).transport;
+        const transport: NativeGraphTransport = {
+            ...base,
+            renderGraphOffline: ({ renderId }) => {
+                renderIds.push(renderId);
+                return new Promise<Uint8Array>((resolve, reject) => {
+                    finishRender = () => resolve(new Uint8Array(frames * 8));
+                    cancelRender = () => reject(cancelledFailure);
+                });
+            },
+            cancelGraphOfflineRender: (renderId) => {
+                cancels.push(renderId);
+                cancelRender();
+                return Promise.resolve();
+            },
+        };
+        return { transport, renderIds, cancels, finish: () => finishRender() };
+    }
+
+    beforeEach(() => {
+        vi.stubGlobal('AudioBuffer', StubAudioBuffer);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('cancels the render it started, by the id it started it under, and ends as Export cancelled', async () => {
+        const frames = 480;
+        const { transport, renderIds, cancels } = cancellableTransport(frames);
+        const controller = new AbortController();
+
+        const rendering = renderOneTrack({ transport, frames, devices: [], abortSignal: controller.signal });
+        await vi.waitFor(() => expect(renderIds).toHaveLength(1));
+        controller.abort();
+
+        await expect(rendering).rejects.toThrow('Export cancelled');
+        expect(renderIds[0]).toEqual(expect.any(String));
+        expect(cancels).toEqual([renderIds[0]]);
+    });
+
+    it('ends as Export cancelled when the cancelled render fails for a reason of its own', async () => {
+        const frames = 480;
+        const { transport, renderIds } = cancellableTransport(frames, new Error('engine stream stopped'));
+        const controller = new AbortController();
+
+        const rendering = renderOneTrack({ transport, frames, devices: [], abortSignal: controller.signal });
+        await vi.waitFor(() => expect(renderIds).toHaveLength(1));
+        controller.abort();
+
+        await expect(rendering).rejects.toThrow('Export cancelled');
+    });
+
+    it('sends no cancel for an abort after the render settled', async () => {
+        const frames = 480;
+        const { transport, renderIds, cancels, finish } = cancellableTransport(frames);
+        const controller = new AbortController();
+
+        const rendering = renderOneTrack({ transport, frames, devices: [], abortSignal: controller.signal });
+        await vi.waitFor(() => expect(renderIds).toHaveLength(1));
+        finish();
+        const result = await rendering;
+        controller.abort();
+
+        expect(result.outcome).toBe('rendered');
+        expect(cancels).toEqual([]);
+    });
+
+    it('sends no cancel and starts no render for an export cancelled before it reached the render', async () => {
+        const frames = 480;
+        const { transport, renderIds, cancels } = cancellableTransport(frames);
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(
+            renderOneTrack({ transport, frames, devices: [], abortSignal: controller.signal })
+        ).rejects.toThrow('Export cancelled');
+        expect(renderIds).toEqual([]);
+        expect(cancels).toEqual([]);
+    });
+
+    it('names a fresh render id for every render', async () => {
+        const frames = 480;
+        const { transport, renderIds, finish } = cancellableTransport(frames);
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const rendering = renderOneTrack({ transport, frames, devices: [] });
+            await vi.waitFor(() => expect(renderIds).toHaveLength(attempt + 1));
+            finish();
+            await rendering;
+        }
+
+        expect(new Set(renderIds).size).toBe(2);
     });
 });

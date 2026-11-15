@@ -163,6 +163,12 @@ export type NativeGraphTransport = Readonly<{
      */
     renderGraphOffline: (input: RenderGraphOfflineInput) => Promise<Uint8Array>;
     /**
+     * `cancel_graph_offline`: stop the render started under `renderId`. A
+     * transport without it renders every request to completion; the export
+     * then ends cancelled at its next checkpoint instead of mid-render.
+     */
+    cancelGraphOfflineRender?: (renderId: string) => Promise<void>;
+    /**
      * `apply_graph_commands`: one batch onto the **live** native engine, which
      * lazily starts on the first batch. Never called by the offline backend —
      * a bounce must not open an audio device — and reached in production only
@@ -215,6 +221,7 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
                 args: { batch, frames, sampleRate, renderId: renderId ?? null },
             });
         },
+        cancelGraphOfflineRender: cancelNativeGraphOfflineRender,
         async applyGraphCommands({ batch }) {
             return desktopInvoke('apply_graph_commands', { batch });
         },
@@ -235,4 +242,21 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
  */
 export async function cancelNativeGraphOfflineRender(renderId: string): Promise<void> {
     await desktopInvoke('cancel_graph_offline', { renderId });
+}
+
+/**
+ * The text every cancelled native render's error carries
+ * (`OFFLINE_RENDER_CANCELLED` in `crates/sourdaw-native/src/commands/
+ * offline_plugins.rs`). A seam contract — never reword one side alone.
+ */
+export const NATIVE_OFFLINE_RENDER_CANCELLED = 'offline-render-cancelled';
+
+/**
+ * Whether a failed render was one `cancel_graph_offline` stopped. Matched as
+ * contained rather than leading text: the desktop IPC prefixes the native
+ * message with its own channel name when it rejects the invoke.
+ */
+export function isNativeOfflineRenderCancelled(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes(NATIVE_OFFLINE_RENDER_CANCELLED);
 }

@@ -18,3 +18,5 @@ export type {
     ExternalPluginParameterState,
 } from './externalPluginParameterStore';
 export { externalPluginParameterStore, defaultExternalPluginParameterState } from './externalPluginParameterStore';
+export type { ExternalPluginTailState } from './externalPluginTailStore';
+export { externalPluginTailStore, defaultExternalPluginTailState } from './externalPluginTailStore';

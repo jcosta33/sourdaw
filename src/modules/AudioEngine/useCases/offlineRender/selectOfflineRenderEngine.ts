@@ -18,19 +18,24 @@
  *
  *   - **Frozen tracks** replay a pre-rendered buffer through the web strip.
  *   - **Device chains** — a chain renders natively only when every device on
- *     it, bypassed or not, is a built-in the engine builds a body for
+ *     it, bypassed or not, is either a built-in the engine builds a body for
  *     (`nativeBuiltinBody`, the renderer's mirror of the engine's own
- *     registry), and the native render carries those bodies' parameter
- *     automation the way the live writer does (#3776). Three exclusions stand:
- *     a device with no native body — a hosted plugin (the offline render has
- *     no engine to host an instance in), a Crumbs sampler (an engine-owned
- *     splice the offline mapper has no lookup for), Faust, Yeast and every
- *     Web Audio-only built-in — would be refused by name or not rendered at
- *     all; an instrument (`isOfflineInstrumentDevice`), because instruments
- *     and Toaster pad routes are scheduled web-side and a native strip would
- *     print a rest; and the target of a sidechain route, because the native
- *     wire has no sidechain vocabulary and a keyed device would print
- *     unkeyed.
+ *     registry) or a loaded hosted effect plugin, and the native render
+ *     carries both families' parameter automation the way the live writer
+ *     does (#3776, #4592). A loaded hosted effect prints through an offline
+ *     instance the engine builds from the live one's state
+ *     (`nativeOfflineHostedDevice`, the one admission the programme shares).
+ *     The exclusions: a loaded hosted *instrument*, which the offline render
+ *     does not host, and a loaded hosted plugin the scan holds no kind for,
+ *     both named; a device with no native body — a hosted plugin with nothing
+ *     loaded (a pass-through live, kept on Web Audio as before), a Crumbs
+ *     sampler (an engine-owned splice the offline mapper has no lookup for),
+ *     Faust, Yeast and every Web Audio-only built-in — would be refused by
+ *     name or not rendered at all; a built-in instrument
+ *     (`isOfflineInstrumentDevice`), because instruments and Toaster pad
+ *     routes are scheduled web-side and a native strip would print a rest;
+ *     and the target of a sidechain route, because the native wire has no
+ *     sidechain vocabulary and a keyed device would print unkeyed.
  *   - **MIDI programme** — instruments render web-side; a native render of a
  *     MIDI clip would be a rest that reads as a correct file.
  *   - **Clip gain envelopes** — the native wire has no envelope vocabulary
@@ -61,6 +66,11 @@ import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeN
 import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
 import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
+import {
+    classifyNativeOfflineHostedDevice,
+    readNativeOfflineHostedRuntime,
+    type NativeOfflineHostedRuntime,
+} from './nativeOfflineHostedDevice';
 import { resolveOutputTarget } from './resolveOutputTarget';
 
 export type OfflineRenderEngineSelection =
@@ -124,12 +134,36 @@ export type SelectOfflineRenderEngineInput = Readonly<{
      * the old, wrong list; callers that know the project pass the real one).
      */
     projectTrackIds?: readonly string[];
+    /**
+     * The loaded hosted instances and their kinds, as the render captured
+     * them. Absent, read live.
+     */
+    hostedPluginRuntime?: NativeOfflineHostedRuntime;
 }>;
 
 /** Why this track's chain cannot render natively, or `null` when every device on it can. */
-function deviceChainGateReason(track: Track, keyedDeviceIds: ReadonlySet<string>): string | null {
+function hostedDeviceGateReason(
+    track: Track,
+    device: Track['devices'][number],
+    verdict: 'instrument' | 'unknown'
+): string {
+    if (verdict === 'instrument') {
+        return `track "${track.name}" carries hosted instrument "${device.name}", which the native render does not host offline`;
+    }
+    return `track "${track.name}" carries hosted plugin "${device.name}", which the plugin scan records no kind for`;
+}
+
+function deviceChainGateReason(
+    track: Track,
+    keyedDeviceIds: ReadonlySet<string>,
+    hostedRuntime: NativeOfflineHostedRuntime
+): string | null {
     for (const device of track.devices) {
-        if (nativeBuiltinBody(device.type) === null) {
+        const hosted = classifyNativeOfflineHostedDevice(device, hostedRuntime);
+        if (hosted === 'instrument' || hosted === 'unknown') {
+            return hostedDeviceGateReason(track, device, hosted);
+        }
+        if (hosted !== 'effect' && nativeBuiltinBody(device.type) === null) {
             return `track "${track.name}" carries device "${device.type}", which the native render has no body for`;
         }
         // A Grinder whose record carries model digest words is running a real
@@ -203,11 +237,12 @@ function modulationAndLayerGateReason(input: SelectOfflineRenderEngineInput): st
 function contentGateReason(input: SelectOfflineRenderEngineInput): string | null {
     const { renderableTracks, scheduledTracks } = input;
     const keyedDeviceIds = new Set(input.sidechainRoutes.map((route) => route.targetDeviceId));
+    const hostedRuntime = input.hostedPluginRuntime ?? readNativeOfflineHostedRuntime();
     for (const track of renderableTracks) {
         if (track.freezeState.status === 'frozen') {
             return `track "${track.name}" is frozen and replays a pre-rendered buffer`;
         }
-        const chainGate = deviceChainGateReason(track, keyedDeviceIds);
+        const chainGate = deviceChainGateReason(track, keyedDeviceIds, hostedRuntime);
         if (chainGate !== null) {
             return chainGate;
         }

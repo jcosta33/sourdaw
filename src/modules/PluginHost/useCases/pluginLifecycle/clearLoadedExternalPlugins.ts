@@ -6,6 +6,7 @@ import {
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
+import { defaultExternalPluginTailState, externalPluginTailStore } from '../../stores/externalPluginTailStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -39,4 +40,6 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationStore.set(defaultExternalPluginActivationState);
     // The parameter snapshots belong to the outgoing generation's instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    // So do the tails they reported.
+    externalPluginTailStore.set(defaultExternalPluginTailState);
 }

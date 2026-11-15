@@ -5,6 +5,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import { clearExternalPluginRestoreFailure } from './clearExternalPluginRestoreFailure';
 import { externalLatencyReporters } from './externalLatencyReporters';
@@ -23,6 +24,7 @@ import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 import { watchExternalPluginParameterEvents } from './watchExternalPluginParameterEvents';
 import { watchExternalPluginParameterRescan } from './watchExternalPluginParameterRescan';
+import { watchExternalPluginTail } from './watchExternalPluginTail';
 
 type ActivateExternalPluginInput = {
     pluginId: string;
@@ -146,6 +148,9 @@ export function activateExternalPlugin({
     // editor, and both subscriptions are one listener for the whole session.
     watchExternalPluginParameterEvents();
     watchExternalPluginParameterRescan();
+    // Before the load for the same reason: a plugin that lengthens its tail
+    // while it first activates must find the subscription already up.
+    watchExternalPluginTail();
 
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during
@@ -175,6 +180,9 @@ export function activateExternalPlugin({
                 engineAttached: instance.engine_plugin_id !== null,
                 parameters: toExternalPluginParameters(instance.parameters),
             });
+            // What an export reserves after the last note for this instance's
+            // decay; later revisions arrive over `plugin-tail-changed`.
+            writeExternalPluginTail(instanceId, instance.tail_samples);
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing yet. The first graph batch starts one and

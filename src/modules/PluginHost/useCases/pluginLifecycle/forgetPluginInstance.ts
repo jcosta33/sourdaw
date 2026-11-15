@@ -11,6 +11,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import { dropExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import { dropExternalPluginTail } from '../../stores/externalPluginTailStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
@@ -32,6 +33,8 @@ export function forgetPluginInstance(instanceId: string): void {
     // The parameters described an instance that no longer exists; leaving them
     // would keep offering automation targets for a destroyed plugin.
     dropExternalPluginParameterSnapshot(instanceId);
+    // A destroyed instance rings for nothing; an export must not reserve its tail.
+    dropExternalPluginTail(instanceId);
     externalPluginActivationStore.update((state) => {
         const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
         delete byInstanceId[instanceId];

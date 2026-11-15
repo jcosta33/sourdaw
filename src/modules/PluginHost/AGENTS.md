@@ -26,7 +26,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`. The module exports no ev
 - **Faust synchronization**: Faust is wired in PluginHost and AudioEngine; updates to Faust DSP types or node interfaces must remain synchronized across both modules.
 - **External plugins are engine-hosted**: the native engine processes a hosted plugin inline on its own audio callback. No command carries per-block audio across the desktop IPC boundary, and the Web Audio graph holds a unity pass-through where such a device sits.
 - **Released strips report back through the sink**: an unload's own chain release changes native strip state with no batch of its own, so `unloadPlugin` forwards the strips it released to whatever `registerReleasedStripReportSink` wired up, and the composition root — never this module — decides who that is.
-- **External plugin parameter store is read-only outside the module**: `externalPluginParameterStore` is exported for reading; its writers stay off the `stores/index.ts` barrel.
+- **External plugin parameter and tail stores are read-only outside the module**: `externalPluginParameterStore` and `externalPluginTailStore` are exported for reading; their writers stay off the `stores/index.ts` barrel. A tail is kept in frames of the activation rate, never converted here, because both formats' infinite sentinel would not survive a conversion; the load seeds it, `plugin-tail-changed` revises a held instance's only, and forgetting an instance or ending the graph generation drops it.
 
 ## Verification
 

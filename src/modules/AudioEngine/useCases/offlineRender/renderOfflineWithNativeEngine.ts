@@ -13,12 +13,18 @@
  *
  * ── Device parameter automation ───────────────────────────────────────────
  *
- * The engine selection admits only chains of native built-in bodies, and their
- * parameter lanes ride `write-device-parameter` under exactly the law and the
- * names the live writer stamps them with (`nativeBuiltinAutomation`, #3776).
- * A lane naming a device on its strip that this law will not carry declines
- * the render (`nativeRefusedDeviceLane`) rather than printing a file without
- * it.
+ * The engine selection admits only chains of native built-in bodies and loaded
+ * hosted effects (`nativeOfflineHostedDevice`, #4592), and their parameter
+ * lanes ride `write-device-parameter` under exactly the law and the names the
+ * live writer stamps them with: `nativeBuiltinAutomation` for a built-in
+ * (#3776), the instance's own published law for a hosted effect, both through
+ * `nativeDeviceParameterLaw`. A hosted effect sits on its strip with its
+ * `externalInstanceId`, and the engine prints it through an offline instance
+ * of its own, built from the live instance's state and compensated by the
+ * engine against the instance's own latency. A lane naming a device on its
+ * strip that this law will not carry — including any hosted lane when the
+ * capture carries no hosted law — declines the render
+ * (`nativeRefusedDeviceLane`) rather than printing a file without it.
  *
  * ── Decline versus fail ───────────────────────────────────────────────────
  *
@@ -53,7 +59,10 @@
  * the engineer heard.
  *
  * Cancellation (`checkCancel`) propagates from either phase — a cancelled
- * export must not fall back into a second, uncancelled render.
+ * export must not fall back into a second, uncancelled render. While the
+ * render itself is in flight the abort signal reaches the native side through
+ * the backend, which cancels the render it named; the native refusal that
+ * follows reaches the caller as the same `Export cancelled` error.
  *
  * Warnings are buffered and flushed only when the native render is the one
  * delivered; a declined attempt discards them because the Web Audio path
@@ -75,8 +84,12 @@ import {
     type AudioGraphParameterWrite,
 } from '../../models/AudioGraphBackend';
 import { STEREO_CHANNEL_COUNT } from '../../models/ChannelLaw';
+import { createExportError } from '../../errors/ExportError';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
-import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
+import {
+    isNativeOfflineRenderCancelled,
+    type NativeGraphTransport,
+} from '../../repositories/nativeGraph/nativeGraphTransport';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflinePpqEndpointProjector,
@@ -86,6 +99,7 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { nativeBuiltinAutomation } from '../livePlayback/nativeBuiltinAutomation';
 import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
+import { nativeDeviceParameterLaw } from '../livePlayback/nativeDeviceParameterLaw';
 // Project truth spells a built-in's parameters as the ids a panel authors; the
 // native mapper resolves them against the engine's own vocabulary and refuses
 // the whole batch, by strip, over one it cannot name (#3893).
@@ -96,14 +110,15 @@ import { automationWriteCommand } from './automationWriteCommand';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
 import { deviceParameterOverlapReason } from './deviceParameterOverlapReason';
+import {
+    classifyNativeOfflineHostedDevice,
+    readNativeOfflineHostedRuntime,
+    type NativeOfflineHostedRuntime,
+} from './nativeOfflineHostedDevice';
 import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
-import {
-    projectStripAutomationWrites,
-    REFUSE_DEVICE_AUTOMATION,
-    type StripAutomationDeviceEntry,
-} from './projectStripAutomationWrites';
+import { projectStripAutomationWrites, type StripAutomationDeviceEntry } from './projectStripAutomationWrites';
 import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
@@ -149,6 +164,12 @@ export type NativeOfflineRenderInput = Readonly<{
     onProgress?: (fraction: number) => void;
     /** Stops this render alone, without the process-wide export cancel flag. */
     abortSignal?: AbortSignal;
+    /**
+     * The loaded hosted instances and their kinds the engine selection read —
+     * the same value, so the two halves of the render admit one set. Absent,
+     * read live.
+     */
+    hostedPluginRuntime?: NativeOfflineHostedRuntime;
 }>;
 
 export type NativeOfflineRenderResult =
@@ -165,11 +186,34 @@ function writeCommands(
     return writes.map((write) => automationWriteCommand(target, write));
 }
 
-/** The built-ins on this strip the native render builds a body for, in chain order. */
-function nativeBodyDeviceEntries(track: Track): readonly StripAutomationDeviceEntry[] {
-    return track.devices.flatMap((device) =>
-        nativeBuiltinBody(device.type) === null ? [] : [{ deviceId: device.id, deviceType: device.type }]
-    );
+/**
+ * The devices on this strip the native render prints and stamps, in chain
+ * order: the built-ins it builds a body for and the hosted effects it builds an
+ * offline instance of, admitted by the selection's own predicate.
+ */
+export function nativeOfflineDeviceEntries(
+    track: Track,
+    hostedRuntime: NativeOfflineHostedRuntime
+): readonly StripAutomationDeviceEntry[] {
+    return track.devices.flatMap((device): StripAutomationDeviceEntry[] => {
+        if (
+            device.externalInstanceId !== undefined &&
+            classifyNativeOfflineHostedDevice(device, hostedRuntime) === 'effect'
+        ) {
+            return [{ deviceId: device.id, deviceType: device.type, externalInstanceId: device.externalInstanceId }];
+        }
+        return nativeBuiltinBody(device.type) === null ? [] : [{ deviceId: device.id, deviceType: device.type }];
+    });
+}
+
+/**
+ * What a failed native render throws: the export's own `Export cancelled` when
+ * this export's cancel stopped it — the flag or signal `checkCancel` reads, or
+ * the native side's own cancelled refusal — and the failure itself otherwise.
+ */
+function nativeRenderFailure(error: unknown, abortSignal: AbortSignal | undefined): unknown {
+    checkCancel(abortSignal);
+    return isNativeOfflineRenderCancelled(error) ? createExportError('Export cancelled', error) : error;
 }
 
 /**
@@ -247,11 +291,15 @@ export async function renderOfflineWithNativeEngine(
     // The same lanes and the same declared law the web render reads, bound to
     // the built-in half the live writer stamps under.
     const automationLanes = input.captured?.scheduling.automationLanes ?? automationStore.value?.lanes ?? [];
-    const builtinAutomation = nativeBuiltinAutomation({
-        source: input.captured?.scheduling.deviceParameterLaw ?? offlineDeviceParameterLawState,
+    const lawSource = input.captured?.scheduling.deviceParameterLaw ?? offlineDeviceParameterLawState;
+    const builtinAutomation = nativeBuiltinAutomation({ source: lawSource, stripTracks: renderableTracks });
+    const { law: deviceParameterLaw } = nativeDeviceParameterLaw({
+        source: lawSource,
         stripTracks: renderableTracks,
+        builtin: builtinAutomation.law,
     });
-    const deviceParameterLaw = builtinAutomation.law ?? REFUSE_DEVICE_AUTOMATION;
+    const hostedRuntime =
+        input.hostedPluginRuntime ?? readNativeOfflineHostedRuntime(input.captured?.loadedExternalInstanceIds);
 
     // ── Strips, exactly as the web path seeds them ─────────────────────────
     const stripCommands = renderableTracks.map((track): AudioGraphCommand => {
@@ -310,7 +358,7 @@ export async function renderOfflineWithNativeEngine(
             : getCompensationDelay(track.id, undefined, engineHostedStripIds);
         const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
 
-        const deviceEntries = nativeBodyDeviceEntries(track);
+        const deviceEntries = nativeOfflineDeviceEntries(track, hostedRuntime);
         const refusedLane = nativeRefusedDeviceLane({
             track,
             lanes: automationLanes,
@@ -486,7 +534,9 @@ export async function renderOfflineWithNativeEngine(
         checkCancel(abortSignal);
         onProgress?.(0.5);
 
-        const { left, right } = await backend.render(frameCount);
+        const { left, right } = await backend.render(frameCount, { abortSignal }).catch((error: unknown) => {
+            throw nativeRenderFailure(error, abortSignal);
+        });
         checkCancel(abortSignal);
         // The master level is the web path's `masterGain` node, applied here
         // in the one place the native render's output crosses back.
