@@ -100,7 +100,11 @@ function countDeviceStateWrites(): { count: number } {
             ...handlers.setDeviceState,
             execute: (action, context) => {
                 writes.count += 1;
-                return handlers.setDeviceState.execute(action, context);
+                const result = handlers.setDeviceState.execute(action, context);
+                if (result instanceof Promise) {
+                    throw new TypeError('Expected the device state handler to execute synchronously');
+                }
+                return result;
             },
         },
     });
