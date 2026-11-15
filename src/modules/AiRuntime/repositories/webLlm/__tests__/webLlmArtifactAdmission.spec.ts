@@ -52,18 +52,31 @@ describe('admitWebLlmModelArtifacts artifact-set digest binding', () => {
         expect(mocks.openCache).toHaveBeenCalledTimes(1);
     });
 
-    it.each([
+    const alterations = [
         ['an artifact sha256', { sha256: 'f'.repeat(64) }],
         ['an artifact size', { sizeBytes: getWebLlmArtifactManifestModel(MODEL_ID).artifacts[0]!.sizeBytes + 1 }],
-    ])('refuses before touching storage when %s no longer matches the artifact-set digest', async (_name, change) => {
-        const altered = withFirstArtifactChanged(getWebLlmArtifactManifestModel(MODEL_ID), change);
-        const { dependencies, mocks } = createDependencies(altered);
+    ] as const;
+    const consentStates = [
+        ['with download consent', { downloadConsent: true }],
+        ['without download consent', {}],
+    ] as const;
 
-        await expect(admitWebLlmModelArtifacts(MODEL_ID, { downloadConsent: true }, dependencies)).rejects.toThrow(
-            `WebLLM release artifact-set digest mismatch for ${MODEL_ID}`
-        );
-        for (const mock of Object.values(mocks)) {
-            expect(mock).not.toHaveBeenCalled();
+    it.each(
+        alterations.flatMap(([alteration, change]) =>
+            consentStates.map(([consent, options]) => [alteration, consent, change, options] as const)
+        )
+    )(
+        'refuses before touching storage when %s no longer matches the artifact-set digest, %s',
+        async (_alteration, _consent, change, options) => {
+            const altered = withFirstArtifactChanged(getWebLlmArtifactManifestModel(MODEL_ID), change);
+            const { dependencies, mocks } = createDependencies(altered);
+
+            await expect(admitWebLlmModelArtifacts(MODEL_ID, options, dependencies)).rejects.toThrow(
+                `WebLLM release artifact-set digest mismatch for ${MODEL_ID}`
+            );
+            for (const mock of Object.values(mocks)) {
+                expect(mock).not.toHaveBeenCalled();
+            }
         }
-    });
+    );
 });
