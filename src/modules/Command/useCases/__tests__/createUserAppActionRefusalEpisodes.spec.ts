@@ -512,6 +512,83 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(notifyUser).toHaveBeenCalledTimes(1);
         });
 
+        it('keeps the newer episode when an older dispatch is refused after it, around an earlier commit', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            const oldest = Promise.withResolvers<void>();
+            const earlier = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction)
+                .mockReturnValueOnce(oldest.promise)
+                .mockImplementationOnce(async (_action, options) => {
+                    await earlier.promise;
+                    options?.onCommitted?.();
+                });
+            const oldestRefused = episodes.execute('A', action);
+            const committed = episodes.execute('A', action);
+            refuse();
+            await episodes.execute('A', action);
+
+            oldest.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(oldestRefused).resolves.toBe('refused');
+            earlier.resolve();
+            await expect(committed).resolves.toBe('committed');
+            unlock();
+            await afterMicrotasks();
+
+            // The newest edit was refused after the commit started, so it is still unsaved.
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('delivers a refused edit when an earlier dispatch commits between the unlock and the delivery', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const earlier = Promise.withResolvers<void>();
+            let commitEarlier: (() => void) | undefined;
+            vi.mocked(executeAppAction).mockImplementationOnce((_action, options) => {
+                commitEarlier = options?.onCommitted;
+                return earlier.promise;
+            });
+            const committed = episodes.execute('A', action);
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            // The commit's continuation is queued ahead of the delivery the unlock queues.
+            commitEarlier?.();
+            earlier.resolve();
+            unlock();
+            await expect(committed).resolves.toBe('committed');
+            await afterMicrotasks();
+
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('stays silent for a warned episode refused again while admitted and relocked before delivery', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            vi.mocked(executeAppAction).mockImplementationOnce(async () => {
+                queueMicrotask(() => {
+                    unlock();
+                    queueMicrotask(lock);
+                });
+                throw new AppActionAdmissionRefusedError('addTrack');
+            });
+
+            await expect(episodes.execute('A', action)).resolves.toBe('refused');
+            await afterMicrotasks();
+            expect(onAdmitted).not.toHaveBeenCalled();
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+
+            unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
         it('warns once for a refusal that lands while an unwarned admitted episode awaits delivery', async () => {
             const onAdmitted = vi.fn();
             const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });

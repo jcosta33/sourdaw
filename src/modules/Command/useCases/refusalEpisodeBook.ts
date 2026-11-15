@@ -70,6 +70,23 @@ function holdRefused(episode: OpenEpisode, warned: boolean): HeldEpisode {
 
 type EpisodeMaps = { open: Map<string, HeldEpisode>; delivering: Map<string, HeldEpisode> };
 
+/** Moves every open episode the gate now admits to delivery and drops the stale ones; returns the admitted. */
+function takeAdmitted(maps: EpisodeMaps): [string, HeldEpisode][] {
+    const admitted: [string, HeldEpisode][] = [];
+    for (const [key, episode] of maps.open) {
+        const verdict = readVerdict(episode);
+        if (verdict === 'refused') {
+            continue;
+        }
+        maps.open.delete(key);
+        if (verdict === 'admitted') {
+            maps.delivering.set(key, episode);
+            admitted.push([key, episode]);
+        }
+    }
+    return admitted;
+}
+
 /** Delivers each admitted episode no close has withdrawn since, reopening one the gate refuses again. */
 function runDeliveries(
     maps: EpisodeMaps,
@@ -117,18 +134,7 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
     }
 
     function closeAdmittedEpisodes(): void {
-        const admitted: [string, HeldEpisode][] = [];
-        for (const [key, episode] of open) {
-            const verdict = readVerdict(episode);
-            if (verdict === 'refused') {
-                continue;
-            }
-            open.delete(key);
-            if (verdict === 'admitted') {
-                delivering.set(key, episode);
-                admitted.push([key, episode]);
-            }
-        }
+        const admitted = takeAdmitted({ open, delivering });
         syncSubscription();
         if (admitted.length > 0) {
             deliverAdmitted(admitted);
@@ -157,7 +163,12 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
             }
             // A key awaiting delivery was never seen admitted by anyone, so it is still the same episode.
             const previous = open.get(key) ?? delivering.get(key);
-            const warned = previous?.projectIdentity === episode.projectIdentity && previous.warned;
+            const samePrevious = previous?.projectIdentity === episode.projectIdentity ? previous : undefined;
+            if (samePrevious && samePrevious.order > episode.order) {
+                // A late refusal from an older dispatch: the held episode already stands for the newer edit.
+                return;
+            }
+            const warned = samePrevious?.warned ?? false;
             delivering.delete(key);
             if (verdict === 'admitted') {
                 // The gate changed between the refusal and this handler, so no signal reached the episode.
