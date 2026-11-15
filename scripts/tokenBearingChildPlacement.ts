@@ -160,13 +160,7 @@ function isGitHubCliKey(key: string): boolean {
  * lane's config or attributes select for a local command: filters, merge and diff drivers, textconv.
  */
 export function tokenFreeGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const stripped: NodeJS.ProcessEnv = { ...env };
-    for (const key of Object.keys(stripped)) {
-        if (isGitHubCliKey(key)) {
-            delete stripped[key];
-        }
-    }
-    return stripped;
+    return Object.fromEntries(Object.entries(env).filter(([key]) => !isGitHubCliKey(key)));
 }
 
 /**
@@ -344,7 +338,7 @@ function assertNoConfigDefinedHooks(
             `refusing a token-bearing git child: cannot list hook config (${listing.stderr.trim() || `exit ${String(listing.status ?? 'signal')}`})`
         );
     }
-    const firstKey = listing.stdout.split('\n')[0];
+    const firstKey = listing.stdout.split('\n')[0] ?? '';
     throw new Error(`refusing a token-bearing git child: repository config defines ${firstKey}`);
 }
 
