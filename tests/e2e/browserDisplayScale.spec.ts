@@ -630,7 +630,9 @@ test('failed initial App graph recovers in the same child document and preserves
         const { automationStore }: typeof import('../../src/modules/Automation/stores') = await import(automationPath);
         const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(commandPath);
         const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio 1');
-        if (!track) throw new Error('Actual audio owner is absent');
+        if (!track) {
+            throw new Error('Actual audio owner is absent');
+        }
         await executeAppAction({
             type: 'addAutomationLane',
             payload: { trackId: track.id, parameterId: 'gain', parameterName: 'Recovery gain' },
@@ -638,7 +640,9 @@ test('failed initial App graph recovers in the same child document and preserves
         const lane = automationStore.value?.lanes.find(
             (entry) => entry.trackId === track.id && entry.parameterId === 'gain'
         );
-        if (!lane) throw new Error('Registered automation action produced no owner');
+        if (!lane) {
+            throw new Error('Registered automation action produced no owner');
+        }
         await executeAppAction({
             type: 'addAutomationPoint',
             payload: { laneId: lane.id, beat: 1, value: 0.4, curve: 'linear', tension: 0 },
@@ -666,7 +670,9 @@ test('failed initial App graph recovers in the same child document and preserves
     expect(beforeEdit.counts).toEqual({ notes: 1, controllers: 3, takes: 1, compRegions: 1, automationPoints: 1 });
     const clip = beforeEdit.tracks.flatMap((track) => track.clips).find((entry) => entry.type === 'midi');
     const owner = beforeEdit.tracks.find((track) => track.id === clip?.trackId);
-    if (!clip || !owner) throw new Error('Hydrated MIDI edit owner is absent');
+    if (!clip || !owner) {
+        throw new Error('Hydrated MIDI edit owner is absent');
+    }
     const row = frame
         .getByRole('grid', { name: 'Track list', exact: true })
         .locator('[role="row"][draggable="true"]')
@@ -681,7 +687,9 @@ test('failed initial App graph recovers in the same child document and preserves
         const { timelineViewStore }: typeof import('../../src/modules/Arrangement/stores') = await import(path);
         return timelineViewStore.value;
     });
-    if (!view) throw new Error('Actual timeline view is absent');
+    if (!view) {
+        throw new Error('Actual timeline view is absent');
+    }
     const x = canvas.x + (clip.startBeat + (clip.endBeat - clip.startBeat) / 2) * view.pixelsPerBeat - view.scrollX;
     const y = header.y + header.height / 2;
     await page.mouse.move(x, y);
@@ -730,7 +738,9 @@ test('failed initial App graph recovers in the same child document and preserves
     });
     page.on('pageerror', (error) => pageErrors.push(error.message));
     page.on('framenavigated', (navigated) => {
-        if (navigated === frame) childNavigations.push(navigated.url());
+        if (navigated === frame) {
+            childNavigations.push(navigated.url());
+        }
     });
     page.on('requestfailed', (request) => {
         if (request.frame() === frame && new URL(request.url()).pathname === '/src/app/router.ts') {

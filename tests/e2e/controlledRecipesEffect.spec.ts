@@ -6,13 +6,17 @@ import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedTool
 function tool(request: ScriptedToolRequest, name: string): string {
     const wire = name.replaceAll('.', '_');
     const found = request.tools.find((entry) => entry.function.name === wire);
-    if (!found) throw new Error(`Application did not offer ${name}`);
+    if (!found) {
+        throw new Error(`Application did not offer ${name}`);
+    }
     return found.function.name;
 }
 
 function receipt(request: ScriptedToolRequest, id: string): Record<string, unknown> {
     const item = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === id);
-    if (typeof item?.content !== 'string') throw new Error(`Missing receipt ${id}`);
+    if (typeof item?.content !== 'string') {
+        throw new Error(`Missing receipt ${id}`);
+    }
     const value: unknown = JSON.parse(item.content);
     if (
         !value ||
@@ -76,7 +80,9 @@ test('every controlled compressor expansion lowers measured dynamic range throug
                 context,
                 ordinal + 1
             );
-            if (expansion.status !== 'expanded') throw new Error(`${entry.id}: ${expansion.reason}`);
+            if (expansion.status !== 'expanded') {
+                throw new Error(`${entry.id}: ${expansion.reason}`);
+            }
             if (
                 expansion.commands[0]?.operation !== 'addDevice' ||
                 expansion.commands[0].arguments.deviceType !== 'builtin-compressor'
@@ -86,7 +92,9 @@ test('every controlled compressor expansion lowers measured dynamic range throug
             // The added compressor starts from its initial values; the expansion writes only the
             // values that differ from them.
             const initial = getAddedDeviceParameterValues('builtin-compressor');
-            if (initial === null) throw new Error('builtin-compressor has no initial values');
+            if (initial === null) {
+                throw new Error('builtin-compressor has no initial values');
+            }
             const parameters: Record<string, number> = { ...initial };
             for (const item of expansion.commands.slice(1)) {
                 if (
@@ -98,8 +106,9 @@ test('every controlled compressor expansion lowers measured dynamic range throug
                 }
                 parameters[item.arguments.paramId] = item.arguments.value;
             }
-            if (expansion.values.some((value) => value.source !== 'midpoint'))
+            if (expansion.values.some((value) => value.source !== 'midpoint')) {
                 throw new Error(`${entry.id}: midpoint provenance lost`);
+            }
 
             const dry = new AudioBuffer({ length: frameCount, numberOfChannels: 1, sampleRate });
             const samples = dry.getChannelData(0);
@@ -139,7 +148,9 @@ test('every controlled compressor expansion lowers measured dynamic range throug
             }
             let wetEnergy = 0;
             for (const sample of wet.getChannelData(0)) {
-                if (!Number.isFinite(sample)) throw new Error(`${entry.id}: nonfinite audio`);
+                if (!Number.isFinite(sample)) {
+                    throw new Error(`${entry.id}: nonfinite audio`);
+                }
                 wetEnergy += sample * sample;
             }
             results.push({
@@ -226,7 +237,9 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
             const tracks = trackStore.value?.tracks ?? [];
             const sourceId = tracks.find((track) => track.name === 'Close Drums')?.clips[0]?.audioBufferId;
             const source = sourceId ? audioBufferCache.get(sourceId) : undefined;
-            if (!source) throw new Error('Actual source PCM unavailable');
+            if (!source) {
+                throw new Error('Actual source PCM unavailable');
+            }
             const hashes = [];
             for (let channel = 0; channel < source.numberOfChannels; channel++) {
                 hashes.push(
@@ -260,8 +273,9 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                 onWarning: (message: string) => warnings.push(message),
             });
             const metric = measureAgentObjectiveBuffer(audio).measurements.rms;
-            if (metric.status !== 'measured' || typeof metric.value !== 'number')
+            if (metric.status !== 'measured' || typeof metric.value !== 'number') {
                 throw new Error('Gate RMS unavailable');
+            }
             const hashes = [];
             const windows = { sustainedLeft: 0, sustainedRight: 0, gapLeft: 0, gapRight: 0, preSecondGapLeft: 0 };
             for (let channel = 0; channel < audio.numberOfChannels; channel++) {
@@ -274,10 +288,18 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                     preSecondGapEnergy = 0;
                 for (let frame = 0; frame < data.length; frame++) {
                     const sample = data[frame];
-                    if (!Number.isFinite(sample)) throw new Error('Nonfinite gate output');
-                    if (frame >= 7_200 && frame < 10_800) openEnergy += sample * sample;
-                    if (frame >= 20_000 && frame < 24_000) gapEnergy += sample * sample;
-                    if (frame >= 25_000 && frame < 26_000) preSecondGapEnergy += sample * sample;
+                    if (!Number.isFinite(sample)) {
+                        throw new Error('Nonfinite gate output');
+                    }
+                    if (frame >= 7_200 && frame < 10_800) {
+                        openEnergy += sample * sample;
+                    }
+                    if (frame >= 20_000 && frame < 24_000) {
+                        gapEnergy += sample * sample;
+                    }
+                    if (frame >= 25_000 && frame < 26_000) {
+                        preSecondGapEnergy += sample * sample;
+                    }
                 }
                 if (channel === 0) {
                     windows.sustainedLeft = openEnergy;
@@ -301,7 +323,7 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
             return [literalWholeRequestIntake(request)];
         }
         const step = turn - 1;
-        if (step === 0)
+        if (step === 0) {
             return [
                 {
                     id: 'project',
@@ -309,6 +331,7 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                     arguments: { type: 'object', page: { limit: 50 } },
                 },
             ];
+        }
         if (step === 1) {
             receipt(request, 'project');
             return [
@@ -422,7 +445,9 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                 await import('/src/modules/Project/useCases/index.ts');
             const { projectStore } = await import('/src/modules/Project/stores/index.ts');
             const createdAt = projectStore.value?.createdAt;
-            if (createdAt === undefined) throw new Error('No project identity to reopen');
+            if (createdAt === undefined) {
+                throw new Error('No project identity to reopen');
+            }
             const saved = await saveProject();
             const loaded = saved
                 ? await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true })
@@ -475,7 +500,9 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                 const lane = automationStore.value?.lanes.find(
                     (entry) => entry.trackId === trackId && entry.parameterId === parameterId
                 );
-                if (!lane) throw new Error('Gate threshold automation lane unavailable');
+                if (!lane) {
+                    throw new Error('Gate threshold automation lane unavailable');
+                }
                 for (const [beat, value] of [
                     [0, -42.5],
                     [1, -55],

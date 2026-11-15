@@ -638,9 +638,13 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
             ]);
             const entry = getRecentProjects().find((item) => item.name === name);
-            if (!entry) throw new Error('Named recent project is missing');
+            if (!entry) {
+                throw new Error('Named recent project is missing');
+            }
             const raw = await readNamedProjectJson(entry.key);
-            if (!raw) throw new Error('Named project JSON is missing');
+            if (!raw) {
+                throw new Error('Named project JSON is missing');
+            }
             return {
                 key: entry.key,
                 data: JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData,
@@ -709,11 +713,14 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                         history: undoHistoryStore.value,
                     });
                 const history = undoHistoryStore.value;
-                if (!history?.past.length || !history.future.length)
+                if (!history?.past.length || !history.future.length) {
                     throw new Error('Undo and Redo must both contain entries');
+                }
                 const beforeImport = snapshot();
                 const raw = await readNamedProjectJson(key);
-                if (!raw) throw new Error('Named JSON missing before malformed import');
+                if (!raw) {
+                    throw new Error('Named JSON missing before malformed import');
+                }
                 const results = [];
                 for (const route of ['top', 'saved'] as const) {
                     const data = JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData;
@@ -722,7 +729,9 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                             ? data.takeLanes
                             : data.arrangements?.find((item) => item.id === data.activeArrangementId)?.takeLanes;
                     const take = lanes?.lanes.flatMap((lane) => lane.takes).find((item) => item.midiSource);
-                    if (!take?.midiSource) throw new Error(`Frozen source absent in ${route}`);
+                    if (!take?.midiSource) {
+                        throw new Error(`Frozen source absent in ${route}`);
+                    }
                     const malformed = structuredClone(take.midiSource);
                     const malformedRows = {
                         ...malformed.rows,

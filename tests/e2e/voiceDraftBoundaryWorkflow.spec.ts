@@ -124,11 +124,15 @@ test('native transcript stays a draft until explicit submission and confirmation
                 if (command === 'load_cached_whisper_model' || command === 'disarm_retrospective_capture') {
                     return Promise.resolve();
                 }
-                if (command === 'list_midi_inputs') return Promise.resolve([]);
+                if (command === 'list_midi_inputs') {
+                    return Promise.resolve([]);
+                }
                 if (command === 'unload_plugin') {
                     return Promise.resolve({ unloadedInstanceIds: [], errors: [], reports: [] });
                 }
-                if (command === 'engine_rt_diagnostics') return Promise.resolve({ running: false, events: [] });
+                if (command === 'engine_rt_diagnostics') {
+                    return Promise.resolve({ running: false, events: [] });
+                }
                 return refuse(command);
             },
             invokeBinary: (command) => refuse(command),
