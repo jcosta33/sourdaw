@@ -841,10 +841,13 @@ fn file_identity(_metadata: &fs::Metadata) -> Option<(u64, u64)> {
 struct CachedModule<Module, Fingerprint> {
     module: Weak<Module>,
     fingerprint: Fingerprint,
-    /// The image can never be unloaded, so this entry outlives every `Arc`:
-    /// the sweep keeps it, and its fingerprint keeps describing the image the
-    /// platform loader hands back for this path until the process exits.
-    stays_resident: bool,
+    /// Held strongly only for a module whose image can never be unloaded. That
+    /// module has already run its entry point and published its factory, and
+    /// `kComponentNonDiscardable` asks the host to keep both, so a reopen reuses
+    /// it rather than entering the same image a second time. The sweep keeps the
+    /// entry, and its fingerprint keeps describing the image the platform loader
+    /// hands back for this path until the process exits.
+    resident: Option<Arc<Module>>,
 }
 
 /// Whether a loaded module's image stays mapped after its last holder lets go.
@@ -870,7 +873,10 @@ type ModuleCache<Module, Fingerprint> = Mutex<HashMap<PathBuf, CachedModule<Modu
 /// completely ordinary. So a bundle is loaded once and shared, and the image is
 /// unloaded only when the last holder lets go.
 ///
-/// `Weak`, so an entry never becomes the thing keeping a module resident.
+/// An entry holds a discardable module only weakly, so it is never the thing
+/// keeping a module loaded. A module that stays resident whatever happens is
+/// held strongly: its image cannot go away, and dropping the factory would only
+/// make the next open enter that image again.
 static LOADED_MODULES: LazyLock<ModuleCache<Vst3Module, ModuleFileFingerprint>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -909,6 +915,16 @@ fn shared_module<Module: ModuleResidency, Fingerprint: PartialEq>(
     // than handed an image the record misdescribes.
     let current = fingerprint()?;
     if let Some(cached) = open.get(&key) {
+        if let Some(module) = cached.resident.clone() {
+            if cached.fingerprint != current {
+                return Err(format!(
+                    "An older build of {} stays loaded for the rest of this session (the plugin \
+                     asks never to be unloaded); restart Sourdaw to load the updated plugin",
+                    key.display()
+                ));
+            }
+            return Ok(module);
+        }
         if let Some(module) = cached.module.upgrade() {
             if cached.fingerprint != current {
                 return Err(format!(
@@ -919,19 +935,12 @@ fn shared_module<Module: ModuleResidency, Fingerprint: PartialEq>(
             }
             return Ok(module);
         }
-        if cached.stays_resident && cached.fingerprint != current {
-            return Err(format!(
-                "An older build of {} stays loaded for the rest of this session (the plugin \
-                 asks never to be unloaded); restart Sourdaw to load the updated plugin",
-                key.display()
-            ));
-        }
     }
 
     // Entries for modules that have since been released. Swept here rather than
     // in `Drop`, which would have to take this same lock while it is held. A
     // resident entry is never swept: its image is still mapped.
-    open.retain(|_, cached| cached.stays_resident || cached.module.strong_count() > 0);
+    open.retain(|_, cached| cached.resident.is_some() || cached.module.strong_count() > 0);
 
     let module = load()?;
     open.insert(
@@ -939,7 +948,7 @@ fn shared_module<Module: ModuleResidency, Fingerprint: PartialEq>(
         CachedModule {
             module: Arc::downgrade(&module),
             fingerprint: current,
-            stays_resident: module.stays_resident(),
+            resident: module.stays_resident().then(|| Arc::clone(&module)),
         },
     );
     Ok(module)
@@ -1666,8 +1675,10 @@ mod tests {
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
     }
 
+    /// Entering a non-discardable image a second time is what the reopen must
+    /// not do: the cache keeps the module the first open loaded.
     #[test]
-    fn an_unchanged_resident_module_opens_again_after_its_last_release() {
+    fn an_unchanged_resident_module_is_reused_after_its_last_release_not_loaded_again() {
         let fixture = FixtureDirectory::new("resident-unchanged");
         let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
         let cache = resident_cache();
@@ -1678,14 +1689,15 @@ mod tests {
             Ok(Arc::new(ResidentFakeModule))
         };
 
-        drop(
-            shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
-                .expect("the fake loads"),
-        );
-        shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+        let first = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("the fake loads");
+        let first_address = Arc::as_ptr(&first) as usize;
+        drop(first);
+        let reopened = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
             .expect("an unchanged resident module opens again");
 
-        assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(Arc::as_ptr(&reopened) as usize, first_address);
     }
 
     /// Opening another bundle sweeps released entries; a resident one must
