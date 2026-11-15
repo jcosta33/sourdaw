@@ -1,3 +1,4 @@
+import { commandBatchEffectByActionType } from '../models/CommandBatchActionEffect';
 import { type CommandBatchDynamicEffects } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
@@ -13,71 +14,6 @@ export type VersionedCommandBatchEffects = {
     importedAssets: number;
     renderJobs: number;
 };
-
-export const CREATE_OPERATIONS = new Set([
-    'importStemSet',
-    'addTrack',
-    'createBus',
-    'duplicateTrack',
-    'addClip',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'splitClip',
-    'glueClips',
-    'quantizeTransients',
-    'stripSilence',
-    'drawClip',
-    'duplicateClipAt',
-    'addNotes',
-    'arpeggiate',
-    'extractGroove',
-    'createDrumPreviewBranches',
-    'createVcaGroup',
-    'addDevice',
-    'addYeastProcessor',
-    'addSend',
-    'addSidechainRoute',
-    'addAdjustmentRegion',
-    'addAutomationLane',
-    'addAutomationPoint',
-    'automateSendRange',
-    'automateSendRanges',
-    'automateTrackGainRange',
-    'automateParameterRange',
-    'renderProjectSections',
-    'addMarker',
-    'addSection',
-]);
-export const DELETE_OPERATIONS = new Set([
-    'removeTrack',
-    'removeClip',
-    'removeMarker',
-    'removeSection',
-    'removeDevice',
-    'removeYeastProcessor',
-    'removeSend',
-    'removeSidechainRoute',
-    'glueClips',
-    'stripSilence',
-    'arpeggiate',
-    'thinAutomation',
-    'quantizeAutomation',
-    'automateParameterRange',
-]);
-export const ROUTING_OPERATIONS = new Set([
-    'createBus',
-    'addSend',
-    'setSend',
-    'removeSend',
-    'setTrackOutput',
-    'addSidechainRoute',
-    'removeSidechainRoute',
-]);
-export const TEMPO_OPERATIONS = new Set(['setTempo', 'setTimeSignature']);
-export const MASTER_OPERATIONS = new Set(['setMasterGain']);
-const FILE_OPERATIONS = new Set(['importStemSet', 'renderProjectSections']);
-const AUDIO_UPLOAD_OPERATIONS = new Set(['importStemSet']);
-const REMOTE_GENERATION_OPERATIONS = new Set<string>();
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -152,7 +88,7 @@ function getDeletedObjectCount(command: VersionedCommandEnvelope): number {
     if (command.operation === 'thinAutomation') {
         return 0;
     }
-    return DELETE_OPERATIONS.has(command.operation) ? 1 : 0;
+    return commandBatchEffectByActionType[command.operation].delete ? 1 : 0;
 }
 
 function getRenderJobCount(command: VersionedCommandEnvelope): number {
@@ -170,30 +106,27 @@ function getImportedAssetCount(command: VersionedCommandEnvelope): number {
 }
 
 function addRequiredGrants(command: VersionedCommandEnvelope, requiredGrants: Set<CommandGrant>): void {
-    const operation = command.operation;
-    if (CREATE_OPERATIONS.has(operation)) {
+    const effect = commandBatchEffectByActionType[command.operation];
+    if (effect.create) {
         requiredGrants.add('create');
     }
-    if (DELETE_OPERATIONS.has(operation)) {
+    if (effect.delete) {
         requiredGrants.add('delete');
     }
-    if (ROUTING_OPERATIONS.has(operation)) {
+    if (effect.routing) {
         requiredGrants.add('routing');
     }
-    if (TEMPO_OPERATIONS.has(operation)) {
+    if (effect.tempo) {
         requiredGrants.add('tempo');
     }
-    if (MASTER_OPERATIONS.has(operation)) {
+    if (effect.master) {
         requiredGrants.add('master');
     }
-    if (FILE_OPERATIONS.has(operation)) {
+    if (effect.file) {
         requiredGrants.add('file');
     }
-    if (AUDIO_UPLOAD_OPERATIONS.has(operation)) {
+    if (effect.audioUpload) {
         requiredGrants.add('audioUpload');
-    }
-    if (REMOTE_GENERATION_OPERATIONS.has(operation)) {
-        requiredGrants.add('remoteGeneration');
     }
 }
 
