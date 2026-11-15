@@ -162,6 +162,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/guardRecoveryProof.ts',
     'scripts/isolatedGitTransport.ts',
     'scripts/laneActivity.ts',
+    'scripts/laneRemovalFetch.ts',
     'scripts/laneStackForkMarkers.ts',
     'scripts/measurementRevisionHolders.ts',
     'scripts/pnpmModulesPreflight.ts',
