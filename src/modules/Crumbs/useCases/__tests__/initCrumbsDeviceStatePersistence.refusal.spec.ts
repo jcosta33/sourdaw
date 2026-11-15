@@ -7,8 +7,10 @@ import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { fromCrumbsDeviceState } from '../../models/CrumbsDeviceState';
-import { crumbsStore, ensureInstance, setMode } from '../../stores/crumbsStore';
+import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../stores/crumbsStore';
+import { beginCrumbsPairedReconcile, endCrumbsPairedReconcile } from '../../stores/sampleLoadGate';
 import { initCrumbsDeviceStatePersistence } from '../initCrumbsDeviceStatePersistence';
+import { replayCrumbsDeviceStateCommit } from '../crumbsDeviceStateMirror';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -41,6 +43,20 @@ const lock = () =>
         status: 'repair-required',
     });
 const unlock = () => agentProjectRepairStateStore.set(null);
+const SETTLED_SAMPLE = {
+    sampleId: 7,
+    sampleRate: 48000,
+    channels: 2,
+    frameCount: 48000,
+    durationSecs: 1,
+    detectedRoot: null,
+    detectedBpm: null,
+    category: 'unknown',
+    filePath: 'settled.wav',
+    fileName: 'settled.wav',
+} as const;
+const documentSampleId = () =>
+    fromCrumbsDeviceState(trackStore.value?.tracks[0]?.devices[0]?.deviceState)?.activeSample?.sampleId;
 const documentMode = () => fromCrumbsDeviceState(trackStore.value?.tracks[0]?.devices[0]?.deviceState)?.mode;
 
 describe('initCrumbsDeviceStatePersistence on a refused project', () => {
@@ -82,5 +98,21 @@ describe('initCrumbsDeviceStatePersistence on a refused project', () => {
         setMode(DEVICE_ID, 'warp');
 
         await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(2));
+    });
+
+    it('holds the admitted write while a paired reconcile is unsettled and writes the settled state on release', async () => {
+        setActiveSample(DEVICE_ID, SETTLED_SAMPLE);
+        await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(1));
+        beginCrumbsPairedReconcile(DEVICE_ID);
+
+        unlock();
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        expect(documentSampleId()).toBeUndefined();
+
+        // The pair settles on the state the refused edit already holds: only the replay can write it.
+        endCrumbsPairedReconcile(DEVICE_ID);
+        replayCrumbsDeviceStateCommit(DEVICE_ID);
+
+        await vi.waitFor(() => expect(documentSampleId()).toBe(7));
     });
 });

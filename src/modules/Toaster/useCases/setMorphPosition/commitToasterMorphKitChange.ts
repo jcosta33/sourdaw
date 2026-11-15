@@ -87,7 +87,7 @@ async function commitCurrentToasterMorphKitChange(
         resolveEligibleDeviceWriteTarget(deviceId).status === 'eligible';
     let committed = false;
     try {
-        await toasterRefusalEpisodes.execute(
+        const outcome = await toasterRefusalEpisodes.execute(
             deviceId,
             { type: 'setDeviceState', payload: { deviceId, state: toToasterKitState(nextKit) } },
             {
@@ -106,6 +106,14 @@ async function commitCurrentToasterMorphKitChange(
                 },
             }
         );
+        // The refusal told the user the edit is kept in the session until the project can be
+        // changed. Apply it like any other kit edit, without marking it committed, so the
+        // persistence subscription and the episode's admission re-commit still write it.
+        const current = toasterStore.value?.[deviceId];
+        if (outcome === 'refused' && current && stillCurrent()) {
+            toasterStore.set({ ...toasterStore.value, [deviceId]: { ...current, kit: nextKit } });
+            queue.lastCommittedKit = nextKit;
+        }
     } catch (error) {
         // A stale-authority abort is the guard above doing its job, not a failure.
         if (!isAppActionConflictError(error)) {

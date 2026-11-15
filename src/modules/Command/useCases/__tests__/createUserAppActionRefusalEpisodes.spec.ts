@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
@@ -23,14 +24,16 @@ const refuse = () => vi.mocked(executeAppAction).mockRejectedValueOnce(new AppAc
 describe('createUserAppActionRefusalEpisodes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(executeAppAction).mockResolvedValue(undefined);
+        vi.mocked(executeAppAction).mockImplementation(async (_action, options) => {
+            options?.onCommitted?.();
+        });
     });
 
     it('notifies once for a sweep of refused executes on one key', async () => {
         const episodes = createUserAppActionRefusalEpisodes();
         for (let step = 0; step < 20; step++) {
             refuse();
-            await expect(episodes.execute('device-1', action)).resolves.toBeUndefined();
+            await expect(episodes.execute('device-1', action)).resolves.toBe('refused');
         }
 
         expect(notifyUser).toHaveBeenCalledTimes(1);
@@ -226,6 +229,86 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).not.toHaveBeenCalled();
             allowed = true;
             signalBrief();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('drops an episode without reporting it when the project was replaced before the repair state cleared', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            // A load installs the new root, then clears the repair state, in this order.
+            resetCrdtProjectAuthority('Replacement');
+
+            expect(agentProjectRepairStateStore.value).toBeNull();
+            expect(onAdmitted).not.toHaveBeenCalled();
+            // The dropped episode is gone: a refusal in the new project warns afresh.
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
+
+        it('keeps an episode open when a dispatch resolves without committing while still refused', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await expect(episodes.execute('A', action)).resolves.toBe('refused');
+
+            vi.mocked(executeAppAction).mockResolvedValueOnce(undefined);
+            await expect(episodes.execute('A', action)).resolves.toBe('skipped');
+            expect(onAdmitted).not.toHaveBeenCalled();
+
+            unlock();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('reports a key whose action became admitted when a non-committing dispatch resolves', async () => {
+            const onAdmitted = vi.fn();
+            let allowed = false;
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => allowed }));
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            refuse();
+            await episodes.execute('A', action);
+
+            // No admission signal reaches the episode: only the resolve can notice.
+            allowed = true;
+            vi.mocked(executeAppAction).mockResolvedValueOnce(undefined);
+            await expect(episodes.execute('A', action)).resolves.toBe('skipped');
+
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('still calls the caller onCommitted and ends the episode on a committed dispatch', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const onCommitted = vi.fn();
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            unlock();
+            await expect(episodes.execute('A', action, { onCommitted })).resolves.toBe('committed');
+            expect(onCommitted).toHaveBeenCalledTimes(1);
+        });
+
+        it('reports a key when a later refused action is admitted after the first stays refused', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const first = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+            productionBriefAdmissionPort.setGuard((actions) => ({
+                allowsCurrent: () => !actions.some((candidate) => candidate.type === 'removeTrack'),
+            }));
+            lock();
+            vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionAdmissionRefusedError('removeTrack'));
+            await episodes.execute('A', first);
+            refuse();
+            await episodes.execute('A', action);
+
+            unlock();
+
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 

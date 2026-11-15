@@ -10,9 +10,11 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createDefaultKit } from '../../models/ToasterKit';
 import { defaultToasterState, toasterStore } from '../../stores/toasterStore';
+import { toToasterKitState } from '../../models/ToasterKitState';
 import { initToasterKitPersistence } from '../initToasterKitPersistence';
 import { setMorphPosition } from '../setMorphPosition/setMorphPosition';
 import { toggleMorph } from '../setMorphPosition/toggleMorph';
+import { toasterRefusalEpisodes } from '../toasterRefusalEpisodes';
 import { copyMorphTargetPattern } from '../copyMorphTargetPattern';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -63,6 +65,14 @@ const lock = () =>
     });
 const unlock = () => agentProjectRepairStateStore.set(null);
 const morph = () => toasterStore.value?.[DEVICE_ID]?.kit.morph;
+const documentKitData = () => trackStore.value?.tracks[0]?.devices[0]?.deviceState?.data;
+const sessionKitData = () => {
+    const kit = toasterStore.value?.[DEVICE_ID]?.kit;
+    if (!kit) {
+        throw new Error('Toaster fixture is absent');
+    }
+    return toToasterKitState(kit).data;
+};
 
 describe('commitToasterMorphKitChange on a refused project', () => {
     let stopPersistence: () => void;
@@ -81,21 +91,68 @@ describe('commitToasterMorphKitChange on a refused project', () => {
     });
 
     afterEach(() => {
-        stopPersistence();
+        // Leave the module-level episodes empty for the next case.
         toasterStore.set({});
+        stopPersistence();
+        toasterRefusalEpisodes.endAll();
         unlock();
     });
 
-    it('tells the user once across several morph changes on one device and keeps the session kit', async () => {
-        const before = morph();
+    it('tells the user once across several morph changes on one device and keeps each one in the session kit', async () => {
         expect(await setMorphPosition(DEVICE_ID, 0.25)).toBe(false);
         expect(await setMorphPosition(DEVICE_ID, 0.5)).toBe(false);
         expect(await toggleMorph(DEVICE_ID)).toBe(false);
 
         expect(notifyUser).toHaveBeenCalledTimes(1);
         expect(vi.mocked(notifyUser).mock.calls[0]?.[1]).toBe('warning');
-        expect(morph()).toBe(before);
+        expect(morph()).toMatchObject({ position: 0.5, enabled: true });
         expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('keeps applying morph changes issued back to back without awaiting each one', async () => {
+        await Promise.all([setMorphPosition(DEVICE_ID, 0.25), setMorphPosition(DEVICE_ID, 0.5)]);
+
+        expect(morph()?.position).toBe(0.5);
+        expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes the morphed session kit to the document once the project is unlocked', async () => {
+        await setMorphPosition(DEVICE_ID, 0.25);
+        await setMorphPosition(DEVICE_ID, 0.5);
+        expect(documentKitData()).not.toEqual(sessionKitData());
+
+        unlock();
+
+        await vi.waitFor(() => expect(documentKitData()).toEqual(sessionKitData()));
+        expect(morph()?.position).toBe(0.5);
+        expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not log a stale-authority conflict, which the commit guard raises by design', async () => {
+        unlock();
+        clearHandlerRegistry();
+        const handlers = getArrangementHandlers();
+        let changedKit = false;
+        registerHandlerMap({
+            ...handlers,
+            setDeviceState: {
+                ...handlers.setDeviceState,
+                // Runs after the shouldExecute check and before authorizeFirstHandler.
+                materializeCommandArgumentsAt: 'execution',
+                materializeCommandArguments: () => {
+                    const current = toasterStore.value?.[DEVICE_ID];
+                    if (current && !changedKit) {
+                        changedKit = true;
+                        toasterStore.set({ [DEVICE_ID]: { ...current, kit: { ...current.kit } } });
+                    }
+                },
+            },
+        });
+
+        expect(await setMorphPosition(DEVICE_ID, 0.5)).toBe(false);
+
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
     });
 
     it('commits a morph change after the project is unlocked', async () => {

@@ -22,6 +22,20 @@ describe('subscribeToProductionBriefChanges', () => {
         stop();
     });
 
+    it('fires once for a brief replacement followed by a write to another field', () => {
+        const listener = vi.fn();
+        const stop = subscribeToProductionBriefChanges(listener);
+
+        projectStore.update((state) => ({
+            ...(state ?? defaultProjectStoreState),
+            productionBrief: createDefaultProductionBrief('2026-03-03T00:00:00.000Z'),
+        }));
+        projectStore.update((state) => ({ ...(state ?? defaultProjectStoreState), name: 'Renamed' }));
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        stop();
+    });
+
     it('stays silent for a write to another project field and after unsubscribing', () => {
         const listener = vi.fn();
         const stop = subscribeToProductionBriefChanges(listener);

@@ -149,7 +149,6 @@ describe('initToasterKitPersistence on a refused project', () => {
             toasterStore.set({});
 
             unlock();
-            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(documentKitData()).toBeUndefined();
         });

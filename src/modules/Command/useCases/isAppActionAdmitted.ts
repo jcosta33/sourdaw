@@ -4,23 +4,21 @@ import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissio
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 
 /**
- * Captures the production brief footprint of `action` once, so the kernel can
- * ask the same footprint again at commit. `admitsNow` is the dispatch gate's
- * whole preflight: the project is not awaiting repair and the brief does not
- * lock what the action touches.
+ * The dispatch gate's preflight, defined once: the project is not awaiting
+ * repair and the production brief does not lock what the action touches. The
+ * repair check runs first, so a repair-required project never captures a brief
+ * footprint. `briefAllowsCurrent` re-asks the one footprint captured here, which
+ * the kernel does again at commit.
  */
-export function captureAppActionAdmission(action: AppAction): {
-    admitsNow: () => boolean;
-    briefAllowsCurrent: () => boolean;
-} {
+export function admitAppAction(action: AppAction): { admitted: boolean; briefAllowsCurrent: () => boolean } {
+    if (getProjectMutationAdmissionFailure(action) !== null) {
+        return { admitted: false, briefAllowsCurrent: () => false };
+    }
     const brief = productionBriefAdmissionPort.capture([action]);
-    return {
-        admitsNow: () => getProjectMutationAdmissionFailure(action) === null && brief.allowsCurrent(),
-        briefAllowsCurrent: () => brief.allowsCurrent(),
-    };
+    return { admitted: brief.allowsCurrent(), briefAllowsCurrent: () => brief.allowsCurrent() };
 }
 
-/** Whether the dispatch gate would admit this action right now; the kernel preflight and the refusal episodes share it. */
+/** Whether the dispatch gate would admit this action right now. */
 export function isAppActionAdmitted(action: AppAction): boolean {
-    return captureAppActionAdmission(action).admitsNow();
+    return admitAppAction(action).admitted;
 }

@@ -89,4 +89,17 @@ describe('initBacteriaModAssignmentsPersistence on a refused project', () => {
 
         await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(2));
     });
+
+    it('writes nothing on unlock when the table was edited back to what the document holds', async () => {
+        setBacteriaModAssignments(DEVICE_ID, [row()]);
+        await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(1));
+        setBacteriaModAssignments(DEVICE_ID, []);
+        const dispatched = vi.spyOn(trackStore, 'set');
+
+        unlock();
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+        expect(dispatched).not.toHaveBeenCalled();
+        expect(documentRows()).toBeNull();
+    });
 });
