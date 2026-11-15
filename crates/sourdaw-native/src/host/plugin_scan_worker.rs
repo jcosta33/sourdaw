@@ -1427,8 +1427,11 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     #[test]
     fn a_reported_error_that_reads_like_a_classified_message_stays_data_level() {
-        let echoed_limit = oversized_response_error(1);
-        for text in ["Plugin scan helper timed out", echoed_limit.as_str()] {
+        // No apostrophe: the payload travels inside a single-quoted shell string.
+        for text in [
+            "Plugin scan helper timed out",
+            "Plugin scan helper response of 1 bytes exceeded the limit",
+        ] {
             let response = format!(r#"{{"worker_pid":1,"result":{{"Err":"{text}"}}}}"#);
 
             let failure =
