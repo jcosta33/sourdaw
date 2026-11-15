@@ -2655,7 +2655,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('binds Grand Boule source bytes to its inventory digest', { timeout: 20_000 }, () => {
+    it('leaves Grand Boule inventory entries unchanged when a tracked source file changes', { timeout: 20_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-provenance-'));
         writeGrandBouleReleaseFixture(root);
         const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');

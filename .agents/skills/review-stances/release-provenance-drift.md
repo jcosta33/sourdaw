@@ -1,11 +1,12 @@
 # Lesson library: release and provenance drift
 
-A change is incomplete when a tracked-set source edit, a script, literal or name edit, or a merge edit leaves a
+A change is incomplete when a script, literal or name edit, or a merge edit leaves a
 release digest or provenance record stale. Split out of `test-validity.md`. Each probe answers the baseline
 question from the Review section of root `AGENTS.md` (what must break for this check to fail, and does it observe
 what its name claims?). The Release inventory step of the Types and contracts job runs on every non-draft push;
-inspect its result on the reviewed head. A pass on an earlier head or a retry discharges nothing, and a missing
-restamp is the reviewer's finding. Report a probe that cannot run with its exact mutation, named check and
+inspect its result on the reviewed head. A pass on an earlier head or a retry discharges nothing, and a stale digest or
+provenance record that the diff should have moved is the reviewer's finding. A source edit inside a Grand Boule
+tracked set needs no inventory edit; only a boundary add, remove or rename does. Report a probe that cannot run with its exact mutation, named check and
 limitation, never as passed.
 
 ## Standing probes

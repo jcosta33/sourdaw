@@ -158,8 +158,8 @@ The slice order:
 - (b) The first move slice introduces `AppActionRegistry` with its `legacy` key. Until the last move slice, `AppActionRegistry` carries one `legacy` key whose value is the
   union of variants not yet moved, declared in `handlerContract.ts` itself.
 - (c) Each move slice moves one owner group's variants and the snapshot types only they reference,
-  shrinking `legacy`. It rewrites only the importers of the moved named types. It repoints and
-  restamps any tracked set that pins a moved variant (decision 6). It also repoints every spec or
+  shrinking `legacy`. It rewrites only the importers of the moved named types. It repoints the
+  pathspecs of any tracked set that pins a moved variant (decision 6); nothing is restamped. It also repoints every spec or
   script that reads a moved declaration by file path, found with
   `grep -rl "handlerContract.ts" src scripts tests`; for example
   `src/modules/Arrangement/stores/__tests__/vcaActivationQuarantine.spec.ts`. The first move slice

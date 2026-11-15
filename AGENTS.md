@@ -700,7 +700,7 @@ Keep batches small and merges prompt. Hold at most five live lanes at once. Lane
 stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
 file or pinned digest when it feeds that file's generator or digest: an app action feeds the
 command schema and the agent evidence manifest, device guidance feeds the evidence manifest, a
-tracked-set path feeds the release inventory, and a crate's dependency closure feeds the wasm
+Grand Boule boundary label feeds the release inventory, and a crate's dependency closure feeds the wasm
 manifest. Work that shares any of these with a live lane waits for it to merge, or stacks on it
 only when it depends on that lane's change. A head waiting on CI or review does not block opening
 a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
