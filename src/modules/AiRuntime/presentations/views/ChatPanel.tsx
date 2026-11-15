@@ -298,8 +298,7 @@ const ChatMessageItem = ({
                                 aria-label={`Plan reading: ${reading.name}`}
                                 className="h-7 gap-1.5 text-[11px]"
                             >
-                                {reading.name}
-                                <span className="opacity-60">{reading.descriptors.join(', ')}</span>
+                                {reading.name} <span className="opacity-60">{reading.descriptors.join(', ')}</span>
                             </Button>
                         ))}
                         <Button

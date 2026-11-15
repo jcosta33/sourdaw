@@ -12,6 +12,7 @@ import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentCo
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { ANSWER_INTERPRETATION_TOOL_NAME, createAnswerInterpretationToolSchema } from '../models/AnswerInterpretation';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type BriefReadingOffer } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
@@ -1784,6 +1785,19 @@ const planPromptIntent = inject({ logger })(
                     // reading on the card plans exactly that one.
                     const readings = buildBriefReadings(briefCompilation.mixAlternatives ?? []);
                     if (readings.length > 0) {
+                        const briefReadings: BriefReadingOffer = {
+                            catalogId: mixIntent.catalogId,
+                            metricGoalState: briefMetricGoalState,
+                            readings,
+                            brief: briefCompilation.brief,
+                        };
+                        if (providerProposal !== null) {
+                            briefReadings.providerProposal = providerProposal;
+                        }
+                        if (applicationToolReceiptFields.terminalMeasurementSettlement !== undefined) {
+                            briefReadings.terminalMeasurementSettlement =
+                                applicationToolReceiptFields.terminalMeasurementSettlement;
+                        }
                         return {
                             metricGoalState: briefMetricGoalState,
                             actions: [brief.action],
@@ -1794,11 +1808,7 @@ const planPromptIntent = inject({ logger })(
                             ...creativeAuthorityFields,
                             ...(providerProposal === null ? {} : { providerProposal }),
                             plannedRunLines: describeBriefReadings(readings),
-                            briefReadings: {
-                                catalogId: mixIntent.catalogId,
-                                metricGoalState: briefMetricGoalState,
-                                readings,
-                            },
+                            briefReadings,
                         };
                     }
                     const vibeRun = await planBriefVibeRun({

@@ -33,6 +33,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { chooseVibeBriefReading } from '../chooseVibeBriefReading';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { executeBriefCompile } from '../executeBriefCompile';
@@ -94,7 +95,7 @@ const AMBIGUOUS_PROMPT = 'make this mix warmer';
 const THREE_READINGS = [
     { name: 'Darker top end', requestedDescriptors: ['dark'] },
     { name: 'More low-mid body', requestedDescriptors: ['warm'] },
-    { name: 'Gentle saturation', requestedDescriptors: ['vintage'] },
+    { name: 'Gentle saturation', requestedDescriptors: ['vintage', 'warm'] },
 ];
 const PROTECTIVE_CLAUSE = 'keep it warm';
 
@@ -164,8 +165,7 @@ describe('a brief request whose characters admit more than one reading', () => {
         expect(liveBriefRevision()).toBe(BRIEF_REVISION);
         const content = cardContent(card);
         for (const { name, requestedDescriptors } of alternatives) {
-            expect(content).toContain(name);
-            expect(content).toContain(requestedDescriptors.join(', '));
+            expect(content.split('\n')).toContain(`- ${name}: ${requestedDescriptors.join(', ')}`);
         }
         expect(content).toMatch(/more than one way/u);
         expect(getAgentApprovalView({ confirmationId: card.id })?.readings.map((reading) => reading.name)).toEqual(
@@ -334,7 +334,7 @@ describe('choosing one reading of the brief card', () => {
     it.each([
         ['the first reading', 'Darker top end', ['dark']],
         ['the second reading', 'More low-mid body', ['warm']],
-        ['the last reading', 'Gentle saturation', ['vintage']],
+        ['the last reading, which stands for two characters', 'Gentle saturation', ['vintage', 'warm']],
     ])('plans exactly %s in the same run, with no provider turn', async (_label, name, descriptors) => {
         const { card, providerTurns } = await ask(mixIntentWith(THREE_READINGS));
         const turnsBefore = providerTurns();
@@ -357,11 +357,51 @@ describe('choosing one reading of the brief card', () => {
         expect(replacement.approvalSnapshot.batchPosition?.index).toBe(1);
         const planned = scheduledDescriptors(card.runId);
         expect(planned.length).toBeGreaterThan(0);
-        expect(planned).toEqual(planned.map(() => descriptors));
+        // The planner states a batch's characters in its own order; the set is the reading's.
+        expect(planned.map((batch) => batch.toSorted())).toEqual(planned.map(() => descriptors.toSorted()));
         expect(cardContent(replacement)).toContain(`Reading chosen: ${name}`);
         expect(agentRunLifecycle.get(card.runId)?.phase).toBe('waiting-for-approval');
         expect(audio.renderTrackSubgraphOffline).toHaveBeenCalled();
         expect(getAgentApprovalView({ confirmationId: replacement.id })?.readings).toEqual([]);
+        // The replaced card offers nothing to choose any more, though it still holds its readings.
+        expect(getPendingActionConfirmation(card.id)?.approvalSnapshot.briefReadings?.readings).toHaveLength(3);
+        expect(getAgentApprovalView({ confirmationId: card.id })?.readings).toEqual([]);
+    });
+
+    it('records the chosen reading under the provider proposal the readings card was planned with', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        // The card carries the proposal its own planning recorded; a distinct one shows which the plan reads.
+        pendingActionConfirmationStore.set({
+            confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map(
+                withSeededPlan(card.id, { providerProposal: SEEDED_PROPOSAL })
+            ),
+        });
+
+        await chooseVibeBriefReading({ confirmationId: card.id, readingId: readingIdOf(card, 'Darker top end') });
+
+        const chosen = agentRunLifecycle.get(card.runId)?.plan;
+        expect(chosen?.objective).toBe(SEEDED_PROPOSAL.objective);
+        expect(chosen?.validationStrategy).toContain(SEEDED_PROPOSAL.validationStrategy[0]);
+    });
+
+    it('plans the chosen reading under the terminal settlement the readings card was planned with', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        // A settlement must match its intake and receipts, so one that does not is refused only if the plan reads it.
+        pendingActionConfirmationStore.set({
+            confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map(
+                withSeededPlan(card.id, { terminalMeasurementSettlement: SEEDED_SETTLEMENT })
+            ),
+        });
+
+        const outcome = await chooseVibeBriefReading({
+            confirmationId: card.id,
+            readingId: readingIdOf(card, 'Darker top end'),
+        });
+
+        expect(outcome).toMatchObject({
+            status: 'refused',
+            reason: expect.stringMatching(/Terminal measurement settlement does not match/u),
+        });
     });
 
     it('confirms the replacement card as the brief, then proposes the first batch of the chosen reading', async () => {
@@ -376,9 +416,10 @@ describe('choosing one reading of the brief card', () => {
         expect(liveBriefRevision()).toBe(BRIEF_REVISION + 1);
         const batch = requireOnlyProposedCard();
         expect(batch.approvalSnapshot.batchPosition?.index).toBe(2);
-        expect(batch.approvalSnapshot.adoptedRecipes?.map((recipe) => recipe.recipeId)).toEqual([
-            expect.stringMatching(/-vintage$/u),
-        ]);
+        const recipeCharacters = (batch.approvalSnapshot.adoptedRecipes ?? []).map((recipe) =>
+            recipe.recipeId.replace(/^[^-]+-/u, '')
+        );
+        expect(recipeCharacters.toSorted()).toEqual(['vintage', 'warm']);
     });
 
     it('applies nothing: the brief, devices, undo history and revision are as they were', async () => {
@@ -413,6 +454,40 @@ describe('choosing one reading of the brief card', () => {
         expect(notMeasured(requireOnlyProposedCard())).toEqual(quotedOnTheOfferingCard);
     });
 });
+
+const SEEDED_SETTLEMENT = 'seeded-terminal-measurement-settlement';
+
+const SEEDED_PROPOSAL = {
+    semantic: { classification: 'simple' as const, uncertainty: [] },
+    objective: 'Seeded provider objective',
+    constraints: [],
+    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+    capabilityIds: [],
+    assetIds: [],
+    alternatives: [],
+    validationStrategy: ['Seeded validation step.'],
+    stoppingConditions: [],
+};
+
+/** The card as if its request had been planned with a provider proposal or a terminal measurement settlement. */
+function withSeededPlan(
+    cardId: string,
+    seed: { providerProposal?: typeof SEEDED_PROPOSAL; terminalMeasurementSettlement?: string }
+) {
+    return (confirmation: Confirmation): Confirmation => {
+        const readings = confirmation.approvalSnapshot.briefReadings;
+        if (confirmation.id !== cardId || readings === undefined) {
+            return confirmation;
+        }
+        return {
+            ...confirmation,
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                briefReadings: { ...readings, ...seed },
+            },
+        };
+    };
+}
 
 /** The card as it would read if the mix catalogue had changed after the card was made. */
 function withOldCatalog(cardId: string) {
@@ -465,6 +540,33 @@ describe('a chosen reading that cannot be planned once its card is retired', () 
         expect(proposedCards()).toEqual([]);
         expect(planningMessage()?.content).toMatch(/No plan was made for the reading "Darker top end"/u);
         expect(planningMessage()?.stoppableRunId).toBeUndefined();
+    });
+
+    it('leaves a stopped reading cancelled, with no recorded error, when Stop lands while it measures', async () => {
+        const { card } = await ask(mixIntentWith(THREE_READINGS));
+        const errorsBefore = agentRunLifecycle.get(card.runId)?.errors.length;
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: Parameters<typeof renderTrack>[0]) => {
+            void agentRunCancellation.cancel({ runId: card.runId, reason: 'Cancelled by user' });
+            await Promise.resolve();
+            return renderTrack(input);
+        });
+
+        const outcome = await chooseVibeBriefReading({
+            confirmationId: card.id,
+            readingId: readingIdOf(card, 'Darker top end'),
+        });
+
+        expect(outcome.status).toBe('refused');
+        const run = agentRunLifecycle.get(card.runId);
+        expect(run?.phase).toBe('cancelled');
+        expect(run?.errors).toHaveLength(errorsBefore ?? -1);
+        expect(proposedCards()).toEqual([]);
+        const stopped = (chatStore.value?.messages ?? []).findLast((message) =>
+            message.content.includes('planning the reading "Darker top end"')
+        );
+        expect(stopped?.content).toMatch(/^(Cancelled|Stopped) planning the reading/u);
+        expect(stopped?.stoppableRunId).toBeUndefined();
+        expect(planningMessage()).toBeUndefined();
     });
 
     it('returns refused, never throws, and ends the run as failed when planning throws', async () => {

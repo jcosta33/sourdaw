@@ -816,16 +816,17 @@ describe('ChatPanel', () => {
             skip: { available: false, reason: null },
             readings: [
                 { id: 'reading-1', name: 'Darker top end', descriptors: ['dark'] },
-                { id: 'reading-2', name: 'More low-mid body', descriptors: ['warm'] },
+                { id: 'reading-2', name: 'More low-mid body', descriptors: ['warm', 'vintage'] },
             ],
         });
 
         render(<ChatPanel />);
 
         const darker = screen.getByRole('button', { name: 'Plan reading: Darker top end' });
-        expect(darker).toHaveTextContent('Darker top end');
-        expect(darker).toHaveTextContent('dark');
-        expect(screen.getByRole('button', { name: 'Plan reading: More low-mid body' })).toHaveTextContent('warm');
+        expect(darker.textContent).toBe('Darker top end dark');
+        expect(screen.getByRole('button', { name: 'Plan reading: More low-mid body' }).textContent).toBe(
+            'More low-mid body warm, vintage'
+        );
         expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeEnabled();
         fireEvent.click(screen.getByRole('button', { name: 'Plan reading: More low-mid body' }));
         expect(chooseVibeBriefReading).toHaveBeenCalledExactlyOnceWith({

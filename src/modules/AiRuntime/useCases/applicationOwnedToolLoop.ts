@@ -35,6 +35,7 @@ import {
     type ApplicationToolReceipt,
     type TerminalMeasurementSettlement,
 } from '../models/ApplicationOwnedTool';
+import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
 import { type BriefMixAlternative } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -105,7 +106,6 @@ import {
 } from './composeMeasuredAnswer';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
-import { type executeBriefCompile } from './executeBriefCompile';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { formatReceiptContext } from './formatReceiptContext';
@@ -161,7 +161,6 @@ export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' 
 
 type TransformCompileResult = ReturnType<typeof executeTransformCompile>;
 type RecipeExpansionResult = ReturnType<typeof executeRecipeExpansion>;
-type BriefCompileResult = ReturnType<typeof executeBriefCompile>;
 
 export type ApplicationOwnedToolLoopOutcome =
     | {

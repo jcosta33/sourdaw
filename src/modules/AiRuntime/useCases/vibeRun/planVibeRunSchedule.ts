@@ -146,7 +146,8 @@ type ScheduleInput = {
 type Catalog = ReturnType<typeof getMixRecipeCatalog>;
 type Collected = Extract<Awaited<ReturnType<typeof collectVibeRunInitialBaselines>>, { status: 'collected' }>;
 
-type CandidateInput = Pick<ScheduleInput, 'context' | 'brief'> & { descriptors: readonly string[] };
+type CandidateDescriptors = ScheduleInput['mixIntent']['requestedDescriptors'];
+type CandidateInput = Pick<ScheduleInput, 'context' | 'brief'> & { descriptors: CandidateDescriptors };
 
 function readCandidates(input: CandidateInput, catalog: Catalog, protectedTargetIds: readonly string[]) {
     const tracks = withBriefTrackRoles(input.context.tracks, input.brief);
@@ -609,7 +610,7 @@ export function countVibeRunCandidateBatches(input: {
     prompt: string;
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
-    descriptors: readonly string[];
+    descriptors: CandidateDescriptors;
 }): number {
     const protections = readExplicitProtections(input.prompt, input.context);
     return readCandidates(input, getMixRecipeCatalog(), protections.protectedTrackIds).plan.batches.length;

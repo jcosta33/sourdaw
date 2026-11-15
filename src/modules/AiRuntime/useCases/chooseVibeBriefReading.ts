@@ -6,11 +6,10 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { projectStore } from '#/modules/Project/stores';
 
-import { type AgentTrustCeiling } from '../models/AgentExecutionMode';
 import { AGENT_RUN_TERMINAL_PHASES, type AgentRun } from '../models/AgentRun';
-import { type BriefReading } from '../models/BriefReading';
+import { type BriefReading, type BriefReadings } from '../models/BriefReading';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
-import { type IntentResult } from '../models/IntentResult';
+import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { appendChatMessage, updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
@@ -162,13 +161,11 @@ export async function chooseVibeBriefReading(
     try {
         const outcome = await planChosenReading({
             confirmation,
-            briefAction,
+            offer,
             reading,
             run,
             mixIntent,
             interactionMode,
-            trustCeiling: offer.trustCeiling,
-            metricGoalState: offer.metricGoalState,
             signal: controller.signal,
         });
         terminalState = outcome.status === 'chosen' ? 'completed' : 'cancelled';
@@ -189,13 +186,11 @@ export async function chooseVibeBriefReading(
 
 async function planChosenReading(input: {
     confirmation: PendingAppActionConfirmation;
-    briefAction: BriefAction;
+    offer: BriefReadings;
     reading: BriefReading;
     run: AgentRun;
     mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
     interactionMode: 'apply' | 'macro';
-    trustCeiling: AgentTrustCeiling | null;
-    metricGoalState: string;
     signal: AbortSignal;
 }): Promise<ChooseVibeBriefReadingOutput> {
     const { confirmation, reading, run } = input;
@@ -224,10 +219,30 @@ async function planChosenReading(input: {
     try {
         return await planAfterRetire({ ...input, replacementId, assistantMessageId });
     } catch (error) {
+        // A Stop makes the measurement throw; the run it cancelled is stopped, not failed.
+        const live = agentRunLifecycle.get(run.runId);
+        if (live === null || !isLive(live)) {
+            return settleStoppedReading({ assistantMessageId, reading, live });
+        }
         const reason = error instanceof Error ? error.message : String(error);
         logger.error(new Error('Brief reading plan failed after its card was retired', { cause: error }));
         return failReading({ run, assistantMessageId, reading, reason: `planning failed: ${reason}` });
     }
+}
+
+/** The run ended while the reading was planned: say it was stopped or cancelled, and record no failure. */
+function settleStoppedReading(input: {
+    assistantMessageId: string;
+    reading: BriefReading;
+    live: AgentRun | null;
+}): ChooseVibeBriefReadingOutput {
+    const cancelled = input.live !== null && input.live.cancellation.requestedAt !== null;
+    updateChatMessage(input.assistantMessageId, {
+        pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
+        stoppableRunId: undefined,
+        content: `${cancelled ? 'Cancelled' : 'Stopped'} planning the reading "${input.reading.name}".`,
+    });
+    return refuse('The run ended before the reading could be planned.');
 }
 
 /** Ends the run as failed and tells the user why no plan was made for the chosen reading. */
@@ -262,25 +277,23 @@ function failReading(input: {
 
 async function planAfterRetire(input: {
     confirmation: PendingAppActionConfirmation;
-    briefAction: BriefAction;
+    offer: BriefReadings;
     reading: BriefReading;
     run: AgentRun;
     mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
     interactionMode: 'apply' | 'macro';
-    trustCeiling: AgentTrustCeiling | null;
-    metricGoalState: string;
     signal: AbortSignal;
     replacementId: string;
     assistantMessageId: string;
 }): Promise<ChooseVibeBriefReadingOutput> {
-    const { confirmation, briefAction, reading, run, replacementId, assistantMessageId } = input;
+    const { confirmation, offer, reading, run, replacementId, assistantMessageId } = input;
     const revision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
     const priorReceipts = run.plan?.applicationToolReceipts ?? [];
     const planned = await planBriefVibeRun({
         prompt: run.request,
         context,
-        brief: briefAction.payload.brief,
+        brief: offer.brief,
         mixIntent: input.mixIntent,
         runId: run.runId,
         sourceRevision: revision,
@@ -293,12 +306,7 @@ async function planAfterRetire(input: {
     updateChatMessage(assistantMessageId, { stoppableRunId: undefined });
     const live = agentRunLifecycle.get(run.runId);
     if (live === null || !isLive(live)) {
-        const cancelled = live !== null && live.cancellation.requestedAt !== null;
-        updateChatMessage(assistantMessageId, {
-            pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
-            content: `${cancelled ? 'Cancelled' : 'Stopped'} planning the reading "${reading.name}".`,
-        });
-        return refuse('The run ended before the reading could be planned.');
+        return settleStoppedReading({ assistantMessageId, reading, live });
     }
     if (!projectRevisionMatchesLiveIgnoringSaveWrites(revision)) {
         logger.warn('Brief reading plan discarded: the project changed while it was measured.');
@@ -309,8 +317,8 @@ async function planAfterRetire(input: {
             reason: 'the project changed while the reading was planned, so no plan was made. Ask again for the change you want',
         });
     }
-    const result: IntentResult = {
-        metricGoalState: input.metricGoalState,
+    const result: PlannedIntentResult = {
+        metricGoalState: offer.metricGoalState,
         actions: confirmation.actions,
         rawText: run.request,
         requiresConfirmation: true,
@@ -319,6 +327,13 @@ async function planAfterRetire(input: {
         applicationToolReceipts: planned.applicationToolReceipts ?? [...priorReceipts],
         planningOutcome: { kind: 'proposal' },
     };
+    // What the card's own planning recorded beside its metric state, so this plan is recorded as the directly planned brief's.
+    if (offer.providerProposal !== undefined) {
+        result.providerProposal = offer.providerProposal;
+    }
+    if (offer.terminalMeasurementSettlement !== undefined) {
+        result.terminalMeasurementSettlement = offer.terminalMeasurementSettlement;
+    }
     return persistReadingCard({ ...input, replacementId, assistantMessageId, revision, context, result });
 }
 
@@ -328,12 +343,12 @@ async function persistReadingCard(input: {
     reading: BriefReading;
     run: AgentRun;
     interactionMode: 'apply' | 'macro';
-    trustCeiling: AgentTrustCeiling | null;
+    offer: BriefReadings;
     replacementId: string;
     assistantMessageId: string;
     revision: string;
     context: ReturnType<typeof getProjectContext>;
-    result: IntentResult;
+    result: PlannedIntentResult;
 }): Promise<ChooseVibeBriefReadingOutput> {
     const { confirmation, reading, run, replacementId, assistantMessageId, revision, context, result } = input;
     const description = describePendingActionConfirmation({
@@ -346,7 +361,7 @@ async function persistReadingCard(input: {
         runId: run.runId,
         assistantMessageId,
         interactionMode: input.interactionMode,
-        trustCeiling: input.trustCeiling ?? undefined,
+        trustCeiling: input.offer.trustCeiling ?? undefined,
         resume: undefined,
         onResumedPlanAccepted: undefined,
         projectRevision: revision,

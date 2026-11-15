@@ -2,30 +2,17 @@ import { projectStore } from '#/modules/Project/stores';
 import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/modules/Project/useCases';
 
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-import { type BriefMixIntent } from '../models/BriefMixIntent';
-import { type BriefMixAlternative } from '../models/BriefReading';
+import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
-import { readBriefMixIntentWithAlternatives } from './readBriefMixAlternatives';
+import { type CatalogBriefMixAlternative, readBriefMixIntentWithAlternatives } from './readBriefMixAlternatives';
 import { countVibeRunCandidateBatches } from './vibeRun/planVibeRunSchedule';
 
 type BriefUpdate = Parameters<typeof composeProductionBriefUpdate>[0]['update'];
 type BriefStatement = NonNullable<BriefUpdate['preferences']>[number];
-
-type BriefCompileResult = {
-    receipt: ApplicationToolReceipt;
-    commands: readonly RetainedCommand[] | null;
-    briefChangeLines: readonly string[] | null;
-    /** The whole next brief the command writes, typed, for the planner that reads it before Confirm. */
-    composedBrief: ProjectContextProductionBrief | null;
-    mixIntent: BriefMixIntent | null;
-    /** The named readings the request admits, kept apart so the two-key mix intent and its digest never change. */
-    mixAlternatives?: readonly BriefMixAlternative[];
-};
 
 type Parsed = { status: 'parsed'; update: BriefUpdate } | { status: 'invalid'; reason: string };
 
@@ -171,7 +158,7 @@ function readRequestHardConstraints(prompt: string, context: ProjectContext): Br
  * candidate step a vibe run begins with and before anything is measured, or `null` when every one does.
  */
 function describeUnservedReading(
-    alternatives: readonly BriefMixAlternative[],
+    alternatives: readonly CatalogBriefMixAlternative[],
     prompt: string,
     context: ProjectContext,
     brief: ProjectContextProductionBrief

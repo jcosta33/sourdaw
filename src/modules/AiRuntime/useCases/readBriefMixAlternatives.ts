@@ -7,9 +7,13 @@ export const BRIEF_ALTERNATIVES_MAX = 3;
 export const BRIEF_ALTERNATIVE_NAME_MAX_LENGTH = 40;
 
 type MixIntent = NonNullable<ReturnType<typeof readBriefMixIntent>>;
+type MixDescriptor = MixIntent['requestedDescriptors'][number];
+
+/** A reading whose characters are the recipe catalogue's own descriptors, not any string. */
+export type CatalogBriefMixAlternative = BriefMixAlternative & { requestedDescriptors: readonly MixDescriptor[] };
 
 type ReadMixIntentWithAlternatives =
-    | { status: 'read'; mixIntent: MixIntent; alternatives: readonly BriefMixAlternative[] }
+    | { status: 'read'; mixIntent: MixIntent; alternatives: readonly CatalogBriefMixAlternative[] }
     | { status: 'invalid'; reason: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -23,7 +27,7 @@ function invalid(reason: string): ReadMixIntentWithAlternatives {
     return { status: 'invalid', reason };
 }
 
-function readAlternative(value: unknown, descriptors: readonly string[]): BriefMixAlternative | string {
+function readAlternative(value: unknown, descriptors: readonly MixDescriptor[]): CatalogBriefMixAlternative | string {
     if (!isRecord(value) || Object.keys(value).some((key) => key !== 'name' && key !== 'requestedDescriptors')) {
         return READING_SHAPE;
     }
@@ -41,7 +45,7 @@ function readAlternative(value: unknown, descriptors: readonly string[]): BriefM
     if (new Set(requested).size !== requested.length) {
         return `mixIntent.alternatives: reading "${name}" repeats a character.`;
     }
-    const selected: string[] = [];
+    const selected: MixDescriptor[] = [];
     for (const descriptor of requested) {
         const known = descriptors.find((candidate) => candidate === descriptor);
         if (known === undefined) {
@@ -108,7 +112,7 @@ export function readBriefMixIntentWithAlternatives(value: unknown): ReadMixInten
         return invalid('mixIntent.requestedDescriptors must be empty when alternatives are offered.');
     }
     const catalog = getBriefMixIntentCatalog();
-    const alternatives: BriefMixAlternative[] = [];
+    const alternatives: CatalogBriefMixAlternative[] = [];
     for (const entry of offered) {
         const read = readAlternative(entry, catalog.descriptors);
         if (typeof read === 'string') {
