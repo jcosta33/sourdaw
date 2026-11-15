@@ -31,6 +31,14 @@ const PREFERRED_DEFAULT_VELOCITY = 87;
 // the real handlers against the real MIDI store and the real undo stack, and
 // pin that each path restores the exact prior note object.
 
+const gestureClock = vi.hoisted(() => ({ captureGestureBeat: vi.fn(() => 0) }));
+
+// The split stamps its beat with the gesture clock; the rest of the barrel stays real.
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    captureGestureBeat: gestureClock.captureGestureBeat,
+}));
+
 // Only the audition seam is stubbed; the rest of the barrel stays real because
 // the real MIDI use-case graph imports names from it (WebMIDI dispatch).
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -256,8 +264,9 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
             muted: false,
         });
         trackStore.set({ tracks: [track], selectedTrackId: 'track-1' });
-        // The split reads the live playhead channel, not the transport store.
-        playheadPositionRef.current = 2.5;
+        // The split reads the gesture clock, not the latest-value channel.
+        playheadPositionRef.current = 6;
+        gestureClock.captureGestureBeat.mockReturnValue(2.5);
         const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
         fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
         expect(getNotesForClip('clip-1').filter((note) => note.pitch === 60)).toHaveLength(2);

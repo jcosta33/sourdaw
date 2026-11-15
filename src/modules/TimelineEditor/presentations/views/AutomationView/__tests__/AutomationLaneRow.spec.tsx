@@ -35,6 +35,7 @@ const {
     mockWorkspaceState,
     mockTimelineEditingState,
     mockTransportState,
+    mockCaptureGestureBeat,
 } = vi.hoisted(() => ({
     mockWorkspaceStoreRef: {},
     mockTimelineEditingStoreRef: {},
@@ -42,6 +43,7 @@ const {
     mockWorkspaceState: { activeTool: 'pointer' },
     mockTimelineEditingState: { snapValue: 1 },
     mockTransportState: { playheadPosition: 0 },
+    mockCaptureGestureBeat: vi.fn(() => 0),
 }));
 
 vi.mock('#/utils/Styles/cn', () => ({
@@ -139,6 +141,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: mockTransportStoreRef,
+    captureGestureBeat: mockCaptureGestureBeat,
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
@@ -197,6 +200,7 @@ describe('AutomationLaneRow', () => {
         mockTimelineEditingState.snapValue = 1;
         mockTransportState.playheadPosition = 0;
         playheadPositionRef.current = 0;
+        mockCaptureGestureBeat.mockReturnValue(0);
     });
 
     afterEach(() => {
@@ -722,8 +726,13 @@ describe('AutomationLaneRow', () => {
     describe('keyboard cursor at the playhead', () => {
         const getLane = () => screen.getByRole('group', { name: 'Volume automation lane' });
 
-        it('inserts a shape-preserving point at the live playhead on Enter and claims the key', () => {
-            playheadPositionRef.current = 6;
+        // Each case gives the latest-value channel and the transport store
+        // other beats than the gesture clock: the key press's beat is the
+        // gesture clock's alone.
+        it('inserts a shape-preserving point at the gesture beat on Enter and claims the key', () => {
+            playheadPositionRef.current = 9;
+            mockTransportState.playheadPosition = 2;
+            mockCaptureGestureBeat.mockReturnValue(6);
             render(<AutomationLaneRow {...defaultProps} />);
 
             expect(fireEvent.keyDown(getLane(), { key: 'Enter' })).toBe(false);
@@ -740,9 +749,11 @@ describe('AutomationLaneRow', () => {
         });
 
         it.each([{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }])(
-            'opens the shape menu at the playhead beat on $key',
+            'opens the shape menu at the gesture beat on $key',
             (keyInit) => {
-                playheadPositionRef.current = 3;
+                playheadPositionRef.current = 7;
+                mockTransportState.playheadPosition = 1;
+                mockCaptureGestureBeat.mockReturnValue(3);
                 render(<AutomationLaneRow {...defaultProps} />);
 
                 expect(fireEvent.keyDown(getLane(), keyInit)).toBe(false);

@@ -147,7 +147,59 @@ describe('insertAutomationPointPreservingShape', () => {
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('removes exactly the inserted point on undo', () => {
+    it('refuses a linear split whose left neighbour is a smooth segment reading it', () => {
+        // The smooth segment a→b takes its outgoing tangent from b's next
+        // point, which a point at 6 would replace (c at 0.2 → the new 0.5).
+        const points: AutomationPoint[] = [
+            { id: 'a', beat: 0, value: 0.2, curve: 'smooth', tension: 0 },
+            { id: 'b', beat: 4, value: 0.8, curve: 'linear', tension: 0 },
+            { id: 'c', beat: 8, value: 0.2, curve: 'linear', tension: 0 },
+        ];
+        automationStore.set({ lanes: [makeLane(points)] });
+
+        expect(insertAutomationPointPreservingShape('lane-1', 6)).toBe(false);
+
+        expect(storedPoints()).toEqual(points);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('refuses a beat that already holds a point', () => {
+        const points: AutomationPoint[] = [
+            { id: 'a', beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+            { id: 'b', beat: 8, value: 0.9, curve: 'linear', tension: 0 },
+        ];
+        automationStore.set({ lanes: [makeLane(points)] });
+
+        expect(insertAutomationPointPreservingShape('lane-1', 0)).toBe(false);
+
+        expect(storedPoints()).toEqual(points);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('refuses an empty lane', () => {
+        automationStore.set({ lanes: [makeLane([])] });
+
+        expect(insertAutomationPointPreservingShape('lane-1', 3)).toBe(false);
+
+        expect(storedPoints()).toEqual([]);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('copies the step count after the last point of a lane ending on a stairs segment', () => {
+        const points: AutomationPoint[] = [
+            { id: 'a', beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+            { id: 'b', beat: 2, value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
+        ];
+        automationStore.set({ lanes: [makeLane(points)] });
+        const before = sampleLane();
+
+        expect(insertAutomationPointPreservingShape('lane-1', 3)).toBe(true);
+
+        expect(storedPoints()[2]).toMatchObject({ beat: 3, value: 0.5, curve: 'stairs', stairSteps: 6 });
+        expectSameSamples(before, sampleLane());
+    });
+
+    it('removes exactly the inserted point on undo and re-adds the same point on redo', () => {
         const points: AutomationPoint[] = [
             { id: 'a', beat: 0, value: 0.2, curve: 'step', tension: 0 },
             { id: 'b', beat: 8, value: 0.9, curve: 'linear', tension: 0 },
@@ -155,10 +207,14 @@ describe('insertAutomationPointPreservingShape', () => {
         automationStore.set({ lanes: [makeLane(points)] });
 
         insertAutomationPointPreservingShape('lane-1', 3);
+        const inserted = storedPoints();
         const [entry] = mocks.pushUndoEntry.mock.calls;
         expect(entry).toBeDefined();
-        entry?.[1]();
 
+        entry?.[1]();
         expect(storedPoints()).toEqual(points);
+
+        entry?.[2]();
+        expect(storedPoints()).toEqual(inserted);
     });
 });

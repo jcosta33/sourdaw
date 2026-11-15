@@ -124,7 +124,7 @@ const resolveShapePreservingPoint = (
     points: readonly AutomationPoint[],
     beat: number
 ): Omit<AutomationPoint, 'id'> | undefined => {
-    if (points.length === 0 || points.some((point) => point.beat === beat)) {
+    if (points.some((point) => point.beat === beat)) {
         return undefined;
     }
     const rightIndex = points.findIndex((point) => point.beat > beat);
@@ -132,9 +132,13 @@ const resolveShapePreservingPoint = (
     const left = points[leftIndex];
     const right = rightIndex === -1 ? undefined : points[rightIndex];
     if (left === undefined) {
+        // An empty lane plays no value a point could preserve.
+        if (right === undefined) {
+            return undefined;
+        }
         // Before the first point the lane holds that point's value; a flat
         // ramp up to it holds the same value.
-        return right === undefined ? undefined : { beat, value: right.value, curve: 'linear', tension: 0 };
+        return { beat, value: right.value, curve: 'linear', tension: 0 };
     }
     if (left.curve === 'smooth' || points[leftIndex - 1]?.curve === 'smooth' || right?.curve === 'smooth') {
         return undefined;

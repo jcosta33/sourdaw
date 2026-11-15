@@ -55,7 +55,7 @@ const laneMocks = vi.hoisted(() => {
         midiState: { ccByClipId },
         useActualStore: false,
         trackState: { tracks: [] as Array<{ id: string; clips: PlacedClipFixture[] }> },
-        transportState: { playheadPosition: 0 },
+        captureGestureBeat: vi.fn(() => 0),
     };
 });
 
@@ -68,9 +68,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
-    getTransportState: () => laneMocks.transportState,
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    captureGestureBeat: laneMocks.captureGestureBeat,
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
@@ -169,7 +169,7 @@ describe('CCLane', () => {
         vi.clearAllMocks();
         laneMocks.midiState = { ccByClipId: {} };
         laneMocks.trackState.tracks = [];
-        laneMocks.transportState.playheadPosition = 0;
+        laneMocks.captureGestureBeat.mockReturnValue(0);
         playheadPositionRef.current = 0;
     });
 
@@ -565,19 +565,20 @@ describe('CCLane', () => {
             expect(pushUndoEntry).toHaveBeenCalledWith('Add CC point', expect.any(Function), expect.any(Function));
         });
 
-        it('inserts at the live playhead while the transport store still holds the last seek', async () => {
+        it('inserts at the gesture clock’s beat, not the latest-value channel or the parked store', async () => {
             const actual = await vi.importActual<typeof import('../../../helpers/clipPlayheadBeat')>(
                 '../../../helpers/clipPlayheadBeat'
             );
             vi.mocked(readClipPlayheadBeat).mockImplementation(actual.readClipPlayheadBeat);
             laneMocks.trackState.tracks = [{ id: 'track-1', clips: [{ id: 'clip-1', startBeat: 4, endBeat: 12 }] }];
-            laneMocks.transportState.playheadPosition = 5;
-            playheadPositionRef.current = 7;
+            // The transport store stays at its default beat 0, outside the clip.
+            playheadPositionRef.current = 9;
+            laneMocks.captureGestureBeat.mockReturnValue(7);
             render(<CCLane {...defaultProps} />);
 
             fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' });
 
-            // The clip starts at beat 4, so the live arrangement beat 7 is clip beat 3.
+            // The clip starts at beat 4, so the gesture's arrangement beat 7 is clip beat 3.
             expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 64, 3, 0);
         });
 

@@ -17,7 +17,7 @@ import {
     getAutomationLaneCeiling,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
+import { captureGestureBeat, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { cn } from '#/utils/Styles/cn';
@@ -342,12 +342,14 @@ export const AutomationLaneRow = ({
     // The playhead is the lane's keyboard cursor: Enter adds a point where the
     // line already sits there without reshaping it (a shape that cannot be
     // split exactly takes no point), and the menu key opens the shape menu.
+    // Both read the key press's beat from the gesture clock on its own
+    // synchronous path.
     const insertPointAtPlayhead = (): void => {
-        insertAutomationPointPreservingShape(lane.id, playheadPositionRef.current);
+        insertAutomationPointPreservingShape(lane.id, captureGestureBeat());
     };
 
     const openShapeMenuAtPlayhead = (laneElement: HTMLElement): void => {
-        const beat = playheadPositionRef.current;
+        const beat = captureGestureBeat();
         const rect = laneElement.getBoundingClientRect();
         const x = rect.left + Math.min(Math.max(beatToX(beat), 0), rect.width);
         setContextMenu({ x, y: rect.bottom, beat, section: 'shape' });

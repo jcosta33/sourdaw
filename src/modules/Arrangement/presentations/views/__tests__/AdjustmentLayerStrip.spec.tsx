@@ -29,6 +29,12 @@ const mocks = vi.hoisted(() => ({
     layers: [] as MockLayer[],
     tracks: [] as Array<{ id: string; name: string }>,
     executeUserAppAction: vi.fn(),
+    captureGestureBeat: vi.fn(() => 0),
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    captureGestureBeat: mocks.captureGestureBeat,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -508,6 +514,7 @@ describe('AdjustmentLayerStrip', () => {
 
         beforeEach(() => {
             playheadPositionRef.current = 0;
+            mocks.captureGestureBeat.mockReturnValue(0);
         });
 
         it('lays the layer rows out as a grid with one tab stop that arrows move', () => {
@@ -528,9 +535,12 @@ describe('AdjustmentLayerStrip', () => {
             expect(getLayerRow('EQ Layer')).toHaveAttribute('tabindex', '-1');
         });
 
-        it('adds a region at the playhead on Enter and leaves Space to the transport', () => {
+        it('adds a region at the key press’s gesture beat on Enter and leaves Space to the transport', () => {
             mocks.layers = [layerWithRegion()];
-            playheadPositionRef.current = 6.5;
+            // The latest-value channel holds another beat than the press; the
+            // region must start where the gesture clock stamps the press.
+            playheadPositionRef.current = 2.25;
+            mocks.captureGestureBeat.mockReturnValue(6.5);
             renderStrip();
 
             expect(fireEvent.keyDown(getLayerRow('EQ Layer'), { key: ' ' })).toBe(true);

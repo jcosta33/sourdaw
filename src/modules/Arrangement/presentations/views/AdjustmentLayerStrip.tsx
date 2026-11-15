@@ -20,7 +20,7 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { playheadPositionRef } from '#/modules/Transport/stores';
+import { captureGestureBeat } from '#/modules/Transport/stores';
 import { cn } from '#/utils/Styles/cn';
 import { handleRovingRowKeyDown } from '#/utils/UI/rovingRowKeyboard';
 
@@ -469,7 +469,8 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
         if (event.key === ' ') {
             return;
         }
-        handleRovingRowKeyDown(event, 'vertical', () => addRegionAtBeat(layer.id, playheadPositionRef.current));
+        // The key press is the gesture: its beat is stamped by the gesture clock.
+        handleRovingRowKeyDown(event, 'vertical', () => addRegionAtBeat(layer.id, captureGestureBeat()));
     };
 
     const handleRegionKeyDown = (
