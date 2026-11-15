@@ -879,6 +879,9 @@ fn entry_is_still_the_scanned_file(
 /// A file renamed over the scanned one carries a new identity even when its
 /// size and timestamps were made to match, which size and age alone cannot see.
 /// An in-place rewrite keeps the identity and is caught by size or age instead.
+/// On a volume whose file index is not unique or not reported — ReFS with its
+/// 128-bit ids, FAT, some network shares — the identity adds less, and size and
+/// age remain the fingerprint's whole check.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct FileIdentity {
     pub device: u64,
@@ -1062,37 +1065,34 @@ fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
 /// size, age or identity — cannot be read. A fingerprint missing a part is
 /// one no recorded fingerprint can be compared against, so it is no
 /// fingerprint at all.
+///
+/// Every part comes from one lookup of the file, so the three describe the
+/// same file: two lookups by path could each find a different one if the
+/// path were replaced between them. On unix that lookup is the one `stat`.
+#[cfg(unix)]
 fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
+    use std::os::unix::fs::MetadataExt;
+
     let metadata = fs::metadata(path).ok()?;
-    let modified = metadata
-        .modified()
-        .ok()?
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_millis();
     Some(FileFingerprint {
         size_bytes: metadata.len(),
-        modified_ms: u64::try_from(modified).ok()?,
-        identity: file_identity(path, &metadata)?,
+        modified_ms: modified_ms(&metadata)?,
+        identity: FileIdentity {
+            device: metadata.dev(),
+            file: metadata.ino(),
+        },
     })
 }
 
-#[cfg(unix)]
-fn file_identity(_path: &Path, metadata: &fs::Metadata) -> Option<FileIdentity> {
-    use std::os::unix::fs::MetadataExt;
-    Some(FileIdentity {
-        device: metadata.dev(),
-        file: metadata.ino(),
-    })
-}
-
-/// Windows keeps a file's identity behind a handle: std's `file_index` and
-/// `volume_serial_number` are unstable, so the file is opened for no access at
-/// all — attributes only, which any reader may do — and asked directly.
-/// `FILE_FLAG_BACKUP_SEMANTICS` lets the same open succeed on a bundle
-/// directory, which is what a bundle with no resolvable module fingerprints.
+/// [`file_fingerprint`] on Windows, where the identity lives behind a handle:
+/// std's `file_index` and `volume_serial_number` are unstable. So the file is
+/// opened once, for no access — attributes only, the same open std's own
+/// `fs::metadata` makes — and the size, the age and the identity are all read
+/// from that one handle. `FILE_FLAG_BACKUP_SEMANTICS` lets the open succeed on
+/// a bundle directory, which is what a bundle with no resolvable module
+/// fingerprints.
 #[cfg(windows)]
-fn file_identity(path: &Path, _metadata: &fs::Metadata) -> Option<FileIdentity> {
+fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     use std::os::windows::fs::OpenOptionsExt;
     use std::os::windows::io::AsRawHandle;
     use windows::Win32::Foundation::HANDLE;
@@ -1105,14 +1105,31 @@ fn file_identity(path: &Path, _metadata: &fs::Metadata) -> Option<FileIdentity> 
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
         .open(path)
         .ok()?;
+    let metadata = file.metadata().ok()?;
     let mut information = BY_HANDLE_FILE_INFORMATION::default();
     // SAFETY: the handle is `file`'s own, open for the whole call, and
     // `information` is a live, writable struct of the type the call fills.
     unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut information) }.ok()?;
-    Some(FileIdentity {
-        device: u64::from(information.dwVolumeSerialNumber),
-        file: (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    Some(FileFingerprint {
+        size_bytes: metadata.len(),
+        modified_ms: modified_ms(&metadata)?,
+        identity: FileIdentity {
+            device: u64::from(information.dwVolumeSerialNumber),
+            file: (u64::from(information.nFileIndexHigh) << 32)
+                | u64::from(information.nFileIndexLow),
+        },
     })
+}
+
+/// A file's modification time in milliseconds since the unix epoch.
+fn modified_ms(metadata: &fs::Metadata) -> Option<u64> {
+    let modified = metadata
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    u64::try_from(modified).ok()
 }
 
 /// Counts the bytes taken out of `inner`, so a bounded parse can say afterwards
