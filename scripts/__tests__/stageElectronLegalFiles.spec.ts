@@ -86,11 +86,15 @@ function fixture(): { root: string; context: AfterPackContext; contract: Electro
     };
 }
 
+function postCleanupSourceRoot(context: AfterPackContext): string {
+    if (context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas') {
+        return join(context.appOutDir, 'Electron.app/Contents/Resources');
+    }
+    return context.appOutDir;
+}
+
 function writePostCleanupFiles(context: AfterPackContext): string {
-    const source =
-        context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas'
-            ? join(context.appOutDir, 'Electron.app/Contents/Resources')
-            : context.appOutDir;
+    const source = postCleanupSourceRoot(context);
     mkdirSync(source, { recursive: true });
     writeFileSync(join(source, 'LICENSE.electron.txt'), 'license');
     writeFileSync(join(source, 'LICENSES.chromium.html'), 'notices');
