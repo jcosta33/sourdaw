@@ -1526,7 +1526,8 @@ mod tests {
     #[test]
     fn capture_clock_query_brackets_the_read_in_the_engine_epoch_before_any_callback() {
         let state = AppState::default();
-        let (engine, _commands, _retired) = daw_engine::engine_handle_for_command_capture(8);
+        let (engine, _commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         let (epoch, before) = engine.capture_clock_now();
         *state.engine.lock().unwrap() = Some(engine);
         let position = crate::block_on_test(engine_transport_position(&state)).unwrap();
@@ -1570,7 +1571,7 @@ mod tests {
         // batch has to grow it; with the retirement adoption channel gone that
         // growth fails, which is the engine's refusal — nothing pushed.
         let (engine, _command_rx, retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(1);
+            daw_engine::engine_handle_for_command_capture(1).unwrap();
         drop(retired_adoption_rx);
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
@@ -1610,7 +1611,7 @@ mod tests {
 
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let applied = crate::block_on_test(set_transport_maps(maps_payload(), &state))

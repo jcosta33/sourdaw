@@ -1,9 +1,9 @@
 use crate::events::{EventSink, EventSinkExt};
-use audioadapter_buffers::{direct::SequentialSliceOfVecs, owned::InterleavedOwned};
+use audioadapter_buffers::direct::{InterleavedSlice, SequentialSliceOfVecs};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
-    audioadapter::Adapter, Async, FixedAsync, Resampler, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
@@ -94,54 +94,38 @@ impl Drop for SensitiveF64Buffers {
 }
 
 /// Owns rubato's output allocation until every success, error, or panic path
-/// has erased it. `InterleavedOwned` otherwise drops an ordinary `Vec<f64>`.
-struct SensitiveResamplerOutput<T: EraseOwnedOutput>(Option<T>);
+/// has erased it in place. A bare `Vec<f64>` would only deallocate.
+struct SensitiveResamplerOutput<T: EraseOwnedOutput>(T);
 
 trait EraseOwnedOutput {
-    fn erase_owned_output(self);
+    fn erase_owned_output(&mut self);
 }
 
-impl EraseOwnedOutput for InterleavedOwned<f64> {
-    fn erase_owned_output(self) {
-        let mut data = self.take_data();
-        data.zeroize();
+impl EraseOwnedOutput for Vec<f64> {
+    fn erase_owned_output(&mut self) {
+        self.zeroize();
     }
 }
 
-impl<T: EraseOwnedOutput> SensitiveResamplerOutput<T> {
-    fn new(output: T) -> Self {
-        Self(Some(output))
-    }
-}
-
-impl SensitiveResamplerOutput<InterleavedOwned<f64>> {
-    fn buffer_mut(&mut self) -> &mut InterleavedOwned<f64> {
-        self.0
-            .as_mut()
-            .expect("resampler output is present until erased")
+impl SensitiveResamplerOutput<Vec<f64>> {
+    /// The owned mono output, seen as the interleaved buffer rubato writes.
+    fn buffer_mut(&mut self) -> Result<InterleavedSlice<&mut [f64]>, String> {
+        let frames = self.0.len();
+        InterleavedSlice::new_mut(&mut self.0, 1, frames)
+            .map_err(|error| format!("Resampler buffer error: {error}"))
     }
 
-    fn copy_f32(&self, frames: usize) -> Vec<f32> {
-        let output = self
-            .0
-            .as_ref()
-            .expect("resampler output is present until erased");
-        (0..frames)
-            .map(|frame| {
-                output
-                    .read_sample(0, frame)
-                    .expect("rubato reported an output frame within its allocation")
-                    as f32
-            })
-            .collect()
+    fn copy_f32(&self, frames: usize) -> Result<Vec<f32>, String> {
+        let written = self.0.get(..frames).ok_or_else(|| {
+            format!("Resample error: {frames} output frames exceed the output buffer")
+        })?;
+        Ok(written.iter().map(|&sample| sample as f32).collect())
     }
 }
 
 impl<T: EraseOwnedOutput> Drop for SensitiveResamplerOutput<T> {
     fn drop(&mut self) {
-        if let Some(output) = self.0.take() {
-            output.erase_owned_output();
-        }
+        self.0.erase_owned_output();
     }
 }
 
@@ -304,6 +288,7 @@ struct DictationSessionGuard {
 }
 
 impl DictationSessionGuard {
+    #[cfg(test)]
     fn new(session_active: Arc<AtomicBool>, events: Arc<dyn EventSink>) -> Self {
         Self::with_session(
             session_active,
@@ -984,12 +969,12 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
         let adapter = SequentialSliceOfVecs::new(channels, 1, frames)
             .map_err(|error| format!("Resampler buffer error: {error}"))?;
         let needed = resampler.0.process_all_needed_output_len(frames);
-        let mut output = SensitiveResamplerOutput::new(InterleavedOwned::new(0.0, 1, needed));
-        let result = resampler
+        let mut output = SensitiveResamplerOutput(vec![0.0; needed]);
+        let (_input, output_len) = resampler
             .0
-            .process_all_into_buffer(&adapter, output.buffer_mut(), frames, None)
-            .map(|(_input, output_len)| output.copy_f32(output_len));
-        result.map_err(|error| format!("Resample error: {error}"))
+            .process_all_into_buffer(&adapter, &mut output.buffer_mut()?, frames, None)
+            .map_err(|error| format!("Resample error: {error}"))?;
+        output.copy_f32(output_len)
     })?;
 
     Ok(resampled)
@@ -1037,7 +1022,7 @@ mod tests {
     struct EraseOutputProbe(Rc<Cell<bool>>);
 
     impl EraseOwnedOutput for EraseOutputProbe {
-        fn erase_owned_output(self) {
+        fn erase_owned_output(&mut self) {
             self.0.set(true);
         }
     }
@@ -1090,14 +1075,13 @@ mod tests {
 
         let success_output = Rc::new(Cell::new(false));
         {
-            let _output =
-                SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&success_output)));
+            let _output = SensitiveResamplerOutput(EraseOutputProbe(Rc::clone(&success_output)));
         }
         assert!(success_output.get());
 
         let error_output = Rc::new(Cell::new(false));
         let error = {
-            let _output = SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&error_output)));
+            let _output = SensitiveResamplerOutput(EraseOutputProbe(Rc::clone(&error_output)));
             Err::<(), _>("forced output error")
         };
         assert_eq!(error, Err("forced output error"));
@@ -1105,8 +1089,7 @@ mod tests {
 
         let unwind_output = Rc::new(Cell::new(false));
         let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _output =
-                SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&unwind_output)));
+            let _output = SensitiveResamplerOutput(EraseOutputProbe(Rc::clone(&unwind_output)));
             panic!("forced output unwind");
         }));
         assert!(unwind.is_err());

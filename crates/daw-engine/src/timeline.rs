@@ -1549,13 +1549,24 @@ pub(crate) trait CompensationDevices {
 
 /// What one removal hands back to the retirement channel, so the audio thread
 /// never runs a destructor.
+///
+/// The boxes are held only so their destructor runs on the control-thread
+/// reclaimer, which is why the fields are never read.
 pub(crate) enum RetiredTimelineObject {
-    Track(Box<TimelineTrack>),
-    Bus(Box<TimelineBus>),
-    Clip(Box<TimelineClip>),
+    Track {
+        _track: Box<TimelineTrack>,
+    },
+    Bus {
+        _bus: Box<TimelineBus>,
+    },
+    Clip {
+        _clip: Box<TimelineClip>,
+    },
     /// A compensation delay a refused send, a removed send, or a replaced
     /// device latency gave up. Its ring is heap like any other buffer here.
-    Delay(Box<CompensationDelay>),
+    Delay {
+        _delay: Box<CompensationDelay>,
+    },
 }
 
 /// One strip in the render sequence. Tracks and buses share an order so a
@@ -1593,6 +1604,7 @@ const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
 /// ride `setTargetAtTime(target, now, 0.005)`, and the native gate has to glide
 /// on the same curve: a hard step silences at a block boundary with a click
 /// the web side does not have (issue #2126).
+#[cfg(test)]
 const GATE_TIME_CONSTANT_SEC: f32 = 0.005;
 
 /// The fraction of the remaining distance one frame covers:
