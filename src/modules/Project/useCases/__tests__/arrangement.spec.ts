@@ -161,6 +161,8 @@ vi.mock('#/modules/Command/useCases', async () => {
 
         clearUndoHistory: vi.fn(),
         resetActionReplayAuthority: actual.resetActionReplayAuthority,
+        describeAppActionRefusal: vi.fn(),
+        isAppActionAdmissionRefusal: vi.fn(),
         executeAppAction: actual.executeAppAction,
         executeAppActionBatch: vi.fn(),
         executeUserAppAction: vi.fn(),

@@ -1564,21 +1564,19 @@ describe('sterile Git child environments', () => {
                 join(root, 'hooks', 'reference-transaction'),
                 `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`
             );
-            const fetch = (env: NodeJS.ProcessEnv) =>
-                spawnCapture(
-                    'git',
-                    gitAuthenticatedArgs('ghs_sentinel', join(root, 'helper'), ['fetch', source, 'main']),
-                    { cwd: repository, env }
-                );
+            const fetchArgs = [
+                `--git-dir=${join(repository, '.git')}`,
+                ...gitAuthenticatedArgs('ghs_sentinel', join(root, 'helper'), ['fetch', source, 'main']),
+            ];
             const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
 
-            fetch(env);
+            spawnCapture('git', fetchArgs, { cwd: repository, env });
             expect(fixtureGit(repository, ['rev-parse', 'FETCH_HEAD'])).toBe(fixtureGit(source, ['rev-parse', 'HEAD']));
             expect(existsSync(leaked)).toBe(false);
 
             // A fetch that moves a ref without the environment overrides runs the hook with the token.
             fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
-            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            spawnSync('git', fetchArgs, { cwd: repository, env: { ...env, GIT_CONFIG_COUNT: '0' } });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1627,7 +1625,7 @@ describe('sterile Git child environments', () => {
 
             // A fetch that has something new to negotiate, without the overrides, runs the command.
             fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
-            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            spawnSync('git', ['fetch', source, 'main'], { cwd: repository, env: { ...env, GIT_CONFIG_COUNT: '0' } });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1658,7 +1656,14 @@ describe('sterile Git child environments', () => {
             expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
                 'repository config defines hook.lane.event'
             );
-            const credentialArgs = ['-c', 'credential.helper=', '-c', 'credential.helper=!true', ...fetchArgs];
+            const credentialArgs = [
+                `--git-dir=${join(repository, '.git')}`,
+                '-c',
+                'credential.helper=',
+                '-c',
+                'credential.helper=!true',
+                ...fetchArgs,
+            ];
             expect(() =>
                 spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
             ).toThrow('repository config defines hook.lane.event');
@@ -1698,7 +1703,10 @@ describe('sterile Git child environments', () => {
             expect(existsSync(leaked)).toBe(false);
 
             // Without the environment overrides the rewritten remote runs the proxy with the token.
-            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            spawnSync('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], {
+                cwd: root,
+                env: { ...env, GIT_CONFIG_COUNT: '0' },
+            });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1743,7 +1751,10 @@ describe('sterile Git child environments', () => {
             expect(existsSync(leaked)).toBe(false);
 
             // Without the environment overrides the rewritten remote runs the command with the token.
-            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            spawnSync('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], {
+                cwd: root,
+                env: { ...env, GIT_CONFIG_COUNT: '0' },
+            });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });

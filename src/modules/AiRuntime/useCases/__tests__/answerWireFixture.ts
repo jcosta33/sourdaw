@@ -5,21 +5,55 @@ type AdvertisedSchema = { name: string; description: string; parameters: Record<
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
+function inlineDefinitions(node: unknown, definitions: Record<string, unknown>): unknown {
+    if (Array.isArray(node)) {
+        return node.map((child) => inlineDefinitions(child, definitions));
+    }
+    if (!isRecord(node)) {
+        return node;
+    }
+    if (typeof node.$ref === 'string') {
+        return inlineDefinitions(definitions[node.$ref.split('/').at(-1) ?? ''], definitions);
+    }
+    return Object.fromEntries(
+        Object.entries(node)
+            .filter(([keyword]) => keyword !== '$defs')
+            .map(([keyword, child]) => [keyword, inlineDefinitions(child, definitions)])
+    );
+}
+
+/**
+ * The tool `name` as a local system prompt spells it: its description and its parameters with every
+ * `$ref` replaced by the definition it names, the prompt's shared definitions or the tool's own.
+ */
+export function readLocalPromptTool(
+    prompt: string,
+    name: string
+): { description: string; parameters: Record<string, unknown> } | null {
+    const lines = prompt.split('\n');
+    const line = lines.find((entry) => entry.startsWith(`- ${name}:`));
+    const index = line?.lastIndexOf(' {"type":"object"') ?? -1;
+    if (line === undefined || index < 0) {
+        return null;
+    }
+    const parameters: unknown = JSON.parse(line.slice(index + 1));
+    const sharedIndex = lines.findIndex((entry) => entry.startsWith('Shared schema definitions'));
+    const shared: unknown = sharedIndex < 0 ? {} : JSON.parse(lines[sharedIndex + 1] ?? '{}');
+    if (!isRecord(parameters) || !isRecord(shared)) {
+        return null;
+    }
+    const ownDefinitions = isRecord(parameters.$defs) ? parameters.$defs : {};
+    const inlined = inlineDefinitions(parameters, { ...shared, ...ownDefinitions });
+    return isRecord(inlined) ? { description: line.slice(name.length + 4, index), parameters: inlined } : null;
+}
+
 export function advertisedAnswerSchema(value: unknown): AdvertisedSchema {
     function visit(node: unknown): AdvertisedSchema | null {
         if (typeof node === 'string') {
             for (const name of ['selectCreativeInterpretation', 'selectAnswerInterpretation']) {
-                const line = node.split('\n').find((entry) => entry.startsWith(`- ${name}:`));
-                if (line === undefined) {
-                    continue;
-                }
-                const index = line.lastIndexOf(' {"type":"object"');
-                if (index >= 0) {
-                    return {
-                        name,
-                        description: line.slice(name.length + 4, index),
-                        parameters: JSON.parse(line.slice(index + 1)),
-                    };
+                const tool = readLocalPromptTool(node, name);
+                if (tool !== null) {
+                    return { name, ...tool };
                 }
             }
             return null;
