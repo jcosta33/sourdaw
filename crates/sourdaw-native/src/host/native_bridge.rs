@@ -3500,6 +3500,9 @@ mod tests {
             .try_claim_control()
             .expect("the control path takes a free seam");
         render_block_with_events(&mut slot, &[]);
+        // The served block above left the plugin's output in both buffers.
+        left.fill(0.25);
+        right.fill(0.25);
         slot.process_audio(&mut left, &mut right, 64);
         drop(guard);
 
