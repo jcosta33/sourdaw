@@ -145,7 +145,13 @@ function source(entry: unknown): entry is MetricGoalSource {
     return (
         entry.kind === 'policy' &&
         keys(entry, ['kind', 'policyId']) &&
-        oneOf(entry.policyId, ['integrated-loudness-match-v1', 'spectral-centroid-comparison-v1'])
+        oneOf(entry.policyId, [
+            'integrated-loudness-match-v1',
+            'spectral-centroid-comparison-v1',
+            'integrated-loudness-comparison-v1',
+            'side-energy-fraction-comparison-v1',
+            'crest-factor-comparison-v1',
+        ])
     );
 }
 
