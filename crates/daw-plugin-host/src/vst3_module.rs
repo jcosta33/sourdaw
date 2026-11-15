@@ -696,10 +696,10 @@ pub struct Vst3Module {
     /// `None` once the module has been deliberately kept resident — see
     /// [`Vst3Module::open`] on `kComponentNonDiscardable`.
     ///
-    /// Held for its `Drop` and never read: dropping it is what runs the module's
-    /// exit function and unloads the image, and taking it is what makes a
-    /// non-discardable module outlive this host object.
-    #[allow(dead_code)]
+    /// Held for its `Drop`, and read only for whether it is there: dropping it
+    /// is what runs the module's exit function and unloads the image, and
+    /// taking it is what makes a non-discardable module outlive this host
+    /// object.
     platform: Option<platform::LoadedModule>,
     /// The host context this module's *factory* was given.
     ///
@@ -805,7 +805,8 @@ impl Vst3Module {
 /// The identity is the unix device and inode, which a replacing install
 /// (write elsewhere, rename over) always changes even when size and age match.
 /// Windows has no stable std accessor for its file index, so there the size and
-/// modification time decide alone.
+/// modification time decide alone: a replacement with the same size and the
+/// same modification time goes undetected on Windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ModuleFileFingerprint {
     size_bytes: u64,
@@ -840,6 +841,23 @@ fn file_identity(_metadata: &fs::Metadata) -> Option<(u64, u64)> {
 struct CachedModule<Module, Fingerprint> {
     module: Weak<Module>,
     fingerprint: Fingerprint,
+    /// The image can never be unloaded, so this entry outlives every `Arc`:
+    /// the sweep keeps it, and its fingerprint keeps describing the image the
+    /// platform loader hands back for this path until the process exits.
+    stays_resident: bool,
+}
+
+/// Whether a loaded module's image stays mapped after its last holder lets go.
+trait ModuleResidency {
+    fn stays_resident(&self) -> bool;
+}
+
+impl ModuleResidency for Vst3Module {
+    /// A `kComponentNonDiscardable` module's platform handle was forgotten at
+    /// load, which is what keeps it resident.
+    fn stays_resident(&self) -> bool {
+        self.platform.is_none()
+    }
 }
 
 type ModuleCache<Module, Fingerprint> = Mutex<HashMap<PathBuf, CachedModule<Module, Fingerprint>>>;
@@ -873,7 +891,7 @@ static LOADED_MODULES: LazyLock<ModuleCache<Vst3Module, ModuleFileFingerprint>> 
 /// `load` runs under the lock on purpose: two threads opening the same bundle at
 /// once would otherwise both miss, both load the image, and one of them would
 /// win the cache while the other's copy ran its entry point for nothing.
-fn shared_module<Module, Fingerprint: PartialEq>(
+fn shared_module<Module: ModuleResidency, Fingerprint: PartialEq>(
     cache: &ModuleCache<Module, Fingerprint>,
     key: PathBuf,
     fingerprint: impl FnOnce() -> Result<Fingerprint, String>,
@@ -901,11 +919,19 @@ fn shared_module<Module, Fingerprint: PartialEq>(
             }
             return Ok(module);
         }
+        if cached.stays_resident && cached.fingerprint != current {
+            return Err(format!(
+                "An older build of {} stays loaded for the rest of this session (the plugin \
+                 asks never to be unloaded); restart Sourdaw to load the updated plugin",
+                key.display()
+            ));
+        }
     }
 
     // Entries for modules that have since been released. Swept here rather than
-    // in `Drop`, which would have to take this same lock while it is held.
-    open.retain(|_, cached| cached.module.strong_count() > 0);
+    // in `Drop`, which would have to take this same lock while it is held. A
+    // resident entry is never swept: its image is still mapped.
+    open.retain(|_, cached| cached.stays_resident || cached.module.strong_count() > 0);
 
     let module = load()?;
     open.insert(
@@ -913,6 +939,7 @@ fn shared_module<Module, Fingerprint: PartialEq>(
         CachedModule {
             module: Arc::downgrade(&module),
             fingerprint: current,
+            stays_resident: module.stays_resident(),
         },
     );
     Ok(module)
@@ -1119,6 +1146,22 @@ mod tests {
     impl Drop for FakeModule {
         fn drop(&mut self) {
             self.unloads.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+    }
+
+    impl ModuleResidency for FakeModule {
+        fn stays_resident(&self) -> bool {
+            false
+        }
+    }
+
+    /// Stands in for a `kComponentNonDiscardable` module, whose image stays
+    /// mapped after its last holder lets go.
+    struct ResidentFakeModule;
+
+    impl ModuleResidency for ResidentFakeModule {
+        fn stays_resident(&self) -> bool {
+            true
         }
     }
 
@@ -1519,5 +1562,66 @@ mod tests {
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
         assert!(Arc::ptr_eq(&new_build, &shared));
+    }
+
+    // ── A module that can never be unloaded ─────────────────────────────
+
+    fn resident_cache() -> ModuleCache<ResidentFakeModule, ModuleFileFingerprint> {
+        Mutex::new(HashMap::new())
+    }
+
+    /// Dropping the last holder does not unmap a non-discardable image, so the
+    /// platform loader would still answer this path with the old build: only a
+    /// restart can load the new one.
+    #[test]
+    fn a_resident_module_whose_file_is_replaced_after_its_last_release_is_refused() {
+        let fixture = FixtureDirectory::new("resident-replaced");
+        let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let cache = resident_cache();
+        let loads = AtomicUsize::new(0);
+        let fingerprint = || module_file_fingerprint(&module_file);
+        let load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(ResidentFakeModule))
+        };
+
+        drop(
+            shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+                .expect("the fake loads"),
+        );
+        fixture.replace(&module_file, b"build 2, rebuilt");
+        let reopened = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load);
+
+        let refusal = reopened
+            .err()
+            .expect("a resident old image must not be answered as the new build");
+        assert!(
+            refusal.contains("stays loaded for the rest of this session")
+                && refusal.contains("restart Sourdaw"),
+            "the refusal must say only a restart helps: {refusal}"
+        );
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[test]
+    fn an_unchanged_resident_module_opens_again_after_its_last_release() {
+        let fixture = FixtureDirectory::new("resident-unchanged");
+        let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let cache = resident_cache();
+        let loads = AtomicUsize::new(0);
+        let fingerprint = || module_file_fingerprint(&module_file);
+        let load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(ResidentFakeModule))
+        };
+
+        drop(
+            shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+                .expect("the fake loads"),
+        );
+        shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("an unchanged resident module opens again");
+
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
     }
 }
