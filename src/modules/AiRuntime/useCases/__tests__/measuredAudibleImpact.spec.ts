@@ -37,9 +37,9 @@ registerDeviceEnginePorts();
 const RUN_ID = 'measured-audible-run';
 const ASSISTANT_ID = 'measured-audible-assistant';
 
-type AudibleClaim = NonNullable<ReturnType<typeof agentRunLifecycle.get>>['plan'] extends infer Plan
-    ? NonNullable<Plan>['expectedImpact']['audible']
-    : never;
+type AudibleClaim = NonNullable<
+    NonNullable<ReturnType<typeof agentRunLifecycle.get>>['plan']
+>['expectedImpact']['audible'];
 
 type FigureUnit = 'dBFS' | 'dBTP' | 'LUFS' | 'dB';
 
