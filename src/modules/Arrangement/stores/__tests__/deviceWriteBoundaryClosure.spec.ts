@@ -919,6 +919,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // immutable Command metadata for proof, not device hydration or a write.
         'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 6,
         // Count provenance: new file entry, measured 1 — the module path in the
+        // compiled-list type import from compileArbitraryCommandList, moved with
+        // scheduleCompiledBatches out of parsePromptToActions. It splits immutable
+        // compiled evidence into batches; no device hydration or write.
+        'src/modules/AiRuntime/useCases/scheduleCompiledBatches.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in the
         // compiled-evidence type import from compileArbitraryCommandList. The file
         // splits immutable compiled evidence into slices; no device hydration or write.
         'src/modules/AiRuntime/useCases/splitCompiledCommandList.ts': 1,

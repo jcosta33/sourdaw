@@ -47,7 +47,7 @@ import {
 import { getAvailablePresets } from '../services/fuzzySearch';
 import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import { buildPlanningSystemPrompt } from '../transformers/buildPlanningSystemPrompt';
-import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
+import { extractAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
     tryPresetMatch,
@@ -55,7 +55,6 @@ import {
     tryParameterizedPath,
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
-import { type ToolCallResult } from '../transformers/toolCallParser';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
@@ -98,11 +97,12 @@ import { resolveRawPresetActions } from './aiRuntimeQueries/resolveRawPresetActi
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
-import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
+import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
 import { describeNoAiBackendRemedy } from './describeNoAiBackendRemedy';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
+import { expandCatalogProposals } from './expandCatalogProposals';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeBriefCompile } from './executeBriefCompile';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
@@ -135,8 +135,8 @@ import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransfo
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
 import { readBriefMixIntent } from './readBriefMixIntent';
+import { scheduleCompiledBatches } from './scheduleCompiledBatches';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
-import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
 import { planVibeRunSchedule } from './vibeRun/planVibeRunSchedule';
 
@@ -251,91 +251,6 @@ function boundedProviderFragment(value: unknown): string | undefined {
     }
 }
 
-function expandCatalogProposals(calls: readonly ToolCallResult[]) {
-    const proposals = calls.filter((call) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME);
-    if (proposals.length > 1) {
-        return { status: 'invalid' as const, reason: 'Provider proposed more than one command batch.' };
-    }
-    const proposal = proposals[0];
-    const expandedByCall = new Map<ToolCallResult, ToolCallResult[]>();
-    if (proposal) {
-        if (
-            Object.keys(proposal.arguments).some((key) => key !== 'commands' && key !== 'plan') ||
-            !Array.isArray(proposal.arguments.commands) ||
-            (proposal.arguments.plan !== undefined && normalizeAgentPlanProposal(proposal.arguments.plan) === null)
-        ) {
-            return {
-                status: 'invalid' as const,
-                reason: 'Provider command batch proposal does not match the strict catalog contract.',
-            };
-        }
-        const commands = proposal.arguments.commands;
-        if (commands.length === 0 || commands.length > MAX_LLM_ACTIONS_PER_BATCH) {
-            return {
-                status: 'invalid' as const,
-                reason: 'Provider command batch proposal exceeds the command budget.',
-            };
-        }
-        const expandedCommands: ToolCallResult[] = [];
-        for (const command of commands) {
-            if (!isRecord(command) || Object.keys(command).some((key) => key !== 'name' && key !== 'arguments')) {
-                return {
-                    status: 'invalid' as const,
-                    reason: 'Provider command batch proposal has an invalid command shape.',
-                };
-            }
-            if (
-                typeof command.name !== 'string' ||
-                command.name.length === 0 ||
-                command.name.length > 128 ||
-                !isRecord(command.arguments)
-            ) {
-                return {
-                    status: 'invalid' as const,
-                    reason: 'Provider command batch proposal has an invalid command.',
-                };
-            }
-            expandedCommands.push({ name: command.name, arguments: command.arguments });
-        }
-        expandedByCall.set(proposal, expandedCommands);
-    }
-    for (const proposalCall of calls) {
-        if (proposalCall.name === RENDER_REQUEST_TOOL_NAME) {
-            const sectionIds = proposalCall.arguments.sectionIds;
-            if (
-                Object.keys(proposalCall.arguments).length !== 1 ||
-                !Array.isArray(sectionIds) ||
-                sectionIds.length === 0 ||
-                sectionIds.length > 32 ||
-                sectionIds.some(
-                    (sectionId) => typeof sectionId !== 'string' || sectionId.length === 0 || sectionId.length > 256
-                )
-            ) {
-                return {
-                    status: 'invalid' as const,
-                    reason: 'Provider render request does not match the strict catalog contract.',
-                };
-            }
-            expandedByCall.set(proposalCall, [{ name: 'renderProjectSections', arguments: { sectionIds } }]);
-            continue;
-        }
-        if (proposalCall.name !== ANALYSIS_REQUEST_TOOL_NAME) {
-            continue;
-        }
-        if (Object.keys(proposalCall.arguments).length !== 1 || proposalCall.arguments.scope !== 'mix') {
-            return {
-                status: 'invalid' as const,
-                reason: 'Provider analysis request does not match the strict catalog contract.',
-            };
-        }
-        expandedByCall.set(proposalCall, [{ name: 'analyzeMix', arguments: {} }]);
-    }
-    return {
-        status: 'valid' as const,
-        calls: calls.flatMap((call) => expandedByCall.get(call) ?? [call]),
-    };
-}
-
 /**
  * The measured preview a proposal adopted. Whether its figures describe the batch that runs is
  * decided where that batch is persisted for approval, by content hash, because only there does
@@ -345,80 +260,6 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
 function readAdoptedMeasuredPreview(selectedCompilations: readonly RetainedCompilation[]): MeasuredPreview | null {
     const adopted = selectedCompilations.find((compiled) => compiled.kind === 'preview');
     return adopted?.kind === 'preview' ? adopted.measuredPreview : null;
-}
-
-type AcceptedCompiledList = Extract<ArbitraryCommandListCompilation, { status: 'accepted' }>;
-
-type ScheduledCompiledBatches =
-    | { status: 'scheduled'; firstBatch: AcceptedCompiledList; batchSchedule?: IntentResult['batchSchedule'] }
-    | { status: 'rejected'; reason: string };
-
-/**
- * A list that expands past one batch runs as successive batches, each approved on its own. This
- * planning turn carries the first; the rest are kept serialized on the result until the run proposes
- * them. A list that fits one batch passes through untouched. Only a plain structured list can be
- * split: an adopted transform, recipe or measured preview, or a specialized workflow or other request
- * beside the list, describes one batch and is refused rather than cut apart.
- */
-function scheduleCompiledBatches(input: {
-    compiledList: AcceptedCompiledList;
-    selectedCompilations: readonly RetainedCompilation[];
-    providerProposal: IntentResult['providerProposal'] | null;
-}): ScheduledCompiledBatches {
-    const evidence = input.compiledList.compilerEvidence;
-    if (evidence === undefined || evidence.commands.length <= MAX_LLM_ACTIONS_PER_BATCH) {
-        return { status: 'scheduled', firstBatch: input.compiledList };
-    }
-    if (input.selectedCompilations.length > 0) {
-        return {
-            status: 'rejected',
-            reason: 'An adopted transform, recipe or measured preview cannot run as successive batches.',
-        };
-    }
-    if (input.compiledList.calls.some((call) => call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME)) {
-        return {
-            status: 'rejected',
-            reason: 'A list larger than one batch cannot share its turn with a specialized workflow or another request.',
-        };
-    }
-    const split = splitCompiledCommandList({
-        evidence,
-        maxCommandsPerBatch: MAX_LLM_ACTIONS_PER_BATCH,
-        setSelectors: input.compiledList.setSelectors,
-    });
-    if (split.status === 'rejected') {
-        return split;
-    }
-    const first = split.slices[0]!;
-    return {
-        status: 'scheduled',
-        firstBatch: {
-            ...input.compiledList,
-            compilerEvidence: first,
-            calls: input.compiledList.calls.map((call) => ({
-                name: call.name,
-                arguments: { plan: call.arguments.plan, commands: structuredClone(first.commands) },
-            })),
-        },
-        batchSchedule: {
-            schemaVersion: 1,
-            kind: 'bulk-set',
-            scheduleId: `batch-schedule-${crypto.randomUUID()}`,
-            position: 1,
-            total: split.slices.length,
-            totalCommands: evidence.commands.length,
-            serializedProviderProposal:
-                input.providerProposal === null || input.providerProposal === undefined
-                    ? null
-                    : JSON.stringify(input.providerProposal),
-            slices: split.slices.map((slice, index) => ({
-                position: index + 1,
-                commandCount: slice.commands.length,
-                targetIds: [...slice.providerKnownTargetIds],
-                serializedSlice: JSON.stringify(slice),
-            })),
-        },
-    };
 }
 
 /**

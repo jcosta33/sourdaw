@@ -116,7 +116,7 @@
     "src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/initEngine.ts": 600,
     "src/modules/AiRuntime/useCases/modelProviderProtocol.ts": 808,
     "src/modules/AiRuntime/useCases/musicMentor/generateLessons.ts": 600,
-    "src/modules/AiRuntime/useCases/parsePromptToActions.ts": 2480,
+    "src/modules/AiRuntime/useCases/parsePromptToActions.ts": 2373,
     "src/modules/AiRuntime/useCases/planAgentRun.ts": 600,
     "src/modules/AiRuntime/useCases/planPromptActions.ts": 600,
     "src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts": 600,
