@@ -43,8 +43,8 @@ use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
+use std::sync::{Condvar, Mutex};
+use std::time::{Instant, UNIX_EPOCH};
 
 use daw_plugin_host::scanner::{self, PluginFormat, ScannedPlugin};
 use daw_plugin_host::vst3_module;
@@ -367,6 +367,9 @@ struct StoredRegistry {
     /// resolve. Bounds the targeted rescan to once per key per process; see
     /// [`PluginRegistryStore::claim_rescan`].
     resolutions: HashMap<String, ResolutionOutcome>,
+    /// How many callers are parked in [`PluginRegistryStore::wait_for_rescan`]
+    /// on each key right now.
+    rescan_waiters: HashMap<String, usize>,
     /// Binaries currently quarantined, keyed by path. Loaded from the file on
     /// hydration and mutated by [`PluginRegistryStore::quarantine_failure`],
     /// [`PluginRegistryStore::clear_quarantine`], and
@@ -423,6 +426,7 @@ impl RescanAttempt<'_> {
             .lock_stored()
             .resolutions
             .insert(self.plugin_id.clone(), ResolutionOutcome::Refused(reason));
+        self.store.rescan_settled.notify_all();
     }
 
     /// The rescan found the plugin. Nothing is recorded: the entry is in the
@@ -430,6 +434,7 @@ impl RescanAttempt<'_> {
     pub fn resolved(mut self) {
         self.settled = true;
         self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        self.store.rescan_settled.notify_all();
     }
 }
 
@@ -439,6 +444,7 @@ impl Drop for RescanAttempt<'_> {
             return;
         }
         self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        self.store.rescan_settled.notify_all();
     }
 }
 
@@ -448,6 +454,9 @@ pub struct PluginRegistryStore {
     /// no-op and the registry lives and dies with the process.
     location: Option<PathBuf>,
     stored: Mutex<StoredRegistry>,
+    /// Signalled whenever a [`RescanAttempt`] settles or is dropped, under
+    /// `stored`'s lock: what [`PluginRegistryStore::wait_for_rescan`] parks on.
+    rescan_settled: Condvar,
 }
 
 impl PluginRegistryStore {
@@ -470,6 +479,7 @@ impl PluginRegistryStore {
         Self {
             location,
             stored: Mutex::new(StoredRegistry::default()),
+            rescan_settled: Condvar::new(),
         }
     }
 
@@ -673,11 +683,12 @@ impl PluginRegistryStore {
     /// and `load_plugin` is holding a fair `RwLock` in read mode the whole time
     /// — one queued writer behind them stalls every later reader.
     ///
-    /// Concurrent callers for the same key do not queue. The second one is told
-    /// [`RescanClaim::InProgress`] and refuses immediately, because the
-    /// alternative is parking a blocking-pool thread for the length of a child
-    /// process to arrive at an answer the first caller is about to publish to
-    /// the registry anyway.
+    /// A concurrent caller for the same key is told [`RescanClaim::InProgress`]
+    /// and does not start a second rescan. It waits for the first one through
+    /// [`Self::wait_for_rescan`] and then reads the answer that caller
+    /// published: the same project activating the same plugin twice at once —
+    /// two devices of one plugin, a strip rebuilt while an activation is in
+    /// flight — must load both, not fail one because the other got there first.
     pub fn claim_rescan(&self, plugin_id: &str) -> RescanClaim<'_> {
         let mut stored = self.lock_stored();
         match stored.resolutions.get(plugin_id) {
@@ -823,6 +834,53 @@ impl PluginRegistryStore {
             Ok(()) => stored.quarantine = quarantine,
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
+    }
+
+    /// Block until no rescan of `plugin_id` is in progress, or until `deadline`.
+    ///
+    /// Answers whether the key settled: `true` when the in-progress marker is
+    /// gone — the rescan was refused, resolved, or dropped — and `false` when
+    /// the deadline passed with it still in place. A caller that gets `true`
+    /// resolves the key again and finds the first caller's answer.
+    pub fn wait_for_rescan(&self, plugin_id: &str, deadline: Instant) -> bool {
+        let mut stored = self.lock_stored();
+        *stored
+            .rescan_waiters
+            .entry(plugin_id.to_string())
+            .or_default() += 1;
+        let settled = loop {
+            if !matches!(
+                stored.resolutions.get(plugin_id),
+                Some(ResolutionOutcome::InProgress)
+            ) {
+                break true;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break false;
+            }
+            stored = match self.rescan_settled.wait_timeout(stored, remaining) {
+                Ok((stored, _)) => stored,
+                Err(poisoned) => poisoned.into_inner().0,
+            };
+        };
+        if let Some(waiters) = stored.rescan_waiters.get_mut(plugin_id) {
+            *waiters -= 1;
+            if *waiters == 0 {
+                stored.rescan_waiters.remove(plugin_id);
+            }
+        }
+        settled
+    }
+
+    /// How many callers are waiting on `plugin_id`'s rescan right now.
+    #[cfg(test)]
+    pub(crate) fn rescan_waiters(&self, plugin_id: &str) -> usize {
+        self.lock_stored()
+            .rescan_waiters
+            .get(plugin_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     fn lock_stored(&self) -> std::sync::MutexGuard<'_, StoredRegistry> {

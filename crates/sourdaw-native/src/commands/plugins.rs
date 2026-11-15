@@ -970,6 +970,14 @@ pub async fn is_scan_path_authorized(path: String) -> Result<bool, String> {
 /// is a user waiting on a plugin they asked for, not a background sweep.
 const TARGETED_RESCAN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a load waits for another load's rescan of the same key.
+///
+/// The rescan it waits on is bounded by [`TARGETED_RESCAN_TIMEOUT`]; the
+/// margin covers that rescan's fingerprinting and publish around the child
+/// process, so a waiter never gives up on a rescan that is about to answer.
+const RESCAN_WAIT_TIMEOUT: Duration =
+    TARGETED_RESCAN_TIMEOUT.saturating_add(Duration::from_secs(2));
+
 fn read_registry_entry(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
     plugin_id: &str,
@@ -1005,6 +1013,17 @@ fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) 
 struct VettedRegistryEntry {
     entry: PluginRegistryEntry,
     fingerprint: FileFingerprint,
+}
+
+/// What one pass of registry resolution produced.
+enum Resolution<Rescan> {
+    Settled(Result<VettedRegistryEntry, String>),
+    /// Another caller holds this key's rescan. The rescan comes back unused,
+    /// with the refusal to give if waiting for that caller does not settle it.
+    RescanInProgress {
+        rescan: Rescan,
+        busy: String,
+    },
 }
 
 /// Resolve the id a saved project recorded to the registry entry that activates
@@ -1047,15 +1066,61 @@ struct VettedRegistryEntry {
 /// Queueing behind the permit instead would park a blocking-pool thread for up
 /// to the sweep's full duration; refusing on contention instead would record a
 /// negative verdict that has nothing to do with the plugin.
-fn resolve_registry_entry(
+///
+/// A second load of the same key while the first one's rescan runs waits for
+/// that rescan, bounded by [`RESCAN_WAIT_TIMEOUT`], and then resolves once more
+/// — finding the entry the first load published, or the refusal it recorded.
+/// It never starts a rescan of its own while the first is running, and it
+/// waits only once: a key still in progress after that refuses as busy.
+fn resolve_registry_entry<Rescan>(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
-    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
-) -> Result<VettedRegistryEntry, String> {
+    rescan: Rescan,
+) -> Result<VettedRegistryEntry, String>
+where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+{
     registry_store.hydrate_into(plugin_registry, scan_policy);
 
+    let (rescan, busy) = match resolve_registry_entry_once(
+        plugin_registry,
+        registry_store,
+        scan_policy,
+        plugin_id,
+        rescan,
+    ) {
+        Resolution::Settled(result) => return result,
+        Resolution::RescanInProgress { rescan, busy } => (rescan, busy),
+    };
+    if !registry_store.wait_for_rescan(plugin_id, Instant::now() + RESCAN_WAIT_TIMEOUT) {
+        return Err(busy);
+    }
+    match resolve_registry_entry_once(
+        plugin_registry,
+        registry_store,
+        scan_policy,
+        plugin_id,
+        rescan,
+    ) {
+        Resolution::Settled(result) => result,
+        Resolution::RescanInProgress { busy, .. } => Err(busy),
+    }
+}
+
+/// One pass of [`resolve_registry_entry`]'s steps 2 and 3, over a hydrated
+/// registry.
+fn resolve_registry_entry_once<Rescan>(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    registry_store: &PluginRegistryStore,
+    scan_policy: &PluginScanPolicy,
+    plugin_id: &str,
+    rescan: Rescan,
+) -> Resolution<Rescan>
+where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+{
     if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
         return vet_registry_hit(
             plugin_registry,
@@ -1068,26 +1133,29 @@ fn resolve_registry_entry(
     }
 
     let Some(last_known) = registry_store.last_known_entry(plugin_id) else {
-        return Err(format!(
+        return Resolution::Settled(Err(format!(
             "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
-        ));
+        )));
     };
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Err(reason),
+        RescanClaim::Refused(reason) => return Resolution::Settled(Err(reason)),
         RescanClaim::InProgress => {
-            return Err(format!(
-                "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
-                last_known.plugin.name, last_known.plugin.path
-            ));
+            return Resolution::RescanInProgress {
+                rescan,
+                busy: format!(
+                    "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
+                    last_known.plugin.name, last_known.plugin.path
+                ),
+            };
         }
     };
 
     // The rescan carries the persisted descriptor id: a requested key that no
     // longer matches a row — the path re-spelled, the vendor renamed a plugin —
     // still names a plugin to the persisted row, and that is the one to load.
-    rescan_and_publish(
+    Resolution::Settled(rescan_and_publish(
         plugin_registry,
         registry_store,
         scan_policy,
@@ -1101,7 +1169,7 @@ fn resolve_registry_entry(
         },
         |reason| plugin_gone_from_last_known_path(&last_known, reason),
         rescan,
-    )
+    ))
 }
 
 /// Vet a registry hit against the file it names before anything opens it.
@@ -1119,45 +1187,54 @@ fn resolve_registry_entry(
 ///    fingerprinted — gets the same one bounded rescan a miss gets, through the
 ///    same per-key claim, so a refusal is recorded and the next load of the
 ///    same id answers from it instead of spawning again.
-fn vet_registry_hit(
+fn vet_registry_hit<Rescan>(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
     entry: PluginRegistryEntry,
-    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
-) -> Result<VettedRegistryEntry, String> {
-    let authorized = authorize_plugin_file(scan_policy, Path::new(&entry.path), &entry.format)
-        .map_err(|reason| {
-            format!(
+    rescan: Rescan,
+) -> Resolution<Rescan>
+where
+    Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
+{
+    let authorized = match authorize_plugin_file(scan_policy, Path::new(&entry.path), &entry.format)
+    {
+        Ok(authorized) => authorized,
+        Err(reason) => {
+            return Resolution::Settled(Err(format!(
                 "Plugin '{}' will not be loaded from {}: {reason}",
                 entry.name, entry.path
-            )
-        })?;
+            )));
+        }
+    };
 
     let live = plugin_file_fingerprint(&authorized, &entry.format);
     if let Some(fingerprint) = live.filter(|live| Some(*live) == entry.scanned_fingerprint) {
-        return Ok(VettedRegistryEntry {
+        return Resolution::Settled(Ok(VettedRegistryEntry {
             entry: PluginRegistryEntry {
                 path: authorized.display().to_string(),
                 ..entry
             },
             fingerprint,
-        });
+        }));
     }
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Err(reason),
+        RescanClaim::Refused(reason) => return Resolution::Settled(Err(reason)),
         RescanClaim::InProgress => {
-            return Err(format!(
-                "Plugin '{}' is already being checked at {}. Try again once that finishes.",
-                entry.name, entry.path
-            ));
+            return Resolution::RescanInProgress {
+                rescan,
+                busy: format!(
+                    "Plugin '{}' is already being checked at {}. Try again once that finishes.",
+                    entry.name, entry.path
+                ),
+            };
         }
     };
 
-    rescan_and_publish(
+    Resolution::Settled(rescan_and_publish(
         plugin_registry,
         registry_store,
         scan_policy,
@@ -1176,7 +1253,7 @@ fn vet_registry_hit(
             )
         },
         rescan,
-    )
+    ))
 }
 
 /// The policy-authorized path of a plugin, after authorizing the file inside
@@ -6709,6 +6786,196 @@ mod tests {
             second, first,
             "the second load answers with the recorded refusal"
         );
+    }
+
+    /// A rescan double that tells the test it has started, holds until the
+    /// test releases it, and then answers like [`recording_rescan`].
+    fn held_rescan(
+        log: &VettingLog,
+        answer: Result<(), String>,
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) -> impl PluginRescan {
+        let answer_with = recording_rescan(log, answer);
+        move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            started
+                .send(())
+                .expect("the test should be waiting for the rescan to start");
+            release
+                .recv()
+                .expect("the test should release the held rescan");
+            answer_with(format, path, plugin_id, descriptor_id)
+        }
+    }
+
+    /// Two loads of "aaaa1111" on two threads: the first one's rescan is held
+    /// until the second load is parked waiting on it — observed on the store,
+    /// not timed — and only then released.
+    ///
+    /// The second load is handed a rescan double of its own, so a second
+    /// rescan would show in the log rather than hide.
+    fn load_twice_while_the_first_rescan_runs(
+        state: &AppState,
+        scan_policy: PluginScanPolicy,
+        log: &VettingLog,
+        answer: Result<(), String>,
+    ) -> (
+        Result<PluginInstance, String>,
+        Result<PluginInstance, String>,
+    ) {
+        let (started_sender, started) = std::sync::mpsc::channel();
+        let (release, release_receiver) = std::sync::mpsc::channel();
+        let load = |instance_id: &str,
+                    rescan: Box<
+            dyn FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String> + Send,
+        >| {
+            crate::block_on_test(load_plugin_with_backend(
+                PluginId("aaaa1111".to_string()),
+                PluginInstanceId(instance_id.to_string()),
+                &NoWindowHost,
+                state,
+                scan_policy.clone(),
+                rescan,
+                recording_construction(log),
+            ))
+        };
+        let first_rescan = held_rescan(log, answer.clone(), started_sender, release_receiver);
+        let second_rescan = recording_rescan(log, answer);
+
+        std::thread::scope(|scope| {
+            let first = scope.spawn(|| load("first-concurrent-instance", Box::new(first_rescan)));
+            started
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the first load's rescan should start");
+            let second =
+                scope.spawn(|| load("second-concurrent-instance", Box::new(second_rescan)));
+
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while state.plugin_registry_store.rescan_waiters("aaaa1111") == 0
+                && !second.is_finished()
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "the second load neither waited on the rescan nor finished"
+                );
+                std::thread::yield_now();
+            }
+            release
+                .send(())
+                .expect("the held rescan should still be waiting for its release");
+
+            (
+                first.join().expect("the first load should not panic"),
+                second.join().expect("the second load should not panic"),
+            )
+        })
+    }
+
+    /// Two loads of one changed plugin at once — two devices of the same
+    /// plugin, a strip rebuilt while an activation is in flight — both load,
+    /// on the strength of one rescan: the second waits for the first's rescan
+    /// and then vets the entry it published.
+    ///
+    /// Mutation this catches: answering a hit's `RescanClaim::InProgress`
+    /// with the busy refusal straight away, which fails the second load.
+    #[test]
+    fn a_second_load_of_a_changed_plugin_waits_for_the_first_ones_rescan() {
+        let plugins = LoadFixtureRoot::create("vetting-concurrent-changed");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a longer plugin binary than the one that was scanned",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        let (first, second) =
+            load_twice_while_the_first_rescan_runs(&state, plugins.scan_policy(), &log, Ok(()));
+
+        first.expect("the load that rescanned must load");
+        second.expect("the load that waited for that rescan must load too");
+        assert_eq!(logged(&log, "rescan"), 1, "one rescan serves both loads");
+        assert_eq!(logged(&log, "construct"), 2, "both loads construct");
+    }
+
+    /// The waiting load gets the refusal the first load's rescan recorded,
+    /// word for word, and starts no rescan of its own.
+    ///
+    /// Mutation this catches: the immediate busy refusal on
+    /// `RescanClaim::InProgress`, which answers the second load with "already
+    /// being checked" rather than the reason the plugin was refused.
+    #[test]
+    fn a_second_load_of_a_changed_plugin_gets_the_first_ones_refusal() {
+        let plugins = LoadFixtureRoot::create("vetting-concurrent-refused");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a plugin that no longer declares itself",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        let (first, second) = load_twice_while_the_first_rescan_runs(
+            &state,
+            plugins.scan_policy(),
+            &log,
+            Err("no plugin declared".to_string()),
+        );
+
+        let first = first.expect_err("a changed plugin whose rescan refuses must not load");
+        let second = second.expect_err("the load that waited must not load either");
+        assert_eq!(
+            second, first,
+            "the waiting load answers with the recorded refusal"
+        );
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "the refusal comes from one rescan"
+        );
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
+    }
+
+    /// The same wait on the miss route: two loads of a plugin whose persisted
+    /// row hydration refused, so neither finds it in the registry, both load
+    /// from one rescan of its last known location.
+    ///
+    /// Mutation this catches: answering a miss's `RescanClaim::InProgress`
+    /// with the busy refusal straight away.
+    #[test]
+    fn a_second_load_of_a_missing_plugin_waits_for_the_first_ones_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-concurrent-miss");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+        let state = state_with_registry_file(&fixture.root);
+        let log = vetting_log();
+
+        let (first, second) =
+            load_twice_while_the_first_rescan_runs(&state, fixture.scan_policy(), &log, Ok(()));
+
+        first.expect("the load that rescanned must load");
+        second.expect("the load that waited for that rescan must load too");
+        assert!(
+            state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .get("aaaa1111")
+                .is_some_and(|entry| entry.name == "Rescanned Reverb"),
+            "the entry both loads used is the rescanned one, not a hydrated row"
+        );
+        assert_eq!(logged(&log, "rescan"), 1, "one rescan serves both loads");
+        assert_eq!(logged(&log, "construct"), 2, "both loads construct");
     }
 
     /// Load by an explicit registry key, for a test that addresses one plugin
