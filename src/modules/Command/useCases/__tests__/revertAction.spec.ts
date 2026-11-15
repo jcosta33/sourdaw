@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
+import {
+    AppActionCommittedError,
+    AppActionConflictError,
+    AppActionNotDispatchedError,
+} from '../../errors/AppActionExecutionError';
+import { type UndoEntry } from '../../models/UndoEntry';
 import {
     clearActionReplayCapabilities,
     registerActionReplayCapability as registerStoredActionReplayCapability,
 } from '../../stores/actionReplayCapabilities';
+import { undoStore } from '../../stores/undoStore';
 import { getActionReplayStatus } from '../getActionReplayStatus';
 import { revertAction } from '../revertAction';
 
@@ -69,12 +75,26 @@ function registerActionReplayCapability(input: { entryId: string; inverseAction:
     });
 }
 
+const UNDONE_ENTRY: UndoEntry = {
+    kind: 'action',
+    id: 'undone-entry',
+    label: 'Set tempo',
+    timestamp: 20,
+    source: 'manual',
+    action: { type: 'setTempo', payload: { bpm: 140 } },
+    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+};
+
 describe('revertAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearActionReplayCapabilities();
+        undoStore.set({ past: [], future: [UNDONE_ENTRY] });
         mocks.action_history_store.value = { entries: [] };
-        mocks.execute_app_action.mockResolvedValue(undefined);
+        mocks.execute_app_action.mockImplementation((_action, options) => {
+            options?.onCommitted?.();
+            return Promise.resolve();
+        });
         mocks.mark_reverted.mockReturnValue({ status: 'marked' });
     });
 
@@ -92,8 +112,9 @@ describe('revertAction', () => {
         const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
         const order: string[] = [];
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockImplementation(() => {
+        mocks.execute_app_action.mockImplementation((_action, options) => {
             order.push('execute');
+            options?.onCommitted?.();
             return Promise.resolve();
         });
         mocks.mark_reverted.mockImplementation(() => {
@@ -109,6 +130,7 @@ describe('revertAction', () => {
             undoEntryId: entry.id,
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
+            onCommitted: expect.any(Function),
         });
         expect(mocks.mark_reverted).toHaveBeenCalledWith({
             entryId: entry.id,
@@ -192,6 +214,7 @@ describe('revertAction', () => {
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         const replay = revertAction(entry.id);
+        await vi.waitFor(() => expect(mocks.execute_app_action).toHaveBeenCalledTimes(1));
         clearActionReplayCapabilities();
         if (reject_execution === undefined) {
             throw new Error('Expected replay execution to be pending');
@@ -216,6 +239,7 @@ describe('revertAction', () => {
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         const replay = revertAction(entry.id);
+        await vi.waitFor(() => expect(mocks.execute_app_action).toHaveBeenCalledTimes(1));
         clearActionReplayCapabilities();
         if (resolve_execution === undefined) {
             throw new Error('Expected replay execution to be pending');
@@ -275,5 +299,102 @@ describe('revertAction', () => {
         expect(second_result).toEqual({ status: 'unavailable' });
         await first_replay;
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+    });
+
+    describe('redo future', () => {
+        function register_entry(): TestHistoryEntry {
+            const entry = create_entry();
+            mocks.action_history_store.value = { entries: [entry] };
+            registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+            return entry;
+        }
+
+        it('should discard the redo future once the inverse lands', async () => {
+            const entry = register_entry();
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
+
+            expect(undoStore.value?.future).toEqual([]);
+        });
+
+        it('should discard the redo future when the inverse landed but metadata was replaced', async () => {
+            const entry = register_entry();
+            mocks.mark_reverted.mockReturnValue({ status: 'unavailable' });
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'executed-unmarked' });
+
+            expect(undoStore.value?.future).toEqual([]);
+        });
+
+        it('should discard the redo future when the inverse committed with an error', async () => {
+            const entry = register_entry();
+            const failure = new AppActionCommittedError('togglePlayback', new Error('metadata failed'));
+            mocks.execute_app_action.mockRejectedValueOnce(failure);
+
+            await expect(revertAction(entry.id)).rejects.toBe(failure);
+
+            expect(undoStore.value?.future).toEqual([]);
+        });
+
+        it('should discard the redo future when the inverse committed with an error and metadata was replaced', async () => {
+            const entry = register_entry();
+            mocks.execute_app_action.mockRejectedValueOnce(
+                new AppActionCommittedError('togglePlayback', new Error('inverse history failed'))
+            );
+            mocks.mark_reverted.mockReturnValue({ status: 'unavailable' });
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'executed-unmarked' });
+
+            expect(undoStore.value?.future).toEqual([]);
+        });
+
+        it('should keep the redo future when the inverse returns without writing', async () => {
+            const entry = register_entry();
+            mocks.execute_app_action.mockResolvedValueOnce(undefined);
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
+
+            expect(undoStore.value?.future).toEqual([UNDONE_ENTRY]);
+        });
+
+        it('should keep the redo future when the inverse conflicts', async () => {
+            const entry = register_entry();
+            mocks.execute_app_action.mockRejectedValueOnce(new AppActionConflictError('togglePlayback', 'changed'));
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'conflict' });
+
+            expect(undoStore.value?.future).toEqual([UNDONE_ENTRY]);
+        });
+
+        it('should keep the redo future when the inverse fails before writing', async () => {
+            const entry = register_entry();
+            const failure = new AppActionNotDispatchedError('togglePlayback');
+            mocks.execute_app_action.mockRejectedValueOnce(failure);
+
+            await expect(revertAction(entry.id)).rejects.toBe(failure);
+
+            expect(undoStore.value?.future).toEqual([UNDONE_ENTRY]);
+        });
+
+        it('should keep the redo future when no capability exists', async () => {
+            mocks.action_history_store.value = { entries: [create_entry()] };
+
+            expect(await revertAction('entry-1')).toEqual({ status: 'unavailable' });
+
+            expect(undoStore.value?.future).toEqual([UNDONE_ENTRY]);
+        });
+
+        it('should keep the redo future made after the inverse when only metadata marking is retried', async () => {
+            const entry = register_entry();
+            mocks.mark_reverted.mockImplementationOnce(() => {
+                throw new Error('mark failed');
+            });
+            await expect(revertAction(entry.id)).rejects.toThrow('mark failed');
+            undoStore.set({ past: [], future: [UNDONE_ENTRY] });
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'reconciled' });
+
+            expect(undoStore.value?.future).toEqual([UNDONE_ENTRY]);
+        });
     });
 });
