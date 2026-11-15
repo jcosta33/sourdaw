@@ -1,10 +1,13 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { assignGrooveTemplate } from '../../useCases/grooveTemplates/assignGrooveTemplate';
 import { canonicalizeGrooveTemplateAssignment } from '../../useCases/grooveTemplates/canonicalizeGrooveTemplateAssignment';
 import { getGrooveAssignment } from '../../useCases/grooveTemplates/getGrooveAssignment';
 import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
+import { planGrooveApplication } from '../../useCases/grooveTemplates/planGrooveApplication';
+
+import { isApplyGrooveSessionEntry } from './validateApplyGrooveCommand';
 
 type ApplyGrooveAction = Extract<AppAction, { type: 'applyGroove' }>;
 
@@ -17,7 +20,14 @@ function getAssignmentInput(action: ApplyGrooveAction) {
     };
 }
 
+function planInBatch(action: ApplyGrooveAction, context?: HandlerValidationContext) {
+    return planGrooveApplication(action.payload, context ? context.actions.slice(0, context.actionIndex) : []);
+}
+
 export const handleApplyGroove = createHandler<'applyGroove'>({
+    validateSessionEntry: isApplyGrooveSessionEntry,
+    validate: (action, context) => planInBatch(action, context).refusal === null,
+    validationRefusalReason: (action, context) => planInBatch(action, context).refusal,
     isNoop: (action) => {
         const expected = canonicalizeGrooveTemplateAssignment(getAssignmentInput(action));
         const current = getGrooveAssignment(getAssignmentInput(action));
@@ -43,19 +53,19 @@ export const handleApplyGroove = createHandler<'applyGroove'>({
             afterAmbiguousCommit: markGrooveTemplateProjectWrite,
         };
     },
-    describe: (action) => {
-        const expectedAssignment = canonicalizeGrooveTemplateAssignment(getAssignmentInput(action));
+    describe: (action, context) => {
+        // The assignment this application replaces is the one the earlier actions of its batch leave.
+        const { assignment, priorAssignment } = planInBatch(action, context);
         return {
             label: `Assign groove "${action.payload.grooveId}"`,
-            inverseAction: expectedAssignment
+            inverseAction: assignment
                 ? {
                       type: 'restoreGrooveAssignment',
                       payload: {
                           consumerType: 'clip',
-                          consumerId: action.payload.clipId,
-                          assignment:
-                              getGrooveAssignment({ consumerType: 'clip', consumerId: action.payload.clipId }) ?? null,
-                          expectedAssignment,
+                          consumerId: assignment.consumerId,
+                          assignment: priorAssignment,
+                          expectedAssignment: assignment,
                       },
                   }
                 : null,

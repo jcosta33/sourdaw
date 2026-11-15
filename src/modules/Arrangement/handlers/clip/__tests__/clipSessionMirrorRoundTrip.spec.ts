@@ -1944,6 +1944,207 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    describe('groove application replay', () => {
+        const PRIOR_ASSIGNMENT = {
+            consumerType: 'clip' as const,
+            consumerId: 'clip-a',
+            templateId: 'mpc-60',
+            amount: 0.4,
+        };
+
+        function clipAssignment(clipId = 'clip-a') {
+            return (
+                grooveTemplateStore.value?.assignments.find(
+                    (assignment) => assignment.consumerType === 'clip' && assignment.consumerId === clipId
+                ) ?? null
+            );
+        }
+
+        function seedNotes(clipIds: readonly string[] = ['clip-a']): void {
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: Object.fromEntries(
+                    clipIds.map((clipId) => [
+                        clipId,
+                        [{ id: `${clipId}-late-note`, pitch: 60, startBeat: 0.02, duration: 1, velocity: 96 }],
+                    ])
+                ),
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            flushAutomergeStorageWrites();
+        }
+
+        /** What an agent batch runs: preflight validation of the whole batch and guarded compensation. */
+        function runAsAgent(actions: AppAction[]) {
+            for (const action of actions) {
+                getExecutableCommandRegistrations()
+                    .find((candidate) => candidate.actionType === action.type)
+                    ?.materializeCommandArguments?.(action);
+            }
+            return executeAppActionBatch(actions, { groupId: 'agent-groove', requireCompensation: true });
+        }
+
+        function setClipFields(clipId: string, fields: Partial<Clip>): void {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, ...fields } : clip)),
+                })),
+            });
+        }
+
+        function applyGroove(grooveId: string, clipId = 'clip-a', amount?: number): AppAction {
+            return { type: 'applyGroove', payload: { clipId, grooveId, ...(amount === undefined ? {} : { amount }) } };
+        }
+
+        it('assigns a built-in template, then undoes to the exact prior assignment and redoes across reloads', async () => {
+            seedNotes();
+            expect(assignGrooveTemplate({ ...PRIOR_ASSIGNMENT }).ok).toBe(true);
+            flushAutomergeStorageWrites();
+
+            expect(await runAsAgent([applyGroove('swing-light', 'clip-a', 0.75)])).toMatchObject({
+                status: 'committed',
+            });
+            const applied = { consumerType: 'clip', consumerId: 'clip-a', templateId: 'swing-light', amount: 0.75 };
+            expect(clipAssignment()).toEqual(applied);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipAssignment()).toEqual(PRIOR_ASSIGNMENT);
+
+            reloadSavedProject();
+            await redo();
+            expect(clipAssignment()).toEqual(applied);
+        });
+
+        it('undoes an application to a clip that had no groove back to none', async () => {
+            seedNotes();
+            expect(await runAsAgent([applyGroove('swing-light')])).toMatchObject({ status: 'committed' });
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipAssignment()).toBeNull();
+        });
+
+        it('assigns a template the project itself holds', async () => {
+            seedNotes();
+            createGrooveTemplate({
+                id: 'project-groove',
+                name: 'Project groove',
+                subdivision: '1/16',
+                slots: [{ index: 1, timingOffset: 0.02, dynamicsOffset: -0.1 }],
+                provenance: { type: 'user', sourceId: 'project-groove' },
+            });
+            flushAutomergeStorageWrites();
+
+            expect(await runAsAgent([applyGroove('project-groove')])).toMatchObject({ status: 'committed' });
+            expect(clipAssignment()?.templateId).toBe('project-groove');
+        });
+
+        it('refuses a template the pool does not hold, naming it, and writes nothing', async () => {
+            seedNotes();
+            const result = await runAsAgent([applyGroove('provider-invented-swing')]);
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: expect.stringContaining('Groove template "provider-invented-swing" is not in the groove pool'),
+            });
+            expect(clipAssignment()).toBeNull();
+            expect(undoStore.value?.past ?? []).toEqual([]);
+        });
+
+        it.each([
+            [
+                'a locked clip',
+                () => {
+                    setClipFields('clip-a', { locked: true });
+                },
+                'Clip "clip-a" is locked',
+            ],
+            [
+                'a clip on a frozen track',
+                () => {
+                    trackStore.set({
+                        ...trackStore.value!,
+                        tracks: trackStore.value!.tracks.map((track) => ({ ...track, frozen: true })),
+                    });
+                },
+                'Clip "clip-a" is on a frozen track',
+            ],
+            [
+                'an audio clip',
+                () => {
+                    setClipFields('clip-a', { type: 'audio', audioBufferId: 'buffer-a' });
+                },
+                'Clip "clip-a" is not a MIDI clip',
+            ],
+            ['a clip with no notes', () => seedNotes([]), 'Clip "clip-a" has no notes for a groove to shape'],
+        ])('refuses %s with its reason and writes nothing', async (_case, arrange, reason) => {
+            seedNotes();
+            arrange();
+            flushAutomergeStorageWrites();
+
+            const result = await runAsAgent([applyGroove('swing-light')]);
+
+            expect(result).toMatchObject({ status: 'conflicted', reason: expect.stringContaining(reason) });
+            expect(clipAssignment()).toBeNull();
+        });
+
+        it('applies the template an extraction earlier in the batch creates, and undoes both as one step after a reload', async () => {
+            seedNotes(['clip-a', 'clip-b']);
+            const result = await runAsAgent([
+                { type: 'extractGroove', payload: { clipId: 'clip-a' } },
+                applyGroove('groove-clip-a-v1', 'clip-b'),
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'groove-clip-a-v1')).toBe(
+                true
+            );
+            expect(clipAssignment('clip-b')?.templateId).toBe('groove-clip-a-v1');
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipAssignment('clip-b')).toBeNull();
+            expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'groove-clip-a-v1')).toBe(
+                false
+            );
+        });
+
+        it('describes a second application in the batch against the first, so one undo restores the clip', async () => {
+            seedNotes();
+            expect(assignGrooveTemplate({ ...PRIOR_ASSIGNMENT }).ok).toBe(true);
+            flushAutomergeStorageWrites();
+
+            const result = await runAsAgent([applyGroove('swing-light'), applyGroove('sp-1200', 'clip-a', 0.5)]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(clipAssignment()?.templateId).toBe('sp-1200');
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipAssignment()).toEqual(PRIOR_ASSIGNMENT);
+        });
+
+        it('refuses to undo an application whose assignment changed since, keeping the later one', async () => {
+            seedNotes();
+            expect(await runAsAgent([applyGroove('swing-light')])).toMatchObject({ status: 'committed' });
+            // A collaborator reassigns the clip; that edit is not on this session's undo stack.
+            const later = { consumerType: 'clip' as const, consumerId: 'clip-a', templateId: 'mpc-60', amount: 0.9 };
+            expect(assignGrooveTemplate(later).ok).toBe(true);
+            flushAutomergeStorageWrites();
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(false);
+            expect(clipAssignment()).toEqual(later);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+    });
+
     describe('audio start trim captured source replay', () => {
         afterEach(() => tempoMapStore.set({ changes: [] }));
 

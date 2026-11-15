@@ -134,7 +134,7 @@ function getProjectDiscoverySchema(): ToolSchema {
     const domains = getProjectProtocolContracts().discovery.operations.map((operation) => operation.name);
     return tool(
         PROJECT_DISCOVERY_TOOL_NAME,
-        'Discover the devices, presets, samples, assets and capabilities their owners publish, as one bounded revision-bearing page.',
+        'Discover the devices, presets, samples, assets, capabilities and groove templates their owners publish, as one bounded revision-bearing page.',
         {
             domain: { type: 'string', enum: domains },
             filters: {

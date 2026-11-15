@@ -30,7 +30,8 @@ function createInternalReplayContract(
         | 'restoreCompRegionInterval'
         | 'restoreTempoEdit'
         | 'restoreTempoMapEdit'
-        | 'deleteGrooveTemplate',
+        | 'deleteGrooveTemplate'
+        | 'restoreGrooveAssignment',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -116,5 +117,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreTempoMapEdit', 1, 'required'),
         // The guarded inverse of extractGroove; the extraction's own entry validator binds it.
         createInternalReplayContract('deleteGrooveTemplate', 1, 'optional'),
+        // The guarded inverse of applyGroove; the application's own entry validator binds it.
+        createInternalReplayContract('restoreGrooveAssignment', 1, 'optional'),
     ];
 }
