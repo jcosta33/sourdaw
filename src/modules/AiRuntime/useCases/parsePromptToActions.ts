@@ -113,8 +113,8 @@ import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
+import { isBriefWritingRequest } from './isBriefWritingRequest';
 import { type ContinuedFigure } from './lastCommitContinuation/lastCommitOutcome';
-import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import {
     generateToolPlanningOutcome,
     type ProviderAttemptAdmission,
@@ -2396,29 +2396,6 @@ async function planBriefVibeRun(input: {
         plannedRunLines: planned.lines,
         applicationToolReceipts: [...input.priorReceipts, ...planned.receipts],
     };
-}
-
-/**
- * Only a hosted request from the chat, or from the Prompt Bar asking to hand it to the chat, may write
- * the production brief. WebLLM, Explain and a decision resume keep the tools and interpretation modes
- * they had, so no profile is offered a mode its tools cannot complete. Automatic never yields an
- * all-hosted chain, so it never offers the brief.
- */
-function isBriefWritingRequest(input: {
-    thread: ThreadContext | null | undefined;
-    runId: string | undefined;
-    projectRevision: string | undefined;
-    chatHandOff: boolean;
-}): boolean {
-    const { thread, runId, projectRevision, chatHandOff } = input;
-    if ((thread === undefined && !chatHandOff) || projectRevision === undefined || projectRevision === '') {
-        return false;
-    }
-    if (runId !== undefined && (agentRunLifecycle.get(runId)?.resume ?? null) !== null) {
-        return false;
-    }
-    const chain = getBackendChain();
-    return chain.length > 0 && chain.every((backend) => backend === 'cloud');
 }
 
 /** A request the Prompt Bar runs in the agent chat instead; it carries no batch. */
