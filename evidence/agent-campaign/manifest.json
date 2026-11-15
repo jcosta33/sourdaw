@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "e1698a879bf51d1d27e16449bad0da486427c1731b7bcd848fc6690bb0963b67"
+                    "digest": "4ff50d8f5568579e2951e1c538053fe6b976d98249bc3f88a170f315fbd39907"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
