@@ -62,7 +62,8 @@ const importModule: ModuleLoader = (absolutePath) => import(pathToFileURL(absolu
  */
 async function readHeadBaselineFiles(root: string, load: ModuleLoader): Promise<string[]> {
     const loaded = await load(resolve(root, BASELINE_PATH));
-    const files = typeof loaded === 'object' && loaded !== null ? Reflect.get(loaded, 'sizeBaselineFiles') : undefined;
+    const files: unknown =
+        typeof loaded === 'object' && loaded !== null ? Reflect.get(loaded, 'sizeBaselineFiles') : undefined;
     if (!Array.isArray(files) || !files.every((entry): entry is string => typeof entry === 'string')) {
         throw new Error(`${BASELINE_PATH} must export sizeBaselineFiles as an array of strings.`);
     }
