@@ -1,7 +1,8 @@
 import { lstatSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
-import { createIsolatedGitDirectory, gitAuthenticatedArgs, releaseIsolatedGitDirectory } from './githubAppIdentity.ts';
+import { gitAuthenticatedArgs } from './githubAppIdentity.ts';
+import { createIsolatedGitDirectory, releaseIsolatedGitDirectory } from './tokenBearingChildPlacement.ts';
 import { fail } from './prContract.ts';
 
 /** Runs git in one repository; the caller fixes the directory and the environment. */

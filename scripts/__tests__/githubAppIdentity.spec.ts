@@ -42,7 +42,6 @@ import {
     authenticateRole,
     authenticateTrackerAuthor,
     createGhSession,
-    createIsolatedGitDirectory,
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
     gitCredentialHelperValue,
@@ -55,7 +54,6 @@ import {
     originMainBlob,
     parseDotenv,
     parseGraphqlResponse,
-    releaseIsolatedGitDirectory,
     resolvePrimaryRoot,
     spawnCapture,
     spawnCaptureBytes,
@@ -64,6 +62,7 @@ import {
     type GitHubJsonClient,
     spawnRun,
 } from '../githubAppIdentity.ts';
+import { createIsolatedGitDirectory, releaseIsolatedGitDirectory } from '../tokenBearingChildPlacement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 vi.mock('node:child_process', async (importOriginal) => {
