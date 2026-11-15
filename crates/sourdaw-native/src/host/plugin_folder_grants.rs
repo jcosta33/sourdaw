@@ -28,7 +28,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::filesystem::{
-    built_in_roots, canonicalize_through_missing_tail, replace_file_atomically,
+    built_in_roots, canonicalize_through_missing_tail, grant_registry, replace_file_atomically,
 };
 use crate::host::plugin_scan_policy::{
     default_plugin_scan_roots, normalize_path_lexically, path_has_symlink_component,
@@ -65,6 +65,7 @@ pub enum PluginFolderRefusal {
     HomeOrAncestor(PathBuf),
     OverlapsDefaultFolder { path: PathBuf, default: PathBuf },
     OverlapsAppStorage { path: PathBuf, storage: PathBuf },
+    OverlapsWritableFileGrant { path: PathBuf, grant: PathBuf },
     InsideGrant { path: PathBuf, grant: PathBuf },
     TooMany,
     ResolvesElsewhere { granted: PathBuf, now: PathBuf },
@@ -120,6 +121,12 @@ impl fmt::Display for PluginFolderRefusal {
                 path.display(),
                 storage.display()
             ),
+            Self::OverlapsWritableFileGrant { path, grant } => write!(
+                formatter,
+                "{} is inside or contains {}, a folder Sourdaw can write project files into, so plugins there could be replaced. Choose a folder only plugin installers write to.",
+                path.display(),
+                grant.display()
+            ),
             Self::InsideGrant { path, grant } => write!(
                 formatter,
                 "{} is inside {}, which is already a plugin folder.",
@@ -163,6 +170,10 @@ pub(crate) struct ForbiddenRoots {
     /// folder overlapping it would let a page plant native code that the scan
     /// and the loader then execute.
     pub(crate) app_storage_roots: Vec<PathBuf>,
+    /// The paths the user granted the renderer read-write access to through
+    /// a file or folder pick. A plugin folder overlapping one would let a page
+    /// replace a plugin with its own code, whichever pick came first.
+    pub(crate) renderer_writable_grants: Vec<PathBuf>,
 }
 
 impl ForbiddenRoots {
@@ -179,6 +190,7 @@ impl ForbiddenRoots {
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
+            renderer_writable_grants: grant_registry::persisted_read_write_paths(),
         }
     }
 }
@@ -282,6 +294,12 @@ pub(crate) fn validate_folder(
         return Err(PluginFolderRefusal::OverlapsAppStorage {
             path: canonical,
             storage,
+        });
+    }
+    if let Some(grant) = first_overlap(&canonical, &forbidden.renderer_writable_grants) {
+        return Err(PluginFolderRefusal::OverlapsWritableFileGrant {
+            path: canonical,
+            grant,
         });
     }
     Ok(canonical)
@@ -507,6 +525,7 @@ mod tests {
             home: Some(tree.dir("home/musician")),
             default_roots: vec![tree.dir("defaults/VST3")],
             app_storage_roots: vec![tree.dir("app-storage/data")],
+            renderer_writable_grants: Vec::new(),
         }
     }
 
@@ -571,6 +590,82 @@ mod tests {
                 "{name}: unexpected result {result:?}"
             );
         }
+    }
+
+    #[test]
+    fn plugin_folder_grant_overlapping_a_read_write_file_grant_is_refused() {
+        let tree = TempTree::create("writable-grant");
+        let project = tree.dir("Projects/Song");
+        let forbidden = ForbiddenRoots {
+            renderer_writable_grants: vec![project.clone()],
+            ..forbidden_in(&tree)
+        };
+
+        for (name, requested) in [
+            ("equal to", project.clone()),
+            ("inside", tree.dir("Projects/Song/Plugins")),
+            ("containing", tree.path("Projects")),
+        ] {
+            let result = grant_at(&tree.store(), &forbidden, &requested);
+            assert!(
+                matches!(
+                    &result,
+                    Err(PluginFolderRefusal::OverlapsWritableFileGrant { grant, .. })
+                        if *grant == project
+                ),
+                "{name}: unexpected result {result:?}"
+            );
+        }
+        assert!(list_at(&tree.store(), &forbidden).is_empty());
+    }
+
+    #[test]
+    fn plugin_folder_grant_beside_a_read_write_file_grant_or_over_a_read_only_one_is_accepted() {
+        let tree = TempTree::create("writable-grant-control");
+        let sibling = tree.dir("Projects/Song-plugins");
+        let read_only = tree.dir("Samples");
+        // Only read-write grants reach `renderer_writable_grants`; a read-only
+        // grant on `Samples` is absent from it by construction.
+        let forbidden = ForbiddenRoots {
+            renderer_writable_grants: vec![tree.dir("Projects/Song")],
+            ..forbidden_in(&tree)
+        };
+
+        for folder in [&sibling, &read_only] {
+            assert_eq!(
+                grant_at(&tree.store(), &forbidden, folder).as_ref(),
+                Ok(folder)
+            );
+        }
+    }
+
+    #[test]
+    fn plugin_folder_stored_grant_overlapping_a_later_read_write_file_grant_is_not_authority() {
+        let tree = TempTree::create("writable-grant-later");
+        let folder = tree.dir("Plugins");
+        let before = forbidden_in(&tree);
+        grant_at(&tree.store(), &before, &folder).expect("pick is valid");
+        assert_eq!(
+            valid_grants_at(&tree.store(), &before),
+            vec![folder.clone()]
+        );
+
+        let after = ForbiddenRoots {
+            renderer_writable_grants: vec![folder.clone()],
+            ..forbidden_in(&tree)
+        };
+
+        let listed = list_at(&tree.store(), &after);
+        assert_eq!(listed.len(), 1);
+        assert!(
+            matches!(
+                listed[0].unavailable,
+                Some(PluginFolderRefusal::OverlapsWritableFileGrant { .. })
+            ),
+            "unexpected status {:?}",
+            listed[0]
+        );
+        assert!(valid_grants_at(&tree.store(), &after).is_empty());
     }
 
     #[test]

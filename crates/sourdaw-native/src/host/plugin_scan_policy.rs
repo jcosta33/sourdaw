@@ -378,6 +378,12 @@ pub(crate) fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
 
     for component in path.components() {
         current_path.push(component.as_os_str());
+        // A Windows verbatim prefix (`\\?\C:`) alone cannot be lstat'ed, and
+        // neither it nor the root can be a link, so inspection starts at the
+        // first named component.
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
         match fs::symlink_metadata(&current_path) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() {
@@ -766,6 +772,7 @@ mod tests {
                 home: Some(tree.dir("home/musician")),
                 default_roots: vec![tree.dir("defaults/VST3")],
                 app_storage_roots: vec![tree.dir("app-storage")],
+                renderer_writable_grants: Vec::new(),
             }
         }
 
