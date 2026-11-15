@@ -94,9 +94,9 @@ struct WavenetLayer {
     layer1x1: Option<Conv1x1>,
     head1x1: Option<Conv1x1>,
     activation: Activation,
-    /// Secondary activation for gated/blended layers.
+    /// Secondary activation for gated/blended layers; `None` exactly when the
+    /// layer is ungated.
     secondary: Option<Activation>,
-    gating: GatingMode,
     bottleneck: usize,
     /// Scratch: conv output + mixin sum (2*bottleneck when gated).
     z: Vec<f32>,
@@ -194,7 +194,6 @@ impl WavenetLayer {
             head1x1,
             activation,
             secondary,
-            gating,
             bottleneck,
             z: vec![0.0; out2],
             residual: vec![0.0; channels],
@@ -217,17 +216,13 @@ impl WavenetLayer {
             self.z[index] += self.mixin[index];
         }
 
-        match self.gating {
-            GatingMode::None => {
+        match &self.secondary {
+            None => {
                 for index in 0..bottleneck {
                     self.z[index] = self.activation.apply(self.z[index], index);
                 }
             }
-            GatingMode::Gated | GatingMode::Blended => {
-                let secondary = self
-                    .secondary
-                    .as_ref()
-                    .expect("gated layer carries a secondary activation");
+            Some(secondary) => {
                 // NAMCore's gating/blending both multiply the primary act on
                 // the top half by the secondary act on the bottom half.
                 for index in 0..bottleneck {
@@ -620,16 +615,15 @@ impl WavenetModel {
         // (see below); it is not read.
         let _head_scale_config = config.get("head_scale").and_then(Value::as_f64);
 
-        let with_head = config.get("head").is_some_and(|value| !value.is_null());
-        let post_head = if with_head {
-            let head_config = config.get("head").expect("checked above");
-            let head_size = layer_arrays
-                .last()
-                .map(|array| array.head_rechannel.output_channels())
-                .unwrap_or(1);
-            Some(PostStackHead::from_config(head_config, head_size, weights)?)
-        } else {
-            None
+        let post_head = match config.get("head").filter(|value| !value.is_null()) {
+            Some(head_config) => {
+                let head_size = layer_arrays
+                    .last()
+                    .map(|array| array.head_rechannel.output_channels())
+                    .unwrap_or(1);
+                Some(PostStackHead::from_config(head_config, head_size, weights)?)
+            }
+            None => None,
         };
         // The chain feeding each array's head accumulation is structural:
         // array i's head inputs carry the previous array's head output.
