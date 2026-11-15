@@ -555,14 +555,6 @@ impl Default for TimelineSamplePool {
     }
 }
 
-impl std::ops::Index<&str> for TimelineSamplePool {
-    type Output = TimelineSample;
-
-    fn index(&self, id: &str) -> &Self::Output {
-        self.get(id).expect("no entry found for key")
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct PluginRegistryEntry {
     pub path: String,

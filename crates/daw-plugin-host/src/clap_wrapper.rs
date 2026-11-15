@@ -447,12 +447,12 @@ unsafe extern "C" fn output_events_try_push(
     if list.is_null() || event.is_null() {
         return false;
     }
-    let queue = (*list).ctx as *const PluginParameterEventQueue;
+    let queue = unsafe { (*list).ctx } as *const PluginParameterEventQueue;
     if queue.is_null() {
         return true;
     }
 
-    capture_header(&*queue, &*event, None)
+    unsafe { capture_header(&*queue, &*event, None) }
 }
 
 /// The context a host-initiated write hands its capture list.
@@ -507,13 +507,13 @@ unsafe extern "C" fn host_write_try_push(
     if list.is_null() || event.is_null() {
         return false;
     }
-    let capture = (*list).ctx as *const HostWriteCapture;
+    let capture = unsafe { (*list).ctx } as *const HostWriteCapture;
     if capture.is_null() {
         return true;
     }
 
-    let capture = &*capture;
-    capture_header(capture.queue, &*event, Some(capture.written_param_id))
+    let capture = unsafe { &*capture };
+    unsafe { capture_header(capture.queue, &*event, Some(capture.written_param_id)) }
 }
 
 /// Decode one header and store it, unless it is the echo of `written_param_id`.
@@ -533,7 +533,7 @@ unsafe fn capture_header(
         return true;
     }
 
-    let Some(captured) = read_output_event(header) else {
+    let Some(captured) = (unsafe { read_output_event(header) }) else {
         return true;
     };
 
@@ -574,14 +574,17 @@ unsafe fn read_output_event(header: &clap_event_header) -> Option<PluginParamete
             if (header.size as usize) < mem::size_of::<clap_event_param_value>() {
                 return None;
             }
-            let event = &*(header as *const clap_event_header as *const clap_event_param_value);
+            let event =
+                unsafe { &*(header as *const clap_event_header as *const clap_event_param_value) };
             Some(PluginParameterEvent::value(event.param_id, event.value))
         }
         CLAP_EVENT_PARAM_GESTURE_BEGIN | CLAP_EVENT_PARAM_GESTURE_END => {
             if (header.size as usize) < mem::size_of::<clap_event_param_gesture>() {
                 return None;
             }
-            let event = &*(header as *const clap_event_header as *const clap_event_param_gesture);
+            let event = unsafe {
+                &*(header as *const clap_event_header as *const clap_event_param_gesture)
+            };
             Some(if header.type_ == CLAP_EVENT_PARAM_GESTURE_BEGIN {
                 PluginParameterEvent::gesture_begin(event.param_id)
             } else {
@@ -607,8 +610,8 @@ unsafe extern "C" fn single_event_get(
     list: *const clap_input_events,
     _index: u32,
 ) -> *const clap_event_header {
-    let ctx = (*list).ctx as *const SingleEventCtx;
-    &(*ctx).event.header as *const clap_event_header
+    let ctx = unsafe { (*list).ctx } as *const SingleEventCtx;
+    unsafe { &(*ctx).event.header as *const clap_event_header }
 }
 
 // ── Stream helpers for state save/load ──────────────────────────────────
@@ -618,8 +621,8 @@ unsafe extern "C" fn ostream_write(
     buffer: *const c_void,
     size: u64,
 ) -> i64 {
-    let vec = &mut *((*stream).ctx as *mut Vec<u8>);
-    let slice = std::slice::from_raw_parts(buffer as *const u8, size as usize);
+    let vec = unsafe { &mut *((*stream).ctx as *mut Vec<u8>) };
+    let slice = unsafe { std::slice::from_raw_parts(buffer as *const u8, size as usize) };
     vec.extend_from_slice(slice);
     size as i64
 }
@@ -629,14 +632,14 @@ unsafe extern "C" fn istream_read(
     buffer: *mut c_void,
     size: u64,
 ) -> i64 {
-    let cursor = &mut *((*stream).ctx as *mut StreamCursor);
+    let cursor = unsafe { &mut *((*stream).ctx as *mut StreamCursor) };
     let remaining = cursor.data.len() - cursor.pos;
     let to_read = (size as usize).min(remaining);
     if to_read == 0 {
         return 0;
     }
     let src = &cursor.data[cursor.pos..cursor.pos + to_read];
-    ptr::copy_nonoverlapping(src.as_ptr(), buffer as *mut u8, to_read);
+    unsafe { ptr::copy_nonoverlapping(src.as_ptr(), buffer as *mut u8, to_read) };
     cursor.pos += to_read;
     to_read as i64
 }
@@ -761,13 +764,14 @@ impl ClapWrapper {
         sample_rate: f64,
         mode: ProcessMode,
     ) -> Result<Self, String> {
-        let loaded = Self::create_instance_from_entry(entry_ptr, plugin_id, sample_rate, mode);
+        let loaded =
+            unsafe { Self::create_instance_from_entry(entry_ptr, plugin_id, sample_rate, mode) };
         match loaded {
             Ok(wrapper) => Ok(wrapper),
             Err(error) => {
                 // No wrapper exists to carry the deinit, so it runs here —
                 // the capture-then-deinit shape the scan-time loader uses.
-                deinit_entry(entry_ptr);
+                unsafe { deinit_entry(entry_ptr) };
                 Err(error)
             }
         }
@@ -787,8 +791,8 @@ impl ClapWrapper {
     ) -> Result<Self, String> {
         // 4. Get the plugin factory
         let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
-        let factory_ptr = if let Some(get_factory) = (*entry_ptr).get_factory {
-            get_factory(factory_id)
+        let factory_ptr = if let Some(get_factory) = unsafe { (*entry_ptr).get_factory } {
+            unsafe { get_factory(factory_id) }
         } else {
             return Err("clap_entry has no get_factory".to_string());
         };
@@ -797,7 +801,7 @@ impl ClapWrapper {
             return Err("Plugin factory is null".to_string());
         }
 
-        let factory = &*(factory_ptr as *const clap_plugin_factory);
+        let factory = unsafe { &*(factory_ptr as *const clap_plugin_factory) };
 
         // 5. Create host descriptor
         // Pin per-instance host callback state into the descriptor BEFORE the
@@ -814,18 +818,18 @@ impl ClapWrapper {
             .create_plugin
             .ok_or("Factory has no create_plugin function")?;
 
-        let plugin = create_plugin(factory, host_ptr, id_c.as_ptr());
+        let plugin = unsafe { create_plugin(factory, host_ptr, id_c.as_ptr()) };
         if plugin.is_null() {
             return Err(format!("Failed to create plugin instance: {}", plugin_id));
         }
 
         // 7. Init the plugin
-        let plugin_ref = &*plugin;
+        let plugin_ref = unsafe { &*plugin };
         if let Some(init_fn) = plugin_ref.init {
-            let ok = init_fn(plugin);
+            let ok = unsafe { init_fn(plugin) };
             if !ok {
                 if let Some(destroy) = plugin_ref.destroy {
-                    destroy(plugin);
+                    unsafe { destroy(plugin) };
                 }
                 return Err("plugin.init() returned false".to_string());
             }
@@ -833,9 +837,11 @@ impl ClapWrapper {
 
         // Read the plugin name
         let name = if !plugin_ref.desc.is_null() {
-            let desc = &*plugin_ref.desc;
+            let desc = unsafe { &*plugin_ref.desc };
             if !desc.name.is_null() {
-                CStr::from_ptr(desc.name).to_string_lossy().into_owned()
+                unsafe { CStr::from_ptr(desc.name) }
+                    .to_string_lossy()
+                    .into_owned()
             } else {
                 plugin_id.to_string()
             }
@@ -847,15 +853,18 @@ impl ClapWrapper {
         //    than a capability probe: CLAP allows the port list to be read only
         //    while the plugin is deactivated, and the buffers handed to
         //    `process()` must match it — so the layout is read now or never.
-        let params_ext = Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
-        let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
-        let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
+        let params_ext =
+            unsafe { Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS) };
+        let state_ext =
+            unsafe { Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE) };
+        let gui_ext = unsafe { Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI) };
         let latency_ext =
-            Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
-        let tail_ext = Self::query_extension::<clap_plugin_tail>(plugin_ref, CLAP_EXT_TAIL);
-        let audio = Self::read_audio_bus_layout(plugin_ref)?;
-        let is_instrument = descriptor_declares_instrument(plugin);
-        let accepts_note_events = Self::reads_note_input_ports(plugin_ref);
+            unsafe { Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY) };
+        let tail_ext =
+            unsafe { Self::query_extension::<clap_plugin_tail>(plugin_ref, CLAP_EXT_TAIL) };
+        let audio = unsafe { Self::read_audio_bus_layout(plugin_ref) }?;
+        let is_instrument = unsafe { descriptor_declares_instrument(plugin) };
+        let accepts_note_events = unsafe { Self::reads_note_input_ports(plugin_ref) };
 
         if !params_ext.is_null() {
             eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
@@ -884,7 +893,7 @@ impl ClapWrapper {
         // 9. Activate the plugin. Activation is [main-thread]; entering the
         //    processing state is [audio-thread], so it stops here and the
         //    first block picks it up through the gate.
-        let activated = activate_plugin(plugin, sample_rate);
+        let activated = unsafe { activate_plugin(plugin, sample_rate) };
         if !activated {
             eprintln!(
                 "[CLAP] Warning: plugin.activate() returned false for {}",
@@ -1208,7 +1217,7 @@ impl ClapWrapper {
     /// Query a plugin extension by ID. Returns null if not supported.
     unsafe fn query_extension<T>(plugin_ref: &clap_plugin, ext_id: &CStr) -> *const T {
         if let Some(get_ext) = plugin_ref.get_extension {
-            let ptr = get_ext(plugin_ref as *const clap_plugin, ext_id.as_ptr());
+            let ptr = unsafe { get_ext(plugin_ref as *const clap_plugin, ext_id.as_ptr()) };
             if ptr.is_null() {
                 return ptr::null();
             }
@@ -1227,18 +1236,19 @@ impl ClapWrapper {
     /// list cannot be read in full is refused: half a port list is a buffer
     /// table this host cannot honestly build.
     unsafe fn read_audio_bus_layout(plugin_ref: &clap_plugin) -> Result<AudioBusLayout, String> {
-        let extension =
-            Self::query_extension::<clap_plugin_audio_ports>(plugin_ref, CLAP_EXT_AUDIO_PORTS);
+        let extension = unsafe {
+            Self::query_extension::<clap_plugin_audio_ports>(plugin_ref, CLAP_EXT_AUDIO_PORTS)
+        };
         if extension.is_null() {
             return Ok(AudioBusLayout::portless());
         }
-        let audio_ports = &*extension;
+        let audio_ports = unsafe { &*extension };
         let read_direction = |is_input: bool| -> Result<Vec<u32>, String> {
             let direction = if is_input { "input" } else { "output" };
             let count = audio_ports
                 .count
                 .ok_or_else(|| format!("CLAP {direction} audio-ports has no count callback"))?;
-            let count = count(plugin_ref as *const clap_plugin, is_input);
+            let count = unsafe { count(plugin_ref as *const clap_plugin, is_input) };
             if count > MAX_RUNTIME_AUDIO_PORTS {
                 return Err(format!(
                     "CLAP {direction} audio port count exceeds runtime bounds"
@@ -1249,8 +1259,8 @@ impl ClapWrapper {
                 .ok_or_else(|| format!("CLAP {direction} audio-ports has no info callback"))?;
             let mut channels = Vec::with_capacity(count as usize);
             for index in 0..count {
-                let mut info: clap_audio_port_info = mem::zeroed();
-                if !get(plugin_ref as *const clap_plugin, index, is_input, &mut info) {
+                let mut info: clap_audio_port_info = unsafe { mem::zeroed() };
+                if !unsafe { get(plugin_ref as *const clap_plugin, index, is_input, &mut info) } {
                     return Err(format!(
                         "CLAP {direction} audio port {index} returned no port info"
                     ));
@@ -1273,16 +1283,17 @@ impl ClapWrapper {
     /// what this host would send it; both answer `false` rather than have
     /// events routed at a port that will not understand them.
     unsafe fn reads_note_input_ports(plugin_ref: &clap_plugin) -> bool {
-        let extension =
-            Self::query_extension::<clap_plugin_note_ports>(plugin_ref, CLAP_EXT_NOTE_PORTS);
+        let extension = unsafe {
+            Self::query_extension::<clap_plugin_note_ports>(plugin_ref, CLAP_EXT_NOTE_PORTS)
+        };
         if extension.is_null() {
             return false;
         }
-        let note_ports = &*extension;
+        let note_ports = unsafe { &*extension };
         let Some(count) = note_ports.count else {
             return false;
         };
-        let input_ports = count(plugin_ref as *const clap_plugin, true);
+        let input_ports = unsafe { count(plugin_ref as *const clap_plugin, true) };
         if input_ports > MAX_RUNTIME_AUDIO_PORTS {
             return false;
         }
@@ -1290,8 +1301,8 @@ impl ClapWrapper {
             return false;
         };
         (0..input_ports).any(|index| {
-            let mut info: clap_note_port_info = mem::zeroed();
-            get(plugin_ref as *const clap_plugin, index, true, &mut info)
+            let mut info: clap_note_port_info = unsafe { mem::zeroed() };
+            (unsafe { get(plugin_ref as *const clap_plugin, index, true, &mut info) })
                 && info.supported_dialects & CLAP_NOTE_DIALECT_CLAP != 0
         })
     }
@@ -1601,7 +1612,7 @@ impl ClapWrapper {
         if self.gui_ext.is_null() || self.plugin.is_null() || !self.gui_open {
             return None;
         }
-        Some(&*self.gui_ext)
+        Some(unsafe { &*self.gui_ext })
     }
 
     /// Whether the plugin accepts a size the host chose.
@@ -1946,25 +1957,29 @@ impl ClapWrapper {
         }
 
         unsafe extern "C" fn event_list_size(list: *const clap_input_events) -> u32 {
-            let ctx = (*list).ctx as *const EventListCtx;
-            (*ctx).midi_count + (*ctx).parameter_count
+            let ctx = unsafe { (*list).ctx } as *const EventListCtx;
+            unsafe { (*ctx).midi_count + (*ctx).parameter_count }
         }
 
         unsafe extern "C" fn event_list_get(
             list: *const clap_input_events,
             index: u32,
         ) -> *const clap_event_header {
-            let ctx = (*list).ctx as *const EventListCtx;
-            if index < (*ctx).parameter_count {
-                return &(*(*ctx).parameter_events.add(index as usize)).header
-                    as *const clap_event_header;
+            let ctx = unsafe { (*list).ctx } as *const EventListCtx;
+            if index < unsafe { (*ctx).parameter_count } {
+                return unsafe {
+                    &(*(*ctx).parameter_events.add(index as usize)).header
+                        as *const clap_event_header
+                };
             }
 
-            let midi_index = index - (*ctx).parameter_count;
-            if midi_index >= (*ctx).midi_count {
+            let midi_index = index - unsafe { (*ctx).parameter_count };
+            if midi_index >= unsafe { (*ctx).midi_count } {
                 return ptr::null();
             }
-            &(*(*ctx).midi_events.add(midi_index as usize)).header as *const clap_event_header
+            unsafe {
+                &(*(*ctx).midi_events.add(midi_index as usize)).header as *const clap_event_header
+            }
         }
 
         let mut ctx = EventListCtx {
@@ -2316,10 +2331,10 @@ fn process_failed(status: clap_process_status) -> bool {
 /// `plugin` is either null or a live plugin whose descriptor outlives it, which
 /// CLAP requires of `clap_plugin.desc`.
 unsafe fn descriptor_declares_instrument(plugin: *const clap_plugin) -> bool {
-    if plugin.is_null() || (*plugin).desc.is_null() {
+    if plugin.is_null() || unsafe { (*plugin).desc.is_null() } {
         return false;
     }
-    let features = owned_feature_list((*(*plugin).desc).features);
+    let features = unsafe { owned_feature_list((*(*plugin).desc).features) };
     category_from_clap_features(&features) == "instrument"
 }
 
@@ -2421,8 +2436,8 @@ fn copy_inputs_to_outputs(inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_sam
 /// library is still loaded; after every plugin instance created through it has
 /// been destroyed, as the spec requires.
 unsafe fn deinit_entry(entry_ptr: *const clap_plugin_entry) {
-    if let Some(deinit) = (*entry_ptr).deinit {
-        deinit();
+    if let Some(deinit) = unsafe { (*entry_ptr).deinit } {
+        unsafe { deinit() };
     }
 }
 
@@ -2440,8 +2455,8 @@ unsafe fn activate_plugin(plugin: *const clap_plugin, sample_rate: f64) -> bool 
     if plugin.is_null() {
         return false;
     }
-    match (*plugin).activate {
-        Some(activate) => activate(plugin, sample_rate, 32, MAX_BUFFER as u32),
+    match unsafe { (*plugin).activate } {
+        Some(activate) => unsafe { activate(plugin, sample_rate, 32, MAX_BUFFER as u32) },
         None => false,
     }
 }
@@ -2535,8 +2550,8 @@ unsafe fn read_latency_ext(
     if latency_ext.is_null() || plugin.is_null() {
         return 0;
     }
-    match (*latency_ext).get {
-        Some(get) => get(plugin),
+    match unsafe { (*latency_ext).get } {
+        Some(get) => unsafe { get(plugin) },
         None => 0,
     }
 }
@@ -2551,8 +2566,8 @@ unsafe fn read_tail_ext(tail_ext: *const clap_plugin_tail, plugin: *const clap_p
     if tail_ext.is_null() || plugin.is_null() {
         return 0;
     }
-    match (*tail_ext).get {
-        Some(get) => get(plugin),
+    match unsafe { (*tail_ext).get } {
+        Some(get) => unsafe { get(plugin) },
         None => 0,
     }
 }
@@ -3435,7 +3450,7 @@ mod tests {
         _plugin: *const clap_plugin,
         id: *const i8,
     ) -> *const c_void {
-        let id = CStr::from_ptr(id);
+        let id = unsafe { CStr::from_ptr(id) };
         if id == CLAP_EXT_LATENCY {
             return &STUB_LATENCY_EXT as *const clap_plugin_latency as *const c_void;
         }
@@ -3463,7 +3478,7 @@ mod tests {
     ) -> bool {
         let target = REFLAG_TARGET.load(Ordering::Relaxed);
         if target != 0 {
-            (*(target as *const HostCallbackState)).mark_latency_dirty();
+            unsafe { (*(target as *const HostCallbackState)).mark_latency_dirty() };
         }
         true
     }
@@ -3487,7 +3502,7 @@ mod tests {
         if pass == 0 {
             let target = RACE_TARGET.load(Ordering::Relaxed);
             if target != 0 {
-                (*(target as *const HostCallbackState)).mark_latency_dirty();
+                unsafe { (*(target as *const HostCallbackState)).mark_latency_dirty() };
             }
         } else if pass == 1 {
             STUB_LATENCY.store(
@@ -3940,7 +3955,7 @@ mod tests {
         record_lifecycle_call("plugin_destroy");
         // Reclaim the instance memory create_plugin leaked, exactly as a real
         // plugin's destroy frees what create_plugin allocated.
-        drop(Box::from_raw(plugin as *mut clap_plugin));
+        drop(unsafe { Box::from_raw(plugin as *mut clap_plugin) });
     }
 
     /// A fresh recording plugin per create call — two instances of one entry
@@ -4201,7 +4216,8 @@ mod tests {
         _plugin: *const clap_plugin,
         id: *const i8,
     ) -> *const c_void {
-        if CStr::from_ptr(id) == CLAP_EXT_RENDER {
+        // SAFETY: the host passes a NUL-terminated extension id.
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_RENDER {
             return &raw const ACCEPTING_RENDER as *const c_void;
         }
         ptr::null()
@@ -4211,7 +4227,8 @@ mod tests {
         _plugin: *const clap_plugin,
         id: *const i8,
     ) -> *const c_void {
-        if CStr::from_ptr(id) == CLAP_EXT_RENDER {
+        // SAFETY: the host passes a NUL-terminated extension id.
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_RENDER {
             return &raw const REFUSING_RENDER as *const c_void;
         }
         ptr::null()
@@ -4225,7 +4242,8 @@ mod tests {
         plugin_id: *const i8,
     ) -> *const clap_plugin {
         let get_extension =
-            if CStr::from_ptr(plugin_id).to_bytes() == RENDER_REFUSING_PLUGIN_ID.as_bytes() {
+            // SAFETY: the host passes a NUL-terminated plugin id.
+            if unsafe { CStr::from_ptr(plugin_id) }.to_bytes() == RENDER_REFUSING_PLUGIN_ID.as_bytes() {
                 refusing_render_get_extension
             } else {
                 accepting_render_get_extension
@@ -4493,18 +4511,20 @@ mod tests {
         _plugin: *const clap_plugin,
         process: *const clap_process,
     ) -> i32 {
-        let transport = (*process).transport;
+        let transport = unsafe { (*process).transport };
         let captured = if transport.is_null() {
             CapturedTransport::default()
         } else {
-            CapturedTransport {
-                present: true,
-                flags: (*transport).flags,
-                tempo: (*transport).tempo,
-                tsig_num: (*transport).tsig_num,
-                tsig_denom: (*transport).tsig_denom,
-                song_pos_beats: (*transport).song_pos_beats,
-                song_pos_seconds: (*transport).song_pos_seconds,
+            unsafe {
+                CapturedTransport {
+                    present: true,
+                    flags: (*transport).flags,
+                    tempo: (*transport).tempo,
+                    tsig_num: (*transport).tsig_num,
+                    tsig_denom: (*transport).tsig_denom,
+                    song_pos_beats: (*transport).song_pos_beats,
+                    song_pos_seconds: (*transport).song_pos_seconds,
+                }
             }
         };
         *CAPTURED_TRANSPORT.lock().unwrap() = Some(captured);
@@ -4881,33 +4901,36 @@ mod tests {
         _plugin: *const clap_plugin,
         process: *const clap_process,
     ) -> i32 {
-        *CAPTURED_BUFFERS.lock().unwrap() = Some(CapturedBuffers {
-            input_count: (*process).audio_inputs_count,
-            output_count: (*process).audio_outputs_count,
-            first_input_channels: if (*process).audio_inputs_count > 0 {
-                (*(*process).audio_inputs).channel_count
-            } else {
-                0
-            },
-            first_output_channels: if (*process).audio_outputs_count > 0 {
-                (*(*process).audio_outputs).channel_count
-            } else {
-                0
-            },
-            second_input_channels: if (*process).audio_inputs_count > 1 {
-                (*(*process).audio_inputs.add(1)).channel_count
-            } else {
-                0
-            },
+        *CAPTURED_BUFFERS.lock().unwrap() = Some(unsafe {
+            CapturedBuffers {
+                input_count: (*process).audio_inputs_count,
+                output_count: (*process).audio_outputs_count,
+                first_input_channels: if (*process).audio_inputs_count > 0 {
+                    (*(*process).audio_inputs).channel_count
+                } else {
+                    0
+                },
+                first_output_channels: if (*process).audio_outputs_count > 0 {
+                    (*(*process).audio_outputs).channel_count
+                } else {
+                    0
+                },
+                second_input_channels: if (*process).audio_inputs_count > 1 {
+                    (*(*process).audio_inputs.add(1)).channel_count
+                } else {
+                    0
+                },
+            }
         });
-        for buffer_index in 0..(*process).audio_outputs_count {
-            let buffer = &mut *(*process).audio_outputs.add(buffer_index as usize);
+        for buffer_index in 0..unsafe { (*process).audio_outputs_count } {
+            let buffer = unsafe { &mut *(*process).audio_outputs.add(buffer_index as usize) };
             for channel in 0..buffer.channel_count {
                 // `data32` is an array of per-channel pointers; the samples
                 // live behind each entry, exactly as a plugin reads them.
-                let channel_data = *(buffer.data32.add(channel as usize));
-                let samples =
-                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize);
+                let channel_data = unsafe { *(buffer.data32.add(channel as usize)) };
+                let samples = unsafe {
+                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize)
+                };
                 samples.fill((channel + 1) as f32);
             }
         }
@@ -5026,12 +5049,13 @@ mod tests {
         _plugin: *const clap_plugin,
         process: *const clap_process,
     ) -> i32 {
-        for buffer_index in 0..(*process).audio_outputs_count {
-            let buffer = &mut *(*process).audio_outputs.add(buffer_index as usize);
+        for buffer_index in 0..unsafe { (*process).audio_outputs_count } {
+            let buffer = unsafe { &mut *(*process).audio_outputs.add(buffer_index as usize) };
             for channel in 0..buffer.channel_count {
-                let channel_data = *(buffer.data32.add(channel as usize));
-                let samples =
-                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize);
+                let channel_data = unsafe { *(buffer.data32.add(channel as usize)) };
+                let samples = unsafe {
+                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize)
+                };
                 samples.fill(((buffer_index + 1) * 10 + channel) as f32);
             }
         }
@@ -5129,16 +5153,18 @@ mod tests {
         process: *const clap_process,
     ) -> i32 {
         INSPECTED_PROCESS_CALLS.fetch_add(1, Ordering::Relaxed);
-        *CAPTURED_BUFFERS.lock().unwrap() = Some(CapturedBuffers {
-            input_count: (*process).audio_inputs_count,
-            output_count: (*process).audio_outputs_count,
-            ..CapturedBuffers::default()
+        *CAPTURED_BUFFERS.lock().unwrap() = Some(unsafe {
+            CapturedBuffers {
+                input_count: (*process).audio_inputs_count,
+                output_count: (*process).audio_outputs_count,
+                ..CapturedBuffers::default()
+            }
         });
-        if (*process).audio_inputs_count > 0 {
-            let buffer = &*(*process).audio_inputs;
+        if unsafe { (*process).audio_inputs_count } > 0 {
+            let buffer = unsafe { &*(*process).audio_inputs };
             if buffer.channel_count >= 2 {
-                let left = *(*(buffer.data32));
-                let right = *(*(buffer.data32.add(1)));
+                let left = unsafe { *(*(buffer.data32)) };
+                let right = unsafe { *(*(buffer.data32.add(1))) };
                 *INSPECTED_SAW.lock().unwrap() = Some((left, right));
             }
         }
@@ -5302,7 +5328,7 @@ mod tests {
         }
 
         unsafe extern "C" fn port_declaring_plugin_destroy(plugin: *const clap_plugin) {
-            drop(Box::from_raw(plugin as *mut clap_plugin));
+            drop(unsafe { Box::from_raw(plugin as *mut clap_plugin) });
         }
 
         unsafe extern "C" fn port_declaring_create_plugin(
@@ -5399,13 +5425,15 @@ mod tests {
             (false, 0) => 2,
             _ => return false,
         };
-        *info = clap_audio_port_info {
-            id: index,
-            name: [0; clap_sys::string_sizes::CLAP_NAME_SIZE],
-            flags: 0,
-            channel_count,
-            port_type: ptr::null(),
-            in_place_pair: clap_sys::id::CLAP_INVALID_ID,
+        unsafe {
+            *info = clap_audio_port_info {
+                id: index,
+                name: [0; clap_sys::string_sizes::CLAP_NAME_SIZE],
+                flags: 0,
+                channel_count,
+                port_type: ptr::null(),
+                in_place_pair: clap_sys::id::CLAP_INVALID_ID,
+            }
         };
         true
     }
@@ -5419,7 +5447,7 @@ mod tests {
         _plugin: *const clap_plugin,
         id: *const i8,
     ) -> *const c_void {
-        if CStr::from_ptr(id) == CLAP_EXT_AUDIO_PORTS {
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_AUDIO_PORTS {
             return &raw const DECLARED_AUDIO_PORTS as *const c_void;
         }
         ptr::null()
@@ -5448,11 +5476,13 @@ mod tests {
         if info.is_null() {
             return false;
         }
-        *info = clap_note_port_info {
-            id: 0,
-            supported_dialects: NOTE_PORT_DIALECTS.load(Ordering::Relaxed),
-            preferred_dialect: 0,
-            name: [0; clap_sys::string_sizes::CLAP_NAME_SIZE],
+        unsafe {
+            *info = clap_note_port_info {
+                id: 0,
+                supported_dialects: NOTE_PORT_DIALECTS.load(Ordering::Relaxed),
+                preferred_dialect: 0,
+                name: [0; clap_sys::string_sizes::CLAP_NAME_SIZE],
+            }
         };
         true
     }
@@ -5466,7 +5496,7 @@ mod tests {
         _plugin: *const clap_plugin,
         id: *const i8,
     ) -> *const c_void {
-        if CStr::from_ptr(id) == CLAP_EXT_NOTE_PORTS {
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_NOTE_PORTS {
             return &raw const STUB_NOTE_PORTS as *const c_void;
         }
         ptr::null()
@@ -5546,8 +5576,9 @@ mod tests {
         _is_floating: bool,
     ) -> bool {
         if !api.is_null() {
-            *NEGOTIATED_GUI_API.lock().unwrap() =
-                CStr::from_ptr(api).to_string_lossy().into_owned();
+            *NEGOTIATED_GUI_API.lock().unwrap() = unsafe { CStr::from_ptr(api) }
+                .to_string_lossy()
+                .into_owned();
         }
         true
     }
@@ -5565,8 +5596,8 @@ mod tests {
         width: *mut u32,
         height: *mut u32,
     ) -> bool {
-        *width = 640;
-        *height = 480;
+        unsafe { *width = 640 };
+        unsafe { *height = 480 };
         true
     }
 
@@ -5598,7 +5629,7 @@ mod tests {
             show: None,
             hide: None,
         };
-        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_GUI {
             return &raw const SCALE_RECORDING_GUI as *const c_void;
         }
         ptr::null()
@@ -5723,9 +5754,11 @@ mod tests {
         width: *mut u32,
         height: *mut u32,
     ) -> bool {
-        record_editor_step(format!("adjust_size({}x{})", *width, *height));
-        *width = 800;
-        *height = 600;
+        record_editor_step(format!("adjust_size({}x{})", unsafe { *width }, unsafe {
+            *height
+        }));
+        unsafe { *width = 800 };
+        unsafe { *height = 600 };
         true
     }
 
@@ -5745,8 +5778,8 @@ mod tests {
         height: *mut u32,
     ) -> bool {
         let (stated_width, stated_height) = *STATED_EDITOR_SIZE.lock().unwrap();
-        *width = stated_width;
-        *height = stated_height;
+        unsafe { *width = stated_width };
+        unsafe { *height = stated_height };
         true
     }
 
@@ -5785,7 +5818,7 @@ mod tests {
             show: None,
             hide: None,
         };
-        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_GUI {
             return &raw const RESIZABLE_GUI as *const c_void;
         }
         ptr::null()
@@ -5815,7 +5848,7 @@ mod tests {
             show: None,
             hide: None,
         };
-        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_GUI {
             return &raw const FIXED_SIZE_GUI as *const c_void;
         }
         ptr::null()
@@ -6009,16 +6042,16 @@ mod tests {
     ) -> i32 {
         let mut sampled = SAMPLED_INPUT_CHANNELS.lock().unwrap();
         sampled.clear();
-        for buffer_index in 0..(*process).audio_inputs_count {
-            let buffer = (*process).audio_inputs.add(buffer_index as usize);
-            for channel in 0..(*buffer).channel_count {
-                let channel_data = *(*buffer).data32.add(channel as usize);
-                sampled.push(*channel_data);
+        for buffer_index in 0..unsafe { (*process).audio_inputs_count } {
+            let buffer = unsafe { (*process).audio_inputs.add(buffer_index as usize) };
+            for channel in 0..unsafe { (*buffer).channel_count } {
+                let channel_data = unsafe { *(*buffer).data32.add(channel as usize) };
+                sampled.push(unsafe { *channel_data });
             }
         }
         // Keep the output write the other stubs perform, so the block still
         // carries observable audio.
-        stub_process_buffer_capturing(_plugin, process)
+        unsafe { stub_process_buffer_capturing(_plugin, process) }
     }
 
     fn input_sampling_plugin_ptr() -> *const clap_plugin {
@@ -6089,7 +6122,7 @@ mod tests {
             if index != 0 || info.is_null() {
                 return false;
             }
-            let mut parameter: clap_param_info = mem::zeroed();
+            let mut parameter: clap_param_info = unsafe { mem::zeroed() };
             // Every name byte set, no terminator: the exact array that made
             // `CStr::from_ptr` read past `name` and into `module`.
             parameter.name = [b'n' as std::os::raw::c_char; CLAP_NAME_SIZE];
@@ -6098,7 +6131,7 @@ mod tests {
             parameter.min_value = 0.0;
             parameter.max_value = 1.0;
             parameter.default_value = 0.5;
-            *info = parameter;
+            unsafe { *info = parameter };
             true
         }
 
@@ -6146,7 +6179,7 @@ mod tests {
     /// Write the staged events onto a real CLAP output list, exactly as a plugin
     /// would: one correctly sized struct per event, headed by its own header.
     unsafe fn emit_staged_events(out_events: *const clap_output_events) {
-        let Some(try_push) = (*out_events).try_push else {
+        let Some(try_push) = (unsafe { (*out_events).try_push }) else {
             return;
         };
         let staged = EMITTED_EVENTS.lock().unwrap().clone();
@@ -6155,14 +6188,14 @@ mod tests {
             let accepted = match event.kind {
                 PluginParameterEventKind::Value => {
                     let value = param_value_event(event.param_id, event.value);
-                    try_push(out_events, &value.header)
+                    unsafe { try_push(out_events, &value.header) }
                 }
                 PluginParameterEventKind::GestureBegin | PluginParameterEventKind::GestureEnd => {
                     let gesture = gesture_event(
                         event.param_id,
                         matches!(event.kind, PluginParameterEventKind::GestureBegin),
                     );
-                    try_push(out_events, &gesture.header)
+                    unsafe { try_push(out_events, &gesture.header) }
                 }
             };
             answers.push(accepted);
@@ -6210,7 +6243,7 @@ mod tests {
         _plugin: *const clap_plugin,
         process: *const clap_process,
     ) -> i32 {
-        emit_staged_events((*process).out_events);
+        unsafe { emit_staged_events((*process).out_events) };
         CLAP_PROCESS_CONTINUE
     }
 
@@ -6220,7 +6253,7 @@ mod tests {
         out_events: *const clap_output_events,
     ) {
         FLUSH_CALLS.fetch_add(1, Ordering::Relaxed);
-        emit_staged_events(out_events);
+        unsafe { emit_staged_events(out_events) };
     }
 
     static FLUSH_CALLS: AtomicU32 = AtomicU32::new(0);
@@ -6636,12 +6669,13 @@ mod tests {
         _plugin: *const clap_plugin,
         process: *const clap_process,
     ) -> clap_process_status {
-        for buffer_index in 0..(*process).audio_outputs_count {
-            let buffer = &mut *(*process).audio_outputs.add(buffer_index as usize);
+        for buffer_index in 0..unsafe { (*process).audio_outputs_count } {
+            let buffer = unsafe { &mut *(*process).audio_outputs.add(buffer_index as usize) };
             for channel in 0..buffer.channel_count {
-                let channel_data = *(buffer.data32.add(channel as usize));
-                let samples =
-                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize);
+                let channel_data = unsafe { *(buffer.data32.add(channel as usize)) };
+                let samples = unsafe {
+                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize)
+                };
                 samples.fill(UNDEFINED_SAMPLE);
             }
         }
@@ -6884,7 +6918,7 @@ mod tests {
         CAPTURED_STEADY_TIMES
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push((*process).steady_time);
+            .push(unsafe { (*process).steady_time });
         CLAP_PROCESS_CONTINUE
     }
 
@@ -6971,10 +7005,10 @@ mod tests {
         plugin: *const clap_plugin,
         id: *const i8,
     ) -> *const c_void {
-        if CStr::from_ptr(id) == CLAP_EXT_TAIL {
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_TAIL {
             return &STUB_TAIL_EXT as *const clap_plugin_tail as *const c_void;
         }
-        stub_get_extension(plugin, id)
+        unsafe { stub_get_extension(plugin, id) }
     }
 
     fn tail_plugin_ptr() -> *const clap_plugin {

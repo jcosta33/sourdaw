@@ -99,7 +99,7 @@ const FALLBACK_CONTENT_SCALE: f64 = 1.0;
 /// # Safety
 /// `pointer` is null, or a live interface of the named type.
 pub(crate) unsafe fn com_identity<I: vst3::Interface>(pointer: *mut I) -> Option<*mut FUnknown> {
-    ComRef::from_raw(pointer)?
+    unsafe { ComRef::from_raw(pointer) }?
         .cast::<FUnknown>()
         .map(|identity| identity.as_ptr())
 }
@@ -508,7 +508,7 @@ impl IPlugFrameTrait for HostEditorFrame {
         if new_size.is_null() {
             return kInvalidArgument;
         }
-        let Some(requested) = EditorSize::from_rect(&*new_size) else {
+        let Some(requested) = EditorSize::from_rect(unsafe { &*new_size }) else {
             return kInvalidArgument;
         };
 
@@ -531,7 +531,8 @@ impl IPlugFrameTrait for HostEditorFrame {
         // that gives up waiting for the guard releases its own reference while
         // `onSize` may still be running through this one, so the wait is a bound
         // on how long a close takes rather than on whether the view is alive.
-        let Some(view) = ComRef::from_raw(view).map(|borrowed| borrowed.to_com_ptr()) else {
+        let Some(view) = unsafe { ComRef::from_raw(view) }.map(|borrowed| borrowed.to_com_ptr())
+        else {
             self.state.end_resize();
             return kInvalidArgument;
         };
@@ -543,7 +544,7 @@ impl IPlugFrameTrait for HostEditorFrame {
 
         // The plugin's own rect, origin included: `onSize` is told the rectangle
         // the view asked for, not a copy of its extent moved to the origin.
-        let accepted = view.onSize(new_size) == kResultOk;
+        let accepted = unsafe { view.onSize(new_size) } == kResultOk;
         if !accepted {
             self.state.restore_granted(previous);
         }
@@ -564,11 +565,11 @@ impl IRunLoopTrait for HostEditorFrame {
         handler: *mut IEventHandler,
         fd: FileDescriptor,
     ) -> tresult {
-        self.state.run_loop.register_event_handler(handler, fd)
+        unsafe { self.state.run_loop.register_event_handler(handler, fd) }
     }
 
     unsafe fn unregisterEventHandler(&self, handler: *mut IEventHandler) -> tresult {
-        self.state.run_loop.unregister_event_handler(handler)
+        unsafe { self.state.run_loop.unregister_event_handler(handler) }
     }
 
     unsafe fn registerTimer(
@@ -576,11 +577,11 @@ impl IRunLoopTrait for HostEditorFrame {
         handler: *mut ITimerHandler,
         milliseconds: TimerInterval,
     ) -> tresult {
-        self.state.run_loop.register_timer(handler, milliseconds)
+        unsafe { self.state.run_loop.register_timer(handler, milliseconds) }
     }
 
     unsafe fn unregisterTimer(&self, handler: *mut ITimerHandler) -> tresult {
-        self.state.run_loop.unregister_timer(handler)
+        unsafe { self.state.run_loop.unregister_timer(handler) }
     }
 }
 
@@ -799,7 +800,7 @@ impl Vst3Editor {
     /// attached.
     unsafe fn negotiate_size(&self, requested: EditorSize) -> Result<EditorSize, String> {
         let mut rect = self.state.to_view_units(requested).to_rect();
-        if self.view.checkSizeConstraint(&mut rect) != kResultTrue {
+        if unsafe { self.view.checkSizeConstraint(&mut rect) } != kResultTrue {
             return Err("[VST3] this editor refused the requested size".to_string());
         }
         let constrained = EditorSize::from_rect(&rect)
@@ -808,7 +809,7 @@ impl Vst3Editor {
 
         let previous = self.state.granted();
         self.state.resize_host_window(granted);
-        if self.view.onSize(&mut rect) != kResultOk {
+        if unsafe { self.view.onSize(&mut rect) } != kResultOk {
             self.state.restore_granted(previous);
             return Err("[VST3] this editor refused to move to the constrained size".to_string());
         }
@@ -890,19 +891,19 @@ unsafe fn attach(
     plugin_name: &str,
 ) -> Result<(), String> {
     if platform_states_content_scale() {
-        apply_content_scale(view, state.view_units_per_logical() as f32);
+        unsafe { apply_content_scale(view, state.view_units_per_logical() as f32) };
     }
 
     // A view that states no size yet is not a refusal: plugins exist that only
     // know their size once they can see a parent, so the pre-attach window
     // resize is skipped and the question asked again below.
-    let preferred = read_view_size(view).map(|size| state.to_logical(size));
+    let preferred = unsafe { read_view_size(view) }.map(|size| state.to_logical(size));
     if let Some(preferred) = preferred {
         state.record_granted(preferred);
         state.resize_host_window(preferred);
     }
 
-    if view.attached(parent, view_type) != kResultOk {
+    if unsafe { view.attached(parent, view_type) } != kResultOk {
         return Err(format!(
             "[VST3] '{plugin_name}' refused to attach its editor to the host window"
         ));
@@ -910,11 +911,11 @@ unsafe fn attach(
 
     // A plugin may settle on a different size once it can see its parent, and the
     // window the host is about to show has to match.
-    let settled = read_view_size(view).map(|size| state.to_logical(size));
+    let settled = unsafe { read_view_size(view) }.map(|size| state.to_logical(size));
     let Some(size) = settled.or(preferred) else {
         // The view is attached now, so the caller's `setFrame(null)` is no
         // longer enough on its own: the detach it owes has to run first.
-        view.removed();
+        unsafe { view.removed() };
         return Err(format!(
             "[VST3] '{plugin_name}' would not state a size for its editor"
         ));
@@ -938,7 +939,7 @@ unsafe fn read_view_size(view: &ComPtr<IPlugView>) -> Option<EditorSize> {
         right: 0,
         bottom: 0,
     };
-    if view.getSize(&mut rect) != kResultOk {
+    if unsafe { view.getSize(&mut rect) } != kResultOk {
         return None;
     }
     EditorSize::from_rect(&rect)
@@ -951,7 +952,7 @@ unsafe fn apply_content_scale(view: &ComPtr<IPlugView>, scale: f32) {
     // A plugin that does not implement the interface has nothing to be told, and
     // that is not a failure: the scale is advice, and the editor still attaches.
     if let Some(scaling) = view.cast::<IPlugViewContentScaleSupport>() {
-        scaling.setContentScaleFactor(scale);
+        unsafe { scaling.setContentScaleFactor(scale) };
     }
 }
 
