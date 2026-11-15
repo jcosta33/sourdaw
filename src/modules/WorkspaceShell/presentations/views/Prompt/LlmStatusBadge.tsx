@@ -60,6 +60,15 @@ function getHostedProviderLabel(provider: 'anthropic' | 'openai' | 'openai-compa
     return 'OpenAI-compatible';
 }
 
+/** Names the attempt answering now from the status alone, never from the preference or the resolved route. */
+function getAnsweringName(status: Extract<LlmEngineStatus, { state: 'generating' }>): string {
+    if (status.backend === 'cloud') {
+        return `${getHostedProviderLabel(status.provider)} · ${status.modelId}`;
+    }
+    const model = WEBLLM_MODELS.find((candidate) => candidate.id === status.modelId);
+    return `Browser · ${model?.displayName ?? status.modelId}`;
+}
+
 export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactElement | null => {
     const [showPanel, setShowPanel] = useState(false);
     const [selectedModelId, setSelectedModelId] = useState(getActiveModelId);
@@ -80,7 +89,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     // panel describes. Reading availability through a second predicate lets the
     // two answers disagree — an available badge over a panel that still
     // describes no backend.
-    const backend = status.state === 'ready' ? status.backend : resolvedBackend;
+    const backend = status.state === 'ready' || status.state === 'generating' ? status.backend : resolvedBackend;
     let backendLabel: string;
     if (backend === 'cloud') {
         backendLabel = hostedProviderStatus ? getHostedProviderLabel(hostedProviderStatus.provider) : 'Cloud';
@@ -244,10 +253,11 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Generating ──────────────────────────────────────────────────────────
     if (status.state === 'generating') {
+        const answering = `Answering with ${getAnsweringName(status)}`;
         return (
-            <Row gap={1.5}>
+            <Row gap={1.5} role="status" title={answering}>
                 <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
-                <span className="text-[10px] text-primary whitespace-nowrap">Thinking…</span>
+                <span className="max-w-[220px] truncate text-[10px] text-primary whitespace-nowrap">{answering}</span>
             </Row>
         );
     }
