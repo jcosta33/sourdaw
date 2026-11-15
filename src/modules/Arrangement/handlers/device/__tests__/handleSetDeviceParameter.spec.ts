@@ -68,41 +68,44 @@ describe('handleSetDeviceParameter', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
-    it.each([true, false])('keeps canonical settlement independent of current runtime authority %s', (current) => {
-        mocks.setDeviceParameter.mockReturnValue(true);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.8 } }] }],
-        });
-        const action = {
-            type: 'setDeviceParameter' as const,
-            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
-        };
-        const owner = Symbol('preview');
-        const context = {
-            actions: [action],
-            actionIndex: 0,
-            deviceParameterRuntimeAuthority: {
-                trackId: 't1',
-                deviceId: 'd1',
-                paramId: 'gain',
-                owner,
-                isCurrent: () => current,
-            },
-        };
-        expect(handleSetDeviceParameter.execute(action, context)).toEqual({ status: 'written' });
-        const expectedOptions: Parameters<
-            typeof import('../../../useCases/device/setDeviceParameter/setDeviceParameter').setDeviceParameter
-        >[3] = {
-            automationRecordingPolicy: undefined,
-            runtimeOwner: owner,
-        };
-        if (!current) {
-            expectedOptions.projectOnly = true;
+    it.each([true, false])(
+        'keeps canonical settlement independent of current runtime authority %s',
+        async (current) => {
+            mocks.setDeviceParameter.mockReturnValue(true);
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.8 } }] }],
+            });
+            const action = {
+                type: 'setDeviceParameter' as const,
+                payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+            };
+            const owner = Symbol('preview');
+            const context = {
+                actions: [action],
+                actionIndex: 0,
+                deviceParameterRuntimeAuthority: {
+                    trackId: 't1',
+                    deviceId: 'd1',
+                    paramId: 'gain',
+                    owner,
+                    isCurrent: () => current,
+                },
+            };
+            expect(handleSetDeviceParameter.execute(action, context)).toEqual({ status: 'written' });
+            const expectedOptions: Parameters<
+                typeof import('../../../useCases/device/setDeviceParameter/setDeviceParameter').setDeviceParameter
+            >[3] = {
+                automationRecordingPolicy: undefined,
+                runtimeOwner: owner,
+            };
+            if (!current) {
+                expectedOptions.projectOnly = true;
+            }
+            expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, expectedOptions);
+            await handleSetDeviceParameter.prepareAbort?.(action, context)();
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(current ? 1 : 0);
         }
-        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, expectedOptions);
-        handleSetDeviceParameter.prepareAbort?.(action, context)();
-        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(current ? 1 : 0);
-    });
+    );
 
     it('reports no-write when the authoritative use case rejects the owner', () => {
         mocks.setDeviceParameter.mockReturnValue(false);
@@ -471,7 +474,7 @@ describe('handleSetDeviceParameter', () => {
     // A Bacteria band body is not a declared parameter, so a band that has
     // never had one stores no value; an aborted first pick has to stop the
     // body in the engine by sending its undeclared default, no body (-1).
-    it('rolls an aborted first body pick back to no body in the engine', () => {
+    it('rolls an aborted first body pick back to no body in the engine', async () => {
         mocks.updateDeviceParam.mockImplementation(() => undefined);
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
@@ -486,7 +489,7 @@ describe('handleSetDeviceParameter', () => {
             payload: { deviceId: 'd1', paramId: 'band0_convolutionIr', value: 2 },
         };
 
-        handleSetDeviceParameter.prepareAbort?.(action)();
+        await handleSetDeviceParameter.prepareAbort?.(action)();
 
         expect(mocks.updateDeviceParam.mock.calls).toEqual([['t1', 'd1', 'band0_convolutionIr', -1]]);
     });
@@ -512,10 +515,10 @@ describe('handleSetDeviceParameter', () => {
         expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
     });
 
-    it('carries a suppressed recording policy into the write it delegates', () => {
+    it('carries a suppressed recording policy into the write it delegates', async () => {
         mocks.setDeviceParameter.mockReturnValue(true);
 
-        handleSetDeviceParameter.execute({
+        await handleSetDeviceParameter.execute({
             type: 'setDeviceParameter',
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: 'suppressed' },
         });
@@ -659,7 +662,7 @@ describe('handleSetDeviceParameter', () => {
         ).toBe(true);
     });
 
-    it('leaves the automation-recording maps alone when aborting a suppressed edit', () => {
+    it('leaves the automation-recording maps alone when aborting a suppressed edit', async () => {
         // `vi.clearAllMocks` drops recorded calls but keeps implementations, so a
         // throwing runtime writer set by an earlier case would still be in place.
         mocks.updateDeviceParam.mockImplementation(() => undefined);
@@ -671,7 +674,7 @@ describe('handleSetDeviceParameter', () => {
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: 'suppressed' },
         };
 
-        handleSetDeviceParameter.prepareAbort?.(action)();
+        await handleSetDeviceParameter.prepareAbort?.(action)();
 
         // The runtime parameter still goes back: the engine write happened.
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.8);

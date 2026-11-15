@@ -80,12 +80,12 @@ describe('section navigation current clock', () => {
         { direction: 'previous' as const, target: 16 },
     ])(
         'moves $direction after the source clock crosses the section boundary ahead of the published cursor',
-        ({ direction, target }) => {
+        async ({ direction, target }) => {
             expectCurrentBeat(16.01);
             expect(playheadPositionRef.current).toBe(15.99);
             expect(transportStore.value?.playheadPosition).toBe(8);
 
-            handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
+            await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
 
             expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(target);
             expect(clock.readNativeCursor).toHaveBeenCalledTimes(1);
@@ -93,7 +93,7 @@ describe('section navigation current clock', () => {
         }
     );
 
-    it('uses the tempo-map integral when the clock crosses a tempo boundary', () => {
+    it('uses the tempo-map integral when the clock crosses a tempo boundary', async () => {
         tempoMapStore.set({
             changes: [
                 { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
@@ -102,13 +102,13 @@ describe('section navigation current clock', () => {
         });
         expectCurrentBeat(16.005);
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
+        await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
 
         expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(32);
         expect(clock.readAudioTime).toHaveBeenCalledTimes(1);
     });
 
-    it('uses the wrapped current occurrence after the source clock crosses the loop end', () => {
+    it('uses the wrapped current occurrence after the source clock crosses the loop end', async () => {
         transportStore.set({
             ...defaultTransportState,
             isPlaying: true,
@@ -120,7 +120,7 @@ describe('section navigation current clock', () => {
         playheadPositionRef.current = 50;
         expectCurrentBeat(4.01);
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'previous' } });
+        await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'previous' } });
 
         expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(4);
         expect(clock.readAudioTime).toHaveBeenCalledTimes(1);
@@ -129,27 +129,30 @@ describe('section navigation current clock', () => {
     it.each([
         { direction: 'next' as const, target: 32 },
         { direction: 'previous' as const, target: 4 },
-    ])('uses the authoritative parked beat and skips its exact start moving $direction', ({ direction, target }) => {
-        transportStore.set({ ...defaultTransportState, isPlaying: false, playheadPosition: 16 });
-        playheadPositionRef.current = 50;
+    ])(
+        'uses the authoritative parked beat and skips its exact start moving $direction',
+        async ({ direction, target }) => {
+            transportStore.set({ ...defaultTransportState, isPlaying: false, playheadPosition: 16 });
+            playheadPositionRef.current = 50;
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
+            await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
 
-        expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(target);
-        expect(clock.readAudioTime).not.toHaveBeenCalled();
-        expect(clock.readNativeCursor).not.toHaveBeenCalled();
-    });
+            expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(target);
+            expect(clock.readAudioTime).not.toHaveBeenCalled();
+            expect(clock.readNativeCursor).not.toHaveBeenCalled();
+        }
+    );
 
     it.each([
         { cursor: 16.01, direction: 'next' as const, target: 32 },
         { cursor: 16, direction: 'previous' as const, target: 4 },
     ])(
         'uses the native cursor at $cursor moving $direction without reading browser time',
-        ({ cursor, direction, target }) => {
+        async ({ cursor, direction, target }) => {
             clock.readNativeCursor.mockReturnValue(cursor);
             playheadPositionRef.current = 50;
 
-            handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
+            await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction } });
 
             expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(target);
             expect(clock.readNativeCursor).toHaveBeenCalledTimes(1);
@@ -157,13 +160,13 @@ describe('section navigation current clock', () => {
         }
     );
 
-    it('does not navigate to an invalid section and remains outside project history', () => {
+    it('does not navigate to an invalid section and remains outside project history', async () => {
         markerStore.set({
             markers: [],
             sections: [{ id: 'invalid', name: 'Invalid', startBeat: 32, endBeat: 16, color: '#778899' }],
         });
 
-        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
+        await handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
 
         expect(seekPlayhead).not.toHaveBeenCalled();
         expect(handleNavigateSection.executionKind).toBe('runtime');

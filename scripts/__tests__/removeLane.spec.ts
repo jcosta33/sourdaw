@@ -1938,6 +1938,34 @@ describe('lane-removal shell boundary', () => {
         );
     });
 
+    /**
+     * gh answers the checkout query from git config any lane can write, where
+     * `remote.<name>.gh-resolved` overrides the remote URL; ownership proven in another repository
+     * would let removal delete a lane whose work never reached main.
+     */
+    it('refuses ownership reads when the checkout query names another repository', () => {
+        const ghCalls: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                if (command === 'gh') {
+                    ghCalls.push(args);
+                }
+                if (args.includes('nameWithOwner')) {
+                    return 'cli/cli';
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort(shell);
+
+        expect(() => port.pullRequests('feat/work')).toThrow(
+            'refusing to operate on cli/cli; expected jcosta33/sourdaw'
+        );
+        expect(() => port.repository()).toThrow('refusing to operate on cli/cli; expected jcosta33/sourdaw');
+        expect(ghCalls.every((args) => args.includes('nameWithOwner'))).toBe(true);
+    });
+
     it('paginates exact-repository ownership and uses native lock and removal commands', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const runs: Array<{ command: string; args: string[] }> = [];
