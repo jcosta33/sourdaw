@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { type EvidencePort, githubEvidencePort, validateNightlyEvidence } from '../codeqlNightlyEvidence.ts';
+
 import { withRecordingGh } from './helpers/recordingGh.ts';
 
 const HEAD = 'a'.repeat(40);

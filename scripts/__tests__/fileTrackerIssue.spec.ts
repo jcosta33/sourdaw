@@ -17,6 +17,7 @@ import {
     titleSubject,
     type IssueSubmission,
 } from '../fileTrackerIssue';
+
 import { withRecordingGh } from './helpers/recordingGh.ts';
 
 const templates = join(process.cwd(), '.github/ISSUE_TEMPLATE');
