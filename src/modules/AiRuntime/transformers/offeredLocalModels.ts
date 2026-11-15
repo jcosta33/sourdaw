@@ -1,6 +1,6 @@
 import { LOCAL_MODEL_TIERS, type LocalModelTier } from '../models/ModelInfo';
 
-import type { MachineMemoryReading } from '../stores/machineMemoryStore';
+import type { MachineMemoryReading } from '../models/MachineMemoryReading';
 
 type OfferableModel = { id: string; tier: LocalModelTier; memoryGb: number };
 

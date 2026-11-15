@@ -27,6 +27,14 @@ describe('offeredLocalModels', () => {
         expect(ids(offeredLocalModels(models, { state: 'known', totalBytes }))).toEqual(expected);
     });
 
+    it('offers the large tier only with a known figure that clears it', () => {
+        const withoutFigure = ids(offeredLocalModels(models, { state: 'unavailable' }));
+        const withFigure = ids(offeredLocalModels(models, { state: 'known', totalBytes: 64_000_000_000 }));
+
+        expect(withoutFigure).not.toContain('large');
+        expect(withFigure).toContain('large');
+    });
+
     it.each([{ state: 'unread' } as const, { state: 'unavailable' } as const])(
         'offers every tier up to Pro and hides the larger ones when the reading is $state',
         (reading) => {

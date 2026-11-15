@@ -1287,11 +1287,12 @@ describe('WebLLM catalogue admission record', () => {
                 gap: 'prebuilt-repository-differs',
                 alter: (input) => ({
                     ...input,
-                    prebuiltList: input.prebuiltList.map((entry) =>
-                        entry.model_id === modelId
-                            ? { ...entry, model: 'https://huggingface.co/other/Repo-MLC' }
-                            : entry
-                    ),
+                    prebuiltList: input.prebuiltList.map((entry) => {
+                        if (entry.model_id !== modelId) {
+                            return entry;
+                        }
+                        return { ...entry, model: 'https://huggingface.co/other/Repo-MLC' };
+                    }),
                 }),
             },
             {

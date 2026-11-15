@@ -44,6 +44,8 @@ type BadgeModelInfo = {
     parameterCount: string;
 };
 
+type OfferedModelInfo = BadgeModelInfo & { id: string };
+
 const REFUSAL_LABELS = {
     'shader-f16-unavailable': 'Needs shader-f16',
     'insufficient-storage': 'Not enough storage',
@@ -374,7 +376,7 @@ type ModelSetupPanelProps = {
     tierKey: 'cloud' | 'webllm';
     modelInfo: BadgeModelInfo;
     selectedModelId: string;
-    offeredModels: readonly BadgeModelInfo[];
+    offeredModels: readonly OfferedModelInfo[];
     machineMemory: MachineMemoryReading;
     /** The sentence saying why the last load was refused, shown above the chooser. */
     refusalMessage?: string;
@@ -479,7 +481,7 @@ const ModelSetupPanel = ({
 // ── Model option card ───────────────────────────────────────────────────
 
 type ModelOptionProps = {
-    model: BadgeModelInfo;
+    model: OfferedModelInfo;
     isSelected: boolean;
     onSelect: () => void;
 };

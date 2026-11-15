@@ -9,28 +9,6 @@ import { LlmStatusBadge } from '../LlmStatusBadge';
 
 import type { MachineMemoryReading } from '#/modules/AiRuntime/stores';
 
-// The catalogue has no large-tier model yet. This one stands in for the tier a later release adds,
-// so the rule that hides a tier above Pro without a memory figure has something to hide.
-vi.mock('#/modules/AiRuntime/models/ModelInfo', async (importOriginal) => {
-    const original = await importOriginal<typeof import('#/modules/AiRuntime/models/ModelInfo')>();
-    return {
-        ...original,
-        WEBLLM_MODELS: [
-            ...original.WEBLLM_MODELS,
-            {
-                id: 'Synthetic-70B-test',
-                displayName: 'Large',
-                parameterCount: '70B',
-                description: 'A stand-in large local model.',
-                downloadSize: '~40 GB',
-                ramUsage: '~40.0 GB',
-                memoryGb: 40,
-                tier: 'large',
-            },
-        ],
-    };
-});
-
 // Nothing here is stubbed: the badge resolves its backend through the real
 // admission chain, so the capability report is the only input that decides what
 // it renders.
@@ -154,7 +132,6 @@ describe('LlmStatusBadge', () => {
         const light = /^Light/;
         const standard = /^Standard/;
         const pro = /^Pro/;
-        const large = /^Large/;
 
         async function openPicker(reading: MachineMemoryReading, onLoad = vi.fn()): Promise<void> {
             capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
@@ -174,43 +151,37 @@ describe('LlmStatusBadge', () => {
                 label: '8 GB clears Light and Standard only',
                 bytes: 8_000_000_000,
                 listed: [light, standard],
-                hidden: [pro, large],
+                hidden: [pro],
             },
             {
                 label: '16 GB clears Light, Standard and Pro',
                 bytes: 16_000_000_000,
                 listed: [light, standard, pro],
-                hidden: [large],
+                hidden: [],
             },
             {
                 label: 'exactly the Pro figure clears Pro',
                 bytes: 10_300_000_000,
                 listed: [light, standard, pro],
-                hidden: [large],
+                hidden: [],
             },
             {
                 label: 'one byte under the Pro figure does not',
                 bytes: 10_299_999_999,
                 listed: [light, standard],
-                hidden: [pro, large],
+                hidden: [pro],
             },
             {
                 label: 'exactly the Standard figure clears Standard',
                 bytes: 4_300_000_000,
                 listed: [light, standard],
-                hidden: [pro, large],
+                hidden: [pro],
             },
             {
                 label: 'one byte under the Standard figure does not',
                 bytes: 4_299_999_999,
                 listed: [light],
-                hidden: [standard, pro, large],
-            },
-            {
-                label: 'enough memory lists the large tier',
-                bytes: 40_000_000_000,
-                listed: [light, standard, pro, large],
-                hidden: [],
+                hidden: [standard, pro],
             },
         ])('lists only what the reported memory clears: $label', async ({ bytes, listed, hidden }) => {
             await openPicker({ state: 'known', totalBytes: bytes });
@@ -226,17 +197,13 @@ describe('LlmStatusBadge', () => {
         it.each([
             { label: 'unavailable', reading: { state: 'unavailable' } as const },
             { label: 'unread', reading: { state: 'unread' } as const },
-        ])(
-            'lists every tier up to Pro with its memory figure and hides larger ones when the reading is $label',
-            async ({ reading }) => {
-                await openPicker(reading);
+        ])('lists every shipped tier with its memory figure when the reading is $label', async ({ reading }) => {
+            await openPicker(reading);
 
-                expect(screen.getByRole('button', { name: light })).toHaveTextContent('~2.7 GB');
-                expect(screen.getByRole('button', { name: standard })).toHaveTextContent('~4.3 GB');
-                expect(screen.getByRole('button', { name: pro })).toHaveTextContent('~10.3 GB');
-                expect(screen.queryByRole('button', { name: large })).not.toBeInTheDocument();
-            }
-        );
+            expect(screen.getByRole('button', { name: light })).toHaveTextContent('~2.7 GB');
+            expect(screen.getByRole('button', { name: standard })).toHaveTextContent('~4.3 GB');
+            expect(screen.getByRole('button', { name: pro })).toHaveTextContent('~10.3 GB');
+        });
 
         it('selects the largest offered model, not the unoffered default, and loads that one', async () => {
             const onLoad = vi.fn();
