@@ -1020,7 +1020,10 @@ describe('relative to the last commit', () => {
              * The tracks a standing commit's re-target reaches: one track is committed directly, several
              * wait on a card, so both the committed and the proposed gain moves count.
              */
-            async function retargetedTracks(prompt: string, extraTracks: ReadonlyArray<[string, string]> = []) {
+            async function retargetedTracks(
+                prompt: string,
+                extraTracks: ReadonlyArray<readonly [string, string]> = []
+            ) {
                 for (const [id, name] of extraTracks) {
                     addTrack(createTrack(id, name), 'audio');
                 }
@@ -2519,7 +2522,7 @@ describe('relative to the last commit', () => {
             [
                 'the user undid the commit while it was planned',
                 'apply' as const,
-                () => {
+                (): void => {
                     const settle = agentRunWorkLease.settle.bind(agentRunWorkLease);
                     vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
                         void undo();
@@ -2531,13 +2534,13 @@ describe('relative to the last commit', () => {
             [
                 'the group revert throws',
                 'apply' as const,
-                () => {
+                (): void => {
                     revertMocks.outcome = () =>
                         Promise.reject(new Error('Grouped undo failed: The inverse write failed'));
                 },
                 -3,
             ],
-            ['the run mode may not commit', 'plan' as const, () => undefined, -3],
+            ['the run mode may not commit', 'plan' as const, (): void => undefined, -3],
         ])(
             'reports a resumed undo as rejected and releases the claim when %s',
             async (_state, mode, arrange, level) => {
