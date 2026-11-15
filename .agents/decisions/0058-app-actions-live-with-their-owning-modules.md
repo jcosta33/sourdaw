@@ -119,15 +119,14 @@ a new action must join.
    argument schema generator emits a canonical order, so moving a variant between files leaves the
    generated `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` unchanged except for its
    import line. Any other diff in that file during a move slice means a shape changed, and it blocks
-   the slice. Release-inventory digests move for two reasons. A tracked path moves. Or a tracked set pins a
-   file whole: `scripts/checkReleaseInventory.ts` has a tracked set, `grand-boule-project-state`,
-   that pins `src/utils/handlerContract.ts` and
+   the slice. The release inventory records only `tracked-set:<label>` entries, so an edit to a tracked file
+   moves nothing there. `scripts/checkReleaseInventory.ts` has a tracked set,
+   `grand-boule-project-state`, that pins `src/utils/handlerContract.ts` and
    `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` as whole files, to pin the
-   GrandBoule device-state action shape. So any edit to either file moves the digest. Every slice
-   that edits a pinned file restamps (`pnpm release:restamp:tracked-set`), and a slice that moves a
-   pinned variant also repoints the set to the variant's new file. The same slice updates the
-   independent path list and fixture in `scripts/__tests__/checkReleaseInventory.spec.ts`, which
-   asserts that list equals the production digest. The agent evidence manifest does not move.
+   GrandBoule device-state action shape. A slice that moves a pinned variant to a new file
+   repoints the set's pathspecs and updates the independent path list in
+   `scripts/__tests__/checkReleaseInventory.spec.ts`, which asserts that list equals the files
+   the pathspecs resolve to. The agent evidence manifest does not move.
 
 7. **Per-action behaviour is one exhaustive lookup per concern.** Code that derives a property of
    each action by enumerating action types with a default branch is a lookup table. Examples are a

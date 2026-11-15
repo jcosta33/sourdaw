@@ -10,11 +10,13 @@ limitation, never as passed.
 
 ## Standing probes
 
-1. **A tracked-set source edit leaves its digest stale (#5568).** For each surface boundary in
-   `scripts/checkReleaseInventory.ts`, run `git diff --name-only <base> <head> -- <gitPathspecs>` with its
-   `:(exclude…)` entries, matching only `gitPathspecs`, never the broader licensing `paths`. Any listed path
-   requires `release/open-source-inventory.json` to move in the same diff; the author's
-   `pnpm release:restamp:tracked-set` refuses until the source change is committed.
+1. **A boundary registry label change leaves the inventory stale (#5568, #6726).** The inventory records
+   `tracked-set:<label>` per `GRAND_BOULE_RELEASE_REGISTRY` boundary, never a content hash, so a source edit
+   inside a boundary must leave `release/open-source-inventory.json` untouched. A diff that adds, removes,
+   or renames a boundary `digestLabel` must move those entries in the same diff. The checker still refuses a
+   boundary whose tracked set is empty, has a missing file, or has an unsafe (symlink, non-regular, or
+   outside-repository) file; probe by emptying one pathspec or replacing a tracked file with a symlink and
+   confirming `pnpm test:release-inventory` names it.
 2. **A `package.json` edit moves the Cargo source pin (#5642).** `scripts/dependencyLicenseReport.ts` digests
    `package.json` into its Cargo source pin, so every `package.json` edit must move the dependency restamp
    artifacts under `release/` in the same diff. Read the diff for both; one without the other is the finding.

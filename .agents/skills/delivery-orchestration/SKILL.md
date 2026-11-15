@@ -163,13 +163,13 @@ that model. The author works only in the lane and commits there; it never pushes
       lists stale digests; regenerate with
       `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json --write` and commit the
       rewrite.
-    - **Release tracked sets**: `release/open-source-inventory.json` records digests over the
-      `gitPathspecs` of `GRAND_BOULE_RELEASE_REGISTRY` in `scripts/checkReleaseInventory.ts`, which
-      reach outside the Grand Boule module into Transport MIDI scheduling, AudioEngine runtime and
-      worklet files, and the command handler maps and argument keys. After committing a change to any
-      of those paths, run `pnpm release:restamp:tracked-set`: it refuses uncommitted tracked-set
-      changes, prints `release inventory already current` or each moved digest, and rewrites the
-      inventory for you to commit. PR CI's release inventory check fails on a stale digest.
+    - **Release tracked sets**: the `gitPathspecs` of `GRAND_BOULE_RELEASE_REGISTRY` in
+      `scripts/checkReleaseInventory.ts` reach outside the Grand Boule module into Transport MIDI
+      scheduling, AudioEngine runtime and worklet files, and the command handler maps and argument
+      keys. Editing a file inside a tracked set needs no inventory edit: the inventory records only
+      `tracked-set:<label>` entries. Adding, removing, or renaming a boundary in
+      `GRAND_BOULE_RELEASE_REGISTRY` moves those entries; edit `release/open-source-inventory.json`
+      to match. PR CI's release inventory check still refuses a boundary with no tracked, readable files.
 
 ### d. Publish
 

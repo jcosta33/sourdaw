@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     copyFileSync,
-    closeSync,
     constants,
     existsSync,
     linkSync,
@@ -10,7 +9,6 @@ import {
     mkdtempSync,
     openSync,
     readFileSync,
-    readlinkSync,
     readSync,
     rmSync,
     symlinkSync,
@@ -1038,44 +1036,28 @@ const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
     ':(exclude)src/modules/GrandBoule/AGENTS.md',
 ];
 
-function readIndependentTrackedEntry(absolutePath: string): Buffer {
-    let fileDescriptor: number | undefined;
-    try {
-        fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
-        return readFileSync(fileDescriptor);
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
-            return readlinkSync(absolutePath, { encoding: 'buffer' });
-        }
-        throw error;
-    } finally {
-        if (fileDescriptor !== undefined) {
-            closeSync(fileDescriptor);
-        }
-    }
-}
-
-function independentTrackedSetSha256(root: string, pathspecs: readonly string[], label: string): string {
-    const files = execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
+function trackedFilesForPathspecs(root: string, pathspecs: readonly string[]): string[] {
+    return execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
         cwd: root,
         encoding: 'utf8',
     })
         .split('\0')
         .filter(Boolean)
         .sort();
-    const hash = createHash('sha256');
-    for (const path of files) {
-        const absolutePath = join(root, path);
-        hash.update(path);
-        hash.update('\0');
-        hash.update(readIndependentTrackedEntry(absolutePath));
-        hash.update('\0');
-    }
-    return `tracked-set-sha256:${hash.digest('hex')}:${label}`;
 }
 
-function independentGrandBouleProjectStateDigest(root: string): string {
-    return independentTrackedSetSha256(root, INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS, 'grand-boule-project-state');
+function registryTrackedFilesByLabel(root: string, digestLabel: string): string[] {
+    const boundary = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find((candidate) => candidate.digestLabel === digestLabel);
+    if (boundary === undefined) {
+        throw new Error(`missing Grand Boule boundary ${digestLabel}`);
+    }
+    return trackedFilesForPathspecs(root, boundary.gitPathspecs);
+}
+
+function boundaryLabelsTracking(root: string, path: string): string[] {
+    return GRAND_BOULE_RELEASE_REGISTRY.boundaries
+        .filter(({ gitPathspecs }) => trackedFilesForPathspecs(root, gitPathspecs).includes(path))
+        .map(({ digestLabel }) => digestLabel);
 }
 
 function findDigestByLabel(digests: readonly string[], label: string): string {
@@ -2691,12 +2673,12 @@ describe('release inventory', () => {
             expect(before.productSurfaces).toEqual(['Grand Boule source, browser WASM, and desktop runtime']);
             expect(before.digests).toHaveLength(GRAND_BOULE_RELEASE_REGISTRY.boundaries.length);
             expect(before.digests).toEqual(
-                GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ digestLabel }) =>
-                    expect.stringMatching(new RegExp(`^tracked-set-sha256:[0-9a-f]{64}:${digestLabel}$`))
-                )
+                GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ digestLabel }) => `tracked-set:${digestLabel}`)
             );
-            const projectStateDigest = findDigestByLabel(before.digests, 'grand-boule-project-state');
-            expect(projectStateDigest).toBe(independentGrandBouleProjectStateDigest(root));
+            // Independent path list: a pathspec change that adds or drops a pinned file fails here.
+            expect(registryTrackedFilesByLabel(root, 'grand-boule-project-state')).toEqual(
+                trackedFilesForPathspecs(root, INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS)
+            );
 
             writeFileSync(join(grandBoule, 'untracked.rs'), 'untracked source');
             expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
@@ -2704,7 +2686,7 @@ describe('release inventory', () => {
             const enginePath = join(grandBoule, 'engine.rs');
             const originalEngine = readFileSync(enginePath, 'utf8');
             writeFileSync(enginePath, 'changed source');
-            expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
             writeFileSync(enginePath, originalEngine);
 
             const providerSymlinkPath = join(root, 'src/modules/GrandBoule/CLAUDE.md');
@@ -2715,15 +2697,13 @@ describe('release inventory', () => {
             );
             rmSync(providerSymlinkPath);
             symlinkSync('AGENTS.md', providerSymlinkPath);
-            expect(
-                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
-            ).toBe(projectStateDigest);
+            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
 
             writeFileSync(
                 join(root, 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts'),
                 'changed descriptor'
             );
-            expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
 
             const representatives = [
                 'crates/daw-dsp/src/grand_boule/engine.rs',
@@ -2752,22 +2732,16 @@ describe('release inventory', () => {
                 'scripts/checkReleaseInventory.ts',
             ];
             writeGrandBouleReleaseFixture(root);
-            const baseline = grandBouleReleaseInventoryContract(root).digests;
-            for (const [index, path] of representatives.entries()) {
-                const absolute = join(root, path);
-                const original = readFileSync(absolute, 'utf8');
-                writeFileSync(absolute, `${original}\nmutation-${index}`);
-                const changed = grandBouleReleaseInventoryContract(root).digests;
+            for (const path of representatives) {
                 const boundaryIndex = GRAND_BOULE_RELEASE_REGISTRY.boundaries.findIndex(({ gitPathspecs }) =>
                     gitPathspecs.some((pathspec) => {
                         const normalized = pathspec.replace(/^:\(glob\)/u, '').replace(/\/\*\*$/u, '');
                         return path === normalized || path.startsWith(`${normalized}/`);
                     })
                 );
-                expect(
-                    changed.flatMap((digest, changedIndex) => (digest === baseline[changedIndex] ? [] : [changedIndex]))
-                ).toEqual([boundaryIndex]);
-                writeFileSync(absolute, original);
+                expect(boundaryLabelsTracking(root, path)).toEqual([
+                    GRAND_BOULE_RELEASE_REGISTRY.boundaries[boundaryIndex]!.digestLabel,
+                ]);
             }
         } finally {
             removeTemporaryDirectory(root);
@@ -2780,34 +2754,13 @@ describe('release inventory', () => {
     // `src/app/composeGrandBoule.ts` entries from GRAND_BOULE_RELEASE_REGISTRY's
     // `grand-boule-project-state` boundary (checkReleaseInventory.ts) turns
     // this red: bootstrap.ts would move the digest again, and composeGrandBoule.ts would not.
-    it('moves the project-state digest only for composeGrandBoule.ts, not for bootstrap.ts (#3089)', () => {
+    it('tracks composeGrandBoule.ts in project-state and leaves bootstrap.ts untracked (#3089)', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-compose-boundary-'));
         writeGrandBouleReleaseFixture(root);
 
         try {
-            const baseline = grandBouleReleaseInventoryContract(root).digests;
-
-            const bootstrapPath = join(root, 'src/app/bootstrap.ts');
-            const originalBootstrap = readFileSync(bootstrapPath, 'utf8');
-            writeFileSync(bootstrapPath, `${originalBootstrap}\n// mutated`);
-            execFileSync('git', ['add', '.'], { cwd: root });
-            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(baseline);
-            writeFileSync(bootstrapPath, originalBootstrap);
-
-            const composePath = join(root, 'src/app/composeGrandBoule.ts');
-            const originalCompose = readFileSync(composePath, 'utf8');
-            writeFileSync(composePath, `${originalCompose}\n// mutated`);
-            const afterComposeEdit = grandBouleReleaseInventoryContract(root).digests;
-            expect(afterComposeEdit).not.toEqual(baseline);
-            const changedIndexes = afterComposeEdit.flatMap((digest, index) =>
-                digest === baseline[index] ? [] : [index]
-            );
-            expect(changedIndexes).toEqual([
-                GRAND_BOULE_RELEASE_REGISTRY.boundaries.findIndex(
-                    ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
-                ),
-            ]);
-            writeFileSync(composePath, originalCompose);
+            expect(boundaryLabelsTracking(root, 'src/app/bootstrap.ts')).toEqual([]);
+            expect(boundaryLabelsTracking(root, 'src/app/composeGrandBoule.ts')).toEqual(['grand-boule-project-state']);
         } finally {
             removeTemporaryDirectory(root);
         }
@@ -2818,20 +2771,14 @@ describe('release inventory', () => {
     // Deleting the `:(exclude,glob)src/modules/GrandBoule/**/__tests__/**`
     // pathspec from GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state`
     // boundary (checkReleaseInventory.ts) turns this red.
-    it('holds the project-state digest byte-identical when a tracked Grand Boule spec changes (#2931)', () => {
+    it('keeps a Grand Boule module spec out of the project-state tracked set (#2931)', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-spec-exclusion-'));
         writeGrandBouleReleaseFixture(root);
 
         try {
-            const released = grandBouleReleaseInventoryContract(root);
-            const specPath = join(root, 'src/modules/GrandBoule/useCases/__tests__/fixture.spec.ts');
-            const originalSpec = readFileSync(specPath, 'utf8');
-            writeFileSync(specPath, `${originalSpec}\nit('covers one more case', () => {});`);
-
-            expect(
-                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
-            ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
-            expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
+            const specPath = 'src/modules/GrandBoule/useCases/__tests__/fixture.spec.ts';
+            expect(existsSync(join(root, specPath))).toBe(true);
+            expect(boundaryLabelsTracking(root, specPath)).toEqual([]);
         } finally {
             removeTemporaryDirectory(root);
         }
@@ -2841,20 +2788,14 @@ describe('release inventory', () => {
     // Deleting the `:(exclude)src/modules/GrandBoule/AGENTS.md` pathspec from
     // GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state` boundary
     // (checkReleaseInventory.ts) turns this red.
-    it('holds the project-state digest byte-identical when the Grand Boule module AGENTS.md changes (#2931)', () => {
+    it('keeps the Grand Boule module AGENTS.md out of the project-state tracked set (#2931)', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-agents-exclusion-'));
         writeGrandBouleReleaseFixture(root);
 
         try {
-            const released = grandBouleReleaseInventoryContract(root);
-            const agentsPath = join(root, 'src/modules/GrandBoule/AGENTS.md');
-            const originalAgents = readFileSync(agentsPath, 'utf8');
-            writeFileSync(agentsPath, `${originalAgents}\nAdditional module guidance.`);
-
-            expect(
-                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
-            ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
-            expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
+            const agentsPath = 'src/modules/GrandBoule/AGENTS.md';
+            expect(existsSync(join(root, agentsPath))).toBe(true);
+            expect(boundaryLabelsTracking(root, agentsPath)).toEqual([]);
         } finally {
             removeTemporaryDirectory(root);
         }
@@ -2864,22 +2805,56 @@ describe('release inventory', () => {
     // surface does distribute. Widening the exclusions past specs and the module
     // AGENTS.md in GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state`
     // boundary (checkReleaseInventory.ts) turns this red.
-    it('moves the project-state digest and refuses when a distributed Grand Boule source changes (#2931)', () => {
+    it('tracks a distributed Grand Boule source in project-state only (#2931)', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-distributed-source-'));
         writeGrandBouleReleaseFixture(root);
 
         try {
-            const released = grandBouleReleaseInventoryContract(root);
-            const sourcePath = join(root, 'src/modules/GrandBoule/models/GrandBouleConfig.ts');
-            const originalSource = readFileSync(sourcePath, 'utf8');
-            writeFileSync(sourcePath, `${originalSource}\nexport type GrandBouleAddition = {};`);
+            expect(boundaryLabelsTracking(root, 'src/modules/GrandBoule/models/GrandBouleConfig.ts')).toEqual([
+                'grand-boule-project-state',
+            ]);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
 
-            const changedLabels = grandBouleReleaseInventoryContract(root).digests.flatMap((digest, index) =>
-                digest === released.digests[index] ? [] : [digestLabelFromEntry(digest)]
+    // #6726: two pull requests editing files in the same tracked set must not both
+    // rewrite the inventory, so editing a tracked file leaves the contract unchanged.
+    // Restoring a content hash in `grandBouleReleaseInventoryContract` turns this red.
+    it('derives identical digests for trees differing only in a tracked-set file (#6726)', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-derived-digests-'));
+        const first = join(base, 'first');
+        const second = join(base, 'second');
+
+        try {
+            writeGrandBouleReleaseFixture(first);
+            writeGrandBouleReleaseFixture(second);
+            const pinned = 'src/utils/handlerContract.ts';
+            expect(boundaryLabelsTracking(first, pinned)).toEqual(['grand-boule-project-state']);
+            writeFileSync(join(second, pinned), `${readFileSync(join(second, pinned), 'utf8')}\n// edited`);
+
+            const firstContract = grandBouleReleaseInventoryContract(first);
+            const secondContract = grandBouleReleaseInventoryContract(second);
+            expect(secondContract.digests).toEqual(firstContract.digests);
+            expect(() => assertGrandBouleReleaseInventory(second, firstContract)).not.toThrow();
+        } finally {
+            removeTemporaryDirectory(base);
+        }
+    });
+
+    it('refuses a Grand Boule boundary whose tracked set is empty', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-empty-boundary-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const boundary = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+                ({ digestLabel }) => digestLabel === 'grand-boule-native-rust'
             );
-            expect(changedLabels).toEqual(['grand-boule-project-state']);
-            expect(thrownMessage(() => assertGrandBouleReleaseInventory(root, released))).toContain(
-                'grand-boule-project-state'
+            const files = registryTrackedFilesByLabel(root, 'grand-boule-native-rust');
+            expect(files.length).toBeGreaterThan(0);
+            execFileSync('git', ['rm', '--cached', '-q', '--', ...files], { cwd: root });
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                `Grand Boule release source boundary has no tracked files: ${boundary!.gitPathspecs.join(', ')}`
             );
         } finally {
             removeTemporaryDirectory(root);
@@ -3755,7 +3730,7 @@ describe('release inventory', () => {
             expect(staleSingleLabelMessage).toContain(`tracked set: ${projectStateBoundary.gitPathspecs.join(', ')}`);
             expect(staleSingleLabelMessage).toContain(
                 'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
-                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+                    "if the change is intended; a tracked-set entry differs only when the boundary registry's labels change, never when a file inside a boundary changes."
             );
             // Every unaffected label stays out of the message — only the one that
             // actually differs is reported.
@@ -3780,7 +3755,7 @@ describe('release inventory', () => {
             expect(duplicateLabelLines[0]).toBe('Grand Boule release inventory digests does not match provenance');
             expect(duplicateLabelLines.at(-1)).toBe(
                 'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
-                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+                    "if the change is intended; a tracked-set entry differs only when the boundary registry's labels change, never when a file inside a boundary changes."
             );
             expect(duplicateLabelLines.slice(1, -1)).toContain(
                 '  grand-boule-project-state: recorded 2 entries where one is expected'
@@ -3798,7 +3773,7 @@ describe('release inventory', () => {
             expect(swappedOrderLines[0]).toBe('Grand Boule release inventory digests does not match provenance');
             expect(swappedOrderLines.at(-1)).toBe(
                 'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
-                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+                    "if the change is intended; a tracked-set entry differs only when the boundary registry's labels change, never when a file inside a boundary changes."
             );
             expect(swappedOrderLines.slice(1, -1)).toContain(
                 `  recorded order differs from the tree; recorded: [${swappedDigests

@@ -749,13 +749,12 @@ function assertCanonicalGrandBouleProviderPolicySymlinks(root: string, paths: re
     }
 }
 
-function trackedFilesSha256(
+function assertTrackedFilesReadable(
     root: string,
     files: readonly string[],
-    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader,
-    budget: RepositoryReadBudget = repositoryReadBudget(readFile)
-): string {
-    const hash = createHash('sha256');
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget
+): void {
     const rootRealPath = realpathSync(root);
     for (const file of files) {
         const absolutePath = resolve(root, file);
@@ -764,29 +763,25 @@ function trackedFilesSha256(
         } catch {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
-        hash.update(file);
-        hash.update('\0');
         try {
-            hash.update(readRepositoryRegularBuffer(rootRealPath, absolutePath, readFile, budget));
+            readRepositoryRegularBuffer(rootRealPath, absolutePath, readFile, budget);
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }
-        hash.update('\0');
     }
-    return hash.digest('hex');
 }
 
-function trackedSetSha256(
+function assertTrackedSetReadable(
     root: string,
     pathspecs: readonly string[],
     readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader,
     budget: RepositoryReadBudget = repositoryReadBudget(readFile)
-): string {
+): void {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
         throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
-    return trackedFilesSha256(root, files, readFile, budget);
+    assertTrackedFilesReadable(root, files, readFile, budget);
 }
 
 export const AUDIO_WORKLET_SOURCES = ['public/audio/worklets/sidechain-compressor-processor.js'] as const;
@@ -1790,10 +1785,10 @@ export function grandBouleReleaseInventoryContract(
             'current tracked live host, scheduling, action, hydration, and offline boundaries',
             'current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners',
         ],
-        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
-            ({ gitPathspecs, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs, readFile, budget)}:${digestLabel}`
-        ),
+        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ gitPathspecs, digestLabel }) => {
+            assertTrackedSetReadable(root, gitPathspecs, readFile, budget);
+            return `tracked-set:${digestLabel}`;
+        }),
         licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
@@ -2574,7 +2569,7 @@ function digestEntryLabel(entry: string): string {
     return entry.slice(entry.lastIndexOf(':') + 1);
 }
 
-// Only Grand Boule's boundaries currently produce `tracked-set-sha256:` digests,
+// Only Grand Boule's boundaries currently produce `tracked-set:` entries,
 // so this is the one place a differing label can resolve to a tracked set of
 // paths worth printing; every other surface's digests stay unannotated.
 function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly string[] | undefined {
@@ -2626,8 +2621,8 @@ function describeUnlabeledDigestsDifference(recordedEntries: readonly string[], 
 }
 
 // A `digests` mismatch on its own names neither the offending boundary nor the
-// remedy, and a `tracked-set-sha256` value differs from an unrelated file's
-// `sha256` digest by nothing a caller can eyeball, so `field does not match
+// remedy, and a stale entry differs from a current one by nothing a caller
+// can eyeball in a long list, so `field does not match
 // provenance` alone leaves whoever hits it grepping the boundary registry by
 // hand. Pairing recorded and current entries by their trailing label instead
 // names exactly what drifted and where to fix it.
@@ -2664,7 +2659,7 @@ function formatDigestsMismatch(recorded: unknown, current: readonly string[], la
         lines.push(...describeUnlabeledDigestsDifference(recordedEntries, current));
     }
     lines.push(
-        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes.`
+        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set entry differs only when the boundary registry's labels change, never when a file inside a boundary changes.`
     );
     return lines.join('\n');
 }

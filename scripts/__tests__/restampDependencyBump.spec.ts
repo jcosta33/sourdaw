@@ -108,9 +108,7 @@ function currentInventory(root: string): ReleaseInventory {
             fixtureSurface('collaboration-server', [`sha256:${digestOf(root, 'server/package-lock.json')}`]),
             fixtureSurface('rust-dependencies', [`sha256:${digestOf(root, 'Cargo.lock')}`]),
             { ...fixtureSurface('project-license-distribution', []), ...contract },
-            fixtureSurface('grand-boule', [
-                `tracked-set-sha256:${digestOf(root, GRAND_BOULE_DIGEST_PATH)}:${GRAND_BOULE_DIGEST_PATH}`,
-            ]),
+            fixtureSurface('grand-boule', [`tracked-set:${GRAND_BOULE_DIGEST_PATH}`]),
         ],
         snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) => ({ path, sha256: digestOf(root, path) })),
         externalReferences: [],
@@ -460,11 +458,11 @@ describe('restamp dependency bump', () => {
         });
     });
 
-    it('leaves a drifted Grand Boule tracked-set digest to a person', () => {
+    it('leaves a drifted Grand Boule surface entry to a person', () => {
         const root = createFixture();
         const inventory = readInventory(root);
         inventory.surfaces.find((surface) => surface.id === 'grand-boule')!.digests = [
-            `tracked-set-sha256:${staleDigest}:${GRAND_BOULE_DIGEST_PATH}`,
+            `tracked-set:${GRAND_BOULE_DIGEST_PATH}-moved`,
         ];
         writeInventory(root, inventory);
         const recorded = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
@@ -473,7 +471,7 @@ describe('restamp dependency bump', () => {
 
         expect(result.ok).toBe(false);
         expect(result.output.split('\n')[0]).toBe(UNRESTAMPED_DIGEST_CLASSES);
-        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule tracked-set');
+        expect(UNRESTAMPED_DIGEST_CLASSES).not.toContain('tracked-set');
         expect(result.output).toContain('grand-boule: tracked-set digest drifted');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(recorded);
     });
