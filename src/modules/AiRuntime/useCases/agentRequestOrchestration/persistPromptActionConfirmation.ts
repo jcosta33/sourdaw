@@ -13,7 +13,7 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
-import { deriveMeasuredAudibleImpact, NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
+import { deriveAudibleImpact, NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
@@ -95,8 +95,9 @@ function failUnretainedProposal(input: PersistPromptActionConfirmationInput): vo
 
 /**
  * Binds the run's plan to the card just persisted: its metric-goal state, and the audible claim of
- * the measurement bound to this exact batch. A plan whose earlier claim the new card does not
- * repeat is rewritten too, so the claim never outlives its measurement.
+ * this exact batch: the predictions of its frozen goals with their verification against the bound
+ * measurement, or the measured figures of a goalless plan. A plan whose earlier claim the new card
+ * does not repeat is rewritten too, so the claim never outlives its measurement.
  */
 function recordConfirmationMetricGoalPlan(
     input: PersistPromptActionConfirmationInput,
@@ -107,10 +108,13 @@ function recordConfirmationMetricGoalPlan(
         return;
     }
     const { metricGoalState, measuredPreview } = confirmation.approvalSnapshot;
-    const claim = deriveMeasuredAudibleImpact({
+    const state = metricGoalStateCodec(metricGoalState);
+    const claim = deriveAudibleImpact({
+        state,
+        commandBatch: input.commandBatch,
         envelope: input.parsedCommandBatch.envelope,
         snapshotPreview: measuredPreview,
-        proofPreviews: metricGoalStateCodec(metricGoalState)?.proofs.map((proof) => proof.preview) ?? [],
+        proofPreviews: state?.proofs.map((proof) => proof.preview) ?? [],
     });
     const audible = run.plan.expectedImpact.audible;
     if (

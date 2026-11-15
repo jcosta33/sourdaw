@@ -17,6 +17,7 @@ import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPla
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { deriveAudibleImpact } from '../deriveMeasuredAudibleImpact';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
@@ -200,12 +201,14 @@ function recordBatchPreviewEvidence(
     liveRun: AgentRun,
     revision: GroundedBatch['revision'],
     metricGoalState: string | undefined,
-    receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts']
+    receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts'],
+    batch: Pick<Parameters<typeof deriveAudibleImpact>[0], 'commandBatch' | 'envelope'>
 ): void {
     if (!liveRun.plan) {
         return;
     }
     const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
+    const state = metricGoalStateCodec(metricGoalState);
     agentRunLifecycle.recordPlan({
         runId: liveRun.runId,
         summary: liveRun.plan.summary,
@@ -220,6 +223,13 @@ function recordBatchPreviewEvidence(
             metricGoalState,
             applicationToolReceipts: [...priorReceipts, ...receipts],
         },
+        audibleClaim:
+            deriveAudibleImpact({
+                ...batch,
+                state,
+                snapshotPreview: undefined,
+                proofPreviews: state?.proofs.map((entry) => entry.preview) ?? [],
+            }) ?? undefined,
     });
 }
 
@@ -293,7 +303,10 @@ async function proposeMeasuredVibeBatch(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts);
+    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts, {
+        commandBatch,
+        envelope: parsedCommandBatch.envelope,
+    });
     const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
     const cardLines = describeVibeBatchCard({
         batch: input.batch,
