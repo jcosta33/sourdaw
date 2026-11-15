@@ -25,14 +25,24 @@ pub(crate) fn allocation_count() -> u64 {
     ALLOCATIONS.with(Cell::get)
 }
 
+// SAFETY: every method forwards the caller's layout and pointer unchanged to
+// `std::alloc::System`, which upholds the `GlobalAlloc` contract; the only
+// extra work is a `const`-initialised thread-local `Cell` increment through
+// `try_with`, which neither allocates nor panics, so no method recurses into
+// the allocator or unwinds.
 unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
         count_allocation();
-        std::alloc::System.alloc(layout)
+        // SAFETY: `layout` is the caller's, which `GlobalAlloc::alloc` requires
+        // to have a non-zero size; it reaches `System` unchanged.
+        unsafe { std::alloc::System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
-        std::alloc::System.dealloc(pointer, layout)
+        // SAFETY: this allocator hands out only `System` blocks, and
+        // `GlobalAlloc::dealloc` requires `pointer` to be one of them with this
+        // same `layout`.
+        unsafe { std::alloc::System.dealloc(pointer, layout) }
     }
 
     unsafe fn realloc(
@@ -42,7 +52,11 @@ unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
         new_size: usize,
     ) -> *mut u8 {
         count_allocation();
-        std::alloc::System.realloc(pointer, layout, new_size)
+        // SAFETY: this allocator hands out only `System` blocks, and
+        // `GlobalAlloc::realloc` requires `pointer` to be one of them with
+        // `layout` and `new_size` to be valid for it; all three reach `System`
+        // unchanged.
+        unsafe { std::alloc::System.realloc(pointer, layout, new_size) }
     }
 }
 

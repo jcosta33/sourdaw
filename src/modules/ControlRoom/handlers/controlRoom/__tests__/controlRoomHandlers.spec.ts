@@ -16,20 +16,20 @@ describe('controlRoomHandlers', () => {
         vi.clearAllMocks();
     });
 
-    it('should switch monitor output', () => {
-        handleSwitchMonitor.execute({ type: 'switchMonitor', payload: { monitorId: 'mon-1' } });
+    it('should switch monitor output', async () => {
+        await handleSwitchMonitor.execute({ type: 'switchMonitor', payload: { monitorId: 'mon-1' } });
 
         expect(switchMonitor).toHaveBeenCalledWith('mon-1');
     });
 
-    it('should toggle dim monitoring', () => {
-        handleToggleControlRoomDim.execute({ type: 'toggleControlRoomDim', payload: undefined });
+    it('should toggle dim monitoring', async () => {
+        await handleToggleControlRoomDim.execute({ type: 'toggleControlRoomDim', payload: undefined });
 
         expect(toggleDim).toHaveBeenCalledTimes(1);
     });
 
-    it('should toggle mono monitoring', () => {
-        handleToggleControlRoomMono.execute({ type: 'toggleControlRoomMono', payload: undefined });
+    it('should toggle mono monitoring', async () => {
+        await handleToggleControlRoomMono.execute({ type: 'toggleControlRoomMono', payload: undefined });
 
         expect(toggleMono).toHaveBeenCalledTimes(1);
     });

@@ -3174,7 +3174,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             resourceLease: createStemImportConfirmationResourceLease(runId, [stemAction]),
         });
 
-        settlePendingActionResourceLease({ confirmationId, disposition: 'discard' });
+        await settlePendingActionResourceLease({ confirmationId, disposition: 'discard' });
 
         await vi.waitFor(() => expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]));
         expect(stemResourceMocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('buffer-confirmed-1');

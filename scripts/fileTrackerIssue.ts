@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { REQUIRED_REPOSITORY } from './githubAppIdentity.ts';
+
 export type IssueFormField = {
     type: string;
     id: string;
@@ -404,8 +406,22 @@ function fieldString(key: string, value: unknown): string {
     return fail(`field ${key} must be a string`);
 }
 
+/**
+ * gh picks the repository of a call without `--repo` from the caller checkout's git config, where a
+ * `remote.<name>.gh-resolved` key any lane can write overrides the remote URL, so the create call
+ * names the required repository itself.
+ */
 export function ghIssueCreateArgs(submission: IssueSubmission, metadata: IssueMetadata = {}): string[] {
-    const args = ['issue', 'create', '--title', submission.title, '--body', submission.body];
+    const args = [
+        'issue',
+        'create',
+        '--repo',
+        REQUIRED_REPOSITORY,
+        '--title',
+        submission.title,
+        '--body',
+        submission.body,
+    ];
     for (const label of submission.labels) {
         args.push('--label', label);
     }
@@ -455,8 +471,10 @@ function createIssue(
         fail(ghIssueCreateFailure(result.stderr, metadata));
     }
     const url = result.stdout.trim();
-    const number = Number(url.split('/').at(-1));
-    if (!Number.isSafeInteger(number) || number <= 0) {
+    const issuesPrefix = `https://github.com/${REQUIRED_REPOSITORY}/issues/`;
+    const digits = url.startsWith(issuesPrefix) ? url.slice(issuesPrefix.length) : '';
+    const number = /^[1-9]\d*$/u.test(digits) ? Number(digits) : Number.NaN;
+    if (!Number.isSafeInteger(number)) {
         fail(`gh issue create returned an unreadable url: ${url}`);
     }
     return { url, number };

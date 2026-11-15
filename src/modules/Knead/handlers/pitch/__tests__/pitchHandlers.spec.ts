@@ -108,9 +108,12 @@ describe('Command Pitch Handlers', () => {
         ).toEqual({ label: 'Commit Pitch Edit', inverseAction: null });
     });
 
-    it('handleRestoreClipFileId swaps the clip file pointer and is not itself undoable', () => {
+    it('handleRestoreClipFileId swaps the clip file pointer and is not itself undoable', async () => {
         expect(handleRestoreClipFileId.undoable).toBe(false);
-        handleRestoreClipFileId.execute({ type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'orig.wav' } });
+        await handleRestoreClipFileId.execute({
+            type: 'restoreClipFileId',
+            payload: { clipId: 'c1', fileId: 'orig.wav' },
+        });
         expect(updateClipInStore).toHaveBeenCalledWith('c1', expect.any(Function));
         expect(
             handleRestoreClipFileId.describe({

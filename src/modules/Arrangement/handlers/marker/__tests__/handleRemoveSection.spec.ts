@@ -20,9 +20,9 @@ beforeEach(() => {
 });
 
 describe('handleRemoveSection — execute', () => {
-    it('calls removeSection with sectionId', () => {
+    it('calls removeSection with sectionId', async () => {
         mockedRemove.mockReturnValue(true);
-        handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 's1' } });
+        await handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 's1' } });
         expect(mockedRemove).toHaveBeenCalledWith('s1');
     });
 

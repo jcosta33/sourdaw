@@ -21,6 +21,7 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
@@ -30,6 +31,7 @@ import {
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type PluginFolderAddResult,
     type RendererSessionQuiesceResult,
 } from './channels.js';
 import { commandChannel, SCAN_PLUGINS } from './commands.js';
@@ -292,6 +294,59 @@ export const registerDialogChannels = ({
                 message: optionalString(request.message) ?? '',
             });
             return undefined;
+        })
+    );
+};
+
+/**
+ * Ask the main-process native host to grant a picked plugin folder.
+ *
+ * A refusal is an answer, not an error: the native policy's message is the
+ * reason the user reads, so it is returned rather than thrown into the IPC
+ * layer, where Electron would wrap it in text the user should not see.
+ */
+const grantPickedPluginFolder = async (
+    native: () => NativeHost | undefined,
+    pickedPath: string
+): Promise<PluginFolderAddResult> => {
+    const host = native();
+    if (host === undefined) {
+        return { status: 'refused', reason: 'Plugin folders cannot be added because the native host is not loaded.' };
+    }
+    try {
+        return { status: 'granted', path: await host.grantPluginFolder(pickedPath) };
+    } catch (error) {
+        return { status: 'refused', reason: error instanceof Error ? error.message : String(error) };
+    }
+};
+
+/**
+ * The plugin-folder picker (jcosta33/sourdaw#6574).
+ *
+ * The handler ignores whatever the renderer sends. The only path it grants is
+ * the one its own native dialog returned, so a forged IPC message can at most
+ * open a picker the user then has to answer. A channel that accepted a path,
+ * or a renderer that sent a `dialog.open` answer back to a grant command,
+ * would let any message mint a scan root.
+ */
+export const registerPluginFolderChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    dialogs,
+    native,
+}: RegisterDialogChannelsInput): void => {
+    ipcMain.handle(
+        PLUGIN_FOLDER_ADD_CHANNEL,
+        withTrustedSender('pluginFolders.add', isTrustedFrameUrl, async (): Promise<PluginFolderAddResult> => {
+            const result = await dialogs.showOpenDialog({
+                title: 'Add Plugin Folder',
+                properties: ['openDirectory', 'createDirectory'],
+            });
+            const pickedPath = result.filePaths[0];
+            if (result.canceled || pickedPath === undefined) {
+                return { status: 'cancelled' };
+            }
+            return grantPickedPluginFolder(native, pickedPath);
         })
     );
 };

@@ -109,7 +109,9 @@ function seed(masterRouting: { outputId: string; sends: Track['sends'] }, master
 function removeAllThenUndo(): { status: string } {
     const action = { type: 'removeAllTracks' as const, payload: undefined };
     const description = handleRemoveAllTracks.describe(action);
-    handleRemoveAllTracks.execute(action);
+    if (handleRemoveAllTracks.execute(action) instanceof Promise) {
+        throw new TypeError('expected a synchronous removal result');
+    }
     expect(currentProject().tracks.map((track) => track.id)).toEqual(['master']);
     const inverse = description.inverseAction;
     if (!inverse || inverse.type !== 'restoreTracks') {

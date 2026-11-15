@@ -29,13 +29,13 @@ beforeEach(() => {
 });
 
 describe('handleAssignGrooveTemplate — execute', () => {
-    it('calls assignGrooveTemplate with payload', () => {
+    it('calls assignGrooveTemplate with payload', async () => {
         mockedAssign.mockReturnValue({
             ok: true,
             status: 'written',
             assignment: { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 },
         });
-        handleAssignGrooveTemplate.execute(action);
+        await handleAssignGrooveTemplate.execute(action);
         expect(mockedAssign).toHaveBeenCalledWith(payload);
     });
 

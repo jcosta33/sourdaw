@@ -1242,7 +1242,11 @@ const validators = {
     autoOrganizeProject: 'unchecked',
 
     // Scratch pad
-    captureScratchPad: 'unchecked',
+    captureScratchPad: (param): param is PayloadOf<'captureScratchPad'> =>
+        hasNoPayload(param) ||
+        (isObj(param) &&
+            hasOnlyKeys(param, ['sectionIds']) &&
+            isOptionalOwn(param, 'sectionIds', isUniqueNonEmptyStringArray)),
     commitScratchPad: 'unchecked',
     clearScratchPad: 'unchecked',
     toggleScratchPad: 'unchecked',

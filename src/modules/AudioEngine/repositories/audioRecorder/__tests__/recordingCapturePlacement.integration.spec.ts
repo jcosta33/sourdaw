@@ -695,7 +695,7 @@ describe('real recorder first-frame capture placement', () => {
                     const resolved = resolveClipsWithComping(TRACK_ID, trackStore.value!.tracks[0]!.clips);
                     const fragment = resolved.find((clip) => clip.startBeat === selection.take.startBeat)!;
                     expect((fragment.audioOffsetBeats ?? 0) / 2).toBeCloseTo(selection.sourceSeconds, 10);
-                    seekPlayhead(selection.take.startBeat);
+                    await seekPlayhead(selection.take.startBeat);
                     await vi.waitFor(() =>
                         expect(transportStore.value!.playheadPosition).toBe(selection.take.startBeat)
                     );

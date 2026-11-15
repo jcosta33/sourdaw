@@ -542,16 +542,13 @@ fn detect_format_on(
         // refused by name rather than passed over in silence.
         //
         // Windows VST2 ships as a bare `.dll`, and that extension is
-        // deliberately not recognised here. There is no way to reach a VST2
-        // folder: `PluginScanPolicy::platform_defaults` is production's only
-        // policy constructor and `authorize_scan_root` admits only descendants
-        // of its fixed roots, so a custom VST2 path cannot be granted. What a
-        // `.dll` arm would actually match is the vendor support and runtime
-        // libraries sitting inside the authorized Windows VST3 and CLAP roots,
-        // which the walk recurses into — and telling a user that a vendor's
-        // runtime DLL is a VST2 plugin Sourdaw will never load is a fabricated
-        // claim about a file that is not a plugin at all. Restore this arm only
-        // together with a production path that can authorize a VST2 root.
+        // deliberately not recognised here. A bare `.dll` says nothing about
+        // what it is without loading it, and the walk meets far more of them
+        // that are not plugins: the vendor support and runtime libraries inside
+        // the Windows VST3 and CLAP default roots, and whatever a folder the
+        // user granted in plugin settings happens to hold. Telling a user that
+        // a vendor's runtime DLL is a VST2 plugin Sourdaw will never load is a
+        // fabricated claim about a file that is not a plugin at all.
         ("vst", true) => Some(PluginFormat::Vst2),
         _ => None,
     }
@@ -1161,13 +1158,11 @@ mod tests {
     }
 
     /// A bare `.dll` is not claimed as a VST2 plugin, and the reason is where
-    /// the walk actually meets one. No production path can authorize a VST2
-    /// folder — `platform_defaults` is the only policy constructor and it
-    /// authorizes the VST3, CLAP and Components roots — while the walk does
-    /// recurse into vendor subfolders of the Windows VST3 and CLAP roots, which
-    /// are full of support and runtime DLLs. Claiming those are VST2 plugins
-    /// Sourdaw will never load is a fabricated statement about a file that is
-    /// not a plugin.
+    /// the walk actually meets one: in vendor subfolders of the Windows VST3
+    /// and CLAP roots, which are full of support and runtime DLLs, and in
+    /// whatever folder the user granted. Nothing short of loading a DLL tells a
+    /// VST2 plugin from those, so claiming they are VST2 plugins Sourdaw will
+    /// never load is a fabricated statement about a file that is not a plugin.
     #[test]
     fn a_bare_dll_is_not_claimed_to_be_a_vst2_plugin() {
         assert_eq!(detect_format(Path::new("/plugins/Vendor.dll"), false), None);
@@ -1377,44 +1372,53 @@ pub fn clap_library_path(path: &Path) -> Result<PathBuf, String> {
 /// first plugin's row, and the rest of a multi-plugin bundle never reached the
 /// browse list at all.
 ///
-/// # Safety
-/// Calls into native CLAP plugin entry points.
+/// Loads the library at `path` and runs the plugin's entry points, so it must
+/// only run in the bounded scan worker, never in the app process.
 pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>, String> {
     let library_path = clap_library_path(path)?;
-    unsafe {
-        let lib = Library::new(&library_path)
-            .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
+    // SAFETY: loading runs the library's initialisers; this runs only in the scan worker child process.
+    let lib = unsafe { Library::new(&library_path) }
+        .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
 
-        let entry: libloading::Symbol<*const clap_plugin_entry> = lib
-            .get(b"clap_entry\0")
+    // SAFETY: `clap_entry` is declared by the CLAP ABI as a `clap_plugin_entry` object, so the
+    // symbol's address is read as `*const clap_plugin_entry`; `lib` outlives the symbol.
+    let entry: libloading::Symbol<*const clap_plugin_entry> =
+        unsafe { lib.get(b"clap_entry\0") }
             .map_err(|error| format!("CLAP candidate has no clap_entry: {error}"))?;
 
-        let entry_ptr = *entry;
-        if entry_ptr.is_null() {
-            return Err("CLAP candidate returned a null clap_entry".to_string());
-        }
-
-        let entry_ref = &*entry_ptr;
-
-        let path_c = match CString::new(path.to_string_lossy().as_bytes()) {
-            Ok(c) => c,
-            Err(_) => return Err("CLAP candidate path contains a null byte".to_string()),
-        };
-
-        if let Some(init_fn) = entry_ref.init {
-            if !init_fn(path_c.as_ptr()) {
-                return Err("CLAP candidate initialization failed".to_string());
-            }
-        }
-
-        let result = extract_from_factory(entry_ref);
-
-        if let Some(deinit) = entry_ref.deinit {
-            deinit();
-        }
-
-        result
+    let entry_ptr = *entry;
+    if entry_ptr.is_null() {
+        return Err("CLAP candidate returned a null clap_entry".to_string());
     }
+
+    // SAFETY: `entry_ptr` is non-null (checked above) and points into the loaded library `lib`,
+    // which stays alive until this function returns, past every use of `entry_ref`.
+    let entry_ref = unsafe { &*entry_ptr };
+
+    let path_c = match CString::new(path.to_string_lossy().as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return Err("CLAP candidate path contains a null byte".to_string()),
+    };
+
+    if let Some(init_fn) = entry_ref.init {
+        // SAFETY: `init` is the entry's own callback and `path_c` is a NUL-terminated string
+        // that lives past the call.
+        let initialized = unsafe { init_fn(path_c.as_ptr()) };
+        if !initialized {
+            return Err("CLAP candidate initialization failed".to_string());
+        }
+    }
+
+    // SAFETY: the entry was successfully init'd above and is deinit'd only after this call.
+    let result = unsafe { extract_from_factory(entry_ref) };
+
+    if let Some(deinit) = entry_ref.deinit {
+        // SAFETY: pairs with the entry's `init` call above; `result` owns its data and borrows
+        // nothing from the plugin.
+        unsafe { deinit() };
+    }
+
+    result
 }
 
 /// Create one CLAP instance — the plugin `plugin_id` names inside the bundle —
@@ -1422,60 +1426,83 @@ pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>,
 /// `clap.audio-ports`, `clap.gui` — and destroy it without activation. The app
 /// process never receives the instance.
 ///
-/// # Safety
-/// Calls third-party CLAP entry points and must only run in the bounded scan worker.
+/// Loads the library at `path` and runs third-party CLAP entry points, so it
+/// must only run in the bounded scan worker.
 pub fn extract_clap_instance_metadata(
     path: &Path,
     plugin_id: &str,
 ) -> Result<ScannedInstance, String> {
     let library_path = clap_library_path(path)?;
-    unsafe {
-        let library = Library::new(&library_path)
-            .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
-        let entry: libloading::Symbol<*const clap_plugin_entry> = library
-            .get(b"clap_entry\0")
+    // SAFETY: loading runs the library's initialisers; this runs only in the scan worker child process.
+    let library = unsafe { Library::new(&library_path) }
+        .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
+    // SAFETY: `clap_entry` is declared by the CLAP ABI as a `clap_plugin_entry` object, so the
+    // symbol's address is read as `*const clap_plugin_entry`; `library` outlives the symbol.
+    let entry: libloading::Symbol<*const clap_plugin_entry> =
+        unsafe { library.get(b"clap_entry\0") }
             .map_err(|error| format!("CLAP candidate has no clap_entry: {error}"))?;
-        let entry_ptr = *entry;
-        if entry_ptr.is_null() {
-            return Err("CLAP candidate returned a null clap_entry".to_string());
-        }
-        let entry_ref = &*entry_ptr;
-        let path_c = CString::new(path.to_string_lossy().as_bytes())
-            .map_err(|_| "CLAP candidate path contains a null byte".to_string())?;
-        if let Some(init) = entry_ref.init {
-            if !init(path_c.as_ptr()) {
-                return Err("CLAP candidate initialization failed".to_string());
-            }
-        }
-
-        let result = extract_instance_metadata_from_factory(entry_ref, plugin_id);
-
-        if let Some(deinit) = entry_ref.deinit {
-            deinit();
-        }
-        result
+    let entry_ptr = *entry;
+    if entry_ptr.is_null() {
+        return Err("CLAP candidate returned a null clap_entry".to_string());
     }
+    // SAFETY: `entry_ptr` is non-null (checked above) and points into the loaded `library`,
+    // which stays alive until this function returns, past every use of `entry_ref`.
+    let entry_ref = unsafe { &*entry_ptr };
+    let path_c = CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|_| "CLAP candidate path contains a null byte".to_string())?;
+    if let Some(init) = entry_ref.init {
+        // SAFETY: `init` is the entry's own callback and `path_c` is a NUL-terminated string
+        // that lives past the call.
+        let initialized = unsafe { init(path_c.as_ptr()) };
+        if !initialized {
+            return Err("CLAP candidate initialization failed".to_string());
+        }
+    }
+
+    // SAFETY: the entry was successfully init'd above and is deinit'd only after this call.
+    let result = unsafe { extract_instance_metadata_from_factory(entry_ref, plugin_id) };
+
+    if let Some(deinit) = entry_ref.deinit {
+        // SAFETY: pairs with the entry's `init` call above; `result` owns its data and borrows
+        // nothing from the plugin.
+        unsafe { deinit() };
+    }
+    result
 }
 
 /// Read a C string that may be null, as an owned `String`.
+///
+/// # Safety
+/// `value` must be null or point to a NUL-terminated string that stays valid for the call.
 unsafe fn owned_c_string(value: *const i8) -> String {
     if value.is_null() {
         return String::new();
     }
-    CStr::from_ptr(value).to_string_lossy().into_owned()
+    // SAFETY: `value` is non-null (checked above) and NUL-terminated per this fn's contract.
+    unsafe { CStr::from_ptr(value) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The bundle's plugin factory, or why it cannot be reached.
+///
+/// # Safety
+/// `entry_ref` must belong to a loaded CLAP library that stays loaded, with its entry `init`
+/// called and `deinit` not yet called, for as long as the returned reference is used.
 unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, String> {
     let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
     let factory_ptr = match entry_ref.get_factory {
-        Some(get_factory) => get_factory(factory_id),
+        // SAFETY: `get_factory` is the init'd entry's own callback and `factory_id` is a
+        // NUL-terminated static CLAP factory id.
+        Some(get_factory) => unsafe { get_factory(factory_id) },
         None => return Err("CLAP entry has no factory lookup".to_string()),
     };
     if factory_ptr.is_null() {
         return Err("CLAP entry returned no plugin factory".to_string());
     }
-    Ok(&*(factory_ptr as *const clap_plugin_factory))
+    // SAFETY: a non-null pointer for the plugin-factory id is a `clap_plugin_factory` owned by the
+    // library, which stays loaded for the returned borrow per this fn's contract.
+    Ok(unsafe { &*(factory_ptr as *const clap_plugin_factory) })
 }
 
 /// Every descriptor the factory declares, in factory order.
@@ -1485,11 +1512,16 @@ unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_f
 /// one, so walking index 0 alone registers only the first plugin of a
 /// multi-plugin bundle and hides the rest — u-he and other vendors ship
 /// several plugins behind one `.clap` file.
+///
+/// # Safety
+/// `factory` must be a live CLAP plugin factory of an init'd entry whose library stays loaded
+/// for as long as the returned descriptor references are used.
 unsafe fn factory_plugin_descriptors(
     factory: &clap_plugin_factory,
 ) -> Result<Vec<&clap_sys::plugin::clap_plugin_descriptor>, String> {
     let count = match factory.get_plugin_count {
-        Some(get_plugin_count) => get_plugin_count(factory),
+        // SAFETY: `get_plugin_count` is the live factory's own callback and receives that factory.
+        Some(get_plugin_count) => unsafe { get_plugin_count(factory) },
         None => return Err("CLAP factory has no plugin count".to_string()),
     };
     if count == 0 {
@@ -1504,11 +1536,15 @@ unsafe fn factory_plugin_descriptors(
     };
     let mut descriptors = Vec::with_capacity(count as usize);
     for index in 0..count {
-        let descriptor = get_descriptor(factory, index);
+        // SAFETY: `index` is below the count the factory reported, as `get_plugin_descriptor`
+        // requires, and the factory is live per this fn's contract.
+        let descriptor = unsafe { get_descriptor(factory, index) };
         if descriptor.is_null() {
             return Err("CLAP factory returned a null descriptor".to_string());
         }
-        descriptors.push(&*descriptor);
+        // SAFETY: `descriptor` is non-null (checked above); CLAP keeps a descriptor valid while
+        // the library stays loaded, which this fn's contract guarantees.
+        descriptors.push(unsafe { &*descriptor });
     }
     Ok(descriptors)
 }
@@ -1556,12 +1592,17 @@ unsafe fn bounded_parameter_module(
     Ok(Some(module.to_string()))
 }
 
+/// # Safety
+/// `plugin` must be an init'd, not yet destroyed CLAP plugin instance and `parameters` the
+/// `clap.params` extension that same instance returned, called on the thread that owns it.
 unsafe fn extract_parameters_from_extension(
     plugin: *const clap_sys::plugin::clap_plugin,
     parameters: &clap_plugin_params,
 ) -> Result<Vec<ScannedParameterDescriptor>, String> {
     let count = match parameters.count {
-        Some(count) => count(plugin),
+        // SAFETY: `count` is the extension's own callback and `plugin` is the instance it came
+        // from, per this fn's contract.
+        Some(count) => unsafe { count(plugin) },
         None => return Err("CLAP parameter extension has no count callback".to_string()),
     };
     if count > MAX_SCANNED_PARAMETER_DESCRIPTORS {
@@ -1575,8 +1616,13 @@ unsafe fn extract_parameters_from_extension(
     let mut metadata_bytes = 0usize;
     let mut descriptors = Vec::with_capacity(count as usize);
     for index in 0..count {
-        let mut info: clap_param_info = mem::zeroed();
-        if !get_info(plugin, index, &mut info) {
+        // SAFETY: `clap_param_info` is a plain C struct of integers, floats, byte arrays and a
+        // nullable cookie pointer, for which all-zero bytes is a valid value.
+        let mut info: clap_param_info = unsafe { mem::zeroed() };
+        // SAFETY: `get_info` is the extension's own callback, `index` is below the bounded count
+        // it reported, and `info` is a live out-parameter.
+        let described = unsafe { get_info(plugin, index, &mut info) };
+        if !described {
             return Err("CLAP parameter extension returned incomplete metadata".to_string());
         }
         if info.id == CLAP_INVALID_ID || !ids.insert(info.id) {
@@ -1590,8 +1636,11 @@ unsafe fn extract_parameters_from_extension(
         {
             return Err("CLAP parameter metadata has invalid numeric bounds".to_string());
         }
-        let name = bounded_parameter_name(&info.name)?;
-        let module = bounded_parameter_module(&info.module)?;
+        // SAFETY: the callee performs no unsafe operation; it only scans the `info.name` array
+        // owned by this frame for a NUL within bounds.
+        let name = unsafe { bounded_parameter_name(&info.name) }?;
+        // SAFETY: as above, the callee only scans the `info.module` array owned by this frame.
+        let module = unsafe { bounded_parameter_module(&info.module) }?;
         metadata_bytes = metadata_bytes.saturating_add(
             name.len() + module.as_ref().map_or(0, String::len) + std::mem::size_of::<u32>() + 32,
         );
@@ -1623,13 +1672,19 @@ unsafe fn extract_parameters_from_extension(
 /// trusted. A port the plugin refuses to describe is a failure rather than a
 /// skipped row: a partial sum reported as a channel count is the same class of
 /// fabrication as the hardcoded zero this replaces.
+///
+/// # Safety
+/// `plugin` must be an init'd, not yet destroyed CLAP plugin instance and `audio_ports` the
+/// `clap.audio-ports` extension that same instance returned, called on the thread that owns it.
 unsafe fn audio_channel_count(
     plugin: *const clap_sys::plugin::clap_plugin,
     audio_ports: &clap_plugin_audio_ports,
     is_input: bool,
 ) -> Result<u32, String> {
     let count = match audio_ports.count {
-        Some(count) => count(plugin, is_input),
+        // SAFETY: `count` is the extension's own callback and `plugin` is the instance it came
+        // from, per this fn's contract.
+        Some(count) => unsafe { count(plugin, is_input) },
         None => return Err("CLAP audio-ports extension has no count callback".to_string()),
     };
     if count > MAX_SCANNED_AUDIO_PORTS {
@@ -1642,8 +1697,13 @@ unsafe fn audio_channel_count(
 
     let mut channels: u32 = 0;
     for index in 0..count {
-        let mut info: clap_audio_port_info = mem::zeroed();
-        if !get(plugin, index, is_input, &mut info) {
+        // SAFETY: `clap_audio_port_info` is a plain C struct of integers, a byte array and a
+        // nullable pointer, for which all-zero bytes is a valid value.
+        let mut info: clap_audio_port_info = unsafe { mem::zeroed() };
+        // SAFETY: `get` is the extension's own callback, `index` is below the bounded count it
+        // reported, and `info` is a live out-parameter.
+        let described = unsafe { get(plugin, index, is_input, &mut info) };
+        if !described {
             return Err("CLAP audio-ports extension returned incomplete port info".to_string());
         }
         channels = channels.saturating_add(info.channel_count);
@@ -1659,6 +1719,10 @@ unsafe fn audio_channel_count(
 ///
 /// Queried after `init` and before any `activate`, which is where CLAP defines
 /// the port list to be stable and readable on the main thread.
+///
+/// # Safety
+/// `plugin` must be an init'd, not yet destroyed CLAP plugin instance and `get_extension` its own
+/// `get_extension` callback, called on the thread that owns the instance.
 unsafe fn extract_audio_channels(
     plugin: *const clap_sys::plugin::clap_plugin,
     get_extension: unsafe extern "C" fn(
@@ -1666,26 +1730,36 @@ unsafe fn extract_audio_channels(
         *const std::os::raw::c_char,
     ) -> *const std::ffi::c_void,
 ) -> Result<Option<ScannedAudioChannelCounts>, String> {
-    let extension = get_extension(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr());
+    // SAFETY: `get_extension` belongs to `plugin` per this fn's contract and the id is a
+    // NUL-terminated static CLAP extension id.
+    let extension = unsafe { get_extension(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr()) };
     if extension.is_null() {
         return Ok(None);
     }
-    let audio_ports = &*(extension as *const clap_plugin_audio_ports);
-    Ok(Some(ScannedAudioChannelCounts {
-        inputs: audio_channel_count(plugin, audio_ports, true)?,
-        outputs: audio_channel_count(plugin, audio_ports, false)?,
-    }))
+    // SAFETY: a non-null answer for `CLAP_EXT_AUDIO_PORTS` is a `clap_plugin_audio_ports` owned by
+    // the plugin instance, which outlives this call.
+    let audio_ports = unsafe { &*(extension as *const clap_plugin_audio_ports) };
+    // SAFETY: `plugin` and `audio_ports` are the instance and extension this fn's contract names.
+    let inputs = unsafe { audio_channel_count(plugin, audio_ports, true) }?;
+    // SAFETY: as above.
+    let outputs = unsafe { audio_channel_count(plugin, audio_ports, false) }?;
+    Ok(Some(ScannedAudioChannelCounts { inputs, outputs }))
 }
 
 /// Inspect the one plugin `plugin_id` names in the bundle. The id is the
 /// caller's — the descriptor pass already read it — because the plugin to
 /// instantiate is a choice about the bundle, not a fact the factory hands out
 /// on its own.
+///
+/// # Safety
+/// `entry_ref` must belong to a loaded CLAP library that stays loaded, with its entry `init`
+/// called and `deinit` not yet called, for the whole call, on the thread that init'd it.
 unsafe fn extract_instance_metadata_from_factory(
     entry_ref: &clap_plugin_entry,
     plugin_id: &str,
 ) -> Result<ScannedInstance, String> {
-    let factory = plugin_factory(entry_ref)?;
+    // SAFETY: `entry_ref` is init'd and its library loaded for this whole call, per this fn's contract.
+    let factory = unsafe { plugin_factory(entry_ref) }?;
     if plugin_id.is_empty() {
         return Err("CLAP instance inspection has no plugin id to instantiate".to_string());
     }
@@ -1696,17 +1770,22 @@ unsafe fn extract_instance_metadata_from_factory(
         Some(create_plugin) => create_plugin,
         None => return Err("CLAP factory has no plugin creation callback".to_string()),
     };
-    let plugin = create_plugin(factory, &host, plugin_id.as_ptr());
+    // SAFETY: `create_plugin` is the live factory's own callback; `host` is a live host
+    // descriptor and `plugin_id` a NUL-terminated string, both outliving the call.
+    let plugin = unsafe { create_plugin(factory, &host, plugin_id.as_ptr()) };
     if plugin.is_null() {
         return Err("CLAP factory could not create a metadata instance".to_string());
     }
-    let plugin_ref = &*plugin;
+    // SAFETY: `plugin` is non-null (checked above) and stays valid until `destroy` below.
+    let plugin_ref = unsafe { &*plugin };
     let destroy = plugin_ref.destroy;
     let result = (|| {
         let init = plugin_ref
             .init
             .ok_or_else(|| "CLAP metadata instance has no init callback".to_string())?;
-        if !init(plugin) {
+        // SAFETY: `init` is the instance's own callback, called once on a created, not yet destroyed instance.
+        let initialized = unsafe { init(plugin) };
+        if !initialized {
             return Err("CLAP metadata instance initialization failed".to_string());
         }
         // No extension lookup at all: the plugin can declare no parameters, no
@@ -1724,30 +1803,42 @@ unsafe fn extract_instance_metadata_from_factory(
             });
         };
 
-        let parameters_extension = get_extension(plugin, CLAP_EXT_PARAMS.as_ptr());
+        // SAFETY: `get_extension` is the init'd instance's own callback and the id is a
+        // NUL-terminated static CLAP extension id.
+        let parameters_extension = unsafe { get_extension(plugin, CLAP_EXT_PARAMS.as_ptr()) };
         let parameters = if parameters_extension.is_null() {
             Vec::new()
         } else {
-            extract_parameters_from_extension(
-                plugin,
-                &*(parameters_extension as *const clap_plugin_params),
-            )?
+            // SAFETY: a non-null answer for `CLAP_EXT_PARAMS` is a `clap_plugin_params` owned by
+            // the instance, which stays alive until `destroy` below.
+            let parameters_ref = unsafe { &*(parameters_extension as *const clap_plugin_params) };
+            // SAFETY: `plugin` is init'd and not yet destroyed, and `parameters_ref` is its own
+            // `clap.params` extension.
+            unsafe { extract_parameters_from_extension(plugin, parameters_ref) }?
         };
+
+        // SAFETY: `plugin` is init'd and not yet destroyed, and `get_extension` is its own callback.
+        let audio_channels = unsafe { extract_audio_channels(plugin, get_extension) }?;
+        // Presence is the whole query. Nothing is called through the
+        // extension: the scan worker never creates a window, and
+        // `clap.gui` being there is exactly what the runtime host
+        // (`ClapWrapper::has_gui`) treats as "this plugin has an editor".
+        // SAFETY: `get_extension` is the init'd instance's own callback and the id is a
+        // NUL-terminated static CLAP extension id; only the returned pointer's nullness is read.
+        let gui_extension = unsafe { get_extension(plugin, CLAP_EXT_GUI.as_ptr()) };
 
         Ok(ScannedInstance {
             parameters,
             capabilities: ScannedInstanceCapabilities {
-                audio_channels: extract_audio_channels(plugin, get_extension)?,
-                // Presence is the whole query. Nothing is called through the
-                // extension: the scan worker never creates a window, and
-                // `clap.gui` being there is exactly what the runtime host
-                // (`ClapWrapper::has_gui`) treats as "this plugin has an editor".
-                has_custom_ui: Some(!get_extension(plugin, CLAP_EXT_GUI.as_ptr()).is_null()),
+                audio_channels,
+                has_custom_ui: Some(!gui_extension.is_null()),
             },
         })
     })();
     if let Some(destroy) = destroy {
-        destroy(plugin);
+        // SAFETY: `destroy` is the instance's own callback; the instance is destroyed exactly
+        // once, after the last use of `plugin` above.
+        unsafe { destroy(plugin) };
     } else {
         return Err("CLAP metadata instance has no destroy callback".to_string());
     }
@@ -1758,6 +1849,10 @@ unsafe fn extract_instance_metadata_from_factory(
 ///
 /// A null array pointer means the plugin declared no features, which is legal
 /// and reads as an empty list rather than as an error.
+///
+/// # Safety
+/// `features` must be null or point to an array of pointers terminated by a null pointer, each
+/// other element pointing to a NUL-terminated string, all valid for the duration of the call.
 pub(crate) unsafe fn owned_feature_list(features: *const *const i8) -> Vec<String> {
     if features.is_null() {
         return Vec::new();
@@ -1766,11 +1861,21 @@ pub(crate) unsafe fn owned_feature_list(features: *const *const i8) -> Vec<Strin
     let mut collected = Vec::new();
     let mut index = 0;
     loop {
-        let feature = *features.add(index);
+        // SAFETY: `index` has only advanced past non-null entries, so it is within the
+        // null-terminated array this fn's contract describes.
+        let slot = unsafe { features.add(index) };
+        // SAFETY: `slot` is that in-bounds element, so it is readable.
+        let feature = unsafe { *slot };
         if feature.is_null() {
             break;
         }
-        collected.push(CStr::from_ptr(feature).to_string_lossy().into_owned());
+        collected.push(
+            // SAFETY: `feature` is a non-null element, hence a NUL-terminated string per this
+            // fn's contract.
+            unsafe { CStr::from_ptr(feature) }
+                .to_string_lossy()
+                .into_owned(),
+        );
         index += 1;
     }
     collected
@@ -1778,15 +1883,25 @@ pub(crate) unsafe fn owned_feature_list(features: *const *const i8) -> Vec<Strin
 
 /// Read one factory descriptor row into the scan's own vocabulary, refusing a
 /// descriptor that claims no stable plugin id.
+///
+/// # Safety
+/// `descriptor` must be a CLAP descriptor whose string fields and feature array satisfy the
+/// CLAP contract (null or NUL-terminated strings, null-terminated feature array) and stay valid
+/// for the call.
 unsafe fn descriptor_metadata(
     descriptor: &clap_sys::plugin::clap_plugin_descriptor,
 ) -> Result<ClapDescriptorMetadata, String> {
     let metadata = ClapDescriptorMetadata {
-        name: owned_c_string(descriptor.name),
-        vendor: owned_c_string(descriptor.vendor),
-        id: owned_c_string(descriptor.id),
-        version: owned_c_string(descriptor.version),
-        features: owned_feature_list(descriptor.features),
+        // SAFETY: `name` is a CLAP descriptor string, null or NUL-terminated.
+        name: unsafe { owned_c_string(descriptor.name) },
+        // SAFETY: `vendor` is a CLAP descriptor string, null or NUL-terminated.
+        vendor: unsafe { owned_c_string(descriptor.vendor) },
+        // SAFETY: `id` is a CLAP descriptor string, null or NUL-terminated.
+        id: unsafe { owned_c_string(descriptor.id) },
+        // SAFETY: `version` is a CLAP descriptor string, null or NUL-terminated.
+        version: unsafe { owned_c_string(descriptor.version) },
+        // SAFETY: `features` is a CLAP null-terminated feature array, or null.
+        features: unsafe { owned_feature_list(descriptor.features) },
         parameters: None,
         parameter_metadata_reason: None,
         capabilities: None,
@@ -1799,13 +1914,22 @@ unsafe fn descriptor_metadata(
 
 /// Read the descriptors of every plugin the factory declares. Called with the
 /// entry already init'd — the caller is responsible for deinit.
+///
+/// # Safety
+/// `entry_ref` must belong to a loaded CLAP library that stays loaded, with its entry `init`
+/// called and `deinit` not yet called, for the whole call.
 unsafe fn extract_from_factory(
     entry_ref: &clap_plugin_entry,
 ) -> Result<Vec<ClapDescriptorMetadata>, String> {
-    let factory = plugin_factory(entry_ref)?;
-    factory_plugin_descriptors(factory)?
+    // SAFETY: `entry_ref` is init'd and its library loaded for this whole call, per this fn's contract.
+    let factory = unsafe { plugin_factory(entry_ref) }?;
+    // SAFETY: `factory` comes from that live entry, which stays loaded until this fn returns.
+    let descriptors = unsafe { factory_plugin_descriptors(factory) }?;
+    descriptors
         .into_iter()
-        .map(|descriptor| descriptor_metadata(descriptor))
+        // SAFETY: each descriptor is a live CLAP descriptor from the loaded library, and
+        // `collect` consumes the iterator before this fn returns.
+        .map(|descriptor| unsafe { descriptor_metadata(descriptor) })
         .collect()
 }
 
@@ -1893,17 +2017,27 @@ mod instance_metadata_tests {
         };
         let name = b"Gain\0";
         let module = b"Dynamics\0";
-        std::ptr::copy_nonoverlapping(
-            name.as_ptr() as *const c_char,
-            parameter.name.as_mut_ptr(),
-            name.len(),
-        );
-        std::ptr::copy_nonoverlapping(
-            module.as_ptr() as *const c_char,
-            parameter.module.as_mut_ptr(),
-            module.len(),
-        );
-        *info = parameter;
+        // SAFETY: source is a 5-byte literal and the destination a distinct local array of
+        // `CLAP_NAME_SIZE` (256) chars, so the copy is in bounds and cannot overlap.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr() as *const c_char,
+                parameter.name.as_mut_ptr(),
+                name.len(),
+            )
+        };
+        // SAFETY: source is a 9-byte literal and the destination a distinct local array of
+        // `CLAP_PATH_SIZE` (1024) chars, so the copy is in bounds and cannot overlap.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                module.as_ptr() as *const c_char,
+                parameter.module.as_mut_ptr(),
+                module.len(),
+            )
+        };
+        // SAFETY: `info` is non-null (checked above) and CLAP's `get_info` contract makes it a
+        // valid, writable `clap_param_info` out-parameter.
+        unsafe { *info = parameter };
         true
     }
 
@@ -1924,15 +2058,19 @@ mod instance_metadata_tests {
         if info.is_null() {
             return false;
         }
-        *info = clap_param_info {
-            id: 8,
-            flags: 0,
-            cookie: std::ptr::null_mut(),
-            name: [b'x' as c_char; CLAP_NAME_SIZE],
-            module: [0; CLAP_PATH_SIZE],
-            min_value: 0.0,
-            max_value: 1.0,
-            default_value: 0.5,
+        // SAFETY: `info` is non-null (checked above) and CLAP's `get_info` contract makes it a
+        // valid, writable `clap_param_info` out-parameter.
+        unsafe {
+            *info = clap_param_info {
+                id: 8,
+                flags: 0,
+                cookie: std::ptr::null_mut(),
+                name: [b'x' as c_char; CLAP_NAME_SIZE],
+                module: [0; CLAP_PATH_SIZE],
+                min_value: 0.0,
+                max_value: 1.0,
+                default_value: 0.5,
+            }
         };
         true
     }
@@ -1969,12 +2107,18 @@ mod instance_metadata_tests {
             default_value: 0.5,
         };
         let name = b"Duplicate\0";
-        std::ptr::copy_nonoverlapping(
-            name.as_ptr() as *const c_char,
-            parameter.name.as_mut_ptr(),
-            name.len(),
-        );
-        *info = parameter;
+        // SAFETY: source is a 10-byte literal and the destination a distinct local array of
+        // `CLAP_NAME_SIZE` (256) chars, so the copy is in bounds and cannot overlap.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr() as *const c_char,
+                parameter.name.as_mut_ptr(),
+                name.len(),
+            )
+        };
+        // SAFETY: `info` is non-null (checked above) and CLAP's `get_info` contract makes it a
+        // valid, writable `clap_param_info` out-parameter.
+        unsafe { *info = parameter };
         true
     }
 
@@ -1994,7 +2138,9 @@ mod instance_metadata_tests {
 
     unsafe extern "C" fn test_plugin_destroy(plugin: *const clap_plugin) {
         DESTROY_CALLS.fetch_add(1, Ordering::Relaxed);
-        drop(Box::from_raw(plugin as *mut clap_plugin));
+        // SAFETY: every plugin these fixtures hand out comes from `Box::into_raw` in a
+        // `*_create_plugin` callback, and the scanner calls `destroy` exactly once per instance.
+        drop(unsafe { Box::from_raw(plugin as *mut clap_plugin) });
     }
 
     unsafe extern "C" fn test_plugin_activate(
@@ -2041,13 +2187,17 @@ mod instance_metadata_tests {
             (false, 0) => 2,
             _ => return false,
         };
-        *info = clap_audio_port_info {
-            id: index,
-            name: [0; CLAP_NAME_SIZE],
-            flags: 0,
-            channel_count,
-            port_type: std::ptr::null(),
-            in_place_pair: CLAP_INVALID_ID,
+        // SAFETY: `info` is non-null (checked above) and CLAP's audio-ports `get` contract makes
+        // it a valid, writable `clap_audio_port_info` out-parameter.
+        unsafe {
+            *info = clap_audio_port_info {
+                id: index,
+                name: [0; CLAP_NAME_SIZE],
+                flags: 0,
+                channel_count,
+                port_type: std::ptr::null(),
+                in_place_pair: CLAP_INVALID_ID,
+            }
         };
         true
     }
@@ -2086,7 +2236,8 @@ mod instance_metadata_tests {
         if extension_id.is_null() {
             return std::ptr::null();
         }
-        let extension_id = CStr::from_ptr(extension_id);
+        // SAFETY: `extension_id` is non-null (checked above) and CLAP passes a NUL-terminated id.
+        let extension_id = unsafe { CStr::from_ptr(extension_id) };
         if extension_id == CLAP_EXT_PARAMS {
             return &raw const TEST_PARAMETERS as *const c_void;
         }
@@ -2233,8 +2384,13 @@ mod instance_metadata_tests {
         _host: *const clap_host,
         plugin_id: *const c_char,
     ) -> *const clap_plugin {
-        *LAST_CREATED_ID.lock().unwrap() = CStr::from_ptr(plugin_id).to_string_lossy().into_owned();
-        test_factory_create_plugin(std::ptr::null(), std::ptr::null(), std::ptr::null())
+        // SAFETY: the scanner passes the NUL-terminated `CString` it built from the plugin id,
+        // alive for this call.
+        *LAST_CREATED_ID.lock().unwrap() = unsafe { CStr::from_ptr(plugin_id) }
+            .to_string_lossy()
+            .into_owned();
+        // SAFETY: `test_factory_create_plugin` ignores all three arguments, so null is fine.
+        unsafe { test_factory_create_plugin(std::ptr::null(), std::ptr::null(), std::ptr::null()) }
     }
 
     static BUNDLE_FACTORY: clap_plugin_factory = clap_plugin_factory {
@@ -2252,6 +2408,8 @@ mod instance_metadata_tests {
         let _fixture = lock_fixture();
         let entry = entry_over(bundle_entry_factory);
 
+        // SAFETY: `entry` is a local fixture over static factories and descriptors, with no
+        // library to unload.
         let metadata = unsafe { extract_from_factory(&entry) }
             .expect("a two-plugin bundle is a legal bundle, not a scan failure");
 
@@ -2282,6 +2440,8 @@ mod instance_metadata_tests {
         }
         let entry = entry_over(unbounded_entry_factory);
 
+        // SAFETY: `entry` is a local fixture over static factories and descriptors, with no
+        // library to unload.
         let error = unsafe { extract_from_factory(&entry) }
             .expect_err("an absurd bundle plugin count must fail closed");
         assert_eq!(error, "CLAP bundle plugin count exceeds scanner bounds");
@@ -2296,6 +2456,7 @@ mod instance_metadata_tests {
         DESTROY_CALLS.store(0, Ordering::Relaxed);
         let entry = entry_over(bundle_entry_factory);
 
+        // SAFETY: `entry` is a local fixture over static factories and plugins; no library to unload.
         let metadata =
             unsafe { extract_instance_metadata_from_factory(&entry, "org.example.scan-safe-b") }
                 .expect("inspecting the second plugin of a bundle should succeed");
@@ -2381,6 +2542,7 @@ mod instance_metadata_tests {
         ACTIVATE_CALLS.store(0, Ordering::Relaxed);
         let entry = entry_over(test_entry_factory);
 
+        // SAFETY: `entry` is a local fixture over static factories and plugins; no library to unload.
         let metadata = unsafe { extract_instance_metadata_from_factory(&entry, TEST_PLUGIN_ID) }
             .expect("parameter scan should succeed");
 
@@ -2423,6 +2585,7 @@ mod instance_metadata_tests {
         DESTROY_CALLS.store(0, Ordering::Relaxed);
         let entry = entry_over(test_entry_factory);
 
+        // SAFETY: `entry` is a local fixture over static factories and plugins; no library to unload.
         let metadata = unsafe { extract_instance_metadata_from_factory(&entry, TEST_PLUGIN_ID) }
             .expect("capability scan should succeed");
 
@@ -2474,6 +2637,7 @@ mod instance_metadata_tests {
         let _fixture = lock_fixture();
         let entry = entry_over(bare_entry_factory);
 
+        // SAFETY: `entry` is a local fixture over static factories and plugins; no library to unload.
         let metadata = unsafe { extract_instance_metadata_from_factory(&entry, TEST_PLUGIN_ID) }
             .expect("a plugin with no extensions is a legal plugin, not a scan failure");
 
@@ -2573,6 +2737,8 @@ mod instance_metadata_tests {
             get: Some(test_audio_port_get),
         };
 
+        // SAFETY: the callbacks in `UNBOUNDED_PORTS` never dereference `plugin`, so a null
+        // instance stands in for one.
         let error = unsafe { audio_channel_count(std::ptr::null(), &UNBOUNDED_PORTS, true) }
             .expect_err("an absurd port count must fail closed");
         assert_eq!(error, "CLAP audio port count exceeds scanner bounds");
@@ -2580,11 +2746,15 @@ mod instance_metadata_tests {
 
     #[test]
     fn scanner_rejects_unbounded_or_duplicate_parameter_metadata() {
+        // SAFETY: the callbacks in `UNBOUNDED_PARAMETERS` never dereference `plugin`, so a null
+        // instance stands in for one.
         let unbounded =
             unsafe { extract_parameters_from_extension(std::ptr::null(), &UNBOUNDED_PARAMETERS) }
                 .expect_err("an unterminated parameter name must fail closed");
         assert_eq!(unbounded, "CLAP parameter name is not null terminated");
 
+        // SAFETY: the callbacks in `DUPLICATE_PARAMETERS` never dereference `plugin`, so a null
+        // instance stands in for one.
         let duplicate =
             unsafe { extract_parameters_from_extension(std::ptr::null(), &DUPLICATE_PARAMETERS) }
                 .expect_err("duplicate parameter ids must fail closed");

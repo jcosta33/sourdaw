@@ -422,7 +422,7 @@
                 "typescript/no-unsafe-member-access": "off",
                 "typescript/no-unsafe-return": "off",
                 "typescript/require-await": "off",
-                "typescript/no-floating-promises": "warn",
+                "typescript/no-floating-promises": "error",
                 "typescript/no-empty-object-type": "off",
                 "import/first": "off",
                 "jsx-a11y/no-static-element-interactions": "off",

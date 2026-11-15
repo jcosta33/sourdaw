@@ -15,8 +15,8 @@ describe('handleSetLayerInsertionIndex', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards layer id and index', () => {
-        handleSetLayerInsertionIndex.execute({
+    it('forwards layer id and index', async () => {
+        await handleSetLayerInsertionIndex.execute({
             type: 'setLayerInsertionIndex',
             payload: { layerId: 'L', insertionIndex: 3 },
         });

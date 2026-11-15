@@ -15,6 +15,7 @@ import {
     assertNativeSourceBinding,
     assertNativeTestResult,
     assertNativeWarmGraph,
+    hostedProbe,
     mutateTransportSource,
     NativeCommandOwnershipError,
     runCommand,
@@ -203,6 +204,157 @@ describe('source and warm-graph admission', () => {
     it('rejects a candidate whose graph differs from the warm owning graph', () => {
         expect(() => assertNativeWarmGraph('same', 'same')).not.toThrow();
         expect(() => assertNativeWarmGraph('candidate-graph', 'integration-graph')).toThrow('already-warm');
+    });
+});
+
+function hostedSourceFixture(
+    options: {
+        mainTransport?: boolean;
+        mainGraph?: boolean;
+        featureTransport?: boolean;
+        unrelatedBase?: boolean;
+    } = {}
+) {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-native-feature-scope-'));
+    roots.push(directory);
+    const root = join(directory, 'checkout');
+    const home = join(directory, 'home');
+    const output = join(directory, 'github-output');
+    const owningSource = 'crates/sourdaw-native/src/commands/engine_transport.rs';
+    mkdirSync(join(root, 'crates/sourdaw-native/src/commands'), { recursive: true });
+    mkdirSync(home);
+    const environment = {
+        PATH: process.env.PATH,
+        HOME: home,
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_TRACE2_EVENT: '0',
+        GIT_AUTHOR_NAME: 'fixture',
+        GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
+        GIT_COMMITTER_NAME: 'fixture',
+        GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
+    };
+    const git = (...args: string[]) => {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: environment });
+        if (result.status !== 0) {
+            throw new Error(`Fixture Git ${args[0]} failed: ${result.stderr}`);
+        }
+        return result.stdout.trim();
+    };
+    git('init', '--initial-branch=main');
+    writeFileSync(join(root, '.gitignore'), '.agents/\n');
+    writeFileSync(join(root, 'Cargo.toml'), '[workspace]\nmembers = []\n');
+    writeFileSync(join(root, owningSource), 'pub fn original_transport() {}\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'common ancestor');
+    const original = git('rev-parse', 'HEAD');
+    git('checkout', '-q', '-b', 'feature');
+    if (options.featureTransport) {
+        writeFileSync(join(root, owningSource), 'pub fn feature_transport() {}\n');
+    } else {
+        writeFileSync(join(root, 'tooling.md'), 'Feature tooling only.\n');
+    }
+    git('add', '.');
+    git('commit', '-q', '-m', 'feature change');
+    const head = git('rev-parse', 'HEAD');
+    git('checkout', '-q', 'main');
+    if (options.mainTransport) {
+        writeFileSync(join(root, owningSource), 'pub fn main_transport() {}\n');
+    }
+    if (options.mainGraph) {
+        writeFileSync(join(root, 'Cargo.toml'), '[workspace]\nmembers = []\nresolver = "3"\n');
+    }
+    if (options.mainTransport || options.mainGraph) {
+        git('add', '.');
+        git('commit', '-q', '-m', 'main advanced');
+    }
+    let base = git('rev-parse', 'HEAD');
+    git('merge', '-q', '--no-ff', 'feature', '-m', 'integration');
+    const integration = git('rev-parse', 'HEAD');
+    if (options.unrelatedBase) {
+        base = git('commit-tree', `${original}^{tree}`, '-m', 'unrelated event base');
+    }
+    return {
+        root,
+        output,
+        summary: join(root, '.agents/artifacts/native-transport-mutations/summary.json'),
+        environment: {
+            ...environment,
+            GITHUB_ACTIONS: 'true',
+            GITHUB_JOB: 'native-macos',
+            GITHUB_WORKSPACE: root,
+            HEAD_SHA: head,
+            BASE_SHA: base,
+            GITHUB_SHA: integration,
+            GITHUB_OUTPUT: output,
+        },
+        platform: 'darwin' as const,
+    };
+}
+
+describe('hosted feature scope', () => {
+    it('does not schedule main-only transport and graph changes for an older tooling feature', async () => {
+        const fixture = hostedSourceFixture({ mainTransport: true, mainGraph: true });
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+        await hostedProbe(fixture);
+        expect(JSON.parse(readFileSync(fixture.summary, 'utf8'))).toMatchObject({
+            result: 'not-scheduled',
+            restored: true,
+            reason: 'owning source unchanged',
+        });
+        expect(readFileSync(fixture.output, 'utf8')).toBe('restored=true\n');
+        expect(log).toHaveBeenCalledWith('native-transport-mutations: not-scheduled; owning source unchanged');
+    });
+
+    it('does not schedule an unchanged owning source against the same event base', async () => {
+        const fixture = hostedSourceFixture();
+        await hostedProbe(fixture);
+        expect(JSON.parse(readFileSync(fixture.summary, 'utf8'))).toMatchObject({
+            result: 'not-scheduled',
+            restored: true,
+        });
+        expect(readFileSync(fixture.output, 'utf8')).toBe('restored=true\n');
+    });
+
+    it('still requires native proof for a genuine feature transport edit', async () => {
+        const fixture = hostedSourceFixture({ featureTransport: true });
+        await expect(hostedProbe(fixture)).rejects.toThrow('Missing job-private already-warm native target');
+        expect(JSON.parse(readFileSync(fixture.summary, 'utf8'))).toMatchObject({
+            result: 'incomplete',
+            restored: false,
+            error: 'Missing job-private already-warm native target',
+        });
+        expect(existsSync(fixture.output)).toBe(false);
+    });
+
+    it('retains candidate-to-integration graph binding after a genuine feature transport edit', async () => {
+        const fixture = hostedSourceFixture({ featureTransport: true, mainGraph: true });
+        await expect(hostedProbe(fixture)).rejects.toThrow('Candidate graph differs from the already-warm');
+        expect(JSON.parse(readFileSync(fixture.summary, 'utf8'))).toMatchObject({
+            result: 'incomplete',
+            restored: false,
+        });
+        expect(existsSync(fixture.output)).toBe(false);
+    });
+
+    it('fails closed when the immutable event commits have no merge base', async () => {
+        const fixture = hostedSourceFixture({ unrelatedBase: true });
+        await expect(hostedProbe(fixture)).rejects.toThrow('Git source admission failed');
+        expect(JSON.parse(readFileSync(fixture.summary, 'utf8'))).toMatchObject({
+            result: 'incomplete',
+            restored: false,
+        });
+        expect(existsSync(fixture.output)).toBe(false);
+    });
+
+    it('fails closed when an immutable event commit is missing', async () => {
+        const fixture = hostedSourceFixture();
+        fixture.environment.BASE_SHA = 'f'.repeat(40);
+        await expect(hostedProbe(fixture)).rejects.toThrow('Git source admission failed');
+        expect(JSON.parse(readFileSync(fixture.summary, 'utf8'))).toMatchObject({
+            result: 'incomplete',
+            restored: false,
+        });
+        expect(existsSync(fixture.output)).toBe(false);
     });
 });
 
