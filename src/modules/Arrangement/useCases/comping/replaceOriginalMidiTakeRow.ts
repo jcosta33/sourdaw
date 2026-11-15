@@ -1,5 +1,4 @@
-import { type OriginalMidiTakeRowReplacementPayload } from '#/utils/handlerContract';
-
+import { type OriginalMidiTakeRowReplacementPayload } from '../../events/arrangementTakeAppActions';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { originalMidiTakeRowReplacement } from './prepareOriginalMidiTakeRowReplacement';
