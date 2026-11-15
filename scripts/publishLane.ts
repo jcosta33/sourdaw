@@ -2236,21 +2236,7 @@ export function shellPort(
                 })
             ),
         cwd: () => cwd,
-        issueExists: (issue) => {
-            const args = issueLookupArgs(issue);
-            const result = withGhChildLocation(executables.gh, args, primaryRoot, session.env, (location) =>
-                spawnSync(executables.gh, args, {
-                    cwd: location.cwd,
-                    env: location.env,
-                    encoding: 'utf8',
-                    shell: false,
-                })
-            );
-            if (result.error !== undefined) {
-                throw result.error;
-            }
-            return issueExistsFromLookup(issue, result);
-        },
+        issueExists: (issue) => lookupIssueExists(executables.gh, issue, primaryRoot, session.env),
         aheadBehind: (lane, baseSha, headSha) => {
             const output = spawnCapture(
                 executables.git,
@@ -2528,6 +2514,18 @@ type IssueLookup = { number?: number; isPullRequest?: boolean };
 
 export function issueLookupArgs(issue: number): string[] {
     return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', ISSUE_LOOKUP_JQ];
+}
+
+/** Asks GitHub whether the issue exists; a missing issue is an answer, any other failure throws. */
+export function lookupIssueExists(gh: string, issue: number, cwd: string, env: NodeJS.ProcessEnv): boolean {
+    const args = issueLookupArgs(issue);
+    const result = withGhChildLocation(gh, args, cwd, env, (location) =>
+        spawnSync(gh, args, { cwd: location.cwd, env: location.env, encoding: 'utf8', shell: false })
+    );
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return issueExistsFromLookup(issue, result);
 }
 
 export function issueExistsFromLookup(

@@ -1861,6 +1861,17 @@ describe('token-bearing gh children start their git outside every repository', (
     // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
     const sentinel = ['ghs', 'gh', 'child', 'sentinel'].join('_');
     const repositoryQuery = ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'];
+    const routingKeys = [
+        'GIT_DIR',
+        'GIT_WORK_TREE',
+        'GIT_COMMON_DIR',
+        'GIT_INDEX_FILE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+        'GIT_NAMESPACE',
+        'GIT_CEILING_DIRECTORIES',
+        'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+    ];
 
     type Observed = { cwd: string; token: string; toplevel: string; marker: string };
 
@@ -1875,12 +1886,14 @@ describe('token-bearing gh children start their git outside every repository', (
             tokenEnv: NodeJS.ProcessEnv;
             tokenFreeEnv: NodeJS.ProcessEnv;
             observed: () => Observed;
+            routing: () => string;
         }) => void,
         ghFileName = 'gh'
     ): void {
         withScratch('sourdaw-gh-child-', (root) => {
             const repository = join(root, 'repository');
             const record = join(root, 'record');
+            const routingRecord = join(root, 'routing');
             const gh = join(root, 'bin', ghFileName);
             mkdirSync(repository);
             mkdirSync(dirname(gh));
@@ -1896,6 +1909,7 @@ describe('token-bearing gh children start their git outside every repository', (
                     `  printf 'toplevel=%s\\n' "$(git rev-parse --show-toplevel 2>/dev/null)"`,
                     `  printf 'marker=%s\\n' "$(git config --get lane.marker 2>/dev/null)"`,
                     `} > ${JSON.stringify(record)}`,
+                    `env | grep -i '^git_' | sort > ${JSON.stringify(routingRecord)}`,
                     '',
                 ].join('\n')
             );
@@ -1919,6 +1933,7 @@ describe('token-bearing gh children start their git outside every repository', (
                         marker: fields.get('marker') ?? '',
                     };
                 },
+                routing: () => readFileSync(routingRecord, 'utf8'),
             });
         });
     }
@@ -1950,6 +1965,28 @@ describe('token-bearing gh children start their git outside every repository', (
             expect(observed.marker).toBe('');
             expect(observed.cwd).not.toBe(f.repository);
             expect(existsSync(observed.cwd)).toBe(false);
+        });
+    });
+
+    it.each([...routingKeys, 'git_dir'])('keeps an inherited %s from reaching the gh child', (key) => {
+        withGhFixture((f) => {
+            const planted = `planted-${key}`;
+            spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], {
+                cwd: f.repository,
+                env: { ...f.tokenEnv, [key]: planted },
+            });
+
+            expect(f.observed().token).toBe(sentinel);
+            expect(f.routing()).not.toContain(planted);
+        });
+    });
+
+    it('moves a checkout repository query that carries any further argument out of the repository', () => {
+        withGhFixture((f) => {
+            spawnCapture('gh', [...repositoryQuery, '--web'], { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed().toplevel).toBe('');
+            expect(f.observed().cwd).not.toBe(f.repository);
         });
     });
 

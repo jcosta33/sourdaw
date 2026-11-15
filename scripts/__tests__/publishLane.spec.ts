@@ -65,6 +65,7 @@ import {
     issueExistsFromLookup,
     issueLookupArgs,
     laneIssueNumber,
+    lookupIssueExists,
     matchingOpenPullRequest,
     mergeabilityFromPullRequestRow,
     parsePublishLaneArgs,
@@ -2072,6 +2073,39 @@ describe('lane publish', () => {
         expect(() =>
             issueExistsFromLookup(12, { status: 1, stdout: '', stderr: 'gh: Bad credentials (HTTP 401)' })
         ).toThrow(/Bad credentials/);
+    });
+
+    it('looks the issue up with a token-bearing gh that starts outside the primary checkout', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-issue-lookup-')));
+        try {
+            const primary = join(root, 'primary');
+            const record = join(root, 'record');
+            const gh = join(root, 'bin', 'gh');
+            mkdirSync(primary);
+            mkdirSync(dirname(gh));
+            fixtureGit(primary, ['init', '-q', '-b', 'main']);
+            writeFileSync(
+                gh,
+                [
+                    '#!/bin/sh',
+                    `printf '%s\\n' "$(pwd -P)" "$(git rev-parse --show-toplevel 2>/dev/null)" > ${JSON.stringify(record)}`,
+                    `printf '{"number":12,"isPullRequest":false}\\n'`,
+                    '',
+                ].join('\n')
+            );
+            chmodSync(gh, 0o755);
+            // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
+            const token = ['ghs', 'issue', 'lookup', 'sentinel'].join('_');
+
+            const found = lookupIssueExists(gh, 12, primary, { PATH: process.env.PATH, GH_TOKEN: token });
+
+            const [cwd, toplevel] = readFileSync(record, 'utf8').split('\n');
+            expect(found).toBe(true);
+            expect(cwd).not.toBe(primary);
+            expect(toplevel).toBe('');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('refuses a pull-request number, which the issues endpoint resolves just as happily', () => {
