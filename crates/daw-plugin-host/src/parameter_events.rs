@@ -128,8 +128,13 @@ pub struct PluginParameterEventQueue {
 
 // SAFETY: every field is either immutable after construction or an atomic, and
 // the slots are only ever touched under the single-producer / single-consumer
-// index discipline documented on the type.
+// index discipline documented on the type, so moving the queue between threads
+// hands over owned `Copy` event data with no thread affinity.
 unsafe impl Send for PluginParameterEventQueue {}
+// SAFETY: shared access goes through atomics, or through the slot cells under
+// the same single-producer / single-consumer index discipline: a slot is
+// written only while ahead of the read cursor and read only after the write
+// cursor is published, so no slot is accessed concurrently.
 unsafe impl Sync for PluginParameterEventQueue {}
 
 impl Default for PluginParameterEventQueue {

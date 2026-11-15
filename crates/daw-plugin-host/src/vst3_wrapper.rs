@@ -131,7 +131,10 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         if index != 0 || !self.filled.get() || sample_offset.is_null() || value.is_null() {
             return kInvalidArgument;
         }
+        // SAFETY: non-null (checked above); `IParamValueQueue::getPoint` gives
+        // the plugin's own writable out-parameter, live for this call.
         unsafe { *sample_offset = 0 };
+        // SAFETY: non-null (checked above); the plugin's own out-parameter.
         unsafe { *value = self.value.get() };
         kResultOk
     }
@@ -145,6 +148,8 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         self.value.set(value);
         self.filled.set(true);
         if !index.is_null() {
+            // SAFETY: non-null (checked above); `addPoint`'s `index` is the
+            // plugin's own writable out-parameter, live for this call.
             unsafe { *index = 0 };
         }
         kResultOk
@@ -235,10 +240,14 @@ impl IParameterChangesTrait for HostParameterChanges {
         if id.is_null() {
             return ptr::null_mut();
         }
+        // SAFETY: non-null (checked above); `addParameterData`'s `id` points at
+        // the plugin's `ParamID`, live for this call.
         let Some(position) = self.queue_index_for(unsafe { *id }) else {
             return ptr::null_mut();
         };
         if !index.is_null() {
+            // SAFETY: non-null (checked above); the plugin's own writable
+            // out-parameter, live for this call.
             unsafe { *index = position as int32 };
         }
         borrowed_ptr(&self.queues[position])
@@ -315,7 +324,12 @@ impl IEventListTrait for HostEventList {
         if index < 0 || index as usize >= self.count.get() || e.is_null() {
             return kInvalidArgument;
         }
-        unsafe { *e = (*self.events.as_ptr())[index as usize] };
+        // SAFETY: `Cell::as_ptr` yields the live array and `index` is below the
+        // pushed count; nothing writes the list during the `process` reading it.
+        let event = unsafe { (*self.events.as_ptr())[index as usize] };
+        // SAFETY: non-null (checked above); `getEvent`'s `e` is the plugin's own
+        // writable out-parameter, live for this call.
+        unsafe { *e = event };
         kResultOk
     }
 
@@ -443,14 +457,20 @@ impl IBStreamTrait for HostStream {
         // and a panic here unwinds into the plugin's frame.
         let Some(remaining) = cursor.bytes.get(cursor.position..) else {
             if !num_bytes_read.is_null() {
+                // SAFETY: non-null (checked); `IBStream::read`'s out-parameter
+                // is the plugin's writable `int32`, live for this call.
                 unsafe { *num_bytes_read = 0 };
             }
             return kResultOk;
         };
         let count = remaining.len().min(num_bytes as usize);
+        // SAFETY: `IBStream::read` gives a non-null (checked) plugin buffer of at
+        // least `num_bytes` bytes; `count` is at most that and at most what
+        // `remaining` holds, and the plugin's buffer cannot alias this `Vec`.
         unsafe { ptr::copy_nonoverlapping(remaining.as_ptr(), buffer as *mut u8, count) };
         cursor.position += count;
         if !num_bytes_read.is_null() {
+            // SAFETY: non-null (checked); the plugin's own writable out-parameter.
             unsafe { *num_bytes_read = count as int32 };
         }
         kResultOk
@@ -481,6 +501,9 @@ impl IBStreamTrait for HostStream {
             cursor.bytes.resize(end, 0);
         }
         let start = cursor.position;
+        // SAFETY: `IBStream::write` gives a non-null (checked) plugin buffer of
+        // `num_bytes` readable bytes; the destination was resized to at least
+        // `start + count` above, and the plugin's buffer cannot alias this `Vec`.
         unsafe {
             ptr::copy_nonoverlapping(
                 buffer as *const u8,
@@ -490,6 +513,7 @@ impl IBStreamTrait for HostStream {
         };
         cursor.position = end;
         if !num_bytes_written.is_null() {
+            // SAFETY: non-null (checked); the plugin's own writable out-parameter.
             unsafe { *num_bytes_written = count as int32 };
         }
         kResultOk
@@ -515,6 +539,8 @@ impl IBStreamTrait for HostStream {
         let clamped = (target as u64).min(cursor.bytes.len() as u64) as usize;
         cursor.position = clamped;
         if !result.is_null() {
+            // SAFETY: non-null (checked); `seek`'s `result` is the plugin's own
+            // writable out-parameter, live for this call.
             unsafe { *result = clamped as int64 };
         }
         kResultOk
@@ -525,6 +551,8 @@ impl IBStreamTrait for HostStream {
             return kInvalidArgument;
         };
         if !pos.is_null() {
+            // SAFETY: non-null (checked); `tell`'s `pos` is the plugin's own
+            // writable out-parameter, live for this call.
             unsafe { *pos = cursor.position as int64 };
         }
         kResultOk
@@ -626,6 +654,9 @@ impl IConnectionPointTrait for Vst3ConnectionProxy {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
+        // SAFETY: `IConnectionPoint::notify` passes null, which `from_raw` maps to
+        // `None`, or a message the plugin keeps alive for this call; it is
+        // retained before the call returns.
         let Some(message) = (unsafe { ComRef::from_raw(message) }) else {
             return kInvalidArgument;
         };
@@ -706,10 +737,17 @@ pub struct Vst3Instance {
     is_instrument: bool,
 }
 
-// SAFETY: every VST3 object here is reached through `&self`/`&mut self` under
-// the seam's access lock, and every pointer is owned by this struct and released
-// in `Drop`.
+// SAFETY: the fields are COM pointers this struct owns (released in `Drop`),
+// the host context and the module `Arc`. VST3 binds lifecycle calls to the
+// host's main thread, which this type does not enforce: it holds because the
+// embedding host constructs and drops every instance on its UI thread and
+// otherwise reaches it only through its owner's exclusive access seam.
 unsafe impl Send for Vst3Instance {}
+// SAFETY: `&self` methods call into the plugin (`accepts_midi`, the state and
+// connection calls), so shared access from two threads at once is not sound
+// from this type alone. It holds because its only holders — a `Vst3Wrapper`
+// behind the embedding host's access seam, or the scanner on its own thread —
+// never share one across threads concurrently.
 unsafe impl Sync for Vst3Instance {}
 
 impl Vst3Instance {
@@ -874,6 +912,8 @@ impl Vst3Instance {
         else {
             return;
         };
+        // SAFETY: control path only; the controller is live and initialised, and
+        // `stream` is the host stream `write_chunk` keeps alive for the call.
         write_chunk(&processor_state, |stream| unsafe {
             controller.setComponentState(stream)
         });
@@ -930,12 +970,12 @@ impl Vst3Instance {
             return;
         };
 
-        // SAFETY: both points belong to live objects this instance owns, and
-        // each proxy outlives the plugin object it is handed to (field order).
-        unsafe {
-            component_point.connect(proxies.for_component.as_ptr());
-            controller_point.connect(proxies.for_controller.as_ptr());
-        }
+        // SAFETY: `component_point` is a live reference on the component this
+        // instance owns, and the proxy outlives it (field order).
+        unsafe { component_point.connect(proxies.for_component.as_ptr()) };
+        // SAFETY: `controller_point` is a live reference on the controller this
+        // instance owns, and the proxy outlives it (field order).
+        unsafe { controller_point.connect(proxies.for_controller.as_ptr()) };
         self.component_connection = Some(component_point);
         self.controller_connection = Some(controller_point);
         self.proxies = Some(proxies);
@@ -944,26 +984,34 @@ impl Vst3Instance {
 
 impl Drop for Vst3Instance {
     fn drop(&mut self) {
-        // SAFETY: every object is live until this point, and the order below is
-        // the reverse of construction, which is what VST3 requires.
-        unsafe {
-            if let Some(proxies) = &self.proxies {
-                if let Some(component_point) = self.component_connection.as_ref() {
-                    component_point.disconnect(proxies.for_component.as_ptr());
-                }
-                if let Some(controller_point) = self.controller_connection.as_ref() {
-                    controller_point.disconnect(proxies.for_controller.as_ptr());
-                }
+        // The order below is the reverse of construction, which is what VST3
+        // requires; every object is live until the fields drop after this body.
+        if let Some(proxies) = &self.proxies {
+            if let Some(component_point) = self.component_connection.as_ref() {
+                // SAFETY: the component's connection point is retained by this
+                // field, and the proxy it was connected to is still alive.
+                unsafe { component_point.disconnect(proxies.for_component.as_ptr()) };
             }
-
-            if let Some(controller) = &self.controller {
-                controller.setComponentHandler(ptr::null_mut());
-                if !self.controller_is_component {
-                    controller.terminate();
-                }
+            if let Some(controller_point) = self.controller_connection.as_ref() {
+                // SAFETY: the controller's connection point is retained by this
+                // field, and the proxy it was connected to is still alive.
+                unsafe { controller_point.disconnect(proxies.for_controller.as_ptr()) };
             }
-            self.component.terminate();
         }
+
+        if let Some(controller) = &self.controller {
+            // SAFETY: the controller is retained by this field; null is how VST3
+            // clears the handler so the plugin stops calling back into it.
+            unsafe { controller.setComponentHandler(ptr::null_mut()) };
+            if !self.controller_is_component {
+                // SAFETY: a separate controller is initialised only once, in
+                // `attach_controller`, and this is its one matching `terminate`.
+                unsafe { controller.terminate() };
+            }
+        }
+        // SAFETY: `create` stores the component only after `initialize`
+        // succeeded, and this is its one matching `terminate`.
+        unsafe { self.component.terminate() };
     }
 }
 
@@ -1042,10 +1090,17 @@ pub struct Vst3Wrapper {
     is_instrument: bool,
 }
 
-// SAFETY: as `Vst3Instance` — every VST3 object is reached under the seam's
-// access lock, and the RT path touches only preallocated storage this struct
-// owns.
+// SAFETY: beyond the `Vst3Instance` it owns, the fields are COM pointers, boxed
+// scratch and host objects built on `Cell`s, all owned here. The type does not
+// pin itself to a thread; it holds because the embedding host constructs and
+// drops it on its UI thread and reaches it otherwise only through its exclusive
+// access seam (`SharedHostedPlugin` in `sourdaw-native`).
 unsafe impl Send for Vst3Wrapper {}
+// SAFETY: `&self` methods call into the plugin (`get_parameters`, `get_state`,
+// `deliver_deferred_messages`, `latency_samples`, `tail_samples`) and the event
+// and parameter lists are `Cell`-based, so shared access from two threads at
+// once is not sound from this type alone. It holds because the embedding host's
+// access seam serialises every reference, shared or exclusive, to one holder.
 unsafe impl Sync for Vst3Wrapper {}
 
 impl Vst3Wrapper {
@@ -1134,38 +1189,42 @@ impl Vst3Wrapper {
             ));
         };
 
-        // SAFETY: the component is initialised and inactive, which is the only
-        // state in which bus arrangement, bus activation and `setupProcessing`
-        // are defined.
-        let bus_layout = unsafe {
-            // Before activation, because `setBusArrangements` is only defined
-            // while the component is inactive — and after it, every block's
-            // shape is fixed by what the plugin agreed to here.
-            let layout = negotiate_bus_layout(component, &processor, self.instance.name())?;
+        // Before activation, because `setBusArrangements` is only defined
+        // while the component is inactive — and after it, every block's
+        // shape is fixed by what the plugin agreed to here.
+        // SAFETY: `activate` runs once, from `activated`, on an instance that
+        // `Vst3Instance::create` initialised and never activated; `processor` is
+        // that component's own audio processor.
+        let bus_layout =
+            unsafe { negotiate_bus_layout(component, &processor, self.instance.name()) }?;
 
-            activate_main_audio_bus(component, BusDirections_::kInput as int32);
-            activate_main_audio_bus(component, BusDirections_::kOutput as int32);
-            if self.accepts_midi {
-                activate_first_event_bus(component);
-            }
-            layout
-        };
+        // SAFETY: the component is initialised and still inactive, the only
+        // state in which bus activation is defined.
+        unsafe { activate_main_audio_bus(component, BusDirections_::kInput as int32) };
+        // SAFETY: as above; the component is initialised and inactive.
+        unsafe { activate_main_audio_bus(component, BusDirections_::kOutput as int32) };
+        if self.accepts_midi {
+            // SAFETY: as above; the component is initialised and inactive.
+            unsafe { activate_first_event_bus(component) };
+        }
 
-        unsafe {
-            let mut setup = self.process_setup();
-            if processor.setupProcessing(&mut setup) != kResultOk {
-                return Err(format!(
-                    "[VST3] '{}' refused the host's processing setup",
-                    self.instance.name()
-                ));
-            }
+        let mut setup = self.process_setup();
+        // SAFETY: the component is initialised and inactive, the state
+        // `setupProcessing` requires; `setup` is a live local read during the call.
+        if unsafe { processor.setupProcessing(&mut setup) } != kResultOk {
+            return Err(format!(
+                "[VST3] '{}' refused the host's processing setup",
+                self.instance.name()
+            ));
+        }
 
-            if component.setActive(1) != kResultOk {
-                return Err(format!(
-                    "[VST3] '{}' refused to activate",
-                    self.instance.name()
-                ));
-            }
+        // SAFETY: the component is initialised, set up and inactive; this runs on
+        // the control path during construction, never concurrently with `process`.
+        if unsafe { component.setActive(1) } != kResultOk {
+            return Err(format!(
+                "[VST3] '{}' refused to activate",
+                self.instance.name()
+            ));
         }
 
         // Every geometry-dependent allocation happens here, once: a block reads
@@ -1418,27 +1477,30 @@ impl Vst3Wrapper {
             self.force_stop_processing_off_audio_thread();
         }
 
-        // SAFETY: exclusive control access; the component is live.
-        unsafe {
-            if self.activated {
-                self.instance.component().setActive(0);
-                self.activated = false;
-            }
+        if self.activated {
+            // SAFETY: exclusive control access (`&mut self`, caller's claim);
+            // the component is live and active, and processing was stopped above.
+            unsafe { self.instance.component().setActive(0) };
+            self.activated = false;
+        }
 
-            let mut setup = self.process_setup();
-            if processor.setupProcessing(&mut setup) != kResultOk {
-                return Err(format!(
-                    "[VST3] '{}' refused re-setup after a latency change",
-                    self.instance.name()
-                ));
-            }
+        let mut setup = self.process_setup();
+        // SAFETY: exclusive control access; the component is initialised and
+        // inactive, the state `setupProcessing` requires; `setup` is a live local.
+        if unsafe { processor.setupProcessing(&mut setup) } != kResultOk {
+            return Err(format!(
+                "[VST3] '{}' refused re-setup after a latency change",
+                self.instance.name()
+            ));
+        }
 
-            if self.instance.component().setActive(1) != kResultOk {
-                return Err(format!(
-                    "[VST3] '{}' refused reactivation after a latency change",
-                    self.instance.name()
-                ));
-            }
+        // SAFETY: exclusive control access; the component is initialised, set up
+        // and inactive.
+        if unsafe { self.instance.component().setActive(1) } != kResultOk {
+            return Err(format!(
+                "[VST3] '{}' refused reactivation after a latency change",
+                self.instance.name()
+            ));
         }
 
         self.activated = true;
@@ -1545,32 +1607,40 @@ impl Vst3Wrapper {
         self.output_scratch[0][..samples].fill(0.0);
         self.output_scratch[1][..samples].fill(0.0);
 
-        // SAFETY: every pointer below addresses this wrapper's own preallocated
-        // storage and is valid for the duration of the `process` call, which is
-        // the only span VST3 lets a plugin read them for. The bus arrays were
-        // sized at activation from the layout the plugin agreed to, so nothing
-        // here allocates and nothing indexes past what the plugin declared.
-        let refused = unsafe {
-            let mut in_ptrs: [*mut f32; CHANNELS] = [
-                self.input_scratch[0].as_mut_ptr(),
-                self.input_scratch[1].as_mut_ptr(),
-            ];
-            let mut out_ptrs: [*mut f32; CHANNELS] = [
-                self.output_scratch[0].as_mut_ptr(),
-                self.output_scratch[1].as_mut_ptr(),
-            ];
+        // Every pointer below addresses this wrapper's own preallocated storage
+        // and is valid for the duration of the `process` call, which is the only
+        // span VST3 lets a plugin read them for. The bus arrays were sized at
+        // activation from the layout the plugin agreed to, so nothing here
+        // allocates and nothing indexes past what the plugin declared.
+        let mut in_ptrs: [*mut f32; CHANNELS] = [
+            self.input_scratch[0].as_mut_ptr(),
+            self.input_scratch[1].as_mut_ptr(),
+        ];
+        let mut out_ptrs: [*mut f32; CHANNELS] = [
+            self.output_scratch[0].as_mut_ptr(),
+            self.output_scratch[1].as_mut_ptr(),
+        ];
 
+        // SAFETY: `in_ptrs` holds `HOST_CHANNELS` pointers into this wrapper's
+        // boxed input scratch, and both the array and the scratch outlive the
+        // `process` call below in this same scope.
+        unsafe {
             point_buses_at_scratch(
                 &mut self.input_bus_buffers,
                 &self.bus_layout.inputs,
                 in_ptrs.as_mut_ptr(),
-            );
+            )
+        };
+        // SAFETY: as above, for `out_ptrs` and the boxed output scratch.
+        unsafe {
             point_buses_at_scratch(
                 &mut self.output_bus_buffers,
                 &self.bus_layout.outputs,
                 out_ptrs.as_mut_ptr(),
-            );
+            )
+        };
 
+        let refused = {
             let mut data = ProcessData {
                 processMode: self.process_mode,
                 symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
@@ -1600,7 +1670,11 @@ impl Vst3Wrapper {
                 },
             };
 
-            processor.process(&mut data) != kResultOk
+            // SAFETY: the thread that runs this instance's blocks (the audio thread,
+            // or the render thread of an offline instance), inside the processing
+            // state the gate just confirmed; `processor` is retained by `self.processor`, and every
+            // pointer in `data` addresses storage that outlives this call.
+            unsafe { processor.process(&mut data) != kResultOk }
         };
 
         if refused {
@@ -2038,47 +2112,54 @@ fn bundle_name(bundle_path: &Path) -> &str {
 /// Free function because the scanner reads the same list from an instance it
 /// never activates.
 pub fn read_parameters(controller: &ComPtr<IEditController>) -> Vec<PluginParameter> {
-    // SAFETY: control path only; the controller is live and initialised.
-    unsafe {
-        let count = controller.getParameterCount();
-        (0..count)
-            .filter_map(|index| {
-                let mut info: ParameterInfo = std::mem::zeroed();
-                if controller.getParameterInfo(index, &mut info) != kResultOk {
-                    return None;
-                }
-                if info.flags & ParameterFlags_::kIsHidden != 0 {
-                    return None;
-                }
-                Some(PluginParameter {
-                    id: info.id,
-                    name: read_string128(&info.title),
-                    value: controller.getParamNormalized(info.id),
-                    default_value: info.defaultNormalizedValue,
-                    min_value: 0.0,
-                    max_value: 1.0,
-                    unit: non_empty(read_string128(&info.units)),
-                    is_automatable: info.flags & ParameterFlags_::kCanAutomate != 0
-                        && info.flags & ParameterFlags_::kIsReadOnly == 0,
-                })
+    // SAFETY: control path only; the `ComPtr` holds a reference on a live,
+    // initialised controller.
+    let count = unsafe { controller.getParameterCount() };
+    (0..count)
+        .filter_map(|index| {
+            // SAFETY: `ParameterInfo` is a plain C struct of integers, floats and
+            // UTF-16 arrays, for which all-zero bytes are a valid value.
+            let mut info: ParameterInfo = unsafe { std::mem::zeroed() };
+            // SAFETY: live, initialised controller; `info` is a local the plugin
+            // writes for the call's duration only.
+            if unsafe { controller.getParameterInfo(index, &mut info) } != kResultOk {
+                return None;
+            }
+            if info.flags & ParameterFlags_::kIsHidden != 0 {
+                return None;
+            }
+            Some(PluginParameter {
+                id: info.id,
+                name: read_string128(&info.title),
+                // SAFETY: live, initialised controller; `info.id` is an id the
+                // controller itself just reported.
+                value: unsafe { controller.getParamNormalized(info.id) },
+                default_value: info.defaultNormalizedValue,
+                min_value: 0.0,
+                max_value: 1.0,
+                unit: non_empty(read_string128(&info.units)),
+                is_automatable: info.flags & ParameterFlags_::kCanAutomate != 0
+                    && info.flags & ParameterFlags_::kIsReadOnly == 0,
             })
-            .collect()
-    }
+        })
+        .collect()
 }
 
 /// The name the factory gives a class, when it lists one with this CID.
 pub fn class_name(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> Option<String> {
-    // SAFETY: the factory is live; each `info` is a valid out parameter.
-    unsafe {
-        let count = factory.countClasses();
-        for index in 0..count {
-            let mut info: vst3::Steinberg::PClassInfo = std::mem::zeroed();
-            if factory.getClassInfo(index, &mut info) != kResultOk {
-                continue;
-            }
-            if same_class_id(&info.cid, class_id) {
-                return non_empty(read_char8(&info.name));
-            }
+    // SAFETY: the `ComPtr` holds a reference on a live factory.
+    let count = unsafe { factory.countClasses() };
+    for index in 0..count {
+        // SAFETY: `PClassInfo` is a plain C struct of byte arrays and an
+        // integer, for which all-zero bytes are a valid value.
+        let mut info: vst3::Steinberg::PClassInfo = unsafe { std::mem::zeroed() };
+        // SAFETY: live factory; `info` is a local the plugin writes for the
+        // call's duration only.
+        if unsafe { factory.getClassInfo(index, &mut info) } != kResultOk {
+            continue;
+        }
+        if same_class_id(&info.cid, class_id) {
+            return non_empty(read_char8(&info.name));
         }
     }
     None
@@ -2095,20 +2176,22 @@ pub fn class_is_instrument(factory: &ComPtr<IPluginFactory>, class_id: &TUID) ->
     let Some(factory2) = factory.cast::<IPluginFactory2>() else {
         return false;
     };
-    // SAFETY: the factory is live; each `info` is a valid out parameter.
-    unsafe {
-        let count = factory2.countClasses();
-        for index in 0..count {
-            let mut info: vst3::Steinberg::PClassInfo2 = std::mem::zeroed();
-            if factory2.getClassInfo2(index, &mut info) != kResultOk {
-                continue;
-            }
-            if !same_class_id(&info.cid, class_id) {
-                continue;
-            }
-            let sub_categories = split_sub_categories(&read_char8(&info.subCategories));
-            return category_from_vst3_sub_categories(&sub_categories) == "instrument";
+    // SAFETY: `factory2` is a live reference `queryInterface` just returned.
+    let count = unsafe { factory2.countClasses() };
+    for index in 0..count {
+        // SAFETY: `PClassInfo2` is a plain C struct of byte arrays and integers,
+        // for which all-zero bytes are a valid value.
+        let mut info: vst3::Steinberg::PClassInfo2 = unsafe { std::mem::zeroed() };
+        // SAFETY: live factory; `info` is a local the plugin writes for the
+        // call's duration only.
+        if unsafe { factory2.getClassInfo2(index, &mut info) } != kResultOk {
+            continue;
         }
+        if !same_class_id(&info.cid, class_id) {
+            continue;
+        }
+        let sub_categories = split_sub_categories(&read_char8(&info.subCategories));
+        return category_from_vst3_sub_categories(&sub_categories) == "instrument";
     }
     false
 }
@@ -2121,15 +2204,17 @@ pub fn class_is_instrument(factory: &ComPtr<IPluginFactory>, class_id: &TUID) ->
 /// stale metadata or a file describing someone else's plugin, and asking such a
 /// factory to instantiate that CID is handing untrusted bytes to a loader.
 pub fn factory_declares_class(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> bool {
-    // SAFETY: the factory is live; each `info` is a valid out parameter.
-    unsafe {
-        let count = factory.countClasses();
-        (0..count).any(|index| {
-            let mut info: vst3::Steinberg::PClassInfo = std::mem::zeroed();
-            factory.getClassInfo(index, &mut info) == kResultOk
-                && same_class_id(&info.cid, class_id)
-        })
-    }
+    // SAFETY: the `ComPtr` holds a reference on a live factory.
+    let count = unsafe { factory.countClasses() };
+    (0..count).any(|index| {
+        // SAFETY: `PClassInfo` is a plain C struct of byte arrays and an
+        // integer, for which all-zero bytes are a valid value.
+        let mut info: vst3::Steinberg::PClassInfo = unsafe { std::mem::zeroed() };
+        // SAFETY: live factory; `info` is a local the plugin writes for the
+        // call's duration only.
+        (unsafe { factory.getClassInfo(index, &mut info) }) == kResultOk
+            && same_class_id(&info.cid, class_id)
+    })
 }
 
 fn create_component(
@@ -2137,17 +2222,18 @@ fn create_component(
     class_id: &TUID,
     name: &str,
 ) -> Result<ComPtr<IComponent>, String> {
-    // SAFETY: the factory is live; `object` is a valid out parameter and the
-    // returned pointer is taken as an owning reference exactly once.
-    unsafe {
-        let mut object: *mut std::ffi::c_void = ptr::null_mut();
-        let iid = crate::vst3_host::tuid_from_guid(&IComponent::IID);
-        if factory.createInstance(class_id.as_ptr(), iid.as_ptr(), &mut object) != kResultOk {
-            return Err(format!("[VST3] factory refused to create '{name}'"));
-        }
-        ComPtr::from_raw(object as *mut IComponent)
-            .ok_or_else(|| format!("[VST3] factory returned no component for '{name}'"))
+    let mut object: *mut std::ffi::c_void = ptr::null_mut();
+    let iid = crate::vst3_host::tuid_from_guid(&IComponent::IID);
+    // SAFETY: the `ComPtr` holds a reference on a live factory; `class_id` and
+    // `iid` are live 16-byte locals, and `object` is a live out-parameter.
+    if unsafe { factory.createInstance(class_id.as_ptr(), iid.as_ptr(), &mut object) } != kResultOk
+    {
+        return Err(format!("[VST3] factory refused to create '{name}'"));
     }
+    // SAFETY: a successful `createInstance` for `IComponent::IID` leaves in
+    // `object` null or an owned `IComponent` reference, adopted here exactly once.
+    unsafe { ComPtr::from_raw(object as *mut IComponent) }
+        .ok_or_else(|| format!("[VST3] factory returned no component for '{name}'"))
 }
 
 fn create_controller(
@@ -2155,16 +2241,18 @@ fn create_controller(
     class_id: &TUID,
     name: &str,
 ) -> Result<ComPtr<IEditController>, String> {
-    // SAFETY: as `create_component`.
-    unsafe {
-        let mut object: *mut std::ffi::c_void = ptr::null_mut();
-        let iid = crate::vst3_host::tuid_from_guid(&IEditController::IID);
-        if factory.createInstance(class_id.as_ptr(), iid.as_ptr(), &mut object) != kResultOk {
-            return Err(format!("[VST3] factory refused the controller of '{name}'"));
-        }
-        ComPtr::from_raw(object as *mut IEditController)
-            .ok_or_else(|| format!("[VST3] factory returned no controller for '{name}'"))
+    let mut object: *mut std::ffi::c_void = ptr::null_mut();
+    let iid = crate::vst3_host::tuid_from_guid(&IEditController::IID);
+    // SAFETY: the `ComPtr` holds a reference on a live factory; `class_id` and
+    // `iid` are live 16-byte locals, and `object` is a live out-parameter.
+    if unsafe { factory.createInstance(class_id.as_ptr(), iid.as_ptr(), &mut object) } != kResultOk
+    {
+        return Err(format!("[VST3] factory refused the controller of '{name}'"));
     }
+    // SAFETY: a successful `createInstance` for `IEditController::IID` leaves in
+    // `object` null or an owned `IEditController` reference, adopted here once.
+    unsafe { ComPtr::from_raw(object as *mut IEditController) }
+        .ok_or_else(|| format!("[VST3] factory returned no controller for '{name}'"))
 }
 
 /// Activate event bus zero, when the component has one. Bus zero is the main bus
@@ -2175,18 +2263,23 @@ fn create_controller(
 unsafe fn activate_first_event_bus(component: &ComPtr<IComponent>) {
     let media = MediaTypes_::kEvent as int32;
     let direction = BusDirections_::kInput as int32;
+    // SAFETY: the `ComPtr` holds a reference on a live component, initialised
+    // by this fn's contract.
     if unsafe { component.getBusCount(media, direction) } <= 0 {
         return;
     }
+    // SAFETY: the component is initialised and inactive (this fn's contract), as
+    // `activateBus` requires, and bus zero exists per the count just read.
     unsafe { component.activateBus(media, direction, 0, 1) };
 }
 
 /// One zeroed `AudioBusBuffers` per declared bus, allocated at activation so the
 /// audio thread only ever refills them.
 fn empty_bus_buffers(count: usize) -> Vec<AudioBusBuffers> {
-    // SAFETY: `AudioBusBuffers` is plain `repr(C)` data whose union member is a
-    // pointer; all-zero is the "no channels, no buffers" value VST3 defines.
     (0..count)
+        // SAFETY: `AudioBusBuffers` is plain `repr(C)` data whose union member
+        // is a pointer; all-zero is the "no channels, no buffers" value VST3
+        // defines.
         .map(|_| unsafe { std::mem::zeroed::<AudioBusBuffers>() })
         .collect()
 }
