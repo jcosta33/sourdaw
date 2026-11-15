@@ -166,10 +166,14 @@ that model. The author works only in the lane and commits there; it never pushes
     - **Release tracked sets**: the `gitPathspecs` of `GRAND_BOULE_RELEASE_REGISTRY` in
       `scripts/checkReleaseInventory.ts` reach outside the Grand Boule module into Transport MIDI
       scheduling, AudioEngine runtime and worklet files, and the command handler maps and argument
-      keys. Editing a file inside a tracked set needs no inventory edit: the inventory records only
-      `tracked-set:<label>` entries. Adding, removing, or renaming a boundary in
-      `GRAND_BOULE_RELEASE_REGISTRY` moves those entries; edit `release/open-source-inventory.json`
-      to match. PR CI's release inventory check still refuses a boundary with no tracked, readable files.
+      keys. Two boundaries pin admitted bytes (`pinsAdmittedBytes`): the DSP source under
+      `crates/daw-dsp/src/grand_boule` and ADR 0036. After committing an edit to either, run
+      `pnpm release:restamp:tracked-set`: it refuses uncommitted changes in those boundaries, prints
+      `release inventory already current` or each moved digest, and rewrites the inventory for you to
+      commit. Editing a file in any other boundary needs no inventory edit: the inventory records only
+      `tracked-set:<label>` for it, which moves when a boundary is added, removed, or renamed in
+      `GRAND_BOULE_RELEASE_REGISTRY`. PR CI's release inventory check still refuses a boundary with
+      no tracked, readable files.
 
 ### d. Publish
 

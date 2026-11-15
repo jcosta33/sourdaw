@@ -1225,8 +1225,8 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set:grand-boule-native-rust",
-                "tracked-set:grand-boule-admission-decision",
+                "tracked-set-sha256:e5d22ea017ba20b5e6a2d0e7a75218e65b8535080500fd0ab34fed07b05c6d90:grand-boule-native-rust",
+                "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set:grand-boule-discovery-catalog",
                 "tracked-set:grand-boule-factory-admission",
                 "tracked-set:grand-boule-live-runtime",

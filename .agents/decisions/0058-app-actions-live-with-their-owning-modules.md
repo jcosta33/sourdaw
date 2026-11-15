@@ -119,9 +119,9 @@ a new action must join.
    argument schema generator emits a canonical order, so moving a variant between files leaves the
    generated `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` unchanged except for its
    import line. Any other diff in that file during a move slice means a shape changed, and it blocks
-   the slice. The release inventory records only `tracked-set:<label>` entries, so an edit to a tracked file
-   moves nothing there. `scripts/checkReleaseInventory.ts` has a tracked set,
-   `grand-boule-project-state`, that pins `src/utils/handlerContract.ts` and
+   the slice. `scripts/checkReleaseInventory.ts` has a tracked set,
+   `grand-boule-project-state`, that is label-only in the release inventory (`tracked-set:<label>`,
+   no content hash), so an edit to a file in it moves nothing there. It pins `src/utils/handlerContract.ts` and
    `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` as whole files, to pin the
    GrandBoule device-state action shape. A slice that moves a pinned variant to a new file
    repoints the set's pathspecs and updates the independent path list in

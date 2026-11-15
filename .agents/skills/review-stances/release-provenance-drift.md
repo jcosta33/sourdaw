@@ -5,19 +5,23 @@ release digest or provenance record stale. Split out of `test-validity.md`. Each
 question from the Review section of root `AGENTS.md` (what must break for this check to fail, and does it observe
 what its name claims?). The Release inventory step of the Types and contracts job runs on every non-draft push;
 inspect its result on the reviewed head. A pass on an earlier head or a retry discharges nothing, and a stale digest or
-provenance record that the diff should have moved is the reviewer's finding. A source edit inside a Grand Boule
-tracked set needs no inventory edit; only a boundary add, remove or rename does. Report a probe that cannot run with its exact mutation, named check and
+provenance record that the diff should have moved is the reviewer's finding. Only the admitted Grand Boule DSP
+source and ADR 0036 are content-pinned; an edit inside any other Grand Boule boundary needs no inventory edit. Report a probe that cannot run with its exact mutation, named check and
 limitation, never as passed.
 
 ## Standing probes
 
-1. **A boundary registry label change leaves the inventory stale (#5568, #6726).** The inventory records
-   `tracked-set:<label>` per `GRAND_BOULE_RELEASE_REGISTRY` boundary, never a content hash, so a source edit
-   inside a boundary must leave `release/open-source-inventory.json` untouched. A diff that adds, removes,
-   or renames a boundary `digestLabel` must move those entries in the same diff. The checker still refuses a
-   boundary whose tracked set is empty, has a missing file, or has an unsafe (symlink, non-regular, or
-   outside-repository) file; probe by emptying one pathspec or replacing a tracked file with a symlink and
-   confirming `pnpm test:release-inventory` names it.
+1. **A content-pinned boundary edit leaves its digest stale, or a label-only edit moves the inventory
+   (#5568, #6726).** In `GRAND_BOULE_RELEASE_REGISTRY` only boundaries with `pinsAdmittedBytes`
+   (`grand-boule-native-rust`, `grand-boule-admission-decision`, per ADR 0036) record
+   `tracked-set-sha256:<hex>:<label>`. Run `git diff --name-only <base> <head> -- <gitPathspecs>` for those
+   two: any listed path requires `release/open-source-inventory.json` to move in the same diff
+   (`pnpm release:restamp:tracked-set`). Every other boundary records `tracked-set:<label>`, so a diff touching
+   only those files must leave the inventory untouched, while a diff that adds, removes, or renames a
+   `digestLabel` must move those entries. The checker still refuses any boundary whose tracked set is empty,
+   has a missing file, or has an unsafe (symlink, non-regular, or outside-repository) file; probe by emptying
+   one pathspec or replacing a tracked file with a symlink and confirming `pnpm test:release-inventory`
+   names it.
 2. **A `package.json` edit moves the Cargo source pin (#5642).** `scripts/dependencyLicenseReport.ts` digests
    `package.json` into its Cargo source pin, so every `package.json` edit must move the dependency restamp
    artifacts under `release/` in the same diff. Read the diff for both; one without the other is the finding.
