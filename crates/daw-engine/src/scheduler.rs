@@ -6213,7 +6213,7 @@ pub struct AudioScheduler {
     /// the transport is playing, so a clip start and a parameter stamp mean
     /// the same position however many callbacks ran meanwhile.
     playhead_frames: u64,
-    command_rx: Option<Consumer<GraphCommand>>,
+    command_rx: Consumer<GraphCommand>,
     retired_tx: Producer<RetiredGraphObjects>,
     pending_retirement: Option<RetiredGraphObjects>,
     /// A consumed [`GraphCommand::BeginBatch`] whose body is not yet fully
@@ -6330,7 +6330,7 @@ impl AudioScheduler {
             pdc_dirty: false,
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
-            command_rx: Some(command_rx),
+            command_rx,
             retired_tx,
             pending_retirement: None,
             pending_batch: None,
@@ -6552,12 +6552,11 @@ impl AudioScheduler {
                 }
                 self.pending_batch = None;
                 for _ in 0..commands {
-                    let cmd = self
-                        .command_rx
-                        .as_mut()
-                        .expect("command consumer")
-                        .pop()
-                        .expect("batch_ready proved the whole batch visible");
+                    // batch_ready proved the whole batch visible, so an empty
+                    // pop can only mean the batch has ended.
+                    let Ok(cmd) = self.command_rx.pop() else {
+                        break;
+                    };
                     // batch_ready reserved a retirement slot per command, so
                     // the drain cannot suspend inside the batch.
                     let retire_ok = self.apply_and_retire(cmd);
@@ -6570,7 +6569,7 @@ impl AudioScheduler {
                 continue;
             }
 
-            let Ok(cmd) = self.command_rx.as_mut().expect("command consumer").pop() else {
+            let Ok(cmd) = self.command_rx.pop() else {
                 return;
             };
             match cmd {
@@ -6595,7 +6594,7 @@ impl AudioScheduler {
     /// producer finishes its push, the reclaimer frees slots on its next poll
     /// — never a livelock.
     fn batch_ready(&self, commands: usize) -> bool {
-        let command_rx = self.command_rx.as_ref().expect("command consumer");
+        let command_rx = &self.command_rx;
         debug_assert!(
             command_rx.buffer().capacity() >= commands
                 && self.retired_tx.buffer().capacity() > commands,
@@ -7279,7 +7278,7 @@ impl AudioScheduler {
                     // decrements its Arc: the reclaimer still holds the old
                     // ring's consumer, so no heap is freed on this thread.
                     drop(std::mem::replace(&mut self.retired_tx, retired_tx));
-                    let old_rx = self.command_rx.replace(commands).expect("command consumer");
+                    let old_rx = std::mem::replace(&mut self.command_rx, commands);
                     // This fence was the old ring's last element (the control
                     // side stops pushing to a ring once it publishes the
                     // swap), so the old ring is drained dry; only the
@@ -8857,21 +8856,22 @@ impl DeviceChain for TrackDeviceChain<'_> {
 
 impl Drop for AudioScheduler {
     fn drop(&mut self) {
-        // Drop runs control-side (`StreamWithReclaimerShutdown`), never in
-        // the audio callback, so this reserve may allocate: a ring swap can
-        // have grown the live ring past the boot capacity `shutdown_commands`
-        // was preallocated with, and the drain below must hold a full ring.
-        let live_ring_capacity = self
-            .command_rx
-            .as_ref()
-            .expect("command consumer")
-            .buffer()
-            .capacity();
+        // Drop runs once the stream's last callback has returned, never
+        // inside one: where the stream is dropped on CoreAudio, and on the
+        // stream's own thread after its buffer loop exits on WASAPI and ALSA.
+        // So this reserve may allocate: a ring swap can have grown the live
+        // ring past the boot capacity `shutdown_commands` was preallocated
+        // with, and the drain below must hold a full ring.
+        let live_ring_capacity = self.command_rx.buffer().capacity();
         self.shutdown_commands.reserve(live_ring_capacity);
-        while let Ok(command) = self.command_rx.as_mut().expect("command consumer").pop() {
+        while let Ok(command) = self.command_rx.pop() {
             self.shutdown_commands.push(command);
         }
-        let command_rx = self.command_rx.take().expect("command consumer");
+        // The live consumer leaves with the shutdown retirement; the scheduler
+        // keeps an empty stand-in for its own fields to drop. Building it
+        // allocates one `Arc`, teardown work for the reason given above.
+        let (_, vacant_rx) = rtrb::RingBuffer::new(0);
+        let command_rx = std::mem::replace(&mut self.command_rx, vacant_rx);
         let command_rx = self.retain_command_consumer.then_some(command_rx);
         let retired = RetiredGraphObjects::shutdown(
             self.pending_retirement.take(),

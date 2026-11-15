@@ -3515,22 +3515,22 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 pub(crate) fn strip_reports(
     registry: &GraphRegistry,
     strip_ids: &[String],
-) -> Vec<StripReportPayload> {
+) -> Result<Vec<StripReportPayload>, String> {
     strip_ids
         .iter()
         .map(|strip_id| {
             let entry = registry
                 .strips
                 .get(strip_id)
-                .expect("a touched strip exists in the registry");
-            StripReportPayload {
+                .ok_or_else(|| format!("strip report: unknown strip '{strip_id}'"))?;
+            Ok(StripReportPayload {
                 kind: match entry.kind {
                     StripKind::Track => "track",
                     StripKind::Bus => "bus",
                 },
                 id: strip_id.clone(),
                 device_ids: entry.device_ids.clone(),
-            }
+            })
         })
         .collect()
 }
@@ -3640,7 +3640,7 @@ fn map_batch(
     // The reports are a final pass over the post-batch registry: what each
     // touched strip's chain really holds after everything applied, never an
     // echo of any one command's request.
-    let reports = strip_reports(registry, &touched);
+    let reports = strip_reports(registry, &touched)?;
     Ok(MappedBatch { ops, reports })
 }
 
