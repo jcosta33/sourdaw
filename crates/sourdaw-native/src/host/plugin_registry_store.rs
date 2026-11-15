@@ -406,7 +406,8 @@ pub enum RescanClaim<'a> {
 
 /// The one rescan a registry key gets this process, held while it runs.
 ///
-/// Settle it with [`RescanAttempt::refuse`] or [`RescanAttempt::resolved`].
+/// Settle it with [`RescanAttempt::refuse`], [`RescanAttempt::resolved`] or
+/// [`RescanAttempt::inconclusive`].
 /// Dropping it unsettled — a panic in the rescan, an early return — clears the
 /// in-progress marker rather than leaving it, because a marker nothing can
 /// clear would refuse that plugin for the rest of the process.
@@ -426,6 +427,16 @@ impl RescanAttempt<'_> {
             .lock_stored()
             .resolutions
             .insert(self.plugin_id.clone(), ResolutionOutcome::Refused(reason));
+        self.store.rescan_settled.notify_all();
+    }
+
+    /// The rescan could not reach a verdict — its helper ran out of time. The
+    /// load that ran it is refused, but nothing is recorded, so the next load
+    /// of the same id rescans instead of answering from a refusal the plugin
+    /// never earned.
+    pub fn inconclusive(mut self) {
+        self.settled = true;
+        self.store.lock_stored().resolutions.remove(&self.plugin_id);
         self.store.rescan_settled.notify_all();
     }
 
@@ -1448,6 +1459,58 @@ mod tests {
 
     fn one_row(path: &Path, stable_id: &str) -> Vec<ScanRow> {
         rows_for(vec![(stable_id, scanned_plugin(path, stable_id))])
+    }
+
+    /// A row persisted with no file identity, whose file is gone, must not
+    /// hydrate: a missing file and a missing identity both read as `None`, and
+    /// two `None`s are equal without being the same file.
+    ///
+    /// Mutation this catches: dropping `recorded.is_some() &&` from
+    /// `entry_is_still_the_scanned_file`, which resolves the missing file.
+    #[test]
+    fn a_row_without_file_identity_whose_file_is_missing_does_not_hydrate() {
+        let test_root = TestRegistryRoot::create("registry-hydrate-no-identity-missing");
+        let missing_path = test_root.write_plugin_file("Gone.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&missing_path, "aaaa1111"));
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        let mut document: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&location).expect("the registry file was written"),
+        )
+        .expect("the registry file is JSON");
+        for row in document["entries"]
+            .as_object_mut()
+            .expect("the document has entries")
+            .values_mut()
+        {
+            row.as_object_mut()
+                .expect("a row is an object")
+                .remove("file_identity")
+                .expect("this build writes file_identity, so the fixture removes it");
+        }
+        std::fs::write(
+            &location,
+            serde_json::to_vec(&document).expect("JSON writes"),
+        )
+        .expect("the identity-less document is written back");
+        std::fs::remove_file(&missing_path).expect("the plugin file should be removable");
+
+        let next_launch = test_root.store();
+        let registry = Mutex::new(HashMap::new());
+        next_launch.hydrate_into(&registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch.last_known_entry("aaaa1111").is_some(),
+            "the row must reach the file, or this test proves nothing about hydration"
+        );
+        assert!(
+            registry
+                .lock()
+                .expect("registry lock should be available")
+                .is_empty(),
+            "a row with no recorded identity and no file must not become a registry hit"
+        );
     }
 
     /// A quarantined candidate is scanned but publishes nothing, so the scan's
