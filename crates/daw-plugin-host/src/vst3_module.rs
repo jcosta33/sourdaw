@@ -25,8 +25,10 @@
 
 use crate::vst3_host::Vst3HostContext;
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::time::SystemTime;
 use vst3::Steinberg::{IPluginFactory, PFactoryInfo, PFactoryInfo_::FactoryFlags_};
 use vst3::{ComPtr, Steinberg::IPluginFactoryTrait};
 
@@ -104,6 +106,35 @@ pub fn windows_load_candidates(
         return Ok(vec![module.to_path_buf()]);
     }
     windows_module_paths(module, target_arch)
+}
+
+/// The one candidate a Windows host opens: the first that exists as a file.
+///
+/// This is the rule the host vets by (`sourdaw-native`'s
+/// `vst3_bundle_binary_location`): same order, same `is_file` test. A loader
+/// that went on to a later candidate when the first would not load would run a
+/// file the host never authorized or fingerprinted.
+pub fn first_existing_module(candidates: &[PathBuf]) -> Option<&Path> {
+    candidates
+        .iter()
+        .find(|candidate| candidate.is_file())
+        .map(PathBuf::as_path)
+}
+
+/// Load the [`first_existing_module`] and nothing else: when it fails to load,
+/// that failure is the result, never a reason to try the next candidate.
+pub fn load_first_existing<T>(
+    bundle: &Path,
+    candidates: &[PathBuf],
+    load: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let Some(module) = first_existing_module(candidates) else {
+        return Err(format!(
+            "VST3 bundle has no module for this architecture: {}",
+            bundle.display()
+        ));
+    };
+    load(module)
 }
 
 /// The `uname -m` spelling a Linux bundle names its architecture directory
@@ -389,6 +420,15 @@ mod platform {
             Ok(Self { bundle })
         }
 
+        /// The executable [`LoadedModule::open`] loads for this bundle: the one
+        /// CoreFoundation names, else the conventional stem-named path.
+        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, String> {
+            match bundle_executable_path(bundle_path).filter(|executable| executable.is_file()) {
+                Some(executable) => Ok(executable),
+                None => super::macos_executable_path(bundle_path),
+            }
+        }
+
         pub fn plugin_factory_entry(&self) -> Option<*mut c_void> {
             // SAFETY: `self.bundle` is the live bundle this value owns the one
             // reference to until `Drop`.
@@ -423,12 +463,18 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::{windows_load_candidates, GET_PLUGIN_FACTORY};
+    use super::{
+        first_existing_module, load_first_existing, windows_load_candidates, GET_PLUGIN_FACTORY,
+    };
     use libloading::os::windows::{
         Library, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
     };
     use std::ffi::c_void;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
+
+    fn load_candidates(bundle_path: &Path) -> Result<Vec<PathBuf>, String> {
+        windows_load_candidates(bundle_path, bundle_path.is_file(), std::env::consts::ARCH)
+    }
 
     type InitDll = unsafe extern "system" fn() -> bool;
     type ExitDll = unsafe extern "system" fn() -> bool;
@@ -473,43 +519,43 @@ mod platform {
         /// built. The library is dropped directly on that path instead, which
         /// unloads the image and calls nothing.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
-            let candidates = windows_load_candidates(
-                bundle_path,
-                bundle_path.is_file(),
-                std::env::consts::ARCH,
-            )?;
-            let mut last_error = format!(
-                "VST3 bundle has no module for this architecture: {}",
-                bundle_path.display()
-            );
-            for candidate in candidates {
-                // SAFETY: loading runs the module's DLL initialisers; this is
-                // instantiation, which the crate runs only on the host UI thread
-                // or in the scan worker child, the places plugin code may run.
-                let library = match unsafe {
-                    Library::load_with_flags(candidate.as_path(), SEARCH_ONLY_TRUSTED_DIRECTORIES)
-                } {
-                    Ok(library) => library,
-                    Err(error) => {
-                        last_error = format!("Cannot load {}: {error}", candidate.display());
-                        continue;
-                    }
-                };
+            let candidates = load_candidates(bundle_path)?;
+            load_first_existing(bundle_path, &candidates, Self::open_module)
+        }
 
-                if let Some(init) = symbol_in::<InitDll>(&library, b"InitDll\0") {
-                    // SAFETY: `init` is the module's exported `InitDll`, read from
-                    // `library`, which stays loaded across this call.
-                    if !unsafe { init() } {
-                        drop(library);
-                        return Err(format!(
-                            "VST3 module refused initialization: {}",
-                            candidate.display()
-                        ));
-                    }
+        /// The module file [`LoadedModule::open`] opens for this bundle.
+        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, String> {
+            let candidates = load_candidates(bundle_path)?;
+            first_existing_module(&candidates)
+                .map(Path::to_path_buf)
+                .ok_or_else(|| {
+                    format!(
+                        "VST3 bundle has no module for this architecture: {}",
+                        bundle_path.display()
+                    )
+                })
+        }
+
+        fn open_module(module: &Path) -> Result<Self, String> {
+            // SAFETY: loading runs the module's DLL initialisers; this is
+            // instantiation, which the crate runs only on the host UI thread
+            // or in the scan worker child, the places plugin code may run.
+            let library =
+                unsafe { Library::load_with_flags(module, SEARCH_ONLY_TRUSTED_DIRECTORIES) }
+                    .map_err(|error| format!("Cannot load {}: {error}", module.display()))?;
+
+            if let Some(init) = symbol_in::<InitDll>(&library, b"InitDll\0") {
+                // SAFETY: `init` is the module's exported `InitDll`, read from
+                // `library`, which stays loaded across this call.
+                if !unsafe { init() } {
+                    drop(library);
+                    return Err(format!(
+                        "VST3 module refused initialization: {}",
+                        module.display()
+                    ));
                 }
-                return Ok(Self { library });
             }
-            Err(last_error)
+            Ok(Self { library })
         }
 
         fn symbol<T>(&self, name: &[u8]) -> Option<T> {
@@ -539,7 +585,7 @@ mod platform {
     use super::{linux_module_path, GET_PLUGIN_FACTORY};
     use libloading::os::unix::Library;
     use std::ffi::c_void;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     type ModuleEntry = unsafe extern "C" fn(*mut c_void) -> bool;
     type ModuleExit = unsafe extern "C" fn() -> bool;
@@ -572,12 +618,7 @@ mod platform {
         /// never entered has not built. The library is dropped directly on that
         /// path instead, which `dlclose`s the image and calls nothing.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
-            let Some(candidate) = linux_module_path(bundle_path, std::env::consts::ARCH)? else {
-                return Err(format!(
-                    "VST3 bundle has no module for this architecture: {}",
-                    bundle_path.display()
-                ));
-            };
+            let candidate = Self::module_file(bundle_path)?;
             // SAFETY: loading runs the module's initialisers; this is
             // instantiation, which the crate runs only on the host UI thread or
             // in the scan worker child, the places plugin code may run.
@@ -605,6 +646,16 @@ mod platform {
                 ));
             }
             Ok(Self { library })
+        }
+
+        /// The module file [`LoadedModule::open`] opens for this bundle.
+        pub fn module_file(bundle_path: &Path) -> Result<PathBuf, String> {
+            linux_module_path(bundle_path, std::env::consts::ARCH)?.ok_or_else(|| {
+                format!(
+                    "VST3 bundle has no module for this architecture: {}",
+                    bundle_path.display()
+                )
+            })
         }
 
         fn symbol<T>(&self, name: &[u8]) -> Option<T> {
@@ -690,7 +741,15 @@ impl Vst3Module {
         let key = bundle_path
             .canonicalize()
             .unwrap_or_else(|_| bundle_path.to_path_buf());
-        shared_module(&LOADED_MODULES, key, || Self::load(bundle_path))
+        shared_module(
+            &LOADED_MODULES,
+            key,
+            || {
+                let module_file = platform::LoadedModule::module_file(bundle_path)?;
+                module_file_fingerprint(&module_file)
+            },
+            || Self::load(bundle_path),
+        )
     }
 
     fn load(bundle_path: &Path) -> Result<Arc<Self>, String> {
@@ -740,6 +799,51 @@ impl Vst3Module {
     }
 }
 
+/// What a module file was when it was loaded: enough to tell that the file at
+/// a path is no longer the one whose image is resident.
+///
+/// The identity is the unix device and inode, which a replacing install
+/// (write elsewhere, rename over) always changes even when size and age match.
+/// Windows has no stable std accessor for its file index, so there the size and
+/// modification time decide alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ModuleFileFingerprint {
+    size_bytes: u64,
+    modified: SystemTime,
+    identity: Option<(u64, u64)>,
+}
+
+/// The fingerprint of the module file at `path`, from one `stat` of it.
+fn module_file_fingerprint(path: &Path) -> Result<ModuleFileFingerprint, String> {
+    let unreadable =
+        |error: std::io::Error| format!("Cannot read VST3 module {}: {error}", path.display());
+    let metadata = fs::metadata(path).map_err(unreadable)?;
+    Ok(ModuleFileFingerprint {
+        size_bytes: metadata.len(),
+        modified: metadata.modified().map_err(unreadable)?,
+        identity: file_identity(&metadata),
+    })
+}
+
+#[cfg(unix)]
+fn file_identity(metadata: &fs::Metadata) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    Some((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn file_identity(_metadata: &fs::Metadata) -> Option<(u64, u64)> {
+    None
+}
+
+/// A cached module and the fingerprint its file had when it was loaded.
+struct CachedModule<Module, Fingerprint> {
+    module: Weak<Module>,
+    fingerprint: Fingerprint,
+}
+
+type ModuleCache<Module, Fingerprint> = Mutex<HashMap<PathBuf, CachedModule<Module, Fingerprint>>>;
+
 /// Every VST3 module this process has open, by canonical bundle path.
 ///
 /// A `.vst3` is one shared library. Loading a bundle twice runs its entry point
@@ -749,11 +853,18 @@ impl Vst3Module {
 /// unloaded only when the last holder lets go.
 ///
 /// `Weak`, so an entry never becomes the thing keeping a module resident.
-static LOADED_MODULES: LazyLock<Mutex<HashMap<PathBuf, Weak<Vst3Module>>>> =
+static LOADED_MODULES: LazyLock<ModuleCache<Vst3Module, ModuleFileFingerprint>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// The module already open for `key`, or one `load` produces and the cache
 /// records.
+///
+/// A module is shared only while its file still has the fingerprint it was
+/// loaded with. A file replaced while its old image is resident — a plugin
+/// update installed mid-session — cannot be loaded beside it: the platform
+/// loader hands back the resident image for that path. So the open is refused
+/// rather than answered with the old build while the host has just vetted and
+/// described the new one.
 ///
 /// Generic over the module because the rule is about `Arc` strength and holds
 /// nothing VST3-specific — which is what lets it be tested without a `.vst3`
@@ -762,9 +873,10 @@ static LOADED_MODULES: LazyLock<Mutex<HashMap<PathBuf, Weak<Vst3Module>>>> =
 /// `load` runs under the lock on purpose: two threads opening the same bundle at
 /// once would otherwise both miss, both load the image, and one of them would
 /// win the cache while the other's copy ran its entry point for nothing.
-fn shared_module<Module>(
-    cache: &Mutex<HashMap<PathBuf, Weak<Module>>>,
+fn shared_module<Module, Fingerprint: PartialEq>(
+    cache: &ModuleCache<Module, Fingerprint>,
     key: PathBuf,
+    fingerprint: impl FnOnce() -> Result<Fingerprint, String>,
     load: impl FnOnce() -> Result<Arc<Module>, String>,
 ) -> Result<Arc<Module>, String> {
     // A poisoned cache is a map of weak pointers, which no panic can leave
@@ -774,16 +886,35 @@ fn shared_module<Module>(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    if let Some(module) = open.get(&key).and_then(Weak::upgrade) {
-        return Ok(module);
+    // Read before any load: a file replaced between this read and the load is
+    // then recorded as the older build, and a later open is refused rather
+    // than handed an image the record misdescribes.
+    let current = fingerprint()?;
+    if let Some(cached) = open.get(&key) {
+        if let Some(module) = cached.module.upgrade() {
+            if cached.fingerprint != current {
+                return Err(format!(
+                    "An older build of {} is still loaded by another instance; remove those \
+                     instances or restart Sourdaw to load the updated plugin",
+                    key.display()
+                ));
+            }
+            return Ok(module);
+        }
     }
 
     // Entries for modules that have since been released. Swept here rather than
     // in `Drop`, which would have to take this same lock while it is held.
-    open.retain(|_, weak| weak.strong_count() > 0);
+    open.retain(|_, cached| cached.module.strong_count() > 0);
 
     let module = load()?;
-    open.insert(key, Arc::downgrade(&module));
+    open.insert(
+        key,
+        CachedModule {
+            module: Arc::downgrade(&module),
+            fingerprint: current,
+        },
+    );
     Ok(module)
 }
 
@@ -991,8 +1122,14 @@ mod tests {
         }
     }
 
-    fn fake_cache() -> Mutex<HashMap<PathBuf, Weak<FakeModule>>> {
+    fn fake_cache() -> ModuleCache<FakeModule, ()> {
         Mutex::new(HashMap::new())
+    }
+
+    /// A fingerprint that never changes, for the cases about `Arc` strength
+    /// alone.
+    fn unchanged() -> Result<(), String> {
+        Ok(())
     }
 
     /// The whole point: a `.vst3` is one shared library, and loading it a second
@@ -1009,10 +1146,20 @@ mod tests {
             }))
         };
 
-        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
-            .expect("the fake loads");
-        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
-            .expect("the fake loads");
+        let first = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Reverb.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("the fake loads");
+        let second = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Reverb.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
         assert!(Arc::ptr_eq(&first, &second));
@@ -1030,10 +1177,20 @@ mod tests {
             }))
         };
 
-        let first =
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load).expect("loads");
-        let second =
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load).expect("loads");
+        let first = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Reverb.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("loads");
+        let second = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Reverb.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("loads");
 
         drop(first);
         assert_eq!(
@@ -1064,11 +1221,21 @@ mod tests {
         };
 
         drop(
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
-                .expect("the fake loads"),
+            shared_module(
+                &cache,
+                PathBuf::from("/plugins/Reverb.vst3"),
+                unchanged,
+                load,
+            )
+            .expect("the fake loads"),
         );
-        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
-            .expect("the fake loads");
+        let reopened = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Reverb.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
         assert_eq!(Arc::strong_count(&reopened), 1);
@@ -1084,10 +1251,20 @@ mod tests {
             }))
         };
 
-        let reverb =
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load).expect("loads");
-        let delay =
-            shared_module(&cache, PathBuf::from("/plugins/Delay.vst3"), load).expect("loads");
+        let reverb = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Reverb.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("loads");
+        let delay = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Delay.vst3"),
+            unchanged,
+            load,
+        )
+        .expect("loads");
 
         assert!(!Arc::ptr_eq(&reverb, &delay));
     }
@@ -1098,10 +1275,12 @@ mod tests {
     fn a_bundle_that_failed_to_load_is_not_remembered_as_open() {
         let cache = fake_cache();
 
-        let refused: Result<Arc<FakeModule>, String> =
-            shared_module(&cache, PathBuf::from("/plugins/Broken.vst3"), || {
-                Err("VST3 module refused initialization".to_string())
-            });
+        let refused: Result<Arc<FakeModule>, String> = shared_module(
+            &cache,
+            PathBuf::from("/plugins/Broken.vst3"),
+            unchanged,
+            || Err("VST3 module refused initialization".to_string()),
+        );
 
         assert!(refused.is_err());
         assert!(cache
@@ -1109,5 +1288,236 @@ mod tests {
             .expect("uncontended")
             .get(Path::new("/plugins/Broken.vst3"))
             .is_none());
+    }
+
+    // ── Fixture files ───────────────────────────────────────────────────
+
+    /// A fresh directory of this test's own, removed when dropped.
+    struct FixtureDirectory(PathBuf);
+
+    impl FixtureDirectory {
+        fn new(test_name: &str) -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "sourdaw-vst3-module-{test_name}-{}-{unique}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("the fixture directory is creatable");
+            Self(path)
+        }
+
+        fn write(&self, relative: &Path, contents: &[u8]) -> PathBuf {
+            let path = self.0.join(relative);
+            let parent = path.parent().expect("a fixture file has a parent");
+            fs::create_dir_all(parent).expect("the fixture parent is creatable");
+            fs::write(&path, contents).expect("the fixture file is writable");
+            path
+        }
+
+        /// Replace `path` the way an installer does: write the new build beside
+        /// it and rename it over, so the path names a new file.
+        fn replace(&self, path: &Path, contents: &[u8]) {
+            let staged = self.0.join("staged-update");
+            fs::write(&staged, contents).expect("the staged build is writable");
+            fs::rename(&staged, path).expect("the staged build replaces the old one");
+        }
+    }
+
+    impl Drop for FixtureDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    // ── Windows ARM64 module selection ──────────────────────────────────
+
+    const ARM64X_MODULE: &str = "Reverb.vst3/Contents/arm64x-win/Reverb.vst3";
+    const ARM64_MODULE: &str = "Reverb.vst3/Contents/arm64-win/Reverb.vst3";
+
+    fn arm_candidates(fixture: &FixtureDirectory) -> Vec<PathBuf> {
+        windows_module_paths(&fixture.0.join("Reverb.vst3"), "aarch64")
+            .expect("a named bundle should probe")
+    }
+
+    #[test]
+    fn a_bundle_with_only_the_arm64x_module_opens_it() {
+        let fixture = FixtureDirectory::new("only-arm64x");
+        let arm64x = fixture.write(Path::new(ARM64X_MODULE), b"arm64x");
+
+        assert_eq!(
+            first_existing_module(&arm_candidates(&fixture)),
+            Some(arm64x.as_path())
+        );
+    }
+
+    #[test]
+    fn a_bundle_with_only_the_arm64_module_opens_it() {
+        let fixture = FixtureDirectory::new("only-arm64");
+        let arm64 = fixture.write(Path::new(ARM64_MODULE), b"arm64");
+
+        assert_eq!(
+            first_existing_module(&arm_candidates(&fixture)),
+            Some(arm64.as_path())
+        );
+    }
+
+    #[test]
+    fn a_bundle_with_both_arm_modules_opens_the_arm64x_one() {
+        let fixture = FixtureDirectory::new("both-arm");
+        let arm64x = fixture.write(Path::new(ARM64X_MODULE), b"arm64x");
+        fixture.write(Path::new(ARM64_MODULE), b"arm64");
+
+        assert_eq!(
+            first_existing_module(&arm_candidates(&fixture)),
+            Some(arm64x.as_path())
+        );
+    }
+
+    #[test]
+    fn a_bundle_with_no_arm_module_opens_nothing() {
+        let fixture = FixtureDirectory::new("no-arm");
+        fs::create_dir_all(fixture.0.join("Reverb.vst3/Contents"))
+            .expect("the bundle is creatable");
+
+        assert_eq!(first_existing_module(&arm_candidates(&fixture)), None);
+        assert!(
+            load_first_existing(
+                &fixture.0.join("Reverb.vst3"),
+                &arm_candidates(&fixture),
+                |_| Ok(())
+            )
+            .is_err(),
+            "a bundle with nothing to open must not report a load"
+        );
+    }
+
+    /// The host vets the first module that exists. When that one will not
+    /// load, opening the next would run a file the host never authorized.
+    #[test]
+    fn an_arm64x_module_that_fails_to_load_fails_the_open_rather_than_falling_through() {
+        let fixture = FixtureDirectory::new("arm64x-unloadable");
+        let arm64x = fixture.write(Path::new(ARM64X_MODULE), b"not a module");
+        fixture.write(Path::new(ARM64_MODULE), b"arm64");
+        let candidates = arm_candidates(&fixture);
+        let attempted = Mutex::new(Vec::new());
+
+        assert_eq!(
+            first_existing_module(&candidates),
+            Some(arm64x.as_path()),
+            "selection must name the module the host vets, not a loadable one"
+        );
+        let opened = load_first_existing(&fixture.0.join("Reverb.vst3"), &candidates, |module| {
+            attempted
+                .lock()
+                .expect("uncontended")
+                .push(module.to_path_buf());
+            if module == arm64x {
+                Err(format!("Cannot load {}", module.display()))
+            } else {
+                Ok(module.to_path_buf())
+            }
+        });
+
+        assert_eq!(opened, Err(format!("Cannot load {}", arm64x.display())));
+        assert_eq!(
+            attempted.into_inner().expect("uncontended"),
+            vec![arm64x.clone()],
+            "no candidate after the vetted one may be opened"
+        );
+    }
+
+    // ── A module file replaced while its image is resident ──────────────
+
+    fn fingerprint_cache() -> ModuleCache<FakeModule, ModuleFileFingerprint> {
+        Mutex::new(HashMap::new())
+    }
+
+    #[test]
+    fn an_unchanged_module_file_is_shared() {
+        let fixture = FixtureDirectory::new("unchanged-file");
+        let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let cache = fingerprint_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let loads = AtomicUsize::new(0);
+        let fingerprint = || module_file_fingerprint(&module_file);
+        let load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let first = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("the fake loads");
+        let second = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("an unchanged file shares the resident module");
+
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    /// The platform loader would hand back the resident image for this path,
+    /// so the only truthful answer while it is held is a refusal.
+    #[test]
+    fn a_module_file_replaced_while_its_old_image_is_held_is_refused() {
+        let fixture = FixtureDirectory::new("replaced-held");
+        let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let cache = fingerprint_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let loads = AtomicUsize::new(0);
+        let fingerprint = || module_file_fingerprint(&module_file);
+        let load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let old_build = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("the fake loads");
+        fixture.replace(&module_file, b"build 2, rebuilt");
+        let reopened = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load);
+
+        let refusal = reopened
+            .err()
+            .expect("a replaced file must not be answered with the resident old image");
+        assert!(
+            refusal.contains("older build") && refusal.contains("restart Sourdaw"),
+            "the refusal must say why and what to do: {refusal}"
+        );
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(unloads.load(AtomicOrdering::SeqCst), 0);
+        drop(old_build);
+    }
+
+    #[test]
+    fn a_replaced_module_file_loads_fresh_once_the_old_image_is_released() {
+        let fixture = FixtureDirectory::new("replaced-released");
+        let module_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let cache = fingerprint_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let loads = AtomicUsize::new(0);
+        let fingerprint = || module_file_fingerprint(&module_file);
+        let load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let old_build = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("the fake loads");
+        fixture.replace(&module_file, b"build 2, rebuilt");
+        drop(old_build);
+        let new_build = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("with the old image released, the new build loads");
+        let shared = shared_module(&cache, fixture.0.join("Reverb.vst3"), fingerprint, load)
+            .expect("the new build is now the resident one");
+
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
+        assert!(Arc::ptr_eq(&new_build, &shared));
     }
 }
