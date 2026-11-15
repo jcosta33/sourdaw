@@ -574,6 +574,99 @@ describe('quantum measurement calibration', () => {
         });
     });
 
+    it('rates an unrated tail sample with the last closed segment rate (#6508)', () => {
+        expect(
+            calibrateQuantumMeasurementRows([
+                input({
+                    samplesTicks: [10_000, 20_000, 30_000, 40_000, 50_000],
+                    segmentIndex: [0, 0, 1, 1, 2],
+                    segmentRates: [100_000, 200_000],
+                }),
+            ])
+        ).toEqual({
+            status: 'calibrated',
+            rows: [{ deviceId: 'grand_boule', samplesMs: [0.1, 0.2, 0.15, 0.2, 0.25] }],
+        });
+    });
+
+    it('rates a multi-sample unrated tail with the last closed segment rate (#6508)', () => {
+        expect(
+            calibrateQuantumMeasurementRows([
+                input({
+                    samplesTicks: [10_000, 20_000, 40_000, 60_000],
+                    segmentIndex: [0, 1, 2, 2],
+                    segmentRates: [100_000, 200_000],
+                }),
+            ])
+        ).toEqual({
+            status: 'calibrated',
+            rows: [{ deviceId: 'grand_boule', samplesMs: [0.1, 0.1, 0.2, 0.3] }],
+        });
+    });
+
+    it('rates a short tail after a closed segment from that segment (#6508)', () => {
+        expect(
+            calibrateQuantumMeasurementRows([
+                input({
+                    samplesTicks: [20_000, 40_000, 90_000],
+                    segmentIndex: [0, 1, 2],
+                    segmentRates: [100_000, 300_000],
+                }),
+            ])
+        ).toEqual({
+            status: 'calibrated',
+            rows: [{ deviceId: 'grand_boule', samplesMs: [0.2, 40_000 / 300_000, 0.3] }],
+        });
+    });
+
+    it('calibrates the unrated tail through the producer payload boundary (#6508)', () => {
+        expect(
+            calibrateQuantumMeasurementPayload({
+                results: [
+                    {
+                        id: 'grand_boule',
+                        samplesTicks: [10_000, 20_000, 30_000, 40_000, 50_000],
+                        segmentIndex: [0, 0, 1, 1, 2],
+                        segmentRates: [100_000, 200_000],
+                    },
+                ],
+            })
+        ).toEqual({
+            status: 'calibrated',
+            rows: [{ deviceId: 'grand_boule', samplesMs: [0.1, 0.2, 0.15, 0.2, 0.25] }],
+        });
+    });
+
+    it.each([
+        ['an unrated index followed by a smaller index', [0, 2, 1], [100_000, 200_000], 1],
+        ['an index beyond the unrated tail', [0, 1, 3], [100_000, 200_000], 2],
+        ['an unrated index with no rates at all', [0], [], 0],
+        ['a row made entirely of tail samples', [2, 2], [100_000, 200_000], 0],
+        ['a tail after a gap in segment indices', [0, 0, 2], [100_000, 200_000], 2],
+        ['a tail in a row that decreases before it', [1, 0, 1, 2], [100_000, 200_000], 3],
+        ['a tail in a row that decreases mid-way', [0, 2, 1, 2], [100_000, 200_000], 1],
+        ['a lone index equal to the rate count', [3], [100_000, 200_000, 300_000], 0],
+    ] as const)('keeps refusing %s', (_label, segmentIndex, segmentRates, sampleIndex) => {
+        const failure = expectRefusal({
+            samplesTicks: segmentIndex.map(() => 20_000),
+            segmentIndex,
+            segmentRates,
+        });
+        expect(failure).toMatchObject({ sampleIndex, reason: 'invalid-segment-index' });
+    });
+
+    it.each([0, Number.NaN, -1] as const)(
+        'refuses at the closed segment sample when its rate %s would rate the tail',
+        (rate) => {
+            const failure = expectRefusal({
+                samplesTicks: [10_000, 20_000, 30_000],
+                segmentIndex: [0, 1, 2],
+                segmentRates: [100_000, rate],
+            });
+            expect(failure).toMatchObject({ sampleIndex: 1, reason: 'invalid-rate' });
+        }
+    );
+
     it('refuses mismatched sample and index lengths in either direction', () => {
         expect(expectRefusal({ samplesTicks: [10_000, 20_000], segmentIndex: [0] }).reason).toBe('length-mismatch');
         expect(expectRefusal({ samplesTicks: [10_000], segmentIndex: [0, 1] }).reason).toBe('length-mismatch');
