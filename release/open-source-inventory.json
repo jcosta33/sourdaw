@@ -1230,7 +1230,7 @@
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
                 "tracked-set-sha256:c4a7a9f31b9ce5c21706ce7e4589af15627018f4b2c6892f4cdfb32be2f389c1:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:7af2ec725165b6e9ecb3b5706a0bbb9486fb13fb27b847b792657b45f5a14051:grand-boule-release-proof"
+                "tracked-set-sha256:9f3d0c500548c02e6ae6be9cab2f26132a4742f7da03e6d6d2de0421ad690f21:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
