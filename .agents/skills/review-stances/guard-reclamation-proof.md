@@ -127,5 +127,22 @@ evidence out of the child output unless it explains retention`, where startup, s
     missing/malformed/extra positional ports, occupied origins, wrong checkout or absent/stale token, failed proof
     and failed cleanup refused. Do not infer a missing recorded port from the current environment.
 
+13. **PID/start identity grants process authority.** The seed-traversal escape originated in `0e20269791`;
+    #2449 retained the permission-error short circuit. In `scripts/__tests__/resourceGuard.spec.ts`'s
+    `process identity ownership` group, drive omitted/replaced ancestors, stale census edges, parent replacement,
+    EPERM/EACCES, unreadable probe sequences and partial lease records. Require fresh independent ownership before
+    rebinding a replacement, persistent identity-scoped retirement, conservative uncertainty and bounded census work.
+    A missing leader preserves its original group; only positive root replacement retires its group authority
+    ([POSIX Process ID Reuse][posix-pid-reuse]). Retain saved child identities across missing/empty lists, prefer
+    newer bound identities, and never turn unknown RSS into lease release or an unbound legacy root into a false identity.
+    Mutation pointers: restore unchecked historical seeds or stale-edge readmission in
+    `scripts/resourceGuardProcessTree.ts`, erase
+    the saved tuple in `reservationProcessTree`, or restore the retired-child/zero-for-unknown shortcut in
+    `reservationIsLive`; the named group must fail. It also rejects unconditional Unix-group/Windows-tree authority.
+    In `scripts/__tests__/resourceGuardStorage.spec.ts`'s `unproved guard storage` group, the survivor cases require
+    bounded cleanup predicates, stored/current identities, errnos and available/unavailable metadata without
+    command, environment or raw error text. These ordered observations claim neither atomic signaling nor a past leak's cause.
+
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c
+[posix-pid-reuse]: https://www.govinfo.gov/content/pkg/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64/pdf/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64.pdf
