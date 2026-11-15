@@ -142,6 +142,15 @@ evidence out of the child output unless it explains retention`, where startup, s
     or unreadable identity remains live. Token-owned rows and owned descendants whose start cannot be read must
     also retain the run without gaining individual signal authority. An unavailable census remains unknown. Restoring historical-PID seeds,
     unconditional root-group authority, or the permission short circuit must fail their respective cases.
+    Change an identity during its first lookup while leaving the first census's parent edge stale: replacement
+    readmission requires one fresh census for the batch and checked current parent/token authority afterwards.
+    Keep a freshly owned replacement admitted. Change its parent identity during validation; make the fresh census
+    or start read unavailable, then probe again unreadably. The command-owned runtime record must retain the old
+    identity's retirement and pending ownership without restoring signal authority. Restore operational lease facts
+    only against their bound PID/start pair; a fresh command and a legacy record infer no retirement. Multiple
+    candidates share one fresh census. A retired original child never regains lease liveness from an unreadable
+    later probe; pending or unknown RSS keeps the owner's reservation, while proved zero/dead state can release it.
+    These ordered OS observations do not claim atomic signaling.
     Cleanup-failure output must retain the actual blocking predicate, census availability, group-probe errno,
     stored/current identity and bounded metadata without process commands or environment text. A discovered
     source risk does not establish any past leak's cause without its blocking-predicate evidence.

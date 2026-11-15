@@ -85,6 +85,8 @@ type ReservationState = {
     childPid?: number;
     childStartedAt?: string;
     trackedProcesses?: Array<{ pid: number; startedAt: string }>;
+    invalidatedProcesses?: Array<{ pid: number; startedAt: string }>;
+    pendingProcesses?: Array<{ pid: number; startedAt: string; replacementStartedAt?: string }>;
 };
 
 type ReservationRecord = ReservationOwner & Partial<ReservationState>;
@@ -684,37 +686,57 @@ function reservationWithState(path: string): ReservationRecord {
     return { ...readReservation(path), ...readReservationState(path) };
 }
 
-function reservationRssBytes(owner: ReservationRecord): number | undefined {
+export function reservationProcessTree(owner: ReservationRecord, host: ProcessTreeHost): ProcessTreeState {
     const tracked = new Map<number, string>();
     for (const processIdentity of owner.trackedProcesses ?? []) {
-        if (isSameProcess(processIdentity.pid, processIdentity.startedAt)) {
-            tracked.set(processIdentity.pid, processIdentity.startedAt);
-        }
+        tracked.set(processIdentity.pid, processIdentity.startedAt);
     }
-    if (owner.childPid !== undefined && isSameProcess(owner.childPid, owner.childStartedAt)) {
-        tracked.set(owner.childPid, owner.childStartedAt ?? '');
+    if (
+        owner.childPid !== undefined &&
+        owner.childStartedAt !== undefined &&
+        !tracked.has(owner.childPid) &&
+        isSameProcess(owner.childPid, owner.childStartedAt, host)
+    ) {
+        tracked.set(owner.childPid, owner.childStartedAt);
     }
-    if (tracked.size > 0) {
-        return sampleProcessTree(owner.childPid ?? -1, tracked, owner.processToken ?? 'unowned');
+    return createProcessTreeState(tracked, owner);
+}
+
+function reservationTreeRssBytes(owner: ReservationRecord, tree: ProcessTreeState, host: ProcessTreeHost) {
+    if (tree.identities.size > 0 || owner.childPid !== undefined) {
+        return sampleProcessTree(owner.childPid ?? -1, tree, owner.processToken ?? 'unowned', host);
     }
-    if (owner.processToken === undefined || platform() === 'win32') {
+    if (owner.processToken === undefined || host.platform() === 'win32') {
         return 0;
     }
-    const rows = processTable(owner.processToken);
+    const rows = host.processTable(owner.processToken);
     if (rows === undefined) {
         return undefined;
     }
     return rows.filter((row) => row.sessionOwned).reduce((total, row) => total + row.rssBytes, 0);
 }
 
-function reservationIsLive(owner: ReservationRecord): boolean {
-    if (isCurrentProcess(owner)) {
+export function reservationRssBytes(
+    owner: ReservationRecord,
+    host: ProcessTreeHost = processTreeHost
+): number | undefined {
+    return reservationTreeRssBytes(owner, reservationProcessTree(owner, host), host);
+}
+
+export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHost = processTreeHost): boolean {
+    if (isSameProcess(owner.pid, owner.processStartedAt, host)) {
         return true;
     }
-    if (owner.childPid !== undefined && isSameProcess(owner.childPid, owner.childStartedAt)) {
+    const tree = reservationProcessTree(owner, host);
+    const childRetired =
+        owner.childPid !== undefined &&
+        owner.childStartedAt !== undefined &&
+        tree.invalidated.get(owner.childPid)?.has(owner.childStartedAt) === true;
+    if (owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, owner.childStartedAt, host)) {
         return true;
     }
-    if ((reservationRssBytes(owner) ?? 0) > 0) {
+    const rssBytes = reservationTreeRssBytes(owner, tree, host);
+    if (rssBytes === undefined || rssBytes > 0) {
         return true;
     }
     return owner.processToken !== undefined && (owner.orphanUntil ?? 0) > Date.now();
@@ -855,7 +877,7 @@ function setSessionProcessIdentity(session: ResourceSession, processToken: strin
     }
 }
 
-function publishTrackedProcesses(session: ResourceSession, tracked: Map<number, string>): boolean {
+function publishTrackedProcesses(session: ResourceSession, tree: ProcessTreeState): boolean {
     if (!session.owned) {
         return true;
     }
@@ -868,7 +890,11 @@ function publishTrackedProcesses(session: ResourceSession, tracked: Map<number, 
             processToken: owner.processToken ?? 'unowned',
             ...(owner.childPid === undefined ? {} : { childPid: owner.childPid }),
             ...(owner.childStartedAt === undefined ? {} : { childStartedAt: owner.childStartedAt }),
-            trackedProcesses: [...tracked].map(([pid, startedAt]) => ({ pid, startedAt })),
+            trackedProcesses: [...tree.identities].map(([pid, startedAt]) => ({ pid, startedAt })),
+            invalidatedProcesses: [...tree.invalidated].flatMap(([pid, starts]) =>
+                [...starts].map((startedAt) => ({ pid, startedAt }))
+            ),
+            pendingProcesses: [...tree.pending].map(([pid, pending]) => ({ pid, ...pending })),
         });
         return true;
     } catch {
@@ -1089,6 +1115,59 @@ export type ProcessTreeHost = {
     terminateWindowsTree: (pid: number) => void;
 };
 
+// Engine/runtime state owned by one guarded command. Retired identity facts outlive
+// an unreadable probe; only fresh independent ownership may bind a new identity.
+export type ProcessTreeState = {
+    identities: Map<number, string>;
+    invalidated: Map<number, Set<string>>;
+    pending: Map<number, { startedAt: string; replacementStartedAt?: string }>;
+};
+
+export function createProcessTreeState(
+    identities = new Map<number, string>(),
+    snapshot: Pick<ReservationState, 'invalidatedProcesses' | 'pendingProcesses' | 'childPid' | 'childStartedAt'> = {}
+): ProcessTreeState {
+    const tree: ProcessTreeState = { identities, invalidated: new Map(), pending: new Map() };
+    for (const identity of snapshot.invalidatedProcesses ?? []) {
+        const matchesBound = identities.get(identity.pid) === identity.startedAt;
+        const matchesOriginalChild =
+            snapshot.childPid === identity.pid && snapshot.childStartedAt === identity.startedAt;
+        if (identity.startedAt !== undefined && (matchesBound || matchesOriginalChild)) {
+            invalidateProcessIdentity(tree, identity.pid, identity.startedAt);
+        }
+    }
+    for (const pending of snapshot.pendingProcesses ?? []) {
+        if (identities.get(pending.pid) === pending.startedAt && processIdentityInvalidated(tree, pending.pid)) {
+            tree.pending.set(pending.pid, {
+                startedAt: pending.startedAt,
+                replacementStartedAt: pending.replacementStartedAt,
+            });
+        }
+    }
+    return tree;
+}
+
+function invalidateProcessIdentity(tree: ProcessTreeState, pid: number, startedAt: string): void {
+    const invalidated = tree.invalidated.get(pid) ?? new Set<string>();
+    invalidated.add(startedAt);
+    tree.invalidated.set(pid, invalidated);
+}
+
+function recordProcessReplacement(
+    tree: ProcessTreeState,
+    pid: number,
+    startedAt: string,
+    replacementStartedAt: string
+) {
+    invalidateProcessIdentity(tree, pid, startedAt);
+    tree.pending.set(pid, { startedAt, replacementStartedAt });
+}
+
+function processIdentityInvalidated(tree: ProcessTreeState, pid: number): boolean {
+    const startedAt = tree.identities.get(pid);
+    return startedAt !== undefined && tree.invalidated.get(pid)?.has(startedAt) === true;
+}
+
 const processTreeHost: ProcessTreeHost = {
     platform,
     processTable,
@@ -1101,7 +1180,7 @@ const processTreeHost: ProcessTreeHost = {
 
 export function sampleProcessTree(
     rootPid: number,
-    tracked: Map<number, string>,
+    tree: ProcessTreeState,
     sessionToken: string,
     host: ProcessTreeHost = processTreeHost
 ): number | undefined {
@@ -1109,47 +1188,207 @@ export function sampleProcessTree(
     if (rows === undefined) {
         return undefined;
     }
-    return sampleProcessRows(rootPid, tracked, rows, host).rssBytes;
+    return sampleProcessRows(rootPid, tree, rows, sessionToken, host).rssBytes;
 }
 
-function sampleProcessRows(
-    rootPid: number,
+function readTrackedStarts(
     tracked: Map<number, string>,
     rows: ProcessRow[],
     host: ProcessTreeHost
-): { rssBytes: number; selected: Set<number> } {
+): Map<number, string | undefined> {
     const relevantPids = new Set(rows.flatMap((row) => [row.pid, row.parentPid]));
-    const replaced = new Set(
-        [...tracked.keys()].filter((pid) => relevantPids.has(pid) && processIdentityReplaced(pid, tracked, host))
-    );
+    const starts = new Map<number, string | undefined>();
+    for (const pid of tracked.keys()) {
+        if (relevantPids.has(pid)) {
+            starts.set(pid, host.processStartedAt(pid));
+        }
+    }
+    return starts;
+}
+
+function changedTrackedStarts(tracked: Map<number, string>, starts: Map<number, string | undefined>) {
+    const changed = new Map<number, string>();
+    for (const [pid, startedAt] of starts) {
+        if (startedAt !== undefined && startedAt !== tracked.get(pid)) {
+            changed.set(pid, startedAt);
+        }
+    }
+    return changed;
+}
+
+function selectProcessRows(rows: ProcessRow[], seeds: number[], blocked: Set<number>): Set<number> {
     const selected = new Set<number>([
-        ...[rootPid, ...tracked.keys()].filter((pid) => !replaced.has(pid)),
-        ...rows.filter((row) => row.sessionOwned).map((row) => row.pid),
+        ...seeds.filter((pid) => !blocked.has(pid)),
+        ...rows.filter((row) => row.sessionOwned && !blocked.has(row.pid)).map((row) => row.pid),
     ]);
     let changed = true;
     while (changed) {
         changed = false;
         for (const row of rows) {
-            if (!selected.has(row.pid) && selected.has(row.parentPid)) {
+            if (!selected.has(row.pid) && !blocked.has(row.pid) && selected.has(row.parentPid)) {
                 selected.add(row.pid);
                 changed = true;
             }
         }
     }
+    return selected;
+}
+
+type ProcessTreeSample = {
+    rssBytes: number | undefined;
+    selected: Set<number>;
+    rows: ProcessRow[];
+    replaced: Set<number>;
+    uncertain: Set<number>;
+    censusAvailable: boolean;
+};
+
+function sampleProcessRows(
+    rootPid: number,
+    tree: ProcessTreeState,
+    rows: ProcessRow[],
+    sessionToken: string,
+    host: ProcessTreeHost
+): ProcessTreeSample {
+    const tracked = tree.identities;
+    const replacements = changedTrackedStarts(tracked, readTrackedStarts(tracked, rows, host));
+    for (const [pid, pending] of tree.pending) {
+        if (tracked.get(pid) === pending.startedAt) {
+            const currentStart = host.processStartedAt(pid);
+            if (currentStart !== undefined && currentStart !== pending.startedAt) {
+                replacements.set(pid, currentStart);
+            } else if (currentStart === undefined && probeProcess(pid, host).state === 'absent') {
+                tree.pending.delete(pid);
+            }
+        } else {
+            tree.pending.delete(pid);
+        }
+    }
+    for (const [pid, replacementStartedAt] of replacements) {
+        const startedAt = tracked.get(pid);
+        if (startedAt !== undefined) {
+            recordProcessReplacement(tree, pid, startedAt, replacementStartedAt);
+        }
+    }
+    const replaced = new Set([...tracked.keys()].filter((pid) => processIdentityInvalidated(tree, pid)));
+    const possible = selectProcessRows(
+        rows,
+        [rootPid, ...tracked.keys()].filter((pid) => !replaced.has(pid)),
+        new Set()
+    );
+    for (const pid of replaced) {
+        const startedAt = tracked.get(pid);
+        if (startedAt !== undefined && !replacements.has(pid) && possible.has(pid)) {
+            tree.pending.set(pid, { startedAt, replacementStartedAt: tree.pending.get(pid)?.replacementStartedAt });
+        }
+    }
+    const uncertain = new Set<number>();
+    const admitted = new Map<number, string>();
+    let currentRows = rows;
+    let censusAvailable = true;
+    if (replacements.size > 0) {
+        // A replacement may have changed after the first census. Its new identity needs
+        // independent ownership observed afterwards; this remains a best-effort OS proof.
+        const freshRows = host.processTable(sessionToken);
+        if (freshRows === undefined) {
+            censusAvailable = false;
+            for (const pid of replaced) {
+                uncertain.add(pid);
+            }
+        } else {
+            currentRows = freshRows;
+            const freshStarts = readTrackedStarts(tracked, freshRows, host);
+            for (const pid of replacements.keys()) {
+                if (!freshStarts.has(pid)) {
+                    freshStarts.set(pid, host.processStartedAt(pid));
+                }
+            }
+            for (const pid of changedTrackedStarts(tracked, freshStarts).keys()) {
+                replaced.add(pid);
+                const startedAt = tracked.get(pid);
+                const replacementStartedAt = freshStarts.get(pid);
+                if (startedAt !== undefined && replacementStartedAt !== undefined) {
+                    recordProcessReplacement(tree, pid, startedAt, replacementStartedAt);
+                }
+                if (!replacements.has(pid)) {
+                    uncertain.add(pid);
+                }
+            }
+            const verified = new Map<number, string>();
+            for (const [pid, startedAt] of replacements) {
+                if (freshStarts.get(pid) === startedAt && host.processStartedAt(pid) === startedAt) {
+                    verified.set(pid, startedAt);
+                } else {
+                    uncertain.add(pid);
+                }
+            }
+            const anchors = new Set<number>();
+            const authorityBlocked = new Set<number>();
+            for (const [pid, startedAt] of freshStarts) {
+                if (startedAt === undefined || (replaced.has(pid) && !verified.has(pid))) {
+                    authorityBlocked.add(pid);
+                }
+                if (startedAt !== undefined && startedAt === tracked.get(pid)) {
+                    // Check the parent anchors after candidate checks, which may themselves
+                    // observe a parent replacement. Unknown anchors cannot grant readmission.
+                    const currentStart = host.processStartedAt(pid);
+                    if (currentStart === startedAt) {
+                        anchors.add(pid);
+                    } else {
+                        authorityBlocked.add(pid);
+                        uncertain.add(pid);
+                        if (currentStart !== undefined) {
+                            replaced.add(pid);
+                            recordProcessReplacement(tree, pid, startedAt, currentStart);
+                        }
+                    }
+                }
+            }
+            const seeds = [rootPid, ...tracked.keys()].filter((pid) => !replaced.has(pid));
+            const potential = selectProcessRows(freshRows, seeds, new Set());
+            const authority = selectProcessRows(freshRows, [...anchors], authorityBlocked);
+            for (const [pid, startedAt] of replacements) {
+                if (verified.has(pid) && !uncertain.has(pid) && authority.has(pid)) {
+                    admitted.set(pid, startedAt);
+                } else if (potential.has(pid)) {
+                    uncertain.add(pid);
+                }
+                if (!uncertain.has(pid)) {
+                    tree.pending.delete(pid);
+                }
+            }
+        }
+    }
+    for (const pid of tree.pending.keys()) {
+        uncertain.add(pid);
+    }
+    const blocked = new Set([...replaced].filter((pid) => !admitted.has(pid)));
+    const seeds = [rootPid, ...tracked.keys()].filter((pid) => !replaced.has(pid));
+    const selected = selectProcessRows(currentRows, seeds, blocked);
     let rssBytes = 0;
-    for (const row of rows) {
+    for (const row of currentRows) {
         if (!selected.has(row.pid)) {
             continue;
         }
         rssBytes += row.rssBytes;
-        if (!tracked.has(row.pid) || replaced.has(row.pid)) {
+        const replacementStart = admitted.get(row.pid);
+        if (replacementStart !== undefined) {
+            tracked.set(row.pid, replacementStart);
+        } else if (!tracked.has(row.pid)) {
             const startedAt = host.processStartedAt(row.pid);
             if (startedAt !== undefined) {
                 tracked.set(row.pid, startedAt);
             }
         }
     }
-    return { rssBytes, selected };
+    return {
+        rssBytes: uncertain.size === 0 ? rssBytes : undefined,
+        selected,
+        rows: currentRows,
+        replaced,
+        uncertain,
+        censusAvailable,
+    };
 }
 
 function processIdentityReplaced(pid: number, tracked: Map<number, string>, host: ProcessTreeHost): boolean {
@@ -1213,12 +1452,14 @@ function boundedEnvironment(
 export function terminateProcessTree(
     pid: number,
     signal: NodeJS.Signals,
-    tracked: Map<number, string>,
+    tree: ProcessTreeState,
     sessionToken: string,
     host: ProcessTreeHost = processTreeHost
 ): void {
-    sampleProcessTree(pid, tracked, sessionToken, host);
-    const rootReplaced = processIdentityReplaced(pid, tracked, host);
+    const tracked = tree.identities;
+    const rows = host.processTable(sessionToken);
+    const sampled = rows === undefined ? undefined : sampleProcessRows(pid, tree, rows, sessionToken, host);
+    const rootReplaced = tree.invalidated.has(pid) || processIdentityReplaced(pid, tracked, host);
     if (host.platform() === 'win32' && !rootReplaced) {
         host.terminateWindowsTree(pid);
         return;
@@ -1231,6 +1472,9 @@ export function terminateProcessTree(
         }
     }
     for (const [trackedPid, startedAt] of [...tracked.entries()].reverse()) {
+        if (sampled?.uncertain.has(trackedPid) || processIdentityInvalidated(tree, trackedPid)) {
+            continue;
+        }
         if (host.processStartedAt(trackedPid) !== startedAt) {
             continue;
         }
@@ -1244,21 +1488,33 @@ export function terminateProcessTree(
 
 export function processTreeAlive(
     pid: number,
-    tracked: Map<number, string>,
+    tree: ProcessTreeState,
     sessionToken: string,
     host: ProcessTreeHost = processTreeHost,
     report?: (observation: ProcessTreeObservation) => void
 ): boolean {
+    const tracked = tree.identities;
     const rows = host.processTable(sessionToken);
     if (rows === undefined) {
         report?.({ census: 'unavailable', processGroupProbe: { state: 'unobserved' }, blockedBy: 'census' });
         return true;
     }
-    const sampled = sampleProcessRows(pid, tracked, rows, host);
+    const sampled = sampleProcessRows(pid, tree, rows, sessionToken, host);
+    const uncertainPid = sampled.uncertain.values().next().value;
+    if (uncertainPid !== undefined) {
+        report?.({
+            census: sampled.censusAvailable ? 'available' : 'unavailable',
+            processGroupProbe: { state: 'unobserved' },
+            blockedBy: 'ownership',
+            ownedPid: uncertainPid,
+            blockingTracked: observeProcessIdentity(uncertainPid, tracked.get(uncertainPid), host),
+        });
+        return true;
+    }
     let processGroupProbe: ProcessTreeObservation['processGroupProbe'] = { state: 'unsupported' };
     // POSIX reserves a process ID while the group with that ID exists. Only positive
     // leader replacement proves the original group ended; a missing leader does not.
-    if (host.platform() !== 'win32' && !processIdentityReplaced(pid, tracked, host)) {
+    if (host.platform() !== 'win32' && !tree.invalidated.has(pid) && !processIdentityReplaced(pid, tracked, host)) {
         processGroupProbe = probeProcess(-pid, host);
         if (processGroupProbe.state !== 'absent') {
             report?.({ census: 'available', processGroupProbe, blockedBy: 'process-group' });
@@ -1267,7 +1523,7 @@ export function processTreeAlive(
     } else if (host.platform() !== 'win32') {
         processGroupProbe = { state: 'reused-root' };
     }
-    const sessionProcess = rows.find((row) => row.sessionOwned);
+    const sessionProcess = sampled.rows.find((row) => row.sessionOwned && sampled.selected.has(row.pid));
     if (sessionProcess !== undefined) {
         report?.({
             census: 'available',
@@ -1277,7 +1533,7 @@ export function processTreeAlive(
         });
         return true;
     }
-    const untrackedProcess = rows.find((row) => sampled.selected.has(row.pid) && !tracked.has(row.pid));
+    const untrackedProcess = sampled.rows.find((row) => sampled.selected.has(row.pid) && !tracked.has(row.pid));
     if (untrackedProcess !== undefined) {
         report?.({
             census: 'available',
@@ -1288,7 +1544,15 @@ export function processTreeAlive(
         return true;
     }
     for (const [trackedPid, startedAt] of tracked) {
+        if (processIdentityInvalidated(tree, trackedPid)) {
+            continue;
+        }
         const blockingTracked = observeProcessIdentity(trackedPid, startedAt, host);
+        if (blockingTracked.state === 'reused' && blockingTracked.currentStartedAt !== undefined) {
+            recordProcessReplacement(tree, trackedPid, startedAt, blockingTracked.currentStartedAt);
+            report?.({ census: 'available', processGroupProbe, blockedBy: 'ownership', ownedPid: trackedPid });
+            return true;
+        }
         if (blockingTracked.state !== 'absent' && blockingTracked.state !== 'reused') {
             report?.({ census: 'available', processGroupProbe, blockedBy: 'tracked-process', blockingTracked });
             return true;
@@ -1301,7 +1565,8 @@ export function processTreeAlive(
 type ProcessTreeObservation = {
     census: 'available' | 'unavailable';
     processGroupProbe: ProcessProbe | { state: 'unobserved' | 'unsupported' | 'reused-root' };
-    blockedBy: 'census' | 'process-group' | 'session-token' | 'owned-process' | 'tracked-process' | 'none';
+    blockedBy:
+        'census' | 'process-group' | 'session-token' | 'owned-process' | 'tracked-process' | 'ownership' | 'none';
     sessionPid?: number;
     ownedPid?: number;
     blockingTracked?: ProcessIdentityObservation;
@@ -1325,17 +1590,17 @@ function boundedProcessTreeObservation(observation: ProcessTreeObservation | und
 
 async function waitForProcessTreeExit(
     pid: number,
-    tracked: Map<number, string>,
+    tree: ProcessTreeState,
     sessionToken: string,
     timeoutMs: number,
     host: ProcessTreeHost = processTreeHost,
     report?: (observation: ProcessTreeObservation) => void
 ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
-    while (processTreeAlive(pid, tracked, sessionToken, host) && Date.now() < deadline) {
+    while (processTreeAlive(pid, tree, sessionToken, host) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    return !processTreeAlive(pid, tracked, sessionToken, host, report);
+    return !processTreeAlive(pid, tree, sessionToken, host, report);
 }
 
 function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead' | 'unknown' {
@@ -2369,8 +2634,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         };
     }
     const startedAt = Date.now();
-    const tracked = new Map<number, string>();
-    const signalFailures: Array<{ pid: number; signal: NodeJS.Signals | number | undefined; errno: string }> = [];
+    const tree = createProcessTreeState();
+    const tracked = tree.identities;
+    const signalFailures: Array<{ pid: number; signal: Parameters<typeof process.kill>[1]; errno: string }> = [];
     let signalFailureCount = 0;
     const commandProcessHost: ProcessTreeHost = {
         ...processTreeHost,
@@ -2434,7 +2700,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (child.pid === undefined) {
             return true;
         }
-        return waitForProcessTreeExit(child.pid, tracked, processToken, timeout, commandProcessHost, (observation) => {
+        return waitForProcessTreeExit(child.pid, tree, processToken, timeout, commandProcessHost, (observation) => {
             treeObservation = observation;
             if (observation.blockedBy !== 'none') {
                 blockingTreeObservation = observation;
@@ -2443,7 +2709,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     };
     const terminateTree = (signal: NodeJS.Signals) => {
         if (child.pid !== undefined) {
-            terminateProcessTree(child.pid, signal, tracked, processToken, commandProcessHost);
+            terminateProcessTree(child.pid, signal, tree, processToken, commandProcessHost);
         }
     };
     let storageRemoved = false;
@@ -2541,7 +2807,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
                 tracked
             );
         } catch (error) {
-            terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+            terminateProcessTree(child.pid, 'SIGKILL', tree, processToken);
             const cleaned = await cleanupStorage();
             if (forceKillTimer !== undefined) {
                 clearTimeout(forceKillTimer);
@@ -2561,7 +2827,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (child.pid === undefined) {
             return;
         }
-        const rssBytes = sampleProcessTree(child.pid, tracked, processToken, commandProcessHost);
+        const rssBytes = sampleProcessTree(child.pid, tree, processToken, commandProcessHost);
         if (rssBytes === undefined) {
             processSamplerFailures += 1;
             if (processSamplerFailures >= 3) {
@@ -2577,7 +2843,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         const now = Date.now();
         if (now - lastHostPressureSample >= (input.hostSampleIntervalMs ?? hostPressureSampleIntervalMs)) {
             lastHostPressureSample = now;
-            if (!publishTrackedProcesses(session, tracked)) {
+            if (!publishTrackedProcesses(session, tree)) {
                 stop('monitor');
                 return;
             }
