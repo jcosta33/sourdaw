@@ -13,6 +13,7 @@ import {
     EVENT_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     DIALOG_MESSAGE_CHANNEL,
@@ -85,6 +86,7 @@ describe('the published surface', () => {
             'nativeMenu',
             'paths',
             'platform',
+            'pluginFolders',
             'stream',
             'system',
             'voiceDictation',
@@ -92,6 +94,7 @@ describe('the published surface', () => {
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
+        expect(Object.keys(bridge.pluginFolders)).toEqual(['add']);
         expect(Object.keys(bridge.system)).toEqual(['totalMemoryBytes']);
         expect(Object.keys(bridge.display)).toEqual(['setZoomFactor']);
         expect(Object.keys(bridge.windowControls).sort()).toEqual([
@@ -692,6 +695,35 @@ describe('window controls', () => {
         expect(kept).toHaveBeenCalledTimes(1);
         expect(kept).toHaveBeenCalledWith(true);
         expect(dropped).not.toHaveBeenCalled();
+    });
+});
+
+describe('the plugin folder picker', () => {
+    it('asks main with no arguments and passes each answer shape through', async () => {
+        const answers: readonly unknown[] = [
+            { status: 'cancelled' },
+            { status: 'granted', path: '/Users/me/Plugins' },
+            { status: 'refused', reason: 'not a folder' },
+        ];
+        for (const answer of answers) {
+            const fake = fakeIpc(() => answer);
+
+            await expect(createSourdawBridge(fake.ipc).pluginFolders.add()).resolves.toEqual(answer);
+            expect(fake.invoke.mock.calls).toEqual([[PLUGIN_FOLDER_ADD_CHANNEL]]);
+        }
+    });
+
+    it.each([
+        null,
+        '/Users/me/Plugins',
+        { status: 'granted' },
+        { status: 'granted', path: 7 },
+        { status: 'refused' },
+        { status: 'unknown' },
+    ])('refuses an answer outside the contract: %j', async (answer) => {
+        await expect(createSourdawBridge(fakeIpc(() => answer).ipc).pluginFolders.add()).rejects.toThrow(
+            /unsupported payload/u
+        );
     });
 });
 

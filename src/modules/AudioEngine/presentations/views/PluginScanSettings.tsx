@@ -1,11 +1,11 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import {
     FolderOpen,
+    FolderPlus,
     Trash2,
     RefreshCw,
     Loader2,
-    Plus,
     AlertCircle,
     CheckCircle2,
     Info,
@@ -14,7 +14,6 @@ import {
     ShieldAlert,
 } from 'lucide-react';
 
-import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
@@ -24,15 +23,38 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/PluginHost/stores';
-import { startPluginScan, addScanPath, removeScanPath } from '#/modules/PluginHost/useCases';
+import {
+    addPluginFolder,
+    refreshPluginFolderGrants,
+    removePluginFolder,
+    removeScanPath,
+    startPluginScan,
+} from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 
 export const PluginScanSettings = (): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);
-    const [newPath, setNewPath] = useState('');
-    const [addPathError, setAddPathError] = useState<string | null>(null);
+    const [isAddingFolder, setIsAddingFolder] = useState(false);
+    const [folderError, setFolderError] = useState<string | null>(null);
+    const [folderStatus, setFolderStatus] = useState<string | null>(null);
+    const addFolderButtonRef = useRef<HTMLButtonElement>(null);
 
     const { hasPluginScanning } = getPlatformCapabilities();
+
+    // The native grant store is the authority for added folders; the store
+    // never restores them, so the list is read fresh each time settings open.
+    useEffect(() => {
+        if (!hasPluginScanning) {
+            return;
+        }
+        const showRefreshFailure = async (): Promise<void> => {
+            const outcome = await refreshPluginFolderGrants();
+            if (!outcome.refreshed) {
+                setFolderError(outcome.reason);
+            }
+        };
+        void showRefreshFailure();
+    }, [hasPluginScanning]);
 
     if (!hasPluginScanning) {
         return (
@@ -59,21 +81,36 @@ export const PluginScanSettings = (): ReactElement | null => {
         );
     }
 
-    // The add is policy-gated: only folders the native scan policy can
-    // authorize become settings entries, and a refusal says which folders are
-    // scannable instead of saving a path that would fail every scan.
-    const handleAddPath = async (): Promise<void> => {
-        const trimmed = newPath.trim();
-        if (!trimmed) {
+    // The shell opens the picker and grants the folder it returns; the
+    // renderer never names the path, so there is nothing to type here.
+    const handleAddFolder = async (): Promise<void> => {
+        setIsAddingFolder(true);
+        setFolderError(null);
+        setFolderStatus(null);
+        try {
+            const outcome = await addPluginFolder();
+            if (outcome.added) {
+                setFolderStatus(`Added ${outcome.path}`);
+            } else if ('reason' in outcome) {
+                setFolderError(outcome.reason);
+            }
+        } finally {
+            setIsAddingFolder(false);
+        }
+    };
+
+    const handleRemoveFolder = async (path: string): Promise<void> => {
+        setFolderError(null);
+        setFolderStatus(null);
+        const outcome = await removePluginFolder(path);
+        if (!outcome.removed) {
+            setFolderError(outcome.reason);
             return;
         }
-        const outcome = await addScanPath(trimmed);
-        if (!outcome.added) {
-            setAddPathError(outcome.reason);
-            return;
-        }
-        setAddPathError(null);
-        setNewPath('');
+        // The removed row took the focused Remove button with it; without
+        // this, keyboard focus falls back to the document body.
+        addFolderButtonRef.current?.focus();
+        setFolderStatus(`Removed ${path}`);
     };
 
     const handleScan = () => {
@@ -117,40 +154,68 @@ export const PluginScanSettings = (): ReactElement | null => {
                     </Stack>
                 ) : null}
 
-                <Row gap={1}>
-                    <DawCompactInput
-                        type="text"
-                        placeholder="/path/to/plugins..."
-                        value={newPath}
-                        onChange={(event) => {
-                            setNewPath(event.target.value);
-                            setAddPathError(null);
-                        }}
-                        className="flex-1"
-                        monospace
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                                void handleAddPath();
-                            }
-                        }}
-                    />
-                    <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                            void handleAddPath();
-                        }}
-                        disabled={!newPath.trim()}
-                        aria-label="Add plugin path"
-                    >
-                        <Plus className="size-3" />
-                    </Button>
-                </Row>
+                {state.grantedFolders.length > 0 ? (
+                    <Stack gap={1}>
+                        <DawEyebrowLabel size="sm">Added folders</DawEyebrowLabel>
+                        <ul className="flex flex-col gap-1" aria-label="Added folders">
+                            {state.grantedFolders.map((folder) => (
+                                <li className="group flex flex-col" key={folder.path}>
+                                    <Row gap={1.5}>
+                                        <FolderOpen
+                                            className="size-3 text-muted-foreground shrink-0"
+                                            aria-hidden="true"
+                                        />
+                                        <span
+                                            className="flex-1 text-[10px] text-foreground truncate font-mono"
+                                            title={folder.path}
+                                        >
+                                            {folder.path}
+                                        </span>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity"
+                                            onClick={() => {
+                                                void handleRemoveFolder(folder.path);
+                                            }}
+                                            aria-label={`Remove plugin folder ${folder.path}`}
+                                        >
+                                            <Trash2 className="size-3 text-destructive" aria-hidden="true" />
+                                        </Button>
+                                    </Row>
+                                    {folder.unavailableReason !== null ? (
+                                        <span className="pl-[18px] text-[10px] text-destructive">
+                                            {folder.unavailableReason}
+                                        </span>
+                                    ) : null}
+                                </li>
+                            ))}
+                        </ul>
+                    </Stack>
+                ) : null}
 
-                {addPathError !== null ? (
-                    <Row align="start" gap={1} className="text-[10px] text-destructive">
+                <Button
+                    ref={addFolderButtonRef}
+                    variant="outline"
+                    size="xs"
+                    className="w-fit gap-1 text-xs"
+                    onClick={() => {
+                        void handleAddFolder();
+                    }}
+                    disabled={isAddingFolder}
+                >
+                    <FolderPlus className="size-3" aria-hidden="true" />
+                    Add Folder
+                </Button>
+
+                <p role="status" className="text-[10px] text-muted-foreground empty:hidden">
+                    {folderStatus}
+                </p>
+
+                {folderError !== null ? (
+                    <Row align="start" gap={1} className="text-[10px] text-destructive" role="alert">
                         <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
-                        <span>{addPathError}</span>
+                        <span>{folderError}</span>
                     </Row>
                 ) : null}
 
