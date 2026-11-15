@@ -240,6 +240,69 @@ describe('createRuntimeTrackStripInitialization', () => {
         expect(calls).toEqual([]);
     });
 
+    it('routes the initialized strip with the delta pad binding', () => {
+        const { initialization, setTrackOutputTransaction, created } = createFixture();
+        const padBinding = { toasterParentTrackId: 'toaster', padIndex: 2 };
+
+        initialization.apply(createDelta([], { padBinding }));
+
+        expect(setTrackOutputTransaction).toHaveBeenCalledExactlyOnceWith(created[0], 'master', padBinding);
+    });
+
+    it('rejects, building nothing, when a live destination strip does not match its compiled snapshot', () => {
+        const destination = createFakeTrackNode('bus-1', [], undefined);
+        const { initialization, ports } = createFixture([destination]);
+        const delta: RuntimeGraphTrackStripInitializationDelta = {
+            ...createDelta([], { targetId: 'bus-1' }),
+            nodes: [
+                { id: 'track-1', kind: 'audio', devices: [] },
+                { id: 'bus-1', kind: 'audio', devices: [EQ] },
+            ],
+        };
+
+        expect(initialization.apply(delta)).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Live destination strip does not match the compiled initialization snapshot',
+        });
+        expect(ports.createTrackNode).not.toHaveBeenCalled();
+    });
+
+    it('unregisters and disposes the private strip when adding a device throws before publication', () => {
+        const { initialization, ports, revision, calls, nodes } = createFixture();
+        vi.mocked(ports.createTrackNode).mockImplementation((trackId: string) => {
+            calls.push(`create:${trackId}`);
+            const node = createFakeTrackNode(trackId);
+            node.addDevice.mockImplementation(() => {
+                throw new Error('device load exploded');
+            });
+            node.dispose.mockImplementation(() => calls.push(`dispose:${trackId}`));
+            return node as unknown as TrackNode;
+        });
+
+        expect(initialization.apply(createDelta([EQ]))).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Live strip initialization failed before publication: Error: device load exploded',
+        });
+        expect(calls).toEqual(['create:track-1', 'unregister:track-1', 'dispose:track-1']);
+        expect(nodes.has('track-1')).toBe(false);
+        expect(revision.current()).toBe(0);
+    });
+
+    it('does not match a snapshot that expects no pad binding against a strip that has one', () => {
+        const existing = createFakeTrackNode('track-1', [], 'master');
+        const { initialization } = createFixture(
+            [existing],
+            new Map([['track-1', { toasterParentTrackId: 'toaster', padIndex: 0 }]])
+        );
+
+        expect(initialization.apply(createDelta([]))).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+        });
+    });
+
     it('warns once per withheld device type until the notices are forgotten', () => {
         const withheld: RuntimeGraphDeltaDevice = { id: 'w-1', type: 'withheld-device', parameterIds: [] };
         const { initialization, nodes } = createFixture();

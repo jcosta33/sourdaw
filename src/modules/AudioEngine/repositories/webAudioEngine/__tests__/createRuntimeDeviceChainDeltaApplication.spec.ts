@@ -179,6 +179,23 @@ describe('createRuntimeDeviceChainDeltaApplication', () => {
         expect(revision.current()).toBe(1);
     });
 
+    it('reports compensation as not attempted when a typed failure carries no rollback error', () => {
+        const source = createFakeTrackNode('track-1', [EQ]);
+        source.applyDeviceChain.mockImplementation(() => {
+            throw new RuntimeGraphMutationFailure(
+                { application: 'needs-reconcile', reason: 'chain half rebuilt' },
+                new Error('connect failed')
+            );
+        });
+        const { apply } = createFixture([source]);
+
+        expect(apply(createDelta([EQ], []))).toMatchObject({
+            application: 'needs-reconcile',
+            compensation: 'not-attempted',
+            reason: 'chain half rebuilt',
+        });
+    });
+
     it('names an untyped live throw in the reconciliation reason', () => {
         const source = createFakeTrackNode('track-1', [EQ]);
         source.applyDeviceChain.mockImplementation(() => {
