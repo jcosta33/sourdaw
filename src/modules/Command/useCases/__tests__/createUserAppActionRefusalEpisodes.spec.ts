@@ -21,6 +21,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 const action = { type: 'addTrack', payload: { name: 'New track', kind: 'audio' } } as const;
 const refuse = () => vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionAdmissionRefusedError('addTrack'));
 
+/** Resolves once every microtask queued so far has run. */
+const afterMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 describe('createUserAppActionRefusalEpisodes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -145,10 +148,12 @@ describe('createUserAppActionRefusalEpisodes', () => {
             await episodes.execute('A', action);
 
             unlock();
+            await afterMicrotasks();
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
 
             lock();
             unlock();
+            await afterMicrotasks();
             expect(onAdmitted).toHaveBeenCalledTimes(1);
         });
 
@@ -205,10 +210,12 @@ describe('createUserAppActionRefusalEpisodes', () => {
             await episodes.execute('B', other);
 
             unlock();
+            await afterMicrotasks();
             expect(onAdmitted.mock.calls).toEqual([['A']]);
 
             briefLocksRemoval = false;
             signalBrief();
+            await afterMicrotasks();
             expect(onAdmitted.mock.calls).toEqual([['A'], ['B']]);
         });
 
@@ -229,6 +236,7 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).not.toHaveBeenCalled();
             allowed = true;
             signalBrief();
+            await afterMicrotasks();
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 
@@ -243,6 +251,7 @@ describe('createUserAppActionRefusalEpisodes', () => {
             resetCrdtProjectAuthority('Replacement');
 
             expect(agentProjectRepairStateStore.value).toBeNull();
+            await afterMicrotasks();
             expect(onAdmitted).not.toHaveBeenCalled();
             // The dropped episode is gone: a refusal in the new project warns afresh.
             lock();
@@ -263,6 +272,7 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).not.toHaveBeenCalled();
 
             unlock();
+            await afterMicrotasks();
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 
@@ -308,8 +318,38 @@ describe('createUserAppActionRefusalEpisodes', () => {
             await episodes.execute('A', action);
 
             unlock();
+            await afterMicrotasks();
 
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('delivers an admitted key after the synchronous change that unlocked the project, not during it', async () => {
+            const delivered: string[] = [];
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted: (key) => delivered.push(key) });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            // One synchronous pass: the unlock signal, then the device state the same merge changed.
+            unlock();
+            delivered.push('device-state-change');
+
+            await afterMicrotasks();
+            expect(delivered).toEqual(['device-state-change', 'A']);
+        });
+
+        it('does not deliver a key whose project was replaced between the signal and the delivery', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            unlock();
+            resetCrdtProjectAuthority('Replacement');
+            await afterMicrotasks();
+
+            expect(onAdmitted).not.toHaveBeenCalled();
         });
 
         it('holds the brief subscription only while an episode is open', async () => {

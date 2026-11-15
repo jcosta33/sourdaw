@@ -6,9 +6,11 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { createDefaultKit } from '../../models/ToasterKit';
 import { toToasterKitState } from '../../models/ToasterKitState';
 import { registerToasterDevice, toasterStore, toggleStep } from '../../stores/toasterStore';
 import { initToasterKitPersistence } from '../initToasterKitPersistence';
+import { reconcileToasterKitsFromProject } from '../reconcileToasterKitsFromProject';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -141,6 +143,43 @@ describe('initToasterKitPersistence on a refused project', () => {
 
             unlock();
             await vi.waitFor(() => expect(documentKitData()).toEqual(sessionKitData()));
+        });
+
+        it('keeps a peer kit that arrives in the same merge that unlocks the project', async () => {
+            toggleStep(DEVICE_ID, 0, 1);
+            await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(1));
+            const peerState = toToasterKitState({ ...createDefaultKit(), swing: 0.3 });
+
+            // The order of a merge: the change notification queues the device reconcile, then the
+            // projection sets the peer's device state and clears the repair state, all synchronously.
+            queueMicrotask(reconcileToasterKitsFromProject);
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: sanitizeTrackSnapshot({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            name: 'Drums',
+                            kind: 'midi',
+                            devices: [
+                                {
+                                    id: DEVICE_ID,
+                                    name: 'Toaster',
+                                    type: 'toaster',
+                                    bypassed: false,
+                                    parameterValues: { masterGain: 1 },
+                                    deviceState: peerState,
+                                },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: null,
+                }).tracks,
+            });
+            unlock();
+
+            await vi.waitFor(() => expect(sessionKitData()).toEqual(peerState.data));
+            await vi.waitFor(() => expect(documentKitData()).toEqual(peerState.data));
         });
 
         it('does not write a device that left the store while the project was locked', async () => {

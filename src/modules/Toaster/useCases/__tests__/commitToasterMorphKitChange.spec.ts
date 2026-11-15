@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { productionBriefAdmissionPort } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { getSettledProjectIdentity } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -95,6 +96,7 @@ describe('commitToasterMorphKitChange on a refused project', () => {
         toasterStore.set({});
         stopPersistence();
         toasterRefusalEpisodes.endAll();
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
         unlock();
     });
 
@@ -126,6 +128,24 @@ describe('commitToasterMorphKitChange on a refused project', () => {
         await vi.waitFor(() => expect(documentKitData()).toEqual(sessionKitData()));
         expect(morph()?.position).toBe(0.5);
         expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not overwrite a session kit that was replaced while the refused morph was in flight', async () => {
+        unlock();
+        let replacement: ReturnType<typeof createDefaultKit> | null = null;
+        productionBriefAdmissionPort.setGuard(() => {
+            const current = toasterStore.value?.[DEVICE_ID];
+            if (current && !replacement) {
+                replacement = { ...current.kit, swing: 0.4 };
+                toasterStore.set({ [DEVICE_ID]: { ...current, kit: replacement } });
+            }
+            return { allowsCurrent: () => false };
+        });
+
+        expect(await setMorphPosition(DEVICE_ID, 0.5)).toBe(false);
+
+        expect(replacement).not.toBeNull();
+        expect(toasterStore.value?.[DEVICE_ID]?.kit).toBe(replacement);
     });
 
     it('does not log a stale-authority conflict, which the commit guard raises by design', async () => {

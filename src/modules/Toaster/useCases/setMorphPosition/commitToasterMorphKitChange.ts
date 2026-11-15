@@ -106,9 +106,9 @@ async function commitCurrentToasterMorphKitChange(
                 },
             }
         );
-        // The refusal told the user the edit is kept in the session until the project can be
-        // changed. Apply it like any other kit edit, without marking it committed, so the
-        // persistence subscription and the episode's admission re-commit still write it.
+        // The warning told the user edits are not saved until the project can be changed. The
+        // morph is kept in the session like any other kit edit, and not marked committed, so the
+        // episode's admission re-commit saves it once the project can be changed.
         const current = toasterStore.value?.[deviceId];
         if (outcome === 'refused' && current && stillCurrent()) {
             toasterStore.set({ ...toasterStore.value, [deviceId]: { ...current, kit: nextKit } });

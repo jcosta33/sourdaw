@@ -58,20 +58,43 @@ export function createUserAppActionRefusalEpisodes(
         unsubscribe ??= subscribeAppActionAdmissionChanges(closeAdmittedEpisodes);
     };
 
+    /** Where an open episode stands now: replaced project, admitted again, or still refused. */
+    const readVerdict = (episode: OpenEpisode): 'stale' | 'admitted' | 'refused' => {
+        if (episode.projectIdentity !== captureProjectIdentity()) {
+            return 'stale';
+        }
+        return isAppActionAdmitted(episode.action) ? 'admitted' : 'refused';
+    };
+
+    // Delivered a microtask later. A merge that unlocks the project also rewrites device state, and
+    // the device reconcile that loads a peer's state into the session stores is queued by the change
+    // notification, ahead of the projection that fires this signal. Writing at once would put the
+    // stale session state over the peer's edit.
+    const deliverAdmitted = (admitted: [string, OpenEpisode][]): void => {
+        queueMicrotask(() => {
+            for (const [key, episode] of admitted) {
+                if (readVerdict(episode) === 'admitted') {
+                    options.onAdmitted?.(key);
+                }
+            }
+        });
+    };
+
     function closeAdmittedEpisodes(): void {
-        const projectIdentity = captureProjectIdentity();
-        const admitted: string[] = [];
+        const admitted: [string, OpenEpisode][] = [];
         for (const [key, episode] of open) {
-            if (episode.projectIdentity !== projectIdentity) {
-                open.delete(key);
-            } else if (isAppActionAdmitted(episode.action)) {
-                open.delete(key);
-                admitted.push(key);
+            const verdict = readVerdict(episode);
+            if (verdict === 'refused') {
+                continue;
+            }
+            open.delete(key);
+            if (verdict === 'admitted') {
+                admitted.push([key, episode]);
             }
         }
         syncSubscription();
-        for (const key of admitted) {
-            options.onAdmitted?.(key);
+        if (admitted.length > 0) {
+            deliverAdmitted(admitted);
         }
     }
 
@@ -82,11 +105,17 @@ export function createUserAppActionRefusalEpisodes(
 
     const settleUncommitted = (key: string): void => {
         const episode = open.get(key);
-        if (!episode || !isAppActionAdmitted(episode.action)) {
+        if (!episode) {
+            return;
+        }
+        const verdict = readVerdict(episode);
+        if (verdict === 'refused') {
             return;
         }
         close(key);
-        options.onAdmitted?.(key);
+        if (verdict === 'admitted') {
+            options.onAdmitted?.(key);
+        }
     };
 
     return {
