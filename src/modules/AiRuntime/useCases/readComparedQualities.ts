@@ -17,6 +17,9 @@ const QUALITY_WORDS: Record<ComparedQuality, readonly string[]> = {
     dynamics: ['dynamic', 'dynamics', 'punch', 'punchy', 'punchier', 'compressed'],
 };
 
+/** The words that name loudness; a decibel figure in a clause accounts for them. */
+export const LOUDNESS_WORDS: readonly string[] = QUALITY_WORDS.loudness;
+
 function findQualityWord(text: string, words: readonly string[]): string | null {
     return new RegExp(String.raw`\b(?:${words.join('|')})\b`).exec(text)?.[0] ?? null;
 }

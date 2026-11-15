@@ -8,23 +8,24 @@ import { readFirstPerceptualTerm } from './admitPerceptualGoalDecline';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { maskTrackReferences } from './maskTrackReferences';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
-import { readComparedQualityWords } from './readComparedQualities';
+import { LOUDNESS_WORDS, readComparedQualityWords } from './readComparedQualities';
 
 // A slash joins clauses only with space around it, so a registered phrase such as "punch in/out" stays whole.
 const CLAUSE_SEPARATOR = /[.;,!?\n&:()—–]|\s\/\s|\b(?:and|then|but|so|while|with|or|plus)\b/u;
-const UNIT = String.raw`(?:db|hz|khz|%|lufs|lkfs|dbfs|dbtp|ms|s)`;
+const DECIBEL_UNIT = String.raw`(?:db|lufs|lkfs|dbfs|dbtp)`;
+// A frequency states no amount of any quality, so it never accounts for the word beside it.
+const UNIT = String.raw`(?:${DECIBEL_UNIT}|%|ms|s)`;
 const FIGURE = String.raw`-?\d+(?:\.\d+)?`;
+const NOT_FREQUENCY = String.raw`(?!\s*k?hz\b)`;
+const DECIBEL_FIGURE = new RegExp(String.raw`(?<![\d.])${FIGURE}\s*${DECIBEL_UNIT}\b`, 'iu');
+const LOUDNESS_WORD = new RegExp(String.raw`\b(?:${LOUDNESS_WORDS.join('|')})\b`, 'giu');
+const COMPARISON = /\bthan\b/iu;
 const DETERMINER = String.raw`(?:(?:the|a|an|this|that|my)\s+)?`;
 /** A figure qualifies a quality only in its own phrase: "3 dB louder", "louder by 3 dB", "gain-level to -6". */
 const FIGURE_QUALIFIERS = [
-    // A figure landing a control ("set the volume of the vocals to -4 dB") is an explicit value for that control.
-    new RegExp(
-        String.raw`\b(?:set|put|bring)\s+${DETERMINER}\p{L}+(?:\s+(?:of|on|for)(?:\s+\S+)*?)?\s+(?:to|at)\s+${FIGURE}(?:\s*${UNIT}\b)?(?![\d.]*\w)`,
-        'giu'
-    ),
     new RegExp(String.raw`${FIGURE}\s*${UNIT}\b\s+\p{L}+`, 'giu'),
-    new RegExp(String.raw`\p{L}+\s+by\s+${FIGURE}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
-    new RegExp(String.raw`\S+\s+(?:to|at)\s+${FIGURE}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
+    new RegExp(String.raw`\p{L}+\s+by\s+${FIGURE}${NOT_FREQUENCY}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
+    new RegExp(String.raw`\S+\s+(?:to|at)\s+${FIGURE}${NOT_FREQUENCY}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
 ];
 const COMMAND_CARRIER = String.raw`^\s*(?:please\s+)?(?:(?:can|could|would)\s+you\s+(?:please\s+)?)?(?:please\s+)?(?:(?:don['’]?t|do\s+not|never)\s+)?`;
 
@@ -32,11 +33,22 @@ function blank(text: string, start: number, end: number): string {
     return text.slice(0, start) + ' '.repeat(end - start) + text.slice(end);
 }
 
+/**
+ * A decibel figure states the clause's loudness wherever its words sit ("turn the vocal volume down 3 dB"), and
+ * accounts for no other quality except the word it directly qualifies. A comparison ("louder than Bass")
+ * states a quality against a target, which no figure accounts for.
+ */
 function blankFigureQualifiers(clause: string): string {
-    return FIGURE_QUALIFIERS.reduce(
+    if (COMPARISON.test(clause)) {
+        return clause;
+    }
+    const qualified = FIGURE_QUALIFIERS.reduce(
         (text, pattern) => text.replaceAll(pattern, (span) => ' '.repeat(span.length)),
         clause
     );
+    return DECIBEL_FIGURE.test(clause)
+        ? qualified.replaceAll(LOUDNESS_WORD, (span) => ' '.repeat(span.length))
+        : qualified;
 }
 
 /** A clause the perceptual-constraint reader consumed becomes a constraint goal, so it states no literal claim. */
