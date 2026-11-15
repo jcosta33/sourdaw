@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
     defaultExternalPluginActivationState,
@@ -6,6 +7,7 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
+import { carriedExternalPluginStates } from './carriedExternalPluginStates';
 import { clearExternalPluginRestoreFailure } from './clearExternalPluginRestoreFailure';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -14,7 +16,7 @@ import {
     externalPluginActivationTasks,
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
-import { loadedExternalInstances } from './loadedExternalInstances';
+import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
 import { restorePluginState } from './restorePluginState';
@@ -52,6 +54,49 @@ function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 
             },
         };
     });
+}
+
+/** The live state a teardown carried for this instance, when it came from the same plugin. */
+function takeCarriedStateChunk(instanceId: string, pluginId: string): string | undefined {
+    const carried = carriedExternalPluginStates.get(instanceId);
+    if (carried === undefined) {
+        return undefined;
+    }
+    if (carried.pluginId !== pluginId) {
+        carriedExternalPluginStates.delete(instanceId);
+        return undefined;
+    }
+    return carried.stateChunk;
+}
+
+/**
+ * Restore carried live state into a fresh instance. The carry is consumed only
+ * once this activation settles it; one a later teardown overtook keeps it for
+ * the next activation.
+ */
+async function restoreCarriedState(
+    instanceId: string,
+    pluginId: string,
+    stateChunk: string,
+    activationEpoch: number
+): Promise<'restored' | 'rejected' | 'superseded'> {
+    let rejection: string | null = null;
+    try {
+        await restorePluginState(instanceId, stateChunk);
+    } catch (error) {
+        rejection = String(error);
+    }
+    if (activationEpoch !== externalPluginActivationEpoch.current || !loadedExternalInstances.has(instanceId)) {
+        return 'superseded';
+    }
+    carriedExternalPluginStates.delete(instanceId);
+    if (rejection === null) {
+        clearExternalPluginRestoreFailure(instanceId);
+        return 'restored';
+    }
+    logger.warn(`External plugin ${pluginId} instance ${instanceId} rejected its carried live state: ${rejection}`);
+    notifyUser(`Unsaved edits in ${pluginId} could not be restored after the plugin was reloaded.`, 'warning');
+    return 'rejected';
 }
 
 /**
@@ -137,6 +182,7 @@ export function activateExternalPlugin({
         return Promise.resolve(priorOutcome ?? { status: 'active' });
     }
     loadedExternalInstances.add(instanceId);
+    loadedExternalInstancePluginIds.set(instanceId, pluginId);
     setActivationStatus(instanceId, 'loading');
 
     // Start before the load, for the same reason the latency sink is registered
@@ -199,10 +245,30 @@ export function activateExternalPlugin({
             // Instantiation failed: drop the guard so a later rebuild can retry,
             // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
+            loadedExternalInstancePluginIds.delete(instanceId);
             externalLatencyReporters.delete(instanceId);
             setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return { status: 'failed', stage: 'load', reason: String(error) };
+        }
+
+        // No base-chunk check against the project chunk is needed: project
+        // state changes under a live instance only through a `replacement`,
+        // offered only while a failed-restore marker stands, and a marked
+        // instance is never carried; a capture writes the live state itself.
+        const carriedStateChunk = takeCarriedStateChunk(instanceId, pluginId);
+        if (carriedStateChunk !== undefined) {
+            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carriedStateChunk, activationEpoch);
+            if (carriedRestore === 'superseded') {
+                return {
+                    status: 'failed',
+                    stage: 'restore',
+                    reason: 'External plugin activation was superseded by a runtime teardown',
+                };
+            }
+            if (carriedRestore === 'restored') {
+                return attachment ?? { status: 'active' };
+            }
         }
 
         if (!stateChunk) {

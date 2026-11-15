@@ -431,6 +431,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     restorePluginState: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
     unloadPlugin: vi.fn(),
+    unloadPluginCarryingLiveState: vi.fn(),
     watchPluginStateDirty: vi.fn(),
 }));
 /**

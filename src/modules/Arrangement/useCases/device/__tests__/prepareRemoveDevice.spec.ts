@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTrack } from '../../../models/Track';
 import { prepareRemoveDevice } from '../prepareRemoveDevice';
 
-import type { unloadPlugin } from '#/modules/PluginHost/useCases';
+import type { unloadPluginCarryingLiveState } from '#/modules/PluginHost/useCases';
 import type { Device, Track } from '../../../models/Track';
 import type { getTrackState } from '../../../repositories/track/getTrackState';
 import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn(),
     deactivateTrackStrip: vi.fn(),
     clearReportedLatency: vi.fn<(deviceId: string) => void>(),
-    unloadPlugin: vi.fn<typeof unloadPlugin>(),
+    unloadPluginCarryingLiveState: vi.fn<typeof unloadPluginCarryingLiveState>(),
     projectTrackToLiveStrip: vi.fn<typeof projectTrackToLiveStrip>(),
 }));
 
@@ -54,7 +54,7 @@ vi.mock('../applyDeviceChainRuntimeDelta', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    unloadPlugin: mocks.unloadPlugin,
+    unloadPluginCarryingLiveState: mocks.unloadPluginCarryingLiveState,
 }));
 
 vi.mock('../../projectTrackToLiveStrip', () => ({
@@ -90,7 +90,7 @@ describe('prepareRemoveDevice', () => {
             acceptance: 'accepted',
             application: 'applied',
         });
-        mocks.unloadPlugin.mockResolvedValue(undefined);
+        mocks.unloadPluginCarryingLiveState.mockResolvedValue(undefined);
     });
 
     it('removes device from store and engine', () => {
@@ -129,7 +129,7 @@ describe('prepareRemoveDevice', () => {
 
         removeDevice('d1');
 
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledWith('inst1');
     });
 
     it('defers graph removal, latency cleanup, and external unload until the owning transaction commits', async () => {
@@ -149,7 +149,7 @@ describe('prepareRemoveDevice', () => {
             throw new TypeError('Expected deferred unload result');
         }
 
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         await result.afterCommit();
@@ -157,7 +157,7 @@ describe('prepareRemoveDevice', () => {
             expect.objectContaining({ operation: 'remove-device' })
         );
         expect(mocks.clearReportedLatency).toHaveBeenCalledWith('d1');
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledWith('inst1');
     });
 
     it('keeps a non-live folder removal project-only across commit reconciliation', async () => {
@@ -179,7 +179,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
     });
 
@@ -207,7 +207,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterCommit()).resolves.toBeUndefined();
 
         expect(clearedLatencyDeviceIds()).toEqual(['d1']);
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledWith('inst1');
     });
 
     it('discharges the graph obligation on ambiguous reconciliation too', async () => {
@@ -280,7 +280,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterAmbiguousCommit()).rejects.toThrow('graph teardown failed');
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledTimes(2);
         expect(mocks.clearReportedLatency).toHaveBeenCalledOnce();
-        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledOnce();
     });
 
     it.each([
@@ -310,7 +310,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterAmbiguousCommit()).rejects.toThrow(initialResult.reason);
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledTimes(2);
         expect(mocks.clearReportedLatency).toHaveBeenCalledOnce();
-        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledOnce();
     });
 
     it('keeps a failed deferred plugin unload retryable without repeating finalized graph teardown', async () => {
@@ -320,7 +320,9 @@ describe('prepareRemoveDevice', () => {
             devices: [createExternalDevice('d1', 'inst1')],
         } as unknown as Track;
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
-        mocks.unloadPlugin.mockRejectedValueOnce(new Error('host teardown failed')).mockResolvedValueOnce(undefined);
+        mocks.unloadPluginCarryingLiveState
+            .mockRejectedValueOnce(new Error('host teardown failed'))
+            .mockResolvedValueOnce(undefined);
 
         const result = prepareRemoveDevice('d1');
         if (typeof result === 'string') {
@@ -331,7 +333,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterCommit()).rejects.toThrow('host teardown failed');
         await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
-        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledTimes(2);
     });
 
     it('keeps a failed deferred strip teardown retryable without repeating finalized device removal', async () => {
@@ -370,7 +372,7 @@ describe('prepareRemoveDevice', () => {
         }
         await result.afterAmbiguousCommit();
 
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
         expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
             trackId: 't1',
             activateDormantExternalPlugins: true,
@@ -396,8 +398,8 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.deactivateTrackStrip.mock.invocationCallOrder[0]!
         );
-        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledTimes(1);
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledWith('instance-1');
     });
 
     it('drops reported latency for every sibling plugin the strip teardown unloads', async () => {
@@ -419,7 +421,10 @@ describe('prepareRemoveDevice', () => {
         await result.afterCommit();
 
         expect(mocks.deactivateTrackStrip).toHaveBeenCalledWith('folder-1');
-        expect(mocks.unloadPlugin.mock.calls.map(([id]) => id).sort()).toEqual(['instance-1', 'instance-2']);
+        expect(mocks.unloadPluginCarryingLiveState.mock.calls.map(([id]) => id).sort()).toEqual([
+            'instance-1',
+            'instance-2',
+        ]);
         expect(clearedLatencyDeviceIds()).toEqual(['external-1', 'external-2']);
     });
 
@@ -437,7 +442,7 @@ describe('prepareRemoveDevice', () => {
         removeDevice('external-1');
 
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
+        expect(mocks.unloadPluginCarryingLiveState.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
         expect(clearedLatencyDeviceIds()).toEqual(['external-1']);
     });
 
@@ -452,7 +457,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
     });
 
     it('retains a live folder strip when another Toaster remains', () => {
@@ -485,8 +490,8 @@ describe('prepareRemoveDevice', () => {
             expect.objectContaining({ operation: 'remove-device' })
         );
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledTimes(1);
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledWith('instance-1');
     });
 
     it('fails closed for duplicate device occurrences before truth or runtime cleanup', () => {
@@ -501,7 +506,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
     });
 
     it('returns missing without truth or runtime cleanup', () => {
@@ -565,7 +570,7 @@ describe('prepareRemoveDevice', () => {
 
         expect(mocks.deactivateTrackStrip).toHaveBeenCalledWith('folder-1');
         // Only the external sibling is unloaded; the builtin sibling is not.
-        expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
+        expect(mocks.unloadPluginCarryingLiveState.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
     });
 
     it('reports a post-commit compiled removal failure without logging it away', async () => {
@@ -587,7 +592,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.mapAllTracks).toHaveBeenCalledOnce();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -610,7 +615,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterCommit()).rejects.toThrow(runtimeResult.reason);
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
     });
 
     it('permits dormant VCA device and plugin cleanup', () => {
@@ -625,7 +630,7 @@ describe('prepareRemoveDevice', () => {
             expect.objectContaining({ operation: 'remove-device' })
         );
         expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.unloadPluginCarryingLiveState).toHaveBeenCalledWith('inst1');
         expect(mocks.mapAllTracks).toHaveBeenCalled();
     });
 });

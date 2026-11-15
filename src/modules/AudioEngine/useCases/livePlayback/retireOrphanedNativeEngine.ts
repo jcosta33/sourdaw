@@ -21,6 +21,14 @@
  * forgotten before the offer is published, or the re-armed session attaches
  * dead instances and no later batch reloads them.
  *
+ * ── Live plugin state is read before the retire ───────────────────────────
+ *
+ * The retire drops the plugin runtimes, so unsaved edits are read first and
+ * carried to the re-arm's reactivation — committed only for the ids a
+ * `retired` outcome names. The engine is not rendering here, so a plugin with
+ * parameter writes still awaiting audio processing fails its read, and
+ * PluginHost warns the user rather than carrying a stale state.
+ *
  * ── `no-engine` disposes, and offers nothing ──────────────────────────────
  *
  * The slot was already empty, so nothing was retired: there are no plugins to
@@ -57,7 +65,10 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { forgetRetiredPluginInstances } from '#/modules/PluginHost/useCases';
+import {
+    forgetRetiredPluginInstances,
+    readExternalPluginStatesBeforeEngineRetire,
+} from '#/modules/PluginHost/useCases';
 
 import { retireNativeEngine } from '../../repositories/engineLifecycle/retireNativeEngine';
 import { defaultNativeEngineRearmState, nativeEngineRearmStore } from '../../stores/nativeEngineRearmStore';
@@ -94,6 +105,7 @@ export function retireOrphanedNativeEngine(): Promise<void> {
         if (orphan === null) {
             return;
         }
+        const liveStates = await readExternalPluginStatesBeforeEngineRetire();
         try {
             const result = await retireNativeEngine();
             if (result.outcome === 'rendering') {
@@ -106,6 +118,7 @@ export function retireOrphanedNativeEngine(): Promise<void> {
             if (result.outcome === 'no-engine') {
                 return;
             }
+            liveStates.commit(result.retiredInstanceIds);
             forgetRetiredPluginInstances(result.retiredInstanceIds);
             if (nativeLiveGraphSession.startsPending > 0) {
                 // A start is pending — requested inside this round trip, or

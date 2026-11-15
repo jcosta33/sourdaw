@@ -66,10 +66,12 @@ import {
     markExternalPluginParameterSnapshotsAttached,
 } from '../../stores/externalPluginParameterStore';
 
+import { commitCarriedLiveStates } from './commitCarriedLiveStates';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { forgetPluginInstance } from './forgetPluginInstance';
 import { forwardReleasedStripReports } from './forwardReleasedStripReports';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 function reconcileUnloadResult(
@@ -131,16 +133,37 @@ async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
     }
 }
 
-export function unloadPlugin(instanceId?: string): Promise<void> {
-    if (instanceId === undefined) {
-        externalPluginStateCaptureAuthority.invalidateAll();
-        return unloadWithRetractedMirror();
-    }
+/** Run `unloadLoaded` on the instance's lifecycle turn, only while it is still loaded. */
+function scheduleKeyedUnload(instanceId: string, unloadLoaded: () => Promise<void>): Promise<void> {
     externalPluginStateCaptureAuthority.invalidate(instanceId);
     return serializePluginLifecycle(instanceId, () => {
         if (!loadedExternalInstances.has(instanceId)) {
             return Promise.resolve();
         }
-        return unloadWithRetractedMirror(instanceId);
+        return unloadLoaded();
+    });
+}
+
+export function unloadPlugin(instanceId?: string): Promise<void> {
+    if (instanceId === undefined) {
+        externalPluginStateCaptureAuthority.invalidateAll();
+        return unloadWithRetractedMirror();
+    }
+    return scheduleKeyedUnload(instanceId, () => unloadWithRetractedMirror(instanceId));
+}
+
+/**
+ * Unload one instance the app will reactivate later — a removed device that
+ * Undo restores, or a sibling a strip deactivation takes down — carrying its
+ * live state to that reactivation. Other teardowns use `unloadPlugin`.
+ */
+export function unloadPluginCarryingLiveState(instanceId: string): Promise<void> {
+    return scheduleKeyedUnload(instanceId, async () => {
+        const reads = await readLiveStatesForTeardown([instanceId], 'inside-lifecycle');
+        try {
+            await unloadWithRetractedMirror(instanceId);
+        } finally {
+            commitCarriedLiveStates(reads, loadedExternalInstances.has(instanceId) ? [] : [instanceId]);
+        }
     });
 }

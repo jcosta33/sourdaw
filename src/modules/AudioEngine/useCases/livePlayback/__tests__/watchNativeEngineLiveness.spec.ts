@@ -38,6 +38,7 @@ vi.mock('../../../repositories/engineLifecycle/retireNativeEngine', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     forgetRetiredPluginInstances: (instanceIds: readonly string[]) => mocks.forgetRetiredPluginInstances(instanceIds),
+    readExternalPluginStatesBeforeEngineRetire: () => Promise.resolve({ commit: () => undefined }),
 }));
 vi.mock('../startNativeEnginePlayheadFeed', () => ({ startNativeEnginePlayheadFeed: vi.fn() }));
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({

@@ -1,5 +1,5 @@
 import { clearReportedLatency, deactivateTrackStrip } from '#/modules/AudioEngine/useCases';
-import { unloadPlugin } from '#/modules/PluginHost/useCases';
+import { unloadPluginCarryingLiveState } from '#/modules/PluginHost/useCases';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -168,7 +168,9 @@ export function prepareRemoveDevice(
                 continue;
             }
             try {
-                await unloadPlugin(instanceId);
+                // Undo, or the strip's reactivation, reloads this instance; its
+                // unsaved edits ride across the unload to that reload.
+                await unloadPluginCarryingLiveState(instanceId);
                 finalizedExternalInstanceIds.add(instanceId);
             } catch (error) {
                 throw manualRepairFailure(`Plugin host teardown failed for instance ${instanceId}`, error);

@@ -8,7 +8,7 @@ import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptur
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
-function preservationReason(instanceId: string): 'restore-failed' | 'restore-pending' | 'not-loaded' | null {
+export function preservationReason(instanceId: string): 'restore-failed' | 'restore-pending' | 'not-loaded' | null {
     if (externalPluginRestoreFailures.has(instanceId)) {
         return 'restore-failed';
     }

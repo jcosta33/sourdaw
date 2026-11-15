@@ -24,6 +24,8 @@ import type { RetireNativeEngineResult } from '../../../models/RetireNativeEngin
 const mocks = vi.hoisted(() => ({
     retireNativeEngine: vi.fn<() => Promise<RetireNativeEngineResult>>(),
     forgetRetiredPluginInstances: vi.fn<(instanceIds: readonly string[]) => void>(),
+    readLiveStates: vi.fn<() => Promise<{ readonly commit: (retiredInstanceIds: readonly string[]) => void }>>(),
+    commitLiveStates: vi.fn<(retiredInstanceIds: readonly string[]) => void>(),
     warn: vi.fn(),
 }));
 
@@ -39,6 +41,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
         ...actual,
         forgetRetiredPluginInstances: (instanceIds: readonly string[]) =>
             mocks.forgetRetiredPluginInstances(instanceIds),
+        readExternalPluginStatesBeforeEngineRetire: () => mocks.readLiveStates(),
     };
 });
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -68,6 +71,9 @@ describe('retireOrphanedNativeEngine', () => {
     beforeEach(() => {
         mocks.retireNativeEngine.mockReset();
         mocks.forgetRetiredPluginInstances.mockReset();
+        mocks.commitLiveStates.mockReset();
+        mocks.readLiveStates.mockReset();
+        mocks.readLiveStates.mockResolvedValue({ commit: mocks.commitLiveStates });
         mocks.warn.mockClear();
         nativeEngineRearmStore.set(defaultNativeEngineRearmState);
         nativeLiveGraphSession.backend = null;
@@ -116,6 +122,54 @@ describe('retireOrphanedNativeEngine', () => {
         // PluginHost still believes is live, so the offer's subscriber must see
         // the forget already done, not merely queued.
         expect(forgetCallsSeenByOffer).toBe(1);
+    });
+
+    it('reads live plugin state before the retire and commits it for the destroyed instances first', async () => {
+        const orphan = fakeBackend();
+        nativeLiveGraphSession.orphanedBackend = orphan;
+        const order: string[] = [];
+        mocks.readLiveStates.mockImplementation(() => {
+            order.push('read');
+            return Promise.resolve({ commit: mocks.commitLiveStates });
+        });
+        mocks.retireNativeEngine.mockImplementation(() => {
+            order.push('retire');
+            return Promise.resolve({ outcome: 'retired', retiredInstanceIds: ['inst-1', 'inst-2'] });
+        });
+        mocks.commitLiveStates.mockImplementation(() => {
+            order.push('commit');
+        });
+        mocks.forgetRetiredPluginInstances.mockImplementation(() => {
+            order.push('forget');
+        });
+
+        await retireOrphanedNativeEngine();
+
+        // Native drops the plugin runtimes inside the retire, so the read must
+        // already have run; the commit must precede the forget, or the next
+        // activation could start before the carry exists.
+        expect(order).toEqual(['read', 'retire', 'commit', 'forget']);
+        expect(mocks.commitLiveStates).toHaveBeenCalledWith(['inst-1', 'inst-2']);
+    });
+
+    it.each([
+        ['the engine came back', () => Promise.resolve({ outcome: 'rendering' as const, retiredInstanceIds: [] })],
+        ['the slot was empty', () => Promise.resolve({ outcome: 'no-engine' as const, retiredInstanceIds: [] })],
+        ['the answer was unreadable', () => Promise.reject(new Error('unrecognized outcome'))],
+    ])('commits no carried state when %s', async (_label, answer) => {
+        nativeLiveGraphSession.orphanedBackend = fakeBackend();
+        mocks.retireNativeEngine.mockImplementation(answer);
+
+        await retireOrphanedNativeEngine();
+
+        expect(mocks.readLiveStates).toHaveBeenCalledTimes(1);
+        expect(mocks.commitLiveStates).not.toHaveBeenCalled();
+    });
+
+    it('reads no plugin state when there is no orphan', async () => {
+        await retireOrphanedNativeEngine();
+
+        expect(mocks.readLiveStates).not.toHaveBeenCalled();
     });
 
     it('drops a spent orphan on an empty slot without offering anything to re-arm', async () => {
