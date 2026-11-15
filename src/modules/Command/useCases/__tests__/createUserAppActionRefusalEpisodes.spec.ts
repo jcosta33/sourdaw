@@ -5,7 +5,10 @@ import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
-import { createUserAppActionRefusalEpisodes } from '../createUserAppActionRefusalEpisodes';
+import {
+    createUserAppActionRefusalEpisodes,
+    type UserAppActionRefusalEpisodes,
+} from '../createUserAppActionRefusalEpisodes';
 import { executeAppAction } from '../executeAppAction';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
@@ -499,6 +502,30 @@ describe('createUserAppActionRefusalEpisodes', () => {
 
             expect(onAdmitted).not.toHaveBeenCalled();
         });
+
+        it.each([
+            ['end', (episodes: UserAppActionRefusalEpisodes) => episodes.end('A')],
+            ['endAll', (episodes: UserAppActionRefusalEpisodes) => episodes.endAll()],
+        ])(
+            'does not deliver a refusal admitted by the time it lands when %s() ran while it was dispatched',
+            async (_name, endKey) => {
+                const onAdmitted = vi.fn();
+                const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+                lock();
+                const dispatch = Promise.withResolvers<void>();
+                vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+                const outcome = episodes.execute('A', action);
+
+                endKey(episodes);
+                unlock();
+                dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+                await expect(outcome).resolves.toBe('refused');
+                await afterMicrotasks();
+
+                expect(onAdmitted).not.toHaveBeenCalled();
+                expect(notifyUser).not.toHaveBeenCalled();
+            }
+        );
 
         it('opens no episode for a refusal whose project was replaced while it was dispatched', async () => {
             const onAdmitted = vi.fn();
