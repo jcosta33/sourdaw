@@ -8,6 +8,12 @@
 //! workers, so an editor call has to be carried to the shell's thread and its
 //! answer carried back.
 //!
+//! The same carry serves a runtime's construction and its teardown, which both
+//! formats bind to the host's main thread as well: VST3 module entry, factory
+//! use and component `initialize`, CLAP `plugin.init` and `destroy`. Off it a
+//! plugin whose module startup builds a Qt application trips a macOS
+//! main-queue assertion and takes the whole app down.
+//!
 //! Two rules keep that carry from deadlocking, and neither is optional.
 //!
 //! The first is that the claim stays behind. An editor command takes the
@@ -218,6 +224,43 @@ pub fn call_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     answered
         .try_recv()
         .map_err(|_| "The shell's UI thread ran the editor call without answering".to_string())
+}
+
+/// Drop `value` on the UI thread, or hand it back with the reason it could not
+/// be.
+///
+/// Dropping a hosted runtime is a plugin's teardown — CLAP `deactivate` and
+/// `destroy`, VST3 `setActive(false)`, `terminate` and the module's exit — and
+/// both formats bind those to the main thread. [`call_on_ui_thread`] cannot
+/// carry it: a call it gives up on is withdrawn by dropping its closure on the
+/// caller's thread, which would run the very teardown this exists to move. Here
+/// the value waits in a slot the closure only empties, so a hop that never ran
+/// leaves the value where the caller can take it back and try again later.
+pub fn release_on_ui_thread<Ui, Value>(ui: &Ui, value: Value) -> Result<(), (Value, String)>
+where
+    Ui: UiThread + ?Sized,
+    Value: Send + 'static,
+{
+    let slot = Arc::new(Mutex::new(Some(value)));
+    let released = Arc::clone(&slot);
+    let outcome = call_on_ui_thread(ui, move || {
+        let value = take_slot(&released);
+        drop(value);
+    });
+    match (outcome, take_slot(&slot)) {
+        (Err(reason), Some(value)) => Err((value, reason)),
+        // The closure emptied the slot, so the drop ran on the UI thread
+        // whatever the hop reported about its own wait.
+        _ => Ok(()),
+    }
+}
+
+/// Empty the slot, ignoring poison: a panic inside the value's own drop has
+/// already taken it out, and what is left still says what it always said.
+fn take_slot<Value>(slot: &Mutex<Option<Value>>) -> Option<Value> {
+    slot.lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
 }
 
 /// A `&mut` lent to the UI thread for exactly one call.
@@ -547,5 +590,61 @@ mod tests {
             !ran.load(Ordering::Acquire),
             "work reported as never having run must not run on a later pass"
         );
+    }
+
+    /// A value whose drop records the thread that ran it, standing in for a
+    /// plugin runtime whose drop is the plugin's own teardown.
+    struct DropRecorder(Arc<Mutex<Vec<ThreadId>>>);
+
+    impl Drop for DropRecorder {
+        fn drop(&mut self) {
+            self.0
+                .lock()
+                .expect("drop log")
+                .push(thread::current().id());
+        }
+    }
+
+    /// The release's whole purpose: the drop happens on the UI thread, not on
+    /// the caller's.
+    #[test]
+    fn a_released_value_is_dropped_on_the_ui_thread() {
+        let ui = DedicatedUiThread::start();
+        let dropped_on = Arc::new(Mutex::new(Vec::new()));
+
+        release_on_ui_thread(&ui, DropRecorder(Arc::clone(&dropped_on)))
+            .map_err(|(_, reason)| reason)
+            .expect("the release runs");
+
+        assert_ne!(ui.thread_id, thread::current().id());
+        assert_eq!(*dropped_on.lock().expect("drop log"), [ui.thread_id]);
+    }
+
+    /// A hop that never lands must hand the value back undropped. Withdrawing
+    /// a closure that owned it would drop it right here, on the caller's
+    /// thread — the very teardown the release exists to move.
+    #[test]
+    fn a_release_whose_hop_never_lands_hands_the_value_back_undropped() {
+        struct Refusing;
+        impl UiThread for Refusing {
+            fn is_ui_thread(&self) -> bool {
+                false
+            }
+            fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
+                Err("the shell's loop is gone".to_string())
+            }
+        }
+        let dropped_on = Arc::new(Mutex::new(Vec::new()));
+
+        let (value, reason) =
+            release_on_ui_thread(&Refusing, DropRecorder(Arc::clone(&dropped_on)))
+                .expect_err("a refused hop cannot have released anything");
+
+        assert_eq!(reason, "the shell's loop is gone");
+        assert!(
+            dropped_on.lock().expect("drop log").is_empty(),
+            "the value must come back whole, not be dropped on the way"
+        );
+        drop(value);
     }
 }

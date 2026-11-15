@@ -130,6 +130,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     commitUndoEntry: vi.fn(),
     createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     executeAppActionBatch: mocks.executeAppActionBatch,

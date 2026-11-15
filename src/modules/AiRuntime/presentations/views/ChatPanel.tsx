@@ -1,4 +1,13 @@
-import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
+import {
+    type ReactElement,
+    type ReactNode,
+    type CSSProperties,
+    useState,
+    useRef,
+    useEffect,
+    useId,
+    type KeyboardEvent,
+} from 'react';
 
 import {
     X,
@@ -45,6 +54,7 @@ import { cancelPendingChatActions } from '../../useCases/cancelPendingChatAction
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { getAgentApprovalView } from '../../useCases/getAgentApprovalView';
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
+import { listMeasuredPreviewAuditionTargetIds } from '../../useCases/listMeasuredPreviewAuditionTargetIds';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { reproposePendingChatActions } from '../../useCases/reproposePendingChatActions';
@@ -56,6 +66,7 @@ import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls
 import { AnswerEvidenceDisclosure } from '../components/AnswerEvidenceDisclosure';
 import { ChatComposer } from '../components/ChatComposer';
 
+import { MeasuredPreviewAudition } from './MeasuredPreviewAudition';
 import {
     RetainedSectionRenderManualReview,
     type RetainedSectionRenderPreviewCoordinator,
@@ -235,6 +246,15 @@ const ChatMessageItem = ({
                         </ul>
                     </div>
                 )}
+                {approval?.status === 'proposed' &&
+                listMeasuredPreviewAuditionTargetIds(approval.confirmationId).length > 0 ? (
+                    // The chat has no partial selection, so the comparison covers every intent group.
+                    <MeasuredPreviewAudition
+                        confirmationId={approval.confirmationId}
+                        selectedIntentGroupIds={approval.intentGroups.map((group) => group.id)}
+                        surface="chat"
+                    />
+                ) : null}
                 {pendingConfirmationId ? (
                     <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button
@@ -328,9 +348,11 @@ const ChatMessageItem = ({
 
 type ChatPanelProps = {
     style?: CSSProperties;
+    /** Names the model answering the current turn; the shell supplies it, since it owns the badge. */
+    routeBadge?: ReactNode;
 };
 
-export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
+export const ChatPanel = ({ style, routeBadge }: ChatPanelProps): ReactElement => {
     // Backend availability reads the subscribed BrowserAi runtime state.
     'use no memo';
 
@@ -637,11 +659,13 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     </Row>
                 }
             >
-                {!llmAvailable ? (
+                {llmAvailable ? (
+                    routeBadge
+                ) : (
                     <span className="ml-1 rounded-sm border border-destructive/20 bg-destructive/10 px-1.5 py-[2px] text-[9px] capitalize tracking-normal text-destructive">
                         {isCheckingLlmAvailability ? 'Checking AI availability' : 'AI Not Available'}
                     </span>
-                ) : null}
+                )}
             </DawHeaderBand>
             <AgentRunDecisionControls
                 decisions={decisionRuns}

@@ -63,6 +63,7 @@ import {
     spawnRun,
 } from '../githubAppIdentity.ts';
 import { TRUSTED_GH_PATH_ENV } from '../prContract.ts';
+import { createIsolatedGitDirectory, releaseIsolatedGitDirectory } from '../tokenBearingChildPlacement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -1565,10 +1566,9 @@ describe('sterile Git child environments', () => {
                 join(root, 'hooks', 'reference-transaction'),
                 `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`
             );
-            const fetchArgs = [
-                `--git-dir=${join(repository, '.git')}`,
-                ...gitAuthenticatedArgs('ghs_sentinel', join(root, 'helper'), ['fetch', source, 'main']),
-            ];
+            // The caller's GH_TOKEN alone makes the child token-bearing; a credential helper would
+            // need a transport-created git directory, which no lane config reaches.
+            const fetchArgs = [`--git-dir=${join(repository, '.git')}`, 'fetch', source, 'main'];
             const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
 
             spawnCapture('git', fetchArgs, { cwd: repository, env });
@@ -1657,17 +1657,28 @@ describe('sterile Git child environments', () => {
             expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
                 'repository config defines hook.lane.event'
             );
-            const credentialArgs = [
-                `--git-dir=${join(repository, '.git')}`,
-                '-c',
-                'credential.helper=',
-                '-c',
-                'credential.helper=!true',
-                ...fetchArgs,
-            ];
-            expect(() =>
-                spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
-            ).toThrow('repository config defines hook.lane.event');
+            // A credential-holding child must run in a transport-created git directory; one whose
+            // config defines a hook still refuses.
+            const isolated = createIsolatedGitDirectory();
+            try {
+                fixtureGit(root, ['init', '-q', '--bare', isolated]);
+                fixtureGit(root, ['--git-dir', isolated, 'config', 'hook.lane.event', 'reference-transaction']);
+                fixtureGit(root, ['--git-dir', isolated, 'config', 'hook.lane.command', program]);
+                const credentialArgs = [
+                    `--git-dir=${isolated}`,
+                    '-c',
+                    'credential.helper=',
+                    '-c',
+                    'credential.helper=!true',
+                    ...fetchArgs,
+                ];
+                expect(() =>
+                    spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
+                ).toThrow('repository config defines hook.lane.event');
+            } finally {
+                releaseIsolatedGitDirectory(isolated);
+                rmSync(isolated, { recursive: true, force: true });
+            }
             expect(existsSync(leaked)).toBe(false);
 
             // The fixed-name overrides alone do not stop a config-defined hook: it runs beside the token.
@@ -1864,12 +1875,13 @@ describe('token-bearing gh children start their git outside every repository', (
             tokenEnv: NodeJS.ProcessEnv;
             tokenFreeEnv: NodeJS.ProcessEnv;
             observed: () => Observed;
-        }) => void
+        }) => void,
+        ghFileName = 'gh'
     ): void {
         withScratch('sourdaw-gh-child-', (root) => {
             const repository = join(root, 'repository');
             const record = join(root, 'record');
-            const gh = join(root, 'bin', 'gh');
+            const gh = join(root, 'bin', ghFileName);
             mkdirSync(repository);
             mkdirSync(dirname(gh));
             fixtureGit(repository, ['init', '-q', '-b', 'main']);
@@ -1939,6 +1951,21 @@ describe('token-bearing gh children start their git outside every repository', (
             expect(observed.cwd).not.toBe(f.repository);
             expect(existsSync(observed.cwd)).toBe(false);
         });
+    });
+
+    it('moves a token-bearing gh child out of the repository when the trusted gh is the gh.exe Windows resolves', () => {
+        withGhFixture((f) => {
+            spawnCapture('gh', ['pr', 'view', '1', '--repo', 'jcosta33/sourdaw', '--json', 'state'], {
+                cwd: f.repository,
+                env: f.tokenEnv,
+            });
+
+            const observed = f.observed();
+            expect(observed.token).toBe(sentinel);
+            expect(observed.cwd).not.toBe(f.repository);
+            expect(observed.toplevel).toBe('');
+            expect(observed.marker).toBe('');
+        }, 'gh.exe');
     });
 
     it('keeps the gh child out of the repository when the temporary directory lies inside it and the caller names its git dir', () => {

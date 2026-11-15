@@ -27,7 +27,6 @@ import {
     spawnCapture,
     spawnRun,
     tokenFreeGitEnv,
-    withGhChildLocation,
     type GhSession,
     type PublishingAuthorAuthorization,
 } from './githubAppIdentity.ts';
@@ -88,6 +87,7 @@ import {
     writeLaneStack,
 } from './stackedLanes.ts';
 import { assertObservableTestInstructions } from './testInstructions.ts';
+import { withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 export { canonicalPath, containsPath };
 

@@ -32,6 +32,7 @@ import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { describePlannedAction } from './describePlannedAction';
 import { executePromptActionGroup } from './executePromptActionGroup';
 import { getProjectContext } from './getProjectContext';
+import { handPromptRequestToChat } from './handPromptRequestToChat';
 import { notifyAiAnswer } from './notifyAiAnswer';
 import { notifyAiChange } from './notifyAiChange';
 import { parsePromptToActions } from './parsePromptToActions';
@@ -59,7 +60,9 @@ export type SubmitAdmittedPromptRequestResult =
           status: Awaited<ReturnType<typeof executePromptActionGroup>>['status'] | 'rejected';
           runId: string;
       }
-    | { status: 'awaiting-approval'; runId: string; confirmationId: string };
+    | { status: 'awaiting-approval'; runId: string; confirmationId: string }
+    /** The request runs in the agent chat instead; the Prompt Bar shows no approval of its own. */
+    | { status: 'handed-off'; runId: string };
 
 function getPromptRunMode(_source: PromptRequestSource): AgentExecutionMode {
     return 'apply';
@@ -254,6 +257,7 @@ export async function submitAdmittedPromptRequest(
                 prompt,
                 signal: input.signal,
                 streamIdentity: { runId, requestId: `prompt-planning:${runId}`, cancellationGeneration: 0 },
+                chatHandOff: true,
                 onProviderAttempt: ({ backend, correlationId, estimatedTotalTokens, estimate }) => {
                     const category = backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
                     const reservation = agentRunLifecycle.reserveBudget({
@@ -354,14 +358,27 @@ export async function submitAdmittedPromptRequest(
             }
             return { status: 'no-op', runId };
         }
+        if (planningOutcome?.kind === 'chat-hand-off') {
+            await releasePlanOwnedStemResources();
+            if (input.signal?.aborted) {
+                await cancelAfterAbort();
+                return { status: 'rejected', runId };
+            }
+            const handOff = handPromptRequestToChat({
+                prompt,
+                reason: planningOutcome.reason,
+                endPromptRun: (phase) => transitionTerminalRun(runId, phase),
+            });
+            return handOff === 'handed-off' ? { status: 'handed-off', runId } : { status: 'rejected', runId };
+        }
         if (planned.result.rejectionReason) {
             transitionTerminalRun(runId, 'failed');
             await releasePlanOwnedStemResources();
             notifyAiChange(`Command not executed: ${planned.result.rejectionReason}`, []);
             return { status: 'rejected', runId };
         }
-        // The prompt bar approves and executes one batch; a request that runs as successive batches,
-        // each with its own approval, belongs in the agent chat that proposes them one at a time.
+        // The prompt bar approves and executes one batch. Its planner hands a schedule to the chat above;
+        // a schedule reaching here without that outcome is still never approved as one batch.
         if (planned.result.batchSchedule !== undefined) {
             transitionTerminalRun(runId, 'failed');
             await releasePlanOwnedStemResources();
