@@ -2178,8 +2178,8 @@ describe('git children the launcher resolves to git.exe', () => {
         });
     });
 
-    it('treats a git.exe named by absolute path as git', () => {
-        withLinkedGit('git.exe', ({ root, git }) => {
+    it.each(['git.exe', 'GIT.EXE'])('treats a %s named by absolute path as git', (fileName) => {
+        withLinkedGit(fileName, ({ root, git }) => {
             expect(
                 spawnCapture(git, tokenProbe, { cwd: root, env: githubChildEnv(sentinel, join(root, 'gh-config')) })
             ).toBe('[]');
