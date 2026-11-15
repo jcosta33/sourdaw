@@ -1417,9 +1417,11 @@ class AutomergeRepository {
     async loadAll({
         bundle,
         shouldCommit,
+        onInstalled,
     }: {
         bundle: DocumentBundle;
         shouldCommit?: () => boolean;
+        onInstalled?: (headsByDoc: Map<DocId, Heads>) => void;
     }): Promise<boolean> {
         if (bundle.size === 0) {
             return false;
@@ -1464,6 +1466,11 @@ class AutomergeRepository {
             this.captureWorkerShadowHeads();
         }
         this.markDocumentIdentityMutation();
+        // Capture the installed bundle before observers can author more changes.
+        // Durable-load callers pair these heads with the authority of these bytes.
+        if (onInstalled) {
+            onInstalled(new Map(Array.from(documents, ([id, document]) => [id, getHeads(document)])));
+        }
         this.notifyRootInstallation();
         this.notifyListeners();
         return true;

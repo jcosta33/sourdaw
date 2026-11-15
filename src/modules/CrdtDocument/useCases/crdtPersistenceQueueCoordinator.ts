@@ -168,6 +168,8 @@ export type CrdtPersistenceOperation = 'incremental' | 'compact' | RootLineageTr
 type LoadCrdtPersistenceOperationResult = {
     loaded: boolean;
     snapshot: CrdtPersistenceSnapshot | null;
+    /** Only heads captured while installing this exact durable bundle, before observers run. */
+    durableHeadsByDoc?: Map<DocId, string[]>;
 };
 
 export type LoadCrdtPersistenceOperation = (input: {
@@ -381,6 +383,9 @@ function runCrdtPersistenceLoad(operation: LoadCrdtPersistenceOperation): Promis
         }
         if (result.snapshot) {
             adoptPersistenceSnapshot(result.snapshot);
+            if (result.loaded && result.durableHeadsByDoc) {
+                persistenceState.exportFrontiers = new Map(result.durableHeadsByDoc);
+            }
         }
         return result.loaded;
     });

@@ -1,4 +1,4 @@
-import { change, init, load, save, toJS } from '@automerge/automerge';
+import { change, getHeads, init, load, save, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -61,6 +61,53 @@ describe('active root installations', () => {
         const count = observed.length;
         repository.createProject('next');
         expect(observed).toHaveLength(count);
+    });
+
+    it('captures loaded document heads before root installation and change listeners can edit them', async () => {
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'loadBundle') {
+                queueMicrotask(() => respondToLoad(worker, request));
+            }
+        };
+        const { automergeRepository: repository } = await import('../automergeRepository');
+        const root = change(init<{ baseline?: boolean }>(), (doc) => {
+            doc.baseline = true;
+        });
+        const child = change(init<{ baseline?: boolean }>(), (doc) => {
+            doc.baseline = true;
+        });
+        const captured: Array<Map<string, string[]>> = [];
+        repository.onRootInstallation(() => {
+            expect(captured).toHaveLength(1);
+            repository.changeDoc('root', (doc: { publication?: boolean }) => {
+                doc.publication = true;
+            });
+        });
+        repository.onChange((id) => {
+            if (id) {
+                return;
+            }
+            repository.changeDoc('child', (doc: { listener?: boolean }) => {
+                doc.listener = true;
+            });
+        });
+        expect(
+            await repository.loadAll({
+                bundle: new Map([
+                    ['root', save(root)],
+                    ['child', save(child)],
+                ]),
+                onInstalled: (heads) => captured.push(heads),
+            })
+        ).toBe(true);
+        expect(captured).toEqual([
+            new Map([
+                ['root', getHeads(root)],
+                ['child', getHeads(child)],
+            ]),
+        ]);
+        expect(repository.getHeads('root')).not.toEqual(getHeads(root));
+        expect(repository.getHeads('child')).not.toEqual(getHeads(child));
     });
 
     it('reports successful project creation while subscribed without publishing a change', async () => {
