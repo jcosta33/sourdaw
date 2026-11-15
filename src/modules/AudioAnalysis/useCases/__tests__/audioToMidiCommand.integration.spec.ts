@@ -385,6 +385,9 @@ describe('registered audio-to-MIDI committed creation', () => {
             Array.from({ length: 129 }, (_, index) => ({ timeSec: index * 0.15, amplitude: 0.8 }))
         );
         const realHandler = getMidiNoteTransformHandlers().addNotes;
+        if (realHandler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected synchronous project note writes');
+        }
         let calls = 0;
         clearHandlerRegistry();
         registerHandlerMap({
@@ -410,6 +413,9 @@ describe('registered audio-to-MIDI committed creation', () => {
     it('rolls back when cancellation arrives after notes stage but before commit', async () => {
         const controller = new AbortController();
         const handler = getMidiNoteTransformHandlers().addNotes;
+        if (handler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected synchronous project note writes');
+        }
         let staged = false;
         clearHandlerRegistry();
         registerHandlerMap({

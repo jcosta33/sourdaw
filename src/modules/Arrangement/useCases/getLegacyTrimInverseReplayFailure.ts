@@ -1,21 +1,14 @@
 import { type AppAction } from '#/utils/handlerContract';
 
+import { preservesTrimCoordinatesByActionType } from '../models/PreservesTrimCoordinatesByActionType';
 import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../stores/trackStore';
 
 function preservesTrimCoordinates(action: AppAction): boolean {
-    switch (action.type) {
-        case 'renameClip':
-        case 'setClipColor':
-        case 'setClipGain':
-        case 'setClipFade':
-        case 'muteClip':
-            return true;
-        default:
-            // A target-free payload can still replace or move project content.
-            // Only the known metadata operations above prove preservation here.
-            return false;
+    if (!Object.hasOwn(preservesTrimCoordinatesByActionType, action.type)) {
+        return false;
     }
+    return preservesTrimCoordinatesByActionType[action.type];
 }
 
 /**

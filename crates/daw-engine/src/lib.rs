@@ -2,6 +2,7 @@
     test,
     allow(
         clippy::unwrap_used,
+        clippy::unreachable,
         clippy::panic,
         reason = "tests assert by unwrapping and fail by panicking"
     )
@@ -888,7 +889,7 @@ impl EngineHandle {
         // store.
         self.push(GraphCommand::AddEffect(
             id,
-            PluginCore::builtin(plugin_type, self.sample_rate),
+            PluginCore::builtin(plugin_type, self.sample_rate)?,
             None,
         ))
     }
@@ -1649,10 +1650,9 @@ fn engine_handle_fixture(
     capture_refusal: Arc<AtomicU8>,
     rendering: Arc<AtomicBool>,
     output_stream_fault: Arc<AtomicU8>,
-) -> EngineHandle {
-    EngineHandle {
-        instance_id: reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)
-            .expect("fixture engine identity exhausted"),
+) -> Result<EngineHandle, String> {
+    Ok(EngineHandle {
+        instance_id: reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)?,
         command_tx,
         retired_adoption_tx,
         audio_thread: audio_thread::detached_audio_thread_handle(),
@@ -1681,23 +1681,27 @@ fn engine_handle_fixture(
         output_buffer_frames: audio_thread::new_output_buffer_frames_slot(),
         output_path_frames: audio_thread::new_output_path_frames_slot(),
         retrospective: crate::retrospective::retrospective_capture().0,
-    }
+    })
 }
 
-/// Build a handle whose commands land in the returned consumer.
+/// A command-capture handle, the consumer its commands land in, and the
+/// receiver its retirement-consumer adoptions land in.
+#[cfg(any(test, feature = "command-capture-fixture"))]
+pub type CommandCaptureFixture = (
+    EngineHandle,
+    Consumer<GraphCommand>,
+    std::sync::mpsc::Receiver<Consumer<RetiredGraphObjects>>,
+);
+
+/// Build a handle whose commands land in the returned consumer. Fails only
+/// when the process has exhausted engine instance identities.
 ///
 /// The audio thread is the only thing an `EngineHandle` cannot have in a test —
 /// it needs a real output device — and it is also the only part a command test
 /// does not exercise: a command's whole journey is the ring between this handle
 /// and [`scheduler::AudioScheduler`], which a test can drive directly.
 #[cfg(any(test, feature = "command-capture-fixture"))]
-pub fn engine_handle_for_command_capture(
-    capacity: usize,
-) -> (
-    EngineHandle,
-    Consumer<GraphCommand>,
-    std::sync::mpsc::Receiver<Consumer<RetiredGraphObjects>>,
-) {
+pub fn engine_handle_for_command_capture(capacity: usize) -> Result<CommandCaptureFixture, String> {
     let (command_tx, command_rx) = RingBuffer::new(capacity);
     let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
@@ -1708,7 +1712,7 @@ pub fn engine_handle_for_command_capture(
     let (_capture_event_tx, capture_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
-    (
+    Ok((
         engine_handle_fixture(
             command_tx,
             retired_adoption_tx,
@@ -1722,10 +1726,10 @@ pub fn engine_handle_for_command_capture(
             audio_thread::new_capture_refusal_slot(),
             audio_thread::new_render_liveness().rendering,
             audio_thread::new_output_stream_fault_slot(),
-        ),
+        )?,
         command_rx,
         retired_adoption_rx,
-    )
+    ))
 }
 
 /// A controlled input/renderer driver for cross-crate native lifecycle tests.
@@ -1775,7 +1779,7 @@ pub fn capture_lifecycle_fixture(
         parts.refusal,
         audio_thread::new_render_liveness().rendering,
         audio_thread::new_output_stream_fault_slot(),
-    );
+    )?;
     engine.capture_clock = capture_clock;
     engine.audio_thread = parts.handle;
     engine.capture_period = parts.period;
@@ -1813,10 +1817,10 @@ mod tests {
 
     #[test]
     fn native_grinder_model_engine_identity_is_unique_for_actual_handle_recreation() {
-        let (first, _, _) = engine_handle_for_command_capture(8);
+        let (first, _, _) = engine_handle_for_command_capture(8).unwrap();
         let id = first.instance_id();
         drop(first);
-        let (next, _, _) = engine_handle_for_command_capture(8);
+        let (next, _, _) = engine_handle_for_command_capture(8).unwrap();
         assert!(next.instance_id() > id);
         let exhausted = std::sync::atomic::AtomicU64::new(u64::MAX);
         assert!(reserve_engine_instance_id(&exhausted).is_err());
@@ -1830,7 +1834,7 @@ mod tests {
     /// the control side exactly as [`crate::EngineHandle::add_effect`] builds
     /// its own — the rate below is the one the capture handle reports.
     fn knead_instance() -> PluginCore {
-        PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+        PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0).unwrap()
     }
 
     /// Overwrites whatever it is handed, so a block it never touched is
@@ -1863,7 +1867,8 @@ mod tests {
     /// its instance and its state while its audio passes it by.
     #[test]
     fn set_bypass_reaches_the_scheduler_and_leaves_the_block_untouched() {
-        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (mut engine, command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16).unwrap();
         let (retired_tx, _retired_rx) = RingBuffer::new(16);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
 
@@ -1903,7 +1908,8 @@ mod tests {
     /// ring — applies against an idle engine in one drain.
     #[test]
     fn a_batch_larger_than_the_command_ring_applies_whole_against_an_idle_engine() {
-        let (mut engine, command_rx, retired_adoption_rx) = engine_handle_for_command_capture(256);
+        let (mut engine, command_rx, retired_adoption_rx) =
+            engine_handle_for_command_capture(256).unwrap();
         let (retired_tx, _old_retired_rx) = RingBuffer::new(257);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
 
@@ -1952,7 +1958,7 @@ mod tests {
     fn a_batch_leaves_the_headroom_its_caller_reserved() {
         let boot_capacity = 256;
         let (mut engine, _command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(boot_capacity);
+            engine_handle_for_command_capture(boot_capacity).unwrap();
 
         // Fence plus body is exactly the boot ring: without a reservation this
         // batch fits without provisioning and leaves nothing behind it.
@@ -1982,7 +1988,7 @@ mod tests {
     #[test]
     fn unknown_effect_types_and_parameter_names_refuse_control_side() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(16);
+            engine_handle_for_command_capture(16).unwrap();
 
         assert!(engine.add_effect(7, "not-a-real-effect").is_err());
         assert!(engine.set_effect_param(7, "not_a_real_param", 1.0).is_err());
@@ -2019,7 +2025,7 @@ mod tests {
     #[test]
     fn add_effect_refuses_a_built_in_that_sounds_notes() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(16);
+            engine_handle_for_command_capture(16).unwrap();
 
         let before = engine.registered_effect_count();
         let error = engine
@@ -2054,7 +2060,8 @@ mod tests {
     /// indistinguishable from one whose input happens to be silent.
     #[test]
     fn a_capture_consumer_past_the_reserve_or_already_on_the_bus_refuses_before_the_ring() {
-        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (mut engine, command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16).unwrap();
 
         for id in 0..CRUMBS_CAPTURE_RESERVE {
             engine
@@ -2085,7 +2092,7 @@ mod tests {
     #[test]
     fn unregistering_a_capture_consumer_frees_the_ledger_slot_it_held() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(16);
+            engine_handle_for_command_capture(16).unwrap();
 
         for id in 0..CRUMBS_CAPTURE_RESERVE {
             engine
@@ -2125,7 +2132,7 @@ mod tests {
     #[test]
     fn removing_a_plugin_frees_the_capture_ledger_slot_its_consumer_held() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(16);
+            engine_handle_for_command_capture(16).unwrap();
 
         engine
             .register_capture_consumer(7)
@@ -2158,7 +2165,8 @@ mod tests {
     /// closes that period; a later registration prepares a fresh period.
     #[test]
     fn registering_a_capture_consumer_requests_the_capture_open() {
-        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner_rx) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
 
@@ -2202,7 +2210,7 @@ mod tests {
 
     #[test]
     fn only_the_last_accepted_capture_release_closes_input() {
-        let (mut engine, mut commands, _retired) = engine_handle_for_command_capture(16);
+        let (mut engine, mut commands, _retired) = engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
         engine.register_capture_consumer(7).unwrap();
@@ -2248,7 +2256,8 @@ mod tests {
     /// pre-record audio never reaches the ring.
     #[test]
     fn arming_retrospective_capture_opens_input_without_a_capture_consumer() {
-        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner_rx) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
 
@@ -2273,7 +2282,7 @@ mod tests {
 
     #[test]
     fn arm_only_disarm_closes_capture_and_reopens_a_fresh_period() {
-        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
         engine.arm_retrospective_capture(3, 2);
@@ -2303,7 +2312,7 @@ mod tests {
 
     #[test]
     fn arm_then_take_disarm_keeps_capture_until_the_take_releases() {
-        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
         engine.arm_retrospective_capture(3, 2);
@@ -2324,7 +2333,7 @@ mod tests {
 
     #[test]
     fn take_then_arm_release_keeps_capture_until_the_arm_disarms() {
-        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
         engine.register_capture_consumer(7).unwrap();
@@ -2351,7 +2360,7 @@ mod tests {
 
     #[test]
     fn repeated_and_refused_retrospective_arms_hold_only_one_capture_period() {
-        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
         engine.arm_retrospective_capture(0, 2);
@@ -2382,7 +2391,7 @@ mod tests {
     #[test]
     fn invalid_retrospective_arm_releases_only_its_previous_holder() {
         for take_active in [false, true] {
-            let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+            let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16).unwrap();
             let (audio_thread, owner) = observed_audio_thread_handle();
             engine.audio_thread = audio_thread;
             engine.arm_retrospective_capture(3, 2);
@@ -2407,7 +2416,8 @@ mod tests {
     /// open the input on behalf of a target that was never installed.
     #[test]
     fn a_failed_retrospective_capture_arm_asks_the_owner_thread_for_nothing() {
-        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16).unwrap();
         let (audio_thread, owner_rx) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
 
@@ -2431,7 +2441,8 @@ mod tests {
     /// `OpenCapture`.
     #[test]
     fn a_register_the_ring_refuses_asks_the_owner_thread_for_nothing() {
-        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(4);
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(4).unwrap();
         let (audio_thread, owner_rx) = observed_audio_thread_handle();
         engine.audio_thread = audio_thread;
 
@@ -2464,7 +2475,8 @@ mod tests {
     /// that opens and closes recorders one at a time must keep working.
     #[test]
     fn the_capture_reserve_survives_a_full_cycle_of_removals() {
-        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64).unwrap();
 
         for id in 0..=CRUMBS_CAPTURE_RESERVE {
             engine
@@ -2482,7 +2494,7 @@ mod tests {
     #[test]
     fn consumers_registered_by_a_batch_fill_the_capture_ledger_the_typed_path_reads() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(64);
+            engine_handle_for_command_capture(64).unwrap();
 
         engine
             .send_graph_batch(
@@ -2510,7 +2522,8 @@ mod tests {
     /// never counted.
     #[test]
     fn a_batch_that_overruns_the_capture_reserve_is_refused_before_the_ring() {
-        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (mut engine, command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64).unwrap();
         let untouched = command_rx.slots();
 
         let overrun = engine
@@ -2545,7 +2558,8 @@ mod tests {
 
     #[test]
     fn a_batch_unregistration_frees_the_capture_ledger_slot_it_held() {
-        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64).unwrap();
 
         engine
             .send_graph_batch(
@@ -2662,7 +2676,7 @@ mod tests {
     #[test]
     fn a_plugin_past_the_shared_effect_table_is_refused_before_it_is_registered() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
+            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8).unwrap();
 
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
@@ -2700,7 +2714,7 @@ mod tests {
     #[test]
     fn retiring_a_plugin_returns_its_slot_to_the_shared_effect_table() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
+            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8).unwrap();
 
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
         engine
@@ -2729,7 +2743,7 @@ mod tests {
     #[test]
     fn a_graph_batch_is_admitted_against_the_whole_effect_table() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
+            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8).unwrap();
 
         // What matters is that the table is full, not which population
         // filled it.
@@ -2761,7 +2775,7 @@ mod tests {
     #[test]
     fn batch_admission_follows_the_order_the_callback_will_apply() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
+            engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8).unwrap();
 
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
         // The retirement below has to be one the callback would really apply,
@@ -2822,7 +2836,7 @@ mod tests {
     #[test]
     fn a_headroom_request_too_large_to_count_is_refused() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            engine_handle_for_command_capture(16);
+            engine_handle_for_command_capture(16).unwrap();
 
         // Any non-zero ledger makes `effect_registrations + usize::MAX`
         // overflow rather than merely exceed the ceiling.
@@ -2856,7 +2870,8 @@ mod tests {
     /// because the strips they name really hold the effects they name.
     #[test]
     fn the_ledger_matches_the_scheduler_effect_table_it_counts() {
-        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (mut engine, command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64).unwrap();
         let (retired_tx, _retired_rx) = RingBuffer::new(64);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
 
@@ -3044,7 +3059,8 @@ mod tests {
     /// effect it names, so the callback really does drop it.
     #[test]
     fn the_capture_ledger_matches_the_bus_it_claims_to_hold() {
-        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (mut engine, command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64).unwrap();
         let (retired_tx, _retired_rx) = RingBuffer::new(64);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
 
@@ -3207,7 +3223,8 @@ mod tests {
                 crate::audio_thread::new_capture_refusal_slot(),
                 crate::audio_thread::new_render_liveness().rendering,
                 crate::audio_thread::new_output_stream_fault_slot(),
-            ),
+            )
+            .unwrap(),
             command_rx,
             diagnostics_tx,
         )
@@ -3296,7 +3313,7 @@ mod tests {
         engine
             .push(GraphCommand::AddEffect(
                 7,
-                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .expect("the raw registration crosses the ring");
@@ -3447,7 +3464,8 @@ mod tests {
                 crate::audio_thread::new_capture_refusal_slot(),
                 crate::audio_thread::new_render_liveness().rendering,
                 crate::audio_thread::new_output_stream_fault_slot(),
-            ),
+            )
+            .unwrap(),
             engine_event_tx,
             capture_event_tx,
         )
@@ -3535,7 +3553,8 @@ mod tests {
             capture_refusal,
             crate::audio_thread::new_render_liveness().rendering,
             crate::audio_thread::new_output_stream_fault_slot(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             engine.drain_engine_events(),
@@ -3560,7 +3579,8 @@ mod tests {
     /// this goes red on the second assertion.
     #[test]
     fn is_rendering_reads_the_flag_the_fixture_clears() {
-        let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64).unwrap();
         assert!(engine.is_rendering());
         assert_eq!(engine.output_stream_fault(), None);
 

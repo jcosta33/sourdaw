@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TrackAlternativeStateSnapshot } from '#/utils/handlerContract';
 
+import { type TrackAlternativeStateSnapshot } from '../../events/arrangementTrackAppActions';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 

@@ -259,8 +259,20 @@ fn render(algorithm: Algorithm, sample_rate: f32, size: f32) -> Vec<f32> {
         let right = chamber.get_right_ptr();
         assert!(!left.is_null(), "{} returned a null buffer", algorithm.name);
         for offset in 0..frames {
-            let left_sample = unsafe { *left.add(offset) };
-            let right_sample = unsafe { *right.add(offset) };
+            // SAFETY: `left` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `offset < frames <= BLOCK`, which is
+            // inside that capacity.
+            let left_slot = unsafe { left.add(offset) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `right` is the instance's `out_right`, sized and bounded
+            // exactly as `out_left` above.
+            let right_slot = unsafe { right.add(offset) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer,
+            // which nothing writes before this read.
+            let right_sample = unsafe { *right_slot };
             assert!(
                 left_sample.is_finite() && right_sample.is_finite(),
                 "{} emitted a non-finite sample at frame {}",
