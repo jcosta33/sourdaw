@@ -498,6 +498,21 @@ describe('board refusals before any claim write', () => {
         expect(labels()).toContain('status:active');
         expect(claimComments(timeline()).map((entry) => entry.id)).toEqual([5000]);
     });
+
+    it('names every board left unmoved when more than one board move fails', () => {
+        const { gh, calls, labels } = fakeGh(['bug', 'status:ready'], [ROADMAP, BUGS], {
+            failItemEdit: (args) => (args.includes('PVT_roadmap') ? 'HTTP 403' : 'HTTP 502'),
+        });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 is claimed: status:active and this claim comment stay on the issue; ' +
+                'board "Sourdaw Roadmap" was not moved to In progress (HTTP 403); ' +
+                'board "Sourdaw Bugs" was not moved to In progress (HTTP 502); move them by hand'
+        );
+
+        expect(callsWith(calls, ['project', 'item-edit'])).toHaveLength(2);
+        expect(labels()).toContain('status:active');
+    });
 });
 
 describe('concurrent claims', () => {
