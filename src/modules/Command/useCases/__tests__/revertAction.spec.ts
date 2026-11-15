@@ -91,7 +91,10 @@ describe('revertAction', () => {
         clearActionReplayCapabilities();
         undoStore.set({ past: [], future: [UNDONE_ENTRY] });
         mocks.action_history_store.value = { entries: [] };
-        mocks.execute_app_action.mockResolvedValue(undefined);
+        mocks.execute_app_action.mockImplementation((_action, options) => {
+            options?.onCommitted?.();
+            return Promise.resolve();
+        });
         mocks.mark_reverted.mockReturnValue({ status: 'marked' });
     });
 
@@ -109,8 +112,9 @@ describe('revertAction', () => {
         const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
         const order: string[] = [];
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockImplementation(() => {
+        mocks.execute_app_action.mockImplementation((_action, options) => {
             order.push('execute');
+            options?.onCommitted?.();
             return Promise.resolve();
         });
         mocks.mark_reverted.mockImplementation(() => {
@@ -126,6 +130,7 @@ describe('revertAction', () => {
             undoEntryId: entry.id,
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
+            onCommitted: expect.any(Function),
         });
         expect(mocks.mark_reverted).toHaveBeenCalledWith({
             entryId: entry.id,
@@ -209,6 +214,7 @@ describe('revertAction', () => {
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         const replay = revertAction(entry.id);
+        await vi.waitFor(() => expect(mocks.execute_app_action).toHaveBeenCalledTimes(1));
         clearActionReplayCapabilities();
         if (reject_execution === undefined) {
             throw new Error('Expected replay execution to be pending');
@@ -233,6 +239,7 @@ describe('revertAction', () => {
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         const replay = revertAction(entry.id);
+        await vi.waitFor(() => expect(mocks.execute_app_action).toHaveBeenCalledTimes(1));
         clearActionReplayCapabilities();
         if (resolve_execution === undefined) {
             throw new Error('Expected replay execution to be pending');
@@ -339,6 +346,15 @@ describe('revertAction', () => {
             expect(await revertAction(entry.id)).toEqual({ status: 'executed-unmarked' });
 
             expect(undoStore.value?.future).toEqual([]);
+        });
+
+        it('should keep the redo future when the inverse returns without writing', async () => {
+            const entry = register_entry();
+            mocks.execute_app_action.mockResolvedValueOnce(undefined);
+
+            expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
+
+            expect(undoStore.value?.future).toEqual([UNDONE_ENTRY]);
         });
 
         it('should keep the redo future when the inverse conflicts', async () => {

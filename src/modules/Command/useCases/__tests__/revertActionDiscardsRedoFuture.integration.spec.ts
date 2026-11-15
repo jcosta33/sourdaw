@@ -36,6 +36,7 @@ import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 import { revertAction } from '../revertAction';
 import { syncActionReplayMetadata } from '../syncActionReplayMetadata';
 import { undo } from '../undo';
+import { undoReplayPreparationPort } from '../undoReplayPreparationPort';
 
 // Issue 6692: an out-of-order revert from the action history is a new edit, so a
 // later redo must not replay an undone relative forward (reorderSection) over the
@@ -90,6 +91,7 @@ describe('revertAction discards the redo future once its inverse lands', () => {
     });
 
     afterEach(() => {
+        undoReplayPreparationPort.setProvider(null);
         unsubscribeFromHistory();
         unsubscribeFromHistory = () => undefined;
         clearActionHistory();
@@ -138,6 +140,56 @@ describe('revertAction discards the redo future once its inverse lands', () => {
 
         await redo();
         expect(sectionOrder()).toEqual(['s2', 's3', 's1']);
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('keeps the redo future when the reverted entry is already undone by a later edit', async () => {
+        await executeAppAction({ type: 'renameSection', payload: { sectionId: 's1', name: 'Hook' } });
+        const rename = actionHistoryStore.value?.entries.find((entry) => entry.actionKind === 'renameSection');
+        if (!rename) {
+            throw new Error('Expected the section rename in the action history');
+        }
+        await executeAppAction({ type: 'renameSection', payload: { sectionId: 's1', name: 'Intro' } });
+        await executeAppAction({ type: 'reorderSection', payload: { sectionId: 's2', direction: 'right' } });
+        await undo({ stepOverConflicts: false });
+        expect(sectionOrder()).toEqual(['s1', 's2', 's3']);
+
+        await expect(revertAction(rename.id)).resolves.toEqual({ status: 'executed' });
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(sectionOrder()).toEqual(['s1', 's3', 's2']);
+    });
+
+    it('a redo started while the revert prepares waits for it and replays nothing', async () => {
+        const firstMoveId = await moveFirstSectionRightTwice();
+        await undo({ stepOverConflicts: false });
+        expect(sectionOrder()).toEqual(['s2', 's1', 's3']);
+
+        let releaseRevert: () => void = () => undefined;
+        const revertHeld = new Promise<void>((resolve) => {
+            releaseRevert = resolve;
+        });
+        let revertPreparing: () => void = () => undefined;
+        const revertStarted = new Promise<void>((resolve) => {
+            revertPreparing = resolve;
+        });
+        undoReplayPreparationPort.setProvider(async (_entries, actions) => {
+            if (actions.length > 0) {
+                revertPreparing();
+                await revertHeld;
+            }
+            return () => undefined;
+        });
+
+        const revert = revertAction(firstMoveId);
+        const racingRedo = redo();
+        await Promise.race([revertStarted, racingRedo]);
+        releaseRevert();
+
+        await expect(revert).resolves.toEqual({ status: 'executed' });
+        await racingRedo;
+        expect(sectionOrder()).toEqual(['s1', 's2', 's3']);
         expect(undoStore.value?.future).toEqual([]);
     });
 });
