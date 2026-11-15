@@ -12,10 +12,8 @@ const rows = [
 describe('projectTrackNames', () => {
     it('changes the planned names for exactly these actions', () => {
         const keep = trackNameProjectionByActionType.selectTrack;
-        const changing = Object.entries(trackNameProjectionByActionType)
-            .filter(([, entry]) => entry !== keep)
-            .map(([type]) => type)
-            .sort();
+        const changingEntries = Object.entries(trackNameProjectionByActionType).filter(([, entry]) => entry !== keep);
+        const changing = changingEntries.map(([type]) => type).sort();
         expect(changing).toEqual(
             ['addTrack', 'createBus', 'renameTrack', 'removeTrack', 'discardCreatedTrack', 'restoreTrack'].sort()
         );

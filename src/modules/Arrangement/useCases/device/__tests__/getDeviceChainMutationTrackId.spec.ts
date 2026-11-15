@@ -14,10 +14,10 @@ const track = {
 describe('getDeviceChainMutationTrackId', () => {
     it('gives a non-default answer for exactly the device-chain mutations', () => {
         const noMutation = deviceChainMutationTrackIdByActionType.selectTrack;
-        const mutating = Object.entries(deviceChainMutationTrackIdByActionType)
-            .filter(([, entry]) => entry !== noMutation)
-            .map(([type]) => type)
-            .sort();
+        const mutatingEntries = Object.entries(deviceChainMutationTrackIdByActionType).filter(
+            ([, entry]) => entry !== noMutation
+        );
+        const mutating = mutatingEntries.map(([type]) => type).sort();
         expect(mutating).toEqual(
             [
                 'addDevice',

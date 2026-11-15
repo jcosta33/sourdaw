@@ -20,10 +20,8 @@ describe('getPlannedTrackState', () => {
 
     it('plans a track for exactly the actions that create one', () => {
         const none = plannedTrackByActionType.selectTrack;
-        const creating = Object.entries(plannedTrackByActionType)
-            .filter(([, entry]) => entry !== none)
-            .map(([type]) => type)
-            .sort();
+        const creatingEntries = Object.entries(plannedTrackByActionType).filter(([, entry]) => entry !== none);
+        const creating = creatingEntries.map(([type]) => type).sort();
         expect(creating).toEqual(['addTrack', 'createBus']);
     });
 

@@ -6,10 +6,8 @@ import { createTrack } from '../Track';
 
 describe('projectsDeviceChainByActionType', () => {
     it('is true for exactly the device-chain actions', () => {
-        const projecting = Object.entries(projectsDeviceChainByActionType)
-            .filter(([, projects]) => projects)
-            .map(([type]) => type)
-            .sort();
+        const projectingEntries = Object.entries(projectsDeviceChainByActionType).filter(([, projects]) => projects);
+        const projecting = projectingEntries.map(([type]) => type).sort();
         expect(projecting).toEqual(
             [
                 'addDevice',

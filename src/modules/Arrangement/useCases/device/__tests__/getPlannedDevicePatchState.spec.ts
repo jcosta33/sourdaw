@@ -5,10 +5,10 @@ import { plannedDeviceWriteStepByActionType } from '../getPlannedDevicePatchStat
 describe('plannedDeviceWriteStepByActionType', () => {
     it('treats exactly these actions as other than a plain command step', () => {
         const plain = plannedDeviceWriteStepByActionType.selectTrack;
-        const special = Object.entries(plannedDeviceWriteStepByActionType)
-            .filter(([, entry]) => entry !== plain)
-            .map(([type]) => type)
-            .sort();
+        const specialEntries = Object.entries(plannedDeviceWriteStepByActionType).filter(
+            ([, entry]) => entry !== plain
+        );
+        const special = specialEntries.map(([type]) => type).sort();
         expect(special).toEqual(['addTrack', 'createBus', 'setFermenterPatch', 'restoreTrack'].sort());
     });
 

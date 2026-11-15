@@ -18,10 +18,8 @@ function project(livePercent: number, prior: readonly AppAction[]): number {
 describe('projectMasterGainThroughPriorBatchActions', () => {
     it('moves the master percent for exactly the two master-gain actions', () => {
         const keep = masterGainProjectionByActionType.selectTrack;
-        const moving = Object.entries(masterGainProjectionByActionType)
-            .filter(([, entry]) => entry !== keep)
-            .map(([type]) => type)
-            .sort();
+        const movingEntries = Object.entries(masterGainProjectionByActionType).filter(([, entry]) => entry !== keep);
+        const moving = movingEntries.map(([type]) => type).sort();
         expect(moving).toEqual(['restoreMasterGain', 'setMasterGain']);
     });
 

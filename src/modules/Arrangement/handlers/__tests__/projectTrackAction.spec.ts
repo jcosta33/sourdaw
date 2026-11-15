@@ -21,10 +21,8 @@ function project(actions: readonly AppAction[]): Track {
 describe('projectTrackAction', () => {
     it('marks the projected track for exactly these actions', () => {
         const keep = trackProjectionByActionType.selectTrack;
-        const marking = Object.entries(trackProjectionByActionType)
-            .filter(([, entry]) => entry !== keep)
-            .map(([type]) => type)
-            .sort();
+        const markingEntries = Object.entries(trackProjectionByActionType).filter(([, entry]) => entry !== keep);
+        const marking = markingEntries.map(([type]) => type).sort();
         expect(marking).toEqual(
             [
                 'discardDuplicatedClip',
