@@ -721,12 +721,14 @@ fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
 /// and ends by `_exit` alone.
 #[cfg(unix)]
 fn terminate_current_process(code: i32) {
-    // SAFETY: getpgrp and getpid have no preconditions and cannot fail.
-    let leads_its_group = unsafe { libc::getpgrp() == libc::getpid() };
-    if leads_its_group {
+    // SAFETY: getpid has no preconditions and cannot fail.
+    let pid = unsafe { libc::getpid() };
+    // SAFETY: getpgrp has no preconditions and cannot fail.
+    let group = unsafe { libc::getpgrp() };
+    if group == pid {
         // SAFETY: kill takes plain values; the target is this process's own
         // group, which this process leads.
-        let _ = unsafe { libc::kill(-libc::getpid(), libc::SIGKILL) };
+        let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
     }
     // SAFETY: _exit is async-signal-safe and never returns.
     unsafe { libc::_exit(code) }
@@ -1118,18 +1120,24 @@ fn tie_to_spawner_death(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     // SAFETY: getpid has no preconditions and cannot fail.
     let spawner = unsafe { libc::getpid() };
-    // SAFETY: the closure calls only prctl, getppid and _exit, all
-    // async-signal-safe, and touches no memory shared with the parent.
+    let tie = move || {
+        // A refused prctl leaves the helper's own parent watch and the
+        // spawner's deadline in force, so the spawn goes ahead.
+        // SAFETY: prctl with PR_SET_PDEATHSIG takes plain values and is
+        // async-signal-safe.
+        let _ = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) };
+        // SAFETY: getppid has no preconditions and is async-signal-safe.
+        if unsafe { libc::getppid() } != spawner {
+            // SAFETY: _exit is async-signal-safe and never returns.
+            unsafe { libc::_exit(HELPER_PARENT_GONE_EXIT_CODE) }
+        }
+        Ok(())
+    };
+    // SAFETY: the hook runs between fork and exec, and calls only prctl,
+    // getppid and _exit, all async-signal-safe; it allocates nothing and
+    // touches no memory shared with the parent.
     unsafe {
-        command.pre_exec(move || {
-            // A refused prctl leaves the helper's own parent watch and the
-            // spawner's deadline in force, so the spawn goes ahead.
-            let _ = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
-            if libc::getppid() != spawner {
-                libc::_exit(HELPER_PARENT_GONE_EXIT_CODE);
-            }
-            Ok(())
-        });
+        command.pre_exec(tie);
     }
 }
 
