@@ -308,6 +308,10 @@ async function sendChatMessage(prompt: string, options?: Parameters<typeof sendC
     chatPlanning.last = null;
     await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
+function providerCallCount(): number {
+    return runtimeMocks.generateWebLlmCompletion.mock.calls.length;
+}
+
 function lastAssistantMessage() {
     return chatStore.value?.messages.findLast((message) => message.role === 'assistant');
 }
@@ -356,6 +360,8 @@ const TWO_LEADS: ReadonlyArray<NamedTrack> = [
 ];
 
 const THREE_LEADS: ReadonlyArray<NamedTrack> = [...TWO_LEADS, ['lead-c', 'Lead']];
+
+const FOUR_LEADS: ReadonlyArray<NamedTrack> = [...THREE_LEADS, ['lead-d', 'Lead']];
 
 function setProjectTracks(tracks: ReadonlyArray<NamedTrack>): void {
     trackStore.set({
@@ -546,6 +552,52 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         );
     });
 
+    it('reads the fourth of four same-named tracks as that track', async () => {
+        setProjectTracks(FOUR_LEADS);
+        scriptProvider([[VOCALS_DOWN_3_DB]]);
+        await commitVocalsDown3Db();
+
+        await sendChatMessage('the fourth Lead too');
+        await confirmIfProposed();
+
+        expect(newestCommittedTrackIds()).toEqual(['lead-d']);
+    });
+
+    it('reads "the first First Lead" as the first of the tracks named First Lead, not a Lead', () => {
+        setProjectTracks([
+            ['first-a', 'First Lead'],
+            ['first-b', 'First Lead'],
+            ['lead-a', 'Lead'],
+            ['lead-b', 'Lead'],
+        ]);
+
+        expect(readNamedTracks('the first First Lead', getProjectContext())).toEqual({
+            status: 'named',
+            ids: ['first-a'],
+        });
+    });
+
+    it('leaves a collision phrase with a tail of its own to ordinary planning, not the rename ask', async () => {
+        setProjectTracks([
+            ['track-vocals', 'Vocals'],
+            ['lead-a', 'Lead'],
+            ['lead-b', 'Lead'],
+            ['second-lead', 'Second Lead'],
+            ['track-bass', 'Bass'],
+        ]);
+        scriptProvider([
+            [VOCALS_DOWN_3_DB],
+            [{ name: 'muteTrack', arguments: { trackId: 'track-bass', muted: true } }],
+        ]);
+        await commitVocalsDown3Db();
+        const calls = providerCallCount();
+
+        await sendChatMessage('the second Lead louder too');
+
+        expect(providerCallCount()).toBeGreaterThan(calls);
+        expect(lastAssistantMessage()?.content ?? '').not.toContain('cannot be told apart');
+    });
+
     it('takes "the first Lead" of a single Lead as that track', async () => {
         setProjectTracks([
             ['track-vocals', 'Vocals'],
@@ -572,6 +624,19 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         ['the second Lead', THREE_LEADS, 'named'],
         ['the fourth Lead', THREE_LEADS, 'ambiguous'],
         ['the second Lead', SECOND_LEAD_TRACKS, 'collision'],
+        ['the second Lead louder', SECOND_LEAD_TRACKS, 'unread'],
+        ['the third Lead louder', TWO_LEADS, 'ambiguous'],
+        ['the fourth Lead', FOUR_LEADS, 'named'],
+        [
+            'the first First Lead',
+            [
+                ['first-a', 'First Lead'],
+                ['first-b', 'First Lead'],
+                ['lead-a', 'Lead'],
+                ['lead-b', 'Lead'],
+            ],
+            'named',
+        ],
         ['Second Lead', SECOND_TRACKS, 'collision'],
         [
             'First Lead',

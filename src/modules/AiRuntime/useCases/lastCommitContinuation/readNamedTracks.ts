@@ -62,7 +62,7 @@ export function readsAsAnotherTrack(phrase: string, name: string, tracks: readon
 type OrdinalReading =
     | { status: 'read'; ranges: NamedRange[] }
     | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] }
-    | { status: 'collision'; text: string; name: string };
+    | { status: 'collision'; text: string; name: string; start: number; end: number };
 
 /**
  * The "[the] second Lead" references of the text, each the k-th track of that whole name. A phrase
@@ -91,7 +91,7 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
             const sharing = tracks.filter((track) => sameName(track.name, name));
             if (readsAsAnotherTrack(match[0], name, tracks)) {
                 if (sharing.length >= 2) {
-                    return { status: 'collision', text: match[0], name: sharing[0]!.name };
+                    return { status: 'collision', text: match[0], name: sharing[0]!.name, start, end };
                 }
                 continue;
             }
@@ -120,6 +120,15 @@ function joinsEveryName(text: string, ranges: ReadonlyArray<{ start: number; end
     });
 }
 
+/** Whether the text is nothing but the ranges, the list's own words and a joiner between every two ranges. */
+function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
+    const words = blank(text, ranges)
+        .toLowerCase()
+        .split(/[\s,]+/u)
+        .filter((word) => word.length > 0);
+    return ranges.length > 0 && words.every((word) => TARGET_LIST_WORDS.has(word)) && joinsEveryName(text, ranges);
+}
+
 /**
  * The tracks the text names by whole name, in either grammatical number, through the shared
  * resolver's own reading, and nothing else: any word besides the names and the list's own joiners,
@@ -130,7 +139,14 @@ export function readNamedTracks(text: string, context: ProjectContext): NamedTra
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
     if (ordinal.status === 'collision') {
-        return ordinal;
+        // A collision is a verdict about a list: text that is otherwise no list stays unread, as it does without ordinals.
+        const phrase = { start: ordinal.start, end: ordinal.end };
+        const others = getBestAgentReferenceNameRanges(blank(text, [phrase]), tracks, 'with-number-forms');
+        const listed = [...others, phrase].toSorted((left, right) => left.start - right.start || left.end - right.end);
+        if (!readsAsList(text, listed)) {
+            return { status: 'unread' };
+        }
+        return { status: 'collision', text: ordinal.text, name: ordinal.name };
     }
     if (ordinal.status === 'beyond-the-tracks') {
         // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
@@ -161,11 +177,7 @@ export function readNamedTracks(text: string, context: ProjectContext): NamedTra
             };
         }
     }
-    const words = blank(text, ranges)
-        .toLowerCase()
-        .split(/[\s,]+/u)
-        .filter((word) => word.length > 0);
-    if (ranges.length === 0 || words.some((word) => !TARGET_LIST_WORDS.has(word)) || !joinsEveryName(text, ranges)) {
+    if (!readsAsList(text, ranges)) {
         return { status: 'unread' };
     }
     return { status: 'named', ids: [...new Set(ranges.map((range) => range.id))] };
