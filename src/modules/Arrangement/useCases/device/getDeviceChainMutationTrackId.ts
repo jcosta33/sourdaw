@@ -177,6 +177,7 @@ export const deviceChainMutationTrackIdByActionType: {
     setClipFade: noMutatedTrack,
     importMidiFile: noMutatedTrack,
     normalizeClip: noMutatedTrack,
+    relinkClipAudioSources: noMutatedTrack,
     reverseClip: noMutatedTrack,
     restoreReversedClip: noMutatedTrack,
     glueClips: noMutatedTrack,

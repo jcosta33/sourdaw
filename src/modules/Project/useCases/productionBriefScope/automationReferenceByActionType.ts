@@ -170,6 +170,7 @@ export const automationReferenceByActionType: {
     setClipFade: automationReferenceRules.namesLaneOrContent,
     importMidiFile: automationReferenceRules.namesLaneOrContent,
     normalizeClip: automationReferenceRules.namesLaneOrContent,
+    relinkClipAudioSources: automationReferenceRules.namesLaneOrContent,
     reverseClip: automationReferenceRules.namesLaneOrContent,
     restoreReversedClip: automationReferenceRules.namesLaneOrContent,
     glueClips: automationReferenceRules.namesLaneOrContent,

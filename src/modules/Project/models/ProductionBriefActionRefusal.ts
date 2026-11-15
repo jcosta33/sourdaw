@@ -161,6 +161,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     setClipFade: 'none',
     importMidiFile: 'none',
     normalizeClip: 'none',
+    relinkClipAudioSources: 'none',
     reverseClip: 'none',
     restoreReversedClip: 'none',
     glueClips: 'none',

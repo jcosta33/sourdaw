@@ -62,6 +62,30 @@ describe('production brief admission of an action no scope rule singles out', ()
         ).toBe(true);
     });
 
+    it.each([
+        { clipId: 'clip-locked', allowed: false },
+        { clipId: 'clip-free', allowed: true },
+    ])('scope-checks the nested relink alias $clipId', ({ clipId, allowed }) => {
+        const action: AppAction = {
+            type: 'relinkClipAudioSources',
+            payload: {
+                targets: [
+                    {
+                        trackId: 'track-guitar',
+                        trackKind: 'audio',
+                        activeAlternativeId: 'active',
+                        alternativeId: null,
+                        clipId,
+                        before: { audioBufferId: 'missing' },
+                        after: { audioBufferId: 'replacement' },
+                    },
+                ],
+            },
+        };
+
+        expect(doesProductionBriefAllowActionBatch([action])).toBe(allowed);
+    });
+
     it('is refused when its type is unknown and its payload names a clip inside the locked range', () => {
         // A persisted batch is untrusted data: JSON.parse yields an untyped value, so no cast is needed.
         const actions: AppAction[] = JSON.parse('[{"type":"noSuchAction","payload":{"clipId":"clip-locked"}}]');

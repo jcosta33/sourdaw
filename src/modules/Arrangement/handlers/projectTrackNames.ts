@@ -226,6 +226,7 @@ export const trackNameProjectionByActionType: {
     setClipFade: keepTrackNames,
     importMidiFile: keepTrackNames,
     normalizeClip: keepTrackNames,
+    relinkClipAudioSources: keepTrackNames,
     reverseClip: keepTrackNames,
     restoreReversedClip: keepTrackNames,
     glueClips: keepTrackNames,

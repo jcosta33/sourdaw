@@ -337,6 +337,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setClipFade: readEffectDeclaredEdits,
     importMidiFile: readEffectDeclaredEdits,
     normalizeClip: readEffectDeclaredEdits,
+    relinkClipAudioSources: readEffectDeclaredEdits,
     reverseClip: readEffectDeclaredEdits,
     restoreReversedClip: readEffectDeclaredEdits,
     glueClips: readEffectDeclaredEdits,

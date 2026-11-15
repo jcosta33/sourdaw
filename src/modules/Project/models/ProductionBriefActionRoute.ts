@@ -161,6 +161,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setClipFade: 'content',
     importMidiFile: 'content',
     normalizeClip: 'content',
+    relinkClipAudioSources: 'content',
     reverseClip: 'content',
     restoreReversedClip: 'content',
     glueClips: 'content',

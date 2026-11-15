@@ -164,6 +164,7 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     setClipFade: ownControl,
     importMidiFile: ownControl,
     normalizeClip: ownControl,
+    relinkClipAudioSources: ownControl,
     reverseClip: ownControl,
     restoreReversedClip: ownControl,
     glueClips: ownControl,

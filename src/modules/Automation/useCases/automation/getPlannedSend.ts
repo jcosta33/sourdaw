@@ -222,6 +222,7 @@ const plannedSendByActionType: {
     setClipFade: unchangedSend,
     importMidiFile: unchangedSend,
     normalizeClip: unchangedSend,
+    relinkClipAudioSources: unchangedSend,
     reverseClip: unchangedSend,
     restoreReversedClip: unchangedSend,
     glueClips: unchangedSend,

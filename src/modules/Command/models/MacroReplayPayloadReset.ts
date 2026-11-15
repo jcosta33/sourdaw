@@ -225,6 +225,7 @@ export const macroReplayPayloadResetByActionType: {
     setClipFade: keepRecordedPayload,
     importMidiFile: keepRecordedPayload,
     normalizeClip: keepRecordedPayload,
+    relinkClipAudioSources: keepRecordedPayload,
     reverseClip: keepRecordedPayload,
     restoreReversedClip: keepRecordedPayload,
     glueClips: dropGluePlan,

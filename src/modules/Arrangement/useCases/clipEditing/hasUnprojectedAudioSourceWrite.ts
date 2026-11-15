@@ -216,6 +216,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     setClipFade: noUnprojectedWrite,
     importMidiFile: noUnprojectedWrite,
     normalizeClip: noUnprojectedWrite,
+    relinkClipAudioSources: noUnprojectedWrite,
     reverseClip: clipWriteOverlapsAudioClip,
     restoreReversedClip: noUnprojectedWrite,
     glueClips: noUnprojectedWrite,

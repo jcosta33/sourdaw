@@ -176,6 +176,7 @@ const tempoScalarTransitionByActionType: {
     setClipFade: notATempoAction,
     importMidiFile: notATempoAction,
     normalizeClip: notATempoAction,
+    relinkClipAudioSources: notATempoAction,
     reverseClip: notATempoAction,
     restoreReversedClip: notATempoAction,
     glueClips: notATempoAction,

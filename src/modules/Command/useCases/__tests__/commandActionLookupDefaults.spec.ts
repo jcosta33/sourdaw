@@ -8,6 +8,8 @@ import { undoEntryStoresCommandIdByActionType } from '../../models/UndoEntryComm
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { executeAppActionBatch } from '../executeAppActionBatch';
+import { isExecutableAppActionType } from '../executableAppActionRegistry';
+import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { COMMAND_TEMPO_TARGET_ID, getCommandDivergenceTargetIds } from '../getCommandDivergenceTargetIds';
 import { lowerSourceMacroAction } from '../macro/lowerSourceMacroAction';
 import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
@@ -38,6 +40,39 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 const renameTrack: AppAction = { type: 'renameTrack', payload: { trackId: 'trk', name: 'Lead' } };
 
 describe('per-action lookups, entries an action type holds by default', () => {
+    it('keeps relink internal and preserves its captured source and owner references during macro lowering', () => {
+        const relink: AppAction = {
+            type: 'relinkClipAudioSources',
+            payload: {
+                targets: [
+                    {
+                        trackId: 'track',
+                        trackKind: 'audio',
+                        activeAlternativeId: 'active',
+                        alternativeId: 'inactive',
+                        clipId: 'clip',
+                        before: { audioBufferId: 'missing', audioOffsetSeconds: 1.25 },
+                        after: { audioBufferId: 'replacement', audioOffsetSeconds: 1.25 },
+                    },
+                ],
+            },
+        };
+
+        expect(isExecutableAppActionType(relink.type)).toBe(false);
+        expect(getAppActionExecutionPolicy(relink.type)).toMatchObject({
+            classification: 'default',
+            risk: 'unclassified',
+            requiresConfirmation: true,
+        });
+        expect(materializeCommandApplicationIds(relink)).toEqual({ action: relink, applicationAssignedIds: [] });
+        const lowered = lowerSourceMacroAction(relink, new Map());
+        expect(lowered).toEqual(relink);
+        expect(lowered).not.toBe(relink);
+        expect(getCommandDivergenceTargetIds({ actions: [relink], targetIds: [] })).toEqual(
+            expect.arrayContaining(['track', 'clip', 'inactive'])
+        );
+    });
+
     it('mints no seed for an action that is not stochastic, and keeps the action as given', () => {
         const command = createExecutionCommandEnvelope({
             action: renameTrack,

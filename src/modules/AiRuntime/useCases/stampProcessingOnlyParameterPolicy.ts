@@ -195,6 +195,7 @@ const stampByActionType: Stamp = {
     setClipFade: leaveUnstamped,
     importMidiFile: leaveUnstamped,
     normalizeClip: leaveUnstamped,
+    relinkClipAudioSources: leaveUnstamped,
     reverseClip: leaveUnstamped,
     restoreReversedClip: leaveUnstamped,
     glueClips: leaveUnstamped,

@@ -198,6 +198,7 @@ const seedMaterializerByActionType: {
     setClipFade: leaveSeedUnminted,
     importMidiFile: leaveSeedUnminted,
     normalizeClip: leaveSeedUnminted,
+    relinkClipAudioSources: leaveSeedUnminted,
     reverseClip: leaveSeedUnminted,
     restoreReversedClip: leaveSeedUnminted,
     glueClips: leaveSeedUnminted,

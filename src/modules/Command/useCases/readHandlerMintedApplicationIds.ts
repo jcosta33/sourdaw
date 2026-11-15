@@ -219,6 +219,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     setClipFade: noHandlerMintedIds,
     importMidiFile: noHandlerMintedIds,
     normalizeClip: noHandlerMintedIds,
+    relinkClipAudioSources: noHandlerMintedIds,
     reverseClip: noHandlerMintedIds,
     restoreReversedClip: noHandlerMintedIds,
     glueClips: (argumentsValue) => [

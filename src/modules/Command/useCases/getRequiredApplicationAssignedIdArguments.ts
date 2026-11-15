@@ -192,6 +192,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     setClipFade: ruleDrivenArguments,
     importMidiFile: ruleDrivenArguments,
     normalizeClip: ruleDrivenArguments,
+    relinkClipAudioSources: ruleDrivenArguments,
     reverseClip: ruleDrivenArguments,
     restoreReversedClip: ruleDrivenArguments,
     glueClips: ruleDrivenArguments,

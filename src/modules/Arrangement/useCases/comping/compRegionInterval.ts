@@ -333,6 +333,7 @@ const sourceChangingActions = new Set([
     'pasteClip',
     'reverseClip',
     'restoreReversedClip',
+    'relinkClipAudioSources',
     'glueClips',
     'restoreClipGlueState',
     'nudgeClip',

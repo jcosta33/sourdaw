@@ -173,6 +173,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     setClipFade: noFallbackScope,
     importMidiFile: noFallbackScope,
     normalizeClip: noFallbackScope,
+    relinkClipAudioSources: noFallbackScope,
     reverseClip: noFallbackScope,
     restoreReversedClip: noFallbackScope,
     glueClips: noFallbackScope,

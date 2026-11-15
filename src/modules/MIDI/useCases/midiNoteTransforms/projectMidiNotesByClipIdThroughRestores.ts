@@ -218,6 +218,7 @@ const notesProjectionByActionType: {
     setClipFade: noNotesProjection,
     importMidiFile: noNotesProjection,
     normalizeClip: noNotesProjection,
+    relinkClipAudioSources: noNotesProjection,
     reverseClip: noNotesProjection,
     restoreReversedClip: noNotesProjection,
     glueClips: noNotesProjection,

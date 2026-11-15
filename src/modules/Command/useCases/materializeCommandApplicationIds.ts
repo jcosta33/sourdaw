@@ -312,6 +312,7 @@ const applicationIdMaterializerByActionType: {
     setClipFade: materializeByIdRule,
     importMidiFile: materializeByIdRule,
     normalizeClip: materializeByIdRule,
+    relinkClipAudioSources: materializeByIdRule,
     reverseClip: materializeByIdRule,
     restoreReversedClip: materializeByIdRule,
     glueClips: materializeByIdRule,

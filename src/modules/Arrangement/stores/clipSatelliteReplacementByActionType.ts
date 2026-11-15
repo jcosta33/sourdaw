@@ -163,6 +163,7 @@ export const clipSatelliteReplacementByActionType: {
     setClipFade: noReplacements,
     importMidiFile: noReplacements,
     normalizeClip: noReplacements,
+    relinkClipAudioSources: noReplacements,
     reverseClip: noReplacements,
     restoreReversedClip: noReplacements,
     glueClips: noReplacements,

@@ -206,6 +206,7 @@ const controllerRestoresByActionType: {
     setClipFade: noControllerRestores,
     importMidiFile: noControllerRestores,
     normalizeClip: noControllerRestores,
+    relinkClipAudioSources: noControllerRestores,
     reverseClip: noControllerRestores,
     restoreReversedClip: noControllerRestores,
     glueClips: noControllerRestores,

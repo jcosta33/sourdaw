@@ -163,6 +163,7 @@ export const preservesTrimCoordinatesByActionType: {
     setClipFade: true,
     importMidiFile: false,
     normalizeClip: false,
+    relinkClipAudioSources: false,
     reverseClip: false,
     restoreReversedClip: false,
     glueClips: false,

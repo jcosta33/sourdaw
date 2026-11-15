@@ -171,6 +171,7 @@ const renderReceiptGateByActionType: GateLookup = {
     setClipFade: notRenderReceiptGated,
     importMidiFile: notRenderReceiptGated,
     normalizeClip: notRenderReceiptGated,
+    relinkClipAudioSources: notRenderReceiptGated,
     reverseClip: notRenderReceiptGated,
     restoreReversedClip: notRenderReceiptGated,
     glueClips: notRenderReceiptGated,

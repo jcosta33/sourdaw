@@ -246,6 +246,7 @@ export const plannedTrackByActionType: {
     setClipFade: noPlannedTrack,
     importMidiFile: noPlannedTrack,
     normalizeClip: noPlannedTrack,
+    relinkClipAudioSources: noPlannedTrack,
     reverseClip: noPlannedTrack,
     restoreReversedClip: noPlannedTrack,
     glueClips: noPlannedTrack,
