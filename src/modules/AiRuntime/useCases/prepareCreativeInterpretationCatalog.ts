@@ -167,32 +167,21 @@ function collectExplicitTargets(prompt: string, context: ProjectContext): Creati
     return targets;
 }
 
-type RoleFamilyReading = {
-    /** Families the request asks to change ("tighten up the drums"). */
-    named: SemanticCommandListRoleFamily[];
-    /** Families only a protection clause names ("leave the drums alone"), which no agent-decided target may reach. */
-    kept: SemanticCommandListRoleFamily[];
-};
-
 /**
- * The role families the request's own words name, with quotations and track names blanked so a
- * quoted "bass" or the track "Drum Bus" names no family. A family inside a protection clause is kept
- * out rather than targeted. A request pointing at the selection ("this bass track") names none.
+ * The role families the request asks to change ("tighten up the drums"), with quotations, track names
+ * and protection clauses blanked so a quoted "bass", the track "Drum Bus" or a family a protection
+ * keeps ("leave the drums alone") names no target. A request pointing at the selection ("this bass
+ * track") names none.
  */
-function readRoleFamilies(positivePrompt: string, context: ProjectContext): RoleFamilyReading {
+function readNamedRoleFamilies(positivePrompt: string, context: ProjectContext): SemanticCommandListRoleFamily[] {
     if (hasExplicitTrackSelection(positivePrompt)) {
-        return { named: [], kept: [] };
+        return [];
     }
     const slotRanges = protectionSlots
         .read(scanPromptQuotedText(positivePrompt).maskedText)
         .map((slot) => slot.completeRange ?? { start: slot.start, end: slot.end });
-    const unnamed = maskTrackReferences(positivePrompt, context, ' ');
-    const outsideProtections = maskRanges(unnamed, slotRanges);
-    const insideProtections = slotRanges.map(({ start, end }) => unnamed.slice(start, end)).join(' ');
-    return {
-        named: findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES),
-        kept: findNamedRoleFamilies(insideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES),
-    };
+    const outsideProtections = maskRanges(maskTrackReferences(positivePrompt, context, ' '), slotRanges);
+    return findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES);
 }
 
 function resolveRoleFamilyTrackIds(context: ProjectContext, family: SemanticCommandListRoleFamily): string[] {
@@ -229,18 +218,14 @@ function collectRoleTargets(
  * Every track a whole-project vibe run could plan, offered when the request names no object, no role
  * family and nothing is selected ("polish the low end"). The catalog cannot tell a perceptual request
  * from any other, so it offers them for every such request, and admission keeps one only beside a
- * perceptual or comparative metric intent.
+ * perceptual or comparative metric intent. The request's protections, a role family's tracks among
+ * them, and the brief's are never offered.
  */
 function collectAgentDecidedTargets(
     context: ProjectContext,
-    protectedIds: ReadonlySet<string>,
-    keptFamilies: readonly SemanticCommandListRoleFamily[]
+    protectedIds: ReadonlySet<string>
 ): CreativeTargetCandidate[] {
-    const excluded = new Set([
-        ...protectedIds,
-        ...readBriefProtectedTrackIds(context),
-        ...keptFamilies.flatMap((family) => resolveRoleFamilyTrackIds(context, family)),
-    ]);
+    const excluded = new Set([...protectedIds, ...readBriefProtectedTrackIds(context)]);
     return context.tracks
         .filter((track) => findPlannableTrackExclusion(track, excluded) === null)
         .map((track, index) => ({
@@ -256,7 +241,7 @@ function collectAgentDecidedTargets(
 /**
  * The targets a request reaches, strongest reference first: named objects alone, else the tracks of
  * the role families it names, else the selection, else, when it names no family at all, every
- * plannable source outside the families it keeps.
+ * plannable source the request and the brief do not protect.
  */
 function collectRequestTargets(
     positivePrompt: string,
@@ -267,16 +252,16 @@ function collectRequestTargets(
     if (explicitTargets.length > 0) {
         return explicitTargets;
     }
-    const families = readRoleFamilies(positivePrompt, context);
-    const roleTargets = collectRoleTargets(families.named, context);
+    const families = readNamedRoleFamilies(positivePrompt, context);
+    const roleTargets = collectRoleTargets(families, context);
     if (roleTargets.length > 0) {
         return roleTargets;
     }
     const contextualTargets = collectContextualTargets(context, protectedIds);
-    if (contextualTargets.length > 0 || families.named.length > 0) {
+    if (contextualTargets.length > 0 || families.length > 0) {
         return contextualTargets;
     }
-    return collectAgentDecidedTargets(context, protectedIds, families.kept);
+    return collectAgentDecidedTargets(context, protectedIds);
 }
 
 /**
