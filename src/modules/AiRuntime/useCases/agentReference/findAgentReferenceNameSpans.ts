@@ -277,8 +277,9 @@ export function findAgentReferenceNameSpans(
     const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
     const needle = words.map((word, index) => (index === 0 ? `(${word})` : `${ANY_JOINER}(${word})`)).join('');
     const pattern = new RegExp(`${WORD_BOUNDARY_BEFORE}${needle}${WORD_BOUNDARY_AFTER}`, 'gu');
-    const [firstToken] = tokens;
-    if (firstToken === undefined || !foldCharacters(text).includes(firstToken)) {
+    const firstWordForms = tokens.length > 1 ? tokens.slice(0, 1) : finalForms;
+    const foldedForPresence = foldCharacters(text);
+    if (!firstWordForms.some((form) => foldedForPresence.includes(form))) {
         return [];
     }
     const { transformed: folded, offsets } = transformWithOffsets(text, foldCharacters);
