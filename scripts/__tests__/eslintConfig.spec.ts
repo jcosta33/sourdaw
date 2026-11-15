@@ -108,10 +108,10 @@ describe('ESLint configuration', () => {
         expect(selectors.selectors).not.toContain(LOCAL_STORAGE_CALL_SELECTOR);
     });
 
-    it('keeps the direct storage restriction non-failing in production TypeScript', async () => {
+    it('fails direct storage access in production TypeScript', async () => {
         const selectors = await restrictedSyntaxFor('src/app/bootstrap.ts');
 
-        expect(selectors.severity).toBe(1);
+        expect(selectors.severity).toBe(2);
         expect(selectors.selectors).toContain(LOCAL_STORAGE_CALL_SELECTOR);
         expect(selectors.selectors).not.toContain(REACT_DEFAULT_IMPORT_SELECTOR);
     });
