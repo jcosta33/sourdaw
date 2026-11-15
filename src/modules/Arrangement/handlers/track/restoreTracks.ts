@@ -5,7 +5,7 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { handleRestoreTrack } from '../restore/handleRestoreTrack';
 
-import { applyDiscardedPluginStates } from './discardedPluginStateCarry';
+import { forgetDiscardedPluginStates, overlayDiscardedPluginStates } from './discardedPluginStateCarry';
 
 /**
  * Inverse-action handler for `removeAllTracks`. Replays one `restoreTrack` snapshot
@@ -19,10 +19,10 @@ export const handleRestoreTracks = createHandler<'restoreTracks'>({
     // save captured after the snapshot was taken.
     materializeCommandArguments: (action, context) => {
         if (context?.undoEntryId !== undefined) {
-            applyDiscardedPluginStates(context.undoEntryId, action.payload.restores);
+            overlayDiscardedPluginStates(context.undoEntryId, action.payload.restores);
         }
     },
-    execute: (action) => {
+    execute: (action, context) => {
         const { restores } = action.payload;
         if (restores.length === 0) {
             return { status: 'no-write' };
@@ -80,9 +80,15 @@ export const handleRestoreTracks = createHandler<'restoreTracks'>({
             }
         }
 
+        const undoEntryId = context?.undoEntryId;
         return {
             status: 'written',
-            afterCommit: () => runAllAsyncEffects(afterCommits),
+            afterCommit: () => {
+                if (undoEntryId !== undefined) {
+                    forgetDiscardedPluginStates(undoEntryId);
+                }
+                return runAllAsyncEffects(afterCommits);
+            },
             afterAmbiguousCommit: () => runAllAsyncEffects(afterAmbiguousCommits),
         };
     },

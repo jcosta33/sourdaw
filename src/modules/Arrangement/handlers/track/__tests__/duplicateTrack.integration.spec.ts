@@ -455,6 +455,30 @@ describe('handleDuplicateTrack atomic integration', () => {
         expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
     });
 
+    it('keeps the captured plugin state for a redo retried after a refused redo', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await duplicateTrack();
+        const copyId = copyTrack().id;
+        await captureCopyPluginState('ZWRpdGVk');
+        await undo();
+        const blocked = trackStore.value!;
+        trackStore.set({
+            ...blocked,
+            tracks: [...blocked.tracks, TrackDummy.create({ id: copyId, name: 'Blocker', kind: 'audio' })],
+        });
+
+        await redo();
+        expect(trackStore.value!.tracks.find((track) => track.id === copyId)!.name).toBe('Blocker');
+        trackStore.set(blocked);
+        await redo();
+
+        expect(trackStore.value!.tracks.find((track) => track.id === copyId)!.devices[0]!.externalStateChunk).toBe(
+            'ZWRpdGVk'
+        );
+    });
+
     it('still refuses undo when the copy device changed beyond its captured state, and redo stays empty', async () => {
         trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
         pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
