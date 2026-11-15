@@ -75,8 +75,16 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
 
 vi.mock('#/modules/AiRuntime/presentations/views', () => ({
     AgentRunDecisionPanel: () => <div data-testid="agent-decision-panel" />,
-    MeasuredPreviewAudition: (input: { confirmationId: string; selectedIntentGroupIds: readonly string[] }) => (
-        <section aria-label="Measured audio comparison" data-confirmation-id={input.confirmationId}>
+    MeasuredPreviewAudition: (input: {
+        confirmationId: string;
+        selectedIntentGroupIds: readonly string[];
+        surface: string;
+    }) => (
+        <section
+            aria-label="Measured audio comparison"
+            data-confirmation-id={input.confirmationId}
+            data-surface={input.surface}
+        >
             {input.selectedIntentGroupIds.join(',')}
         </section>
     ),
@@ -405,6 +413,8 @@ describe('AgentWorkspace', () => {
         const comparison = screen.getByRole('region', { name: 'Measured audio comparison' });
         expect(screen.getAllByRole('region', { name: 'Measured audio comparison' })).toHaveLength(1);
         expect(comparison).toHaveAttribute('data-confirmation-id', 'confirmation-1');
+        // The Workspace names itself, so closing the chat never stops what it started.
+        expect(comparison).toHaveAttribute('data-surface', 'agent-workspace');
         expect(comparison).toHaveTextContent('group-a,group-b');
         stopMeasuredPreviewAuditionMock.mockImplementationOnce((input: { confirmationId: string }) => {
             expect(input).toEqual({ confirmationId: 'confirmation-1' });

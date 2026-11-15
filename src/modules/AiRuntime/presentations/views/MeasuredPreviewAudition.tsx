@@ -12,7 +12,12 @@ import { getMeasuredPreviewAuditionView } from '../../useCases/getMeasuredPrevie
 import { startMeasuredPreviewAudition } from '../../useCases/startMeasuredPreviewAudition';
 import { stopMeasuredPreviewAudition } from '../../useCases/stopMeasuredPreviewAudition';
 
-type AuditionProps = { confirmationId: string; selectedIntentGroupIds: readonly string[] };
+type AuditionProps = {
+    confirmationId: string;
+    selectedIntentGroupIds: readonly string[];
+    /** The surface mounting this comparison; leaving it stops only an audition it started. */
+    surface: Parameters<typeof startMeasuredPreviewAudition>[0]['surface'];
+};
 
 function useAuditionControls(input: AuditionProps) {
     // The projection reads canonical owners. These subscriptions invalidate it
@@ -32,9 +37,9 @@ function useAuditionControls(input: AuditionProps) {
     useEffect(
         () => () => {
             attempt.current++;
-            void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
+            void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId, surface: input.surface });
         },
-        [input.confirmationId]
+        [input.confirmationId, input.surface]
     );
 
     const stop = () => {

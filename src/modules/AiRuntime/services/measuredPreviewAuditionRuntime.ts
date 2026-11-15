@@ -1,6 +1,8 @@
 export type MeasuredPreviewAuditionOperation = {
     id: string;
     confirmationId: string;
+    /** The surface whose comparison started it; only that surface leaving stops it on its behalf. */
+    surface: 'chat' | 'agent-workspace';
     targetId: string;
     side: 'baseline' | 'preview';
     identity: string;

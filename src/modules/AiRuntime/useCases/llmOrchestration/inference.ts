@@ -86,6 +86,7 @@ import { getBackendChain } from './backendResolution/getBackendChain';
 import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
+import { readAnsweringStatus } from './readAnsweringStatus';
 
 // The core planning contract and whichever interpretation control this live phase publishes.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -436,6 +437,8 @@ async function generateLocalToolPlanningOutcome(input: {
     }
     if (!isWebLlmLoaded()) {
         await waitForInference(initWebLlmEngine(undefined, { signal: input.signal }), input.signal);
+        // Loading publishes its progress and then `ready`; the local model now answers the turn.
+        llmStatusStore.set(readAnsweringStatus('webllm'));
     }
     const generatedInference = Promise.resolve<unknown>(
         Reflect.apply(generateWebLlmToolCalls, undefined, [
@@ -571,12 +574,20 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         }
 
         const previousStatus = llmStatusStore.value;
-        llmStatusStore.set({ state: 'generating' });
+        // A request refused before the engine loaded leaves the engine as it was.
+        const settleRefusedAttempt = (backend: RunnableAiBackend): void => {
+            llmStatusStore.set(
+                backend !== 'webllm' || isWebLlmLoaded()
+                    ? { state: 'ready', backend, modelId: getBackendModelId(backend) }
+                    : previousStatus
+            );
+        };
 
         const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            llmStatusStore.set(readAnsweringStatus(backend));
             let admittedAttempt: AdmittedProviderAttempt | null = null;
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
@@ -716,6 +727,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                           }),
                 });
                 if (compiledRequest.status !== 'ready') {
+                    settleRefusedAttempt(backend);
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
                 }
                 const providerRequest = compiledRequest.request;
@@ -768,6 +780,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         },
                     });
                     providerSessionSettled = true;
+                    settleRefusedAttempt(backend);
                     return { status: 'rejected', reason: 'The model provider request is missing required messages.' };
                 }
                 let outcome: ToolPlanningOutcome;
@@ -830,12 +843,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         providerSessionSettled = true;
                         reportProviderResult(refusedResult);
                         logger.warn(`[AI Engine] (webllm) tool planning refused: ${reason}`);
-                        // A request refused before the engine loaded leaves the engine as it was.
-                        llmStatusStore.set(
-                            isWebLlmLoaded()
-                                ? { state: 'ready', backend, modelId: getBackendModelId(backend) }
-                                : previousStatus
-                        );
+                        settleRefusedAttempt(backend);
                         return { status: 'rejected', reason };
                     }
                     outcome = normalizeGeneratedToolPlanningOutcome(local.outcome);
