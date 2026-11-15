@@ -17,6 +17,11 @@ const FIGURE = String.raw`-?\d+(?:\.\d+)?`;
 const DETERMINER = String.raw`(?:(?:the|a|an|this|that|my)\s+)?`;
 /** A figure qualifies a quality only in its own phrase: "3 dB louder", "louder by 3 dB", "gain-level to -6". */
 const FIGURE_QUALIFIERS = [
+    // A figure landing a control ("set the volume of the vocals to -4 dB") is an explicit value for that control.
+    new RegExp(
+        String.raw`\b(?:set|put|bring)\s+${DETERMINER}\p{L}+(?:\s+(?:of|on|for)(?:\s+\S+)*?)?\s+(?:to|at)\s+${FIGURE}(?:\s*${UNIT}\b)?(?![\d.]*\w)`,
+        'giu'
+    ),
     new RegExp(String.raw`${FIGURE}\s*${UNIT}\b\s+\p{L}+`, 'giu'),
     new RegExp(String.raw`\p{L}+\s+by\s+${FIGURE}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
     new RegExp(String.raw`\S+\s+(?:to|at)\s+${FIGURE}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
