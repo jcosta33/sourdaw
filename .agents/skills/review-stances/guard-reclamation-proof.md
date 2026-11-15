@@ -127,5 +127,25 @@ evidence out of the child output unless it explains retention`, where startup, s
     missing/malformed/extra positional ports, occupied origins, wrong checkout or absent/stale token, failed proof
     and failed cleanup refused. Do not infer a missing recorded port from the current environment.
 
+13. **A historical PID is not its current occupant's authority.** Historical-PID traversal originated in
+    `0e20269791` (`fix(tooling): guard scoped validation`, with no associated pull request); #2449 extracted
+    `isSameProcess` while preserving its permission-error short circuit. The missing probe crossed positive
+    start-identity replacement with descendant discovery, signal authority and exit proof; historical reviewer
+    prompts are unestablished. Run `scripts/__tests__/resourceGuard.spec.ts`'s `process identity ownership`
+    cases: an old tracked PID with a positively different current start must neither enlist its foreign children
+    and grandchildren nor signal them. A reused root must authorize neither negative-PGID signals nor Windows
+    `taskkill`, and its replacement group must not keep the original group alive. Keep token-owned and matching
+    tracked descendants authoritative. A leader that exited without a positive replacement must leave its live
+    original group authoritative. POSIX [Process ID Reuse][posix-pid-reuse] reserves an ID while the group with
+    that ID exists; only positive root replacement proves that original group ended. Inject EPERM and EACCES
+    with different, matching and unreadable starts: positive difference rejects the old identity, while matching
+    or unreadable identity remains live. Token-owned rows and owned descendants whose start cannot be read must
+    also retain the run without gaining individual signal authority. An unavailable census remains unknown. Restoring historical-PID seeds,
+    unconditional root-group authority, or the permission short circuit must fail their respective cases.
+    Cleanup-failure output must retain the actual blocking predicate, census availability, group-probe errno,
+    stored/current identity and bounded metadata without process commands or environment text. A discovered
+    source risk does not establish any past leak's cause without its blocking-predicate evidence.
+
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c
+[posix-pid-reuse]: https://www.govinfo.gov/content/pkg/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64/pdf/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64.pdf

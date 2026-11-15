@@ -5389,7 +5389,7 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         const realKill = process.kill.bind(process);
         const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
             if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-                return true;
+                throw Object.assign(new Error('fixture signal denial message'), { code: 'EPERM' });
             }
             return realKill(pid, signal);
         });
@@ -5407,6 +5407,34 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             expect(code).toBe(1);
             expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
             expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
+            const diagnosticLine = result?.output
+                .split('\n')
+                .find((line) => line.startsWith('guard cleanup diagnostic: '));
+            expect(diagnosticLine).toBeDefined();
+            if (diagnosticLine === undefined) {
+                throw new Error('guard cleanup diagnostic missing');
+            }
+            const diagnostic = JSON.parse(diagnosticLine.slice('guard cleanup diagnostic: '.length));
+            expect(diagnostic.treeExitProved).toBe(false);
+            expect(diagnostic.lastObservation.census).toBe('available');
+            expect(diagnostic.lastObservation.blockedBy).toBe('process-group');
+            expect(diagnostic.lastObservation.processGroupProbe.state).toBe('present');
+            expect(diagnostic.signalFailures).toContainEqual(
+                expect.objectContaining({ pid: survivor, signal: 'SIGTERM', errno: 'EPERM' })
+            );
+            expect(diagnostic.signalFailures.length).toBeLessThanOrEqual(16);
+            expect(diagnostic.metadataAtReport.processGroup.status).toBe('available');
+            expect(diagnostic.metadataAtReport.processGroup.rows).toContainEqual(
+                expect.objectContaining({
+                    pid: survivor,
+                    uid: process.getuid?.(),
+                    processGroupId: expect.any(Number),
+                    parentPid: expect.any(Number),
+                    state: expect.any(String),
+                })
+            );
+            expect(diagnosticLine).not.toContain('SOURDAW_PROCESS_SESSION=');
+            expect(diagnosticLine).not.toContain('fixture signal denial message');
         } finally {
             killSpy.mockRestore();
             if (survivor !== undefined) {

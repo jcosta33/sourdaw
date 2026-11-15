@@ -174,6 +174,8 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
 - Darwin and Linux storage census, `LINK` type, pathname diagnostics, capped catalogs, start-time excuse,
   foreign same-UID attribution, temporary-storage ownership, hosted test isolation, and process-group
   inspection EPERM (#5274, #5331, #5345, #5443, #4899, #5240) → `guard-reclamation-proof.md` probes 1 to 11.
+- Historical PID replacement across descendant discovery, Unix group and Windows tree signal authority,
+  permission-denied identity probes, and process-exit diagnostics → `guard-reclamation-proof.md` probe 13.
 - Delivery authority from an earlier PR state (#4586, #5032), the old-receipt publication bypass (#5111) and
   the reviewer confirm token permission (#4411) → `review-authorization.md` probes 10, 7 and 11.
 - Repair ancestry against the finding revision (#4411) → `public-repair-records.md` probe 11.

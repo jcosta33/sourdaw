@@ -39,7 +39,7 @@ import {
     readGuardFailureReceipt,
     type GuardFailureReceipt,
 } from './prContract.ts';
-import { captureProcessGroupSnapshot } from './processSnapshot.ts';
+import { captureProcessGroupOfPid, captureProcessGroupSnapshot } from './processSnapshot.ts';
 import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
@@ -431,17 +431,56 @@ function isCurrentProcess(owner: LockOwner): boolean {
     return isSameProcess(owner.pid, owner.processStartedAt);
 }
 
-function isSameProcess(pid: number, startedAt: string | undefined): boolean {
-    try {
-        process.kill(pid, 0);
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-            return false;
-        }
-        return true;
+export function isSameProcess(
+    pid: number,
+    startedAt: string | undefined,
+    host: ProcessTreeHost = processTreeHost
+): boolean {
+    const observation = observeProcessIdentity(pid, startedAt, host);
+    return observation.state !== 'absent' && observation.state !== 'reused';
+}
+
+type ProcessProbe = { state: 'present' | 'absent' | 'unknown'; errno?: string };
+
+type ProcessIdentityObservation = {
+    pid: number;
+    storedStartedAt: string | undefined;
+    currentStartedAt: string | undefined;
+    state: 'matching' | 'reused' | 'absent' | 'unknown';
+    signalZero: ProcessProbe;
+};
+
+function processSignalErrno(error: unknown): string {
+    if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string') {
+        return /^[A-Z0-9_]{1,32}$/.test(error.code) ? error.code : 'unknown';
     }
-    const currentStart = processStartedAt(pid);
-    return currentStart === undefined || startedAt === undefined || currentStart === startedAt;
+    return 'unknown';
+}
+
+function probeProcess(pid: number, host: ProcessTreeHost): ProcessProbe {
+    try {
+        host.kill(pid, 0);
+        return { state: 'present' };
+    } catch (error) {
+        const errno = processSignalErrno(error);
+        return { state: errno === 'ESRCH' ? 'absent' : 'unknown', errno };
+    }
+}
+
+function observeProcessIdentity(
+    pid: number,
+    storedStartedAt: string | undefined,
+    host: ProcessTreeHost
+): ProcessIdentityObservation {
+    const signalZero = probeProcess(pid, host);
+    const currentStartedAt = signalZero.state === 'absent' ? undefined : host.processStartedAt(pid);
+    let state: ProcessIdentityObservation['state'] = 'unknown';
+    if (signalZero.state === 'absent') {
+        state = 'absent';
+    } else if (storedStartedAt !== undefined && currentStartedAt !== undefined) {
+        state = storedStartedAt === currentStartedAt ? 'matching' : 'reused';
+    }
+    return { pid, storedStartedAt, currentStartedAt, state, signalZero };
 }
 
 function readOwner(path: string): LockOwner {
@@ -1042,21 +1081,49 @@ function processTable(sessionToken?: string): ProcessRow[] | undefined {
     return processCensus(sessionToken)?.rows;
 }
 
-function sessionProcessSummary(sessionToken: string): string {
-    return (processTable(sessionToken) ?? [])
-        .filter((row) => row.sessionOwned)
-        .map((row) => `${row.pid}:${row.command.slice(0, 1_000)}`)
-        .join('\n');
-}
+export type ProcessTreeHost = {
+    platform: () => NodeJS.Platform;
+    processTable: typeof processTable;
+    processStartedAt: typeof processStartedAt;
+    kill: typeof process.kill;
+    terminateWindowsTree: (pid: number) => void;
+};
 
-function sampleProcessTree(rootPid: number, tracked: Map<number, string>, sessionToken: string): number | undefined {
-    const rows = processTable(sessionToken);
+const processTreeHost: ProcessTreeHost = {
+    platform,
+    processTable,
+    processStartedAt,
+    kill: (pid, signal) => process.kill(pid, signal),
+    terminateWindowsTree: (pid) => {
+        spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    },
+};
+
+export function sampleProcessTree(
+    rootPid: number,
+    tracked: Map<number, string>,
+    sessionToken: string,
+    host: ProcessTreeHost = processTreeHost
+): number | undefined {
+    const rows = host.processTable(sessionToken);
     if (rows === undefined) {
         return undefined;
     }
+    return sampleProcessRows(rootPid, tracked, rows, host).rssBytes;
+}
+
+function sampleProcessRows(
+    rootPid: number,
+    tracked: Map<number, string>,
+    rows: ProcessRow[],
+    host: ProcessTreeHost
+): { rssBytes: number; selected: Set<number> } {
+    const present = new Set(rows.map((row) => row.pid));
+    const replaced = new Set(
+        [...tracked.keys()].filter((pid) => present.has(pid) && processIdentityReplaced(pid, tracked, host))
+    );
     const selected = new Set<number>([
-        rootPid,
-        ...tracked.keys(),
+        ...[rootPid, ...tracked.keys()].filter((pid) => !replaced.has(pid)),
         ...rows.filter((row) => row.sessionOwned).map((row) => row.pid),
     ]);
     let changed = true;
@@ -1075,14 +1142,23 @@ function sampleProcessTree(rootPid: number, tracked: Map<number, string>, sessio
             continue;
         }
         rssBytes += row.rssBytes;
-        if (!tracked.has(row.pid)) {
-            const startedAt = processStartedAt(row.pid);
+        if (!tracked.has(row.pid) || replaced.has(row.pid)) {
+            const startedAt = host.processStartedAt(row.pid);
             if (startedAt !== undefined) {
                 tracked.set(row.pid, startedAt);
             }
         }
     }
-    return rssBytes;
+    return { rssBytes, selected };
+}
+
+function processIdentityReplaced(pid: number, tracked: Map<number, string>, host: ProcessTreeHost): boolean {
+    const storedStart = tracked.get(pid);
+    if (storedStart === undefined) {
+        return false;
+    }
+    const currentStart = host.processStartedAt(pid);
+    return currentStart !== undefined && currentStart !== storedStart;
 }
 
 function boundedPositiveInteger(value: string | undefined, cap: number): string {
@@ -1134,62 +1210,132 @@ function boundedEnvironment(
     };
 }
 
-function terminateProcessTree(
+export function terminateProcessTree(
     pid: number,
     signal: NodeJS.Signals,
     tracked: Map<number, string>,
-    sessionToken: string
+    sessionToken: string,
+    host: ProcessTreeHost = processTreeHost
 ): void {
-    sampleProcessTree(pid, tracked, sessionToken);
-    if (platform() === 'win32') {
-        spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    sampleProcessTree(pid, tracked, sessionToken, host);
+    const rootReplaced = processIdentityReplaced(pid, tracked, host);
+    if (host.platform() === 'win32' && !rootReplaced) {
+        host.terminateWindowsTree(pid);
         return;
     }
-    try {
-        process.kill(-pid, signal);
-    } catch {
-        // The process may exit between the last sample and the signal.
+    if (host.platform() !== 'win32' && !rootReplaced) {
+        try {
+            host.kill(-pid, signal);
+        } catch {
+            // The process may exit between the last sample and the signal.
+        }
     }
     for (const [trackedPid, startedAt] of [...tracked.entries()].reverse()) {
-        if (processStartedAt(trackedPid) !== startedAt) {
+        if (host.processStartedAt(trackedPid) !== startedAt) {
             continue;
         }
         try {
-            process.kill(trackedPid, signal);
+            host.kill(trackedPid, signal);
         } catch {
             // The process may exit between identity verification and the signal.
         }
     }
 }
 
-function processTreeAlive(pid: number, tracked: Map<number, string>, sessionToken: string): boolean {
-    if (sampleProcessTree(pid, tracked, sessionToken) === undefined) {
+export function processTreeAlive(
+    pid: number,
+    tracked: Map<number, string>,
+    sessionToken: string,
+    host: ProcessTreeHost = processTreeHost,
+    report?: (observation: ProcessTreeObservation) => void
+): boolean {
+    const rows = host.processTable(sessionToken);
+    if (rows === undefined) {
+        report?.({ census: 'unavailable', processGroupProbe: { state: 'unobserved' }, blockedBy: 'census' });
         return true;
     }
-    if (platform() !== 'win32') {
-        try {
-            process.kill(-pid, 0);
+    const sampled = sampleProcessRows(pid, tracked, rows, host);
+    let processGroupProbe: ProcessTreeObservation['processGroupProbe'] = { state: 'unsupported' };
+    // POSIX reserves a process ID while the group with that ID exists. Only positive
+    // leader replacement proves the original group ended; a missing leader does not.
+    if (host.platform() !== 'win32' && !processIdentityReplaced(pid, tracked, host)) {
+        processGroupProbe = probeProcess(-pid, host);
+        if (processGroupProbe.state !== 'absent') {
+            report?.({ census: 'available', processGroupProbe, blockedBy: 'process-group' });
             return true;
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-                return true;
-            }
+        }
+    } else if (host.platform() !== 'win32') {
+        processGroupProbe = { state: 'reused-root' };
+    }
+    const sessionProcess = rows.find((row) => row.sessionOwned);
+    if (sessionProcess !== undefined) {
+        report?.({
+            census: 'available',
+            processGroupProbe,
+            blockedBy: 'session-token',
+            sessionPid: sessionProcess.pid,
+        });
+        return true;
+    }
+    const untrackedProcess = rows.find((row) => sampled.selected.has(row.pid) && !tracked.has(row.pid));
+    if (untrackedProcess !== undefined) {
+        report?.({
+            census: 'available',
+            processGroupProbe,
+            blockedBy: 'owned-process',
+            ownedPid: untrackedProcess.pid,
+        });
+        return true;
+    }
+    for (const [trackedPid, startedAt] of tracked) {
+        const blockingTracked = observeProcessIdentity(trackedPid, startedAt, host);
+        if (blockingTracked.state !== 'absent' && blockingTracked.state !== 'reused') {
+            report?.({ census: 'available', processGroupProbe, blockedBy: 'tracked-process', blockingTracked });
+            return true;
         }
     }
-    return [...tracked].some(([trackedPid, startedAt]) => isSameProcess(trackedPid, startedAt));
+    report?.({ census: 'available', processGroupProbe, blockedBy: 'none' });
+    return false;
+}
+
+type ProcessTreeObservation = {
+    census: 'available' | 'unavailable';
+    processGroupProbe: ProcessProbe | { state: 'unobserved' | 'unsupported' | 'reused-root' };
+    blockedBy: 'census' | 'process-group' | 'session-token' | 'owned-process' | 'tracked-process' | 'none';
+    sessionPid?: number;
+    ownedPid?: number;
+    blockingTracked?: ProcessIdentityObservation;
+};
+
+type ProcessMetadata = Extract<ReturnType<typeof captureProcessGroupSnapshot>, { status: 'available' }>['rows'][number];
+
+function boundedProcessTreeObservation(observation: ProcessTreeObservation | undefined) {
+    if (observation?.blockingTracked === undefined) {
+        return observation;
+    }
+    return {
+        ...observation,
+        blockingTracked: {
+            ...observation.blockingTracked,
+            storedStartedAt: observation.blockingTracked.storedStartedAt?.slice(0, 64),
+            currentStartedAt: observation.blockingTracked.currentStartedAt?.slice(0, 64),
+        },
+    };
 }
 
 async function waitForProcessTreeExit(
     pid: number,
     tracked: Map<number, string>,
     sessionToken: string,
-    timeoutMs: number
+    timeoutMs: number,
+    host: ProcessTreeHost = processTreeHost,
+    report?: (observation: ProcessTreeObservation) => void
 ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
-    while (processTreeAlive(pid, tracked, sessionToken) && Date.now() < deadline) {
+    while (processTreeAlive(pid, tracked, sessionToken, host) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    return !processTreeAlive(pid, tracked, sessionToken);
+    return !processTreeAlive(pid, tracked, sessionToken, host, report);
 }
 
 function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead' | 'unknown' {
@@ -2224,6 +2370,25 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     }
     const startedAt = Date.now();
     const tracked = new Map<number, string>();
+    const signalFailures: Array<{ pid: number; signal: NodeJS.Signals | number | undefined; errno: string }> = [];
+    let signalFailureCount = 0;
+    const commandProcessHost: ProcessTreeHost = {
+        ...processTreeHost,
+        kill: (pid, signal) => {
+            try {
+                return process.kill(pid, signal);
+            } catch (error) {
+                const errno = processSignalErrno(error);
+                if (signal !== 0 && errno !== 'ESRCH') {
+                    signalFailureCount += 1;
+                    if (signalFailures.length < 16) {
+                        signalFailures.push({ pid, signal, errno });
+                    }
+                }
+                throw error;
+            }
+        },
+    };
     try {
         storage.markSpawning();
     } catch (error) {
@@ -2263,6 +2428,24 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     });
     // Setup-error containment may await tree exit before the caller awaits this promise.
     void childCompletion.catch(() => undefined);
+    let treeObservation: ProcessTreeObservation | undefined;
+    let blockingTreeObservation: ProcessTreeObservation | undefined;
+    const waitForTreeExit = async (timeout: number): Promise<boolean> => {
+        if (child.pid === undefined) {
+            return true;
+        }
+        return waitForProcessTreeExit(child.pid, tracked, processToken, timeout, commandProcessHost, (observation) => {
+            treeObservation = observation;
+            if (observation.blockedBy !== 'none') {
+                blockingTreeObservation = observation;
+            }
+        });
+    };
+    const terminateTree = (signal: NodeJS.Signals) => {
+        if (child.pid !== undefined) {
+            terminateProcessTree(child.pid, signal, tracked, processToken, commandProcessHost);
+        }
+    };
     let storageRemoved = false;
     let treeExitProved = false;
     let releaseThrew = false;
@@ -2270,8 +2453,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (storageRemoved) {
             return true;
         }
-        const treeStopped =
-            child.pid === undefined || (await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000));
+        const treeStopped = await waitForTreeExit(2_000);
         treeExitProved = treeStopped;
         storageProof.verdict = undefined;
         storageProof.reasons = [];
@@ -2320,8 +2502,8 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         } catch {
             /* The stop must still proceed. */
         }
-        terminateProcessTree(childPid, 'SIGTERM', tracked, processToken);
-        forceKillTimer = setTimeout(() => terminateProcessTree(childPid, 'SIGKILL', tracked, processToken), 5_000);
+        terminateTree('SIGTERM');
+        forceKillTimer = setTimeout(() => terminateTree('SIGKILL'), 5_000);
     };
     // Hoisted so the process.on registrations above the spawn-gap comment can name them
     // before these lines execute; they only ever run on a later loop turn.
@@ -2333,7 +2515,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     }
     function onInterrupt(signal: NodeJS.Signals): void {
         if (interruptedSignal !== undefined && child.pid !== undefined) {
-            terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+            terminateTree('SIGKILL');
             return;
         }
         interruptedSignal = signal;
@@ -2379,7 +2561,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (child.pid === undefined) {
             return;
         }
-        const rssBytes = sampleProcessTree(child.pid, tracked, processToken);
+        const rssBytes = sampleProcessTree(child.pid, tracked, processToken, commandProcessHost);
         if (rssBytes === undefined) {
             processSamplerFailures += 1;
             if (processSamplerFailures >= 3) {
@@ -2424,7 +2606,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         sample();
     } catch (error) {
         if (child.pid !== undefined) {
-            terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+            terminateTree('SIGKILL');
         }
         const cleaned = await cleanupStorage();
         if (forceKillTimer !== undefined) {
@@ -2460,18 +2642,16 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         try {
             const result = await childCompletion;
             if (child.pid !== undefined && reason === undefined) {
-                const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
+                const exitedCleanly = await waitForTreeExit(500);
                 if (!exitedCleanly) {
-                    terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
-                    const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
+                    terminateTree('SIGTERM');
+                    const exitedAfterTerm = await waitForTreeExit(1_000);
                     if (!exitedAfterTerm) {
-                        terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
-                        const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
+                        terminateTree('SIGKILL');
+                        const exitedAfterKill = await waitForTreeExit(2_000);
                         if (!exitedAfterKill) {
                             output.append(
-                                Buffer.from(
-                                    `\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`
-                                )
+                                Buffer.from('\nprocess-tree exit could not be proved after forced cleanup\n')
                             );
                             reason = 'leak';
                         }
@@ -2479,7 +2659,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
                 }
             }
             if (child.pid !== undefined && reason !== undefined) {
-                await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
+                await waitForTreeExit(7_000);
             }
             await cleanupStorage();
             return { succeeded: true as const, result };
@@ -2538,6 +2718,46 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             );
             reason ??= 'leak';
         }
+    }
+    if (child.pid !== undefined && (reason === 'leak' || !treeExitProved)) {
+        let processGroup: ReturnType<typeof captureProcessGroupSnapshot>;
+        try {
+            processGroup = (input.processSnapshot ?? captureProcessGroupSnapshot)(child.pid);
+        } catch {
+            processGroup = { status: 'unavailable' };
+        }
+        const blockingPid =
+            blockingTreeObservation?.blockingTracked?.pid ??
+            blockingTreeObservation?.sessionPid ??
+            blockingTreeObservation?.ownedPid;
+        let blockingProcess: { status: 'unavailable' } | { status: 'available'; row: ProcessMetadata | undefined } = {
+            status: 'unavailable',
+        };
+        if (blockingPid !== undefined) {
+            try {
+                const snapshot = captureProcessGroupOfPid(blockingPid);
+                if (snapshot.status === 'available') {
+                    blockingProcess = {
+                        status: 'available',
+                        row: snapshot.rows.find((row) => row.pid === blockingPid),
+                    };
+                }
+            } catch {
+                // Diagnostic failure must not replace the cleanup failure.
+            }
+        }
+        output.append(
+            Buffer.from(
+                `\nguard cleanup diagnostic: ${JSON.stringify({
+                    treeExitProved,
+                    lastObservation: boundedProcessTreeObservation(treeObservation),
+                    blockingObservation: boundedProcessTreeObservation(blockingTreeObservation),
+                    metadataAtReport: { processGroup, blockingProcess },
+                    signalFailures,
+                    signalFailuresTruncated: signalFailureCount > signalFailures.length,
+                })}\n`
+            )
+        );
     }
     const tail = output.result();
     return {

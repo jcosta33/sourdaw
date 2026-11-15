@@ -31,20 +31,25 @@ import {
     detectAuthorLane,
     enterResourceSession,
     hasExplicitTarget,
+    isSameProcess,
     main as runGuardCli,
     parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
     pnpmScriptName,
     psSamplingArgs,
+    processTreeAlive,
     readGuardFailureReceipt,
     resolveDefaultMaxRssBytes,
     writeGuardFailureReceipt,
     RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
+    sampleProcessTree,
+    terminateProcessTree,
     type DetectedLane,
     type GuardedCommandResult,
+    type ProcessTreeHost,
     type ResourceProfile,
     type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
@@ -229,17 +234,23 @@ describe('resource admission', () => {
                 })
             );
             let admitted = false;
+            const waiting = Promise.withResolvers<void>();
             const secondPromise = enterResourceSession({
                 root,
                 requiredRssBytes: 1024 ** 3,
                 availableMemoryBytes: 3 * 1024 ** 3,
                 waitIntervalMs: 10,
+                onWait: () => waiting.resolve(),
             }).then((session) => {
                 admitted = true;
                 return session;
             });
 
-            await new Promise((resolve) => setTimeout(resolve, 30));
+            const observed = await Promise.race([
+                waiting.promise.then(() => 'waiting'),
+                secondPromise.then(() => 'admitted'),
+            ]);
+            expect(observed).toBe('waiting');
             expect(admitted).toBe(false);
             first.release();
 
@@ -416,6 +427,281 @@ describe('process table sampling', () => {
         const darwin = psSamplingArgs('darwin', 'session-token');
         const linux = psSamplingArgs('linux', 'session-token');
         expect(darwin).toEqual([linux[0], `-${linux[1]}`, ...linux.slice(2)]);
+    });
+});
+
+describe('process identity ownership', () => {
+    type ProcessRows = NonNullable<ReturnType<ProcessTreeHost['processTable']>>;
+
+    function fixture(rows: ProcessRows, starts: Array<[number, string]>, probeErrors = new Map<number, string>()) {
+        const identities = new Map(starts);
+        const signals: Array<[number, NodeJS.Signals | number | undefined]> = [];
+        const windowsTrees: number[] = [];
+        const host: ProcessTreeHost = {
+            platform: () => 'linux',
+            processTable: () => rows,
+            processStartedAt: (pid) => identities.get(pid),
+            terminateWindowsTree: (pid) => {
+                windowsTrees.push(pid);
+            },
+            kill: (pid, signal) => {
+                if (signal !== 0) {
+                    signals.push([pid, signal]);
+                    return true;
+                }
+                const code = probeErrors.get(pid);
+                if (code !== undefined) {
+                    throw Object.assign(new Error(code), { code });
+                }
+                const present = rows.some((row) => (pid < 0 ? row.processGroupId === -pid : row.pid === pid));
+                if (!present) {
+                    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+                }
+                return true;
+            },
+        };
+        return { host, signals, windowsTrees };
+    }
+
+    function row(pid: number, parentPid: number, processGroupId: number, rssBytes: number, sessionOwned = false) {
+        return { pid, parentPid, processGroupId, rssBytes, sessionOwned, command: 'fixture' };
+    }
+
+    const originalStart = 'Mon Nov  9 10:00:00 2026';
+    const replacementStart = 'Tue Nov 10 10:00:00 2026';
+
+    function reusedDescendant() {
+        const rows = [
+            row(100, 1, 100, 1),
+            row(101, 100, 100, 2),
+            row(200, 1, 200, 16),
+            row(201, 200, 200, 32),
+            row(202, 201, 200, 64),
+            row(300, 1, 300, 4, true),
+            row(301, 300, 300, 8),
+            row(400, 1, 400, 128),
+        ];
+        const starts: Array<[number, string]> = rows.map((entry) => [entry.pid, replacementStart]);
+        starts.push([100, originalStart]);
+        return {
+            ...fixture(rows, starts),
+            tracked: new Map([
+                [100, originalStart],
+                [200, originalStart],
+            ]),
+        };
+    }
+
+    it('does not enlist foreign descendants through a positively reused historical PID', () => {
+        const { host, tracked } = reusedDescendant();
+
+        expect(sampleProcessTree(100, tracked, 'session', host)).toBe(15);
+        expect([...tracked.keys()].sort((left, right) => left - right)).toEqual([100, 101, 200, 300, 301]);
+        expect(tracked.get(200)).toBe(originalStart);
+    });
+
+    it('does not authorize foreign descendant signals through a positively reused historical PID', () => {
+        const { host, tracked, signals } = reusedDescendant();
+
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+
+        expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([-100, 100, 101, 300, 301]);
+    });
+
+    it.each([
+        { authority: 'session token', parentPid: 1, sessionOwned: true },
+        { authority: 'owned parent', parentPid: 100, sessionOwned: false },
+    ])('refreshes a reused PID only after current $authority admission', ({ parentPid, sessionOwned }) => {
+        const { host, signals } = fixture(
+            [row(100, 1, 100, 1), row(200, parentPid, 200, 2, sessionOwned)],
+            [
+                [100, originalStart],
+                [200, replacementStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+
+        expect(sampleProcessTree(100, tracked, 'session', host)).toBe(3);
+        expect(tracked.get(200)).toBe(replacementStart);
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+        expect(signals).toContainEqual([200, 'SIGTERM']);
+    });
+
+    it('retains token-owned processes whose start identity is unreadable without signaling them individually', () => {
+        const { host, signals } = fixture([row(200, 1, 200, 1, true)], []);
+        const tracked = new Map([[100, originalStart]]);
+
+        expect(processTreeAlive(100, tracked, 'session', host)).toBe(true);
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+        expect(signals.some(([pid]) => pid === 200)).toBe(false);
+    });
+
+    it('retains an owned descendant whose start identity is unreadable without a Unix group probe', () => {
+        const { host } = fixture([row(200, 100, 200, 1)], []);
+        host.platform = () => 'win32';
+
+        expect(processTreeAlive(100, new Map([[100, originalStart]]), 'session', host)).toBe(true);
+    });
+
+    it('does not signal a replacement root group while retaining token and exact-identity descendants', () => {
+        const { host, signals } = fixture(
+            [row(100, 1, 100, 1), row(101, 100, 100, 2), row(300, 1, 300, 4, true), row(400, 1, 400, 8)],
+            [
+                [100, replacementStart],
+                [101, replacementStart],
+                [300, replacementStart],
+                [400, originalStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [400, originalStart],
+        ]);
+
+        terminateProcessTree(100, 'SIGKILL', tracked, 'session', host);
+
+        expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([300, 400]);
+    });
+
+    it('does not keep a replacement root group alive as the original owned group', () => {
+        const { host } = fixture(
+            [row(100, 1, 100, 1), row(101, 100, 100, 2)],
+            [
+                [100, replacementStart],
+                [101, replacementStart],
+            ]
+        );
+
+        expect(processTreeAlive(100, new Map([[100, originalStart]]), 'session', host)).toBe(false);
+    });
+
+    it('does not authorize Windows tree termination from a positively reused root', () => {
+        const { host, signals, windowsTrees } = fixture(
+            [row(100, 1, 100, 1), row(400, 1, 400, 8)],
+            [
+                [100, replacementStart],
+                [400, originalStart],
+            ]
+        );
+        host.platform = () => 'win32';
+
+        terminateProcessTree(
+            100,
+            'SIGKILL',
+            new Map([
+                [100, originalStart],
+                [400, originalStart],
+            ]),
+            'session',
+            host
+        );
+
+        expect(windowsTrees).toEqual([]);
+        expect(signals).toEqual([[400, 'SIGKILL']]);
+    });
+
+    it('keeps Windows tree termination for a matching root', () => {
+        const { host, signals, windowsTrees } = fixture([row(100, 1, 100, 1)], [[100, originalStart]]);
+        host.platform = () => 'win32';
+
+        terminateProcessTree(100, 'SIGTERM', new Map([[100, originalStart]]), 'session', host);
+
+        expect(windowsTrees).toEqual([100]);
+        expect(signals).toEqual([]);
+    });
+
+    it('keeps the original group authoritative after its leader exits', () => {
+        const { host, signals } = fixture([row(101, 1, 100, 2)], [[101, originalStart]]);
+        const tracked = new Map([[100, originalStart]]);
+
+        expect(processTreeAlive(100, tracked, 'session', host)).toBe(true);
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+        expect(signals).toEqual([[-100, 'SIGTERM']]);
+    });
+
+    it.each(['EPERM', 'EACCES'])('rejects a positively different start even when the PID probe returns %s', (code) => {
+        const { host } = fixture([row(200, 1, 200, 1)], [[200, replacementStart]], new Map([[200, code]]));
+
+        expect(isSameProcess(200, originalStart, host)).toBe(false);
+    });
+
+    it.each(
+        ['EPERM', 'EACCES'].flatMap((code) => [
+            { label: 'matching', startedAt: originalStart, code },
+            { label: 'unreadable', startedAt: undefined, code },
+        ])
+    )('keeps a $code $label identity live without authorizing an unknown signal', ({ startedAt, code }) => {
+        const { host, signals } = fixture(
+            [row(200, 1, 200, 1)],
+            startedAt === undefined ? [] : [[200, startedAt]],
+            new Map([
+                [200, code],
+                [-100, 'ESRCH'],
+            ])
+        );
+        const tracked = new Map([[200, originalStart]]);
+
+        expect(isSameProcess(200, originalStart, host)).toBe(true);
+        expect(processTreeAlive(100, tracked, 'session', host)).toBe(true);
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+        expect(signals.some(([pid]) => pid === 200)).toBe(startedAt !== undefined);
+    });
+
+    it('keeps an unavailable census fail-closed', () => {
+        const { host } = fixture([], []);
+        host.processTable = () => undefined;
+        const observations: unknown[] = [];
+
+        expect(processTreeAlive(100, new Map(), 'session', host, (observation) => observations.push(observation))).toBe(
+            true
+        );
+        expect(observations).toEqual([
+            { census: 'unavailable', processGroupProbe: { state: 'unobserved' }, blockedBy: 'census' },
+        ]);
+    });
+
+    it('records the group permission error that blocks exit proof', () => {
+        const { host } = fixture([], [], new Map([[-100, 'EPERM']]));
+        const observations: unknown[] = [];
+
+        expect(processTreeAlive(100, new Map(), 'session', host, (observation) => observations.push(observation))).toBe(
+            true
+        );
+        expect(observations).toEqual([
+            {
+                census: 'available',
+                processGroupProbe: { state: 'unknown', errno: 'EPERM' },
+                blockedBy: 'process-group',
+            },
+        ]);
+    });
+
+    it('records the stored and current identity and errno of the tracked process blocking exit proof', () => {
+        const { host } = fixture([row(200, 1, 200, 1)], [[200, originalStart]], new Map([[200, 'EPERM']]));
+        const observations: unknown[] = [];
+
+        expect(
+            processTreeAlive(100, new Map([[200, originalStart]]), 'session', host, (observation) =>
+                observations.push(observation)
+            )
+        ).toBe(true);
+        expect(observations).toEqual([
+            {
+                census: 'available',
+                processGroupProbe: { state: 'absent', errno: 'ESRCH' },
+                blockedBy: 'tracked-process',
+                blockingTracked: {
+                    pid: 200,
+                    storedStartedAt: originalStart,
+                    currentStartedAt: originalStart,
+                    state: 'matching',
+                    signalZero: { state: 'unknown', errno: 'EPERM' },
+                },
+            },
+        ]);
     });
 });
 
