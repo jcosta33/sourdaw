@@ -4135,12 +4135,15 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
         "a readable descriptor must reach its handler"
     );
 
-    // SAFETY: the same live handler, then two descriptors this test owns.
-    unsafe {
-        assert_eq!(run_loop.unregisterEventHandler(raw), kResultOk);
-        libc::close(write_end);
-        libc::close(read_end);
-    }
+    // SAFETY: `raw` still borrows the live handler `handler` owns, registered above.
+    let unregistered = unsafe { run_loop.unregisterEventHandler(raw) };
+    assert_eq!(unregistered, kResultOk);
+    // SAFETY: `write_end` is the pipe's write descriptor this test opened and
+    // has not closed; nothing uses it after this.
+    unsafe { libc::close(write_end) };
+    // SAFETY: `read_end` is the pipe's read descriptor this test opened, no
+    // longer registered with the run loop; nothing uses it after this.
+    unsafe { libc::close(read_end) };
 }
 
 /// Poll for a condition rather than sleeping a fixed time. Nothing services

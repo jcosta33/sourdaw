@@ -555,14 +555,11 @@ mod platform {
     fn symbol_in<T>(library: &Library, name: &[u8]) -> Option<T> {
         // SAFETY: `library` is loaded for the borrow's duration and `name` is
         // NUL-terminated at every call site; each caller names as `T` the
-        // signature VST3 documents for that export, a `Copy` pointer type the
-        // symbol dereferences to.
-        unsafe {
-            library
-                .get::<T>(name)
-                .ok()
-                .map(|symbol| std::ptr::read(&*symbol as *const T))
-        }
+        // signature VST3 documents for that export.
+        let symbol = unsafe { library.get::<T>(name) }.ok()?;
+        // SAFETY: `symbol` dereferences to a live, initialised `T` (the export's
+        // address), and `T` is a `Copy` pointer type at every call site.
+        Some(unsafe { std::ptr::read(&*symbol as *const T) })
     }
 
     impl LoadedModule {
