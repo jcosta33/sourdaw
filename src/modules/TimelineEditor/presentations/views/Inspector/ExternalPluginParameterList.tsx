@@ -215,21 +215,14 @@ const RestoreFailureNotice = ({ instanceId }: { instanceId: string }): ReactElem
     );
 };
 
-const currentParameters = (instanceId: string): readonly ExternalPluginParameter[] =>
-    externalPluginParameterStore.value?.byInstanceId[instanceId]?.parameters ?? [];
-
 /**
  * Re-reads the host and records, for each parameter object the re-read published, the scheduler write
  * that was latest when it was issued: the answer can predate a write that lands while the host replies.
  */
 async function refreshAndTag(instanceId: string, readIssuedAt: WeakMap<object, number>): Promise<void> {
     const issuedAt = readLatestAutomationWriteSequence();
-    const before = new Set<object>(currentParameters(instanceId));
-    await refreshExternalPluginParameters(instanceId);
-    for (const parameter of currentParameters(instanceId)) {
-        if (!before.has(parameter)) {
-            readIssuedAt.set(parameter, issuedAt);
-        }
+    for (const parameter of await refreshExternalPluginParameters(instanceId)) {
+        readIssuedAt.set(parameter, issuedAt);
     }
 }
 

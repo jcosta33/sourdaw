@@ -3,6 +3,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import {
+    clearExternalPluginParameterReadState,
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
@@ -39,4 +40,5 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationStore.set(defaultExternalPluginActivationState);
     // The parameter snapshots belong to the outgoing generation's instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    clearExternalPluginParameterReadState();
 }

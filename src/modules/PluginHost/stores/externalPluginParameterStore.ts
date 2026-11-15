@@ -234,11 +234,87 @@ export function patchExternalPluginParameterValue(instanceId: string, parameterI
         const parameters = snapshot.parameters.map((parameter) =>
             parameter.id === parameterId ? { ...parameter, value } : parameter
         );
+        bumpEditGeneration(instanceId, parameterId);
         return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters } } };
     });
 }
 
+/**
+ * What a host re-read must not displace, captured when the read is issued: the
+ * edits and the newer re-reads that land while the host is still answering.
+ */
+export type ExternalPluginParameterReadTicket = {
+    token: number;
+    editGenerations: ReadonlyMap<number, number>;
+};
+
+/** Per instance, how many value edits each parameter has taken; absent means none. */
+const editGenerations = new Map<string, Map<number, number>>();
+/** Per instance, the token of the newest re-read issued; an older one is superseded. */
+const latestReadToken = new Map<string, number>();
+/** Global, so a token issued before an instance was dropped never matches one issued after. */
+let lastReadToken = 0;
+
+function bumpEditGeneration(instanceId: string, parameterId: number): void {
+    const generations = editGenerations.get(instanceId) ?? new Map<number, number>();
+    generations.set(parameterId, (generations.get(parameterId) ?? 0) + 1);
+    editGenerations.set(instanceId, generations);
+}
+
+export function issueExternalPluginParameterRead(instanceId: string): ExternalPluginParameterReadTicket {
+    lastReadToken += 1;
+    latestReadToken.set(instanceId, lastReadToken);
+    return { token: lastReadToken, editGenerations: new Map(editGenerations.get(instanceId)) };
+}
+
+/**
+ * Publish a host answer unless a newer re-read was issued since `ticket`, and
+ * keep the store's own object for every parameter edited since the ticket: the
+ * host answered before that edit, so its value is the older one. Returns the
+ * parameter objects this call put in the store, so a caller can tell them from
+ * objects an edit produced. An instance with no snapshot publishes nothing.
+ */
+export function publishExternalPluginParameterRead(
+    instanceId: string,
+    ticket: ExternalPluginParameterReadTicket,
+    hostParameters: readonly ExternalPluginParameter[]
+): readonly ExternalPluginParameter[] {
+    if (latestReadToken.get(instanceId) !== ticket.token) {
+        return [];
+    }
+    let published: readonly ExternalPluginParameter[] = [];
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot) {
+            return current;
+        }
+        const generations = editGenerations.get(instanceId);
+        const edited = new Map(snapshot.parameters.map((parameter) => [parameter.id, parameter]));
+        const merged = hostParameters.map((parameter) =>
+            (generations?.get(parameter.id) ?? 0) === (ticket.editGenerations.get(parameter.id) ?? 0)
+                ? parameter
+                : (edited.get(parameter.id) ?? parameter)
+        );
+        const fromHost = new Set(hostParameters);
+        published = merged.filter((parameter) => fromHost.has(parameter));
+        return {
+            ...current,
+            byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters: merged } },
+        };
+    });
+    return published;
+}
+
+/** Forget the read bookkeeping of every instance, with the snapshots that owned it. */
+export function clearExternalPluginParameterReadState(): void {
+    editGenerations.clear();
+    latestReadToken.clear();
+}
+
 export function dropExternalPluginParameterSnapshot(instanceId: string): void {
+    editGenerations.delete(instanceId);
+    latestReadToken.delete(instanceId);
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;
         const byInstanceId = { ...current.byInstanceId };
