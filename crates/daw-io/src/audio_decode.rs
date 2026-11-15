@@ -1391,8 +1391,15 @@ mod peak_allocation {
 
     pub struct PeakTracking;
 
+    // SAFETY: every method forwards its arguments unchanged to `System`,
+    // which upholds the `GlobalAlloc` contract, and returns `System`'s result
+    // unchanged; the bookkeeping beside it touches only const-initialised
+    // thread-local `Cell`s, which neither allocate nor unwind.
     unsafe impl GlobalAlloc for PeakTracking {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            // SAFETY: `layout` arrives under `GlobalAlloc::alloc`'s caller
+            // contract (non-zero size), which is exactly what `System.alloc`
+            // requires.
             let ptr = unsafe { System.alloc(layout) };
             if !ptr.is_null() {
                 record(layout.size() as isize);
@@ -1401,11 +1408,18 @@ mod peak_allocation {
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: under `GlobalAlloc::dealloc`'s caller contract `ptr` was
+            // allocated by this allocator with `layout`, and every such block
+            // came from `System` with that same layout.
             unsafe { System.dealloc(ptr, layout) };
             record(-(layout.size() as isize));
         }
 
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            // SAFETY: under `GlobalAlloc::realloc`'s caller contract `ptr` was
+            // allocated by this allocator (so by `System`) with `layout`, and
+            // `new_size` is non-zero and does not overflow when rounded to
+            // `layout.align()` — exactly `System.realloc`'s requirements.
             let next = unsafe { System.realloc(ptr, layout, new_size) };
             if !next.is_null() {
                 record(new_size as isize - layout.size() as isize);
