@@ -1,4 +1,6 @@
-// This installer is serialized by Playwright; keep every runtime dependency local or global.
+// Each installer is serialized by Playwright as its own init script; keep every runtime
+// dependency local or global. They share state through `window.productionFaustProbeState`,
+// which the first installer creates, so they must be added in `faustProbeInitScripts` order.
 type LoadMode = 'pass' | 'hold-live' | 'hold-offline' | 'reject-offline';
 type LoadObservation = {
     context: 'live' | 'offline';
@@ -24,29 +26,109 @@ type FaustProbe = {
     observeSuccess: () => void;
     stopObservingSuccess: () => void;
 };
+type FaustProbeState = {
+    blobs: Map<string, Blob>;
+    contexts: WeakMap<AudioWorklet, { kind: 'live' | 'offline'; context: BaseAudioContext }>;
+    contextLoads: WeakMap<BaseAudioContext, LoadObservation[]>;
+    loads: LoadObservation[];
+    taps: Array<{ analyser: AnalyserNode; connected: boolean }>;
+    diagnosticErrors: unknown[];
+    releases: Array<() => void>;
+    mode: LoadMode;
+    successNotifications: number;
+    successObserver: MutationObserver | undefined;
+};
 
 declare global {
     interface Window {
         productionFaustProbe: FaustProbe;
+        productionFaustProbeState: FaustProbeState;
     }
 }
 
-export function installFaustProbe(): void {
-    const blobs = new Map<string, Blob>();
-    const contexts = new WeakMap<AudioWorklet, { kind: 'live' | 'offline'; context: BaseAudioContext }>();
-    const contextLoads = new WeakMap<BaseAudioContext, LoadObservation[]>();
-    const loads: LoadObservation[] = [];
-    const taps: Array<{ analyser: AnalyserNode; connected: boolean }> = [];
-    const diagnosticErrors: unknown[] = [];
-    const releases: Array<() => void> = [];
-    let mode: LoadMode = 'hold-live';
-    let successNotifications = 0;
-    let successObserver: MutationObserver | undefined;
+function installFaustProbeApi(): void {
+    const state: FaustProbeState = {
+        blobs: new Map(),
+        contexts: new WeakMap(),
+        contextLoads: new WeakMap(),
+        loads: [],
+        taps: [],
+        diagnosticErrors: [],
+        releases: [],
+        mode: 'hold-live',
+        successNotifications: 0,
+        successObserver: undefined,
+    };
+    window.productionFaustProbeState = state;
+    window.productionFaustProbe = {
+        setMode(next) {
+            state.mode = next;
+        },
+        release() {
+            state.mode = 'pass';
+            for (const resolve of state.releases.splice(0)) {
+                resolve();
+            }
+        },
+        observeSuccess() {
+            state.successNotifications = 0;
+            state.successObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.textContent?.includes('Audio exported')) {
+                            state.successNotifications++;
+                        }
+                    }
+                }
+            });
+            state.successObserver.observe(document.body, { childList: true, subtree: true });
+        },
+        stopObservingSuccess() {
+            state.successObserver?.disconnect();
+        },
+        snapshot() {
+            if (state.diagnosticErrors.length > 0) {
+                throw state.diagnosticErrors[0];
+            }
+            let samplePeak = 0;
+            let finite = true;
+            const connectedTaps = state.taps.filter((tap) => tap.connected);
+            for (const { analyser } of connectedTaps) {
+                const samples = new Float32Array(analyser.fftSize);
+                analyser.getFloatTimeDomainData(samples);
+                for (const sample of samples) {
+                    finite &&= Number.isFinite(sample);
+                    samplePeak = Math.max(samplePeak, Math.abs(sample));
+                }
+            }
+            return {
+                // Snapshots are point-in-time: later load progress must not rewrite them.
+                loads: state.loads.map((load) => ({
+                    context: load.context,
+                    processorName: load.processorName,
+                    heldAt: load.heldAt,
+                    releasedAt: load.releasedAt,
+                    nativeInvoked: load.nativeInvoked,
+                    nativeCompleted: load.nativeCompleted,
+                    nativeRejected: load.nativeRejected,
+                    constructions: load.constructions,
+                })),
+                tapCount: connectedTaps.length,
+                finite,
+                samplePeak,
+                successNotifications: state.successNotifications,
+            };
+        },
+    };
+}
+
+function captureFaustContexts(): void {
+    const state = window.productionFaustProbeState;
     const createObjectURL = URL.createObjectURL.bind(URL);
     URL.createObjectURL = (blob) => {
         const url = createObjectURL(blob);
         if (blob instanceof Blob && (blob.type === 'text/javascript' || blob.type === 'application/javascript')) {
-            blobs.set(url, blob);
+            state.blobs.set(url, blob);
         }
         return url;
     };
@@ -58,7 +140,7 @@ export function installFaustProbe(): void {
             if (!(context instanceof NativeAudioContext)) {
                 throw new TypeError('Native AudioContext construction returned the wrong type');
             }
-            contexts.set(context.audioWorklet, { kind: 'live', context });
+            state.contexts.set(context.audioWorklet, { kind: 'live', context });
             return context;
         },
     });
@@ -68,23 +150,28 @@ export function installFaustProbe(): void {
             if (!(context instanceof NativeOfflineAudioContext)) {
                 throw new TypeError('Native OfflineAudioContext construction returned the wrong type');
             }
-            contexts.set(context.audioWorklet, { kind: 'offline', context });
+            state.contexts.set(context.audioWorklet, { kind: 'offline', context });
             return context;
         },
     });
+}
+
+function holdFaustModuleLoads(): void {
+    const state = window.productionFaustProbeState;
     const nativeAddModule = AudioWorklet.prototype.addModule;
     AudioWorklet.prototype.addModule = async function (url, options) {
-        const blob = blobs.get(String(url));
+        const blob = state.blobs.get(String(url));
         const source = blob === undefined ? '' : await blob.text();
         const serialized = /const faustData = (\{[^\n]+\});/.exec(source)?.[1];
         const data: unknown = serialized === undefined ? null : JSON.parse(serialized);
         if (data === null || typeof data !== 'object' || !('dspName' in data) || data.dspName !== 'Tape_Delay') {
-            return nativeAddModule.call(this, url, options);
+            await nativeAddModule.call(this, url, options);
+            return;
         }
         if (!('processorName' in data) || typeof data.processorName !== 'string') {
             throw new Error('Target Faust module has no processorName');
         }
-        const context = contexts.get(this);
+        const context = state.contexts.get(this);
         if (context === undefined) {
             throw new Error('Target Faust worklet has no captured native context');
         }
@@ -98,15 +185,15 @@ export function installFaustProbe(): void {
             nativeRejected: null,
             constructions: 0,
         };
-        loads.push(load);
-        const previousLoads = contextLoads.get(context.context) ?? [];
+        state.loads.push(load);
+        const previousLoads = state.contextLoads.get(context.context) ?? [];
         previousLoads.push(load);
-        contextLoads.set(context.context, previousLoads);
-        const hold = mode === (context.kind === 'live' ? 'hold-live' : 'hold-offline');
-        const reject = context.kind === 'offline' && mode === 'reject-offline';
+        state.contextLoads.set(context.context, previousLoads);
+        const hold = state.mode === (context.kind === 'live' ? 'hold-live' : 'hold-offline');
+        const reject = context.kind === 'offline' && state.mode === 'reject-offline';
         if (hold) {
             load.heldAt = performance.now();
-            await new Promise<void>((resolve) => releases.push(resolve));
+            await new Promise<void>((resolve) => state.releases.push(resolve));
             load.releasedAt = performance.now();
         }
         // Revocation makes the saved browser loader fail on the actual Blob URL.
@@ -123,15 +210,17 @@ export function installFaustProbe(): void {
             throw error;
         }
     };
+}
+
+function tapFaustWorkletNodes(): void {
+    const state = window.productionFaustProbeState;
     const NativeAudioWorkletNode = window.AudioWorkletNode;
     window.AudioWorkletNode = new Proxy(NativeAudioWorkletNode, {
         construct(target, args, newTarget) {
             const name: unknown = args[1];
             const context: unknown = args[0];
-            const load =
-                context instanceof BaseAudioContext
-                    ? contextLoads.get(context)?.findLast((entry) => entry.processorName === name)
-                    : undefined;
+            const contextLoads = context instanceof BaseAudioContext ? state.contextLoads.get(context) : undefined;
+            const load = contextLoads?.findLast((entry) => entry.processorName === name);
             if (load !== undefined) {
                 load.constructions++;
             }
@@ -152,7 +241,7 @@ export function installFaustProbe(): void {
                     try {
                         action();
                     } catch (error) {
-                        diagnosticErrors.push(error);
+                        state.diagnosticErrors.push(error);
                     }
                 }
                 Object.defineProperties(node, {
@@ -209,59 +298,16 @@ export function installFaustProbe(): void {
                         }),
                     },
                 });
-                taps.push(tap);
+                state.taps.push(tap);
             }
             return node;
         },
     });
-    window.productionFaustProbe = {
-        setMode(next) {
-            mode = next;
-        },
-        release() {
-            mode = 'pass';
-            for (const resolve of releases.splice(0)) {
-                resolve();
-            }
-        },
-        observeSuccess() {
-            successNotifications = 0;
-            successObserver = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        if (node.textContent?.includes('Audio exported')) {
-                            successNotifications++;
-                        }
-                    }
-                }
-            });
-            successObserver.observe(document.body, { childList: true, subtree: true });
-        },
-        stopObservingSuccess() {
-            successObserver?.disconnect();
-        },
-        snapshot() {
-            if (diagnosticErrors.length > 0) {
-                throw diagnosticErrors[0];
-            }
-            let samplePeak = 0;
-            let finite = true;
-            const connectedTaps = taps.filter((tap) => tap.connected);
-            for (const { analyser } of connectedTaps) {
-                const samples = new Float32Array(analyser.fftSize);
-                analyser.getFloatTimeDomainData(samples);
-                for (const sample of samples) {
-                    finite &&= Number.isFinite(sample);
-                    samplePeak = Math.max(samplePeak, Math.abs(sample));
-                }
-            }
-            return {
-                loads: loads.map((load) => ({ ...load })),
-                tapCount: connectedTaps.length,
-                finite,
-                samplePeak,
-                successNotifications,
-            };
-        },
-    };
 }
+
+export const faustProbeInitScripts = [
+    installFaustProbeApi,
+    captureFaustContexts,
+    holdFaustModuleLoads,
+    tapFaustWorkletNodes,
+] as const;

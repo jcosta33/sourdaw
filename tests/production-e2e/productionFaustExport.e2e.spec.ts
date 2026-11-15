@@ -9,16 +9,14 @@ import { stringify as superjsonStringify } from 'superjson';
 import { analyzePcmWav } from '../e2e/analyzePcmWav';
 import { installFilePickerCapture, type FilePickerCapture } from '../e2e/exportFilePickerCapture';
 
-import { installFaustProbe } from './productionFaustProbe';
+import { faustProbeInitScripts } from './productionFaustProbe';
 import { admitProductionTransportInput } from './productionTransportInput';
 
 // This is a production-preview case. It deliberately uses the shipping iframe,
 // native worklet loading, real transport controls and controlled picker storage.
 async function buildIdentity(origin: string): Promise<Record<string, unknown>> {
-    const paths = (await readdir('dist', { recursive: true, withFileTypes: true }))
-        .filter((entry) => entry.isFile())
-        .map((entry) => join(entry.parentPath, entry.name))
-        .sort();
+    const files = (await readdir('dist', { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile());
+    const paths = files.map((entry) => join(entry.parentPath, entry.name)).sort();
     const hashes = await Promise.all(
         paths.map(async (path) => ({
             path,
@@ -273,7 +271,9 @@ test('production Faust plays and exports after slow native loading, refuses a na
                 localStorage.setItem('wd:first-load-hint-shown', '1');
             }
         }, dismissed);
-        await page.addInitScript(installFaustProbe);
+        for (const initScript of faustProbeInitScripts) {
+            await page.addInitScript(initScript);
+        }
         const response = await page.goto('/');
         expect(response).not.toBeNull();
         if (response === null) {
@@ -282,7 +282,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
         expect(await response.body()).toEqual(await readFile('dist/index.html'));
         await expect(page.locator('iframe[title="Sourdaw"]')).toHaveCount(1);
         const element = await page.locator('iframe[title="Sourdaw"]').elementHandle();
-        frame = (await element?.contentFrame()) ?? undefined;
+        frame = (await element.contentFrame()) ?? undefined;
         if (!frame) {
             throw new Error('Shipping application iframe did not mount');
         }
