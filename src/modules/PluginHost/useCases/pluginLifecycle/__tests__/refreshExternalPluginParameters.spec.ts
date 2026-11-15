@@ -124,14 +124,14 @@ describe('refreshExternalPluginParameters', () => {
 
     describe('against newer facts', () => {
         const deferredRead = (): { resolve: (parameters: PluginParameter[]) => void } => {
-            let resolve: (parameters: PluginParameter[]) => void = () => {};
+            let resolveRead: (parameters: PluginParameter[]) => void = () => {};
             vi.mocked(getPluginParameters).mockImplementationOnce(
                 () =>
-                    new Promise<PluginParameter[]>((settle) => {
-                        resolve = settle;
+                    new Promise<PluginParameter[]>((resolve) => {
+                        resolveRead = resolve;
                     })
             );
-            return { resolve: (parameters) => resolve(parameters) };
+            return { resolve: (parameters) => resolveRead(parameters) };
         };
 
         const seedLoaded = (): void => {
@@ -251,9 +251,9 @@ describe('refreshExternalPluginParameters', () => {
 
             expect(published).toHaveLength(2);
             expect(published).toEqual(externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters);
-            published.forEach((parameter, index) => {
+            for (const [index, parameter] of published.entries()) {
                 expect(externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters[index]).toBe(parameter);
-            });
+            }
         });
     });
 });

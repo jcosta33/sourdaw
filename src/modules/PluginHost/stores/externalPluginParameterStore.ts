@@ -312,11 +312,13 @@ export function publishExternalPluginParameterRead(
         }
         const generations = editGenerations.get(instanceId);
         const edited = new Map(snapshot.parameters.map((parameter) => [parameter.id, parameter]));
-        const merged = hostParameters.map((parameter) =>
-            (generations?.get(parameter.id) ?? 0) === (ticket.editGenerations.get(parameter.id) ?? 0)
-                ? parameter
-                : (edited.get(parameter.id) ?? parameter)
-        );
+        const merged = hostParameters.map((parameter) => {
+            const unedited = (generations?.get(parameter.id) ?? 0) === (ticket.editGenerations.get(parameter.id) ?? 0);
+            if (unedited) {
+                return parameter;
+            }
+            return edited.get(parameter.id) ?? parameter;
+        });
         const fromHost = new Set(hostParameters);
         published = merged.filter((parameter) => fromHost.has(parameter));
         for (const parameter of published) {
