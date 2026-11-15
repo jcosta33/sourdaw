@@ -59,7 +59,9 @@ function readClipMidiEvents(clipId: string): readonly { readonly id: string }[] 
     ];
     for (const list of lists) {
         if (list) {
-            events.push(...list);
+            for (const event of list) {
+                events.push(event);
+            }
         }
     }
     return events;
