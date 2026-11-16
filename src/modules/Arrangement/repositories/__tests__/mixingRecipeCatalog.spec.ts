@@ -105,7 +105,10 @@ describe('mixingRecipeCatalog', () => {
 
     it('covers every descriptor and role pair', () => {
         const covered = new Set(
-            catalog.recipes.flatMap((recipe) => recipe.roles.map((role) => `${recipe.descriptor}/${role}`))
+            catalog.recipes.flatMap((recipe) => {
+                const { descriptor } = recipe;
+                return descriptor === null ? [] : recipe.roles.map((role) => `${descriptor}/${role}`);
+            })
         );
         const missing = MIX_RECIPE_DESCRIPTORS.flatMap((descriptor) =>
             MIX_RECIPE_ROLES.filter((role) => !covered.has(`${descriptor}/${role}`)).map(
