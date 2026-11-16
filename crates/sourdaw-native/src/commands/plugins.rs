@@ -658,6 +658,32 @@ fn apply_instance_scan_result(
     }
 }
 
+/// Why a bundle's remaining plugins were not inspected once one of them took
+/// the scan helper down.
+const SIBLING_INSPECTION_STOPPED_REASON: &str = "Inspection stopped because another plugin in the same file crashed or timed out the scan helper, so the file is quarantined.";
+
+/// The descriptor helper's answer, held to the caps the helper itself
+/// enforces. The helper runs the untrusted binary, so its own checks are not
+/// evidence about what it sent. A violation is a data refusal, never a
+/// quarantine.
+fn validated_bundle(
+    answer: Result<Vec<ScannedDescriptor>, ScanFailure>,
+) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+    let bundle = answer?;
+    scanner::validate_scanned_bundle(&bundle).map_err(ScanFailure::Refused)?;
+    Ok(bundle)
+}
+
+/// [`validated_bundle`] for the instance helper's answer.
+fn validated_instance(
+    format: PluginFormat,
+    answer: Result<ScannedInstance, ScanFailure>,
+) -> Result<ScannedInstance, ScanFailure> {
+    let instance = answer?;
+    scanner::validate_scanned_instance(format, &instance).map_err(ScanFailure::Refused)?;
+    Ok(instance)
+}
+
 /// `retry_quarantined` is the AC-002 escape hatch: `false` is every ordinary
 /// scan, which skips a quarantined candidate without spawning its helper and
 /// never clears the record. `true` — a user-initiated full rescan — clears
@@ -896,13 +922,28 @@ async fn scan_plugins_with_backend(
                 // then vet as the scanned file.
                 let wire_name = candidate.format.wire_name();
                 let before = plugin_file_fingerprint(&candidate.path, wire_name);
-                match scan_descriptor(candidate.format, &candidate.path, budget.candidate) {
+                match validated_bundle(scan_descriptor(
+                    candidate.format,
+                    &candidate.path,
+                    budget.candidate,
+                )) {
                     // One bundle may declare several plugins — CLAP's factory is
                     // count/index shaped — and each gets its own inspection and
                     // its own row. A file that declares one keeps producing
                     // exactly the row it always did.
                     Ok(mut bundle) => {
+                        let mut inspection_stopped = false;
                         for descriptor in &mut bundle {
+                            // A crash or timeout quarantines the file, and every
+                            // further inspection of it would spend a whole
+                            // candidate budget on a binary already known bad.
+                            // The row stays, with the reason, so its missing
+                            // capabilities never read as a measurement.
+                            if inspection_stopped {
+                                descriptor.parameter_metadata_reason =
+                                    Some(SIBLING_INSPECTION_STOPPED_REASON.to_string());
+                                continue;
+                            }
                             // One inspection worker answers parameters and
                             // capabilities together, so they succeed and fail
                             // together. When it does not run, both stay `None`
@@ -910,11 +951,14 @@ async fn scan_plugins_with_backend(
                             // field this scan never asked for must never be
                             // published as a measured zero.
                             let instance = if covers_a_whole_candidate(deadline, budget) {
-                                scan_instance(
+                                validated_instance(
                                     candidate.format,
-                                    &candidate.path,
-                                    &descriptor.descriptor_id,
-                                    budget.candidate,
+                                    scan_instance(
+                                        candidate.format,
+                                        &candidate.path,
+                                        &descriptor.descriptor_id,
+                                        budget.candidate,
+                                    ),
                                 )
                             } else {
                                 // Not a truncated attempt: "deadline" is a
@@ -922,6 +966,10 @@ async fn scan_plugins_with_backend(
                                 // reason and the binary is not blamed.
                                 Err(ScanFailure::Refused("deadline".to_string()))
                             };
+                            inspection_stopped = instance
+                                .as_ref()
+                                .err()
+                                .is_some_and(ScanFailure::is_process_failure);
                             apply_instance_scan_result(
                                 descriptor,
                                 instance,
@@ -1688,6 +1736,7 @@ fn rescan_plugin_file(
             recorded_consumption,
         )
     })?;
+    scanner::validate_scanned_bundle(&bundle).map_err(RescanFailure::Verdict)?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -12112,6 +12161,310 @@ mod tests {
             pick_rescanned_bundle_row(&bundle, "stale-key", "").is_none(),
             "a format with no descriptor id has nothing to fall back on"
         );
+    }
+
+    /// A bundle of `count` plugins with distinct identities.
+    fn bundle_of(count: usize) -> Vec<ScannedDescriptor> {
+        (0..count)
+            .map(|index| descriptor(&format!("com.vendor.sibling-{index:03}")))
+            .collect()
+    }
+
+    /// Scan `Aaa.clap` (sorted first, answers `bundle`) and `Zzz.clap` (a
+    /// healthy single plugin) with `instance_outcome` answering every
+    /// inspection of the first. Returns the result, the instance call log and
+    /// the first bundle's path; the state is returned so a test can read its
+    /// quarantine.
+    fn scan_bundle_then_healthy_candidate(
+        test_name: &str,
+        bundle: Vec<ScannedDescriptor>,
+        instance_outcome: impl Fn() -> Result<ScannedInstance, ScanFailure> + Send + 'static,
+    ) -> (ScanResult, ScanCallLog, PathBuf, AppState) {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        let bundle_path = root.join("Aaa.clap");
+        let healthy_path = root.join("Zzz.clap");
+        std::fs::write(&bundle_path, b"clap-bytes").expect("fixture written");
+        std::fs::write(&healthy_path, b"clap-bytes").expect("fixture written");
+        let state = state_with_registry_file(&root);
+        let instance_calls = scan_call_log();
+        let instance_log = Arc::clone(&instance_calls);
+        let hanging = bundle_path.clone();
+        let hanging_instances = bundle_path.clone();
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, _timeout| {
+                if path == hanging {
+                    Ok(bundle.clone())
+                } else {
+                    Ok(vec![descriptor("com.vendor.healthy")])
+                }
+            },
+            move |_format, path, _plugin_id, timeout| {
+                record_scan_call(&instance_log, path, timeout);
+                if path == hanging_instances {
+                    instance_outcome()
+                } else {
+                    Ok(ScannedInstance::default())
+                }
+            },
+        ))
+        .expect("a scan over an authorized fixture root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+        (result, instance_calls, bundle_path, state)
+    }
+
+    /// The bug: every sibling of a bundle whose first inspection timed out
+    /// spent another whole candidate budget.
+    ///
+    /// Mutation this catches: dropping the `inspection_stopped` guard in the
+    /// bundle loop leaves four instance calls and the generic reason on every
+    /// sibling.
+    #[test]
+    fn a_bundle_whose_first_inspection_times_out_is_not_inspected_again() {
+        let (result, instance_calls, bundle_path, state) = scan_bundle_then_healthy_candidate(
+            "bundle-timeout-stops-siblings",
+            bundle_of(4),
+            || Err(ScanFailure::TimedOut),
+        );
+
+        assert_eq!(
+            scan_calls_for(&instance_calls, &bundle_path),
+            1,
+            "only the first descriptor may cost a helper run"
+        );
+        let rows: Vec<&ScannedPlugin> = result
+            .plugins
+            .iter()
+            .filter(|plugin| plugin.path == bundle_path.display().to_string())
+            .collect();
+        assert_eq!(
+            rows.len(),
+            4,
+            "every sibling keeps its row: {:?}",
+            result.plugins
+        );
+        let stopped = Some(SIBLING_INSPECTION_STOPPED_REASON.to_string());
+        for row in &rows[1..] {
+            assert_eq!(
+                row.parameter_metadata_reason, stopped,
+                "{}",
+                row.descriptor_id
+            );
+            assert!(row.parameters.is_none());
+        }
+        assert_eq!(
+            rows[0].parameter_metadata_reason.as_deref(),
+            Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON),
+            "the descriptor that hung keeps the generic reason"
+        );
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&bundle_path)
+                .is_some(),
+            "the bundle's path is quarantined"
+        );
+        let healthy = result
+            .plugins
+            .iter()
+            .find(|plugin| plugin.descriptor_id == "com.vendor.healthy")
+            .expect("the healthy candidate after the bundle is still scanned");
+        assert!(healthy.parameter_metadata_reason.is_none());
+    }
+
+    /// A data-level refusal says nothing about the binary, so it must not stop
+    /// the next sibling.
+    ///
+    /// Mutation this catches: stopping on any `Err` instead of a process
+    /// failure leaves one instance call.
+    #[test]
+    fn a_siblings_data_refusal_does_not_stop_the_next_inspection() {
+        let (result, instance_calls, bundle_path, state) =
+            scan_bundle_then_healthy_candidate("bundle-refusal-continues", bundle_of(3), || {
+                Err(ScanFailure::Refused("deadline".to_string()))
+            });
+
+        assert_eq!(scan_calls_for(&instance_calls, &bundle_path), 3);
+        assert!(result
+            .plugins
+            .iter()
+            .filter(|plugin| plugin.path == bundle_path.display().to_string())
+            .all(|plugin| plugin.parameter_metadata_reason.as_deref()
+                == Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON)));
+        assert!(state
+            .plugin_registry_store
+            .is_quarantined(&bundle_path)
+            .is_none());
+    }
+
+    fn named_parameter(id: u32, name: String) -> scanner::ScannedParameterDescriptor {
+        scanner::ScannedParameterDescriptor {
+            id,
+            name,
+            module: None,
+            min_value: 0.0,
+            max_value: 1.0,
+            default_value: 0.0,
+            is_automatable: true,
+            is_modulatable: false,
+            is_stepped: false,
+            is_enum: false,
+        }
+    }
+
+    /// Mutation this catches: dropping `validated_bundle` from the descriptor
+    /// pass publishes the over-cap bundle's rows.
+    #[test]
+    fn a_bundle_over_the_plugin_cap_is_refused_and_exactly_the_cap_is_accepted() {
+        let cap = scanner::MAX_SCANNED_BUNDLE_PLUGINS as usize;
+        let (over, _calls, over_path, over_state) =
+            scan_bundle_then_healthy_candidate("bundle-over-cap", bundle_of(cap + 1), || {
+                Ok(ScannedInstance::default())
+            });
+        assert!(
+            !over
+                .plugins
+                .iter()
+                .any(|plugin| plugin.path == over_path.display().to_string()),
+            "an over-cap bundle publishes no rows"
+        );
+        assert!(
+            over.errors.iter().any(|error| error.contains("Aaa.clap")
+                && error.contains("more than the 32 the scan accepts")),
+            "the refusal is recorded: {:?}",
+            over.errors
+        );
+        assert!(
+            over_state
+                .plugin_registry_store
+                .is_quarantined(&over_path)
+                .is_none(),
+            "a data refusal never quarantines"
+        );
+        assert!(over
+            .plugins
+            .iter()
+            .any(|plugin| plugin.descriptor_id == "com.vendor.healthy"));
+
+        let (at_cap, _calls, at_cap_path, _state) =
+            scan_bundle_then_healthy_candidate("bundle-at-cap", bundle_of(cap), || {
+                Ok(ScannedInstance::default())
+            });
+        assert_eq!(
+            at_cap
+                .plugins
+                .iter()
+                .filter(|plugin| plugin.path == at_cap_path.display().to_string())
+                .count(),
+            cap
+        );
+        assert!(at_cap.errors.is_empty(), "{:?}", at_cap.errors);
+    }
+
+    /// One case per instance cap kind the helper enforces, refused as a data
+    /// refusal that keeps the row and its generic reason.
+    ///
+    /// Mutation this catches: dropping `validated_instance` publishes the
+    /// oversized answer's parameters and capabilities.
+    #[test]
+    fn an_instance_answer_over_a_helper_cap_is_refused_and_the_row_keeps_its_reason() {
+        let over_name = || ScannedInstance {
+            parameters: vec![named_parameter(1, "n".repeat(129))],
+            ..ScannedInstance::default()
+        };
+        let over_count = || ScannedInstance {
+            parameters: (0..257)
+                .map(|id| named_parameter(id, "p".to_string()))
+                .collect(),
+            ..ScannedInstance::default()
+        };
+        let over_module = || {
+            let mut parameter = named_parameter(1, "p".to_string());
+            parameter.module = Some("m".repeat(129));
+            ScannedInstance {
+                parameters: vec![parameter],
+                ..ScannedInstance::default()
+            }
+        };
+        // 256 parameters of 128-byte names cost 256 * (128 + 4 + 32) bytes,
+        // each under the name cap, together over the 32 KiB metadata cap.
+        let over_metadata = || ScannedInstance {
+            parameters: (0..256)
+                .map(|id| named_parameter(id, "m".repeat(128)))
+                .collect(),
+            ..ScannedInstance::default()
+        };
+        let over_channels = || {
+            let mut instance = ScannedInstance::default();
+            instance.capabilities.audio_channels = Some(scanner::ScannedAudioChannelCounts {
+                inputs: 0,
+                outputs: 1025,
+            });
+            instance
+        };
+        type InstanceAnswer = fn() -> ScannedInstance;
+        let cases: [(&str, InstanceAnswer); 5] = [
+            ("name bytes", over_name),
+            ("parameter count", over_count),
+            ("module bytes", over_module),
+            ("metadata bytes", over_metadata),
+            ("channels", over_channels),
+        ];
+        for (case, answer) in cases {
+            let (result, _calls, bundle_path, state) =
+                scan_bundle_then_healthy_candidate("instance-over-cap", bundle_of(1), move || {
+                    Ok(answer())
+                });
+            let row = result
+                .plugins
+                .iter()
+                .find(|plugin| plugin.path == bundle_path.display().to_string())
+                .unwrap_or_else(|| panic!("{case}: the row stays published"));
+            assert!(row.parameters.is_none(), "{case}");
+            assert_eq!(
+                row.parameter_metadata_reason.as_deref(),
+                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON),
+                "{case}"
+            );
+            assert!(
+                state
+                    .plugin_registry_store
+                    .is_quarantined(&bundle_path)
+                    .is_none(),
+                "{case}: a data refusal never quarantines"
+            );
+        }
+    }
+
+    /// The boundary's other side: answers exactly at each cap are accepted.
+    #[test]
+    fn an_instance_answer_exactly_at_the_caps_is_accepted() {
+        let (result, _calls, bundle_path, _state) =
+            scan_bundle_then_healthy_candidate("instance-at-cap", bundle_of(1), || {
+                let mut instance = ScannedInstance {
+                    parameters: vec![named_parameter(1, "n".repeat(128))],
+                    ..ScannedInstance::default()
+                };
+                instance.capabilities.audio_channels = Some(scanner::ScannedAudioChannelCounts {
+                    inputs: 1024,
+                    outputs: 1024,
+                });
+                Ok(instance)
+            });
+        let row = result
+            .plugins
+            .iter()
+            .find(|plugin| plugin.path == bundle_path.display().to_string())
+            .expect("the row is published");
+        assert_eq!(row.parameters.as_ref().map(Vec::len), Some(1));
+        assert!(row.parameter_metadata_reason.is_none());
     }
 
     fn descriptor(descriptor_id: &str) -> scanner::ScannedDescriptor {

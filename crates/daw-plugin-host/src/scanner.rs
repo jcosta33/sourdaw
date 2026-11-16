@@ -55,6 +55,82 @@ const MAX_SCANNED_AUDIO_PORTS: u32 = 64;
 /// on a legal number of ports is describing something no host can route.
 const MAX_SCANNED_AUDIO_CHANNELS: u32 = 1024;
 
+/// What one parameter's name and module cost against
+/// [`MAX_SCANNED_PARAMETER_METADATA_BYTES`]. One formula for the helper's own
+/// running total and for [`validate_scanned_instance`], so the two cannot drift.
+fn parameter_metadata_cost(name: &str, module: Option<&str>) -> usize {
+    name.len() + module.map_or(0, str::len) + std::mem::size_of::<u32>() + 32
+}
+
+/// Refuse a descriptor bundle that exceeds the caps the scan helper enforces.
+///
+/// The helper is the process running the untrusted binary, so its own checks
+/// are not evidence about what it sent: the parent re-applies them to the
+/// answer before using it. Only the helper's existing caps are mirrored here,
+/// and they are read from the constants above rather than restated.
+pub fn validate_scanned_bundle(bundle: &[ScannedDescriptor]) -> Result<(), String> {
+    if bundle.len() > MAX_SCANNED_BUNDLE_PLUGINS as usize {
+        return Err(format!(
+            "The scan helper reported {} plugins in one file, more than the {} the scan accepts",
+            bundle.len(),
+            MAX_SCANNED_BUNDLE_PLUGINS
+        ));
+    }
+    Ok(())
+}
+
+/// Refuse an instance answer that exceeds the caps the scan helper enforces.
+///
+/// Only CLAP's extraction enforces parameter and audio-channel caps; VST3's
+/// extraction bounds none of them, so a VST3 answer is not held to numbers its
+/// helper never applied.
+pub fn validate_scanned_instance(
+    format: PluginFormat,
+    instance: &ScannedInstance,
+) -> Result<(), String> {
+    if format != PluginFormat::Clap {
+        return Ok(());
+    }
+    if instance.parameters.len() > MAX_SCANNED_PARAMETER_DESCRIPTORS as usize {
+        return Err(format!(
+            "The scan helper reported {} parameters, more than the {} the scan accepts",
+            instance.parameters.len(),
+            MAX_SCANNED_PARAMETER_DESCRIPTORS
+        ));
+    }
+    let mut metadata_bytes = 0usize;
+    for parameter in &instance.parameters {
+        if parameter.name.len() > MAX_SCANNED_PARAMETER_NAME_BYTES {
+            return Err(format!(
+                "The scan helper reported a parameter name longer than {MAX_SCANNED_PARAMETER_NAME_BYTES} bytes"
+            ));
+        }
+        let module = parameter.module.as_deref();
+        if module.is_some_and(|module| module.len() > MAX_SCANNED_PARAMETER_NAME_BYTES) {
+            return Err(format!(
+                "The scan helper reported a parameter module longer than {MAX_SCANNED_PARAMETER_NAME_BYTES} bytes"
+            ));
+        }
+        metadata_bytes =
+            metadata_bytes.saturating_add(parameter_metadata_cost(&parameter.name, module));
+    }
+    if metadata_bytes > MAX_SCANNED_PARAMETER_METADATA_BYTES {
+        return Err(format!(
+            "The scan helper reported more than {MAX_SCANNED_PARAMETER_METADATA_BYTES} bytes of parameter metadata"
+        ));
+    }
+    if let Some(channels) = instance.capabilities.audio_channels {
+        if channels.inputs > MAX_SCANNED_AUDIO_CHANNELS
+            || channels.outputs > MAX_SCANNED_AUDIO_CHANNELS
+        {
+            return Err(format!(
+                "The scan helper reported more than {MAX_SCANNED_AUDIO_CHANNELS} audio channels in one direction"
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub const PARAMETER_METADATA_UNAVAILABLE_REASON: &str =
     "The scanner could not safely complete external parameter inspection.";
 
@@ -531,8 +607,11 @@ fn detect_format_on(
     is_dir: bool,
     single_file_vst3_is_a_module: bool,
 ) -> Option<PluginFormat> {
-    let ext = path.extension()?.to_str()?;
-    match (ext, is_dir) {
+    // Bundle extensions compare ASCII-case-insensitively: Windows and default
+    // macOS volumes are case-insensitive, and a vendor or user rename can
+    // leave `Foo.VST3` on disk.
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match (ext.as_str(), is_dir) {
         ("vst3", true) => Some(PluginFormat::Vst3),
         ("vst3", false) if single_file_vst3_is_a_module => Some(PluginFormat::Vst3),
         ("clap", false) | ("clap", true) => Some(PluginFormat::Clap),
@@ -994,6 +1073,156 @@ mod tests {
         };
         assert_eq!(collected, expected);
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// `Foo.VST3` is one bundle candidate and the walk never descends into it,
+    /// so the inner module is not collected as a second, single-file plugin.
+    ///
+    /// Mutation this catches: matching the extension case-sensitively leaves
+    /// neither bundle collected on macOS and Linux, and collects the inner
+    /// module instead of the bundle on Windows.
+    #[test]
+    fn an_uppercase_bundle_extension_is_one_candidate_the_walk_does_not_enter() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-uppercase-extension")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        let vst3 = temp_root.join("Upper.VST3");
+        let module_folder = vst3.join("Contents").join("x86_64-win");
+        std::fs::create_dir_all(&module_folder).expect("bundle should be created");
+        std::fs::write(module_folder.join("Upper.vst3"), b"").expect("module should be written");
+        let clap = temp_root.join("Upper.CLAP");
+        std::fs::create_dir_all(&clap).expect("CLAP bundle should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        let mut collected = plugins
+            .iter()
+            .map(|candidate| (candidate.path.clone(), candidate.format))
+            .collect::<Vec<_>>();
+        collected.sort();
+        assert_eq!(
+            collected,
+            vec![(clap, PluginFormat::Clap), (vst3, PluginFormat::Vst3)]
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// With the Windows single-file rule on, an uppercase bundle directory is
+    /// still the bundle, which is what stops the walk entering it.
+    #[test]
+    fn extensions_match_regardless_of_case_on_every_platform_rule() {
+        for single_file_vst3_is_a_module in [false, true] {
+            for (name, is_dir, expected) in [
+                ("X.VST3", true, Some(PluginFormat::Vst3)),
+                ("X.Vst3", true, Some(PluginFormat::Vst3)),
+                ("X.CLAP", true, Some(PluginFormat::Clap)),
+                ("X.CLAP", false, Some(PluginFormat::Clap)),
+                ("X.ClAp", false, Some(PluginFormat::Clap)),
+                ("X.COMPONENT", true, Some(PluginFormat::AudioUnit)),
+                ("X.VST", true, Some(PluginFormat::Vst2)),
+                (
+                    "X.VST3",
+                    false,
+                    single_file_vst3_is_a_module.then_some(PluginFormat::Vst3),
+                ),
+                ("X.TXT", true, None),
+            ] {
+                assert_eq!(
+                    detect_format_on(Path::new(name), is_dir, single_file_vst3_is_a_module),
+                    expected,
+                    "{name} (dir: {is_dir}, single-file rule: {single_file_vst3_is_a_module})"
+                );
+            }
+        }
+    }
+
+    fn parameter_named(id: u32, name: &str) -> ScannedParameterDescriptor {
+        ScannedParameterDescriptor {
+            id,
+            name: name.to_string(),
+            module: None,
+            min_value: 0.0,
+            max_value: 1.0,
+            default_value: 0.0,
+            is_automatable: true,
+            is_modulatable: false,
+            is_stepped: false,
+            is_enum: false,
+        }
+    }
+
+    fn bundle_descriptor() -> ScannedDescriptor {
+        ScannedDescriptor {
+            format: "clap".to_string(),
+            name: None,
+            vendor: String::new(),
+            descriptor_id: String::new(),
+            version: String::new(),
+            category: String::new(),
+            parameters: None,
+            parameter_metadata_reason: None,
+            capabilities: None,
+        }
+    }
+
+    #[test]
+    fn a_bundle_is_valid_up_to_the_plugin_cap_and_refused_one_past_it() {
+        let cap = MAX_SCANNED_BUNDLE_PLUGINS as usize;
+        assert!(validate_scanned_bundle(&vec![bundle_descriptor(); cap]).is_ok());
+        assert!(validate_scanned_bundle(&vec![bundle_descriptor(); cap + 1]).is_err());
+    }
+
+    #[test]
+    fn an_instance_is_held_to_each_clap_cap_on_both_sides_of_it() {
+        let instance_with = |parameters: Vec<ScannedParameterDescriptor>| ScannedInstance {
+            parameters,
+            ..ScannedInstance::default()
+        };
+        let clap = PluginFormat::Clap;
+        assert!(validate_scanned_instance(
+            clap,
+            &instance_with(vec![parameter_named(1, &"n".repeat(128))])
+        )
+        .is_ok());
+        assert!(validate_scanned_instance(
+            clap,
+            &instance_with(vec![parameter_named(1, &"n".repeat(129))])
+        )
+        .is_err());
+        let count =
+            |count: u32| instance_with((0..count).map(|id| parameter_named(id, "p")).collect());
+        assert!(validate_scanned_instance(clap, &count(256)).is_ok());
+        assert!(validate_scanned_instance(clap, &count(257)).is_err());
+        let mut with_module = parameter_named(1, "p");
+        with_module.module = Some("m".repeat(129));
+        assert!(validate_scanned_instance(clap, &instance_with(vec![with_module])).is_err());
+        let heavy = instance_with(
+            (0..256)
+                .map(|id| parameter_named(id, &"m".repeat(128)))
+                .collect(),
+        );
+        assert!(validate_scanned_instance(clap, &heavy).is_err());
+        let channels = |outputs: u32| {
+            let mut instance = ScannedInstance::default();
+            instance.capabilities.audio_channels =
+                Some(ScannedAudioChannelCounts { inputs: 0, outputs });
+            instance
+        };
+        assert!(validate_scanned_instance(clap, &channels(1024)).is_ok());
+        assert!(validate_scanned_instance(clap, &channels(1025)).is_err());
+        assert!(
+            validate_scanned_instance(PluginFormat::Vst3, &channels(1025)).is_ok(),
+            "the VST3 helper enforces no channel cap, so none is applied to its answer"
+        );
     }
 
     /// One line per format, not one per plugin. A user with a folder of VST2
@@ -1641,9 +1870,8 @@ unsafe fn extract_parameters_from_extension(
         let name = unsafe { bounded_parameter_name(&info.name) }?;
         // SAFETY: as above, the callee only scans the `info.module` array owned by this frame.
         let module = unsafe { bounded_parameter_module(&info.module) }?;
-        metadata_bytes = metadata_bytes.saturating_add(
-            name.len() + module.as_ref().map_or(0, String::len) + std::mem::size_of::<u32>() + 32,
-        );
+        metadata_bytes =
+            metadata_bytes.saturating_add(parameter_metadata_cost(&name, module.as_deref()));
         if metadata_bytes > MAX_SCANNED_PARAMETER_METADATA_BYTES {
             return Err("CLAP parameter metadata exceeds scanner bounds".to_string());
         }
