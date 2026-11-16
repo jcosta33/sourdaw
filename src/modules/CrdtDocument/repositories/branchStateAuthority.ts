@@ -253,7 +253,7 @@ async function transact<TRefusal extends BranchStateRefusal>(
 ): Promise<BranchStateCommitResult<TRefusal>> {
     const outcome = await withBranchStateLock({
         name: BRANCH_STATE_TRANSACTION_LOCK_NAME,
-        run: async () => runTransaction(decide, project),
+        run: () => Promise.resolve(runTransaction(decide, project)),
     });
     return outcome.status === 'lock-unavailable' ? { status: 'refused', reason: 'lock-unavailable' } : outcome.value;
 }
@@ -314,7 +314,7 @@ async function settledOrUnsequenced(): Promise<'settled' | 'lock-unavailable'> {
     const sequencing = await withBranchStateLock({
         name: BRANCH_STATE_TRANSACTION_LOCK_NAME,
         ifAvailable: true,
-        run: async () => undefined,
+        run: () => Promise.resolve(undefined),
     });
     return sequencing.status === 'lock-unavailable' ? 'lock-unavailable' : 'settled';
 }
