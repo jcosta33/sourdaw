@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRootIdentity,
+    createCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
@@ -329,6 +334,26 @@ describe('createUserAppActionRefusalEpisodes', () => {
             refuse();
             await episodes.execute('A', action);
             expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
+
+        it('reports a key when the project unlocks after a peer sync added a document to it', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            const documentIdentity = captureProjectIdentity();
+            const rootIdentity = captureProjectRootIdentity();
+
+            // A sync that brings a peer's new document materialises it before applying its changes.
+            createCrdtDoc('peer-track-6888');
+            expect(captureProjectIdentity()).not.toBe(documentIdentity);
+            expect(captureProjectRootIdentity()).toBe(rootIdentity);
+
+            unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
         });
 
         it('keeps an episode open when a dispatch resolves without committing while still refused', async () => {
@@ -785,6 +810,23 @@ describe('createUserAppActionRefusalEpisodes', () => {
             unlock();
             await afterMicrotasks();
             expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('warns and later reports a refusal whose dispatch saw a peer sync add a document', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            vi.mocked(executeAppAction).mockImplementationOnce(async () => {
+                createCrdtDoc('peer-track-6888-in-flight');
+                throw new AppActionAdmissionRefusedError('addTrack');
+            });
+
+            await expect(episodes.execute('A', action)).resolves.toBe('refused');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+
+            unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 
         it('holds the brief subscription only while an episode is open', async () => {
