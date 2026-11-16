@@ -28,7 +28,8 @@
             "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": true
+            "sealed": false,
+            "pendingContract": "recipe.discover and recipe.expand"
         },
         "whole-project-vibe-with-constraint": {
             "sealed": true
@@ -417,107 +418,35 @@
             "id": "AC067-HO-MULTI-1",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
-            "prompt": "the lead vocal sounds muddy in the chorus",
-            "providerTurns": [
-                {
-                    "kind": "intake",
-                    "intent": "perceptual",
-                    "targets": ["Lead Vocal"],
-                    "objectives": [
-                        {
-                            "recipeId": "vocal-muddy",
-                            "targetName": "Lead Vocal",
-                            "rangeName": "Chorus"
-                        }
-                    ]
-                },
-                {
-                    "kind": "recipe",
-                    "id": "discovery",
-                    "descriptors": ["muddy"],
-                    "targetName": "Lead Vocal",
-                    "limit": 2
-                },
-                {
-                    "kind": "expand",
-                    "id": "expansion",
-                    "recipeId": "vocal-muddy",
-                    "targetName": "Lead Vocal",
-                    "role": "vocal"
-                },
-                {
-                    "kind": "measure-preview",
-                    "id": "preview",
-                    "targets": ["Lead Vocal"],
-                    "rangeName": "Chorus",
-                    "metrics": ["frequencyBandEnergy"],
-                    "recipeCallId": "expansion"
-                },
-                {
-                    "kind": "propose-compiled",
-                    "compiledCallIds": ["preview"],
-                    "targets": ["Lead Vocal"]
-                }
-            ],
+            "prompt": "make the chorus hit harder",
+            "providerTurns": [],
             "oracle": {
-                "kind": "proposal",
-                "actions": [
-                    {
-                        "type": "addDevice",
-                        "payload": {
-                            "trackId": "track-lead-vocal",
-                            "deviceType": "builtin-eq"
-                        }
-                    },
-                    {
-                        "type": "setDeviceParameter",
-                        "payload": {
-                            "paramId": "eq-mid-freq",
-                            "value": 325
-                        }
-                    },
-                    {
-                        "type": "setDeviceParameter",
-                        "payload": {
-                            "paramId": "eq-mid-gain",
-                            "value": -3.5
-                        }
-                    },
-                    {
-                        "type": "setDeviceParameter",
-                        "payload": {
-                            "paramId": "eq-mid-q",
-                            "value": 1.85
-                        }
-                    },
-                    {
-                        "type": "setDeviceParameter",
-                        "payload": {
-                            "paramId": "eq-low-freq",
-                            "value": 150
-                        }
-                    },
-                    {
-                        "type": "setDeviceParameter",
-                        "payload": {
-                            "paramId": "eq-low-gain",
-                            "value": -2
-                        }
-                    }
-                ],
-                "measuredGoals": [
-                    {
-                        "metric": "frequencyBandEnergy",
-                        "band": "low-mid",
-                        "relation": "decrease",
-                        "target": "Lead Vocal"
-                    }
-                ]
+                "kind": "pending"
             }
         },
         {
             "id": "AC067-HO-MULTI-2",
             "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "polish the low end",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "pending"
+            }
+        },
+        {
+            "id": "AC067-HO-MULTI-3",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "tighten up the drums",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "pending"
+            }
+        },
+        {
+            "id": "AC067-HO-PERCEPTUAL-4",
+            "promptClass": "perceptual-single-target",
             "class": "execute-exact",
             "prompt": "the snare sounds boxy in the verse",
             "providerTurns": [
@@ -604,8 +533,8 @@
             }
         },
         {
-            "id": "AC067-HO-MULTI-3",
-            "promptClass": "perceptual-multi-target",
+            "id": "AC067-HO-PERCEPTUAL-5",
+            "promptClass": "perceptual-single-target",
             "class": "execute-exact",
             "prompt": "the kick needs more weight in the chorus",
             "providerTurns": [

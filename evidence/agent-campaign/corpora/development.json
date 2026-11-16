@@ -28,7 +28,8 @@
             "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": true
+            "sealed": false,
+            "pendingContract": "recipe.discover and recipe.expand"
         },
         "whole-project-vibe-with-constraint": {
             "sealed": true
@@ -4679,8 +4680,8 @@
             }
         },
         {
-            "id": "AC067-DEV-MULTI-1",
-            "promptClass": "perceptual-multi-target",
+            "id": "AC067-DEV-PERCEPTUAL-4",
+            "promptClass": "perceptual-single-target",
             "class": "execute-exact",
             "prompt": "the vocal could use more warmth in the verse",
             "providerTurns": [
@@ -4779,8 +4780,8 @@
             }
         },
         {
-            "id": "AC067-DEV-MULTI-2",
-            "promptClass": "perceptual-multi-target",
+            "id": "AC067-DEV-PERCEPTUAL-5",
+            "promptClass": "perceptual-single-target",
             "class": "execute-exact",
             "prompt": "the cymbal wash is too harsh in the chorus",
             "providerTurns": [
@@ -4879,8 +4880,8 @@
             }
         },
         {
-            "id": "AC067-DEV-MULTI-3",
-            "promptClass": "perceptual-multi-target",
+            "id": "AC067-DEV-PERCEPTUAL-6",
+            "promptClass": "perceptual-single-target",
             "class": "execute-exact",
             "prompt": "the hats sound dull in the verse",
             "providerTurns": [
