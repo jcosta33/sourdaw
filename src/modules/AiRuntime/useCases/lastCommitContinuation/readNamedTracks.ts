@@ -47,18 +47,6 @@ function orderAmongSameName(track: ListedTrack, tracks: readonly ListedTrack[]):
     return tracks.filter((candidate) => sameName(candidate.name, track.name)).findIndex((c) => c.id === track.id) + 1;
 }
 
-/**
- * Whether the words of a phrase also read as the name of a track other than those called `name`
- * ("the second Lead" beside a track "Second Lead" or "Second"): an order word is never read, or
- * offered, where it would pick a track the same words name.
- */
-export function readsAsAnotherTrack(phrase: string, name: string, tracks: readonly ListedTrack[]): boolean {
-    return getBestAgentReferenceNameRanges(phrase, tracks, 'with-number-forms').some((range) => {
-        const owner = tracks.find((track) => track.id === range.id);
-        return owner !== undefined && !sameName(owner.name, name);
-    });
-}
-
 type OrdinalReading =
     | { status: 'read'; ranges: NamedRange[] }
     | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] }
@@ -75,11 +63,13 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
         (left, right) => right.length - left.length
     );
     const otherNameRanges = getBestAgentReferenceNameRanges(text, tracks, 'with-number-forms');
-    const isOf = (range: NamedRange, name: string): boolean =>
-        sameName(tracks.find((track) => track.id === range.id)?.name ?? '', name);
+    function isOf(range: NamedRange, name: string): boolean {
+        return sameName(tracks.find((track) => track.id === range.id)?.name ?? '', name);
+    }
     const ranges: NamedRange[] = [];
-    const taken = (start: number, end: number): boolean =>
-        ranges.some((range) => range.start < end && range.end > start);
+    function taken(start: number, end: number): boolean {
+        return ranges.some((range) => range.start < end && range.end > start);
+    }
     for (const name of names) {
         const pattern = new RegExp(
             String.raw`(?<![\p{L}\p{N}])(?:the\s+)?(${ORDINAL_WORDS.join('|')})\s+${escapeRegExp(name)}(?![\p{L}\p{N}])`,

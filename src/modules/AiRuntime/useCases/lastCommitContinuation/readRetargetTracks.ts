@@ -2,7 +2,8 @@ import { clarify } from '../../models/LastCommitRefusal';
 import { type ProjectContext } from '../../models/ProjectContext';
 
 import { type LastCommitContinuation, type RetargetRequest } from './lastCommitOutcome';
-import { type AmbiguousTrack, ORDINAL_WORDS, readNamedTracks, readsAsAnotherTrack } from './readNamedTracks';
+import { type AmbiguousTrack, ORDINAL_WORDS, readNamedTracks } from './readNamedTracks';
+import { readsAsAnotherTrack } from './readsAsAnotherTrack';
 
 type ReadTargets = { status: 'named'; ids: string[] } | { status: 'refused'; outcome: LastCommitContinuation };
 
@@ -15,8 +16,9 @@ type CandidateOptions = { status: 'options'; text: string } | { status: 'unlabel
  */
 function describeCandidates(candidates: readonly AmbiguousTrack[], context: ProjectContext): CandidateOptions {
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
-    const shares = (candidate: AmbiguousTrack): boolean =>
-        candidates.filter((other) => other.name.toLowerCase() === candidate.name.toLowerCase()).length > 1;
+    function shares(candidate: AmbiguousTrack): boolean {
+        return candidates.filter((other) => other.name.toLowerCase() === candidate.name.toLowerCase()).length > 1;
+    }
     if (!candidates.some(shares)) {
         return { status: 'options', text: candidates.map((candidate) => candidate.name).join(' or ') };
     }
@@ -33,10 +35,11 @@ function describeCandidates(candidates: readonly AmbiguousTrack[], context: Proj
         }
         options.push(label);
     }
-    const last = options.at(-1);
+    const leading = options.slice(0, -1).join(', ');
+    const last = options.slice(-1).join('');
     return {
         status: 'options',
-        text: `${options.slice(0, -1).join(', ')} or ${last}, counting from the top of the track list`,
+        text: `${leading} or ${last}, counting from the top of the track list`,
     };
 }
 
