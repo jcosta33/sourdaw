@@ -1,6 +1,7 @@
 import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
+
+import { type ClipAutomationLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 function sortById(lanes: readonly ClipAutomationLaneSnapshot[]): ClipAutomationLaneSnapshot[] {
     return [...lanes].sort((left, right) => left.id.localeCompare(right.id));

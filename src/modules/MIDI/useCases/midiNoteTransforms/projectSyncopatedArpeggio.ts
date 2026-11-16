@@ -1,5 +1,4 @@
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
-
+import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
 import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
 export type SyncopatedArpeggioNoteProjection = Omit<MidiClipNoteSnapshot, 'id'>;

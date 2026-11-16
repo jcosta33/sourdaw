@@ -61,7 +61,7 @@ export type WarpStretchMode = WarpState['stretchMode'];
  * Every stretch-mode id a persisted or recorded payload may carry: the
  * canonical ADR 0024 set plus the pre-ADR aliases that survive in CRDT
  * documents and versioned command envelopes recorded before the retirement.
- * The wire contract mirrors this union structurally (`handlerContract`'s
+ * The wire contract mirrors this union structurally (the events'
  * `ClipSatelliteWarpStateSnapshot` — model isolation keeps the two
  * declarations separate).
  */

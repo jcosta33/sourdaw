@@ -7,8 +7,8 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { digest } from '#/utils/canonicalDigest';
-import { type CommandSourceProof } from '#/utils/handlerContract';
 
+import { type CommandSourceProof } from '../../events/crdtDocumentSnapshots';
 import { setSemanticContext, clearSemanticContext } from '../../stores/semanticChangeContext';
 import { commandSourcePublicationMatches } from '../commandSourcePublicationMatches';
 import { createCrdtDoc } from '../createCrdtDoc';

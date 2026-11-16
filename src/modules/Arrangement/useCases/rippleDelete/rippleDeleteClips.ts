@@ -1,6 +1,6 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
