@@ -119,6 +119,25 @@ describe('readExplicitProtections over a role family', () => {
         });
     });
 
+    it.each([
+        'make the mix warmer but leave the faders of the drums alone',
+        'make the mix warmer but leave faders of the drums alone',
+    ])('"%s" protects only the drum faders through the control-of form', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({
+            ...NOTHING,
+            protectedControls: DRUM_IDS.map((trackId) => ({ trackId, actionTypes: ['setTrackGain'] })),
+        });
+    });
+
+    it.each([
+        "don't touch the vocals and mute the drums",
+        "don't touch the vocals and pan the drums",
+        "don't touch the vocals and solo the drums",
+        "don't touch the vocals and mute drums",
+    ])('"%s" protects the vocals and reads the control verb before the drums as no protection', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: VOCAL_IDS });
+    });
+
     it('keeps "don\'t make the drums louder" a per-dimension hold on each drum track and no protection', () => {
         const prompt = "make the mix warmer, but don't make the drums louder";
 

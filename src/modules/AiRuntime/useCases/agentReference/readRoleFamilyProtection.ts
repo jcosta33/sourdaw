@@ -23,9 +23,16 @@ function namesNoFamily(token: Token): boolean {
     return token.quoted || token.text.includes('□');
 }
 
+/** A control that opens the member as its verb ("mute the drums") changes the family; "faders of the drums" owns it. */
+function opensOnControlVerb(tokens: readonly Token[]): boolean {
+    const [opening, next] = tokens;
+    return opening !== undefined && protectionObjectForms.isControl(opening.lower) && next?.lower !== 'of';
+}
+
 /**
  * The tracks a protection member keeps when it names one role family and nothing else but its
- * controls and a kind noun after it ("the drums", "the drum tracks", "the vocals' sends"). The tokens
+ * controls and a kind noun after it ("the drums", "the drum tracks", "the vocals' sends"). A control
+ * opening the member as its verb ("mute the drums") names what the request changes and protects nothing. The tokens
  * come with project names blanked and quotations flagged, so "Drum Bus" and a quoted "drums" name no
  * family. A family no track resolves to is none, so the object forms read the member as before.
  */
@@ -33,7 +40,7 @@ export function readRoleFamilyProtection(
     tokens: readonly Token[],
     familyTrackIds: (family: SemanticCommandListRoleFamily) => string[]
 ): { trackIds: string[]; controls: string[] } | null {
-    if (tokens.some(namesNoFamily)) {
+    if (tokens.some(namesNoFamily) || opensOnControlVerb(tokens)) {
         return null;
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
