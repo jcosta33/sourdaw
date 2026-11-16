@@ -19,6 +19,7 @@ const OXC = '.oxlintrc.json';
 const CRAFT = 'oxlint.craft-baseline.mjs';
 const SIZE = 'eslint.size-baseline.mjs';
 const CEIL = 'scripts/lintSizeCeilings.json';
+const PLG = '.oxlint-plugins.json';
 
 function unchanged(tree: LedgerTree): LedgerTrees {
     return { base: tree, main: tree, head: tree };
@@ -31,6 +32,15 @@ const OXLINT = `{
 }`;
 const SIZE_BASELINE = `export const sizeBaselineFiles = [\n    'src/big.ts',\n];\n`;
 const CEILINGS = JSON.stringify({ 'src/big.ts': 700 });
+
+function sizeBaseline(...paths: string[]): string {
+    return `export const sizeBaselineFiles = [\n${paths.map((path) => `    '${path}',\n`).join('')}];\n`;
+}
+
+/** `.oxlint-plugins.json` shape: top-level rules plus the size-warning override listing `files`. */
+function pluginSizeWarnings(files: string[], rule: unknown = 'warn'): string {
+    return JSON.stringify({ rules: { eqeqeq: 'error' }, overrides: [{ files, rules: { 'max-lines': rule } }] });
+}
 
 describe('lint ledger crossing decision', () => {
     const cases: Array<{
@@ -251,10 +261,64 @@ describe('lint ledger crossing decision', () => {
         },
     ];
 
-    it.each(additions)('does not cross $name on main while the pull request edits the file, and the mirror', (edit) => {
+    it.each(additions)('crosses $name on main while the pull request edits the file, and the mirror', (edit) => {
         const { base, added } = edit;
-        expect(lintLedgerCrossingPaths([], ['src/x.ts'], { base, main: added, head: base })).toEqual([]);
-        expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: added })).toEqual([]);
+        expect(lintLedgerCrossingPaths([], ['src/x.ts'], { base, main: added, head: base })).toEqual(['src/x.ts']);
+        expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: added })).toEqual(['src/x.ts']);
+    });
+
+    it.each(additions)('does not cross $name on one side while the other edits an unrelated bound path', (edit) => {
+        const { base, added } = edit;
+        const withY = (tree: LedgerTree): LedgerTree => ({
+            ...tree,
+            [CRAFT]: CRAFT_WITH.replace('src/x.ts', 'src/y.ts'),
+        });
+        expect(
+            lintLedgerCrossingPaths(['src/y.ts'], [], { base: withY(base), main: withY(base), head: withY(added) })
+        ).toEqual([]);
+        expect(
+            lintLedgerCrossingPaths([], ['src/y.ts'], { base: withY(base), main: withY(added), head: withY(base) })
+        ).toEqual([]);
+    });
+
+    it('crosses main deleting a size-baselined file while the pull request adds it to .oxlint-plugins.json', () => {
+        const base = { [SIZE]: sizeBaseline('src/p.ts', 'src/q.ts'), [PLG]: pluginSizeWarnings(['src/q.ts']) };
+        const main = { [SIZE]: sizeBaseline('src/q.ts'), [PLG]: pluginSizeWarnings(['src/q.ts']) };
+        const head = { ...base, [PLG]: pluginSizeWarnings(['src/p.ts', 'src/q.ts']) };
+        expect(lintLedgerCrossingPaths(['src/p.ts', SIZE], [PLG], { base, main, head })).toEqual(['src/p.ts']);
+    });
+
+    it('crosses main deleting a file .oxlint-plugins.json lists while the pull request rewrites its entry', () => {
+        const base = { [SIZE]: sizeBaseline('src/p.ts'), [PLG]: pluginSizeWarnings(['src/p.ts']) };
+        const main = { [SIZE]: sizeBaseline(), [PLG]: pluginSizeWarnings([]) };
+        const head = { ...base, [PLG]: pluginSizeWarnings(['src/p.ts'], ['warn', { max: 900 }]) };
+        expect(lintLedgerCrossingPaths(['src/p.ts', SIZE, PLG], [PLG], { base, main, head })).toEqual(['src/p.ts']);
+    });
+
+    it('crosses main deleting a file .oxlint-plugins.json lists while the pull request adds it to the size baseline only', () => {
+        const base = { [SIZE]: sizeBaseline('src/q.ts'), [PLG]: pluginSizeWarnings(['src/p.ts', 'src/q.ts']) };
+        const main = { [SIZE]: sizeBaseline('src/q.ts'), [PLG]: pluginSizeWarnings(['src/q.ts']) };
+        const head = { ...base, [SIZE]: sizeBaseline('src/p.ts', 'src/q.ts') };
+        expect(lintLedgerCrossingPaths(['src/p.ts', PLG], [SIZE], { base, main, head })).toEqual(['src/p.ts']);
+    });
+
+    it('does not cross a pull request adding a .oxlint-plugins.json entry for a path main never touched', () => {
+        const base = { [SIZE]: sizeBaseline('src/p.ts'), [PLG]: pluginSizeWarnings(['src/p.ts']) };
+        const head = { ...base, [PLG]: pluginSizeWarnings(['src/p.ts', 'src/q.ts']) };
+        expect(lintLedgerCrossingPaths(['src/p.ts'], [PLG], { base, main: base, head })).toEqual([]);
+    });
+
+    it('leaves out a bound path neither side edited or rebound while both sides rebind others', () => {
+        const ceilings = (x: number, y: number): LedgerTree => ({
+            [CEIL]: JSON.stringify({ 'src/x.ts': x, 'src/y.ts': y, 'src/z.ts': 700 }),
+        });
+        expect(
+            lintLedgerCrossingPaths(['src/x.ts'], ['src/x.ts', 'src/y.ts'], {
+                base: ceilings(700, 700),
+                main: ceilings(600, 700),
+                head: ceilings(700, 600),
+            })
+        ).toEqual(['src/x.ts']);
     });
 
     const oxlintRules = (...overrides: Array<{ files: string[]; rules: Record<string, unknown> }>): LedgerTree => ({
@@ -269,12 +333,12 @@ describe('lint ledger crossing decision', () => {
         expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: added })).toEqual(['src/f.ts']);
     });
 
-    it('does not cross when main adds an off rule to an override listing a path the pull request edits, and the mirror', () => {
+    it('crosses when main adds an off rule to an override listing a path the pull request edits, and the mirror', () => {
         const aOff = { files: ['./src/a.ts'], rules: { 'no-var': 'off' } };
         const base = oxlintRules(aOff);
         const relaxed = oxlintRules({ ...aOff, rules: { ...aOff.rules, 'some-rule': 'off' } });
-        expect(lintLedgerCrossingPaths([], ['src/a.ts'], { base, main: relaxed, head: base })).toEqual([]);
-        expect(lintLedgerCrossingPaths(['src/a.ts'], [], { base, main: base, head: relaxed })).toEqual([]);
+        expect(lintLedgerCrossingPaths([], ['src/a.ts'], { base, main: relaxed, head: base })).toEqual(['src/a.ts']);
+        expect(lintLedgerCrossingPaths(['src/a.ts'], [], { base, main: base, head: relaxed })).toEqual(['src/a.ts']);
     });
 
     it('crosses when main adds a warn rule to an override listing a path the pull request edits, and the mirror', () => {
@@ -291,18 +355,15 @@ describe('lint ledger crossing decision', () => {
         expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: tightened })).toEqual(['src/f.ts']);
     });
 
-    it.each([0, ['off'], ['off', { option: true }], 'allow'])('treats the oxlint severity %j as off', (severity) => {
-        const base = oxlintRules(fOff);
-        const relaxed = oxlintRules({ ...fOff, rules: { ...fOff.rules, 'some-rule': severity } });
-        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: relaxed, head: base })).toEqual([]);
-        expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: relaxed })).toEqual([]);
-    });
-
-    it.each([2, ['error', { option: true }]])('treats the oxlint severity %j as enforcing', (severity) => {
-        const base = oxlintRules(fOff);
-        const enforced = oxlintRules({ ...fOff, rules: { ...fOff.rules, 'some-rule': severity } });
-        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: enforced, head: base })).toEqual(['src/f.ts']);
-    });
+    it.each([0, ['off'], ['off', { option: true }], 'allow', 2, ['error', { option: true }]])(
+        'crosses an added oxlint rule at severity %j, and the mirror',
+        (severity) => {
+            const base = oxlintRules(fOff);
+            const added = oxlintRules({ ...fOff, rules: { ...fOff.rules, 'some-rule': severity } });
+            expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: added, head: base })).toEqual(['src/f.ts']);
+            expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: added })).toEqual(['src/f.ts']);
+        }
+    );
 
     it.each([SUP, OXC, CEIL])('fails closed when %s does not parse', (name) => {
         const good = { [name]: '{}' };
@@ -426,6 +487,7 @@ describe('lint ledger crossing over a real repository', () => {
 
     it.each([
         { ledger: '.oxlintrc.json', content: OXLINT.replace('./src/c.ts', './x.ts') },
+        { ledger: '.oxlint-plugins.json', content: pluginSizeWarnings(['x.ts']) },
         {
             ledger: 'oxlint.craft-baseline.mjs',
             content: "export const craftBaselineFiles = {\n    'r': [\n        'x.ts',\n    ],\n};\n",
@@ -464,6 +526,43 @@ describe('lint ledger crossing over a real repository', () => {
         git(['commit', '--quiet', '-m', 'main renames']);
 
         expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+    });
+
+    it('crosses when main deletes a bound file the pull request edits', () => {
+        const { git, write } = scratchRepository();
+        write('eslint.size-baseline.mjs', sizeBaseline('x.ts'));
+        write('x.ts', 'one;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('x.ts', 'two;\n');
+        git(['commit', '--quiet', '-am', 'b']);
+        git(['switch', '--quiet', 'main']);
+        git(['rm', '--quiet', 'x.ts']);
+        git(['commit', '--quiet', '-m', 'main deletes x.ts and leaves the ledger']);
+
+        expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+    });
+
+    it('refuses when main deletes a baselined file and the pull request only names it in .oxlint-plugins.json', () => {
+        const { git, write } = scratchRepository();
+        write('eslint.size-baseline.mjs', sizeBaseline('p.ts', 'q.ts'));
+        write('.oxlint-plugins.json', `${pluginSizeWarnings(['q.ts'])}\n`);
+        write('p.ts', 'one;\n');
+        write('q.ts', 'one;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('.oxlint-plugins.json', `${pluginSizeWarnings(['p.ts', 'q.ts'])}\n`);
+        git(['commit', '--quiet', '-am', 'b mirrors the size baseline into the plugin config']);
+        git(['switch', '--quiet', 'main']);
+        git(['rm', '--quiet', 'p.ts']);
+        write('eslint.size-baseline.mjs', sizeBaseline('q.ts'));
+        git(['commit', '--quiet', '-am', 'main deletes p.ts and drops its baseline entry']);
+
+        const crossing = readLintLedgerCrossing(git, 'main', 'b');
+        expect(crossing.paths).toEqual(['p.ts']);
+        expect(lintLedgerCrossingRefusal(6740, crossing)).toContain('lint-ledger-bound file since merge base');
     });
 
     it('reads a binding that only the merge base holds', () => {

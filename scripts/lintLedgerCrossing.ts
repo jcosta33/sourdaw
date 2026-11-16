@@ -12,6 +12,8 @@ export const LINT_LEDGER_FILES = [
     // oxlint burn-down baselines in override `files` lists: a removal on one side and a new violation
     // measured while the file was still baselined on the other.
     '.oxlintrc.json',
+    // The native oxlint plugin config: its size-warning override must list exactly the size baseline.
+    '.oxlint-plugins.json',
     // Craft-plugin burn-down exemptions per rule, the same hazard as the oxlint baselines.
     'oxlint.craft-baseline.mjs',
     // Files downgraded to warn for the size ceilings.
@@ -72,7 +74,7 @@ function canonicalJson(value: unknown): string {
     return JSON.stringify(value);
 }
 
-/** Removes `//` and block comments outside strings so the JSONC `.oxlintrc.json` parses as JSON. */
+/** Removes `//` and block comments outside strings so a JSONC oxlint config parses as JSON. */
 function withoutJsonComments(text: string): string {
     let result = '';
     let index = 0;
@@ -142,23 +144,8 @@ function indexKeyedJson(index: BindingIndex, name: string, side: string, text: s
     }
 }
 
-/** An oxlint rule value that disables the rule: `"off"`/`"allow"`/`0`, bare or leading a `[severity, options]` array. */
-function isOxlintSeverityOff(value: unknown): boolean {
-    const severity: unknown = Array.isArray(value) ? value[0] : value;
-    return severity === 'off' || severity === 'allow' || severity === 0;
-}
-
-/**
- * One entry per (file, rule, value) so a rule added to an override does not disturb the entries
- * already bound to its files. Entries whose rule is enforcing are also recorded in `enforcing`.
- */
-function indexOxlintOverrides(
-    index: BindingIndex,
-    enforcing: BindingIndex,
-    name: string,
-    side: string,
-    text: string
-): void {
+/** One entry per (file, rule, value) so a rule added to an override leaves the other entries for its files intact. */
+function indexOxlintOverrides(index: BindingIndex, name: string, side: string, text: string): void {
     const parsed = parseLedgerJson(name, side, text);
     const overrides = isRecord(parsed) && Array.isArray(parsed.overrides) ? parsed.overrides : [];
     for (const override of overrides) {
@@ -170,11 +157,7 @@ function indexOxlintOverrides(
                 continue;
             }
             for (const [rule, value] of Object.entries(override.rules)) {
-                const binding = `${name}:${JSON.stringify(rule)}=${canonicalJson(value)}`;
-                addBinding(index, file, binding);
-                if (!isOxlintSeverityOff(value)) {
-                    addBinding(enforcing, file, binding);
-                }
+                addBinding(index, file, `${name}:${JSON.stringify(rule)}=${canonicalJson(value)}`);
             }
         }
     }
@@ -193,41 +176,38 @@ function indexModuleList(index: BindingIndex, name: string, text: string): void 
     }
 }
 
-type LedgerBindings = {
-    entries: BindingIndex;
-    /** The oxlint entries that enforce a rule; every other ledger records none. */
-    enforcing: BindingIndex;
-};
+const OXLINT_CONFIGS: ReadonlySet<string> = new Set(['.oxlintrc.json', '.oxlint-plugins.json']);
 
-function bindingIndex(tree: LedgerTree, side: string): LedgerBindings {
+function bindingIndex(tree: LedgerTree, side: string): BindingIndex {
     const entries: BindingIndex = new Map();
-    const enforcing: BindingIndex = new Map();
     for (const [name, text] of Object.entries(tree)) {
-        if (name === '.oxlintrc.json') {
-            indexOxlintOverrides(entries, enforcing, name, side, text);
+        if (OXLINT_CONFIGS.has(name)) {
+            indexOxlintOverrides(entries, name, side, text);
         } else if (name.endsWith('.json')) {
             indexKeyedJson(entries, name, side, text);
         } else {
             indexModuleList(entries, name, text);
         }
     }
-    return { entries, enforcing };
+    return entries;
+}
+
+function sameEntries(left: ReadonlySet<string> | undefined, right: ReadonlySet<string> | undefined): boolean {
+    const leftEntries = left ?? new Set<string>();
+    const rightEntries = right ?? new Set<string>();
+    return leftEntries.size === rightEntries.size && [...leftEntries].every((entry) => rightEntries.has(entry));
 }
 
 /**
- * Paths a side touches in the ledgers with no file edit: it lost an entry the merge base held (a
- * baseline removed or a figure changed), or it added an enforcing oxlint entry the base lacked,
- * which tightens a file the other side measured under the relaxed rule. Any other added entry only
- * relaxes or newly binds a path and never turns a green pair red.
+ * Paths a side touches in the ledgers with no file edit: its entries for the path differ from the
+ * merge base's in either direction. A lost entry or changed figure invalidates the other side's
+ * measurement, and so does an added one, because the ledgers are pinned equal to one another: an
+ * entry one side adds for a path the other side deleted or re-baselined leaves them disagreeing.
  */
-function rebound(base: LedgerBindings, side: LedgerBindings): string[] {
-    const lost = Array.from(base.entries)
-        .filter(([path, entries]) => [...entries].some((entry) => side.entries.get(path)?.has(entry) !== true))
-        .map(([path]) => path);
-    const tightened = Array.from(side.enforcing)
-        .filter(([path, entries]) => [...entries].some((entry) => base.entries.get(path)?.has(entry) !== true))
-        .map(([path]) => path);
-    return [...lost, ...tightened];
+function rebound(base: BindingIndex, side: BindingIndex): string[] {
+    return Array.from(new Set([...base.keys(), ...side.keys()])).filter(
+        (path) => !sameEntries(base.get(path), side.get(path))
+    );
 }
 
 /**
