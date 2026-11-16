@@ -1120,6 +1120,7 @@ mod tests {
                 has_gui,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
         gui_threads
@@ -1153,6 +1154,7 @@ mod tests {
                 has_gui: true,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
     }

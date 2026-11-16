@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { clearUndoHistory, pushUndoEntry, undo } from '#/modules/Command/useCases';
 
-import { useUndoState } from '../useUndoState';
+import { useUndoAvailability, useUndoState } from '../useUndoState';
 
 function pushEntry(label: string, groupId?: string): void {
     pushUndoEntry(
@@ -66,5 +66,64 @@ describe('useUndoState', () => {
         expect(result.current.canRedo).toBe(true);
         expect(result.current.lastAction).toBeNull();
         expect(result.current.undoCount).toBe(0);
+    });
+});
+
+describe('useUndoAvailability', () => {
+    beforeEach(() => {
+        clearUndoHistory();
+    });
+
+    it('reports neither undo nor redo when history is empty', () => {
+        const { result } = renderHook(() => useUndoAvailability());
+
+        expect(result.current).toEqual({ canUndo: false, canRedo: false });
+    });
+
+    it('reports undo but not redo once a step exists', () => {
+        pushEntry('Add note');
+
+        const { result } = renderHook(() => useUndoAvailability());
+
+        expect(result.current).toEqual({ canUndo: true, canRedo: false });
+    });
+
+    it('reports redo but not undo once every step is undone', async () => {
+        pushEntry('Add note');
+        const { result } = renderHook(() => useUndoAvailability());
+
+        await act(async () => {
+            await undo();
+        });
+
+        expect(result.current).toEqual({ canUndo: false, canRedo: true });
+    });
+
+    it('keeps undo available while redo turns on after undoing one of two steps', async () => {
+        pushEntry('Add note');
+        pushEntry('Move clip');
+        const { result } = renderHook(() => useUndoAvailability());
+
+        await act(async () => {
+            await undo();
+        });
+
+        expect(result.current).toEqual({ canUndo: true, canRedo: true });
+    });
+
+    it('does not render again when a further step leaves both flags unchanged', () => {
+        pushEntry('Add note');
+        let renders = 0;
+        renderHook(() => {
+            renders += 1;
+            return useUndoAvailability();
+        });
+        renders = 0;
+
+        act(() => {
+            pushEntry('Move clip');
+        });
+
+        expect(renders).toBe(0);
     });
 });
