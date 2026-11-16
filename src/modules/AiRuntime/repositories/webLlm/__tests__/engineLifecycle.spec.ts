@@ -462,5 +462,44 @@ describe('WebLLM engineLifecycle injectables', () => {
 
             expect(llmStatusStore.value).toEqual(generating);
         });
+        it('republishes ready for the kept model when it aborts another model that is still loading', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const loaded = await loadModelX();
+            artifactAdmissionMock.mockImplementationOnce(() => new Promise(() => undefined));
+            const pending = initWebLlmEngine('model-y');
+            pending.catch(() => undefined);
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('loading'));
+
+            await expect(initWebLlmEngine(LOADED_MODEL)).resolves.toBe(loaded);
+
+            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: LOADED_MODEL });
+        });
+
+        it('keeps the engine and model id when the attempt is aborted before the engine library loads', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const loaded = await loadModelX();
+            let releaseAdmission: () => void = () => undefined;
+            artifactAdmissionMock.mockImplementationOnce(
+                async (_modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
+                    await new Promise<void>((resolve) => {
+                        releaseAdmission = resolve;
+                    });
+                    await options?.consume?.({ appConfig: { cacheBackend: 'cache', model_list: [] } });
+                }
+            );
+            const controller = new AbortController();
+            const pending = initWebLlmEngine('model-y', { signal: controller.signal });
+            const cancellation = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+            await vi.waitFor(() => expect(artifactAdmissionMock).toHaveBeenCalledTimes(2));
+
+            controller.abort();
+            releaseAdmission();
+            await cancellation;
+
+            await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
+            expect(engineState.engine).toBe(loaded);
+            expect(engineState.activeModelId).toBe(LOADED_MODEL);
+            expect(terminateWorkerMock).not.toHaveBeenCalled();
+        });
     });
 });

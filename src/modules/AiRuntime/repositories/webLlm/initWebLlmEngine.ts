@@ -50,8 +50,9 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         new DOMException('WebLLM initialization superseded', 'AbortError')
                     );
                 }
-                // A refused load of another model leaves its error showing while this one answers.
-                if (llmStatusStore.value?.state === 'error') {
+                // A refused load leaves its error showing, and an aborted one its loading text, while this one answers.
+                const shown = llmStatusStore.value?.state;
+                if (shown === 'error' || shown === 'loading') {
                     llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
                 return Promise.resolve(engineState.engine);
@@ -119,8 +120,10 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
                         attemptSignal.throwIfAborted();
 
-                        // Two models must not hold GPU memory at once, so the previous engine goes only
-                        // now that the new one is certain to be created: a refusal never gets here.
+                        // Two models must not hold GPU memory at once, so the previous engine goes here,
+                        // just before the new worker. Adapter and admission refusals, and an abort before
+                        // this point, keep it; a creation failure after it leaves no engine, and
+                        // activeModelId still names the model that last loaded.
                         retirePreviousWebLlmEngine();
                         const worker = new Worker(new URL('../../workers/llmWorker.ts', import.meta.url), {
                             type: 'module',
