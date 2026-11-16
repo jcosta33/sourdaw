@@ -1,8 +1,5 @@
-import { carryTeardownReads } from './carryTeardownReads';
-import { loadedExternalInstances } from './loadedExternalInstances';
 import { projectSwitchLostPlugins } from './projectSwitchLostPlugins';
-import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
-import { unloadEveryPluginKeepingCarries } from './unloadEveryPluginKeepingCarries';
+import { unloadEveryPluginCarryingLiveState } from './unloadEveryPluginCarryingLiveState';
 
 /**
  * The whole-runtime unload a project replacement runs before it is certain to
@@ -16,15 +13,6 @@ import { unloadEveryPluginKeepingCarries } from './unloadEveryPluginKeepingCarri
  * switch drops them all (`settleProjectSwitchPluginTeardown`). A failed read is
  * reported only on refusal, since only then does the plugin come back without it.
  */
-export async function unloadPluginsBeforeProjectSwitch(): Promise<void> {
-    const loadedBeforeUnload = [...loadedExternalInstances];
-    const reads = await readLiveStatesForTeardown(loadedBeforeUnload, 'scheduled');
-    try {
-        await unloadEveryPluginKeepingCarries();
-    } finally {
-        const tornDown = loadedBeforeUnload.filter((instanceId) => !loadedExternalInstances.has(instanceId));
-        for (const pluginId of carryTeardownReads(reads, tornDown)) {
-            projectSwitchLostPlugins.add(pluginId);
-        }
-    }
+export function unloadPluginsBeforeProjectSwitch(): Promise<void> {
+    return unloadEveryPluginCarryingLiveState('scheduled', projectSwitchLostPlugins);
 }

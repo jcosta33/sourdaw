@@ -190,6 +190,15 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
     });
 
+    it('keeps cancel_graph_offline registered but denied until a src caller invokes it', () => {
+        // The export's cancel is the caller this waits for; exposing it first
+        // would widen the surface ahead of the need.
+        expect(registeredCommands()).toContain('cancel_graph_offline');
+        expect(DENIED_COMMANDS).toContain('cancel_graph_offline');
+        expect(isExposedCommand('cancel_graph_offline')).toBe(false);
+        expect(SOURDAW_COMMAND_ARGUMENTS.has('cancel_graph_offline')).toBe(false);
+    });
+
     it('keeps grant_plugin_folder denied while its list and revoke commands stay exposed', () => {
         // Granting widens the roots a scan loads plugin code from, so only the
         // main-process picker may call it, with the path its own dialog
@@ -433,7 +442,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['timeline_sample_lifecycle', ['request']],
     ['register_timeline_material', ['lease', 'sample_id', 'version', 'sample_rate', 'channels', 'pcm']],
     ['release_levain_bank', ['bank_key']],
-    ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
+    ['render_graph_offline', ['batch', 'frames', 'sample_rate', 'render_id']],
     ['retire_native_engine', []],
     ['revoke_plugin_folder_grant', ['path']],
     ['scan_plugins', ['paths', 'retry_quarantined']],

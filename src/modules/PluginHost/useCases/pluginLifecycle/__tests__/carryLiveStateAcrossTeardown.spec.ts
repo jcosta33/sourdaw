@@ -923,16 +923,110 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
             expect(carriedExternalPluginStates.size).toBe(0);
         });
+    });
 
-        it('restores the project chunk after the project session retires', async () => {
+    describe('project session quiesce', () => {
+        it('restores the live bytes, not the project chunk, when the quiesce is cancelled after retirement', async () => {
             await activateAndEdit(SAVED_CHUNK);
-            await unloadPluginCarryingLiveState(INSTANCE_ID);
+
+            const retirement = await beginProjectSessionPluginRetirement();
+            await retirement.retire();
+            expect(loadedExternalInstances.size).toBe(0);
+            retirement.reopen();
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('keeps a removal carry from before the quiesce when the quiesce is cancelled', async () => {
+            await activateBothAndEdit();
+            await unloadPluginCarryingLiveState(OTHER_INSTANCE_ID);
 
             const retirement = await beginProjectSessionPluginRetirement();
             await retirement.retire();
             retirement.reopen();
+
+            expect(await reactivateBoth()).toEqual([
+                [INSTANCE_ID, LIVE_BYTES],
+                [OTHER_INSTANCE_ID, OTHER_LIVE_BYTES],
+            ]);
+        });
+
+        it('reads nothing and keeps the removal carry when the quiesce is cancelled before retirement', async () => {
+            await activateBothAndEdit();
+            await unloadPluginCarryingLiveState(OTHER_INSTANCE_ID);
+            mocks.getPluginState.mockClear();
+
+            const retirement = await beginProjectSessionPluginRetirement();
+            retirement.reopen();
+
+            expect(mocks.getPluginState).not.toHaveBeenCalled();
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            await activate(SAVED_CHUNK, PLUGIN_ID, OTHER_INSTANCE_ID);
+            expect(mocks.setPluginState.mock.calls).toEqual([[OTHER_INSTANCE_ID, OTHER_LIVE_BYTES]]);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('drops every carry, the removal carries included, when the session is released', async () => {
+            await activateBothAndEdit();
+            await unloadPluginCarryingLiveState(OTHER_INSTANCE_ID);
+
+            const retirement = await beginProjectSessionPluginRetirement();
+            await retirement.retire();
+            retirement.release();
+
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(await reactivateBoth()).toEqual([
+                [INSTANCE_ID, SAVED_BYTES],
+                [OTHER_INSTANCE_ID, SAVED_BYTES],
+            ]);
+        });
+
+        it('warns by plugin name about an unreadable instance only when the quiesce is cancelled', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.getPluginState.mockRejectedValueOnce(new Error('control lock timed out'));
+
+            const retirement = await beginProjectSessionPluginRetirement();
+            await retirement.retire();
+            expect(warnings()).toEqual([]);
+            retirement.reopen();
             await activate(SAVED_CHUNK);
 
+            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('says nothing about an unreadable instance when the session is released', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.getPluginState.mockRejectedValueOnce(new Error('control lock timed out'));
+
+            const retirement = await beginProjectSessionPluginRetirement();
+            await retirement.retire();
+            retirement.release();
+            retirement.reopen();
+
+            expect(warnings()).toEqual([]);
+        });
+
+        it('completes the retirement at the read deadline and warns only on cancellation', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            const lateRead = Promise.withResolvers<Uint8Array>();
+            mocks.getPluginState.mockReturnValueOnce(lateRead.promise);
+
+            const retirement = await beginProjectSessionPluginRetirement();
+            const retiring = retirement.retire();
+            await vi.advanceTimersByTimeAsync(5_000);
+            await retiring;
+            vi.useRealTimers();
+
+            expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined);
+            expect(warnings()).toEqual([]);
+            lateRead.resolve(LIVE_BYTES);
+            retirement.reopen();
+            await activate(SAVED_CHUNK);
+            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
     });
