@@ -33,6 +33,7 @@ import { type MetricGoal, type MetricGoalState } from '../metricGoalContractType
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { findExcludedDimensionEdit } from '../perceptualConstraints/findExcludedDimensionEdit';
+import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from '../perceptualConstraints/perceptualConstraintInvariants';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
@@ -1163,6 +1164,11 @@ function unread(clause: string, reason: string): UnsupportedPerceptualConstraint
     return { constraintId: 'unsupported', clause, reason };
 }
 
+const COMPARATIVE_REASON =
+    'It compares against another track or the mix, and a measured bound holds one scope only to its own figures.';
+const NET_REASON =
+    'The application reads no measured bound or hold in these words, so nothing it measures shows that they hold.';
+
 /**
  * The fixture project with a Drums track, a track whose name holds "louder", a guitar known only by
  * its role, and any extra names.
@@ -1352,15 +1358,14 @@ describe('reading measured holds and bounds', () => {
             ],
             [],
         ],
+        // one negation over two directions bounds the object in both families
         [
             "don't make the vocal brighter and louder",
-            [],
             [
-                unread(
-                    "don't make the vocal brighter and louder",
-                    '“the vocal brighter and” names no track or mix whose loudness can be measured.'
-                ),
+                measured('brightness-not-raised-v1', "don't make the vocal brighter and louder", onTracks('vocal')),
+                measured('loudness-not-raised-v1', "don't make the vocal brighter and louder", onTracks('vocal')),
             ],
+            [],
         ],
         // a linking verb, an object before the noun, and every modal negation
         ["don't make it sound louder", [measured('loudness-not-raised-v1', "don't make it sound louder", MIX)], []],
@@ -1416,7 +1421,10 @@ describe('reading measured holds and bounds', () => {
         ],
         [
             "don't make the vocal brighter and don't make the drums louder",
-            [measured('loudness-not-raised-v1', "don't make the drums louder", onTracks('drums'))],
+            [
+                measured('brightness-not-raised-v1', "don't make the vocal brighter", onTracks('vocal')),
+                measured('loudness-not-raised-v1', "don't make the drums louder", onTracks('drums')),
+            ],
             [],
         ],
         [
@@ -1550,7 +1558,11 @@ describe('reading measured holds and bounds', () => {
         ],
         // what states no measured hold
         ['make the drums louder', [], []],
-        ["don't make the mix louder than the vocal", [], []],
+        [
+            "don't make the mix louder than the vocal",
+            [],
+            [unread("don't make the mix louder than the vocal", COMPARATIVE_REASON)],
+        ],
         ['turn Louder Pad up', [], []],
         ['rename the vocal "don\'t make it louder"', [], []],
         ['keep it warm', [], [unread('keep it warm', 'No measurement the application takes shows that “warm” holds.')]],
@@ -1583,6 +1595,277 @@ describe('reading measured holds and bounds', () => {
             unsupported: [],
         });
     });
+});
+
+type BoundRow = [
+    prompt: string,
+    constraintId: MeasuredPerceptualConstraint['constraintId'],
+    metricId: HeldMetric,
+    relation: 'no-increase' | 'no-decrease',
+    heldId: MeasuredPerceptualConstraint['constraintId'],
+    scope: PerceptualConstraintScope,
+];
+
+describe('reading one-way width, brightness and dynamics clauses as bounds', () => {
+    it.each([
+        [
+            "don't make the mix any wider",
+            'stereo-width-not-widened-v1',
+            'sideEnergyFraction',
+            'no-increase',
+            'stereo-width-held-v1',
+            MIX,
+        ],
+        [
+            "don't widen the drums",
+            'stereo-width-not-widened-v1',
+            'sideEnergyFraction',
+            'no-increase',
+            'stereo-width-held-v1',
+            onTracks('drums'),
+        ],
+        [
+            "don't make the mix any narrower",
+            'stereo-width-not-narrowed-v1',
+            'sideEnergyFraction',
+            'no-decrease',
+            'stereo-width-held-v1',
+            MIX,
+        ],
+        [
+            'without narrowing the vocal',
+            'stereo-width-not-narrowed-v1',
+            'sideEnergyFraction',
+            'no-decrease',
+            'stereo-width-held-v1',
+            onTracks('vocal'),
+        ],
+        [
+            "don't make the vocal any brighter",
+            'brightness-not-raised-v1',
+            'spectralCentroid',
+            'no-increase',
+            'brightness-held-v1',
+            onTracks('vocal'),
+        ],
+        [
+            "don't brighten the drums",
+            'brightness-not-raised-v1',
+            'spectralCentroid',
+            'no-increase',
+            'brightness-held-v1',
+            onTracks('drums'),
+        ],
+        [
+            "don't make the vocal darker",
+            'brightness-not-lowered-v1',
+            'spectralCentroid',
+            'no-decrease',
+            'brightness-held-v1',
+            onTracks('vocal'),
+        ],
+        [
+            'the mix must not get any duller',
+            'brightness-not-lowered-v1',
+            'spectralCentroid',
+            'no-decrease',
+            'brightness-held-v1',
+            MIX,
+        ],
+        [
+            "don't make the drums more dynamic",
+            'dynamics-not-raised-v1',
+            'crestFactor',
+            'no-increase',
+            'dynamics-held-v1',
+            onTracks('drums'),
+        ],
+        [
+            'the vocal must not get more dynamic',
+            'dynamics-not-raised-v1',
+            'crestFactor',
+            'no-increase',
+            'dynamics-held-v1',
+            onTracks('vocal'),
+        ],
+        [
+            "don't make the drums less dynamic",
+            'dynamics-not-reduced-v1',
+            'crestFactor',
+            'no-decrease',
+            'dynamics-held-v1',
+            onTracks('drums'),
+        ],
+        [
+            "don't squash the drums",
+            'dynamics-not-reduced-v1',
+            'crestFactor',
+            'no-decrease',
+            'dynamics-held-v1',
+            onTracks('drums'),
+        ],
+        [
+            "don't make the mix any flatter",
+            'dynamics-not-reduced-v1',
+            'crestFactor',
+            'no-decrease',
+            'dynamics-held-v1',
+            MIX,
+        ],
+    ] satisfies BoundRow[])(
+        'reads "%s" as %s on %s, %s, at the tolerance %s holds',
+        (prompt, constraintId, metricId, relation, heldId, scope) => {
+            expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({
+                constraints: [measured(constraintId, prompt, scope)],
+                unsupported: [],
+            });
+            const [held] = PERCEPTUAL_CONSTRAINT_INVARIANTS[heldId];
+            expect(held?.metricId).toBe(metricId);
+            expect(PERCEPTUAL_CONSTRAINT_INVARIANTS[constraintId]).toEqual([
+                { metricId, band: null, relation, tolerance: held?.tolerance },
+            ]);
+        }
+    );
+
+    it.each([
+        // a comparison has no single scope a bound could hold
+        [
+            "don't make it louder than the vocal",
+            [],
+            [unread("don't make it louder than the vocal", COMPARATIVE_REASON)],
+        ],
+        [
+            'keep the drums quieter than the vocal',
+            [],
+            [unread('keep the drums quieter than the vocal', COMPARATIVE_REASON)],
+        ],
+        // a two-way clause in any family is a hold
+        [
+            "don't make the mix wider or narrower",
+            [measured('stereo-width-held-v1', "don't make the mix wider or narrower", MIX)],
+            [],
+        ],
+        // possessive and shared-noun loudness
+        [
+            "keep the drums' level the same",
+            [measured('loudness-held-v1', "keep the drums' level the same", onTracks('drums'))],
+            [],
+        ],
+        [
+            'keep the vocal and drums level the same',
+            [measured('loudness-held-v1', 'keep the vocal and drums level the same', onTracks('vocal', 'drums'))],
+            [],
+        ],
+        // "isn't", "is not" and "keep … from getting"
+        ["the mix isn't louder", [measured('loudness-not-raised-v1', "the mix isn't louder", MIX)], []],
+        ['the mix is not louder', [measured('loudness-not-raised-v1', 'the mix is not louder', MIX)], []],
+        [
+            'keep the mix from getting louder',
+            [measured('loudness-not-raised-v1', 'keep the mix from getting louder', MIX)],
+            [],
+        ],
+        // an amount or a target no fixed tolerance states
+        [
+            "don't raise the volume of the vocal by more than 3 dB",
+            [],
+            [unread("don't raise the volume of the vocal by more than 3 dB", NET_REASON)],
+        ],
+        [
+            "don't lower the level of the vocal to match the drums",
+            [],
+            [unread("don't lower the level of the vocal to match the drums", NET_REASON)],
+        ],
+        // "or" joining an object list
+        [
+            "don't raise the level of the vocal or the drums",
+            [
+                measured(
+                    'loudness-not-raised-v1',
+                    "don't raise the level of the vocal or the drums",
+                    onTracks('vocal', 'drums')
+                ),
+            ],
+            [],
+        ],
+        // a split verb particle
+        [
+            "don't turn the level of the vocal up",
+            [measured('loudness-not-raised-v1', "don't turn the level of the vocal up", onTracks('vocal'))],
+            [],
+        ],
+        // two nouns, each with its own object
+        [
+            'keep the level of the vocal and the width of the drums',
+            [
+                measured(
+                    'loudness-held-v1',
+                    'keep the level of the vocal and the width of the drums',
+                    onTracks('vocal')
+                ),
+                measured(
+                    'stereo-width-held-v1',
+                    'keep the level of the vocal and the width of the drums',
+                    onTracks('drums')
+                ),
+            ],
+            [],
+        ],
+        // a second quality under the first one's keep
+        [
+            'keep the vocal warm and the drums bright',
+            [measured('brightness-held-v1', 'keep the vocal warm and the drums bright', onTracks('drums'))],
+            [
+                unread(
+                    'keep the vocal warm and the drums bright',
+                    'No measurement the application takes shows that “warm” holds.'
+                ),
+            ],
+        ],
+        // an "and" continuation shares the clause's negation
+        [
+            "don't make the mix louder and the vocal quieter",
+            [
+                measured('loudness-not-raised-v1', "don't make the mix louder and the vocal quieter", MIX),
+                measured(
+                    'loudness-not-lowered-v1',
+                    "don't make the mix louder and the vocal quieter",
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make the vocal louder and quieter",
+            [measured('loudness-held-v1', "don't make the vocal louder and quieter", onTracks('vocal'))],
+            [],
+        ],
+        // what states no new constraint: a name, a quotation, an instruction and the low end
+        ['pan the Wider Pad left', [], []],
+        ['add reverb to Not Brighter', [], []],
+        ['rename the bus to "don\'t make it wider"', [], []],
+        ['make the vocal brighter', [], []],
+        ['widen the drums', [], []],
+        [
+            "don't touch the low end",
+            [
+                {
+                    constraintId: 'low-end-untouched-v1',
+                    clause: "don't touch the low end",
+                    scope: MIX,
+                    protection: { kind: 'exclude-dimension', dimension: 'low-frequency-band' },
+                },
+            ],
+            [],
+        ],
+    ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
+        'reads "%s"',
+        (prompt, constraints, unsupported) => {
+            expect(compilePerceptualConstraints(prompt, grammarContext('Wider Pad', 'Not Brighter'))).toEqual({
+                constraints,
+                unsupported,
+            });
+        }
+    );
 });
 
 type HeldMetric = 'integratedLoudness' | 'crestFactor' | 'sideEnergyFraction' | 'spectralCentroid';
@@ -1685,6 +1968,26 @@ const ADMITTED_ROWS: AdmissionRow[] = [
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 950],
     ["don't make it louder", 'master', 'integratedLoudness', -20, -19.5],
     ["don't make it quieter", 'master', 'integratedLoudness', -20, -20.5],
+    // Each one-way width, brightness and dynamics bound moves freely the allowed way, by at most its
+    // family's hold tolerance the forbidden way, and exactly at that tolerance.
+    ["don't make the mix any wider", 'master', 'sideEnergyFraction', 0.3, 0.1],
+    ["don't make the mix any wider", 'master', 'sideEnergyFraction', 0.3, 0.309],
+    ["don't make the mix any wider", 'master', 'sideEnergyFraction', 0.01, 0.02],
+    ["don't make the mix any narrower", 'master', 'sideEnergyFraction', 0.3, 0.6],
+    ["don't make the mix any narrower", 'master', 'sideEnergyFraction', 0.3, 0.291],
+    ["don't make the mix any narrower", 'master', 'sideEnergyFraction', 0.02, 0.01],
+    ["don't make the mix any brighter", 'master', 'spectralCentroid', 1000, 400],
+    ["don't make the mix any brighter", 'master', 'spectralCentroid', 1000, 1049],
+    ["don't make the mix any brighter", 'master', 'spectralCentroid', 1000, 1050],
+    ["don't make the mix any darker", 'master', 'spectralCentroid', 1000, 3000],
+    ["don't make the mix any darker", 'master', 'spectralCentroid', 1000, 951],
+    ["don't make the mix any darker", 'master', 'spectralCentroid', 1000, 950],
+    ["don't make the mix more dynamic", 'master', 'crestFactor', 12, 4],
+    ["don't make the mix more dynamic", 'master', 'crestFactor', 12, 12.9],
+    ["don't make the mix more dynamic", 'master', 'crestFactor', 12, 13],
+    ["don't squash the mix", 'master', 'crestFactor', 12, 20],
+    ["don't squash the mix", 'master', 'crestFactor', 12, 11.1],
+    ["don't squash the mix", 'master', 'crestFactor', 12, 11],
 ];
 const BLOCKED_ROWS: AdmissionRow[] = [
     ["don't make it louder", 'master', 'integratedLoudness', -20, -19.4],
@@ -1706,6 +2009,19 @@ const BLOCKED_ROWS: AdmissionRow[] = [
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 949.75],
     ["don't make it louder", 'master', 'integratedLoudness', -20, -19.4921875],
     ["don't make it quieter", 'master', 'integratedLoudness', -20, -20.5078125],
+    // The forbidden way, past each tolerance and just past it.
+    ["don't make the mix any wider", 'master', 'sideEnergyFraction', 0.3, 0.311],
+    ["don't make the mix any wider", 'master', 'sideEnergyFraction', 0.01, 0.02005],
+    ["don't make the mix any narrower", 'master', 'sideEnergyFraction', 0.3, 0.289],
+    ["don't make the mix any narrower", 'master', 'sideEnergyFraction', 0.02, 0.00995],
+    ["don't make the mix any brighter", 'master', 'spectralCentroid', 1000, 1051],
+    ["don't make the mix any brighter", 'master', 'spectralCentroid', 1000, 1050.25],
+    ["don't make the mix any darker", 'master', 'spectralCentroid', 1000, 949],
+    ["don't make the mix any darker", 'master', 'spectralCentroid', 1000, 949.75],
+    ["don't make the mix more dynamic", 'master', 'crestFactor', 12, 13.1],
+    ["don't make the mix more dynamic", 'master', 'crestFactor', 12, 13.0078125],
+    ["don't squash the mix", 'master', 'crestFactor', 12, 10.9],
+    ["don't squash the mix", 'master', 'crestFactor', 12, 10.9921875],
 ];
 
 /** The batch the clause rides, compiled for real, then admitted against one proof of the given figures. */
@@ -1803,6 +2119,22 @@ describe('stored bound goals', () => {
         ).toEqual([
             ['no-increase', ['master']],
             ['no-decrease', ['vocal']],
+        ]);
+        expect(metricGoalStateCodec(JSON.stringify(state))).toEqual(state);
+        expect(metricGoalStateCodec(compiled.metricGoalState)).toEqual(JSON.parse(compiled.metricGoalState ?? 'null'));
+    });
+
+    it.each([
+        ["don't make the mix any wider", 'no-increase'],
+        ["don't make the mix any narrower", 'no-decrease'],
+        ["don't make the mix any brighter", 'no-increase'],
+        ["don't make the mix any darker", 'no-decrease'],
+        ["don't make the mix more dynamic", 'no-increase'],
+        ["don't squash the mix", 'no-decrease'],
+    ])('round-trips a state carrying the bound "%s"', (clause, relation) => {
+        const { compiled, state } = compiledState(`Lower the trim but ${clause}`);
+        expect(state.authorities.flatMap((authority) => authority.goals.map((goal) => goal.relation))).toEqual([
+            relation,
         ]);
         expect(metricGoalStateCodec(JSON.stringify(state))).toEqual(state);
         expect(metricGoalStateCodec(compiled.metricGoalState)).toEqual(JSON.parse(compiled.metricGoalState ?? 'null'));
