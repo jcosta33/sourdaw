@@ -296,6 +296,11 @@ type PeerProject = {
     warpStates: NonNullable<typeof warpStateStore.value>;
 };
 type SavedSplitAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
+type ApplyGrooveAction = Extract<AppAction, { type: 'applyGroove' }>;
+/** An action an executable command registration materializes, as the agent path does before a batch runs. */
+type ExecutableCommandAction = Parameters<
+    NonNullable<ReturnType<typeof getExecutableCommandRegistrations>[number]['materializeCommandArguments']>
+>[0];
 
 function syncPeerProject(edit: (project: PeerProject) => void): void {
     const current = getCrdtDoc<PeerProject>('root');
@@ -1976,7 +1981,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }
 
         /** What an agent batch runs: preflight validation of the whole batch and guarded compensation. */
-        function runAsAgent(actions: AppAction[]) {
+        function runAsAgent(actions: ExecutableCommandAction[]) {
             for (const action of actions) {
                 getExecutableCommandRegistrations()
                     .find((candidate) => candidate.actionType === action.type)
@@ -1995,8 +2000,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             });
         }
 
-        function applyGroove(grooveId: string, clipId = 'clip-a', amount?: number): AppAction {
-            return { type: 'applyGroove', payload: { clipId, grooveId, ...(amount === undefined ? {} : { amount }) } };
+        function applyGroove(grooveId: string, clipId = 'clip-a', amount?: number): ApplyGrooveAction {
+            const action: ApplyGrooveAction = { type: 'applyGroove', payload: { clipId, grooveId } };
+            if (amount !== undefined) {
+                action.payload.amount = amount;
+            }
+            return action;
         }
 
         it('assigns a built-in template, then undoes to the exact prior assignment and redoes across reloads', async () => {

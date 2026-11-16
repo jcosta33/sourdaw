@@ -78,12 +78,18 @@ function deleteTemplate(
     }
     return {
         templates: state.templates.filter((candidate) => candidate.id !== templateId),
-        assignments: state.assignments.map((assignment) =>
-            assignment.templateId === templateId
-                ? { ...assignment, templateId: STRAIGHT_GROOVE_TEMPLATE_ID }
-                : assignment
-        ),
+        assignments: state.assignments.map((assignment) => resetAssignmentOfDeletedTemplate(assignment, templateId)),
     };
+}
+
+function resetAssignmentOfDeletedTemplate(
+    assignment: GrooveTemplateState['assignments'][number],
+    deletedTemplateId: string
+): GrooveTemplateState['assignments'][number] {
+    if (assignment.templateId !== deletedTemplateId) {
+        return assignment;
+    }
+    return { ...assignment, templateId: STRAIGHT_GROOVE_TEMPLATE_ID };
 }
 
 function restoreDeletedTemplate(
