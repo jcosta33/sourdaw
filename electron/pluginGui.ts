@@ -915,18 +915,21 @@ export const interceptOwnerWindowTeardown = (
     return { destroyAfterEditorsDetach };
 };
 
+/** The addon's `PluginWindowHostCallbacks`: the shell's window callbacks, by name. */
+export type PluginWindowHostCallbacks = {
+    readonly createEditorWindow: PluginWindowHost['create'];
+    readonly editorWindowExists: PluginWindowHost['exists'];
+    readonly setEditorWindowSize: PluginWindowHost['setSize'];
+    readonly setEditorWindowResizable: PluginWindowHost['setResizable'];
+    readonly showAndFocusEditorWindow: PluginWindowHost['showAndFocus'];
+    readonly destroyEditorWindow: PluginWindowHost['destroy'];
+    readonly hideEditorWindow: PluginWindowHost['hide'];
+    readonly showEditorWindow: PluginWindowHost['show'];
+};
+
 /** The addon methods this module drives; a stale addon may lack them. */
 export type PluginWindowNative = {
-    readonly registerPluginWindowHost: (
-        createEditorWindow: PluginWindowHost['create'],
-        editorWindowExists: PluginWindowHost['exists'],
-        setEditorWindowSize: PluginWindowHost['setSize'],
-        setEditorWindowResizable: PluginWindowHost['setResizable'],
-        showAndFocusEditorWindow: PluginWindowHost['showAndFocus'],
-        destroyEditorWindow: PluginWindowHost['destroy'],
-        hideEditorWindow: PluginWindowHost['hide'],
-        showEditorWindow: PluginWindowHost['show']
-    ) => void;
+    readonly registerPluginWindowHost: (callbacks: PluginWindowHostCallbacks) => void;
     /** Async on the addon side; typed loosely because the router-facing addon type is untyped. */
     readonly notifyPluginWindowClosed: (instanceId: string, label: string) => unknown;
     /** Both async on the addon side, and both answer the size the plugin granted. */
@@ -1056,16 +1059,15 @@ export const registerPluginWindowHost = (
             await Promise.resolve(notifyClosed.call(native, instanceId, label));
         },
     });
-    register.call(
-        native,
-        host.create,
-        host.exists,
-        host.setSize,
-        host.setResizable,
-        host.showAndFocus,
-        host.destroy,
-        host.hide,
-        host.show
-    );
+    register.call(native, {
+        createEditorWindow: host.create,
+        editorWindowExists: host.exists,
+        setEditorWindowSize: host.setSize,
+        setEditorWindowResizable: host.setResizable,
+        showAndFocusEditorWindow: host.showAndFocus,
+        destroyEditorWindow: host.destroy,
+        hideEditorWindow: host.hide,
+        showEditorWindow: host.show,
+    });
     return host;
 };

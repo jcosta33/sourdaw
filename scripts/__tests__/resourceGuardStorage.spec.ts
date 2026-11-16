@@ -122,35 +122,33 @@ async function kill(pid: number): Promise<void> {
     await waitUntil(() => !isAlive(pid));
 }
 
-async function waitForStorageAbandonment(tempDirectories: string[], deadline: number): Promise<void> {
+// Each census bounds itself at five seconds, so a loaded host may need several before one
+// concludes. The barrier is a census returning dead; the bound only ends a wait that never does.
+const ABANDONMENT_PROOF_TIMEOUT_MS = 30_000;
+
+async function waitForStorageAbandonment(
+    tempDirectories: string[],
+    timeoutMs = ABANDONMENT_PROOF_TIMEOUT_MS
+): Promise<void> {
     let lastState = 'unknown';
     let lastReason = 'not sampled';
     try {
-        await waitUntil(
-            () => {
-                if (Date.now() > deadline) {
-                    return false;
-                }
-                lastReason = 'no diagnostic';
-                // This test process supervised every fixture run whose storage is checked.
-                lastState = storageFileState(
-                    tempDirectories,
-                    [],
-                    (reason) => {
-                        lastReason = reason;
-                    },
-                    process.pid
-                );
-                if (Date.now() > deadline) {
-                    return false;
-                }
-                return lastState === 'dead';
-            },
-            Math.max(0, deadline - Date.now())
-        );
+        // A census that concluded dead is the proof even when it finished past the bound.
+        await waitUntil(() => {
+            lastReason = 'no diagnostic';
+            // This test process supervised every fixture run whose storage is checked.
+            lastState = storageFileState(
+                tempDirectories,
+                [],
+                (reason) => {
+                    lastReason = reason;
+                },
+                process.pid
+            );
+            return lastState === 'dead';
+        }, timeoutMs);
     } catch (error) {
-        const outcome = Date.now() > deadline ? 'timed out' : 'failed';
-        throw new Error(`storage fixture abandonment proof ${outcome}: ${lastState}: ${lastReason}`, { cause: error });
+        throw new Error(`storage fixture abandonment proof timed out: ${lastState}: ${lastReason}`, { cause: error });
     }
 }
 
@@ -296,6 +294,83 @@ function claimPayloads(root: string): string[] {
             .filter((name) => name !== 'claim.json')
             .map((name) => join(claims, claim, name))
     );
+}
+
+// A run's storage is its own directory or the payload a reclaimer moved under a claim.
+function runStoragePaths(storageRoot: string, token: string): string[] {
+    const claims = join(storageRoot, '.claims');
+    const claimed = existsSync(claims) ? readdirSync(claims).map((claim) => join(claims, claim, token)) : [];
+    return [join(storageRoot, token), ...claimed].filter((path) => existsSync(path));
+}
+
+const recordedRecoveryPath = resolve('scripts/__tests__/fixtures/recordedStorageRecovery.ts');
+// Each recovery census bounds itself at five seconds, so on a loaded host one can end unproved.
+// Retention of dead storage is then correct, and only a later start's census can reclaim it.
+const RECOVERY_ATTEMPTS = 4;
+
+type RecordedRecovery = {
+    code: number | null;
+    reason: string | undefined;
+    output: string;
+    censuses: { verdict: 'alive' | 'dead' | 'unknown'; reasons: string[] }[];
+};
+
+async function recordedRecovery(root: string, watched: string[], attempt: number): Promise<RecordedRecovery> {
+    const resultPath = join(root, `recovery-${attempt}.json`);
+    // The watched paths reach the recovery by file: on its command line, the process census would
+    // read them as a live reference to the storage it is meant to reclaim.
+    const watchedPath = join(root, `recovery-${attempt}-watched.json`);
+    writeFileSync(watchedPath, JSON.stringify(watched));
+    const options = {
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        profile: 'focused',
+        availableMemoryBytes: abundantMemoryBytes,
+        maxRssBytes: 512 * 1024 ** 2,
+        admissionRoot: root,
+        storageRoot: join(root, 'storage'),
+        diskReserveBytes: 1,
+    };
+    const recovery = spawn(process.execPath, [recordedRecoveryPath, JSON.stringify(options), watchedPath, resultPath], {
+        stdio: 'ignore',
+    });
+    if (recovery.pid === undefined) {
+        throw new Error('recorded storage recovery did not start');
+    }
+    childPids.add(recovery.pid);
+    const exitCode = await new Promise<number | null>((resolve) => recovery.once('exit', resolve));
+    childPids.delete(recovery.pid);
+    expect(exitCode).toBe(0);
+    return JSON.parse(readFileSync(resultPath, 'utf8'));
+}
+
+// Starts guards until one reclaims the dead run's storage. A start may keep it only when its last
+// census of that storage could not finish. Keeping it after a census proved it free, without
+// any census, or after any census found it in use fails the case.
+async function expectRecoveryReclaims(root: string, watched: string[], token: string): Promise<void> {
+    const storageRoot = join(root, 'storage');
+    for (let attempt = 1; ; attempt++) {
+        const recovery = await recordedRecovery(root, watched, attempt);
+        const evidence = JSON.stringify({
+            attempt,
+            reason: recovery.reason ?? 'none',
+            censuses: recovery.censuses,
+            storage: recovery.output
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage'))
+                .slice(-4),
+        });
+        expect(recovery.code, evidence).toBe(0);
+        const retained = runStoragePaths(storageRoot, token);
+        if (retained.length === 0) {
+            return;
+        }
+        const last = recovery.censuses.at(-1);
+        const unfinished = last?.verdict === 'unknown' && areTransientProofReasons(last.reasons);
+        const inUse = recovery.censuses.some((census) => census.verdict === 'alive');
+        expect({ retained, unfinished, inUse }, evidence).toEqual({ retained, unfinished: true, inUse: false });
+        expect(attempt, evidence).toBeLessThan(RECOVERY_ATTEMPTS);
+    }
 }
 
 // `provedFileState` gives the child supervisor a file census that proves every storage free, for
@@ -994,7 +1069,6 @@ setInterval(() => {}, 1000);
     );
 
     it('preserves a killed supervisors storage while descendants live and reclaims it on a later start', async () => {
-        const deadline = Date.now() + 30_000;
         const root = fixture();
         const marker = join(root, 'started.json');
         const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);`;
@@ -1038,7 +1112,7 @@ setInterval(() => {}, 1000);
         expect(existsSync(started.tmp)).toBe(true);
         await kill(rootPid);
         await kill(started.pid);
-        await waitForStorageAbandonment([started.tmp], deadline);
+        await waitForStorageAbandonment([started.tmp]);
         const recovery = await guarded(root);
         expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
         expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
@@ -1166,6 +1240,12 @@ setInterval(() => {}, 1000);
         15_000
     );
 
+    // Every step waits on its own completion barrier: the hidden user's marker, the supervisor's
+    // exit, a heartbeat, a dead census, a recovery's exit. Under host load each step takes several
+    // times its idle cost, so the bounds only end a step that never completes.
+    const HIDDEN_USER_STEP_TIMEOUT_MS = 30_000;
+    const HIDDEN_USER_CASE_TIMEOUT_MS = 180_000;
+
     it.each([
         { consumer: 'cwd', scenario: 'parent exit' },
         { consumer: 'open file', scenario: 'parent exit' },
@@ -1176,7 +1256,6 @@ setInterval(() => {}, 1000);
     ] as const)(
         'retains hidden temp users: $consumer after $scenario',
         async ({ consumer, scenario }) => {
-            const deadline = Date.now() + 20_000;
             const root = fixture();
             const marker = join(root, 'hidden.json');
             const heartbeat = join(root, 'heartbeat');
@@ -1252,14 +1331,14 @@ setInterval(() => {}, 1000);
                 throw new Error('hidden temp supervisor did not start');
             }
             childPids.add(supervisorPid);
-            await waitUntil(() => existsSync(marker));
+            await waitUntil(() => existsSync(marker), HIDDEN_USER_STEP_TIMEOUT_MS);
             const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             childPids.add(started.pid);
             const rootPid = Number(readFileSync(rootMarker, 'utf8'));
             childPids.add(rootPid);
             const owner = scenario === 'parent exit' ? undefined : readOwner(started.tmp);
             if (scenario === 'parent exit') {
-                await waitUntil(() => existsSync(resultPath) && !isAlive(supervisorPid));
+                await waitUntil(() => existsSync(resultPath) && !isAlive(supervisorPid), HIDDEN_USER_STEP_TIMEOUT_MS);
             } else {
                 await kill(supervisorPid);
                 await kill(rootPid);
@@ -1282,7 +1361,10 @@ setInterval(() => {}, 1000);
                 expect(payloads).toHaveLength(1);
                 currentTemp = join(payloads[0] ?? '', 'tmp');
             }
-            await waitUntil(() => existsSync(heartbeat) && Number(readFileSync(heartbeat, 'utf8')) >= 2);
+            await waitUntil(
+                () => existsSync(heartbeat) && Number(readFileSync(heartbeat, 'utf8')) >= 2,
+                HIDDEN_USER_STEP_TIMEOUT_MS
+            );
             expect(isAlive(started.pid)).toBe(true);
             const tick = Number(readFileSync(heartbeat, 'utf8'));
             console.log(
@@ -1299,24 +1381,12 @@ setInterval(() => {}, 1000);
             expect((await guarded(root)).code).toBe(0);
             expect(isAlive(started.pid)).toBe(true);
             expect(existsSync(currentTemp)).toBe(true);
-            await waitUntil(() => Number(readFileSync(heartbeat, 'utf8')) > tick);
+            await waitUntil(() => Number(readFileSync(heartbeat, 'utf8')) > tick, HIDDEN_USER_STEP_TIMEOUT_MS);
             await kill(started.pid);
-            await waitForStorageAbandonment([started.tmp, currentTemp], deadline);
-            const recovery = await guarded(root);
-            expect(recovery.code).toBe(0);
-            if (existsSync(currentTemp)) {
-                console.log(
-                    JSON.stringify({
-                        retainedAfterExit: true,
-                        consumer,
-                        scenario,
-                        evidence: recovery.output.slice(-512),
-                    })
-                );
-            }
-            expect(existsSync(currentTemp), proofDiagnostic(recovery)).toBe(false);
+            await waitForStorageAbandonment([started.tmp, currentTemp]);
+            await expectRecoveryReclaims(root, [started.tmp, currentTemp], basename(dirname(started.tmp)));
         },
-        20_000
+        HIDDEN_USER_CASE_TIMEOUT_MS
     );
 
     function emptyProcessCensusFixture(holdPreparedRecord: boolean) {
@@ -1464,7 +1534,6 @@ cp.execFileSync=(file,args,options)=>{
     });
 
     async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
-        const deadline = Date.now() + 20_000;
         const {
             root,
             marker,
@@ -1594,7 +1663,7 @@ ready();
         await kill(admission.rootPid);
         expect(isAlive(supervisor.pid)).toBe(false);
         expect(isAlive(admission.rootPid)).toBe(false);
-        await waitForStorageAbandonment([started.tmp], deadline);
+        await waitForStorageAbandonment([started.tmp]);
         const recovery = await runMarkedGuard(root);
         expectMarkedRecovery(root, [{ tempDirectory: started.tmp, token: originalToken }], recovery);
     }

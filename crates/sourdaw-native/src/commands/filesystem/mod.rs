@@ -1404,6 +1404,53 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_scope_marks_every_path_private() {
+        RuntimeScope::test_in_refused_process(
+            concat!(module_path!(), "::a_refused_scope_marks_every_path_private"),
+            || {
+                // The legacy IPC root is a public built-in root when no scope was asked for.
+                let legacy_ipc = std::env::temp_dir()
+                    .join(IPC_TEMP_DIR_NAME)
+                    .join("audio.wav");
+                assert!(is_private_state_path(&legacy_ipc));
+            },
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_resolves_no_renderer_path() {
+        RuntimeScope::test_in_refused_process(
+            concat!(
+                module_path!(),
+                "::a_refused_scope_resolves_no_renderer_path"
+            ),
+            || assert!(resolve_renderer_path("audio.wav").is_err()),
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_names_no_private_state_directory() {
+        RuntimeScope::test_in_refused_process(
+            concat!(
+                module_path!(),
+                "::a_refused_scope_names_no_private_state_directory"
+            ),
+            || assert!(private_state_directory().is_err()),
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_names_no_project_directory() {
+        RuntimeScope::test_in_refused_process(
+            concat!(
+                module_path!(),
+                "::a_refused_scope_names_no_project_directory"
+            ),
+            || assert!(project_directory().is_err()),
+        );
+    }
+
+    #[test]
     fn scoped_native_private_paths_outrank_recursive_grants() {
         RuntimeScope::test_in_process(
             concat!(
