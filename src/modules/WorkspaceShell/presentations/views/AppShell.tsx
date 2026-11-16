@@ -22,6 +22,7 @@ import { ConfirmDialog } from '#/infra/dialogService/ConfirmDialog';
 import { NotificationToast } from '#/infra/dialogService/NotificationToast';
 import { PromptDialog } from '#/infra/dialogService/PromptDialog';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import {
     GenerativeAiPanel,
@@ -102,6 +103,7 @@ import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
+import { findEnabledVariationLaneTrackIds, isSameVariationLanesShown } from '../helpers/variationLanesShown';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
@@ -308,15 +310,23 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const { showNotice: showEngineFallbackNotice, dismissNotice: dismissEngineFallbackNotice } =
         useEngineFallbackNotice();
     const prefs = useStore(preferencesStore, defaultPreferences);
-    const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
-    const isAudioClipSelected =
-        selectedClipId !== null &&
-        tracksSnapshot.tracks.some((track) =>
-            track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
-        );
-    const takesTabAvailable = hasVariationLanes(tracksSnapshot.tracks);
-    const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
-    const aiPanelOpen = aiState.isPanelOpen;
+    // The shell reads three facts from the tracks; following the whole store would render the
+    // whole chrome again for every clip edit.
+    const isAudioClipSelected = useStoreSelector(
+        trackStore,
+        (state) =>
+            selectedClipId !== null &&
+            (state?.tracks ?? []).some((track) =>
+                track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
+            )
+    );
+    const takesTabAvailable = useStoreSelector(trackStore, (state) => hasVariationLanes(state?.tracks ?? []));
+    const variationLanesShown = useStoreSelector(
+        trackStore,
+        (state) => detectVariationLaneEnabling(null, state?.tracks ?? []).shown,
+        isSameVariationLanesShown
+    );
+    const aiPanelOpen = useStoreSelector(aiStore, (state) => state?.isPanelOpen ?? false);
     const alphaDismissed = useStore(alphaNoticeStore);
     const showAlphaNotice = project.initialized && !alphaDismissed;
     const [exportOpen, setExportOpen] = useState(false);
@@ -453,17 +463,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // the comparison.
     const variationLanesShownRef = useRef<ReadonlyMap<string, boolean> | null>(null);
     useEffect(() => {
-        const { shown, enabledTrackIds } = detectVariationLaneEnabling(
-            variationLanesShownRef.current,
-            tracksSnapshot.tracks
-        );
-        variationLanesShownRef.current = shown;
+        const enabledTrackIds = findEnabledVariationLaneTrackIds(variationLanesShownRef.current, variationLanesShown);
+        variationLanesShownRef.current = variationLanesShown;
         if (enabledTrackIds.length === 0) {
             return;
         }
         setBottomTabState({ value: 'takes', selectedClipId });
         openMixer();
-    }, [tracksSnapshot.tracks, selectedClipId]);
+    }, [variationLanesShown, selectedClipId]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {

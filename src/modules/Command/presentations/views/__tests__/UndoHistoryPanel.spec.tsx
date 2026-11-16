@@ -15,6 +15,14 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
+// The panel gates on a selector over the open flag; read it through the spec's useStore fixture.
+vi.mock('#/infra/store/useStoreSelector', async () => {
+    const { useStore } = await import('#/infra/store/useStore');
+    return {
+        useStoreSelector: (store: never, selector: (state: unknown) => unknown) => selector(useStore(store)),
+    };
+});
+
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: { name: 'workspaceStore' },
 }));

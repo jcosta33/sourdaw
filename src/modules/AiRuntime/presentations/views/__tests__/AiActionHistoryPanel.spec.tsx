@@ -1,4 +1,6 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useSyncExternalStore } from 'react';
+
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiActionHistoryPanel } from '../AiActionHistoryPanel';
@@ -46,6 +48,14 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: module_mocks.use_store,
 }));
 
+// The panel gates on a selector over the open flag; read it through the spec's useStore fixture.
+vi.mock('#/infra/store/useStoreSelector', async () => {
+    const { useStore } = await import('#/infra/store/useStore');
+    return {
+        useStoreSelector: (store: never, selector: (state: unknown) => unknown) => selector(useStore(store)),
+    };
+});
+
 vi.mock('#/modules/AiRuntime/stores/aiActionHistoryStore', () => ({
     aiActionHistoryStore: module_mocks.ai_action_history_store,
     toggleAiHistoryPanel: module_mocks.toggle_ai_history_panel,
@@ -73,7 +83,22 @@ const mock_ai_state: { groups: MockAiActionGroup[]; panelOpen: boolean } = {
 };
 const mock_history_state: { entries: MockActionHistoryEntry[] } = { entries: [] };
 
+// The panel's list follows its stores, not its parent, so a fixture change must notify it.
+const fixture_listeners = new Set<() => void>();
+let fixture_version = 0;
+const subscribe_to_fixture = (listener: () => void): (() => void) => {
+    fixture_listeners.add(listener);
+    return () => fixture_listeners.delete(listener);
+};
+const notify_fixture_changed = (): void => {
+    fixture_version += 1;
+    for (const listener of fixture_listeners) {
+        listener();
+    }
+};
+
 module_mocks.use_store.mockImplementation((store: unknown, default_value: unknown) => {
+    useSyncExternalStore(subscribe_to_fixture, () => fixture_version);
     if (store === module_mocks.ai_action_history_store) {
         return mock_ai_state;
     }
@@ -335,12 +360,12 @@ describe('AiActionHistoryPanel', () => {
                 source: 'manual',
             },
         ];
-        const view = render(<AiActionHistoryPanel />);
+        render(<AiActionHistoryPanel />);
         fireEvent.click(screen.getByLabelText('Revert this change'));
         await waitFor(() => expect(screen.getByText('Reverted')).toBeInTheDocument());
 
         mock_history_state.entries = [{ ...mock_history_state.entries[0]!, label: 'Peer replacement' }];
-        view.rerender(<AiActionHistoryPanel />);
+        act(notify_fixture_changed);
 
         expect(screen.getByText('Peer replacement')).toBeInTheDocument();
         expect(screen.queryByText('Reverted')).not.toBeInTheDocument();

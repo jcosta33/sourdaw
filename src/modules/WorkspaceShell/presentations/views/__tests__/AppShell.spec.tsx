@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
 import {
@@ -50,6 +51,17 @@ const arrangementMinimumHeightMock = vi.hoisted(() => ({ value: 0 }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
 }));
+
+// The shell reads its track and AI facts through selectors; the spec drives them from its own
+// fixtures and leaves every other store to the real hook.
+const realStoreSelector = vi.hoisted(() => ({
+    use: null as typeof import('#/infra/store/useStoreSelector').useStoreSelector | null,
+}));
+vi.mock('#/infra/store/useStoreSelector', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/store/useStoreSelector')>();
+    realStoreSelector.use = actual.useStoreSelector;
+    return { useStoreSelector: vi.fn() };
+});
 
 vi.mock('../../hooks/useWorkspaceState', () => ({
     useWorkspaceState: vi.fn(),
@@ -390,6 +402,21 @@ describe('AppShell', () => {
         selectedClipIdState = null;
         agentProjectRepairState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
+        vi.mocked(useStoreSelector).mockImplementation((store, selector, equalityFn) => {
+            if (store === trackStore) {
+                return selector(trackStoreState);
+            }
+            if (store === aiStore) {
+                return selector({ tasks: [], isPanelOpen: false });
+            }
+            if (store === workspaceStore) {
+                return selector(workspaceState);
+            }
+            if (realStoreSelector.use === null) {
+                throw new Error('The real useStoreSelector must be loaded');
+            }
+            return realStoreSelector.use(store, selector, equalityFn);
+        });
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === trackStore) {
                 return trackStoreState;

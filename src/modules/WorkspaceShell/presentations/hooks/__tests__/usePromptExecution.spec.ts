@@ -85,7 +85,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     initEngine: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: null },
+    // useStoreSelector reads this one directly, so it serves the spec's current trackState.
+    trackStore: { value: null, getSnapshot: () => trackState, subscribeReact: () => () => undefined },
     clipSelectionStore: { value: null },
     defaultTrackState: { tracks: [], selectedTrackId: null },
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
