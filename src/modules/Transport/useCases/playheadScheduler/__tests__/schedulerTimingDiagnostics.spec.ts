@@ -19,6 +19,7 @@ describe('schedulerTimingDiagnostics', () => {
             outOfOrderMessages: 0,
             ticksSettled: 1,
             ticksSkippedInFlight: 0,
+            ticksSkippedBehindOverrun: 0,
             deliveryDeadlineMisses: 0,
             workerWakeLatenessMs: { samples: 1, total: 3, last: 3, max: 3, average: 3 },
             mainDeliveryLatenessMs: { samples: 1, total: 7, last: 7, max: 7, average: 7 },
@@ -38,6 +39,7 @@ describe('schedulerTimingDiagnostics', () => {
         expect(snapshot.sequenceGaps).toBe(2);
         expect(snapshot.deliveryDeadlineMisses).toBe(1);
         expect(snapshot.ticksSkippedInFlight).toBe(1);
+        expect(snapshot.ticksSkippedBehindOverrun).toBe(0);
         expect(snapshot.mainDeliveryLatenessMs).toEqual({
             samples: 2,
             total: 29,
@@ -51,6 +53,7 @@ describe('schedulerTimingDiagnostics', () => {
         schedulerTimingDiagnostics.recordTickMessage(1, 3_000, 2_999, 2_998);
         schedulerTimingDiagnostics.recordTickSettled(-1);
         schedulerTimingDiagnostics.recordTickSkipped();
+        schedulerTimingDiagnostics.recordTickSkippedBehindOverrun();
 
         expect(schedulerTimingDiagnostics.snapshot().workerWakeLatenessMs.last).toBe(0);
         expect(schedulerTimingDiagnostics.snapshot().tickExecutionMs.last).toBe(0);
@@ -65,11 +68,23 @@ describe('schedulerTimingDiagnostics', () => {
             outOfOrderMessages: 0,
             ticksSettled: 0,
             ticksSkippedInFlight: 0,
+            ticksSkippedBehindOverrun: 0,
             deliveryDeadlineMisses: 0,
             workerWakeLatenessMs: { samples: 0, total: 0, last: 0, max: 0, average: 0 },
             mainDeliveryLatenessMs: { samples: 0, total: 0, last: 0, max: 0, average: 0 },
             messageTransitMs: { samples: 0, total: 0, last: 0, max: 0, average: 0 },
             tickExecutionMs: { samples: 0, total: 0, last: 0, max: 0, average: 0 },
         });
+    });
+
+    it('counts messages dropped behind an overrunning tick apart from in-flight skips', () => {
+        schedulerTimingDiagnostics.recordTickSkippedBehindOverrun();
+        schedulerTimingDiagnostics.recordTickSkippedBehindOverrun();
+        schedulerTimingDiagnostics.recordTickSkipped();
+
+        const snapshot = schedulerTimingDiagnostics.snapshot();
+        expect(snapshot.ticksSkippedBehindOverrun).toBe(2);
+        expect(snapshot.ticksSkippedInFlight).toBe(1);
+        expect(snapshot.ticksSettled).toBe(0);
     });
 });

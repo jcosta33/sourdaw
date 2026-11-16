@@ -309,7 +309,7 @@ async function tick(seconds = TICK_SECONDS): Promise<void> {
             generation: schedulerSession.generation,
             sequence: tickSequence,
             scheduledAtMs: receivedAtMs - 2,
-            sentAtMs: receivedAtMs - 1,
+            sentAtMs: receivedAtMs,
         },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
