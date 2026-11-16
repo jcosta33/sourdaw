@@ -60,6 +60,9 @@ test.describe('Mixer master gain — keyboard response', () => {
         await expect.poll(async () => Number(await gain.getAttribute('aria-valuenow'))).toBeCloseTo(10 ** (-6 / 20), 5);
 
         const copiedValue = await gain.getAttribute('aria-valuenow');
+        if (copiedValue === null) {
+            throw new Error('Master gain has no aria-valuenow to copy');
+        }
         menu = await openMenu();
         await menu.getByRole('menuitem', { name: 'Copy Value' }).click();
         await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`gain:${copiedValue}`);
@@ -69,19 +72,19 @@ test.describe('Mixer master gain — keyboard response', () => {
         await expect(gain).toHaveAttribute('aria-valuenow', '0.8');
         menu = await openMenu();
         await menu.getByRole('menuitem', { name: 'Paste Value' }).click();
-        await expect(gain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
+        await expect(gain).toHaveAttribute('aria-valuenow', copiedValue);
 
         const undo = page.getByRole('button', { name: 'Undo', exact: true });
         const redo = page.getByRole('button', { name: 'Redo', exact: true });
         await undo.click();
         await expect(gain).toHaveAttribute('aria-valuenow', '0.8');
         await redo.click();
-        await expect(gain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
+        await expect(gain).toHaveAttribute('aria-valuenow', copiedValue);
 
         await page.evaluate(() => navigator.clipboard.writeText('pan:0.25'));
         menu = await openMenu();
         await menu.getByRole('menuitem', { name: 'Paste Value' }).click();
-        await expect(gain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
+        await expect(gain).toHaveAttribute('aria-valuenow', copiedValue);
         await expect(page.getByText('Clipboard does not contain a valid master gain value.')).toBeVisible();
     });
 });

@@ -119,7 +119,7 @@ describe('handleAddSection — index', () => {
             type: 'addSection',
             payload: { startBeat: 0, endBeat: 4, name: 'X', sectionId: 's1', index: 2 },
         });
-        expect(mockedAddSection.mock.calls[0]![5]).toBe(2);
+        expect(mockedAddSection.mock.calls[0]![5]).toMatchObject({ index: 2 });
     });
 
     it.each([
@@ -151,7 +151,7 @@ describe('handleAddSection — execute index rule', () => {
                 payload: { startBeat: 0, endBeat: 4, name: 'X', sectionId: 's1', index },
             });
             expect(result).toBeUndefined();
-            expect(mockedAddSection.mock.calls[0]![5]).toBe(index);
+            expect(mockedAddSection.mock.calls[0]![5]).toEqual({ index });
         }
     );
 

@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createTrack } from '#/modules/Arrangement/useCases';
+import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { digest } from '#/utils/canonicalDigest';
 
-import { AGENT_RUN_MAX_TEXT_LENGTH, MAX_AUDIBLE_CLAIM_METRICS } from '../../models/AgentRun';
+import { AGENT_RUN_MAX_TEXT_LENGTH, MAX_AUDIBLE_CLAIM_METRICS, MAX_AUDIBLE_PREDICTIONS } from '../../models/AgentRun';
 import {
     type MeasuredMetricDelta,
     type MeasuredPreview,
@@ -19,12 +20,19 @@ import { chatStore } from '../../stores/chatStore';
 import { getPendingActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
-import { AUDIBLE_CLAIM_TOO_LARGE_REASON, NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
+import {
+    AUDIBLE_CLAIM_TOO_LARGE_REASON,
+    NO_AUDIBLE_CLAIM_REASON,
+    UNBOUND_PREDICTION_REASON,
+} from '../deriveMeasuredAudibleImpact';
 import { digestCommandBatchContent } from '../digestCommandBatchContent';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerceptualConstraintGoals';
 
 import {
     configuredLiteralMetricState,
@@ -41,7 +49,7 @@ type AudibleClaim = NonNullable<
     NonNullable<ReturnType<typeof agentRunLifecycle.get>>['plan']
 >['expectedImpact']['audible'];
 
-type FigureUnit = 'dBFS' | 'dBTP' | 'LUFS' | 'dB';
+type FigureUnit = 'dBFS' | 'dBTP' | 'LUFS' | 'dB' | 'hertz';
 
 function entry(unit: FigureUnit, value: number) {
     return { status: 'measured' as const, metricVersion: 1 as const, unit, value, confidence: 'exact' as const };
@@ -92,6 +100,12 @@ function proposeCard(input: {
     /** A preview held only by the metric-goal proofs, as a vibe-run batch card holds it. */
     proofPreviews?: readonly ((bound: { revision: string; batchContentHash: string }) => MeasuredPreview)[];
     foreignHash?: boolean;
+    /** Frozen metric goals of a perceptual or comparative request, bound to the batch the card persists. */
+    goals?: {
+        kind: 'perceptual' | 'comparative';
+        goals: readonly MetricGoal[];
+        proofPreviews?: readonly ((bound: { revision: string; batchContentHash: string }) => MeasuredPreview)[];
+    };
 }): Card {
     const revision = captureProjectRevision();
     const actions = [
@@ -112,6 +126,19 @@ function proposeCard(input: {
     }
     const parsed = parseBatch(compiled.commandBatch);
     const batchContentHash = input.foreignHash === true ? 'another-batch' : digestCommandBatchContent(parsed.envelope);
+    let metricGoalState: ReturnType<typeof goalState> | ReturnType<typeof proofOnlyState>;
+    if (input.goals === undefined) {
+        metricGoalState = proofOnlyState(
+            compiled.commandBatch,
+            input.proofPreviews?.map((build) => build({ revision, batchContentHash }))
+        );
+    } else {
+        metricGoalState = goalState(compiled.commandBatch, {
+            kind: input.goals.kind,
+            goals: input.goals.goals,
+            previews: input.goals.proofPreviews?.map((build) => build({ revision, batchContentHash })) ?? [],
+        });
+    }
     const confirmationId = persistPromptActionConfirmation({
         runId: RUN_ID,
         prompt: 'Set the vocal gain',
@@ -123,10 +150,7 @@ function proposeCard(input: {
         agentApproval: compiled.agentApproval,
         affectedIds: ['vocal'],
         protectedUnchanged: [],
-        metricGoalState: proofOnlyState(
-            compiled.commandBatch,
-            input.proofPreviews?.map((build) => build({ revision, batchContentHash }))
-        ),
+        metricGoalState,
         measuredPreview: input.preview?.({ revision, batchContentHash }),
         executionMode: 'atomic',
         group: { groupId: `group-${String(input.gain)}`, groupLabel: 'Set vocal gain' },
@@ -140,14 +164,7 @@ function proposeCard(input: {
     return { confirmationId, envelope: parsed.envelope };
 }
 
-function proofOnlyState(
-    commandBatch: ReturnType<typeof compileAgentActionExecution>['commandBatch'],
-    previews: readonly MeasuredPreview[] | undefined
-): string | undefined {
-    if (previews === undefined) {
-        return undefined;
-    }
-    const state = JSON.parse(configuredLiteralMetricState(commandBatch)) as Record<string, unknown>;
+function withProofs(state: object, previews: readonly MeasuredPreview[]): string {
     const artifact = { route: 'isolated-subgraph' as const, artifact: { contentAddress: 'content-address' } };
     const proofs = previews.map((preview, index) => ({
         preview: {
@@ -167,6 +184,44 @@ function proofOnlyState(
         receiptDigest: `proof-receipt-digest-${String(index)}`,
     }));
     return JSON.stringify({ ...state, proofs });
+}
+
+function proofOnlyState(
+    commandBatch: ReturnType<typeof compileAgentActionExecution>['commandBatch'],
+    previews: readonly MeasuredPreview[] | undefined
+): string | undefined {
+    if (previews === undefined) {
+        return undefined;
+    }
+    return withProofs(JSON.parse(configuredLiteralMetricState(commandBatch)) as object, previews);
+}
+
+/** The literal fixture's state with its authority replaced by one stating `goals`, bound to the whole batch. */
+function goalState(
+    commandBatch: ReturnType<typeof compileAgentActionExecution>['commandBatch'],
+    input: { kind: 'perceptual' | 'comparative'; goals: readonly MetricGoal[]; previews: readonly MeasuredPreview[] }
+): string {
+    const literal = metricGoalStateCodec(configuredLiteralMetricState(commandBatch));
+    const authority = literal?.authorities[0];
+    if (literal === null || authority === undefined) {
+        throw new Error('Expected the literal fixture state.');
+    }
+    const { envelope } = parseBatch(commandBatch);
+    const state: MetricGoalState = {
+        ...literal,
+        authorities: [{ ...authority, kind: input.kind, goals: input.goals }],
+        steps: [
+            {
+                stepId: 'overall',
+                commandCount: envelope.commands.length,
+                operationTypes: envelope.commands.map((command) => command.operation),
+                recipePrefixHash: null,
+            },
+        ],
+        proofs: [],
+        binding: null,
+    };
+    return withProofs(bindMetricGoalsToBatch({ state, commandBatch }), input.previews);
 }
 
 function parseBatch(commandBatch: ReturnType<typeof compileAgentActionExecution>['commandBatch']) {
@@ -223,6 +278,15 @@ function movedFiguresFromApprovalCard(confirmationId: string) {
             ];
         })
     );
+}
+
+/** What a reload reads: the JSON the store wrote, not the in-memory state. */
+function reloadRunFromStorage(): ReturnType<typeof sanitizeAgentRunState>['runs'][number] | undefined {
+    const written = localStorage.getItem('sourdaw-agent-runs');
+    if (written === null) {
+        throw new Error('The run store wrote nothing.');
+    }
+    return sanitizeAgentRunState(parse(written)).runs.find((run) => run.runId === RUN_ID);
 }
 
 beforeEach(() => {
@@ -737,15 +801,6 @@ describe('the plan’s audible claim', () => {
         expect(audible().status).toBe('not-claimed');
     });
 
-    /** What a reload reads: the JSON the store wrote, not the in-memory state. */
-    function reloadRunFromStorage(): ReturnType<typeof sanitizeAgentRunState>['runs'][number] | undefined {
-        const written = localStorage.getItem('sourdaw-agent-runs');
-        if (written === null) {
-            throw new Error('The run store wrote nothing.');
-        }
-        return sanitizeAgentRunState(parse(written)).runs.find((run) => run.runId === RUN_ID);
-    }
-
     it('round-trips a claim over a named section through what the store wrote', () => {
         proposeCard({
             gain: 0.7,
@@ -1255,5 +1310,683 @@ describe('the plan’s audible claim', () => {
         };
         expect(persisted(MAX_AUDIBLE_CLAIM_METRICS)).toBe(1);
         expect(persisted(MAX_AUDIBLE_CLAIM_METRICS + 1)).toBe(0);
+    });
+});
+
+describe('the plan’s predicted audible claim', () => {
+    const catalog = getMixRecipeCatalog();
+
+    /** A frozen spectral centroid goal on the vocal, taken from the catalog recipe that promises that direction. */
+    function centroidGoal(direction: 'increase' | 'decrease', goalId = `vocal-centroid-${direction}`): MetricGoal {
+        const recipe = catalog.recipes.find(
+            (entry) =>
+                entry.origin === undefined &&
+                entry.metrics.some(
+                    (metric) =>
+                        metric.metric === 'spectralCentroid' &&
+                        metric.direction === direction &&
+                        metric.band === undefined
+                )
+        );
+        const expectationIndex =
+            recipe?.metrics.findIndex(
+                (metric) =>
+                    metric.metric === 'spectralCentroid' && metric.direction === direction && metric.band === undefined
+            ) ?? -1;
+        if (recipe === undefined || expectationIndex < 0) {
+            throw new Error(`The catalog holds no recipe promising a spectral centroid ${direction}.`);
+        }
+        return {
+            goalId,
+            stepId: 'overall',
+            metricId: 'spectralCentroid',
+            band: null,
+            targetIds: ['vocal'],
+            referenceTargetIds: [],
+            range: { startBeat: 0, endBeat: 4, sectionId: null },
+            relation: direction,
+            targetValue: null,
+            tolerance: 0,
+            source: {
+                kind: 'recipe',
+                recipeId: recipe.id,
+                catalogVersion: catalog.version,
+                recipeDigest: digest(recipe),
+                expectationIndex,
+            },
+        };
+    }
+
+    const loudnessOrderingGoal: MetricGoal = {
+        goalId: 'vocal-louder-than-master',
+        stepId: 'overall',
+        metricId: 'integratedLoudness',
+        band: null,
+        targetIds: ['vocal'],
+        referenceTargetIds: ['master'],
+        range: { startBeat: 0, endBeat: 4, sectionId: null },
+        relation: 'greater-than-current',
+        targetValue: null,
+        tolerance: 0,
+        source: { kind: 'policy', policyId: 'integrated-loudness-comparison-v1' },
+    };
+
+    /** The vocal's spectral centroid before and after, with the change the real comparison reports. */
+    function centroidTarget(baselineHz: number, previewHz: number): MeasuredPreviewTarget {
+        const change = compareAgentScopeMeasurements({
+            baseline: { spectralCentroid: entry('hertz', baselineHz) },
+            preview: { spectralCentroid: entry('hertz', previewHz) },
+        }).spectralCentroid;
+        if (change === undefined) {
+            throw new Error('The comparison reported nothing.');
+        }
+        return {
+            targetId: 'vocal',
+            targetKind: 'track',
+            baseline: { spectralCentroid: entry('hertz', baselineHz) },
+            preview: { spectralCentroid: entry('hertz', previewHz) },
+            deltas: { spectralCentroid: change },
+        };
+    }
+
+    function predicted(): Extract<AudibleClaim, { status: 'predicted' }> {
+        const claim = audible();
+        if (claim.status !== 'predicted') {
+            throw new Error(`Expected a predicted claim, got: ${JSON.stringify(claim)}`);
+        }
+        return claim;
+    }
+
+    const brighter = centroidGoal('increase');
+
+    it('states the frozen goals as predictions bound to the batch, before any preview is measured', () => {
+        const card = proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        const claim = predicted();
+        expect(claim).toEqual({
+            status: 'predicted',
+            kind: 'perceptual',
+            revision: captureProjectRevision(),
+            batchContentHash: digestCommandBatchContent(card.envelope),
+            predictions: [{ ...brighter, outcome: null }],
+            verification: null,
+            observed: { status: 'listed', metrics: [] },
+        });
+        const state = metricGoalStateCodec(
+            getPendingActionConfirmation(card.confirmationId)?.approvalSnapshot.metricGoalState
+        );
+        expect(claim.batchContentHash).toBe(state?.binding?.contentHash);
+        expect(claim.revision).toBe(state?.binding?.revision);
+    });
+
+    it('shows each prediction beside its measured figures when the preview satisfies the goals', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        const before = predicted();
+        proposeCard({
+            gain: 0.7,
+            goals: {
+                kind: 'perceptual',
+                goals: [brighter],
+                proofPreviews: [previewOf([centroidTarget(1000, 1400)])],
+            },
+        });
+        const claim = predicted();
+        expect(Object.keys(claim).sort()).toEqual(Object.keys(before).sort());
+        expect(claim.verification).toMatchObject({ status: 'verified', failure: null });
+        expect(claim.predictions).toEqual([
+            {
+                ...brighter,
+                outcome: { baseline: [1000], observed: [1400], reference: [], unit: 'hertz', status: 'verified' },
+            },
+        ]);
+        // The observed change is listed apart from the prediction and is the measurement's own figures.
+        expect(claim.observed).toEqual({
+            status: 'listed',
+            metrics: [
+                {
+                    targetId: 'vocal',
+                    targetKind: 'track',
+                    range: { startBeat: 0, endBeat: 4, sectionId: null },
+                    metricId: 'spectralCentroid',
+                    baseline: { value: 1000, unit: 'hertz' },
+                    preview: { value: 1400, unit: 'hertz' },
+                    delta: { value: 400, unit: 'hertz' },
+                },
+            ],
+        });
+    });
+
+    it('blocks a preview that contradicts the prediction, and the card stays visible with Confirm refused', () => {
+        const card = proposeCard({
+            gain: 0.7,
+            preview: previewOf([centroidTarget(1000, 800)]),
+            goals: {
+                kind: 'perceptual',
+                goals: [brighter],
+                proofPreviews: [previewOf([centroidTarget(1000, 800)])],
+            },
+        });
+        const claim = predicted();
+        expect(claim.verification).toMatchObject({ status: 'blocked', failure: 'out-of-tolerance' });
+        expect(claim.predictions[0]?.outcome).toEqual({
+            baseline: [1000],
+            observed: [800],
+            reference: [],
+            unit: 'hertz',
+            status: 'blocked',
+        });
+        const view = getAgentApprovalView({ confirmationId: card.confirmationId });
+        expect(view?.status).toBe('proposed');
+        expect(view?.measuredPreview).not.toBeNull();
+        expect(view?.canConfirm).toBe(false);
+        expect(view?.metricGoals).toMatchObject({
+            status: 'blocked',
+            failure: claim.verification?.failure,
+            reason: claim.verification?.reason,
+        });
+    });
+
+    it('blocks goals that contradict each other as contradictory, with every prediction unmeasured', () => {
+        const card = proposeCard({
+            gain: 0.7,
+            goals: {
+                kind: 'perceptual',
+                goals: [brighter, centroidGoal('decrease')],
+                proofPreviews: [previewOf([centroidTarget(1000, 1400)])],
+            },
+        });
+        const claim = predicted();
+        expect(claim.verification).toMatchObject({ status: 'blocked', failure: 'contradictory' });
+        expect(claim.predictions.map((prediction) => prediction.goalId)).toEqual([
+            'vocal-centroid-increase',
+            'vocal-centroid-decrease',
+        ]);
+        expect(claim.predictions.map((prediction) => prediction.outcome?.status)).toEqual(['blocked', 'blocked']);
+        const view = getAgentApprovalView({ confirmationId: card.confirmationId });
+        expect(view?.canConfirm).toBe(false);
+        expect(view?.metricGoals.failure).toBe('contradictory');
+    });
+
+    it('carries the reference targets and the comparative relation of a comparative request', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'comparative', goals: [loudnessOrderingGoal] } });
+        const claim = predicted();
+        expect(claim.kind).toBe('comparative');
+        expect(claim.predictions).toEqual([{ ...loudnessOrderingGoal, outcome: null }]);
+        expect(claim.predictions[0]?.referenceTargetIds).toEqual(['master']);
+        expect(claim.predictions[0]?.relation).toBe('greater-than-current');
+        expect(claim.verification).toBeNull();
+    });
+
+    it('lists the goals of a mixed request once, as comparative', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'comparative', goals: [loudnessOrderingGoal, brighter] } });
+        const claim = predicted();
+        expect(claim.kind).toBe('comparative');
+        expect(claim.predictions.map((prediction) => prediction.goalId)).toEqual([
+            'vocal-louder-than-master',
+            'vocal-centroid-increase',
+        ]);
+    });
+
+    it('claims nothing audible for a literal plan that states no goal', () => {
+        proposeCard({ gain: 0.7, proofPreviews: [] });
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('keeps the observed-only measured claim for a goalless plan with a bound preview', () => {
+        proposeCard({ gain: 0.7, proofPreviews: [previewOf([vocalTarget()])] });
+        expect(audible().status).toBe('measured');
+    });
+
+    it('never verifies against a preview of another batch', () => {
+        proposeCard({
+            gain: 0.7,
+            foreignHash: true,
+            preview: previewOf([centroidTarget(1000, 1400)]),
+            goals: { kind: 'perceptual', goals: [brighter], proofPreviews: [previewOf([centroidTarget(1000, 1400)])] },
+        });
+        const claim = predicted();
+        expect(claim.verification).toBeNull();
+        expect(claim.predictions.map((prediction) => prediction.outcome)).toEqual([null]);
+        expect(claim.observed).toEqual({ status: 'listed', metrics: [] });
+    });
+
+    it('never verifies against a preview of another revision', () => {
+        proposeCard({
+            gain: 0.7,
+            goals: {
+                kind: 'perceptual',
+                goals: [brighter],
+                proofPreviews: [
+                    (bound) => ({ ...previewOf([centroidTarget(1000, 1400)])(bound), revision: 'another-revision' }),
+                ],
+            },
+        });
+        const claim = predicted();
+        expect(claim.verification).toBeNull();
+        expect(claim.predictions.map((prediction) => prediction.outcome)).toEqual([null]);
+    });
+
+    it('keeps the predictions but resets the verification when the card is rebound to a new binding', () => {
+        proposeCard({
+            gain: 0.7,
+            goals: { kind: 'perceptual', goals: [brighter], proofPreviews: [previewOf([centroidTarget(1000, 1400)])] },
+        });
+        expect(predicted().verification?.status).toBe('verified');
+        const run = agentRunLifecycle.get(RUN_ID);
+        const state = metricGoalStateCodec(run?.plan?.metricGoalState);
+        if (run === null || state?.binding === null || state === null) {
+            throw new Error('Expected the bound goal state.');
+        }
+        agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'waiting-for-approval' });
+        const rebound: MetricGoalState = {
+            ...state,
+            proofs: [],
+            binding: { ...state.binding, contentHash: 'rebound-batch-hash', revision: 'rebound-revision' },
+        };
+        expect(
+            agentRunLifecycle.rebindMetricGoalState({
+                runId: RUN_ID,
+                expectedMetricGoalState: run.plan?.metricGoalState,
+                metricGoalState: JSON.stringify(rebound),
+                revision: 'rebound-revision',
+            })
+        ).toBe(true);
+        expect(predicted()).toEqual({
+            status: 'predicted',
+            kind: 'perceptual',
+            revision: 'rebound-revision',
+            batchContentHash: 'rebound-batch-hash',
+            predictions: [{ ...brighter, outcome: null }],
+            verification: null,
+            observed: { status: 'listed', metrics: [] },
+        });
+    });
+
+    it('says why nothing is predicted when the goals are bound to no batch', () => {
+        const run = agentRunLifecycle.get(RUN_ID);
+        if (run?.plan === null || run === null) {
+            throw new Error('Expected the run plan.');
+        }
+        const unbound: MetricGoalState = {
+            schemaVersion: 1,
+            authorities: [],
+            steps: [],
+            proofs: [],
+            binding: null,
+        };
+        const literal = metricGoalStateCodec(
+            configuredLiteralMetricState(
+                compileAgentActionExecution({
+                    actions: [{ type: 'setTrackGain', payload: { trackId: 'vocal', gain: 0.7, expectedGain: 1 } }],
+                    actionLabels: ['setTrackGain'],
+                    context: getProjectContext(),
+                    group: { groupId: 'unbound', groupLabel: 'Unbound' },
+                    intent: 'Set the vocal gain',
+                    projectRevision: captureProjectRevision(),
+                    requiresConfirmation: true,
+                    runId: RUN_ID,
+                }).commandBatch
+            )
+        );
+        const authority = literal?.authorities[0];
+        if (authority === undefined) {
+            throw new Error('Expected the literal fixture authority.');
+        }
+        agentRunLifecycle.recordPlan({
+            runId: RUN_ID,
+            summary: run.plan.summary,
+            commandIds: [],
+            serializedBatchIdentity: null,
+            revision: captureProjectRevision(),
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: {
+                ...run.plan,
+                metricGoalState: JSON.stringify({
+                    ...unbound,
+                    authorities: [{ ...authority, kind: 'perceptual', goals: [brighter] }],
+                }),
+            },
+        });
+        expect(audible()).toEqual({ status: 'not-claimed', reason: UNBOUND_PREDICTION_REASON });
+    });
+
+    it('does not let a later card with no goal state inherit the first card’s predictions', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        expect(audible().status).toBe('predicted');
+        proposeCard({ gain: 0.6 });
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('does not restate the earlier batch’s predictions when a write supplies no goal state', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        expect(audible().status).toBe('predicted');
+        const run = agentRunLifecycle.get(RUN_ID);
+        if (run?.plan === null || run === null) {
+            throw new Error('Expected the run plan.');
+        }
+        const { metricGoalState: carried, ...withoutState } = run.plan;
+        expect(carried).toBeDefined();
+        agentRunLifecycle.recordPlan({
+            runId: RUN_ID,
+            summary: run.plan.summary,
+            commandIds: [],
+            serializedBatchIdentity: null,
+            revision: captureProjectRevision(),
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: withoutState,
+        });
+        // The state field is still carried; the claim is not derived from it.
+        expect(agentRunLifecycle.get(RUN_ID)?.plan?.metricGoalState).toBe(carried);
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('keeps both predictions, and the run across a reload, when two authorities mint the same goal id', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        const run = agentRunLifecycle.get(RUN_ID);
+        const state = metricGoalStateCodec(run?.plan?.metricGoalState);
+        const authority = state?.authorities[0];
+        if (run?.plan === null || run === null || state === null || authority === undefined) {
+            throw new Error('Expected the bound goal state.');
+        }
+        agentRunLifecycle.recordPlan({
+            runId: RUN_ID,
+            summary: run.plan.summary,
+            commandIds: [],
+            serializedBatchIdentity: null,
+            revision: captureProjectRevision(),
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: {
+                ...run.plan,
+                metricGoalState: JSON.stringify({
+                    ...state,
+                    authorities: [authority, { ...authority, authorityId: 'second-authority' }],
+                }),
+            },
+        });
+        const claim = predicted();
+        expect(claim.predictions.map((prediction) => prediction.goalId)).toEqual([brighter.goalId, brighter.goalId]);
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+    });
+
+    describe('the size of the observed list', () => {
+        const manyTargets = (count: number) =>
+            Array.from({ length: count }, (_, index) => vocalTarget({ targetId: `target-${String(index)}` }));
+
+        it('lists exactly the limit beside the predictions', () => {
+            proposeCard({
+                gain: 0.7,
+                goals: {
+                    kind: 'perceptual',
+                    goals: [brighter],
+                    proofPreviews: [previewOf(manyTargets(MAX_AUDIBLE_CLAIM_METRICS))],
+                },
+            });
+            const claim = predicted();
+            expect(claim.observed.status === 'listed' && claim.observed.metrics).toHaveLength(
+                MAX_AUDIBLE_CLAIM_METRICS
+            );
+        });
+
+        it('marks the list omitted past the limit and still claims the predictions', () => {
+            proposeCard({
+                gain: 0.7,
+                goals: {
+                    kind: 'perceptual',
+                    goals: [brighter],
+                    proofPreviews: [previewOf(manyTargets(MAX_AUDIBLE_CLAIM_METRICS + 1))],
+                },
+            });
+            const claim = predicted();
+            expect(claim.observed).toEqual({ status: 'omitted', reason: AUDIBLE_CLAIM_TOO_LARGE_REASON });
+            expect(claim.predictions.map((prediction) => prediction.goalId)).toEqual([brighter.goalId]);
+            persistAgentRunState(readAgentRunState());
+            expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+        });
+    });
+
+    it('keeps a measured constraint hold and an unsupported clause across a reload', () => {
+        const goals = readPerceptualConstraintGoals(
+            {
+                constraints: [
+                    {
+                        constraintId: 'loudness-held-v1',
+                        clause: 'keep the loudness',
+                        scope: { kind: 'tracks', trackIds: ['vocal'] },
+                        protection: { kind: 'measured' },
+                    },
+                ],
+                unsupported: [
+                    {
+                        constraintId: 'unsupported',
+                        clause: 'keep the vocal intimate',
+                        reason: 'No measurement verifies it.',
+                    },
+                ],
+            },
+            getProjectContext()
+        );
+        expect(goals.map((goal) => goal.source)).toEqual([
+            { kind: 'constraint', constraintId: 'loudness-held-v1', clause: 'keep the loudness' },
+            { kind: 'constraint', constraintId: 'unsupported', clause: 'keep the vocal intimate' },
+        ]);
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals } });
+        const claim = predicted();
+        expect(claim.predictions.map((prediction) => prediction.source)).toEqual(goals.map((goal) => goal.source));
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+    });
+
+    it('keeps a policy-sourced comparative goal across a reload', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'comparative', goals: [loudnessOrderingGoal] } });
+        const claim = predicted();
+        expect(claim.predictions[0]?.source).toEqual({ kind: 'policy', policyId: 'integrated-loudness-comparison-v1' });
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+    });
+
+    describe('through the store', () => {
+        const rows = {
+            unverified: () => proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } }),
+            verified: () =>
+                proposeCard({
+                    gain: 0.7,
+                    goals: {
+                        kind: 'perceptual',
+                        goals: [brighter],
+                        proofPreviews: [previewOf([centroidTarget(1000, 1400)])],
+                    },
+                }),
+            blocked: () =>
+                proposeCard({
+                    gain: 0.7,
+                    goals: {
+                        kind: 'perceptual',
+                        goals: [brighter],
+                        proofPreviews: [previewOf([centroidTarget(1000, 800)])],
+                    },
+                }),
+        } as const;
+
+        it.each(['unverified', 'verified', 'blocked'] as const)('round-trips a %s claim unchanged', (row) => {
+            rows[row]();
+            const before = predicted();
+            persistAgentRunState(readAgentRunState());
+            expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
+        });
+
+        it.each(['measured', 'not-claimed'] as const)('still loads a stored %s claim unchanged', (status) => {
+            proposeCard(status === 'measured' ? { gain: 0.7, preview: previewOf([vocalTarget()]) } : { gain: 0.7 });
+            const before = audible();
+            expect(before.status).toBe(status);
+            persistAgentRunState(readAgentRunState());
+            expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
+        });
+
+        type StoredPredicted = {
+            predictions: Record<string, unknown>[];
+            verification: Record<string, unknown> | null;
+            observed?: Record<string, unknown>;
+        } & Record<string, unknown>;
+
+        const first = (claim: StoredPredicted): Record<string, unknown> => {
+            const [prediction] = claim.predictions;
+            if (prediction === undefined) {
+                throw new Error('Expected a prediction to corrupt.');
+            }
+            return prediction;
+        };
+        const outcomeOf = (claim: StoredPredicted): Record<string, unknown> =>
+            first(claim).outcome as Record<string, unknown>;
+
+        const NON_FINITE = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+        const CORRUPTIONS: { rule: string; base: keyof typeof rows; edit: (claim: StoredPredicted) => void }[] = [
+            {
+                rule: 'no predictions',
+                base: 'unverified',
+                edit: (claim) => {
+                    claim.predictions = [];
+                },
+            },
+            {
+                rule: 'more predictions than the ceiling',
+                base: 'unverified',
+                edit: (claim) => {
+                    claim.predictions = Array.from({ length: MAX_AUDIBLE_PREDICTIONS + 1 }, (_, index) => ({
+                        ...first(claim),
+                        goalId: `goal-${String(index)}`,
+                    }));
+                },
+            },
+            {
+                rule: 'an outcome while no verification exists',
+                base: 'unverified',
+                edit: (claim) => {
+                    first(claim).outcome = { baseline: [], observed: [], reference: [], unit: null, status: 'blocked' };
+                },
+            },
+            {
+                rule: 'a verification with no outcome for a prediction',
+                base: 'verified',
+                edit: (claim) => {
+                    first(claim).outcome = null;
+                },
+            },
+            {
+                rule: 'a verified verdict over a blocked outcome',
+                base: 'verified',
+                edit: (claim) => {
+                    outcomeOf(claim).status = 'blocked';
+                },
+            },
+            {
+                rule: 'a verified verdict that names a failure',
+                base: 'verified',
+                edit: (claim) => {
+                    claim.verification = { ...claim.verification, failure: 'missing' };
+                },
+            },
+            {
+                rule: 'a blocked verdict that names no failure',
+                base: 'blocked',
+                edit: (claim) => {
+                    claim.verification = { ...claim.verification, failure: null };
+                },
+            },
+            {
+                rule: 'a failure that is not one the evaluation reports',
+                base: 'blocked',
+                edit: (claim) => {
+                    claim.verification = { ...claim.verification, failure: 'unlikely' };
+                },
+            },
+            {
+                rule: 'a relation the goals do not define',
+                base: 'unverified',
+                edit: (claim) => {
+                    first(claim).relation = 'louder';
+                },
+            },
+            {
+                rule: 'a source kind the goals do not define',
+                base: 'unverified',
+                edit: (claim) => {
+                    first(claim).source = { kind: 'guess' };
+                },
+            },
+            {
+                rule: 'a kind that is neither perceptual nor comparative',
+                base: 'unverified',
+                edit: (claim) => {
+                    claim.kind = 'literal';
+                },
+            },
+            {
+                rule: 'an observed list that is neither listed nor omitted',
+                base: 'unverified',
+                edit: (claim) => {
+                    claim.observed = { status: 'maybe' };
+                },
+            },
+            {
+                rule: 'a missing observed list',
+                base: 'unverified',
+                edit: (claim) => {
+                    delete claim.observed;
+                },
+            },
+            ...NON_FINITE.flatMap((bad) => [
+                {
+                    rule: `an outcome figure that is ${String(bad)}`,
+                    base: 'verified' as const,
+                    edit: (claim: StoredPredicted) => {
+                        outcomeOf(claim).observed = [bad];
+                    },
+                },
+                {
+                    rule: `a tolerance that is ${String(bad)}`,
+                    base: 'unverified' as const,
+                    edit: (claim: StoredPredicted) => {
+                        first(claim).tolerance = bad;
+                    },
+                },
+            ]),
+        ];
+
+        function survivorsAfter(base: keyof typeof rows, edit: (claim: StoredPredicted) => void): number {
+            rows[base]();
+            const copy = structuredClone(readAgentRunState()) as {
+                runs: { plan: { expectedImpact: { audible: StoredPredicted } } }[];
+            };
+            for (const run of copy.runs) {
+                edit(run.plan.expectedImpact.audible);
+            }
+            return sanitizeAgentRunState(copy).runs.length;
+        }
+
+        it.each(['unverified', 'verified', 'blocked'] as const)('keeps a run whose %s claim is untouched', (base) => {
+            expect(survivorsAfter(base, () => undefined)).toBe(1);
+        });
+
+        it('keeps a run whose predictions sit exactly at the ceiling', () => {
+            expect(
+                survivorsAfter('unverified', (claim) => {
+                    claim.predictions = Array.from({ length: MAX_AUDIBLE_PREDICTIONS }, (_, index) => ({
+                        ...first(claim),
+                        goalId: `goal-${String(index)}`,
+                    }));
+                })
+            ).toBe(1);
+        });
+
+        it.each(CORRUPTIONS.map((row) => [row.rule, row] as const))('drops the run for %s', (_rule, row) => {
+            expect(survivorsAfter(row.base, row.edit)).toBe(0);
+        });
     });
 });

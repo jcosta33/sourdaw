@@ -47,8 +47,10 @@ so a lane can choose the programs and network settings any Git command run there
 merge and diff drivers, textconv, `name::` remote helpers, URL rewrites, and URL-scoped or plain
 `http.*` keys such as `http.curloptResolve`, `http.sslCAInfo` and `http.proxy`. Their names are
 the lane's choice, so no environment override can switch them off. The token is therefore kept
-out of every Git command that reads that config. No Git child receives `GH_TOKEN` or the GitHub
-CLI's config directory; Git authenticates only through a credential helper, and the only children
+out of every Git command that reads that config. No Git child receives any variable the GitHub CLI
+reads a token from (`GH_TOKEN`, `GITHUB_TOKEN` and their enterprise forms, in any case) or its
+config directory, and a caller that hands one to a Git child gets the same hook check as a
+credential-holding child; Git authenticates only through a credential helper, and the only children
 that install one are the network transports (fetch, push, `ls-remote`). Those run through
 `withIsolatedGitTransport` in `scripts/isolatedGitTransport.ts`, against a fresh Git directory
 whose config the script writes, named with `--git-dir`, whose `objects` links to the repository's
@@ -60,7 +62,15 @@ a concurrent update refuses. A credential-holding Git child refuses to start unl
 `--git-dir` it names is, character for character, a directory a running transport created; the
 shared repository's own Git directory, a look-alike temporary directory, and a transport directory
 after its transport returned all refuse, and so does a child whose environment sets
-`GIT_COMMON_DIR`, which would move its config back to the shared repository.
+`GIT_COMMON_DIR`, which would move its config back to the shared repository. Git also reads config
+from the environment and from global options, so such a child's `GIT_*` environment must equal the
+sterile authorization environment exactly, keys matched as written (another global or system
+config file, `GIT_CONFIG_PARAMETERS`, a further numbered entry, or `GIT_EXEC_PATH` all refuse), and
+its global options are an allowlist that excludes `--config-env` and `--exec-path`. A child counts
+as credential-holding whenever anything installs a helper: any key case, a URL-scoped
+`credential.<url>.helper`, `--config-env`, or environment config. A child is Git when the command
+its caller names is `git`, with any `.exe` suffix and in any case, or is exactly the launcher's
+trusted Git path, whatever that path's file name.
 Working-tree and object commands (status, diff, merge, show) need lane config but no token, and
 run in the lane or primary without it.
 
@@ -73,13 +83,18 @@ the config it reads defines any `hook.*` key. Transports are an allowlist of `ht
 defence in depth beside the isolated directory. The GitHub CLI holds the token and starts Git
 itself, so every token-bearing `gh` child starts in a fresh empty directory that Git cannot climb
 out of, with inherited repository routing removed: any Git it runs finds no repository and reads no
-repository config. Each such call therefore names its repository with `--repo` or an explicit API
+repository config. A child is gh when the command its caller names is `gh`, with any `.exe` suffix
+and in any case, or is exactly the launcher's trusted gh path, whatever that path's file name. Each
+such call therefore names its repository with `--repo` or an explicit API
 path. The one exception is the exact checkout repository query (`gh repo view --json nameWithOwner
 --jq .nameWithOwner`), which reads remote names in the caller's repository with `git remote -v` and
 `git config --get-regexp`; those read config but start no config-selected program. That query
 answers from config any lane can write, where `remote.<name>.gh-resolved` overrides the remote URL,
 so a command reads it once, asserts it names the required repository, and passes that asserted name
 to every later call; a second read would let a lane move the calls after the check.
+The nightly CodeQL evidence reporter keeps its `gh` in place: its workflow checks out only the
+reporter's own files from the trusted commit into a fresh runner, so there is no lane config for
+Git to read, and importing the placement helper would break that sparse checkout.
 Keeping the token secret from same-account processes is outside this
 boundary. Every Git-read environment
 ignores replace refs. The

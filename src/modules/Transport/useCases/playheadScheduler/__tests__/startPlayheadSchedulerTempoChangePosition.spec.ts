@@ -290,7 +290,7 @@ function emitSchedulerTick(worker: SchedulerWorkerHarness): void {
             generation: schedulerSession.generation,
             sequence: schedulerTickSequence,
             scheduledAtMs: receivedAtMs - 2,
-            sentAtMs: receivedAtMs - 1,
+            sentAtMs: receivedAtMs,
         },
     });
 }

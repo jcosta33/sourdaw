@@ -15,7 +15,7 @@ test.describe('Mixer snapshot recall — restores saved state', () => {
 
     test('recall restores the gain value saved in a snapshot', async ({ page }) => {
         const mixer = page.getByRole('region', { name: 'Mixer panel', exact: true });
-        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
+        const kick = mixer.getByRole('row', { name: 'Kick channel', exact: true });
         const gainSlider = kick.getByRole('slider', { name: 'Kick gain', exact: true });
         const recallButton = mixer.getByRole('button', { name: 'Recall mixer snapshot', exact: true });
 

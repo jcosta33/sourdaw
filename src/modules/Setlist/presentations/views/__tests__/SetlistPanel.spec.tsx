@@ -109,7 +109,7 @@ describe('SetlistPanel', () => {
             render(<SetlistPanel />);
             expect(screen.getByText('No setlist items')).toBeTruthy();
             expect(screen.getByRole('button', { name: 'Add first item' })).toBeTruthy();
-            expect(screen.queryByRole('list')).toBeNull();
+            expect(screen.queryByRole('grid')).toBeNull();
         });
 
         it('calls addSetlistItem with a "Song N" name based on current item count from the empty-state action', () => {
@@ -129,7 +129,7 @@ describe('SetlistPanel', () => {
     });
 
     describe('item list rendering', () => {
-        it('renders a listitem for each entry and the computed progress readout', () => {
+        it('renders a row for each entry and the computed progress readout', () => {
             seed({
                 items: [
                     makeItem({ id: 'a', name: 'Opener', estimatedDuration: 120 }),
@@ -138,7 +138,7 @@ describe('SetlistPanel', () => {
                 currentIndex: 1,
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             expect(items).toHaveLength(2);
             // currentIndex 1 of 2 items → "2 of 2"
             expect(screen.getByText('2 of 2')).toBeTruthy();
@@ -202,6 +202,54 @@ describe('SetlistPanel', () => {
             expect(screen.queryByText('1')).toBeNull();
             // item 1 is not current → shows its 1-based index.
             expect(screen.getByText('2')).toBeTruthy();
+        });
+    });
+
+    describe('keyboard operation', () => {
+        it('makes only the current row a Tab stop and marks it selected', () => {
+            seed({
+                items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
+                currentIndex: 1,
+            });
+            render(<SetlistPanel />);
+            const rows = screen.getAllByRole('row');
+            expect(rows.map((row) => row.tabIndex)).toEqual([-1, 0]);
+            expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'true']);
+        });
+
+        it.each(['Enter', ' '])('goes to the focused row on %j, as a click does, and claims the key', (key) => {
+            seed({
+                items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
+                currentIndex: 0,
+            });
+            render(<SetlistPanel />);
+            const row = screen.getAllByRole('row')[1]!;
+            row.focus();
+            const claimed = !fireEvent.keyDown(row, { key });
+            expect(goToItem).toHaveBeenCalledWith(1);
+            expect(claimed).toBe(true);
+        });
+
+        it('moves focus between rows with the arrow keys without going to an item', () => {
+            seed({
+                items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
+                currentIndex: 0,
+            });
+            render(<SetlistPanel />);
+            const [first, second] = screen.getAllByRole('row');
+            first!.focus();
+            fireEvent.keyDown(first!, { key: 'ArrowDown' });
+            expect(document.activeElement).toBe(second);
+            fireEvent.keyDown(second!, { key: 'ArrowUp' });
+            expect(document.activeElement).toBe(first);
+            expect(goToItem).not.toHaveBeenCalled();
+        });
+
+        it('leaves Enter on a control inside the row to that control', () => {
+            seed({ items: [makeItem({ id: 'a', name: 'Opener' })], currentIndex: 0 });
+            render(<SetlistPanel />);
+            fireEvent.keyDown(screen.getByRole('button', { name: 'Opener' }), { key: 'Enter' });
+            expect(goToItem).not.toHaveBeenCalled();
         });
     });
 
@@ -465,7 +513,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             // Clicking the color bar span (aria-hidden, not a button) lets the
             // event bubble to the row onClick, which triggers goToItem. The item
             // name button calls stopPropagation to enter edit mode instead.
@@ -499,7 +547,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             fireEvent.dragStart(items[0]!, { dataTransfer: dataTransfer() });
             fireEvent.dragOver(items[1]!, { dataTransfer: dataTransfer() });
             fireEvent.drop(items[1]!, { dataTransfer: dataTransfer() });
@@ -511,7 +559,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             expect(items[1]!.className).not.toContain('border-t-ring');
             fireEvent.dragStart(items[0]!, { dataTransfer: dataTransfer() });
             fireEvent.dragOver(items[1]!, { dataTransfer: dataTransfer() });
@@ -524,7 +572,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             fireEvent.dragStart(items[0]!, { dataTransfer: dataTransfer() });
             fireEvent.dragOver(items[1]!, { dataTransfer: dataTransfer() });
             fireEvent.drop(items[1]!, { dataTransfer: dataTransfer() });
@@ -536,7 +584,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             fireEvent.dragStart(items[0]!, { dataTransfer: dataTransfer() });
             fireEvent.dragOver(items[0]!, { dataTransfer: dataTransfer() });
             fireEvent.drop(items[0]!, { dataTransfer: dataTransfer() });
@@ -548,7 +596,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             fireEvent.drop(items[1]!, { dataTransfer: dataTransfer() });
             expect(reorderSetlistItems).not.toHaveBeenCalled();
         });
@@ -558,7 +606,7 @@ describe('SetlistPanel', () => {
                 items: [makeItem({ id: 'a', name: 'Opener' }), makeItem({ id: 'b', name: 'Closer' })],
             });
             render(<SetlistPanel />);
-            const items = screen.getAllByRole('listitem');
+            const items = screen.getAllByRole('row');
             fireEvent.dragStart(items[0]!, { dataTransfer: dataTransfer() });
             fireEvent.dragOver(items[1]!, { dataTransfer: dataTransfer() });
             fireEvent.dragEnd(items[0]!);

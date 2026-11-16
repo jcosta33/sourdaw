@@ -8,7 +8,7 @@ test.describe('Command palette — test-id targeted', () => {
     });
 
     test('opening command palette via Cmd+K shows input via test ID', async ({ page }) => {
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
         const input = page.getByTestId('command-palette-input');

@@ -926,6 +926,175 @@ describe('AgentWorkspace', () => {
             expect(container.textContent).not.toContain('master-uuid');
             expect(screen.queryByText(/Audible impact not-claimed/u)).not.toBeInTheDocument();
         });
+
+        describe('a predicted claim', () => {
+            type Predicted = Extract<
+                NonNullable<ReturnType<typeof run>['plan']>['expectedImpact']['audible'],
+                { status: 'predicted' }
+            >;
+            const centroid = (
+                outcome: Predicted['predictions'][number]['outcome']
+            ): Predicted['predictions'][number] => ({
+                goalId: 'centroid',
+                stepId: 'overall',
+                metricId: 'spectralCentroid',
+                band: null,
+                targetIds: ['track-uuid-1'],
+                referenceTargetIds: [],
+                range: { startBeat: 0, endBeat: 4, sectionId: null },
+                relation: 'increase',
+                targetValue: null,
+                tolerance: 0,
+                source: { kind: 'unsupported' },
+                outcome,
+            });
+            const claim = (overrides: Partial<Predicted>): Predicted => ({
+                status: 'predicted',
+                kind: 'perceptual',
+                revision: 'revision-1',
+                batchContentHash: 'hash-1',
+                predictions: [centroid(null)],
+                verification: null,
+                observed: { status: 'listed', metrics: [] },
+                ...overrides,
+            });
+            const outcome = (observed: number, status: 'verified' | 'blocked') => ({
+                baseline: [1000],
+                observed: [observed],
+                reference: [],
+                unit: 'hertz',
+                status,
+            });
+
+            beforeEach(() => {
+                trackStore.set({
+                    tracks: [createTrack({ id: 'track-uuid-1', name: 'Lead Vocal', kind: 'audio' })],
+                    selectedTrackId: null,
+                    ghostClips: [],
+                });
+                agentRunControlsMock.list.mockReturnValue([projection()]);
+            });
+
+            const predictions = () =>
+                within(screen.getByRole('list', { name: 'Predicted audible impact' }))
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent);
+
+            it('states the prediction and that it awaits a preview, without calling it measured', () => {
+                setRuns([plannedRun({ stoppingConditions: [], audible: claim({}) })]);
+                render(<AgentWorkspace />);
+                expect(screen.getByText('Audible impact predicted')).toBeInTheDocument();
+                expect(predictions()).toEqual(['Lead Vocal spectralCentroid: predicted to increase; awaiting preview']);
+                expect(screen.queryByRole('list', { name: 'Measured audible impact' })).not.toBeInTheDocument();
+                expect(screen.queryByText(/Audible impact measured/u)).not.toBeInTheDocument();
+            });
+
+            it('shows the prediction beside the figures it held to, and the measured change apart', () => {
+                setRuns([
+                    plannedRun({
+                        stoppingConditions: [],
+                        audible: claim({
+                            predictions: [centroid(outcome(1400, 'verified'))],
+                            verification: { status: 'verified', failure: null, reason: 'Satisfied.' },
+                            observed: {
+                                status: 'listed',
+                                metrics: [
+                                    {
+                                        targetId: 'track-uuid-1',
+                                        targetKind: 'track',
+                                        range: { startBeat: 0, endBeat: 4, sectionId: null },
+                                        metricId: 'spectralCentroid',
+                                        baseline: { value: 1000, unit: 'hertz' },
+                                        preview: { value: 1400, unit: 'hertz' },
+                                        delta: { value: 400, unit: 'hertz' },
+                                    },
+                                ],
+                            },
+                        }),
+                    }),
+                ]);
+                render(<AgentWorkspace />);
+                expect(predictions()).toEqual([
+                    'Lead Vocal spectralCentroid: predicted to increase; held: 1000.00 hertz → 1400.00 hertz',
+                ]);
+                expect(
+                    within(screen.getByRole('list', { name: 'Measured audible impact' }))
+                        .getAllByRole('listitem')
+                        .map((item) => item.textContent)
+                ).toEqual(['Lead Vocal spectralCentroid: 1000.00 hertz → 1400.00 hertz (+400.00 hertz)']);
+            });
+
+            it('says a contradicted prediction did not hold, with the figures that contradicted it', () => {
+                setRuns([
+                    plannedRun({
+                        stoppingConditions: [],
+                        audible: claim({
+                            predictions: [centroid(outcome(800, 'blocked'))],
+                            verification: { status: 'blocked', failure: 'out-of-tolerance', reason: 'Not satisfied.' },
+                        }),
+                    }),
+                ]);
+                render(<AgentWorkspace />);
+                expect(predictions()).toEqual([
+                    'Lead Vocal spectralCentroid: predicted to increase; did not hold: 1000.00 hertz → 800.00 hertz',
+                ]);
+            });
+
+            it('says why a prediction could not be verified when nothing was read for it', () => {
+                setRuns([
+                    plannedRun({
+                        stoppingConditions: [],
+                        audible: claim({
+                            predictions: [
+                                centroid({ baseline: [], observed: [], reference: [], unit: null, status: 'blocked' }),
+                            ],
+                            verification: {
+                                status: 'blocked',
+                                failure: 'contradictory',
+                                reason: 'The frozen objective criteria contradict each other.',
+                            },
+                        }),
+                    }),
+                ]);
+                render(<AgentWorkspace />);
+                expect(predictions()).toEqual([
+                    'Lead Vocal spectralCentroid: predicted to increase; not verified: The frozen objective criteria contradict each other.',
+                ]);
+            });
+
+            it('names the reference of a comparative prediction', () => {
+                setRuns([
+                    plannedRun({
+                        stoppingConditions: [],
+                        audible: claim({
+                            kind: 'comparative',
+                            predictions: [
+                                {
+                                    ...centroid(null),
+                                    relation: 'greater-than-current',
+                                    referenceTargetIds: ['master-uuid'],
+                                },
+                            ],
+                        }),
+                    }),
+                ]);
+                render(<AgentWorkspace />);
+                expect(predictions()).toEqual([
+                    'Lead Vocal spectralCentroid: predicted to exceed master-uuid; awaiting preview',
+                ]);
+            });
+
+            it('says the measured list is omitted when more moved than a plan can list', () => {
+                setRuns([
+                    plannedRun({
+                        stoppingConditions: [],
+                        audible: claim({ observed: { status: 'omitted', reason: 'Too many figures moved.' } }),
+                    }),
+                ]);
+                render(<AgentWorkspace />);
+                expect(screen.getByText('Measured: Too many figures moved.')).toBeInTheDocument();
+            });
+        });
     });
 
     it('announces phase in a polite live region and a terminal outcome in an alert', () => {

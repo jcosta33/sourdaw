@@ -23,6 +23,7 @@ import {
     GITHUB_HTTPS_REMOTE,
     ORCHESTRATOR_USER_NODE_ID,
     createGhSession,
+    githubChildEnv,
     resolvePrimaryRoot,
     type GhSession,
 } from '../githubAppIdentity.ts';
@@ -3299,7 +3300,10 @@ describe('lane publish', () => {
             chmodSync(gitShim, 0o700);
             const session: GhSession = {
                 configDir,
-                env: { PATH: process.env.PATH, GH_TOKEN: 'ghs_fixture', TEST_LS_REMOTE_OUTPUT: output },
+                env: githubChildEnv('ghs_fixture', configDir, {
+                    PATH: process.env.PATH,
+                    TEST_LS_REMOTE_OUTPUT: output,
+                }),
                 dispose: () => {},
             };
             return { port: shellPort(session, root, root, { git: gitShim, gh: 'gh' }), root };
