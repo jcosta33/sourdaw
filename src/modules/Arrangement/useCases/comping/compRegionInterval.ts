@@ -8,7 +8,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompSelectionSpanSnapshot } from '../../events/arrangementTakeAppActions';
 import { changesCompSource } from '../../models/ChangesCompSourceByActionType';
-import { rewritesTempoMap } from '../../models/TempoMapWriterByActionType';
+import { changesTempo } from '../../models/ChangesTempoByActionType';
 import { type Clip, type Track } from '../../models/Track';
 import { type CompAudioSourceInputContext } from '../../stores/compAudioSourceInputs';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
@@ -374,7 +374,7 @@ function supportsSourceCapturePrefix(trackId: string, context: TakeLanePrefixCon
     // promotion-dependent combinations refuse before any command publishes.
     return prefix.every(
         (action) =>
-            !rewritesTempoMap(action.type) &&
+            !changesTempo(action.type) &&
             (action.type === 'restoreTrack' ||
                 action.type === 'removeTrack' ||
                 !changesCompSource(action.type) ||

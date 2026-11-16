@@ -3,7 +3,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { type TransientQuantizePlanSnapshot } from '../../events/arrangementClipAppActions';
-import { rewritesTempoMap } from '../../models/TempoMapWriterByActionType';
+import { changesTempo } from '../../models/ChangesTempoByActionType';
 import { prepareTransientQuantize } from '../../useCases/prepareTransientQuantize';
 import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
 
@@ -70,7 +70,7 @@ function priorActionInvalidatesPlan(action: QuantizeTransientsAction, context: H
         .slice(0, context.actionIndex)
         .some(
             (prior) =>
-                rewritesTempoMap(prior.type) ||
+                changesTempo(prior.type) ||
                 (prior.payload !== undefined && JSON.stringify(prior.payload).includes(clipReference))
         );
 }

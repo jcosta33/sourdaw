@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import {
+    type AppAction,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
     type MidiClipDataActionSnapshot,
@@ -374,6 +375,18 @@ describe('handleRestoreClipSplitState — satellites', () => {
 
         expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
         expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
+    });
+
+    it('validate admits a split restore after an editTempoMap prefix through the projected take lanes', () => {
+        const prefix: AppAction = {
+            type: 'editTempoMap',
+            payload: { edit: { type: 'add', beat: 0, tempo: 90 } },
+        };
+        const action = makeAction(makeSnapshot(), makeSnapshot());
+
+        expect(handleRestoreClipSplitState.validate?.(action, { actions: [prefix, action], actionIndex: 1 })).toBe(
+            true
+        );
     });
 
     it('validate skips the satellite check for a legacy payload', () => {

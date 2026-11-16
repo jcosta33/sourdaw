@@ -409,5 +409,12 @@ describe('compRegionInterval', () => {
                 expect(compRegionInterval.capturePatchAfterPrefix(input, { actions, actionIndex: 1 })).toBeNull();
             }
         );
+
+        it('still captures after detectTempo, which only reads audio and writes no tempo', () => {
+            const detectTempo: AppAction = { type: 'detectTempo', payload: { clipId: 'not-a-track-clip' } };
+            const actions = [detectTempo, setCompRegion];
+
+            expect(compRegionInterval.capturePatchAfterPrefix(input, { actions, actionIndex: 1 })).not.toBeNull();
+        });
     });
 });
