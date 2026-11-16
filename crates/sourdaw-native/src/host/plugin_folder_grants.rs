@@ -228,10 +228,36 @@ pub(crate) fn production_store_location() -> Option<PathBuf> {
 }
 
 /// Tests never touch the developer's own grant file: a unit test that inherited
-/// real grants would pass or fail on what happens to be on that machine.
+/// real grants would pass or fail on what happens to be on that machine. A test
+/// that needs a store installs a temporary one for its own thread with
+/// [`with_store_location_for_test`].
 #[cfg(test)]
 pub(crate) fn production_store_location() -> Option<PathBuf> {
-    None
+    TEST_STORE_LOCATION.with(|location| location.borrow().clone())
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_STORE_LOCATION: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Point [`production_store_location`] at `location` on this thread for the
+/// duration of `body`. Thread-local, so tests running alongside keep seeing no
+/// store.
+#[cfg(test)]
+pub(crate) fn with_store_location_for_test<T>(location: &Path, body: impl FnOnce() -> T) -> T {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_STORE_LOCATION.with(|location| *location.borrow_mut() = self.0.take());
+        }
+    }
+
+    let previous =
+        TEST_STORE_LOCATION.with(|current| current.replace(Some(location.to_path_buf())));
+    let _restore = Restore(previous);
+    body()
 }
 
 /// Every folder the plugin scan loads code from: the platform's plugin folders,
@@ -489,6 +515,12 @@ fn save_grants(location: &Path, grants: &[PathBuf]) -> Result<(), PluginFolderRe
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::{Path, PathBuf};
+
+    /// Store `grants` at `location` as the grant command would, without the
+    /// folder checks, so a test can hold a grant whose folder is missing.
+    pub(crate) fn store_grants(location: &Path, grants: &[PathBuf]) {
+        super::save_grants(location, grants).expect("grant store should be written");
+    }
 
     /// A temporary directory, canonicalized so no test path carries the
     /// platform's own temp-directory symlink (`/var` on macOS).
