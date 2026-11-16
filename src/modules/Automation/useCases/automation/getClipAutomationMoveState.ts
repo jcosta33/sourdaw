@@ -1,4 +1,4 @@
-import { type ClipAutomationLaneActionSnapshot } from '#/utils/handlerContract';
+import { type ClipAutomationLaneActionSnapshot } from '#/modules/Arrangement/events';
 
 import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';

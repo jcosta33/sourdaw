@@ -1,9 +1,4 @@
-import {
-    type AutomationMode,
-    type AutomationPointSnapshot,
-    type ModulatorMappingSnapshot,
-    type ModulatorSnapshot,
-} from '#/utils/handlerContract';
+import { type AutomationPointSnapshot } from '#/utils/handlerContract';
 
 import { type SendAutomationRangeSnapshot } from '../models/SendAutomationRangeSnapshot';
 
@@ -278,3 +273,46 @@ declare module '#/utils/handlerContract' {
         automation: AutomationAppAction;
     }
 }
+
+export type ModulatorMappingSnapshot = {
+    readonly targetTrackId: string;
+    readonly targetDeviceId: string;
+    readonly targetParamId: string;
+    readonly amount: number;
+};
+export type ModulatorSnapshot = {
+    readonly id: string;
+    readonly name: string;
+    readonly trackId: string;
+    readonly enabled: boolean;
+    readonly mappings: readonly ModulatorMappingSnapshot[];
+    readonly kind: 'lfo' | 'envelope' | 'step';
+    readonly config:
+        | {
+              readonly kind: 'lfo';
+              readonly waveform: 'sine' | 'square' | 'saw' | 'triangle' | 'random';
+              readonly rate: number;
+              readonly sync: boolean;
+              readonly phase: number;
+              readonly depth: number;
+          }
+        | {
+              readonly kind: 'envelope';
+              readonly attack: number;
+              readonly decay: number;
+              readonly sustain: number;
+              readonly release: number;
+              readonly triggerMode: 'midi' | 'audio' | 'sync';
+          }
+        | {
+              readonly kind: 'step';
+              readonly steps: readonly number[];
+              readonly rate: number;
+              readonly smooth: number;
+          };
+};
+export type IncomingModulationMappingSnapshot = {
+    readonly modulatorId: string;
+    readonly mapping: ModulatorMappingSnapshot;
+};
+export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';

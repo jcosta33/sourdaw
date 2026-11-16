@@ -574,8 +574,9 @@ transient `UNKNOWN`, refusing conflicts or a second `UNKNOWN`.
 
 Delivery refuses a pull request when `main` touched since their merge base a file the pull request
 also touched and a lint ledger (`LINT_LEDGER_FILES` in `scripts/lintLedgerCrossing.ts`) binds that
-file. A side touches a file by editing it or by changing what a ledger records for it, so a
-ledger-only edit counts. A ledger that does not parse as JSON refuses delivery. The non-strict
+file. The ledgers include the six dependency-boundary baselines
+(`.dependency-cruiser-known-violations*.json`), which bind the `from` file of each row. A side touches a file by editing it or by changing what a ledger records for it, so a
+ledger-only edit counts. A ledger that does not parse as JSON, or a boundary baseline that is not an array of rows with a `from` path, refuses delivery. The non-strict
 ruleset's `Gate` never measured the two edits together. The initial check
 refuses with no remote write. A crossing first seen at the final read refuses after the delivery
 receipt is posted and leaves the delivery lock held; recover it with
