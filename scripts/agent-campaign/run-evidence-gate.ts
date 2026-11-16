@@ -15,6 +15,7 @@ import { parseArgs } from 'node:util';
 
 import { format, resolveConfig } from 'prettier';
 
+import { closureBlockers, closureDrift, readLiveClosures, testedCrates } from './evidenceClosure.ts';
 import { EVIDENCE_SUITE_COMMANDS, EVIDENCE_SUITE_DATA, EVIDENCE_TASK_GROUPINGS } from './evidenceGateContract.ts';
 import {
     EVIDENCE_CAMPAIGN,
@@ -29,6 +30,7 @@ import {
     parseEvidenceRecord,
     sharedFixturePaths,
     validateEvidenceManifest,
+    type EvidenceClosure,
     type EvidenceDigestedPath,
     type EvidenceFixture,
     type EvidenceManifest,
@@ -73,16 +75,10 @@ const BLOCKED_EXIT_CODE = 2;
  */
 function commandFixturePaths(command: string): readonly string[] {
     const tokens = command.split(/\s+/u).filter((token) => token.length > 0);
-    const paths: string[] = [];
-    for (const [index, token] of tokens.entries()) {
-        if (FIXTURE_PREFIXES.some((prefix) => token.startsWith(prefix)) && token !== EVIDENCE_MANIFEST_PATH) {
-            paths.push(token);
-        }
-        const crate = tokens[index + 1];
-        if (token === '-p' && tokens[index - 2] === 'cargo' && tokens[index - 1] === 'test' && crate !== undefined) {
-            paths.push(`crates/${crate}/src`);
-        }
-    }
+    const paths = tokens.filter(
+        (token) => FIXTURE_PREFIXES.some((prefix) => token.startsWith(prefix)) && token !== EVIDENCE_MANIFEST_PATH
+    );
+    paths.push(...testedCrates(command).map((crate) => `crates/${crate}/src`));
     return [...new Set(paths)].sort();
 }
 
@@ -290,14 +286,22 @@ function releaseBlockers(
     for (const path of driftedRecordPaths(suite, record, release.environment)) {
         blockers.push(`${suite.id}: record digest drifted for ${path}`);
     }
+    blockers.push(...closureBlockers(suite, record, release.closures.get(suite.id)));
     if (record.outcome !== 'passed') {
         blockers.push(`${suite.id}: record outcome is ${record.outcome}, not passed`);
     }
     return blockers;
 }
 
-/** The head a release answers to, and the environment digests the live tree carries for it. */
-export type ReleaseState = { head: string; environment: readonly EvidenceDigestedPath[] };
+/**
+ * The head a release answers to, the environment digests the live tree carries for it, and the
+ * live closure of every suite whose record carries one.
+ */
+export type ReleaseState = {
+    head: string;
+    environment: readonly EvidenceDigestedPath[];
+    closures: ReadonlyMap<string, EvidenceClosure>;
+};
 
 export function evaluateRelease(
     manifest: EvidenceManifest,
@@ -527,10 +531,17 @@ function blockedFixtures(root: string, suite: EvidenceSuite): readonly string[] 
         .map(({ path }) => path);
 }
 
+/** What a gate run observed of the tree it ran against. */
+type RunObservation = {
+    head: string;
+    environment: readonly EvidenceDigestedPath[];
+    closure: EvidenceClosure | null;
+};
+
 function newRecord(
     manifest: EvidenceManifest,
     suite: EvidenceSuite,
-    observed: ReleaseState,
+    observed: RunObservation,
     run: { startedAt: string; durationMs: number; exitCode: number; outcome: EvidenceOutcome }
 ): EvidenceRecord {
     return {
@@ -542,6 +553,7 @@ function newRecord(
         capabilityInventoryDigest: manifest.capabilityInventory.digest,
         fixtures: suite.fixtures,
         environment: observed.environment,
+        closure: observed.closure,
         startedAt: run.startedAt,
         durationMs: run.durationMs,
         exitCode: run.exitCode,
@@ -577,12 +589,24 @@ function runBlockedGate(
         console.error(`${suite.id}: fixture ${path} does not exist`);
     }
     const run = { startedAt: new Date().toISOString(), durationMs: 0, exitCode: 0, outcome: 'blocked' } as const;
-    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
+    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closure: null };
     writeRecord(root, newRecord(manifest, suite, observed, run));
     return BLOCKED_EXIT_CODE;
 }
 
-function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateId: string): number {
+async function liveClosureOf(root: string, suite: EvidenceSuite): Promise<EvidenceClosure> {
+    const closure = (await readLiveClosures(root, [suite])).get(suite.id);
+    if (closure === undefined) {
+        throw new Error(`${suite.id}: no closure was derived`);
+    }
+    return closure;
+}
+
+/**
+ * The closure is derived before the command runs, so an unresolvable one refuses the run, and again
+ * after, so a run whose subject moved under it leaves no record claiming either tree.
+ */
+async function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateId: string): Promise<number> {
     const suite = selectGate(manifest, taskId, gateId);
     if (suite.kind === 'manual') {
         throw new Error(`${suite.id}: a manual suite carries no runnable command`);
@@ -599,17 +623,28 @@ function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateI
     if (stale.length > 0) {
         return report(stale);
     }
-    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
+    const closure = await liveClosureOf(root, suite);
+    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closure };
     const startedAt = new Date().toISOString();
     const run = runSuiteCommand(root, suite);
+    const drift = closureDrift(closure, await liveClosureOf(root, suite));
+    if (drift.length > 0) {
+        return report(drift.map((path) => `${suite.id}: closure file drifted during the run: ${path}`));
+    }
     const outcome: EvidenceOutcome = run.exitCode === 0 ? 'passed' : 'failed';
     writeRecord(root, newRecord(manifest, suite, observed, { startedAt, ...run, outcome }));
     return run.exitCode;
 }
 
-function runRelease(root: string, manifest: EvidenceManifest): number {
-    const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
-    const { blockers } = evaluateRelease(manifest, readRecords(root, manifest), release);
+async function runRelease(root: string, manifest: EvidenceManifest): Promise<number> {
+    const records = readRecords(root, manifest);
+    const recorded = new Set(records.filter(({ closure }) => closure !== null).map(({ suite }) => suite));
+    const closures = await readLiveClosures(
+        root,
+        manifest.suites.filter(({ id }) => recorded.has(id))
+    );
+    const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closures };
+    const { blockers } = evaluateRelease(manifest, records, release);
     return report([...blockers, ...sourceExampleReleaseBlockers(root), ...acceptanceCorpusReleaseBlockers(root)]);
 }
 

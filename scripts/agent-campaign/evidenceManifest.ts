@@ -43,6 +43,9 @@ export type EvidenceManifest = {
 
 export type EvidenceOutcome = 'passed' | 'failed' | 'blocked';
 
+/** Every file a run's evidence depended on, each with its digest, and one digest over the list. */
+export type EvidenceClosure = { digest: string; files: readonly EvidenceDigestedPath[] };
+
 export type EvidenceRecord = {
     schemaVersion: number;
     suite: string;
@@ -52,6 +55,8 @@ export type EvidenceRecord = {
     capabilityInventoryDigest: string;
     fixtures: readonly EvidenceFixture[];
     environment: readonly EvidenceDigestedPath[];
+    /** Null for a blocked run, which ran nothing, and for a record written before closures existed. */
+    closure: EvidenceClosure | null;
     startedAt: string;
     durationMs: number;
     exitCode: number;
@@ -246,6 +251,19 @@ export function parseEvidenceManifest(text: string): EvidenceManifest {
     };
 }
 
+function parseClosure(value: unknown, label: string): EvidenceClosure | null {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    const entry = asRecord(value, label);
+    return {
+        digest: asString(entry.digest, `${label}.digest`),
+        files: asArray(entry.files, `${label}.files`).map((file, index) =>
+            parseDigestedPath(file, `${label}.files[${index}]`)
+        ),
+    };
+}
+
 export function parseEvidenceRecord(text: string, label: string): EvidenceRecord {
     const entry = asRecord(JSON.parse(text), label);
     return {
@@ -261,6 +279,7 @@ export function parseEvidenceRecord(text: string, label: string): EvidenceRecord
         environment: asArray(entry.environment, `${label}.environment`).map((item, index) =>
             parseDigestedPath(item, `${label}.environment[${index}]`)
         ),
+        closure: parseClosure(entry.closure, `${label}.closure`),
         startedAt: asString(entry.startedAt, `${label}.startedAt`),
         durationMs: asNumber(entry.durationMs, `${label}.durationMs`),
         exitCode: asNumber(entry.exitCode, `${label}.exitCode`),

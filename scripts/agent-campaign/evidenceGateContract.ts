@@ -104,6 +104,32 @@ export const EVIDENCE_SUITE_DATA: Readonly<Record<string, readonly string[]>> = 
     ],
 };
 
+/**
+ * Files or trees a suite's specs read by path rather than import, so the import closure cannot see
+ * them. They join the suite's recorded closure, never the manifest: the per-pull-request freshness
+ * check pins named fixtures only, and most of these move with ordinary product work.
+ */
+export const EVIDENCE_SUITE_CLOSURE_READS: Readonly<Record<string, readonly string[]>> = {
+    // localVoiceCommandBoundary.spec.ts reads the native speech command source.
+    'AC-001': ['crates/sourdaw-native/src/commands/speech.rs'],
+    // webLlmProviderAdapter.spec.ts reads the lockfile and the admission decision records.
+    'AC-023': [
+        'pnpm-lock.yaml',
+        '.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md',
+        '.agents/decisions/0060-admit-webllm-llama-3-1-70b-under-the-llama-3-1-community-license.md',
+    ],
+    // singleAudioContextInvariant.spec.ts scans every source file under src/.
+    'AC-041': ['src'],
+    // externalAgentAdapterConformance.spec.ts scans the AgentAdapters module.
+    'AC-051': ['src/modules/AgentAdapters'],
+    // agentSourceExamples.spec.ts reads the source-examples corpus.
+    'AC-056': ['evidence/agent-campaign/corpora/source-examples.json'],
+    // webviewSecurity.spec.ts reads index.html; both specs scan production sources in src/ and electron/.
+    'AC-057': ['index.html', 'src', 'electron'],
+    // agentCampaignBaseline.spec.ts reads the build configuration and the desktop channel list.
+    'AC-060': ['vite.config.ts', 'electron/channels.ts'],
+};
+
 /** Task ownership of the requirement ids. Every id above appears under exactly one task. */
 export const EVIDENCE_TASK_GROUPINGS: readonly EvidenceTaskGrouping[] = [
     { id: 'TASK-SA-00-protocol-governance', gates: ['AC-006', 'AC-007', 'AC-008', 'AC-017', 'AC-055', 'AC-060'] },

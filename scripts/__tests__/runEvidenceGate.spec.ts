@@ -83,8 +83,15 @@ function scopedTo(manifest: EvidenceManifest, suite: EvidenceSuite): EvidenceMan
     return { ...manifest, suites: [suite], collisions: [] };
 }
 
+/** A closure every suite's record and live tree agree on; closure drift has its own spec. */
+const UNCHANGED_CLOSURE = { digest: 'c'.repeat(64), files: [] };
+
 function releaseState(root: string, manifest: EvidenceManifest, head: string): ReleaseState {
-    return { head, environment: readEnvironmentDigests(root, manifest) };
+    return {
+        head,
+        environment: readEnvironmentDigests(root, manifest),
+        closures: new Map(manifest.suites.map(({ id }) => [id, UNCHANGED_CLOSURE])),
+    };
 }
 
 function passingRecord(manifest: EvidenceManifest, suite: EvidenceSuite, release: ReleaseState): EvidenceRecord {
@@ -97,6 +104,7 @@ function passingRecord(manifest: EvidenceManifest, suite: EvidenceSuite, release
         capabilityInventoryDigest: manifest.capabilityInventory.digest,
         fixtures: suite.fixtures,
         environment: release.environment,
+        closure: UNCHANGED_CLOSURE,
         startedAt: '2026-01-01T00:00:00.000Z',
         durationMs: 12,
         exitCode: 0,
