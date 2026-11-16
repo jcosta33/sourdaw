@@ -1,4 +1,3 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type GrooveTemplateAssignment } from '../../models/GrooveTemplateState';
@@ -21,42 +20,11 @@ export type GrooveApplicationPlan = {
     refusal: string | null;
 };
 
-function findClip(clipId: string) {
-    for (const track of trackStore.value?.tracks ?? []) {
-        const clip = track.clips.find((candidate) => candidate.id === clipId);
-        if (clip) {
-            return { track, clip };
-        }
-    }
-    return null;
-}
-
 function hasNotes(clipId: string, earlierActions: readonly AppAction[]): boolean {
     return (
         getNotesForClip(clipId).length > 0 ||
         earlierActions.some((action) => action.type === 'addNotes' && action.payload.clipId === clipId)
     );
-}
-
-function findClipRefusal(clipId: string, earlierActions: readonly AppAction[]): string | null {
-    const found = findClip(clipId);
-    if (!found) {
-        return `Clip "${clipId}" does not exist`;
-    }
-    if (found.clip.type !== 'midi') {
-        return `Clip "${clipId}" is not a MIDI clip`;
-    }
-    if (found.clip.locked === true) {
-        return `Clip "${clipId}" is locked`;
-    }
-    if (found.track.frozen === true) {
-        return `Clip "${clipId}" is on a frozen track`;
-    }
-    // A groove moves and shapes notes; on a clip without any it changes nothing audible.
-    if (!hasNotes(clipId, earlierActions)) {
-        return `Clip "${clipId}" has no notes for a groove to shape`;
-    }
-    return null;
 }
 
 /**
@@ -91,5 +59,9 @@ export function planGrooveApplication(
             refusal: `Groove template "${payload.grooveId}" is not in the groove pool`,
         };
     }
-    return { priorAssignment, assignment, refusal: findClipRefusal(payload.clipId, earlierActions) };
+    // A groove moves and shapes notes; on a clip without any it changes nothing audible.
+    const refusal = hasNotes(payload.clipId, earlierActions)
+        ? null
+        : `Clip "${payload.clipId}" has no notes for a groove to shape`;
+    return { priorAssignment, assignment, refusal };
 }

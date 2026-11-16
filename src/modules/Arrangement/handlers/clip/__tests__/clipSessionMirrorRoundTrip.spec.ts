@@ -2152,6 +2152,82 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(clipAssignment()).toEqual(later);
             expect(undoStore.value?.past).toHaveLength(1);
         });
+
+        it('applies a groove to a clip and notes the same batch creates first', async () => {
+            seedNotes();
+            const result = await runAsAgent([
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'new-clip',
+                        trackId: TRACK_ID,
+                        startBeat: 20,
+                        endBeat: 24,
+                        name: 'New',
+                        type: 'midi',
+                    },
+                },
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: 'new-clip',
+                        notes: [{ id: 'new-note', pitch: 62, startBeat: 0.03, duration: 1, velocity: 90 }],
+                    },
+                },
+                applyGroove('swing-light', 'new-clip'),
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(clipAssignment('new-clip')?.templateId).toBe('swing-light');
+        });
+
+        it('refuses a groove on a clip an earlier action in the batch removes, rolling the batch back', async () => {
+            seedNotes();
+            // An agent batch refuses removeClip outright; an ordinary batch validates up front the same way.
+            const result = await executeAppActionBatch(
+                [{ type: 'removeClip', payload: { clipId: 'clip-a' } }, applyGroove('swing-light')],
+                { groupId: 'remove-then-groove' }
+            );
+
+            expect(result).toMatchObject({ reason: expect.stringContaining('Clip "clip-a" does not exist') });
+            expect(result.status).not.toBe('committed');
+            expect(clipAssignment()).toBeNull();
+            expect(trackStore.value?.tracks.some((track) => track.clips.some((clip) => clip.id === 'clip-a'))).toBe(
+                true
+            );
+            expect(undoStore.value?.past ?? []).toEqual([]);
+        });
+
+        it('refuses to undo onto a template a collaborator deleted since, keeping the clip on the later groove', async () => {
+            seedNotes();
+            createGrooveTemplate({
+                id: 'project-groove',
+                name: 'Project groove',
+                subdivision: '1/16',
+                slots: [{ index: 1, timingOffset: 0.02, dynamicsOffset: -0.1 }],
+                provenance: { type: 'user', sourceId: 'project-groove' },
+            });
+            expect(
+                assignGrooveTemplate({
+                    consumerType: 'clip',
+                    consumerId: 'clip-a',
+                    templateId: 'project-groove',
+                    amount: 1,
+                }).ok
+            ).toBe(true);
+            flushAutomergeStorageWrites();
+            expect(await runAsAgent([applyGroove('swing-light')])).toMatchObject({ status: 'committed' });
+            // A collaborator deletes the template the clip held before; the clip now holds swing-light.
+            expect(deleteGrooveTemplate('project-groove')).not.toBeNull();
+            flushAutomergeStorageWrites();
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(false);
+            expect(clipAssignment()?.templateId).toBe('swing-light');
+            expect(grooveTemplateStore.value?.assignments.some((entry) => entry.templateId === 'project-groove')).toBe(
+                false
+            );
+        });
     });
 
     describe('audio start trim captured source replay', () => {
