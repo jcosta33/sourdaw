@@ -14,7 +14,41 @@ const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// The GPU memory budget in bytes, or null when this machine does not report one.
 #[napi]
 pub fn gpu_memory_budget() -> Option<i64> {
-    gpu_memory_budget_bytes()
+    js_exact_byte_count(gpu_memory_budget_bytes())
+}
+
+/// A byte count as JS can hold it exactly, or `None` when it would round.
+fn js_exact_byte_count(bytes: Option<u64>) -> Option<i64> {
+    bytes
         .filter(|bytes| *bytes <= MAX_SAFE_INTEGER)
         .and_then(|bytes| i64::try_from(bytes).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{js_exact_byte_count, MAX_SAFE_INTEGER};
+
+    #[test]
+    fn a_budget_a_js_number_holds_exactly_crosses_unchanged() {
+        assert_eq!(js_exact_byte_count(Some(0)), Some(0));
+        assert_eq!(
+            js_exact_byte_count(Some(8 * 1024 * 1024 * 1024)),
+            Some(8 * 1024 * 1024 * 1024)
+        );
+        assert_eq!(
+            js_exact_byte_count(Some(MAX_SAFE_INTEGER)),
+            Some((1_i64 << 53) - 1)
+        );
+    }
+
+    #[test]
+    fn a_budget_a_js_number_would_round_is_not_reported() {
+        assert_eq!(js_exact_byte_count(Some(MAX_SAFE_INTEGER + 1)), None);
+        assert_eq!(js_exact_byte_count(Some(u64::MAX)), None);
+    }
+
+    #[test]
+    fn an_unreported_budget_stays_unreported() {
+        assert_eq!(js_exact_byte_count(None), None);
+    }
 }
