@@ -1,16 +1,13 @@
 {
     "$schema": "./node_modules/oxlint/configuration_schema.json",
-    // Oxlint pass for Sourdaw. Covers every ESLint-enforced rule that oxlint 1.74
-    // implements natively (core, typescript incl. type-aware via tsgolint, unicorn,
-    // promise, import, jsx-a11y). Rules oxlint cannot run stay in eslint.config.mjs
-    // (custom sourdaw/*, @eslint-react, react-hooks v7, @tanstack/query,
-    // eslint-comments, prettier, @stylistic, naming-convention, import-x/order,
-    // no-restricted-syntax, consistent-return, no-invalid-this, no-octal).
+    // Native and type-aware rules with their existing narrower target exclusions.
+    // Full-scope native core rules and public JS plugins live in .oxlint-plugins.json;
+    // parser-service, resolver, directive, budget and semantic gaps remain in ESLint.
     "plugins": ["typescript", "unicorn", "jsx-a11y", "import", "promise"],
     // JS plugin: agent JS-isms oxlint does not implement natively (spread-as-clone,
     // conditional empty spread, JSON.parse(JSON.stringify), long array chains,
-    // ternary-as-if). Native size ceilings stay in ESLint until their 541-file
-    // override is ported; do not enable those here in this change.
+    // ternary-as-if). Native size ceilings and their warning baseline live in
+    // .oxlint-plugins.json so tooling excluded from this pass stays checked.
     "jsPlugins": ["./scripts/oxlintCraft/plugin.mjs"],
     "env": {
         "browser": true,
@@ -581,7 +578,6 @@
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts",
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts",
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedBatchOutcome.ts",
-                "src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts",
                 "src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts",
                 "src/modules/AiRuntime/useCases/buildAgentContext.ts",
                 "src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts",
@@ -985,7 +981,6 @@
                 "src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts",
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts",
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts",
-                "src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts",
                 "src/modules/AiRuntime/useCases/agentRunLifecycle.ts",
                 "src/modules/AiRuntime/useCases/agentToolCatalog.ts",
                 "src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts",

@@ -431,6 +431,8 @@ function criterionTargets(
 ) {
     const baseline: number[] = [];
     const observed: number[] = [];
+    const initialFigures: number[] = [];
+    let unmet: Criterion['unmet'] = null;
     let unit: string | null = null;
     let failure = initialFailure;
     let violation: HoldViolation | null = null;
@@ -443,51 +445,78 @@ function criterionTargets(
         const { initial, before, after, final } = figures;
         baseline.push(before.value);
         observed.push(final.value);
+        initialFigures.push(initial.value);
         unit = final.unit;
         const referenceValues = referencesFor(goal, reference, index);
         if (failure === null && !satisfies(goal, before.value, after.value, referenceValues)) {
             failure = 'out-of-tolerance';
             violation = { targetId: id, from: before.value, to: after.value };
+            unmet = { scope: 'step', from: before.value, to: after.value };
         }
         if (failure === null && !satisfies(goal, initial.value, final.value, referenceValues)) {
             failure = 'out-of-tolerance';
             violation = { targetId: id, from: initial.value, to: final.value };
+            unmet = { scope: 'batch', from: initial.value, to: final.value };
         }
     }
-    return { baseline, observed, reference, unit, failure, violation };
+    return {
+        baseline,
+        observed,
+        initial: initialFigures,
+        final: [...observed],
+        reference,
+        unit,
+        failure,
+        violation,
+        unmet,
+    };
+}
+
+type CriterionFigures = ReturnType<typeof criterionTargets>;
+
+const UNEVALUATED_FIGURES: CriterionFigures = {
+    baseline: [],
+    observed: [],
+    initial: [],
+    final: [],
+    reference: [],
+    unit: null,
+    failure: null,
+    violation: null,
+    unmet: null,
+};
+
+function readCriterionOutcome(failure: Failure | null): Criterion['outcome'] {
+    if (failure === null) {
+        return 'met';
+    }
+    return failure === 'out-of-tolerance' ? 'not-met' : 'not-evaluated';
+}
+
+function readCriterionFigures(goal: MetricGoal, context: ObservationContext): CriterionFigures {
+    if (goal.metricId === null || goal.relation === 'unsupported' || goal.range === null) {
+        return { ...UNEVALUATED_FIGURES, failure: 'incomparable' };
+    }
+    const prefix = readGoalPrefix(goal, context.binding);
+    if (prefix === undefined) {
+        return { ...UNEVALUATED_FIGURES, failure: 'missing' };
+    }
+    const { reference, failure } = goalReferences(goal, context);
+    return criterionTargets(goal, prefix, context, reference, failure);
 }
 
 function evaluateCriterion(
     goal: MetricGoal,
     context: ObservationContext
 ): { criterion: Criterion; failure: Failure | null; violation: HoldViolation | null } {
-    const prefix = readGoalPrefix(goal, context.binding);
-    let values: {
-        baseline: number[];
-        observed: number[];
-        reference: number[];
-        unit: string | null;
-        failure: Failure | null;
-        violation: HoldViolation | null;
-    } = {
-        baseline: [],
-        observed: [],
-        reference: [],
-        unit: null,
-        failure: null,
-        violation: null,
-    };
-    if (goal.metricId === null || goal.relation === 'unsupported' || goal.range === null) {
-        values.failure = 'incomparable';
-    } else if (prefix === undefined) {
-        values.failure = 'missing';
-    } else {
-        const { reference, failure } = goalReferences(goal, context);
-        values = criterionTargets(goal, prefix, context, reference, failure);
-    }
-    const { failure, violation, ...figures } = values;
+    const { failure, violation, ...figures } = readCriterionFigures(goal, context);
     return {
-        criterion: { ...goal, ...figures, status: failure === null ? 'verified' : 'blocked' },
+        criterion: {
+            ...goal,
+            ...figures,
+            outcome: readCriterionOutcome(failure),
+            status: failure === null ? 'verified' : 'blocked',
+        },
         failure,
         violation,
     };
@@ -530,6 +559,10 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
             baseline: [],
             observed: [],
             reference: [],
+            initial: [],
+            final: [],
+            outcome: 'not-reached',
+            unmet: null,
             unit: null,
             status: 'blocked',
         }))
@@ -581,12 +614,17 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
             reason: 'The frozen objective criteria contradict each other on the same subjects and range.',
         });
     }
+    // Every criterion is read, so a blocked batch's card shows each one's own figures; the first to fail names the refusal.
+    let refusal: Refusal | null = null;
     for (const [goalIndex, goal] of goals.entries()) {
         const { criterion, failure, violation } = evaluateCriterion(goal, { state, binding });
         criteria[goalIndex] = criterion;
-        if (failure !== null) {
-            return blocked(criteria, { failure, reason: criterionFailureReason({ criterion, failure, violation }) });
+        if (failure !== null && refusal === null) {
+            refusal = { failure, reason: criterionFailureReason({ criterion, failure, violation }) };
         }
+    }
+    if (refusal !== null) {
+        return blocked(criteria, refusal);
     }
     return {
         status: 'verified',

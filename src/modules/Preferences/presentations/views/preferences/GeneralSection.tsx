@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactElement } from 'react';
+import { type ChangeEvent, type ReactElement, useId } from 'react';
 
 import { Settings } from 'lucide-react';
 
@@ -26,6 +26,7 @@ const AUTO_SAVE_DESCRIPTION_ID = 'auto-save-policy-description';
 
 export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement => {
     const trackHeights: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
+    const groupId = useId();
     const handleAutoSaveIntervalChange = (event: ChangeEvent<HTMLSelectElement>): void => {
         const interval = Number(event.target.value);
         if (!isAutoSaveIntervalMs(interval)) {
@@ -109,7 +110,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     />
                     {prefs.metronomeEnabled ? (
                         <Stack gap={1}>
-                            <label className="text-[10px] text-muted-foreground block">Volume</label>
+                            <span className="text-[10px] text-muted-foreground block">Volume</span>
                             <Slider
                                 value={[prefs.metronomeVolume * 100]}
                                 onValueChange={([value]) => {
@@ -130,13 +131,16 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
             <FieldGroup label="Recording">
                 <Stack gap={3}>
                     <Stack gap={1}>
-                        <label className="text-[10px] text-muted-foreground block">Count-In (bars)</label>
-                        <Row align="stretch" gap={1}>
+                        <span id={`${groupId}-count-in`} className="text-[10px] text-muted-foreground block">
+                            Count-In (bars)
+                        </span>
+                        <Row role="group" aria-labelledby={`${groupId}-count-in`} align="stretch" gap={1}>
                             {([0, 1, 2, 4] as const).map((bars) => (
                                 <Button
                                     key={bars}
                                     variant={prefs.recordCountIn === bars ? 'secondary' : 'ghost'}
                                     size="xs"
+                                    aria-pressed={prefs.recordCountIn === bars}
                                     onClick={() => update({ recordCountIn: bars })}
                                 >
                                     {bars === 0 ? 'Off' : `${bars}`}
@@ -157,13 +161,16 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                         </Row>
                         {prefs.preRollEnabled ? (
                             <Stack gap={1}>
-                                <label className="text-[10px] text-muted-foreground block">Pre-roll bars</label>
-                                <Row align="stretch" gap={1}>
+                                <span id={`${groupId}-pre-roll`} className="text-[10px] text-muted-foreground block">
+                                    Pre-roll bars
+                                </span>
+                                <Row role="group" aria-labelledby={`${groupId}-pre-roll`} align="stretch" gap={1}>
                                     {([1, 2, 4] as const).map((bars) => (
                                         <Button
                                             key={bars}
                                             variant={prefs.preRollBars === bars ? 'secondary' : 'ghost'}
                                             size="xs"
+                                            aria-pressed={prefs.preRollBars === bars}
                                             onClick={() => update({ preRollBars: bars })}
                                         >
                                             {bars}
@@ -178,11 +185,13 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
             <Separator />
             <FieldGroup label="Mixer">
                 <Stack gap={1}>
-                    <label className="text-[10px] text-muted-foreground block">Solo Mode</label>
+                    <span id={`${groupId}-solo-mode`} className="text-[10px] text-muted-foreground block">
+                        Solo Mode
+                    </span>
                     <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
                         Determines how soloed tracks affect others. SIP (Solo In Place) is standard.
                     </p>
-                    <Row align="stretch" gap={1}>
+                    <Row role="group" aria-labelledby={`${groupId}-solo-mode`} align="stretch" gap={1}>
                         {[
                             {
                                 value: 'sip' as SoloModePreference,
@@ -205,6 +214,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                                     <Button
                                         variant={prefs.soloMode === mode.value ? 'secondary' : 'ghost'}
                                         size="xs"
+                                        aria-pressed={prefs.soloMode === mode.value}
                                         onClick={() => update({ soloMode: mode.value })}
                                     >
                                         {mode.label}

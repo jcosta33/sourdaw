@@ -3,6 +3,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type HandlerMaterializationContext, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
+import { projectsTakeLaneState } from '../models/ProjectsTakeLaneStateByActionType';
 import { getHeldClips } from '../models/TrackAlternativeClips';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
@@ -25,14 +26,7 @@ function captureTakeLaneSnapshots(
     if (!state) {
         const hasProjectedPrefix = context?.actions
             .slice(0, context.actionIndex)
-            .some(
-                (action) =>
-                    action.type === 'setCompRegion' ||
-                    action.type === 'restoreCompRegionInterval' ||
-                    action.type === 'restoreTrack' ||
-                    action.type === 'removeTrack' ||
-                    action.type === 'selectTake'
-            );
+            .some((action) => projectsTakeLaneState(action.type));
         if (hasProjectedPrefix) {
             throw new Error('Could not project prior take-lane actions for track removal snapshot');
         }

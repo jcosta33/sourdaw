@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { setAutomationMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -63,19 +64,24 @@ const LaneSparkline = ({
         .join(' ');
 
     return (
-        <div
+        <Button
+            variant="bare"
+            size="bare"
+            type="button"
+            aria-expanded={false}
+            aria-label={`Expand ${lane.parameterName} lane`}
             style={{ height: SPARKLINE_HEIGHT }}
-            className="relative bg-surface-base/20 cursor-pointer border-b border-border/10"
+            className="relative block w-full bg-surface-base/20 border-b border-border/10 text-left font-normal"
             onClick={() => toggleLaneCollapsed(lane.id)}
         >
-            <Row gap={1} className="absolute top-0.5 left-1 z-10">
+            <Row as="span" gap={1} className="absolute top-0.5 left-1 z-10">
                 <ChevronRight className="size-2.5 text-muted-foreground/50" />
                 <span className="text-[8px] text-muted-foreground/60 truncate max-w-[80px]">{lane.parameterName}</span>
             </Row>
             <svg width={width} height={SPARKLINE_HEIGHT} className="absolute inset-0">
                 <path d={pathData} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.5} />
             </svg>
-        </div>
+        </Button>
     );
 };
 

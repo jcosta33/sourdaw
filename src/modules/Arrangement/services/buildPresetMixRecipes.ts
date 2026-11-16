@@ -9,6 +9,7 @@ import {
     MIX_RECIPE_ROLES,
     type MixRecipe,
     type MixRecipeDescriptor,
+    type MixRecipeOrigin,
     type MixRecipeParameterTarget,
     type MixRecipeRole,
     type MixRecipeStep,
@@ -88,8 +89,21 @@ function toInsertSteps(preset: SoundPreset): MixRecipeStep[] | null {
     return steps.length === 0 ? null : steps;
 }
 
+function toOrigin(preset: SoundPreset): MixRecipeOrigin {
+    return {
+        kind: 'preset',
+        presetId: preset.id,
+        presetVersion: getPresetContractVersion(preset),
+        tags: [...preset.tags],
+    };
+}
+
 function describeSource(preset: SoundPreset, descriptor: MixRecipeDescriptor): string {
     return `Factory preset "${preset.name}" (${preset.id}). Its ${descriptor} descriptor and roles are read from the preset's authored tags and category, not measured. A character tag records what the preset's author intended and is not proof of the algorithm any device in the chain runs. Each parameter is the value the preset stores.`;
+}
+
+function describeDescriptorlessSource(preset: SoundPreset): string {
+    return `Factory preset "${preset.name}" (${preset.id}). It carries no perceptual descriptor and moves no claimed metric: its roles are read from the preset's authored tags and category, and it is found by its name and tags. Each parameter is the value the preset stores.`;
 }
 
 /**
@@ -97,29 +111,42 @@ function describeSource(preset: SoundPreset, descriptor: MixRecipeDescriptor): s
  *
  * Each device becomes an `insert` step in chain order and each stored parameter becomes a window
  * whose minimum equals its maximum, so expanding the recipe writes the stored values and nothing
- * the preset did not author. A preset is published only when every device is an effect, every stored
- * value is one its parameter declares, and its tags name at least one produced descriptor; otherwise
- * nothing is guessed and it is not published. Its roles are those its category or tags name, and a
- * preset naming none is a generic processor published with no role, which serves any source. A
- * preset naming several descriptors yields one recipe for each. Prerequisites, contraindications and
+ * the preset did not author. A preset is published only when every device is an effect and every
+ * stored value is one its parameter declares; otherwise nothing is guessed and it is not published.
+ * Its roles are those its category or tags name, and a preset naming none is a generic processor
+ * published with no role, which serves any source. A preset whose tags name produced descriptors
+ * yields one recipe for each. A preset whose tags name none yields one recipe with no descriptor,
+ * because no perceptual character is invented for it. Prerequisites, contraindications and
  * metrics stay empty, because the catalog defines them per recipe and not per descriptor.
  */
 export function buildPresetMixRecipes(presets: readonly SoundPreset[]): MixRecipe[] {
     return presets.flatMap((preset): MixRecipe[] => {
-        const tags = new Set(preset.tags.map(normalizeTag));
-        const descriptors = resolveDescriptors(tags);
-        const roles = resolveRoles(preset.category, tags);
-        if (descriptors.length === 0) {
-            return [];
-        }
         const steps = toInsertSteps(preset);
         if (steps === null) {
             return [];
         }
-        const presetVersion = getPresetContractVersion(preset);
+        const tags = new Set(preset.tags.map(normalizeTag));
+        const descriptors = resolveDescriptors(tags);
+        const roles = resolveRoles(preset.category, tags);
+        if (descriptors.length === 0) {
+            return [
+                {
+                    id: `preset:${preset.id}`,
+                    origin: toOrigin(preset),
+                    descriptor: null,
+                    roles,
+                    title: `Factory preset "${preset.name}"`,
+                    steps,
+                    prerequisites: [],
+                    contraindications: [],
+                    metrics: [],
+                    source: describeDescriptorlessSource(preset),
+                },
+            ];
+        }
         return descriptors.map((descriptor) => ({
             id: `preset:${preset.id}:${descriptor}`,
-            origin: { kind: 'preset', presetId: preset.id, presetVersion, tags: [...preset.tags] },
+            origin: toOrigin(preset),
             descriptor,
             roles,
             title: `Factory preset "${preset.name}", authored as ${descriptor}`,

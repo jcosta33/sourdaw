@@ -349,7 +349,10 @@ function answersGoal(
             return false;
         }
         return terms.every((term) => {
-            const discovery = discoverMixRecipes({ descriptors: [term], targetId: id, role, limit: 1 }, context.tracks);
+            const discovery = discoverMixRecipes(
+                { descriptors: [term], presetTerms: [], targetId: id, role, limit: 1 },
+                context.tracks
+            );
             return discovery.status === 'ok' && discovery.data.total > 0;
         });
     };

@@ -499,7 +499,7 @@ async function tickAt(relativeFrame: number, expectedError?: string, clockIsRese
             generation: schedulerSession.generation,
             sequence: ++tickSequence,
             scheduledAtMs: receivedAtMs - 2,
-            sentAtMs: receivedAtMs - 1,
+            sentAtMs: receivedAtMs,
         },
     });
     // Admission is synchronous; settlement and clock publication are observable.
@@ -910,7 +910,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
                     generation: schedulerSession.generation,
                     sequence: ++tickSequence,
                     scheduledAtMs: receivedAtMs - 2,
-                    sentAtMs: receivedAtMs - 1,
+                    sentAtMs: receivedAtMs,
                 },
             });
             try {
@@ -981,7 +981,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
                 generation: schedulerSession.generation,
                 sequence: ++tickSequence,
                 scheduledAtMs: receivedAtMs - 2,
-                sentAtMs: receivedAtMs - 1,
+                sentAtMs: receivedAtMs,
             },
         });
         try {
@@ -1308,7 +1308,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
                     generation: schedulerSession.generation,
                     sequence: ++tickSequence,
                     scheduledAtMs: receivedAtMs - 2,
-                    sentAtMs: receivedAtMs - 1,
+                    sentAtMs: receivedAtMs,
                 },
             });
             try {

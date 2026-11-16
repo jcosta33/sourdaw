@@ -120,7 +120,7 @@ function createProjectTrack(overrides: Partial<ProjectTrack> = {}): ProjectTrack
 const renderWithTooltip = (ui: React.ReactElement) => render(<TooltipProvider>{ui}</TooltipProvider>);
 
 const openContextMenu = () =>
-    fireEvent.contextMenu(screen.getByRole('group', { name: 'Track 1 channel' }), { clientX: 0, clientY: 0 });
+    fireEvent.contextMenu(screen.getByRole('row', { name: 'Track 1 channel' }), { clientX: 0, clientY: 0 });
 
 describe('ExpandedChannelStrip', () => {
     const mockTrack: Track = {
@@ -174,7 +174,7 @@ describe('ExpandedChannelStrip', () => {
     it('renders identity, gain readout, and pan readout', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
 
-        expect(screen.getByRole('group', { name: 'Track 1 channel' })).not.toHaveClass('ring-1');
+        expect(screen.getByRole('row', { name: 'Track 1 channel' })).not.toHaveClass('ring-1');
         expect(screen.getByText('Track 1')).toBeInTheDocument();
         expect(screen.getByText('audio')).toBeInTheDocument();
         // The real gain law (`20 * log10(gain)`), not the old hand-rolled
@@ -275,13 +275,34 @@ describe('ExpandedChannelStrip', () => {
 
     it('applies the selection ring when isSelected is true', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected widthClass="w-40" />);
-        expect(screen.getByRole('group', { name: 'Track 1 channel' })).toHaveClass('ring-1');
+        expect(screen.getByRole('row', { name: 'Track 1 channel' })).toHaveClass('ring-1');
     });
 
     it('selects the track when the strip background is clicked', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
-        fireEvent.click(screen.getByRole('group', { name: 'Track 1 channel' }));
+        fireEvent.click(screen.getByRole('row', { name: 'Track 1 channel' }));
         expect(mocks.selectTrack).toHaveBeenCalledWith('track-1');
+    });
+
+    it.each(['Enter', ' '])('selects the track on %j from the focused strip and claims the key', (key) => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} isTabStop widthClass="w-40" />);
+        const strip = screen.getByRole('row', { name: 'Track 1 channel' });
+        expect(strip).toHaveAttribute('tabindex', '0');
+        strip.focus();
+
+        const claimed = !fireEvent.keyDown(strip, { key });
+
+        expect(mocks.selectTrack).toHaveBeenCalledExactlyOnceWith('track-1');
+        expect(claimed).toBe(true);
+    });
+
+    it('leaves Enter on a control inside the strip to that control', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        expect(screen.getByRole('row', { name: 'Track 1 channel' })).toHaveAttribute('tabindex', '-1');
+
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Mute' }), { key: 'Enter' });
+
+        expect(mocks.selectTrack).not.toHaveBeenCalled();
     });
 
     it('toggles mute, solo (exclusive and additive), arm, and monitoring without selecting the track', () => {
@@ -336,7 +357,7 @@ describe('ExpandedChannelStrip', () => {
     it('opens a context menu at the click position and closes it after choosing Mute', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
 
-        fireEvent.contextMenu(screen.getByRole('group', { name: 'Track 1 channel' }), { clientX: 42, clientY: 17 });
+        fireEvent.contextMenu(screen.getByRole('row', { name: 'Track 1 channel' }), { clientX: 42, clientY: 17 });
         expect(screen.getByRole('menu')).toHaveStyle({ left: '42px', top: '17px' });
 
         fireEvent.click(screen.getByRole('menuitem', { name: 'Mute' }));

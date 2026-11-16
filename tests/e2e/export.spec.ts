@@ -9,7 +9,7 @@ test.describe('Export & Bouncing', () => {
 
     test('Can open the export dialog via shortcut and toggle formats', async ({ page }) => {
         // Press 'Cmd+Shift+E' / 'Ctrl+Shift+E' to open the Export Dialog directly
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
 
         // The Export dialog should appear. Sourdaw's export dialog has the title 'Export audio'.

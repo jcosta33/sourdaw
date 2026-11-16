@@ -13,16 +13,21 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 function receipt(request: ScriptedToolRequest, id: string) {
     const item = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === id);
-    if (typeof item?.content !== 'string') throw new Error(`Missing receipt ${id}`);
+    if (typeof item?.content !== 'string') {
+        throw new TypeError(`Missing receipt ${id}`);
+    }
     const value: unknown = JSON.parse(item.content);
-    if (!record(value) || value.status !== 'success' || !record(value.data))
+    if (!record(value) || value.status !== 'success' || !record(value.data)) {
         throw new Error(`Failed receipt ${id}: ${item.content}`);
+    }
     return value.data;
 }
 function tool(request: ScriptedToolRequest, name: string) {
     const wire = name.replaceAll('.', '_');
     const found = request.tools.find((entry) => entry.function.name === wire);
-    if (!found) throw new Error(`Application did not offer ${name}`);
+    if (!found) {
+        throw new Error(`Application did not offer ${name}`);
+    }
     return found.function.name;
 }
 async function sourceState(page: Page) {
@@ -34,9 +39,11 @@ async function sourceState(page: Page) {
             await import('/src/modules/CrdtDocument/useCases/index.ts');
         settlePendingProjectWritesAndCaptureRevision();
         const tracks = (trackStore.value?.tracks ?? []).filter((track) => track.kind === 'audio');
-        const clip = tracks[0]?.clips[0];
+        const clip = tracks.at(0)?.clips.at(0);
         const source = clip?.audioBufferId ? audioBufferCache.get(clip.audioBufferId) : undefined;
-        if (!source) throw new Error('Actual source PCM is unavailable');
+        if (!source) {
+            throw new Error('Actual source PCM is unavailable');
+        }
         const hashes = [];
         for (let channel = 0; channel < source.numberOfChannels; channel++) {
             const data = source.getChannelData(channel).slice();
@@ -68,7 +75,9 @@ async function rendered(page: Page) {
             const data = audio.getChannelData(channel).slice();
             hashes.push(Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', data.buffer))).join(','));
             for (const sample of data) {
-                if (!Number.isFinite(sample)) throw new Error('Rendered nonfinite audio');
+                if (!Number.isFinite(sample)) {
+                    throw new TypeError('Rendered nonfinite audio');
+                }
                 energy += sample * sample;
                 peak = Math.max(peak, Math.abs(sample));
             }
@@ -130,7 +139,7 @@ for (const recipe of [
                 return [literalWholeRequestIntake(request)];
             }
             const step = turn - 1;
-            if (step === 0)
+            if (step === 0) {
                 return [
                     {
                         id: 'project',
@@ -138,6 +147,7 @@ for (const recipe of [
                         arguments: { type: 'object', page: { limit: 50 } },
                     },
                 ];
+            }
             if (step === 1) {
                 receipt(request, 'project');
                 return [
@@ -268,11 +278,14 @@ for (const recipe of [
                     await import('/src/modules/Project/useCases/index.ts');
                 const { projectStore } = await import('/src/modules/Project/stores/index.ts');
                 const createdAt = projectStore.value?.createdAt;
-                if (createdAt === undefined) throw new Error('No current project identity to reopen');
+                if (createdAt === undefined) {
+                    throw new Error('No current project identity to reopen');
+                }
                 const saved = await saveProject();
-                const loaded = saved
-                    ? await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true })
-                    : 'not-attempted';
+                if (!saved) {
+                    return { saved, loaded: 'not-attempted' as const };
+                }
+                const loaded = await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true });
                 return { saved, loaded };
             });
             await testInfo.attach('save-load-result', {
@@ -434,9 +447,13 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         }
         const strip = audio.getTrackStrip(trackId);
         const device = strip?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
-        if (!strip || !device?.controller?.ready) throw new Error('TrackNode did not promote actual ready WASM');
+        if (!strip || !device?.controller?.ready) {
+            throw new Error('TrackNode did not promote actual ready WASM');
+        }
         const pendingFinalBypassed = device.bypassed;
-        if (pendingFinalBypassed !== true) throw new Error('Pending bypass was not replayed at actual promotion');
+        if (pendingFinalBypassed !== true) {
+            throw new Error('Pending bypass was not replayed at actual promotion');
+        }
         await command.executeAppAction({ type: 'bypassDevice', payload: { deviceId, bypassed: false } });
         const frames = 8192,
             rate = context.sampleRate;
@@ -488,9 +505,11 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         for (const [name, points] of [
             ['attackGain', attack],
             ['sustainGain', sustain],
-        ] as const)
-            for (const point of points)
+        ] as const) {
+            for (const point of points) {
                 audio.scheduleDeviceParam(trackId, deviceId, name, point.value, (start + point.frame) / rate);
+            }
+        }
         source.start(start / rate);
         const live = await captured;
         source.disconnect();
@@ -507,7 +526,7 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         for (const [name, points] of [
             ['attackGain', attack],
             ['sustainGain', sustain],
-        ] as const)
+        ] as const) {
             strategy.scheduleParam?.(
                 name,
                 points.map((point) => ({
@@ -517,13 +536,14 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
                     endValue: point.value,
                 }))
             );
+        }
         const offlineSource = offline.createBufferSource();
         offlineSource.buffer = buffer;
         offlineSource.connect(strategy.node.inputNode);
         strategy.node.outputNode.connect(offline.destination);
         offlineSource.start();
         const printed = await offline.startRendering();
-        strategy.destroy?.();
+        strategy.destroy();
         const f = Math.fround;
         const coefficient = (seconds: number) => f(1 - f(Math.exp(f(-1 / f(f(seconds) * rate)))));
         const fast = coefficient(0.0005),
@@ -532,6 +552,28 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
             oracleError = 0;
         const differences: Array<{ channel: number; frame: number; live: number; offline: number; expected: number }> =
             [];
+        // The shipped attack and sustain gain schedules, as piecewise-constant frame ranges.
+        const attackGainAt = (frame: number): number => {
+            if (frame < 61) {
+                return 1;
+            }
+            if (frame < 257) {
+                return 1.5;
+            }
+            if (frame < 4097) {
+                return 2;
+            }
+            return 0.75;
+        };
+        const sustainGainAt = (frame: number): number => {
+            if (frame < 129) {
+                return 1;
+            }
+            if (frame < 4097) {
+                return 0.25;
+            }
+            return 0.5;
+        };
         for (let channel = 0; channel < 2; channel++) {
             let fastEnv = 0,
                 slowEnv = 0;
@@ -542,10 +584,14 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
                 const sample = input[frame];
                 fastEnv = f(fastEnv + f(fast * f(Math.abs(sample) - fastEnv)));
                 slowEnv = f(slowEnv + f(slow * f(Math.abs(sample) - slowEnv)));
-                if (Math.abs(fastEnv) < 1.1754943508222875e-38) fastEnv = 0;
-                if (Math.abs(slowEnv) < 1.1754943508222875e-38) slowEnv = 0;
-                const a = frame < 61 ? 1 : frame < 257 ? 1.5 : frame < 4097 ? 2 : 0.75;
-                const b = frame < 129 ? 1 : frame < 4097 ? 0.25 : 0.5;
+                if (Math.abs(fastEnv) < 1.1754943508222875e-38) {
+                    fastEnv = 0;
+                }
+                if (Math.abs(slowEnv) < 1.1754943508222875e-38) {
+                    slowEnv = 0;
+                }
+                const a = attackGainAt(frame);
+                const b = sustainGainAt(frame);
                 const expected = f(sample * (f(fastEnv - slowEnv) > 0.01 ? a : b));
                 if (Math.abs(rendered[frame] - offlineSamples[frame]) > 1e-7 && differences.length < 12) {
                     differences.push({
@@ -572,7 +618,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         analyser.fftSize = 256;
         device.outputNode.connect(analyser);
         const warmUntil = context.currentTime + 1;
-        while (context.currentTime < warmUntil) await new Promise(requestAnimationFrame);
+        while (context.currentTime < warmUntil) {
+            await new Promise(requestAnimationFrame);
+        }
         // Chromium lands every AudioParam write made at a currentTime that sits
         // above its integer frame on the next sample (a k-rate one a quantum
         // late). Re-enter on such a frame, so the case proves the hard re-entry
@@ -582,7 +630,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         const sitsAbove = (frame: number) => (frame / rate) * rate > frame;
         const nextFrameAbove = (from: number) => {
             let frame = Math.ceil(from / 128) * 128;
-            while (!sitsAbove(frame)) frame += 128;
+            while (!sitsAbove(frame)) {
+                frame += 128;
+            }
             return frame;
         };
         const contextFrame = () => Math.round(context.currentTime * rate);
@@ -590,10 +640,14 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         let reentryAttempts = 0;
         while (!sitsAbove(contextFrame())) {
             reentryAttempts++;
-            if (reentryAttempts > 400) throw new Error('No suspended frame sat above its integer frame');
+            if (reentryAttempts > 400) {
+                throw new Error('No suspended frame sat above its integer frame');
+            }
             const target = nextFrameAbove(contextFrame());
             await context.resume();
-            while (contextFrame() < target - 512) await new Promise(requestAnimationFrame);
+            while (contextFrame() < target - 512) {
+                await new Promise(requestAnimationFrame);
+            }
             await context.suspend();
         }
         const resumeFrame = contextFrame();
@@ -614,7 +668,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         // context renders first; on CI one arrived late and the first sample
         // kept the old gain. Hold every message until the re-entry is captured,
         // so the case proves re-entry never depends on one.
-        if (!(device.outputNode instanceof AudioWorkletNode)) throw new Error('Shaper output is not its worklet');
+        if (!(device.outputNode instanceof AudioWorkletNode)) {
+            throw new TypeError('Shaper output is not its worklet');
+        }
         const shaperPort = device.outputNode.port;
         const heldMessages: unknown[] = [];
         shaperPort.postMessage = (message: unknown) => {
@@ -627,7 +683,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         await context.resume();
         const fresh = await reentry;
         Reflect.deleteProperty(shaperPort, 'postMessage');
-        for (const message of heldMessages) shaperPort.postMessage(message);
+        for (const message of heldMessages) {
+            shaperPort.postMessage(message);
+        }
         constant.stop();
         constant.disconnect();
         reentryCapture.disconnect();
@@ -757,8 +815,9 @@ test('reset epoch is consumed before re-entry at suspended frame896', async ({ p
         const differences = [];
         for (let frame = 896; frame < 8192; frame++) {
             resetOracleError = Math.max(resetOracleError, Math.abs(left[frame] - expected[frame]));
-            if (left[frame] !== expected[frame] && differences.length < 8)
+            if (left[frame] !== expected[frame] && differences.length < 8) {
                 differences.push({ frame, actual: left[frame], expected: expected[frame] });
+            }
         }
         freshNode.destroy();
         return {
@@ -792,13 +851,11 @@ test('real worklet export failure and terminal reset exhaustion cannot report su
         try {
             window.AudioWorkletNode = class extends Original {
                 constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
-                    super(
-                        context,
-                        name,
-                        name === 'transient-shaper-processor'
-                            ? { ...options, processorOptions: { ...options?.processorOptions, wasmModule: minimal } }
-                            : options
-                    );
+                    const minimalModuleOptions = {
+                        ...options,
+                        processorOptions: { ...options?.processorOptions, wasmModule: minimal },
+                    };
+                    super(context, name, name === 'transient-shaper-processor' ? minimalModuleOptions : options);
                 }
             };
             try {
@@ -825,7 +882,9 @@ test('real worklet export failure and terminal reset exhaustion cannot report su
                     super(context, name, options);
                     if (name === 'transient-shaper-processor') {
                         const epoch = this.parameters.get('_resetEpoch');
-                        if (!epoch) throw new Error('Missing private reset parameter');
+                        if (!epoch) {
+                            throw new Error('Missing private reset parameter');
+                        }
                         epoch.value = 16777214;
                     }
                 }
@@ -843,8 +902,11 @@ test('real worklet export failure and terminal reset exhaustion cannot report su
             node.setBypass(false);
             const buffer = await context.startRendering();
             let energy = 0;
-            for (let channel = 0; channel < 2; channel++)
-                for (const sample of buffer.getChannelData(channel)) energy += sample * sample;
+            for (let channel = 0; channel < 2; channel++) {
+                for (const sample of buffer.getChannelData(channel)) {
+                    energy += sample * sample;
+                }
+            }
             node.destroy();
             return { exportFailure, runtimeFailure, energy, successfulProcessing: energy > 0 };
         } finally {
@@ -907,15 +969,19 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             const samples = new Float32Array(256);
             async function observe(expected: number, name: string) {
                 const deadline = performance.now() + 5000;
-                while (true) {
-                    analyser.getFloatTimeDomainData(samples);
-                    if (samples.every((sample) => Math.abs(sample - expected) < 0.00001)) break;
-                    if (performance.now() > deadline) throw new Error(`${name} never rendered expected audio`);
+                analyser.getFloatTimeDomainData(samples);
+                while (!samples.every((sample) => Math.abs(sample - expected) < 0.00001)) {
+                    if (performance.now() > deadline) {
+                        throw new Error(`${name} never rendered expected audio`);
+                    }
                     await new Promise(requestAnimationFrame);
+                    analyser.getFloatTimeDomainData(samples);
                 }
                 performance.mark(`${name}-start`);
                 const start = context.currentTime;
-                while (context.currentTime - start < 0.25) await new Promise(requestAnimationFrame);
+                while (context.currentTime - start < 0.25) {
+                    await new Promise(requestAnimationFrame);
+                }
                 performance.mark(`${name}-end`);
                 analyser.getFloatTimeDomainData(samples);
                 return { first: samples[0], last: samples[255], audioSeconds: context.currentTime - start };
@@ -927,9 +993,10 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             });
             const node = await creating;
             let moduleReady = false;
-            void node.ready.then(() => {
+            void (async () => {
+                await node.ready;
                 moduleReady = true;
-            });
+            })();
             const pending = moduleReady;
             await node.ready;
             node.setParam('attackGain', 0.5);
@@ -944,7 +1011,7 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             return {
                 sampleRate: context.sampleRate,
                 pending,
-                activeAudioObserved: Math.abs((active.first ?? 0) - 0.25) < 0.00001,
+                activeAudioObserved: Math.abs(active.first - 0.25) < 0.00001,
                 dry,
                 active,
                 failed,
@@ -957,7 +1024,9 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
     }
     const completed = await completion;
     expect(completed.dataLossOccurred).not.toBe(true);
-    if (!completed.stream) throw new Error('Trace stream is unavailable');
+    if (!completed.stream) {
+        throw new Error('Trace stream is unavailable');
+    }
     const chunks: Buffer[] = [];
     let size = 0;
     let eof = false;
@@ -966,7 +1035,9 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             const read = await session.send('IO.read', { handle: completed.stream, size: 1024 * 1024 });
             const bytes = Buffer.from(read.data, read.base64Encoded ? 'base64' : 'utf8');
             size += bytes.length;
-            if (size > 16 * 1024 * 1024) throw new Error('Bounded trace exceeded 16MiB');
+            if (size > 16 * 1024 * 1024) {
+                throw new Error('Bounded trace exceeded 16MiB');
+            }
             chunks.push(bytes);
             eof = read.eof === true;
         }
@@ -982,16 +1053,21 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
     await testInfo.attach('live-effect-trace-raw', { path: tracePath, contentType: 'application/gzip' });
     const decoded = gunzipSync(compressed, { maxOutputLength: 32 * 1024 * 1024 });
     const trace: unknown = JSON.parse(decoded.toString('utf8'));
-    if (!record(trace) || !Array.isArray(trace.traceEvents)) throw new Error('Trace events absent');
+    if (!record(trace) || !Array.isArray(trace.traceEvents)) {
+        throw new Error('Trace events absent');
+    }
     const events = trace.traceEvents.filter(record);
     const start = events.find((event) => event.name === 'transient-active-start');
     const end = events.find((event) => event.name === 'transient-active-end');
-    if (typeof start?.ts !== 'number' || typeof end?.ts !== 'number') throw new Error('Active trace bounds absent');
+    if (typeof start?.ts !== 'number' || typeof end?.ts !== 'number') {
+        throw new TypeError('Active trace bounds absent');
+    }
     const startTs = start.ts,
         endTs = end.ts;
     function interval(value: Record<string, unknown>) {
-        if (typeof value.ts !== 'number' || typeof value.dur !== 'number' || value.dur < 0)
+        if (typeof value.ts !== 'number' || typeof value.dur !== 'number' || value.dur < 0) {
             throw new Error('Incomplete trace interval');
+        }
         return { start: value.ts, end: value.ts + value.dur, duration: value.dur };
     }
     function nestedIn(parent: Record<string, unknown>, child: Record<string, unknown>) {
@@ -1019,8 +1095,9 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
         typeof dryEnd?.ts !== 'number' ||
         !record(observation) ||
         typeof observation.sampleRate !== 'number'
-    )
+    ) {
         throw new Error('Dry bounds or actual sample rate missing');
+    }
     const dryStartTs = dryStart.ts,
         dryEndTs = dryEnd.ts,
         rate = observation.sampleRate;
@@ -1050,8 +1127,9 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
         expect(parents).toHaveLength(1);
     }
     const budgets = destination.map((event) => {
-        if (!record(event.args) || typeof event.args.frames !== 'number' || event.args.frames <= 0)
+        if (!record(event.args) || typeof event.args.frames !== 'number' || event.args.frames <= 0) {
             throw new Error('Destination frame producer missing');
+        }
         const span = interval(event),
             budgetUs = (event.args.frames / rate) * 1e6;
         const children = author.filter((child) => nestedIn(event, child));

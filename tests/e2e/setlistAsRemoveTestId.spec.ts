@@ -25,7 +25,7 @@ async function addOneItem(page: Page): Promise<void> {
     await expect(add).toBeVisible();
     await add.click();
 
-    const list = page.getByRole('list', { name: 'Setlist items' });
+    const list = page.getByRole('grid', { name: 'Setlist items' });
     await expect(list).toBeVisible();
 }
 
@@ -39,8 +39,8 @@ test.describe('Setlist per-item controls — AS toggle and Remove', () => {
     test('removing the only item restores the empty state', async ({ page }) => {
         await addOneItem(page);
 
-        const list = page.getByRole('list', { name: 'Setlist items' });
-        const items = list.getByRole('listitem');
+        const list = page.getByRole('grid', { name: 'Setlist items' });
+        const items = list.getByRole('row');
         await expect(items).toHaveCount(1);
 
         // The single item is named "Song 1" (addSetlistItem uses
@@ -70,7 +70,7 @@ test.describe('Setlist per-item controls — AS toggle and Remove', () => {
     test('AS auto-stop toggle flips aria-pressed and its label', async ({ page }) => {
         await addOneItem(page);
 
-        const items = page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem');
+        const items = page.getByRole('grid', { name: 'Setlist items' }).getByRole('row');
         await expect(items).toHaveCount(1);
 
         // The AS toggle sits outside the hover-gated cluster, so it is always
