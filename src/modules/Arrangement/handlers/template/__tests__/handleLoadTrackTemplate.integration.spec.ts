@@ -66,6 +66,8 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),
     activateExternalPlugin: pluginHostMocks.activateExternalPlugin,
     unloadPlugin: pluginHostMocks.unloadPlugin,
+    // The discard unload carries live state; its instance ids are this spec's subject.
+    unloadPluginCarryingLiveState: pluginHostMocks.unloadPlugin,
 }));
 
 const noActionHistoryMetadataPort = {

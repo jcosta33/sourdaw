@@ -259,6 +259,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: vi.fn(() => false),
     registerFaustDSP: vi.fn(),
     unloadPlugin: mockUnloadLoadedExternalPlugins,
+    unloadPluginsBeforeProjectSwitch: mockUnloadLoadedExternalPlugins,
+    settleProjectSwitchPluginTeardown: vi.fn(),
     unloadPluginCarryingLiveState: vi.fn(),
     readExternalPluginStatesBeforeEngineRetire: vi.fn(),
     activateExternalPlugin: vi.fn(),
