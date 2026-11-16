@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
-import { createDesktopNativeGraphTransport, type NativeLevainBankLayout } from '../nativeGraphTransport';
+import {
+    cancelNativeGraphOfflineRender,
+    createDesktopNativeGraphTransport,
+    type NativeLevainBankLayout,
+} from '../nativeGraphTransport';
 import { type NativeGraphWireBatch } from '../serializeAudioGraphCommand';
 
 vi.mock('#/utils/desktopBridge', () => ({
@@ -139,9 +143,33 @@ describe('createDesktopNativeGraphTransport', () => {
 
         expect(invokeForBinaryResponse).toHaveBeenCalledWith({
             command: 'render_graph_offline',
-            args: { batch: BATCH, frames: 1, sampleRate: 48_000 },
+            args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: null },
         });
         expect(result).toBe(bytes);
+    });
+
+    it('names a cancellable render by its id on render_graph_offline', async () => {
+        vi.mocked(invokeForBinaryResponse).mockResolvedValue(new Uint8Array(8));
+
+        await createDesktopNativeGraphTransport().renderGraphOffline({
+            batch: BATCH,
+            frames: 1,
+            sampleRate: 48_000,
+            renderId: 'bounce-7',
+        });
+
+        expect(invokeForBinaryResponse).toHaveBeenCalledWith({
+            command: 'render_graph_offline',
+            args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: 'bounce-7' },
+        });
+    });
+
+    it('cancels a render by its id through cancel_graph_offline', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue(undefined);
+
+        await cancelNativeGraphOfflineRender('bounce-7');
+
+        expect(desktopInvoke).toHaveBeenCalledWith('cancel_graph_offline', { renderId: 'bounce-7' });
     });
 
     it('applies live batches through apply_graph_commands', async () => {

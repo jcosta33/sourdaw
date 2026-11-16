@@ -12,6 +12,7 @@ const runtime = vi.hoisted(() => ({
     beginProjectSessionPluginRetirement: vi.fn(),
     retire: vi.fn(),
     reopen: vi.fn(),
+    release: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -41,9 +42,11 @@ describe('quiesceProjectSession', () => {
         runtime.beginProjectSessionPluginRetirement.mockReset().mockImplementation(async () => ({
             retire: runtime.retire,
             reopen: runtime.reopen,
+            release: runtime.release,
         }));
         runtime.retire.mockReset().mockImplementation(() => runtime.unloadPlugin());
         runtime.reopen.mockReset();
+        runtime.release.mockReset();
     });
 
     it('stops playback, drops the live graph, then unloads project plugin instances', async () => {
