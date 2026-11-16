@@ -3,3 +3,4 @@
 
 export type { MidiOutPayload, MidiNoteOnPayload, MidiNoteOffPayload, MidiPedalCcPayload } from './MidiEvents';
 export type { GrooveTemplateActionSnapshot } from './midiAppActions';
+export type { MidiCcSnapshot, MidiNotesSnapshot, MidiPitchBendSnapshot } from './midiAppActions';

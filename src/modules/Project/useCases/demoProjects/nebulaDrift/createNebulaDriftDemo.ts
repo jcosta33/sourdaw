@@ -132,7 +132,7 @@ function subDroneGainKeyframes(tb: number) {
     ];
 }
 
-export async function demo5_NebulaDrift(): Promise<void> {
+export function demo5_NebulaDrift(): void {
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
 
     const droneFolder = createTrack({ name: '🌌 Drone Beds', kind: 'folder' });

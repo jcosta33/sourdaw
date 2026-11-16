@@ -75,7 +75,7 @@ Put allocation guards in a `#[cfg(debug_assertions)]` module: `disable_release` 
 
 ### 8. Offline renders through the same scheduler
 
-`OfflineRenderer` (`offline.rs`) is the same `AudioScheduler` over the same command ring, drained then rendered in `OFFLINE_BLOCK_FRAMES` blocks, with no device or clock. Never add an offline branch or a second renderer: behaviour must not depend on block size or phase, because live callbacks run on the device's period. Size its ring to the whole batch, as `render_offline_ops` in `sourdaw-native/src/commands/graph.rs` does, so the graph is never rendered half-built. Hosted plugins are not bound offline.
+`OfflineRenderer` (`offline.rs`) is the same `AudioScheduler` over the same command ring, drained then rendered in `OFFLINE_BLOCK_FRAMES` blocks, with no device or clock. Never add an offline branch or a second renderer: behaviour must not depend on block size or phase, because live callbacks run on the device's period. Size its ring to the whole batch, as `render_offline_ops` in `sourdaw-native/src/commands/graph.rs` does, so the graph is never rendered half-built. A hosted effect renders offline through an offline instance built for that render alone and registered before the batch, never through the live one; the render thread is its audio thread and leaves its processing state after the last block. A cancel is read before each block (`OfflineRenderControl`).
 
 **Why:** offline is the null-test oracle for live playback; one implementation means a difference is a transport defect.
 

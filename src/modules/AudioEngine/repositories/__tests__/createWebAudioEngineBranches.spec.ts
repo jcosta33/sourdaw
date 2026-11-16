@@ -9,8 +9,7 @@ import {
     type AudioEngineTopologyTestHarness,
 } from './createAudioEngineTopologyTestHarness';
 
-import type { createDeviceReadinessDiagnostics } from '../../engine/deviceReadinessDiagnostics';
-import type { AudioEngine } from '../../models/AudioEngineState';
+import type { BuiltinDeviceNode, SendNode } from '../../models/AudioEngineState';
 
 /**
  * Node double shared across the TrackNode / BusNode mocks below. The strip
@@ -142,12 +141,12 @@ type MockTrackNode = {
     capturePendingDeviceLoads: ReturnType<typeof vi.fn>;
 };
 
-function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
-    const node = (engine as unknown as { trackNodes: Map<string, MockTrackNode> }).trackNodes.get(trackId);
+function getMockTrackNode(engine: AudioEngineTopologyTestHarness, trackId: string): MockTrackNode {
+    const node = engine.internals.trackNodes.get(trackId);
     if (!node) {
         throw new Error(`expected mock TrackNode for ${trackId}`);
     }
-    return node;
+    return node as unknown as MockTrackNode;
 }
 
 describe('AudioEngineImpl — residual branch coverage', () => {
@@ -236,8 +235,8 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     // the two states that must still report a real number. Each member gets its own
     // verdict: `null` for "no tap, level unknown", a number for "tap live".
     describe('master peak level — unavailable vs silent', () => {
-        function masterMeterSab(eng: AudioEngine): ArrayBuffer {
-            const meterNode = (eng as unknown as { masterMeterNode: { port: { postMessage: Mock } } }).masterMeterNode;
+        function masterMeterSab(eng: AudioEngineTopologyTestHarness): ArrayBuffer {
+            const meterNode = eng.internals.masterMeterNode as unknown as { port: { postMessage: Mock } };
             const initCall = meterNode.port.postMessage.mock.calls.find(
                 (call) => (call[0] as { type?: string }).type === 'init'
             );
@@ -281,7 +280,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                 const noSabEngine = createAudioEngine(asAudioContext(mockCtx));
                 await noSabEngine.initialize();
                 // No worklet meter node — the constructor's analyser stands.
-                const meter = (noSabEngine as unknown as { masterMeterNode?: unknown }).masterMeterNode;
+                const meter = noSabEngine.internals.masterMeterNode;
                 expect(meter).toBeUndefined();
                 expect(noSabEngine.getMasterPeakLevel()).toBeNull();
             } finally {
@@ -357,13 +356,9 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     //    send / sidechain) and the missing-strip early return.
     describe('reconnectRoutingForTrack guards', () => {
         it('is a no-op for a track that has no strip (invoked directly)', () => {
-            // Access the private reconnector bound to the engine instance so its
-            // `this.trackNodes` reference resolves. Invoking it on an id that was
-            // never created exercises the `if (!strip) return` guard.
-            const engineWithInternals = engine as unknown as {
-                reconnectRoutingForTrack: (id: string) => void;
-            };
-            const reconnector = engineWithInternals.reconnectRoutingForTrack.bind(engine);
+            // Invoke the engine's reconnector directly on an id that was never
+            // created to exercise the `if (!strip) return` guard.
+            const reconnector = engine.internals.reconnectRoutingForTrack;
             expect(() => reconnector('never-created-track')).not.toThrow();
         });
 
@@ -471,11 +466,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             strip.deviceNodes.push({ deviceId: 'eq-1', type: 'builtin-eq' } as never);
             const trackNode = getMockTrackNode(engine, 't1');
             expect(() => {
-                (
-                    engine as unknown as {
-                        handleDeviceRemoved: (id: string, device: unknown) => void;
-                    }
-                ).handleDeviceRemoved('t1', { type: 'builtin-eq' });
+                engine.internals.handleDeviceRemoved('t1', { type: 'builtin-eq' } as unknown as BuiltinDeviceNode);
             }).not.toThrow();
             void trackNode;
         });
@@ -512,14 +503,11 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     describe('ensureBusStrip failure', () => {
         it('throws when the track strip for the bus cannot be created', () => {
             // The guard fires when ensureTrackStripInGraph runs but the node
-            // is absent from trackNodes afterwards. Spy on the graph-local
-            // helper to make it a no-op (it neither creates nor inserts), so the
-            // subsequent trackNodes.get(busId) returns undefined and the guard
-            // throws its descriptive error.
-            const graphEngine = engine as unknown as {
-                ensureTrackStripInGraph(trackId: string): unknown;
-            };
-            const spy = vi.spyOn(graphEngine, 'ensureTrackStripInGraph').mockImplementation(() => undefined);
+            // is absent from trackNodes afterwards. Make the live trackNodes
+            // map refuse the insert, so the subsequent trackNodes.get(busId)
+            // returns undefined and the guard throws its descriptive error.
+            const trackNodes = engine.internals.trackNodes;
+            const spy = vi.spyOn(trackNodes, 'set').mockImplementation(() => trackNodes);
             expect(() => engine.ensureBusStrip('orphan-bus')).toThrow(
                 /Failed to create track strip for bus orphan-bus/
             );
@@ -641,15 +629,11 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             vi.useFakeTimers();
             engine.ensureTrackStrip('t1');
             const trackNode = getMockTrackNode(engine, 't1');
-            const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> }).pendingDevicePromises;
+            const set = engine.internals.pendingDevicePromises;
             const capturedPromise = new Promise(() => {});
             const replacementPromise = new Promise(() => {});
             set.add(capturedPromise);
-            const collector = (
-                engine as unknown as {
-                    deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-                }
-            ).deviceReadinessDiagnostics;
+            const collector = engine.internals.deviceReadinessDiagnostics;
             const token = collector.begin({ deviceId: 'captured', deviceType: 'crumbs', requiresContent: true });
             collector.markGraphReady({ token });
             trackNode.capturePendingDeviceLoads.mockReturnValue([{ promise: capturedPromise, token }]);
@@ -659,11 +643,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             });
             const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
-            const waiting = (
-                engine as unknown as {
-                    waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
-                }
-            ).waitForDevices(10);
+            const waiting = engine.internals.waitForDevices(10);
             set.add(replacementPromise);
             await vi.advanceTimersByTimeAsync(11);
 
@@ -684,13 +664,8 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             try {
                 engine.ensureTrackStrip('t1');
                 const trackNode = getMockTrackNode(engine, 't1');
-                const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
-                    .pendingDevicePromises;
-                const collector = (
-                    engine as unknown as {
-                        deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-                    }
-                ).deviceReadinessDiagnostics;
+                const set = engine.internals.pendingDevicePromises;
+                const collector = engine.internals.deviceReadinessDiagnostics;
                 const stalled = Promise.withResolvers<void>();
                 const progressing = Promise.withResolvers<void>();
                 const stalledToken = collector.begin({
@@ -724,11 +699,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                     }
                 });
 
-                const waiting = (
-                    engine as unknown as {
-                        waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
-                    }
-                ).waitForDevices(10000);
+                const waiting = engine.internals.waitForDevices(10000);
                 await vi.advanceTimersByTimeAsync(9_990);
                 collector.markContentProgress({ token: progressingToken, epoch: 1, progress: 39 / 161 });
                 await vi.advanceTimersByTimeAsync(20);
@@ -756,13 +727,8 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             try {
                 engine.ensureTrackStrip('t1');
                 const trackNode = getMockTrackNode(engine, 't1');
-                const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
-                    .pendingDevicePromises;
-                const collector = (
-                    engine as unknown as {
-                        deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-                    }
-                ).deviceReadinessDiagnostics;
+                const set = engine.internals.pendingDevicePromises;
+                const collector = engine.internals.deviceReadinessDiagnostics;
                 const ready = Promise.withResolvers<void>();
                 const failed = Promise.withResolvers<void>();
                 const delayed = Promise.withResolvers<void>();
@@ -808,11 +774,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                     }
                 });
 
-                const firstWait = (
-                    engine as unknown as {
-                        waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
-                    }
-                ).waitForDevices(10000);
+                const firstWait = engine.internals.waitForDevices(10000);
                 collector.markContentSettled({ token: readyToken, outcome: 'ready' });
                 set.delete(ready.promise);
                 ready.resolve();
@@ -822,11 +784,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                 expect(collector.getWaitState(readyToken).status).toBe('ready');
                 expect(collector.getWaitState(failedToken).status).toBe('failed');
 
-                const secondWait = (
-                    engine as unknown as {
-                        waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
-                    }
-                ).waitForDevices(10000);
+                const secondWait = engine.internals.waitForDevices(10000);
                 for (let index = 0; index < 256; index++) {
                     const token = collector.begin({
                         deviceId: `completed-${String(index)}`,
@@ -864,8 +822,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     describe('scheduleOscillator onended', () => {
         it('removes the oscillator from scheduledNodes when onended fires', () => {
             engine.scheduleOscillator(440, 0, 0.1, 0.3);
-            const scheduled = (engine as unknown as { scheduledNodes: { onended: ((ev: Event) => void) | null }[] })
-                .scheduledNodes;
+            const scheduled = engine.internals.scheduledNodes;
             expect(scheduled.length).toBe(1);
             // Fire onended → the node splices itself out.
             scheduled[0]!.onended?.(new Event('ended'));
@@ -874,8 +831,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
 
         it('tolerates onended firing when the node was already removed (idx < 0)', () => {
             engine.scheduleOscillator(440, 0, 0.1, 0.3);
-            const scheduled = (engine as unknown as { scheduledNodes: { onended: ((ev: Event) => void) | null }[] })
-                .scheduledNodes;
+            const scheduled = engine.internals.scheduledNodes;
             const node = scheduled[0]!;
             // Fire once (removes), then again (idx = -1 path, must not throw).
             node.onended?.(new Event('ended'));
@@ -1009,9 +965,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
 
             // Re-run reconcile directly (bypassing onDeviceLoaded which would
             // have already run with controls1 as the found device).
-            const reconciler = (
-                engine as unknown as { reconcileToasterParent: (id: string) => void }
-            ).reconcileToasterParent.bind(engine);
+            const reconciler = engine.internals.reconcileToasterParent;
             reconciler('rparent');
 
             // L477: destinationNode was truthy → controls1.disconnectPadOutput.
@@ -1055,11 +1009,9 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             strip.deviceNodes = strip.deviceNodes.filter((d) => (d as { deviceId?: string }).deviceId !== 'rtoast3a');
 
             // Surgically delete the child strip but keep the pad route.
-            (engine as unknown as { trackNodes: Map<string, unknown> }).trackNodes.delete('rp2');
+            engine.internals.trackNodes.delete('rp2');
 
-            const reconciler = (
-                engine as unknown as { reconcileToasterParent: (id: string) => void }
-            ).reconcileToasterParent.bind(engine);
+            const reconciler = engine.internals.reconcileToasterParent;
             // No throw: destinationNode lookup returns undefined → continue (L481).
             expect(() => reconciler('rparent3')).not.toThrow();
             expect(controls2.connectPadOutput).not.toHaveBeenCalled();
@@ -1092,14 +1044,10 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             // toasterControls is a stale object ≠ activeControls. The pad's
             // route.controls === activeControls, so it must NOT be detached.
             const staleControls = { disconnectPadOutput: vi.fn(), setPadDryRouted: vi.fn() };
-            (
-                engine as unknown as {
-                    handleDeviceRemoved: (id: string, device: unknown) => void;
-                }
-            ).handleDeviceRemoved('sparent', {
+            engine.internals.handleDeviceRemoved('sparent', {
                 type: 'toaster',
                 toasterControls: staleControls,
-            });
+            } as unknown as BuiltinDeviceNode);
             expect(activeControls.disconnectPadOutput).not.toHaveBeenCalled();
         });
     });
@@ -1211,8 +1159,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                 inputNode: makeNode() as unknown as AudioNode,
             } as never);
             engine.ensureTrackStrip('replaySrc');
-            const pending = (engine as unknown as { pendingSidechainRoutes: Map<string, unknown> })
-                .pendingSidechainRoutes;
+            const pending = engine.internals.pendingSidechainRoutes;
             pending.set('replaySrc→replayDev', {
                 sourceTrackId: 'replaySrc',
                 targetTrackId: 'replayTgt',
@@ -1270,7 +1217,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             try {
                 // Fabricate a send entry in sendNodes whose sourceTrackId has no
                 // live strip, then call crossfadeSendTap directly.
-                const sendNodes = (engine as unknown as { sendNodes: Map<string, unknown> }).sendNodes;
+                const sendNodes: Map<string, unknown> = engine.internals.sendNodes;
                 const busStrip = engine.ensureBusStrip('cfbus');
                 sendNodes.set('ghost→cfbus', {
                     sourceTrackId: 'ghost-no-strip',
@@ -1287,17 +1234,8 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                     preFader: false,
                 });
                 const createGainBefore = mockCtx.createGain.mock.calls.length;
-                const crossfade = (
-                    engine as unknown as {
-                        crossfadeSendTap: (
-                            existing: unknown,
-                            busStrip: unknown,
-                            preFader: boolean,
-                            level: number
-                        ) => void;
-                    }
-                ).crossfadeSendTap.bind(engine);
-                crossfade(sendNodes.get('ghost→cfbus'), busStrip, true, 0.5);
+                const crossfade = engine.internals.crossfadeSendTap;
+                crossfade(sendNodes.get('ghost→cfbus') as SendNode, busStrip, true, 0.5);
                 // No new gain built (early return at the sourceStrip guard).
                 expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore);
             } finally {
@@ -1309,14 +1247,10 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     // ── waitForDevices: normal completion (deadline NOT exceeded, L978 else).
     describe('waitForDevices normal completion', () => {
         it('awaits pending devices that resolve and clear before the deadline', async () => {
-            const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> }).pendingDevicePromises;
+            const set = engine.internals.pendingDevicePromises;
             engine.ensureTrackStrip('t1');
             const trackNode = getMockTrackNode(engine, 't1');
-            const collector = (
-                engine as unknown as {
-                    deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-                }
-            ).deviceReadinessDiagnostics;
+            const collector = engine.internals.deviceReadinessDiagnostics;
             const token = collector.begin({ deviceId: 'captured', deviceType: 'crumbs', requiresContent: true });
             collector.markGraphReady({ token });
             // A pending device promise that, on resolution, removes itself from
@@ -1334,11 +1268,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
 
             // The loop enters (size > 0), deadline not exceeded (L978 else arm),
             // awaits the promise which resolves and self-removes, then size == 0.
-            await expect(
-                (
-                    engine as unknown as { waitForDevices: (t: number) => ReturnType<AudioEngine['waitForDevices']> }
-                ).waitForDevices(5000)
-            ).resolves.toMatchObject({
+            await expect(engine.internals.waitForDevices(5000)).resolves.toMatchObject({
                 status: 'ready',
                 devices: [{ deviceId: 'captured', status: 'ready', stage: null }],
             });

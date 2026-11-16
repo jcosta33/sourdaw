@@ -1,6 +1,8 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { type AppAction, type DeviceChainTopologySnapshot, type DeviceSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type DeviceChainTopologySnapshot } from '../../events/arrangementTrackSnapshots';
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Track } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';

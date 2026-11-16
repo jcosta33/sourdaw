@@ -93,7 +93,13 @@ function creative(entry: unknown): entry is CreativeRequestAuthority {
         entry.targets.every(
             (target: unknown) =>
                 record(target) &&
-                oneOf(target.provenance, ['explicit-reference', 'contextual-selection', 'new-object-slot']) &&
+                oneOf(target.provenance, [
+                    'explicit-reference',
+                    'contextual-selection',
+                    'new-object-slot',
+                    'role-reference',
+                    'agent-decided',
+                ]) &&
                 oneOf(target.objectType, ['track', 'clip', 'clip-set']) &&
                 strings(target.objectIds) &&
                 (target.parentTrackId === null || text(target.parentTrackId))
@@ -227,6 +233,21 @@ function configuredIntake(entry: Record<string, unknown>): boolean {
     );
 }
 
+/**
+ * Admission keeps an agent-decided target only beside perceptual or comparative intent, so a stored
+ * one under any other kind is an authority no admission ever minted.
+ */
+function keepsAgentDecidedTargetsAcoustic(entry: Record<string, unknown>): boolean {
+    const creativeAuthority = entry.creativeAuthority;
+    if (entry.kind === 'perceptual' || entry.kind === 'comparative' || !record(creativeAuthority)) {
+        return true;
+    }
+    return (
+        !Array.isArray(creativeAuthority.targets) ||
+        creativeAuthority.targets.every((target: unknown) => !record(target) || target.provenance !== 'agent-decided')
+    );
+}
+
 function authority(entry: unknown, metricIds: readonly string[]): entry is MetricRequestAuthority {
     return (
         record(entry) &&
@@ -252,6 +273,7 @@ function authority(entry: unknown, metricIds: readonly string[]): entry is Metri
         (entry.creativeAuthority === null || creative(entry.creativeAuthority)) &&
         ((entry.kind !== 'literal' && entry.kind !== 'non-acoustic') || entry.goals.length === 0) &&
         (entry.kind !== 'non-acoustic' || entry.creativeAuthority !== null) &&
+        keepsAgentDecidedTargetsAcoustic(entry) &&
         configuredIntake(entry)
     );
 }

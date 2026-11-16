@@ -1128,9 +1128,22 @@ describe('mandatory planning tools', () => {
             );
 
             it.each([
-                { memory: { state: 'known', totalBytes: 16_000_000_000 }, names: ['Pro'], hides: ['Large'] },
+                {
+                    memory: { state: 'known', totalBytes: 16_000_000_000, gpuBudgetBytes: 16_000_000_000 },
+                    names: ['Pro'],
+                    hides: ['Large'],
+                },
+                {
+                    memory: { state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: null },
+                    names: ['Pro'],
+                    hides: ['Large'],
+                },
                 { memory: { state: 'unavailable' }, names: ['Pro'], hides: ['Large'] },
-                { memory: { state: 'known', totalBytes: 64_000_000_000 }, names: ['Pro', 'Large'], hides: [] },
+                {
+                    memory: { state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 },
+                    names: ['Pro', 'Large'],
+                    hides: [],
+                },
             ] as const)(
                 'names only the planners the $memory.state memory reading offers when refusing the Light model',
                 async ({ memory, names, hides }) => {
@@ -1151,7 +1164,7 @@ describe('mandatory planning tools', () => {
             );
 
             it('names no local model and points to a hosted one when the machine is offered no planner', async () => {
-                machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+                machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null });
                 engineState.activeModelId = 'Qwen3-1.7B-q4f16_1-MLC';
                 const { outcome } = await sendLocalRequest(emptyProject());
 
