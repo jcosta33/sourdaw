@@ -62,6 +62,12 @@ const makeTrack = ({ clipType = 'midi', clipEndBeat = 4, showVariationLanes = fa
     };
 };
 
+const hydrateTracks = (tracks: Track[]): void => {
+    act(() => {
+        hydrateTracksForProject({ tracks });
+    });
+};
+
 const setTracks = (tracks: Track[]): void => {
     act(() => {
         setTrackState({ tracks, selectedTrackId: null });
@@ -134,6 +140,34 @@ describe('useShellTrackFacts', () => {
 
         expect(result.current.variationLanesShown.get('track-2')).toBe(true);
         expect(renders).toBeGreaterThan(0);
+    });
+
+    it('does not offer the Takes tab for a folder, whose lanes are never shown', () => {
+        const { result } = mount(null);
+
+        setTracks([{ ...makeTrack({ showVariationLanes: true }), kind: 'folder' }]);
+
+        expect(result.current.takesTabAvailable).toBe(false);
+        expect(result.current.variationLanesShown.get('track-1')).toBe(false);
+    });
+
+    it('reports an audio clip selected only when the selected clip id is an audio clip', () => {
+        const midiTrack = makeTrack();
+        const audioTrack = (id: string): Track => {
+            const track = makeTrack({ clipType: 'audio' });
+            const clip = { ...track.clips[0]!, id: `${id}-clip`, trackId: id };
+            return {
+                ...track,
+                id,
+                clips: [clip],
+                alternatives: [{ id: `${id}-alternative`, name: 'Main', clips: [clip] }],
+            };
+        };
+        hydrateTracks([midiTrack, audioTrack('audio-1'), audioTrack('audio-2')]);
+
+        expect(mount('clip-1').result.current.isAudioClipSelected).toBe(false);
+        expect(mount('audio-1-clip').result.current.isAudioClipSelected).toBe(true);
+        expect(mount('missing').result.current.isAudioClipSelected).toBe(false);
     });
 
     it('renders with the new value when lanes switch back off', () => {
