@@ -41,12 +41,15 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import { type ActionHistoryEntry } from '../../models/ActionHistoryState';
 import {
     type ProspectiveMutationWorkerRequest,
     type ProspectiveMutationWorkerResult,
 } from '../../models/ProspectiveMutationWorkerProtocol';
+import { actionHistoryStore } from '../../stores/actionHistoryStore';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { commandSourcePublicationContains } from '../../useCases/commandSourcePublicationContains';
+import { recordActionHistoryEntry } from '../../useCases/recordActionHistoryEntry';
 import { registerCrdtStorageRuntime } from '../../useCases/registerCrdtStorageRuntime';
 import { automergeRepository as repository } from '../automergeRepository';
 import { loadAllFromIdb } from '../crdtPersistence/loadAllFromIdb';
@@ -73,6 +76,7 @@ vi.mock('@automerge/automerge', async (importOriginal) => {
         decodeChange: vi.fn(actual.decodeChange),
         getChanges: vi.fn(actual.getChanges),
         applyChanges: vi.fn(actual.applyChanges),
+        save: vi.fn(actual.save),
     };
 });
 
@@ -192,6 +196,51 @@ afterEach(() => {
 });
 
 describe('repository canonical Worker candidate adoption', () => {
+    it('exports complete native seed history without main-thread compression or consuming the adoption cursor', async () => {
+        let original = from<Document>({ slot: { count: 0 } }, { actor });
+        for (let index = 0; index < 2048; index++) {
+            original = change(original, { time: 0, message: `retained edit ${index}` }, (draft) => {
+                draft.other = index % 2 === 0;
+            });
+        }
+        repository.insertDoc('root', original);
+        const control = clone(original, { actor });
+        const expectedCursor = native.saveIncremental(control);
+        free(control);
+        const history = native.getChangesMetaSince(original, []);
+        mocks.request.mockImplementationOnce(async (request) => {
+            expect(request.seed[8]).toBe(0);
+            expect(request.seed.byteOffset).toBe(0);
+            expect(request.seed.byteLength).toBe(request.seed.buffer.byteLength);
+            const reloaded = load<Document>(request.seed, { actor: request.actor });
+            try {
+                expect(reloaded).toEqual(original);
+                expect(getHeads(reloaded)).toEqual(getHeads(original));
+                expect(getActorId(reloaded)).toBe(actor);
+                expect(native.getChangesMetaSince(reloaded, [])).toEqual(history);
+            } finally {
+                free(reloaded);
+            }
+            return response(request);
+        });
+        const prepared = plan(original);
+        vi.mocked(native.save).mockClear();
+        try {
+            await prepared.requestMaterialization!(new AbortController().signal);
+            expect(native.save).not.toHaveBeenCalled();
+            expect(native.saveIncremental(original)).toEqual(expectedCursor);
+            publish(prepared.materialize());
+            const actual = repository.getDoc<Document>('root')!;
+            expect(actual.slot.count).toBe(1);
+            const additions = native.getChangesMetaSince(actual, getHeads(original));
+            expect(additions).toHaveLength(1);
+            expect(additions[0]).toMatchObject({ actor, seq: 2050, deps: getHeads(original), message: 'Detect' });
+            expect(repository.captureDocIncremental('root', getHeads(original))?.chunk.byteLength).toBeGreaterThan(0);
+        } finally {
+            prepared.discard();
+        }
+    });
+
     it('captures only uncaptured native history after Worker adoption and preserves subsequent capture progress', async () => {
         const original = seed();
         const baseline = Uint8Array.from(save(clone(original)));
@@ -1359,6 +1408,79 @@ describe('repository canonical Worker candidate adoption', () => {
                 doc.slot.count = 7;
             });
             expect(repository.getDoc<Document>('root')?.slot.count).toBe(7);
+        }
+    );
+
+    it.each(['commit', 'refuse'] as const)(
+        'atomically handles prepared primary state and real late history append with 200-row eviction on %s',
+        async (outcome) => {
+            const entries: ActionHistoryEntry[] = Array.from({ length: 200 }, (_, index) => ({
+                id: `history-${index}`,
+                label: `Retained edit ${index}`,
+                actionKind: 'app-action',
+                source: 'manual',
+                timestamp: index,
+                reverted: false,
+            }));
+            const next: ActionHistoryEntry = {
+                id: 'detect',
+                label: 'Detect transients',
+                actionKind: 'app-action',
+                source: 'manual',
+                timestamp: 200,
+                reverted: false,
+            };
+            const original = from({ slot: { count: 0 }, actionHistory: { entries } }, { actor });
+            repository.insertDoc('root', original);
+            registerCrdtStorageRuntime();
+            actionHistoryStore.hydrate();
+            const storage = createAutomergeStorage<{ count: number }>('root', 'slot');
+            storage.hydrate?.();
+            const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
+            if (transaction.status !== 'returned') {
+                throw transaction.error;
+            }
+            const preparation = storage.prepareSet?.(transaction.value, { count: 1 });
+            if (!preparation) {
+                throw new Error('Expected canonical Worker preparation');
+            }
+            preparation.clone();
+            const request = preparation.requestMaterialization;
+            if (!request) {
+                throw new Error('Expected canonical Worker request');
+            }
+            await request(new AbortController().signal);
+            preparation.materialize();
+            expect(transaction.scope(preparation.stage)).toBe(true);
+            const evicted = transaction.scope(() => recordActionHistoryEntry(next));
+            expect(evicted).toEqual(['history-0']);
+            expect(repository.getDoc('root')).toBe(original);
+            const expected = { slot: { count: 1 }, actionHistory: { entries: [...entries.slice(1), next] } };
+            const observer = vi.fn(() => expect(repository.getDoc('root')).toEqual(expected));
+            repository.onChange(observer);
+            transaction.validateDocument('root', (candidate) => {
+                expect(candidate).toEqual(expected);
+                expect(repository.getDoc('root')).toBe(original);
+                return outcome === 'refuse' ? 'late history refused' : null;
+            });
+            if (outcome === 'refuse') {
+                expect(() => transaction.commit()).toThrow('late history refused');
+                transaction.abort();
+                expect(repository.getDoc('root')).toBe(original);
+                expect(original.slot.count).toBe(0);
+                expect(original.actionHistory.entries).toEqual(entries);
+                expect(observer).not.toHaveBeenCalled();
+            } else {
+                transaction.commit();
+                const current = repository.getDoc<typeof expected>('root')!;
+                expect(current).toEqual(expected);
+                expect(actionHistoryStore.value).toEqual(expected.actionHistory);
+                expect(observer).toHaveBeenCalledOnce();
+                expect(native.getChangesMetaSince(current, getHeads(original))).toHaveLength(2);
+                expect(getObjectId(current.actionHistory.entries[0])).toBe(
+                    getObjectId(original.actionHistory.entries[1])
+                );
+            }
         }
     );
 

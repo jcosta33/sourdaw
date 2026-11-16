@@ -1,5 +1,5 @@
-import { change, from, getObjectId, load, save } from '@automerge/automerge';
-import { describe, it, expect } from 'vitest';
+import { change, clone, free, from, getBackend, getObjectId, load, save, toJS } from '@automerge/automerge';
+import { describe, it, expect, vi } from 'vitest';
 
 import { reconcileCrdtSlot, type CrdtSlotPresence } from '../reconcileCrdtSlot';
 
@@ -845,6 +845,158 @@ describe('reconcileCrdtSlot placement against a live Automerge list', () => {
 });
 
 describe('reconcileCrdtSlot cost against a large live Automerge list', () => {
+    it('retains the recursive deletion of an own undefined field omitted by the writer', () => {
+        const base = { payload: { optional: undefined } };
+        const doc = { slot: structuredClone(base) };
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: base,
+            value: { payload: {} },
+            documentPresence: { slot: structuredClone(base) },
+        });
+        expect(Object.hasOwn(doc.slot.payload, 'optional')).toBe(false);
+    });
+
+    it.each([
+        [0, -0],
+        [-0, 0],
+    ])('preserves a plain-port nested scalar change from %s to %s despite equal composite JSON', (before, after) => {
+        const base = { payload: { value: before } };
+        const doc = { slot: structuredClone(base) };
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: base,
+            value: { payload: { value: after } },
+            documentPresence: { slot: structuredClone(base) },
+        });
+        expect(Object.is(doc.slot.payload.value, after)).toBe(true);
+    });
+
+    it.each([
+        [0, -0],
+        [-0, 0],
+    ])('matches direct native scalar semantics for %s to %s', (before, after) => {
+        const base = { payload: { value: before } };
+        const initial = from({ slot: base });
+        const direct = change(clone(initial), (draft) => {
+            draft.slot.payload.value = after;
+        });
+        const result = change(initial, (draft) => {
+            reconcileCrdtSlot({
+                doc: draft,
+                key: 'slot',
+                baseValue: base,
+                value: { payload: { value: after } },
+                documentPresence: { slot: structuredClone(base) },
+            });
+        });
+        try {
+            // Installed native assignment normalizes +0 -> -0 to +0; reconciliation preserves that behavior.
+            expect(Object.is(direct.slot.payload.value, 0)).toBe(true);
+            expect(Object.is(result.slot.payload.value, direct.slot.payload.value)).toBe(true);
+        } finally {
+            free(result);
+            free(direct);
+        }
+    });
+
+    it('does not read unchanged native row payloads witnessed by the captured presence during capped history append', () => {
+        const base = {
+            rows: Array.from({ length: 200 }, (_, index) => ({
+                id: `history-${index}`,
+                payload: { label: `Edit ${index}`, targets: [`clip-${index}`], timestamp: index },
+            })),
+        };
+        const original = from({ slot: base });
+        const desired = {
+            rows: [
+                ...base.rows.slice(1),
+                { id: 'next', payload: { label: 'Detect', targets: ['target'], timestamp: 200 } },
+            ],
+        };
+        const rowIds = new Set(original.slot.rows.map((row) => getObjectId(row)));
+        let payloadReads = 0;
+        const result = change(original, (draft) => {
+            const reads = vi.spyOn(getBackend(draft), 'getWithType');
+            try {
+                reconcileCrdtSlot({
+                    doc: draft,
+                    key: 'slot',
+                    baseValue: base,
+                    value: desired,
+                    documentPresence: { slot: structuredClone(base) },
+                });
+                payloadReads = reads.mock.calls.filter(
+                    ([objectId, field]) => rowIds.has(objectId) && field === 'payload'
+                ).length;
+            } finally {
+                reads.mockRestore();
+            }
+        });
+        try {
+            expect(result.slot).toEqual(desired);
+            expect(getObjectId(result.slot.rows[0])).toBe(getObjectId(original.slot.rows[1]));
+            expect(payloadReads).toBe(0);
+        } finally {
+            free(result);
+        }
+    });
+
+    it.each(['captured', 'unknown'] as const)(
+        'keeps peer history edits, additions and deletions while handling a nested seed with %s presence',
+        (presenceKind) => {
+            type HistoryRow = { id: string; payload: { label: string; seed?: number } };
+            const presence = {
+                rows: Array.from({ length: 200 }, (_, index): HistoryRow => ({
+                    id: `history-${index}`,
+                    payload: { label: `Edit ${index}` },
+                })),
+            };
+            const base = structuredClone(presence);
+            base.rows[7]!.payload.seed = 0.9999999999999999;
+            const initial = from({ slot: presence });
+            const peer = change(clone(initial, { actor: 'bbbbbbbbbbbbbbbb' }), (draft) => {
+                draft.slot.rows[3]!.payload.label = 'newer peer edit';
+                draft.slot.rows.splice(4, 1);
+                draft.slot.rows.unshift({ id: 'peer', payload: { label: 'peer-only history' } });
+            });
+            const retainedId = getObjectId(peer.slot.rows.find((row) => row.id === 'history-3'));
+            const desired = {
+                rows: [...base.rows.slice(1), { id: 'next', payload: { label: 'Detect' } }],
+            };
+            const result = change(peer, (draft) => {
+                reconcileCrdtSlot({
+                    doc: draft,
+                    key: 'slot',
+                    baseValue: base,
+                    value: desired,
+                    documentPresence: presenceKind === 'captured' ? { slot: presence } : undefined,
+                });
+            });
+            try {
+                const rows = toJS(result).slot.rows;
+                expect(rows.map((row) => row.id)).toEqual([
+                    'peer',
+                    ...base.rows
+                        .slice(1)
+                        .filter((row) => row.id !== 'history-4')
+                        .map((row) => row.id),
+                    'next',
+                ]);
+                expect(rows.find((row) => row.id === 'history-3')?.payload.label).toBe('newer peer edit');
+                expect(getObjectId(result.slot.rows.find((row) => row.id === 'history-3'))).toBe(retainedId);
+                expect(rows.find((row) => row.id === 'history-7')?.payload.seed).toBe(
+                    presenceKind === 'captured' ? 0.9999999999999999 : undefined
+                );
+            } finally {
+                free(result);
+                free(initial);
+            }
+        }
+    );
+
     const rowCount = 3000;
     const budgetMs = 3000;
     const testTimeoutMs = 20_000;

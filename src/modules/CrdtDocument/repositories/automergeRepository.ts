@@ -21,6 +21,7 @@ import {
     clone,
     getActorId,
     getAuthor,
+    getBackend,
     free,
 } from '@automerge/automerge';
 
@@ -624,7 +625,7 @@ class AutomergeRepository {
                     const encodingClone = clone(candidate, { actor });
                     let seed: Uint8Array<ArrayBuffer>;
                     try {
-                        seed = Uint8Array.from(save(encodingClone));
+                        seed = Uint8Array.from(getBackend(encodingClone).saveNoCompress());
                     } finally {
                         free(encodingClone);
                     }

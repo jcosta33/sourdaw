@@ -86,3 +86,8 @@ findings without a concrete break ("I'd prefer if") are discarded.
    added source and current enforcing configuration. Refresh that witness when either relevant
    source or enforcing configuration changes. An older `--quiet` warning pass proves neither
    combined compliance nor a missing rule visitor.
+   Mirrored warning paths also need the integrated canonical set: #6740 retained a migrated warning entry
+   after #6825 removed its source and canonical baseline entry. A deleted path must leave every mirror,
+   preserving all surviving paths, severities and ceilings. Require the exact warning-set and canonical
+   burn-down cases in `scripts/__tests__/eslintWarnLevels.spec.ts` and
+   `scripts/__tests__/oxlintPluginMigration.spec.ts`; restoring the obsolete mirrored path must fail both.

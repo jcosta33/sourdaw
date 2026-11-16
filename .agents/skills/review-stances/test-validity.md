@@ -189,6 +189,14 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    click through PCM copy, cold Worker, atomic commit and UI completion, with frames and main-thread tasks recorded
    over that same interval; the reviewer checks the recorded interval covers all of it. Native document parsing
    and JS-root materialization are separate costs even when one public load call combines them (#5843).
+   A fresh single-clip source also omits retained-history seed encoding and late supplemental history. #5843
+   (`afc6`, five recorded `kimi-k2.8` standard draws; prompts unavailable) had the 120-second source without
+   those dense inputs. Require authoritative tracks, MIDI, companion warp states and retained native changes,
+   then observe cold full-document seed compression and the real 200-entry history append/eviction alongside
+   the prepared primary mutation. Both complete tasks stay inside the original click-to-completion gate.
+   A deterministic unchanged-row payload-read check must fail without the trusted-presence shortcut, while
+   peer deletion, nested stranded-seed and signed-zero controls must fail an overbroad shortcut. Real owner
+   history must co-commit with the prepared primary or leave both slots unchanged on refusal.
    Moving either stage outside an existing named measure must leave it inside the full click-to-completion
    long-task gate. Hold the parsed handle before adoption and require abort or replaced authority to free it
    without publication. A mock that always returns
