@@ -59,15 +59,17 @@ export const ELECTRON_NODE_MODULES_EXCLUSION_PATTERN = /^\s*- '!node_modules\/\*
  * `[dev_dependencies]` or `default_members` as the hyphenated spelling (deprecated, accepted before
  * the 2024 edition), and projecting an underscore spelling Cargo ignores costs only a spurious restamp.
  */
-type CargoSelection = 'keep' | 'ignore' | { readonly [key: string]: CargoSelection };
+type CargoSelection = 'keep' | 'ignore' | CargoTableSelection;
+
+type CargoTableSelection = { readonly [key: string]: CargoSelection };
 
 const CARGO_DEPENDENCY_TABLES = {
     dependencies: 'keep',
     'dev-dependencies': 'keep',
     'build-dependencies': 'keep',
-} as const satisfies CargoSelection;
+} as const satisfies CargoTableSelection;
 
-const CARGO_LICENCE_GRAPH_SELECTION: CargoSelection = {
+const CARGO_LICENCE_GRAPH_SELECTION: CargoTableSelection = {
     ...CARGO_DEPENDENCY_TABLES,
     features: 'keep',
     patch: 'keep',
@@ -178,7 +180,7 @@ function assertNoDependencyKeys(value: TomlValue, segments: readonly string[], p
 
 function selectCargoKeys(
     table: TomlTable,
-    selection: { readonly [key: string]: CargoSelection },
+    selection: CargoTableSelection,
     segments: readonly string[],
     path: string
 ): { [key: string]: JsonValue } {

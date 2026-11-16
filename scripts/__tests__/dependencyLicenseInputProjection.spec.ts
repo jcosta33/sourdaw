@@ -474,6 +474,9 @@ serde = "1"
         ['node --run', { build: 'vite build && node --run prep' }],
         ['npm run --script-shell=sh', { build: 'npm run --script-shell=sh prep' }],
         ['a pnpm:devPreinstall hook', { 'pnpm:devPreinstall': 'pnpm prep' }],
+        ['an environment assignment', { build: 'vite build && STAGE=prep tool' }],
+        ['an output redirection', { build: 'vite build && tool>prep' }],
+        ['an input redirection', { build: 'vite build && tool <prep' }],
     ])('keeps a script packaging reaches through %s, and drops an unrelated one', (_form, roots) => {
         const manifest = (prep: string, lint: string): string =>
             JSON.stringify({ license: 'MIT', scripts: { ...roots, prep, lint } });
