@@ -149,6 +149,18 @@ supports an explicit TVM_SOURCE_DIR, but the actual builder environment is not a
 identity, publisher-named MLC-LLM/TVM sources and the nested TIRx/FFI source pins are proven; the exact
 Qwen source/license chain and complete build-input provenance are not.
 
+## WebLLM Llama model
+
+Built with Llama. Web and desktop builds can download one pinned MLC-format conversion of Meta
+Llama 3.1 70B Instruct for browser-local WebLLM inference, offered as the Large local model on
+machines with enough memory. Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright
+© Meta Platforms, Inc. All Rights Reserved. The agreement is in
+[Llama-3.1-LICENSE.txt](./Llama-3.1-LICENSE.txt), the Acceptable Use Policy it incorporates is in
+[Llama-3.1-ACCEPTABLE-USE-POLICY.txt](./Llama-3.1-ACCEPTABLE-USE-POLICY.txt), and the attribution
+record is in [Llama-NOTICE.txt](./Llama-NOTICE.txt). The conversion's card attributes it to a Llama 3.1
+70B Instruct model but does not map it to an exact checkpoint revision. It runs on the same pinned
+WebGPU library repository as the Qwen models above.
+
 ## Plugin interfaces
 
 Sourdaw hosts CLAP and VST®3 plugins by declaring each format's interfaces through the `clap-sys` and

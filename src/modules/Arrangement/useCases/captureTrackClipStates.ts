@@ -2,7 +2,7 @@ import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot
 import { midiStore } from '#/modules/MIDI/stores';
 
 import { type TrackClipStateSnapshot } from '../events/arrangementTrackSnapshots';
-import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { getHeldClips } from '../models/TrackAlternativeClips';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 
 import { readClipScopedAutomationLanes } from './clip/readClipScopedAutomationLanes';
@@ -78,7 +78,10 @@ export function captureTrackClipStates(
         }
 
         const clips = structuredClone(track.clips);
-        const clipIds = collectTrackClipIds(track);
+        // Only the clips the track holds now: the active alternative's stored copy
+        // is stale between switches and can name a clip since moved to another
+        // track, whose MIDI, satellites and lanes are not this track's to restore.
+        const clipIds = [...new Set(getHeldClips(track).map((clip) => clip.id))];
 
         const midiNotesByClipId: Record<string, MidiNotesSnapshot> = {};
         const midiCcByClipId: Record<string, MidiCcSnapshot> = {};
@@ -101,8 +104,8 @@ export function captureTrackClipStates(
             .map((clipId) => readClipSatelliteEntry(clipId))
             .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
         const clipAutomationLanes = structuredClone(readClipScopedAutomationLanes(clipIds));
-        // Intersect against the track's whole clip universe, not the active
-        // collection: routes like flatten retire takes of hidden-alternative
+        // Intersect against every clip the track holds, not the active
+        // collection alone: routes like flatten retire takes of hidden-alternative
         // clips too, and an id dropped here is a take the undo never restores.
         const trackRetiringClipIds = clipIds.filter((clipId) => retiringClipIdSet.has(clipId));
 

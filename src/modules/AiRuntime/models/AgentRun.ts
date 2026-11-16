@@ -2,6 +2,7 @@ import { type AgentContextEvidence } from './AgentContext';
 import { type AgentExecutionMode, type AgentTrustCeiling } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
+import { MAX_METRIC_GOAL_STATE_BYTES, type MetricGoal, type MetricGoalEvaluation } from './MetricGoalAdmission';
 import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
 import { type PerceptualConstraintReading } from './PerceptualConstraint';
 import { type BoundRequestProtections } from './ProposalGroundingBasis';
@@ -179,12 +180,66 @@ export const AGENT_RUN_MAX_TEXT_LENGTH = 128 * 1024;
 export const MAX_AUDIBLE_CLAIM_METRICS = 256;
 
 /**
- * What the plan says the batch does to the sound: nothing, or the figures of a measurement bound to
- * exactly this batch at this revision.
+ * The most predictions a plan's audible claim lists. A goal state is at most
+ * `MAX_METRIC_GOAL_STATE_BYTES` and the smallest goal serializes to 188 bytes, so no state holds more
+ * goals than this and a claim derived from a stored state never exceeds the reader's ceiling.
+ */
+export const MAX_AUDIBLE_PREDICTIONS = Math.floor(MAX_METRIC_GOAL_STATE_BYTES / 188);
+
+/** What a measured verification found for one prediction: the evaluation's own figures for that goal. */
+export type AgentRunAudiblePredictionOutcome = Pick<
+    MetricGoalEvaluation['criteria'][number],
+    'baseline' | 'observed' | 'reference' | 'unit' | 'status'
+>;
+
+/**
+ * One frozen metric goal as the plan predicts it before any preview is measured: the goal's own fields,
+ * and `outcome` once a measurement bound to the same batch has been evaluated against it.
+ */
+export type AgentRunAudiblePrediction = Pick<
+    MetricGoal<string>,
+    | 'goalId'
+    | 'stepId'
+    | 'metricId'
+    | 'band'
+    | 'targetIds'
+    | 'referenceTargetIds'
+    | 'range'
+    | 'relation'
+    | 'targetValue'
+    | 'tolerance'
+    | 'source'
+> & { outcome: AgentRunAudiblePredictionOutcome | null };
+
+/** The admission's verdict on the predictions against the bound measurement. */
+export type AgentRunAudibleVerification = {
+    status: 'verified' | 'blocked';
+    failure: MetricGoalEvaluation['failure'];
+    reason: string | null;
+};
+
+/** The metrics a bound measurement moved, never a prediction; omitted when more moved than a plan can list. */
+export type AgentRunObservedAudibleImpact =
+    { status: 'listed'; metrics: AgentRunMeasuredAudibleMetric[] } | { status: 'omitted'; reason: string };
+
+/**
+ * What the plan says the batch does to the sound: nothing, the figures of a measurement bound to
+ * exactly this batch at this revision, or the frozen metric goals of a perceptual or comparative
+ * request stated as predictions before measurement and shown beside what was measured after it.
  */
 export type AgentRunPlanAudibleImpact =
     | { status: 'not-claimed'; reason: string }
-    | { status: 'measured'; revision: string; batchContentHash: string; metrics: AgentRunMeasuredAudibleMetric[] };
+    | { status: 'measured'; revision: string; batchContentHash: string; metrics: AgentRunMeasuredAudibleMetric[] }
+    | {
+          status: 'predicted';
+          kind: 'perceptual' | 'comparative';
+          revision: string;
+          batchContentHash: string;
+          predictions: AgentRunAudiblePrediction[];
+          /** Null until a measurement bound to this batch exists. */
+          verification: AgentRunAudibleVerification | null;
+          observed: AgentRunObservedAudibleImpact;
+      };
 
 export type AgentRunPlanExpectedImpact = {
     project: string[];

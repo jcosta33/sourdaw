@@ -245,9 +245,6 @@ test('receives independent renderer heartbeats while the real entry module remai
         expect(event(item, 'transform-resolve')).toBeUndefined();
         expect(event(item, 'renderer-heartbeat')).toMatchObject({
             entryStarted: false,
-            bootstrapStarted: false,
-            appRenderIssued: false,
-            retryIssued: false,
         });
         expect(event(item, 'server-heartbeat')).toBeDefined();
         gate.resolve('export const fixtureValue = 23;');

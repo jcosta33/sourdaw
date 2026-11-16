@@ -15,6 +15,7 @@ import {
     type TrackCollectionFieldsSnapshot,
 } from '../../events/arrangementTrackSnapshots';
 import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import {
     normalizeClipSatelliteEntry,
     readClipSatelliteEntry,
@@ -804,12 +805,18 @@ function transitionRetiredTakeLanes(
     recordRedoTakeRetirement(action, removeTakesForClips([...retiringClipIds]));
 }
 
-/** Every clip a snapshot entry holds: the active collection plus each alternative's. */
+/**
+ * Every clip a snapshot entry holds: the active collection plus each inactive
+ * alternative's. The active alternative's stored copy is stale between switches
+ * and can name a clip since moved to another track, whose takes a redo must not
+ * re-retire.
+ */
 function snapshotClipIds(entry: TrackClipStateSnapshot): string[] {
-    return [
-        ...entry.clips.map((clip) => clip.id),
-        ...entry.trackFields.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
-    ];
+    return getHeldClips({
+        clips: entry.clips,
+        activeAlternativeId: entry.trackFields.activeAlternativeId,
+        alternatives: entry.trackFields.alternatives,
+    }).map((clip) => clip.id);
 }
 
 /**
@@ -901,8 +908,8 @@ function clearSatelliteRecordsDroppedByRestore(
  * runs; for routes that only remove clips (cut, flatten, consolidate) the
  * diff is empty and this writes nothing.
  *
- * Clip-level granularity is exact here: the capture reads every clip id on the
- * named tracks, so a clip the replacement leaves out had no rows before the
+ * Clip-level granularity is exact here: the capture reads every clip the named
+ * tracks hold, so a clip the replacement leaves out had no rows before the
  * forward ran (or did not exist), and any rows live under its id are the
  * forward's own mint.
  */
