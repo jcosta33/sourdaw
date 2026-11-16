@@ -611,7 +611,7 @@ for (const projectScale of [false, true]) {
                 expect(fixture.elasticClips.every((clip) => clip.markers === ATTACKS.length)).toBe(true);
                 expect(fixture.historyEditChanges).toBeGreaterThanOrEqual(2048);
                 expect(fixture.historyRetained).toBe(true);
-                expect(fixture.rootBytes).toBeGreaterThan(0);
+                expect(fixture.rootSlotValueJsonBytes).toBeGreaterThan(0);
                 expect(fixture.targetClipId).toBe(before.clipId);
             }
             const targetClipId = before.clipId;

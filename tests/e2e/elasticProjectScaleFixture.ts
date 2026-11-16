@@ -1,8 +1,8 @@
-import { getChangesMetaSince, getHeads, getMissingDeps, toJS } from '@automerge/automerge';
+import { getChangesMetaSince, getHeads, getMissingDeps, toJS, type Heads } from '@automerge/automerge';
 
 import { getWarpState, trackStore } from '../../src/modules/Arrangement/stores';
 import { executeAppAction, executeAppActionBatch } from '../../src/modules/Command/useCases';
-import { captureCheckpointRoot, getCrdtDoc } from '../../src/modules/CrdtDocument/useCases';
+import { getCrdtDoc, settlePendingProjectWritesAndCaptureRevision } from '../../src/modules/CrdtDocument/useCases';
 import { midiStore } from '../../src/modules/MIDI/stores';
 
 /** A substantial arrangement and edit session, rather than padding an unrelated document field. */
@@ -48,34 +48,38 @@ export function captureElasticProjectScalePreservedState(targetClipId: string): 
     };
 }
 
-export async function inspectElasticProjectScale() {
-    const { rootBytes, projectRevision } = await captureCheckpointRoot();
-    const document = getCrdtDoc<Record<string, unknown>>('root');
+export function inspectElasticProjectScale(historyHeads: Heads) {
+    const projectRevision = settlePendingProjectWritesAndCaptureRevision();
+    const document = getCrdtDoc<{
+        tracks?: Pick<NonNullable<typeof trackStore.value>, 'tracks'>;
+        midi?: Pick<NonNullable<typeof midiStore.value>, 'notesByClipId'>;
+        warpStates?: { states: Record<string, Pick<ReturnType<typeof getWarpState>, 'markers'>> };
+    }>('root');
     if (!document) {
         throw new Error('Project-scale fixture requires the actual root document');
     }
-    const tracks = trackStore.value?.tracks.filter((track) => track.kind === 'audio' || track.kind === 'midi') ?? [];
+    const tracks = document.tracks?.tracks.filter((track) => track.kind === 'audio' || track.kind === 'midi') ?? [];
     const changes = getChangesMetaSince(document, []);
+    const slotJsonBytes = Object.fromEntries(
+        Object.entries(document).map(([slot, value]) => [slot, new TextEncoder().encode(JSON.stringify(value)).length])
+    );
     return {
-        rootBytes: rootBytes.byteLength,
+        // Sum of slot-value JSON UTF-8 sizes, not an encoded native document size.
+        rootSlotValueJsonBytes: Object.values(slotJsonBytes).reduce((sum, bytes) => sum + bytes, 0),
         projectRevision,
         changes: changes.length,
         actors: [...new Set(changes.map((change) => change.actor))],
         heads: getHeads(document),
-        slotJsonBytes: Object.fromEntries(
-            Object.entries(document).map(([slot, value]) => [
-                slot,
-                new TextEncoder().encode(JSON.stringify(value)).length,
-            ])
-        ),
+        historyRetained: getMissingDeps(document, historyHeads).length === 0,
+        slotJsonBytes,
         audioTracks: tracks.filter((track) => track.kind === 'audio').length,
         midiTracks: tracks.filter((track) => track.kind === 'midi').length,
         clips: tracks.reduce((count, track) => count + track.clips.length, 0),
-        notes: Object.values(midiStore.value?.notesByClipId ?? {}).reduce((count, notes) => count + notes.length, 0),
+        notes: Object.values(document.midi?.notesByClipId ?? {}).reduce((count, notes) => count + notes.length, 0),
         elasticClips: tracks
             .flatMap((track) => track.clips)
             .flatMap((clip) => {
-                const markers = getWarpState(clip.id).markers;
+                const markers = document.warpStates?.states[clip.id]?.markers ?? [];
                 return markers.length > 0 ? [{ clipId: clip.id, markers: markers.length }] : [];
             }),
     };
@@ -218,18 +222,13 @@ export async function seedElasticProjectScale() {
         progress('companion-detect', index + 1);
     }
     progress('checkpoint', 0);
-    const snapshot = await inspectElasticProjectScale();
-    const finalDocument = getCrdtDoc('root');
-    if (!finalDocument) {
-        throw new Error('Project-scale fixture lost its final root');
-    }
+    const snapshot = inspectElasticProjectScale(historyHeads);
     progress('complete', 1);
     return {
         targetClipId: sourceClip.id,
         targetTrackId: sourceTrack.id,
         historyEditChanges,
         historyHeads,
-        historyRetained: getMissingDeps(finalDocument, historyHeads).length === 0,
         ...snapshot,
     };
 }

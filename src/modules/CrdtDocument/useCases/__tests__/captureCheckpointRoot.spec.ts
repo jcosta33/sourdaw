@@ -1,4 +1,5 @@
-import { clone, getHeads, load } from '@automerge/automerge';
+import { clone, free, getActorId, getHeads, load, loadIncremental, toJS } from '@automerge/automerge';
+import * as native from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -9,6 +10,7 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppAction, productionBriefAdmissionPort } from '#/modules/Command/useCases';
 
+import { inspectElasticProjectScale } from '../../../../../tests/e2e/elasticProjectScaleFixture';
 import {
     ControlledWorker,
     createRootBundle,
@@ -20,6 +22,16 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureCheckpointRoot } from '../captureCheckpointRoot';
 import { captureProjectRevision } from '../captureProjectRevision';
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
+
+vi.mock('@automerge/automerge', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@automerge/automerge')>();
+    return {
+        ...actual,
+        save: vi.fn(actual.save),
+        saveIncremental: vi.fn(actual.saveIncremental),
+        saveSince: vi.fn(actual.saveSince),
+    };
+});
 
 type HeldCompactRequest = {
     request: CompactShadowRequest;
@@ -84,6 +96,106 @@ describe('captureCheckpointRoot', () => {
         clearHandlerRegistry();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
+    });
+
+    it('observes a coherent settled fixture census without serialization while a registered owner advances live authority', async () => {
+        const { compactRequest } = await prepareLoadedProject();
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tracks = {
+                tracks: [
+                    { id: 'audio-one', kind: 'audio', clips: [{ id: 'audio-a' }, { id: 'audio-b' }] },
+                    { id: 'audio-two', kind: 'audio', clips: [{ id: 'audio-c' }] },
+                    { id: 'midi-one', kind: 'midi', clips: [{ id: 'midi-a' }] },
+                ],
+            };
+            doc.midi = { notesByClipId: { 'midi-a': [{ pitch: 60 }, { pitch: 64 }, { pitch: 67 }] } };
+            doc.warpStates = { states: { 'audio-a': { markers: [{ id: 'one' }, { id: 'two' }] } } };
+        });
+        const historyHeads = automergeRepository.getHeads('root')!;
+        const baselineHeads = historyHeads;
+        const baselineClone = clone(automergeRepository.getDoc('root')!);
+        const baseline = native.save(baselineClone);
+        free(baselineClone);
+        automergeRepository.saveDocIncremental('root');
+        const pending = createAutomergeStorage<{ value: number }>('root', 'pendingBeforeCensus');
+        pending.hydrate?.();
+        const storage = createAutomergeStorage<{ value: number }>('root', 'actionDuringCensus');
+        storage.hydrate?.();
+        registerHandlerMap({
+            setSnapValue: {
+                describe: () => ({ label: 'Advance authority after fixture census' }),
+                execute: (action) => storage.set({ value: action.payload.value }),
+                undoable: false,
+            },
+        });
+        await executeAppAction(
+            { type: 'setSnapValue', payload: { value: 0.25 } },
+            { skipMacroRecording: true, skipUndo: true }
+        );
+        const control = automergeRepository.captureDocIncremental('root', baselineHeads)!;
+        expect(control.chunk.byteLength).toBeGreaterThan(0);
+        pending.set({ value: 7 });
+        expect(automergeRepository.getDoc('root')).not.toHaveProperty('pendingBeforeCensus');
+        vi.mocked(native.save).mockClear();
+        vi.mocked(native.saveIncremental).mockClear();
+        vi.mocked(native.saveSince).mockClear();
+        const census = Promise.resolve(inspectElasticProjectScale(historyHeads));
+        const binaryCalls = [native.save, native.saveIncremental, native.saveSince].map(
+            (serializer) => vi.mocked(serializer).mock.calls.length
+        );
+        const settledRoot = automergeRepository.getDoc<Record<string, unknown>>('root')!;
+        const settledHeads = getHeads(settledRoot);
+        const settledRevision = captureProjectRevision();
+        const settledData = toJS(settledRoot);
+        expect(settledData.pendingBeforeCensus).toEqual({ value: 7 });
+        const cursor = automergeRepository.saveDocIncremental('root')!;
+        expect(cursor.byteLength).toBeGreaterThan(0);
+        const restored = loadIncremental(load<Record<string, unknown>>(baseline), cursor);
+        try {
+            expect(restored).toEqual(settledRoot);
+            expect(getHeads(restored)).toEqual(settledHeads);
+        } finally {
+            free(restored);
+        }
+        const first = await Promise.race([
+            census.then(() => ({ kind: 'census' as const })),
+            compactRequest.then((exchange) => ({ kind: 'compaction' as const, exchange })),
+        ]);
+        await executeAppAction(
+            { type: 'setSnapValue', payload: { value: 0.5 } },
+            { skipMacroRecording: true, skipUndo: true }
+        );
+        if (first.kind === 'compaction') {
+            completeCompact(first.exchange);
+        }
+        const snapshot = await census;
+        expect(snapshot).toMatchObject({
+            projectRevision: settledRevision,
+            heads: settledHeads,
+            changes: 4,
+            audioTracks: 2,
+            midiTracks: 1,
+            clips: 4,
+            notes: 3,
+            elasticClips: [{ clipId: 'audio-a', markers: 2 }],
+            historyRetained: true,
+        });
+        expect(snapshot.actors.toSorted()).toEqual(['aaaaaaaaaaaaaaaa', getActorId(settledRoot)].toSorted());
+        const expectedSlotBytes = Object.fromEntries(
+            Object.entries(settledData).map(([slot, value]) => [
+                slot,
+                new TextEncoder().encode(JSON.stringify(value)).byteLength,
+            ])
+        );
+        expect(snapshot.slotJsonBytes).toEqual(expectedSlotBytes);
+        expect(snapshot.rootSlotValueJsonBytes).toBe(
+            Object.values(expectedSlotBytes).reduce((sum, bytes) => sum + bytes, 0)
+        );
+        expect(snapshot.rootSlotValueJsonBytes).toBeGreaterThan(0);
+        expect(binaryCalls).toEqual([0, 0, 0]);
+        expect(captureProjectRevision()).not.toBe(settledRevision);
+        expect(automergeRepository.getDoc('root')).toMatchObject({ actionDuringCensus: { value: 0.5 } });
+        expect(automergeRepository.getHeads('root')).not.toEqual(settledHeads);
     });
 
     it('returns the exact worker bytes for the expected root heads and state', async () => {

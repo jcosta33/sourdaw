@@ -111,6 +111,8 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    task. Full-seed compression and unchanged supplemental-history traversal can independently exhaust the
    task ceiling. Keep both inside the original completion interval and require complete enclosing-task proof;
    changing one phase measure or moving history beyond completion does not bound either task.
+   An observational census keeps heads, history and JSON-size diagnostics on one settled root without
+   awaiting authorization serialization or warming a native encoder before the measured command.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**
