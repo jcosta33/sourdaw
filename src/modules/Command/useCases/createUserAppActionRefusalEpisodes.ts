@@ -36,7 +36,9 @@ type UserAppActionRefusalEpisodeOptions = {
  * its delivery runs. An episode belongs to the project its dispatch started
  * in: once the project is replaced it is dropped without `onAdmitted` or a
  * warning, because the session state it would write belongs to the outgoing
- * project. The admission subscription is held only while an episode is open.
+ * project. A refusal whose key the caller ended while its dispatch was in
+ * flight opens nothing, because the key left the session store before the
+ * refusal landed. The admission subscription is held only while an episode is open.
  * Only the dispatch gate's admission refusal counts: every other failure, a
  * handler or storage conflict included, still rejects unchanged.
  *
@@ -53,6 +55,7 @@ export function createUserAppActionRefusalEpisodes(
         async execute(key, action, executeOptions) {
             const dispatch = { committed: false };
             const projectIdentity = captureProjectIdentity();
+            const endMark = episodes.endMarkOf(key);
             try {
                 await executeAppAction(action, {
                     ...executeOptions,
@@ -65,7 +68,7 @@ export function createUserAppActionRefusalEpisodes(
                 if (!isAppActionAdmissionRefusal(error)) {
                     throw error;
                 }
-                episodes.openRefused(key, { action, projectIdentity });
+                episodes.openRefused(key, { action, projectIdentity, endMark });
                 return 'refused';
             }
             if (dispatch.committed) {
@@ -75,7 +78,7 @@ export function createUserAppActionRefusalEpisodes(
             episodes.settleUncommitted(key);
             return 'skipped';
         },
-        end: episodes.close,
-        endAll: episodes.closeAll,
+        end: episodes.end,
+        endAll: episodes.endAll,
     };
 }

@@ -124,3 +124,40 @@ describe('proposalControlProtection automation fallback scope', () => {
         expect(readOperations(name, {}, true)).toEqual([{ trackId: 'track-vocals', operations: [name] }]);
     });
 });
+
+describe('proposalControlProtection linked lanes', () => {
+    const follower: Lane = { ...lane('lane-follower', 'track-room', 'pan'), linkedLaneId: 'lane-gain' };
+    const linkedContext: ProjectContext = {
+        ...CONTEXT,
+        automationLanes: [lane('lane-gain', 'track-vocals', 'gain'), lane('lane-pan', 'track-vocals', 'pan'), follower],
+    };
+
+    function readLinkedOperations(actionType: string) {
+        return proposalControlProtection.readEffects({
+            actionType,
+            payload: { trackId: 'track-vocals', parameterId: 'gain' },
+            context: linkedContext,
+            declaredOwners: ['track-vocals'],
+            automation: true,
+            laneTargetIds: [],
+        });
+    }
+
+    it('reaches the follower of a source lane when the action changes source points', () => {
+        expect(readLinkedOperations('addAutomationPoint')).toContainEqual({
+            trackId: 'track-room',
+            operations: ['setTrackPan'],
+        });
+    });
+
+    it.each(['addAutomationLane', 'setAutomationLaneEnabled', 'setAutomationMode'])(
+        'leaves the follower alone when %s changes no source point',
+        (actionType) => {
+            expect(readLinkedOperations(actionType).map((effect) => effect.trackId)).toEqual(['track-vocals']);
+        }
+    );
+
+    it.each(unknownNames)('reaches the follower for the unowned name %s', (name) => {
+        expect(readLinkedOperations(name).map((effect) => effect.trackId)).toContain('track-room');
+    });
+});

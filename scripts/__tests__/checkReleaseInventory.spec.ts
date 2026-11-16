@@ -119,7 +119,7 @@ const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
 // The v0_2_87 libraries introduce the publisher-named TVM → TIRx → FFI chain.
 // Pin the independently reviewed paths, separate source buckets, source mapping
 // and exact legal bytes, including the shared notice's updated attribution.
-const WEBLLM_LEGAL_CLOSURE_DIGEST = '0643986ff5fe4de46fd87f2c1cb743182cf6daad26b6af6638b61a58e8c3c86c';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = '7109cfe9ce569dae5a64d08da0aef752d9de2040fb8f4f1f7366c2e53aec5aeb';
 const APACHE_TVM_COMMIT = 'e345029cedf0be76a087fcad9c89a97bed4f7204';
 const TVM_TIRX_COMMIT = '198a04573ea44e060c1087c8223cf082c64a6c03';
 const TVM_FFI_COMMIT = '6628c464e3b824d09c9cf65ac0c6c24f973f6d56';
@@ -718,6 +718,14 @@ function webLlmLegalSourceBuckets(sources: readonly string[]): Record<string, st
         mlcLlmNotice: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/mlc-llm/tree/')).sort(),
         qwenLicenseSet: sources.filter((source) => source.startsWith('https://huggingface.co/Qwen/')).sort(),
         webLlmLicense: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/web-llm/blob/')).sort(),
+        llamaLicenseSet: sources
+            .filter(
+                (source) =>
+                    source.startsWith('https://huggingface.co/mlc-ai/Llama-') ||
+                    source.startsWith('https://github.com/meta-llama/llama-models/blob/') ||
+                    source.startsWith('https://www.llama.com/')
+            )
+            .sort(),
     };
 }
 
@@ -737,11 +745,26 @@ function webLlmLegalSourceKinds(path: string): string[] {
     if (path === 'public/legal/Qwen-NOTICE.txt') {
         return ['qwenLicenseSet'];
     }
+    if (
+        path === 'public/legal/Llama-NOTICE.txt' ||
+        path === 'public/legal/Llama-3.1-LICENSE.txt' ||
+        path === 'public/legal/Llama-3.1-ACCEPTABLE-USE-POLICY.txt'
+    ) {
+        return ['llamaLicenseSet'];
+    }
     if (path === 'public/legal/Apache-2.0.txt') {
         return ['webLlmLicense'];
     }
     if (path === 'public/legal/THIRD-PARTY-NOTICES.md') {
-        return ['apacheTvmRaw', 'tvmTirxRaw', 'tvmFfiRaw', 'mlcLlmNotice', 'qwenLicenseSet', 'webLlmLicense'];
+        return [
+            'apacheTvmRaw',
+            'tvmTirxRaw',
+            'tvmFfiRaw',
+            'mlcLlmNotice',
+            'qwenLicenseSet',
+            'llamaLicenseSet',
+            'webLlmLicense',
+        ];
     }
     throw new Error(`unexpected WebLLM legal path in oracle: ${path}`);
 }
