@@ -3659,7 +3659,17 @@
                         "relation": "decrease",
                         "target": "Guitar"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-guitar",
+                        "eq-low-freq",
+                        "eq-low-gain",
+                        "eq-high-gain"
+                    ],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 4
+                }
             }
         },
         {
@@ -3751,7 +3761,12 @@
                         "target": "Guitar",
                         "reference": "Keys"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-guitar", "gain-level"],
+                    "protectedIds": ["track-keys", "track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 2
+                }
             }
         },
         {
@@ -3834,7 +3849,17 @@
                         "target": "Hi-Hat",
                         "reference": "Guitar"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-hi-hat",
+                        "width-amount",
+                        "width-mono-bass",
+                        "width-side"
+                    ],
+                    "protectedIds": ["track-guitar", "track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 4
+                }
             }
         },
         {
@@ -3931,7 +3956,23 @@
                         "target": "Snare",
                         "reference": "Backing Vocals R"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-snare",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q",
+                        "eq-high-freq",
+                        "eq-high-gain"
+                    ],
+                    "protectedIds": [
+                        "track-backing-vocal-right",
+                        "track-drum-bus",
+                        "track-reverb-bus"
+                    ],
+                    "maxCommands": 6
+                }
             }
         },
         {
@@ -4181,7 +4222,19 @@
                         "target": "Snare",
                         "reference": "Bass DI"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-kick",
+                        "comp-threshold",
+                        "comp-ratio",
+                        "comp-attack",
+                        "comp-release",
+                        "track-snare"
+                    ],
+                    "protectedIds": ["track-bass-di", "track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 10
+                }
             }
         },
         {
@@ -4324,7 +4377,18 @@
                         "target": "Overheads",
                         "reference": "Keys"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-overheads",
+                        "comp-threshold",
+                        "comp-ratio",
+                        "comp-attack",
+                        "comp-release"
+                    ],
+                    "protectedIds": ["track-keys", "track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 5
+                }
             }
         },
         {
@@ -4467,7 +4531,18 @@
                         "target": "Guitar",
                         "reference": "Keys"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-guitar",
+                        "comp-threshold",
+                        "comp-ratio",
+                        "comp-attack",
+                        "comp-release"
+                    ],
+                    "protectedIds": ["track-keys", "track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 5
+                }
             }
         },
         {
@@ -4569,7 +4644,19 @@
                         "relation": "decrease",
                         "target": "Lead Vocal"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-lead-vocal",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q",
+                        "eq-low-freq",
+                        "eq-low-gain"
+                    ],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 6
+                }
             }
         },
         {
@@ -4676,7 +4763,19 @@
                         "relation": "increase",
                         "target": "Keys"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-keys",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q",
+                        "eq-high-freq",
+                        "eq-high-gain"
+                    ],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 6
+                }
             }
         },
         {
@@ -4776,7 +4875,18 @@
                         "relation": "decrease",
                         "target": "Lead Vocal"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-lead-vocal",
+                        "eq-low-freq",
+                        "eq-low-gain",
+                        "eq-high-freq",
+                        "eq-high-gain"
+                    ],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 5
+                }
             }
         },
         {
@@ -4876,7 +4986,18 @@
                         "relation": "decrease",
                         "target": "Overheads"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-overheads",
+                        "eq-high-gain",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q"
+                    ],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 5
+                }
             }
         },
         {
@@ -4983,7 +5104,19 @@
                         "relation": "increase",
                         "target": "Hi-Hat"
                     }
-                ]
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "track-hi-hat",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q",
+                        "eq-high-freq",
+                        "eq-high-gain"
+                    ],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 6
+                }
             }
         },
         {
