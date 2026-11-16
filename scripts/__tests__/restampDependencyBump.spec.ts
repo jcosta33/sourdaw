@@ -6,7 +6,6 @@ import { dirname, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-    LICENCE_PROJECTED_SNAPSHOT_PATHS,
     loadRepositorySnapshot,
     projectLicenseDistributionReleaseInventoryContract,
     REQUIRED_SNAPSHOT_PATHS,
@@ -24,6 +23,7 @@ import {
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
 import { writeDependencyLicenseArtifacts } from '../generateDependencyLicenseReport';
+import { LICENCE_PROJECTED_SNAPSHOT_PATHS } from '../releaseInventoryLicenceSnapshots';
 import {
     RELEASE_INVENTORY_PATH,
     restampDependencyBump,

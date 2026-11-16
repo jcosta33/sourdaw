@@ -65,7 +65,6 @@ import {
     GRAND_BOULE_RELEASE_REGISTRY,
     GRAND_BOULE_RUST_SOURCE_ADMISSION,
     grandBouleReleaseInventoryContract,
-    LICENCE_PROJECTED_SNAPSHOT_PATHS,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
     ownerVisualAssetReleaseInventoryContract,
@@ -83,6 +82,7 @@ import {
 } from '../checkReleaseInventory';
 import { licenceInputDigest, licenceInputProjectionKind } from '../dependencyLicenseInputProjection';
 import { DEPENDENCY_LICENSE_PROOFS_PATH, DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
+import { LICENCE_PROJECTED_SNAPSHOT_PATHS } from '../releaseInventoryLicenceSnapshots';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);

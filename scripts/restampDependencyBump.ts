@@ -11,7 +11,6 @@ import {
     ADAPTED_MIT_NOTICE_PATH,
     checkReleaseInventory,
     fileSha256,
-    LICENCE_PROJECTED_SNAPSHOT_PATHS,
     pathAddressedSha256,
     projectLicenseDistributionReleaseInventoryContract,
     REQUIRED_SNAPSHOT_PATHS,
@@ -40,6 +39,7 @@ import {
     DEPENDENCY_LICENSE_ARTIFACT_PATHS,
     writeDependencyLicenseArtifacts,
 } from './generateDependencyLicenseReport.ts';
+import { LICENCE_PROJECTED_SNAPSHOT_PATHS } from './releaseInventoryLicenceSnapshots.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const RELEASE_INVENTORY_PATH = 'release/open-source-inventory.json';

@@ -32,13 +32,13 @@ import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
+import { licenceInputDigest, type LicenceInputProjection } from './dependencyLicenseInputProjection.ts';
+import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import {
-    curatedDependencyLicenseProofsProjection,
-    licenceInputDigest,
-    licenceInputProjectionKind,
-    type LicenceInputProjection,
-} from './dependencyLicenseInputProjection.ts';
-import { DEPENDENCY_LICENSE_PROOFS_PATH, DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+    curatedDependencyLicenseProofsDigest,
+    LICENCE_PROJECTED_SNAPSHOT_PATHS,
+    licenceSnapshotError,
+} from './releaseInventoryLicenceSnapshots.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -65,12 +65,6 @@ export const REQUIRED_SNAPSHOT_PATHS = [
     'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
     'public/wasm/manifest.json',
 ] as const;
-
-/**
- * Snapshots pinned by the licence-input projection the dependency licence proof pins them by, so
- * an edit the proof cannot see (a new script, a crate `[lints]` table) leaves the inventory alone.
- */
-export const LICENCE_PROJECTED_SNAPSHOT_PATHS: readonly string[] = ['package.json', 'Cargo.toml'];
 
 export const RELEASE_INVENTORY_READ_LIMITS = {
     inventoryBytes: 8 * 1024 * 1024,
@@ -1541,20 +1535,6 @@ export function assertAdaptedMitSourceProofs(root: string): void {
     if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
         throw new Error(`${ADAPTED_MIT_LICENSE_PATH}: distributed upstream license drifted`);
     }
-}
-
-/**
- * Pins only the hand-curated `packages` proofs. The proof file's generated Cargo runtime inventory
- * is checked live by the licence preflight against Cargo.lock, the licence-input projections and
- * the dependency licence report, which this surface still pins whole.
- */
-function curatedDependencyLicenseProofsDigest(root: string): string {
-    const projection = curatedDependencyLicenseProofsProjection(
-        readFileSync(resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8'),
-        DEPENDENCY_LICENSE_PROOFS_PATH
-    );
-    const digest = createHash('sha256').update(projection, 'utf8').digest('hex');
-    return `sha256:${digest}:@curated-packages:${DEPENDENCY_LICENSE_PROOFS_PATH}`;
 }
 
 export function projectLicenseDistributionReleaseInventoryContract(root: string): SurfaceContract {
@@ -3058,18 +3038,11 @@ export function validateReleaseInventory(
                 errors.push(`${entry.path}: snapshot path must be tracked`);
             } else if (!/^[0-9a-f]{64}$/.test(entry.sha256)) {
                 errors.push(`${entry.path}: snapshot must be a SHA-256 digest`);
-            } else if (!LICENCE_PROJECTED_SNAPSHOT_PATHS.includes(entry.path)) {
-                if (entry.projection !== undefined) {
-                    errors.push(`${entry.path}: snapshot must pin the whole file`);
-                } else if (snapshot.fileDigests[entry.path] !== entry.sha256) {
-                    errors.push(`${entry.path}: snapshot drifted`);
+            } else {
+                const error = licenceSnapshotError(entry, snapshot);
+                if (error !== undefined) {
+                    errors.push(error);
                 }
-            } else if (entry.projection !== licenceInputProjectionKind(entry.path)) {
-                errors.push(
-                    `${entry.path}: snapshot must pin the ${licenceInputProjectionKind(entry.path)} projection`
-                );
-            } else if (snapshot.snapshotProjectionDigests[entry.path] !== entry.sha256) {
-                errors.push(`${entry.path}: snapshot drifted`);
             }
         }
     }
