@@ -1,5 +1,6 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { getBestAgentReferenceNameRanges } from '../agentReference/getBestAgentReferenceNameRanges';
+import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
 
 /** Words a list of track names may hold besides the names themselves. */
 const TARGET_LIST_WORDS: ReadonlySet<string> = new Set(['the', 'and', '&', 'both', 'track', 'tracks']);
@@ -33,10 +34,6 @@ export const ORDINAL_WORDS: readonly string[] = [
 ];
 
 type ListedTrack = { id: string; name: string };
-
-function escapeRegExp(text: string): string {
-    return text.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-}
 
 function sameName(left: string, right: string): boolean {
     return left.toLowerCase() === right.toLowerCase();
