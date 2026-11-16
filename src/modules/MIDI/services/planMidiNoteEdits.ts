@@ -1,0 +1,301 @@
+import { MAX_MIDI_DATA_7BIT, MIN_AUDIBLE_VELOCITY } from '#/utils/midiData';
+import { MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
+
+import { type MidiNote } from '../models/MidiNote';
+import { cloneMidiNoteForAdmission } from '../transformers/cloneMidiNoteForAdmission';
+import { isMidiNoteSnapshot } from '../transformers/isMidiNoteSnapshot';
+import { normalizeMidiNoteInput } from '../transformers/normalizeMidiNoteInput';
+
+import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
+
+export const MIDI_NOTE_EDIT_MAX_OPERATIONS = 128;
+
+type NotePatch = Partial<Pick<MidiNote, 'pitch' | 'startBeat' | 'duration' | 'velocity'>>;
+type InsertNote = Pick<MidiNote, 'id' | 'pitch' | 'startBeat' | 'duration'> & {
+    velocity?: number;
+    /** Accepted only as the canonical application default, never as a creative edit. */
+    probability?: number;
+};
+
+export type MidiNoteEditOperation =
+    | { type: 'patch'; noteId: string; patch: NotePatch }
+    | { type: 'delete'; noteId: string }
+    | { type: 'insert'; note: InsertNote };
+
+type BeatWindow = { startBeat: number; endBeat: number };
+
+/** Authority supplied by the application, independently of the proposed operations. */
+export type MidiNoteEditScope = {
+    allowedNoteIds: readonly string[];
+    protectedNoteIds: readonly string[];
+    protectedWindows: readonly BeatWindow[];
+    insertionWindows: readonly BeatWindow[];
+    insertionBudget: number;
+};
+
+type NoteEditChange = {
+    type: MidiNoteEditOperation['type'];
+    noteId: string;
+    before: MidiNote | null;
+    after: MidiNote | null;
+};
+
+type RefusalReason =
+    | 'invalid-source'
+    | 'invalid-scope'
+    | 'invalid-operations'
+    | 'operation-budget-exceeded'
+    | 'note-not-found'
+    | 'note-not-allowed'
+    | 'protected-note'
+    | 'protected-window'
+    | 'insert-id-collision'
+    | 'insertion-budget-exceeded'
+    | 'outside-insertion-window';
+
+type PlanResult =
+    | { status: 'planned'; notes: MidiNote[]; changes: NoteEditChange[] }
+    | { status: 'rejected'; reason: RefusalReason; operationIndex?: number };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasKeys(value: object, required: readonly string[], optional: readonly string[] = []): boolean {
+    return (
+        required.every((key) => Object.hasOwn(value, key)) &&
+        Reflect.ownKeys(value).every((key) => typeof key === 'string' && [...required, ...optional].includes(key))
+    );
+}
+
+function isId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isFiniteBeat(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isIntegerInRange(value: unknown, minimum: number): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= MAX_MIDI_DATA_7BIT;
+}
+
+function isNoteField(key: string, value: unknown): boolean {
+    switch (key) {
+        case 'pitch':
+            return isIntegerInRange(value, 0);
+        case 'velocity':
+            return isIntegerInRange(value, MIN_AUDIBLE_VELOCITY);
+        case 'startBeat':
+            return isFiniteBeat(value);
+        case 'duration':
+            return isFiniteBeat(value) && value >= MIDI_NOTE_MIN_DURATION_BEATS;
+        default:
+            return false;
+    }
+}
+
+function isPatch(value: unknown): value is NotePatch {
+    return (
+        isRecord(value) &&
+        Reflect.ownKeys(value).length > 0 &&
+        Reflect.ownKeys(value).every((key) => typeof key === 'string' && isNoteField(key, value[key]))
+    );
+}
+
+function isInsertNote(value: unknown): value is InsertNote {
+    return (
+        isRecord(value) &&
+        hasKeys(value, ['id', 'pitch', 'startBeat', 'duration'], ['velocity', 'probability']) &&
+        isId(value.id) &&
+        ['pitch', 'startBeat', 'duration'].every((key) => isNoteField(key, value[key])) &&
+        (!Object.hasOwn(value, 'velocity') || isNoteField('velocity', value.velocity)) &&
+        (!Object.hasOwn(value, 'probability') || value.probability === 100) &&
+        isFiniteSpan(value.startBeat, value.duration)
+    );
+}
+
+function isOperation(value: unknown): value is MidiNoteEditOperation {
+    if (!isRecord(value)) {
+        return false;
+    }
+    switch (value.type) {
+        case 'patch':
+            return hasKeys(value, ['type', 'noteId', 'patch']) && isId(value.noteId) && isPatch(value.patch);
+        case 'delete':
+            return hasKeys(value, ['type', 'noteId']) && isId(value.noteId);
+        case 'insert':
+            return hasKeys(value, ['type', 'note']) && isInsertNote(value.note);
+        default:
+            return false;
+    }
+}
+
+function isIdList(value: unknown): value is readonly string[] {
+    return Array.isArray(value) && [...value].every(isId) && new Set(value).size === value.length;
+}
+
+function isWindowList(value: unknown): value is readonly BeatWindow[] {
+    return (
+        Array.isArray(value) &&
+        [...value].every(
+            (window) =>
+                isRecord(window) &&
+                hasKeys(window, ['startBeat', 'endBeat']) &&
+                isFiniteBeat(window.startBeat) &&
+                isFiniteBeat(window.endBeat) &&
+                window.endBeat > window.startBeat
+        )
+    );
+}
+
+function isScope(value: MidiNoteEditScope): boolean {
+    return (
+        isRecord(value) &&
+        hasKeys(value, [
+            'allowedNoteIds',
+            'protectedNoteIds',
+            'protectedWindows',
+            'insertionWindows',
+            'insertionBudget',
+        ]) &&
+        isIdList(value.allowedNoteIds) &&
+        isIdList(value.protectedNoteIds) &&
+        isWindowList(value.protectedWindows) &&
+        isWindowList(value.insertionWindows) &&
+        Number.isSafeInteger(value.insertionBudget) &&
+        value.insertionBudget >= 0 &&
+        value.insertionBudget <= MIDI_NOTE_EDIT_MAX_OPERATIONS
+    );
+}
+
+function isFiniteSpan(startBeat: unknown, duration: unknown): boolean {
+    return (
+        isFiniteBeat(startBeat) &&
+        typeof duration === 'number' &&
+        Number.isFinite(duration) &&
+        duration > 0 &&
+        Number.isFinite(startBeat + duration) &&
+        startBeat + duration > startBeat
+    );
+}
+
+function overlapsWindow(note: MidiNote, window: BeatWindow): boolean {
+    return note.startBeat < window.endBeat && note.startBeat + note.duration > window.startBeat;
+}
+
+function copyNote(note: MidiNote): MidiNote {
+    return cloneMidiNoteForAdmission({ ...note });
+}
+
+function patchNote(note: MidiNote, patch: NotePatch): MidiNote {
+    const base =
+        patch.duration !== undefined && patch.duration < note.duration
+            ? sliceMidiNoteExtent(note, { fromOffset: 0, duration: patch.duration })
+            : note;
+    return copyNote({ ...base, ...patch });
+}
+
+/** Plan one clip's ordered edits without writing project state or assigning new identities. */
+export function planMidiNoteEdits(input: {
+    notes: readonly MidiNote[];
+    operations: readonly MidiNoteEditOperation[];
+    scope: MidiNoteEditScope;
+}): PlanResult {
+    if (
+        !isMidiNoteSnapshot(input.notes) ||
+        input.notes.some(
+            (note) =>
+                !isIntegerInRange(note.pitch, 0) ||
+                !isIntegerInRange(note.velocity, MIN_AUDIBLE_VELOCITY) ||
+                !isFiniteSpan(note.startBeat, note.duration)
+        )
+    ) {
+        return { status: 'rejected', reason: 'invalid-source' };
+    }
+    if (!isScope(input.scope)) {
+        return { status: 'rejected', reason: 'invalid-scope' };
+    }
+    if (!Array.isArray(input.operations) || input.operations.length === 0) {
+        return { status: 'rejected', reason: 'invalid-operations' };
+    }
+    if (input.operations.length > MIDI_NOTE_EDIT_MAX_OPERATIONS) {
+        return { status: 'rejected', reason: 'operation-budget-exceeded' };
+    }
+
+    const notes = input.notes.map(copyNote);
+    const changes: NoteEditChange[] = [];
+    const usedIds = new Set(notes.map((note) => note.id));
+    const allowedIds = new Set(input.scope.allowedNoteIds);
+    const protectedIds = new Set(input.scope.protectedNoteIds);
+    let insertedCount = 0;
+    for (const [operationIndex, operation] of input.operations.entries()) {
+        const refuse = (reason: RefusalReason): PlanResult => ({ status: 'rejected', reason, operationIndex });
+        if (!isOperation(operation)) {
+            return refuse('invalid-operations');
+        }
+        if (operation.type === 'insert') {
+            if (usedIds.has(operation.note.id)) {
+                return refuse('insert-id-collision');
+            }
+            if (protectedIds.has(operation.note.id)) {
+                return refuse('protected-note');
+            }
+            insertedCount += 1;
+            if (insertedCount > input.scope.insertionBudget) {
+                return refuse('insertion-budget-exceeded');
+            }
+            const after = normalizeMidiNoteInput(operation.note);
+            if (input.scope.protectedWindows.some((window) => overlapsWindow(after, window))) {
+                return refuse('protected-window');
+            }
+            if (
+                !input.scope.insertionWindows.some(
+                    (window) =>
+                        after.startBeat >= window.startBeat && after.startBeat + after.duration <= window.endBeat
+                )
+            ) {
+                return refuse('outside-insertion-window');
+            }
+            usedIds.add(after.id);
+            notes.push(after);
+            changes.push({ type: 'insert', noteId: after.id, before: null, after: copyNote(after) });
+            continue;
+        }
+
+        const index = notes.findIndex((note) => note.id === operation.noteId);
+        const before = notes[index];
+        if (!before) {
+            return refuse('note-not-found');
+        }
+        if (protectedIds.has(before.id)) {
+            return refuse('protected-note');
+        }
+        if (!allowedIds.has(before.id)) {
+            return refuse('note-not-allowed');
+        }
+        const after = operation.type === 'patch' ? patchNote(before, operation.patch) : null;
+        if (after && !isFiniteSpan(after.startBeat, after.duration)) {
+            return refuse('invalid-operations');
+        }
+        if (
+            input.scope.protectedWindows.some(
+                (window) => overlapsWindow(before, window) || (after !== null && overlapsWindow(after, window))
+            )
+        ) {
+            return refuse('protected-window');
+        }
+        changes.push({
+            type: operation.type,
+            noteId: before.id,
+            before: copyNote(before),
+            after: after === null ? null : copyNote(after),
+        });
+        if (after) {
+            notes[index] = after;
+        } else {
+            notes.splice(index, 1);
+        }
+    }
+    return { status: 'planned', notes, changes };
+}
