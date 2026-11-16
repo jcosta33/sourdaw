@@ -1,15 +1,16 @@
 import { VERSIONED_COMMAND_BATCH_SCHEMA_VERSION } from '../models/VersionedCommandBatchEnvelope';
 
 import { VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION } from './createVerifiedBatchReceipt';
-import { executableAppActionDescriptors } from './executableAppActionRegistry';
-import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
+import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 
 export function getCommandProtocolContracts() {
-    const operations = executableAppActionDescriptors.map((descriptor) => ({
-        name: descriptor.actionType,
-        version: String(getExecutableAppActionOperationVersion(descriptor.actionType)),
-        availability: 'available' as const,
-    }));
+    const operations = getExecutableCommandRegistrations()
+        .filter((registration) => registration.discoverability === 'visible')
+        .map((registration) => ({
+            name: registration.actionType,
+            version: String(registration.operationVersion),
+            availability: 'available' as const,
+        }));
 
     return {
         command: {
