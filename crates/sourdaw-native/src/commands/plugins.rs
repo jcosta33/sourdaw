@@ -8710,7 +8710,7 @@ mod tests {
                     .and_then(|stem| stem.strip_prefix("Broken"))
                     .and_then(|index| index.parse().ok())
                     .expect("fixture names carry their index");
-                if index % 2 == 0 {
+                if index.is_multiple_of(2) {
                     Err(ScanFailure::ExitedUnsuccessfully {
                         path: path.to_path_buf(),
                     })
