@@ -306,6 +306,9 @@ const clipTargetIdsByActionType: ClipTargetLookup = {
 };
 
 function lookupClipTargetIds<Type extends RuntimeActionType>(action: ActionOf<Type>): string[] {
+    if (!Object.hasOwn(clipTargetIdsByActionType, action.type)) {
+        return noClipTargets();
+    }
     return clipTargetIdsByActionType[action.type](action);
 }
 

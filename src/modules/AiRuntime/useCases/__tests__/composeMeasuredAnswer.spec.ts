@@ -67,11 +67,13 @@ function trackScope(id: string, label: string): AnswerRequestAuthority['scopes']
 }
 
 /** A real discovery receipt for the warm recipes, read against the same tracks the intake froze. */
-function discoveryRead(callId: string, targetId: string | null, role: string | null = null): AdmittedAnswerRead {
-    const discovered = discoverMixRecipes(
-        { descriptors: ['warm'], targetId, role, limit: 4 },
-        getProjectContext().tracks
-    );
+function discoveryRead(
+    callId: string,
+    targetId: string | null,
+    role: string | null = null,
+    query: { descriptors: string[]; presetTerms: string[] } = { descriptors: ['warm'], presetTerms: [] }
+): AdmittedAnswerRead {
+    const discovered = discoverMixRecipes({ ...query, targetId, role, limit: 4 }, getProjectContext().tracks);
     if (discovered.status !== 'ok') {
         throw new Error('Discovery fixture must resolve.');
     }
@@ -111,6 +113,19 @@ beforeEach(() => {
         ],
         selectedTrackId: null,
         ghostClips: [],
+    });
+});
+
+describe('an answer about a factory preset that names no perceptual descriptor', () => {
+    it('says the recipe carries no descriptor and never claims it describes one', () => {
+        const read = discoveryRead('recipe', VOCAL_ID, null, { descriptors: [], presetTerms: ['slapback'] });
+        const recipeId = read.source.kind === 'recipe' ? read.source.value.candidates[0]?.id : undefined;
+
+        const answer = accepted(compose([{ kind: 'recipe', callId: 'recipe', recipeId: recipeId ?? '' }], [read]));
+
+        expect(recipeId).toBe('preset:fx-delay-slapback');
+        expect(answer.text).toContain('carries no perceptual descriptor');
+        expect(answer.text).not.toContain('describes');
     });
 });
 
