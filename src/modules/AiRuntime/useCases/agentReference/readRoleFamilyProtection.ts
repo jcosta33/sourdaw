@@ -4,7 +4,7 @@ import {
 } from '../../models/SemanticCommandList';
 
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
-import { CONNECTIVE_WORDS, protectionObjectForms, type Token } from './protectionObjectForms';
+import { CONNECTIVE_WORDS, KIND_NOUNS, protectionObjectForms, type Token } from './protectionObjectForms';
 
 /** The kind nouns a role family word may carry ("the drum tracks", "the vocal bus"). */
 const FAMILY_KIND_NOUNS: ReadonlySet<string> = new Set([
@@ -50,12 +50,21 @@ function opensOnControlVerb(tokens: readonly Token[]): boolean {
 }
 
 /**
+ * A singular kind noun after a family word written as a name ("the Drum Bus" capitalized, with no
+ * such project object) names one object the object forms must bind, never the family.
+ */
+function namesKindObject(word: Token, kindNoun: Token): boolean {
+    return KIND_NOUNS.has(kindNoun.lower) && protectionObjectForms.writesUnboundName([word, kindNoun]);
+}
+
+/**
  * The tracks a protection member keeps when it names one role family and nothing else but its
  * controls, quantifiers before it and a kind noun after it ("the drums", "all the drum tracks", "the
- * drum kit", "the vocals' sends"). A control
- * opening the member as its verb ("mute the drums") names what the request changes and protects nothing. The tokens
- * come with project names blanked and quotations flagged, so "Drum Bus" and a quoted "drums" name no
- * family. A family no track resolves to is none, so the object forms read the member as before.
+ * drum kit", "the vocals' sends"). A control opening the member as its verb ("mute the drums") names
+ * what the request changes and protects nothing. The tokens come with project names blanked and
+ * quotations flagged, so "Drum Bus" and a quoted "drums" name no family, and a capitalized singular
+ * kind form of an absent object ("the Drum Bus") is left to the object forms' unbound refusal. A
+ * family no track resolves to is none, so the object forms read the member as before.
  */
 export function readRoleFamilyProtection(
     tokens: readonly Token[],
@@ -65,14 +74,15 @@ export function readRoleFamilyProtection(
         return null;
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
-    const words = content.filter((token) => !protectionObjectForms.isControl(token.lower)).map((token) => token.lower);
-    const quantifiers = words.findIndex((word) => !QUANTIFIERS.has(word));
-    const [word, kindNoun, ...rest] = quantifiers === -1 ? [] : words.slice(quantifiers);
-    if (word === undefined || rest.length > 0) {
+    const named = content.filter((token) => !protectionObjectForms.isControl(token.lower));
+    const firstNamed = named.findIndex((token) => !QUANTIFIERS.has(token.lower));
+    const [word, kindNoun, ...rest] = firstNamed === -1 ? [] : named.slice(firstNamed);
+    if (word === undefined || rest.length > 0 || (kindNoun !== undefined && namesKindObject(word, kindNoun))) {
         return null;
     }
-    const [family, ...others] = findNamedRoleFamilies(word, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).named;
-    if (family === undefined || others.length > 0 || (kindNoun !== undefined && !isFamilyKindNoun(kindNoun, family))) {
+    const [family, ...others] = findNamedRoleFamilies(word.lower, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).named;
+    const fitsKindNoun = kindNoun === undefined || (family !== undefined && isFamilyKindNoun(kindNoun.lower, family));
+    if (family === undefined || others.length > 0 || !fitsKindNoun) {
         return null;
     }
     const trackIds = familyTrackIds(family);

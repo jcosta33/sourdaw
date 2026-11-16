@@ -198,6 +198,34 @@ describe('readExplicitProtections over a role family', () => {
         });
     });
 
+    describe('in a project with no Drum Bus', () => {
+        const withoutDrumBus: ProjectContext = {
+            ...context,
+            tracks: context.tracks.filter((track) => track.id !== drumBus.id),
+        };
+
+        it.each(["make the mix warmer, don't touch the Drum Bus", 'make the mix warmer, leave the Drum Track alone'])(
+            '"%s" refuses the capitalized kind name as an unbound reference rather than reading the family',
+            (prompt) => {
+                const reading = readExplicitProtections(prompt, withoutDrumBus);
+
+                expect(reading.unresolved).toEqual(['Drum']);
+                expect(reading.protectedTrackIds).toEqual([]);
+            }
+        );
+
+        it.each([
+            "make the mix warmer, don't touch the drum bus",
+            "make the mix warmer, don't touch the Drums",
+            'make the mix warmer, leave the Drum tracks alone',
+        ])('"%s" still reads the drums family: lowercase, a bare word or a plural category', (prompt) => {
+            expect(readExplicitProtections(prompt, withoutDrumBus)).toEqual({
+                ...NOTHING,
+                protectedTrackIds: DRUM_IDS,
+            });
+        });
+    });
+
     it('protects nothing when the family is what the request changes', () => {
         expect(readExplicitProtections('warm up the drums', context)).toEqual(NOTHING);
     });
