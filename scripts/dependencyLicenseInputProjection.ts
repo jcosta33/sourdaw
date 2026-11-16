@@ -12,7 +12,8 @@
  *   `[workspace.dependencies]`), `[features]`, `[patch*]`, `[replace]`, `[workspace]` `members`,
  *   `exclude`, `default-members` and `resolver`, and the `license`/`license-file` keys of
  *   `[package]` and `[workspace.package]`, workspace-inherited and underscore-separated forms
- *   included. Any other key segment ending in `dependencies` outside `[*.metadata]` fails closed,
+ *   included. Keys match after TOML unquoting, so `["dependencies"]` or `"features".x` count as the
+ *   bare spelling Cargo reads them as. Any other key segment ending in `dependencies` outside `[*.metadata]` fails closed,
  *   so a table spelling the projection does not know cannot reach the graph unpinned. Members are the
  *   roots the runtime graph walks from, so a new member brings its dependencies into the proof.
  *   Dev-dependencies stay because `cargo metadata` unifies features across dependency kinds: a
@@ -72,15 +73,137 @@ export function licenceInputProjectionKind(path: string): LicenceInputProjection
     return 'whole-file';
 }
 
-/** `[header]` and the key of one content line joined into one dotted path, whitespace around dots removed. */
-function cargoKeyPath(header: string, line: string, path: string): string {
-    const equalsIndex = line.indexOf('=');
-    if (equalsIndex === -1) {
-        throw new Error(`${path}: unrecognised Cargo manifest line under [${header}]: ${line}`);
+const TOML_BASIC_STRING_ESCAPES: Readonly<Record<string, string>> = {
+    b: '\b',
+    t: '\t',
+    n: '\n',
+    f: '\f',
+    r: '\r',
+    e: '\u001B',
+    '"': '"',
+    '\\': '\\',
+};
+const TOML_BARE_KEY_CHARACTER_PATTERN = /^[A-Za-z0-9_-]$/u;
+const TOML_UNICODE_ESCAPE_DIGIT_COUNTS: Readonly<Record<string, number>> = { u: 4, U: 8 };
+
+type TomlKeySegmentScan = { segment: string; end: number };
+
+/** The decoded value of the basic string key segment (`"..."`) whose opening quote sits at `start`. */
+function scanTomlBasicStringSegment(text: string, start: number, failure: () => Error): TomlKeySegmentScan {
+    let segment = '';
+    let index = start + 1;
+    while (index < text.length) {
+        const char = text.charAt(index);
+        if (char === '"') {
+            return { segment, end: index + 1 };
+        }
+        if (char !== '\\') {
+            segment += char;
+            index += 1;
+            continue;
+        }
+        const escape = text.charAt(index + 1);
+        const digitCount = TOML_UNICODE_ESCAPE_DIGIT_COUNTS[escape];
+        if (digitCount !== undefined) {
+            const digits = text.slice(index + 2, index + 2 + digitCount);
+            if (!new RegExp(`^[0-9A-Fa-f]{${digitCount}}$`, 'u').test(digits)) {
+                throw failure();
+            }
+            segment += String.fromCodePoint(Number.parseInt(digits, 16));
+            index += 2 + digitCount;
+            continue;
+        }
+        const decoded = TOML_BASIC_STRING_ESCAPES[escape];
+        if (decoded === undefined) {
+            throw failure();
+        }
+        segment += decoded;
+        index += 2;
     }
-    const key = line.slice(0, equalsIndex).trim();
+    throw failure();
+}
+
+/** One key segment at `start`: a basic string, a literal string (`'...'`, taken verbatim), or a bare key. */
+function scanTomlKeySegment(text: string, start: number, failure: () => Error): TomlKeySegmentScan {
+    const opening = text.charAt(start);
+    if (opening === '"') {
+        return scanTomlBasicStringSegment(text, start, failure);
+    }
+    if (opening === "'") {
+        const closing = text.indexOf("'", start + 1);
+        if (closing === -1) {
+            throw failure();
+        }
+        return { segment: text.slice(start + 1, closing), end: closing + 1 };
+    }
+    let end = start;
+    while (end < text.length && TOML_BARE_KEY_CHARACTER_PATTERN.test(text.charAt(end))) {
+        end += 1;
+    }
+    if (end === start) {
+        throw failure();
+    }
+    return { segment: text.slice(start, end), end };
+}
+
+function skipTomlWhitespace(text: string, start: number): number {
+    let index = start;
+    while (text.charAt(index) === ' ' || text.charAt(index) === '\t') {
+        index += 1;
+    }
+    return index;
+}
+
+/**
+ * The unquoted segments of the dotted TOML key at the start of `text`, and the index just past it
+ * and any trailing whitespace. A dot inside a quoted segment stays in it, so
+ * `'cfg(target_os = "macos")'` is one segment.
+ */
+function scanTomlDottedKey(text: string, failure: () => Error): { segments: string[]; end: number } {
+    const segments: string[] = [];
+    let index = skipTomlWhitespace(text, 0);
+    for (;;) {
+        const scanned = scanTomlKeySegment(text, index, failure);
+        segments.push(scanned.segment);
+        index = skipTomlWhitespace(text, scanned.end);
+        if (text.charAt(index) !== '.') {
+            return { segments, end: index };
+        }
+        index = skipTomlWhitespace(text, index + 1);
+    }
+}
+
+/** `[header]` and the key of one content line, whitespace around dots removed, as written. */
+function cargoRawKeyPath(header: string, line: string): string {
+    const key = line.slice(0, Math.max(line.indexOf('='), 0)).trim();
     const trimmedHeader = header.trim();
     return (trimmedHeader === '' ? key : `${trimmedHeader}.${key}`).replaceAll(/\s*\.\s*/gu, '.');
+}
+
+/**
+ * `[header]` and the key of one content line as one dotted path of unquoted segments, so a quoted
+ * spelling such as `["dependencies"]` or `"features".x` matches the patterns as Cargo reads it.
+ */
+function cargoKeyPath(header: string, line: string, path: string): string {
+    const trimmedHeader = header.trim();
+    // `[[bin]]` reaches here as `[bin]`: an array of tables matches like a table.
+    const tableName =
+        trimmedHeader.startsWith('[') && trimmedHeader.endsWith(']') ? trimmedHeader.slice(1, -1) : trimmedHeader;
+    const headerFailure = (): Error => new Error(`${path}: unreadable Cargo manifest header [${header}]`);
+    const headerSegments: string[] = [];
+    if (tableName.trim() !== '') {
+        const scannedHeader = scanTomlDottedKey(tableName, headerFailure);
+        if (scannedHeader.end !== tableName.length) {
+            throw headerFailure();
+        }
+        headerSegments.push(...scannedHeader.segments);
+    }
+    const lineFailure = (): Error => new Error(`${path}: unrecognised Cargo manifest line under [${header}]: ${line}`);
+    const scannedKey = scanTomlDottedKey(line, lineFailure);
+    if (line.charAt(scannedKey.end) !== '=') {
+        throw lineFailure();
+    }
+    return [...headerSegments, ...scannedKey.segments].join('.');
 }
 
 function isCargoLicenceGraphKey(keyPath: string): boolean {
@@ -109,7 +232,7 @@ export function cargoManifestLicenceGraphProjection(text: string, path: string):
         if (isCargoLicenceGraphKey(keyPath)) {
             entries.push(`[${header.trim()}]\n${line}`);
         } else if (CARGO_DEPENDENCY_SEGMENT_PATTERN.test(keyPath) && !CARGO_METADATA_KEY_PATTERN.test(keyPath)) {
-            throw new Error(`${path}: unrecognised dependency table key ${keyPath}`);
+            throw new Error(`${path}: unrecognised dependency table key ${cargoRawKeyPath(header, line)}`);
         }
     }
     return `${entries.sort().join('\n')}\n`;

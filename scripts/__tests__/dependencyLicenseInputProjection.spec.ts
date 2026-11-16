@@ -209,6 +209,82 @@ libc = "0.2"
         expect(edited).not.toBe(underscoreBaseline);
     });
 
+    // TOML reads a quoted key segment as its unquoted text, so Cargo sees each table below as the
+    // bare spelling; a quoted dependency table must pin like a bare one.
+    const QUOTED_MANIFEST = `"features".x = ["a"]
+
+[package]
+name = "demo"
+"license" = "MIT"
+"description" = "Demo crate"
+
+["dependencies"]
+serde = "1"
+
+['build-dependencies']
+cc = "1"
+
+[target.x."dependencies"]
+libc = "0.2"
+
+[target.'cfg(unix)'."dev-dependencies"]
+tempfile = "3"
+
+["patch".crates-io]
+cpal = { path = "vendor/cpal" }
+`;
+    const quotedBaseline = cargoManifestLicenceGraphProjection(QUOTED_MANIFEST, 'Cargo.toml');
+
+    it.each([
+        ['["dependencies"] add', 'serde = "1"\n', 'serde = "1"\nrtrb = "0.4"\n'],
+        ["['build-dependencies'] add", 'cc = "1"\n', 'cc = "1"\nnapi-build = "2"\n'],
+        ['[target.x."dependencies"] add', 'libc = "0.2"\n', 'libc = "0.2"\nnix = "0.29"\n'],
+        [`[target.'cfg(unix)'."dev-dependencies"] add`, 'tempfile = "3"\n', 'tempfile = "3"\nproptest = "1"\n'],
+        ['root "dependencies".evil add', '"features".x', '"dependencies".evil = "1"\n"features".x'],
+        ['root "features".x change', '"features".x = ["a"]', '"features".x = ["a", "b"]'],
+        [
+            '["patch".crates-io] add',
+            'path = "vendor/cpal" }\n',
+            'path = "vendor/cpal" }\nrubato = { path = "vendor/rubato" }\n',
+        ],
+        ['[package] "license" change', '"license" = "MIT"', '"license" = "Apache-2.0"'],
+    ])('moves the Cargo projection on the quoted spelling %s', (_change, before, after) => {
+        expect(QUOTED_MANIFEST).toContain(before);
+        const edited = cargoManifestLicenceGraphProjection(QUOTED_MANIFEST.replace(before, after), 'Cargo.toml');
+        expect(edited).not.toBe(quotedBaseline);
+    });
+
+    it('leaves the Cargo projection alone on a quoted key the licence graph does not read', () => {
+        const before = '"description" = "Demo crate"';
+        expect(QUOTED_MANIFEST).toContain(before);
+        const edited = cargoManifestLicenceGraphProjection(
+            QUOTED_MANIFEST.replace(before, '"description" = "A demo crate"'),
+            'Cargo.toml'
+        );
+        expect(edited).toBe(quotedBaseline);
+    });
+
+    it('keeps a quoted target cfg table whole, dots and quotes inside the cfg included', () => {
+        const manifest = `[target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-rs = "0.13"
+
+[target."cfg(all(unix, target_env = \\"gnu\\"))".dependencies]
+libc = "0.2"
+
+[target.'cfg(unix)'.dev_dependencies]
+nix = "0.29"
+`;
+        expect(cargoManifestLicenceGraphProjection(manifest, 'Cargo.toml')).toBe(
+            `[target."cfg(all(unix, target_env = \\"gnu\\"))".dependencies]\nlibc = "0.2"\n` +
+                `[target.'cfg(target_os = "macos")'.dependencies]\ncoreaudio-rs = "0.13"\n` +
+                `[target.'cfg(unix)'.dev_dependencies]\nnix = "0.29"\n`
+        );
+        // The digest the pre-unquoting matcher gave this fixture: unquoting changes which keys match, never the bytes.
+        expect(licenceInputDigest('Cargo.toml', Buffer.from(MANIFEST, 'utf8')).sha256).toBe(
+            'fd584f235c7b542351fb43f1b8e7568c322fce84506fd9a014850312197395a9'
+        );
+    });
+
     it('fails closed on a dependency table spelling the projection does not know', () => {
         expect(() =>
             cargoManifestLicenceGraphProjection('[target.\'cfg(unix)\'.devdependencies]\nlibc = "0.2"\n', 'Cargo.toml')
