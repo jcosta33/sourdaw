@@ -28,8 +28,7 @@
             "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": false,
-            "pendingContract": "recipe.discover and recipe.expand"
+            "sealed": true
         },
         "whole-project-vibe-with-constraint": {
             "sealed": true
@@ -418,30 +417,297 @@
             "id": "AC067-HO-MULTI-1",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
-            "prompt": "make the chorus hit harder",
-            "providerTurns": [],
+            "prompt": "the lead vocal sounds muddy in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Lead Vocal"],
+                    "objectives": [
+                        {
+                            "recipeId": "vocal-muddy",
+                            "targetName": "Lead Vocal",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["muddy"],
+                    "targetName": "Lead Vocal",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "vocal-muddy",
+                    "targetName": "Lead Vocal",
+                    "role": "vocal"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Lead Vocal"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Lead Vocal"]
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 325
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": -3.5
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.85
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 150
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": -2
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "low-mid",
+                        "relation": "decrease",
+                        "target": "Lead Vocal"
+                    }
+                ]
             }
         },
         {
             "id": "AC067-HO-MULTI-2",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
-            "prompt": "polish the low end",
-            "providerTurns": [],
+            "prompt": "the snare sounds boxy in the verse",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Snare"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-muddy",
+                            "targetName": "Snare",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["muddy"],
+                    "targetName": "Snare",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-muddy",
+                    "targetName": "Snare",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Snare"],
+                    "rangeName": "Verse",
+                    "metrics": ["frequencyBandEnergy"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Snare"]
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 375
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": -3.5
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.85
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "low-mid",
+                        "relation": "decrease",
+                        "target": "Snare"
+                    }
+                ]
             }
         },
         {
             "id": "AC067-HO-MULTI-3",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
-            "prompt": "tighten up the drums",
-            "providerTurns": [],
+            "prompt": "the kick needs more weight in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Kick"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-thin",
+                            "targetName": "Kick",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["thin"],
+                    "targetName": "Kick",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-thin",
+                    "targetName": "Kick",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Kick"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy", "rms"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Kick"]
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 80
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": 3
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 240
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 1.75
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-q",
+                            "value": 1.15
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "increase",
+                        "target": "Kick"
+                    },
+                    {
+                        "metric": "rms",
+                        "relation": "increase",
+                        "target": "Kick"
+                    }
+                ]
             }
         },
         {
