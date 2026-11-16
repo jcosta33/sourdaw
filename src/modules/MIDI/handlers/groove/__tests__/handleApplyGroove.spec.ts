@@ -31,13 +31,13 @@ beforeEach(() => {
 });
 
 describe('handleApplyGroove — execute', () => {
-    it('calls assignGrooveTemplate with the correct input', () => {
+    it('calls assignGrooveTemplate with the correct input', async () => {
         mockedAssign.mockReturnValue({
             ok: true,
             status: 'written',
             assignment: { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 },
         });
-        handleApplyGroove.execute(baseAction);
+        await handleApplyGroove.execute(baseAction);
         expect(mockedAssign).toHaveBeenCalledTimes(1);
         const arg = mockedAssign.mock.calls[0]?.[0];
         expect(arg).toEqual({ consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 0.8 });
@@ -48,13 +48,13 @@ describe('handleApplyGroove — execute', () => {
         expect(() => handleApplyGroove.execute(baseAction)).toThrow(/Groove assignment rejected/);
     });
 
-    it('defaults amount to 1 when not provided', () => {
+    it('defaults amount to 1 when not provided', async () => {
         mockedAssign.mockReturnValue({
             ok: true,
             status: 'written',
             assignment: { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 },
         });
-        handleApplyGroove.execute({ type: 'applyGroove', payload: { clipId: 'c1', grooveId: 'g1' } });
+        await handleApplyGroove.execute({ type: 'applyGroove', payload: { clipId: 'c1', grooveId: 'g1' } });
         const arg = mockedAssign.mock.calls[0]?.[0];
         expect(arg?.amount).toBe(1);
     });

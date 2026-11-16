@@ -15,8 +15,8 @@ describe('handleSetLayerParameter', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards the full payload', () => {
-        handleSetLayerParameter.execute({
+    it('forwards the full payload', async () => {
+        await handleSetLayerParameter.execute({
             type: 'setLayerParameter',
             payload: { layerId: 'L', paramName: 'Gain', value: 3 },
         });

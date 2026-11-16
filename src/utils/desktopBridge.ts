@@ -361,6 +361,17 @@ export async function desktopOpenDialog(options: DesktopOpenDialogOptions = {}):
     return sourdawBridge().dialog.open(options);
 }
 
+/** What asking the desktop shell to pick and grant a plugin folder came to. */
+export type DesktopPluginFolderAddResult = Awaited<ReturnType<SourdawDesktopBridge['pluginFolders']['add']>>;
+
+/**
+ * Open the native folder picker and grant the pick as a plugin scan root.
+ * The shell grants only the folder its own picker returned.
+ */
+export async function desktopAddPluginFolder(): Promise<DesktopPluginFolderAddResult> {
+    return sourdawBridge().pluginFolders.add();
+}
+
 /** Open a native save dialog. Resolves `null` when the user cancels. */
 export async function desktopSaveDialog(options: DesktopSaveDialogOptions = {}): Promise<string | null> {
     return sourdawBridge().dialog.save(options);
@@ -379,6 +390,15 @@ export async function desktopSamplesBaseUrl(): Promise<string> {
 /** Total physical memory of the desktop machine, in bytes. A positive safe integer; the bridge refuses anything else. */
 export async function desktopTotalMemoryBytes(): Promise<number> {
     return sourdawBridge().system.totalMemoryBytes();
+}
+
+/**
+ * What a model's weights may occupy on the desktop machine's GPU, in bytes, or null when the OS does not
+ * report it. Not the system total. A positive safe integer when known; the bridge refuses anything else.
+ */
+export async function desktopGpuMemoryBudgetBytes(): Promise<number | null> {
+    const budget = await sourdawBridge().system.gpuMemoryBudgetBytes();
+    return budget.state === 'known' ? budget.bytes : null;
 }
 
 /** The platform the desktop shell runs on, or null off-desktop. */

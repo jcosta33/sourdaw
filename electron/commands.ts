@@ -89,6 +89,7 @@ export const EXPOSED_COMMANDS = [
     'get_crumbs_position',
     'get_crumbs_recording_state',
     'get_default_plugin_paths',
+    'get_plugin_folder_grants',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
     'get_waveform_peaks',
@@ -112,6 +113,7 @@ export const EXPOSED_COMMANDS = [
     'release_levain_bank',
     'render_graph_offline',
     RETIRE_NATIVE_ENGINE,
+    'revoke_plugin_folder_grant',
     SCAN_PLUGINS,
     'seal_export_file',
     'send_push_midi',
@@ -191,6 +193,14 @@ export const EXPOSED_COMMANDS = [
  * addon, for the path a native dialog is about to return, which is what makes
  * "the user picked this" the only way a path becomes reachable.
  *
+ * `grant_plugin_folder` is denied for the same reason as `grant_path`
+ * (jcosta33/sourdaw#6574): it widens the roots `scan_plugins` loads plugin
+ * code from. The main process calls it on the addon with the folder its own
+ * picker returned, on a channel that takes no path from the renderer. Its
+ * read and revoke counterparts, `get_plugin_folder_grants` and
+ * `revoke_plugin_folder_grant`, are exposed: listing grants reveals only
+ * folders the user picked, and revoking one can only narrow what is scanned.
+ *
  * `begin_renderer_session` is denied like `grant_path` for the reason it
  * exists (jcosta33/sourdaw#4752): it is the main process's own admission of a
  * renderer session — the bump that strands every retrospective arm the
@@ -246,6 +256,7 @@ export const DENIED_COMMANDS = [
     'get_asr_status',
     'get_link_status',
     'grant_path',
+    'grant_plugin_folder',
     'hide_all_plugin_guis',
     'is_plugin_gui_supported',
     'link_start_playing',

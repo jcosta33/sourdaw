@@ -15,6 +15,7 @@
 //! The event sink is a threadsafe function registered once at construction. It
 //! takes owned arguments and is never reachable from the render callback.
 
+mod gpu;
 mod windows;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -658,6 +659,13 @@ impl SourdawNative {
         )?)
     }
 
+    /// Shell plumbing for the scan utility's terminate path, never a renderer
+    /// command. Synchronous so it completes before the process exits.
+    #[napi]
+    pub fn stop_plugin_scan_helpers(&self) {
+        crate::stop_plugin_scan_helpers();
+    }
+
     #[napi]
     pub async fn get_default_plugin_paths(&self) -> Result<Vec<String>> {
         reason(commands::plugins::get_default_plugin_paths().await)
@@ -666,6 +674,34 @@ impl SourdawNative {
     #[napi]
     pub async fn is_scan_path_authorized(&self, path: String) -> Result<bool> {
         reason(commands::plugins::is_scan_path_authorized(path).await)
+    }
+
+    /// Grant one plugin folder the user picked. Main process only.
+    ///
+    /// The shell withholds this from the renderer's command surface, and that
+    /// is the whole point of it: a page that could mint its own plugin folder
+    /// could have the scan and the loader execute native code from anywhere.
+    /// The shell calls it with the path a native folder dialog just returned,
+    /// and gets back the canonical path that was granted.
+    #[napi]
+    pub async fn grant_plugin_folder(&self, path: String) -> Result<String> {
+        reason(commands::plugin_folders::grant_plugin_folder(path).await)
+    }
+
+    /// The granted plugin folders, each with the reason it is unavailable
+    /// when it is.
+    #[napi]
+    pub async fn get_plugin_folder_grants(&self) -> Result<Value> {
+        json(reason(
+            commands::plugin_folders::get_plugin_folder_grants().await,
+        )?)
+    }
+
+    /// Revoke one granted plugin folder. Safe for the renderer: revoking only
+    /// narrows what the scan may reach.
+    #[napi]
+    pub async fn revoke_plugin_folder_grant(&self, path: String) -> Result<()> {
+        reason(commands::plugin_folders::revoke_plugin_folder_grant(path).await)
     }
 
     #[napi]

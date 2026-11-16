@@ -14,8 +14,8 @@ never advertised and never loaded. VST is a registered trademark of Steinberg Me
 ## 1. Scan roots
 
 Built-in scan roots are owned by the native layer. `get_default_plugin_paths` returns the platform roots
-that Sourdaw is willing to scan by default, and `scan_plugins` accepts only those roots or their
-descendants.
+that Sourdaw is willing to scan by default, and `scan_plugins` accepts only those roots, the folders the
+user granted, or their descendants.
 
 The default set is each format's own installation folders on the running platform, as those formats'
 specifications define them. `crates/sourdaw-native/src/host/plugin_scan_policy.rs` is the list; this
@@ -33,8 +33,48 @@ and Sourdaw resolves them from the shell's own known folders (`FOLDERID_ProgramF
 `FOLDERID_LocalAppData`) — the same query the VST® 3 SDK's Windows host module makes — rather than from
 a drive letter or from the process environment. A folder the shell cannot name is left out, not guessed.
 
-Custom plugin folders require a future native grant or trusted preference flow before they can be scanned.
-A renderer-provided absolute path is not enough authority.
+### Custom plugin folders are granted by a native folder pick
+
+A plugin folder outside the defaults is scanned only once the user has granted it
+([ADR 0061](../../.agents/decisions/0061-plugin-folders-are-granted-by-a-native-folder-pick.md)). A
+renderer-provided absolute path is not enough authority, and no other route adds one.
+
+- **Origin.** A grant is minted only inside the main-process handler that owns a native folder
+  dialog's result: the handler passes the path the dialog returned straight to the addon's
+  grant command. The renderer never sends a path to be granted, and the grant command is denied
+  to the renderer's command surface.
+- **Storage.** Grants persist in the private native state directory, which no file command resolves
+  into and no project or collaborator writes. The file is not authority by itself; it is bounded in
+  size and count and read whole or not at all.
+- **Re-validation.** Every use — each scan, registry hydration and plugin load builds its policy
+  afresh — re-runs the pick's checks on each stored grant and requires it to resolve to exactly the
+  path that was granted. A granted folder that is missing (a drive not connected), has become a
+  symbolic link or now resolves elsewhere grants nothing and is listed unavailable with its reason;
+  a folder swapped for a symbolic link is refused, never followed. An unavailable grant stays
+  recorded so a reconnected drive works again.
+- **Overlap refusals.** A pick is refused when it is a filesystem root, the user's home folder or an
+  ancestor of it — any of which would hand the scan every file the user owns — when it is inside or
+  contains a default plugin folder, which keeps the defaults' priority order the only one that
+  applies to them, and when it is inside or contains storage the renderer may write without a user
+  pick, because a plugin folder there would let a page plant native code that the scan and the
+  loader then execute. For the same reason a pick is refused when it is inside or contains a path
+  the user granted read-write file access to, and a stored grant becomes unavailable once such a
+  file grant appears. A pick inside an existing grant is refused; one containing existing grants
+  replaces them, so grants never overlap.
+- **No file writes into plugin folders.** The other direction holds at the file commands: no
+  read-write file grant admits a write inside a default plugin folder or a stored plugin folder
+  grant, available or not, and a read-write pick inside one is refused at the dialog. A pick that
+  contains one, such as the home folder, stays writable everywhere else, because refusing it would
+  refuse the most ordinary project folder choice on Linux. A folder that does not exist yet keeps
+  the renderer's spelling, so containment compares names as the volume does: case-folded on macOS
+  and Windows, Unicode-normalized on macOS, and without trailing dots and spaces on Windows.
+- **Ranking.** Granted folders rank after every default folder, in grant order, so a copy of a
+  plugin in a default folder always wins.
+- **Revocation.** Revoking removes the stored grant; the next policy built refuses the folder and
+  every plugin under it. Revoking only narrows authority, so the renderer may ask for it.
+
+Exactly one production constructor widens the scan policy past the platform defaults, and it reads
+only this grant store. `get_default_plugin_paths` still reports the defaults alone.
 
 ### `CLAP_PATH` is not a scan root
 
@@ -45,11 +85,8 @@ The variable is outside the renderer's reach, but that is not what makes a root 
 scan root is an authority the native layer grants, and every path it adds is third-party code the scan
 worker loads. `CLAP_PATH` is a custom root set by whatever launched the process — a shell profile, a
 launcher, an installer's leftover — with no grant, no record, and no way for the person running
-Sourdaw to see or revoke it. Honouring it would open the user-supplied-folder route this policy keeps
-closed until the native grant flow exists, and would do it through the one channel that flow could
-never show in settings. When that grant flow is designed, whether `CLAP_PATH` entries can be offered
-as grants is a question for that design; until then, a plugin outside the default folders is not
-scanned, whatever the environment says.
+Sourdaw to see or revoke it. A user who keeps plugins in a `CLAP_PATH` folder picks that folder in the
+plugin-folder dialog like any other, and from then on it is a grant they can see and revoke.
 
 The scanner also refuses symlinked plugin paths, including paths with symlinked ancestors. A symlink
 under or at an allowed root must not become an implicit grant to scan or load a target outside the

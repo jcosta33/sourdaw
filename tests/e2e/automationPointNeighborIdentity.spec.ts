@@ -157,7 +157,8 @@ async function prepareNearbyPoints(page: Page) {
 
 test('dragging one nearby point preserves its neighbor through Undo and Redo', async ({ page }, testInfo) => {
     const { observer, before, lane, pixelsPerBeat, hit } = await prepareNearbyPoints(page);
-    const [target, neighbor] = lane.points;
+    const target = lane.points.at(0);
+    const neighbor = lane.points.at(1);
     if (!target || !neighbor) {
         throw new Error('Two captured points are required');
     }
@@ -235,7 +236,7 @@ test('Escape restores only the dragged point and records no movement history', a
         )
         .toEqual([expectedPreview, expectedPreview]);
     const preview = await observer.evaluate((o) => o.snapshot());
-    const neighbor = lane.points[1];
+    const neighbor = lane.points.at(1);
     if (!neighbor) {
         throw new Error('The original neighbor is required');
     }

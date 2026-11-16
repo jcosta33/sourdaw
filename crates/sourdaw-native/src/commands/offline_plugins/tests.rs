@@ -17,6 +17,8 @@ use crate::commands::graph::render_graph_offline_with;
 use crate::commands::plugins::{
     create_hosted_runtime, read_plugin_state_chunk, VettedRegistryEntry,
 };
+use crate::host::plugin_folder_grants::grant_at;
+use crate::host::plugin_folder_grants::test_support::TempTree;
 use crate::host::plugin_registry_store::plugin_file_fingerprint;
 use crate::host::ui_thread::UiThreadTask;
 use crate::state::{EnginePluginInstanceData, PluginRegistryEntry, TimelineSample};
@@ -1000,6 +1002,65 @@ fn a_reload_between_the_mapping_and_the_build_refuses_the_render_by_name() {
         "{refusal}"
     );
     assert_eq!(ui.tasks_run(), 0, "nothing is built");
+}
+
+// ── Granted plugin folders ──────────────────────────────────────────────
+
+/// A forbidden set inside `tree`, clear of the fixture's own folder.
+fn forbidden_in(tree: &TempTree) -> ForbiddenRoots {
+    ForbiddenRoots {
+        home: Some(tree.dir("home/musician")),
+        default_roots: vec![tree.dir("defaults/VST3")],
+        app_storage_roots: vec![tree.dir("app-storage")],
+        renderer_writable_grants: Vec::new(),
+    }
+}
+
+/// An export through the production seams over a grant store that holds the
+/// fixture's folder, or nothing.
+fn export_through_production_seams(name: &str, granted: bool) -> Result<Vec<f32>, String> {
+    let fx = InstalledFx::create(name);
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let tree = TempTree::create(name);
+    let forbidden = forbidden_in(&tree);
+    if granted {
+        grant_at(&tree.store(), &forbidden, &fx.root).expect("the fixture folder is grantable");
+    }
+    let seams = OfflinePluginSeams::over_grant_store(Some(&tree.store()), &forbidden);
+    render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+}
+
+/// The re-vet authorizes what a live load does: a plugin under a folder the
+/// user granted prints.
+#[test]
+fn a_plugin_under_a_granted_folder_passes_the_offline_re_vet_and_prints() {
+    let print = export_through_production_seams("granted-folder", true)
+        .expect("a plugin from a granted folder renders offline");
+    assert!(
+        print.iter().any(|sample| *sample != 0.0),
+        "the print carries the effect's output"
+    );
+}
+
+/// The same export with nothing granted is refused by name: the grant is what
+/// admitted it.
+#[test]
+fn a_plugin_under_an_ungranted_folder_is_refused_by_the_offline_re_vet() {
+    let refusal = export_through_production_seams("ungranted-folder", false)
+        .expect_err("a plugin outside every authorized folder is refused");
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("Unauthorized plugin scan path"),
+        "{refusal}"
+    );
 }
 
 #[test]

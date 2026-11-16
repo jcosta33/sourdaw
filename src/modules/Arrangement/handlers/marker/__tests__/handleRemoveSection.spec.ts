@@ -20,9 +20,9 @@ beforeEach(() => {
 });
 
 describe('handleRemoveSection — execute', () => {
-    it('calls removeSection with sectionId', () => {
+    it('calls removeSection with sectionId', async () => {
         mockedRemove.mockReturnValue(true);
-        handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 's1' } });
+        await handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 's1' } });
         expect(mockedRemove).toHaveBeenCalledWith('s1');
     });
 
@@ -82,7 +82,16 @@ describe('handleRemoveSection — describe', () => {
         const result = handleRemoveSection.describe({ type: 'removeSection', payload: { sectionId: 's1' } });
         expect(result.inverseAction).toEqual({
             type: 'addSection',
-            payload: { startBeat: 8, endBeat: 24, name: 'Chorus', sectionId: 's1', color: '#0f0', index: 1 },
+            payload: {
+                startBeat: 8,
+                endBeat: 24,
+                name: 'Chorus',
+                sectionId: 's1',
+                color: '#0f0',
+                index: 1,
+                beforeId: 's2',
+                afterId: 's0',
+            },
         });
     });
 });

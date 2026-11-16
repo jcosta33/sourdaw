@@ -5,6 +5,7 @@ import { handleDiscardCreatedTrack } from '../discardCreatedTrack';
 const mocks = vi.hoisted(() => ({
     finalizeRuntimeRemoval: vi.fn(),
     finalizeModulationRemoval: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
     getTrackStoreState: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     publishTrackRemoved: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: mocks.wireSidechainRoutes,
-    getAllSidechainRoutes: vi.fn(),
+    getAllSidechainRoutes: mocks.getAllSidechainRoutes,
     hydrateSidechainRoutes: vi.fn(),
 }));
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -346,6 +347,105 @@ describe('handleDiscardCreatedTrack', () => {
 
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
+    });
+
+    describe('guard against the created track with captured plugin state (issue #6597)', () => {
+        const createdDevice = {
+            id: 'created-device',
+            name: 'Hosted Synth',
+            type: 'external',
+            bypassed: false,
+            parameterValues: { cutoff: 0.5 },
+            externalPluginId: 'plugin-1',
+            externalInstanceId: 'instance-1',
+            externalStateChunk: 'c2F2ZWQ=',
+        };
+        const createdTrack = { id: 'created', name: 'Created', clips: [], sends: [], devices: [createdDevice] };
+        const { externalStateChunk: _createdChunk, ...deviceWithoutChunk } = createdDevice;
+
+        // Each live device diverges from the fingerprinted one; only the first two
+        // diverge in the plugin's state chunk alone.
+        const cases = [
+            { drift: 'a different chunk', device: { ...createdDevice, externalStateChunk: 'ZWRpdGVk' }, admits: true },
+            { drift: 'the chunk cleared', device: deviceWithoutChunk, admits: true },
+            {
+                drift: 'a new chunk and a bypass',
+                device: { ...createdDevice, externalStateChunk: 'ZWRpdGVk', bypassed: true },
+                admits: false,
+            },
+            { drift: 'a parameter', device: { ...createdDevice, parameterValues: { cutoff: 0.75 } }, admits: false },
+            {
+                drift: 'another plugin instance',
+                device: { ...createdDevice, externalInstanceId: 'instance-2' },
+                admits: false,
+            },
+            { drift: 'a rename', device: { ...createdDevice, name: 'Renamed' }, admits: false },
+        ];
+
+        function guardedDiscard() {
+            return {
+                type: 'discardCreatedTrack' as const,
+                payload: {
+                    trackId: 'created',
+                    generatedMidiStateGuard: {
+                        entityJson: JSON.stringify(createdTrack),
+                        midiByClipIdJson: '{}',
+                    },
+                },
+            };
+        }
+
+        beforeEach(() => {
+            mocks.getAllSidechainRoutes.mockReturnValue([]);
+            mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval });
+        });
+
+        it.each(cases)('validate admits only chunk drift: $drift', ({ device, admits }) => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ ...createdTrack, devices: [device] }] });
+            const action = guardedDiscard();
+            const validate = handleDiscardCreatedTrack.validate;
+            if (!validate) {
+                throw new Error('Expected discardCreatedTrack to provide validation');
+            }
+
+            expect(validate(action, { actions: [action], actionIndex: 0 })).toBe(admits);
+        });
+
+        // The chunk exemption strips device state alone: a created track's clips still
+        // count on the validate route whose guard names no MIDI clip.
+        const createdClip = { id: 'created-clip', trackId: 'created', name: 'Take', startBeat: 0, endBeat: 4 };
+        const clipCases = [
+            { drift: 'none', clip: createdClip, admits: true },
+            { drift: 'a clip rename', clip: { ...createdClip, name: 'Renamed take' }, admits: false },
+            { drift: 'a clip move', clip: { ...createdClip, startBeat: 1 }, admits: false },
+        ];
+
+        it.each(clipCases)('validate still compares the created clips: $drift', ({ clip, admits }) => {
+            const trackWithClip = { ...createdTrack, clips: [createdClip] };
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ ...trackWithClip, clips: [clip] }] });
+            const action = {
+                type: 'discardCreatedTrack' as const,
+                payload: {
+                    trackId: 'created',
+                    generatedMidiStateGuard: { entityJson: JSON.stringify(trackWithClip), midiByClipIdJson: '{}' },
+                },
+            };
+            const validate = handleDiscardCreatedTrack.validate;
+            if (!validate) {
+                throw new Error('Expected discardCreatedTrack to provide validation');
+            }
+
+            expect(validate(action, { actions: [action], actionIndex: 0 })).toBe(admits);
+        });
+
+        it.each(cases)('execute admits only chunk drift: $drift', async ({ device, admits }) => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ ...createdTrack, devices: [device] }] });
+
+            const result = await handleDiscardCreatedTrack.execute(guardedDiscard());
+
+            expect(result?.status).toBe(admits ? 'written' : 'conflict');
+            expect(mocks.removeTrack).toHaveBeenCalledTimes(admits ? 1 : 0);
+        });
     });
 
     it('is an internal non-undoable compensation action', () => {

@@ -268,6 +268,7 @@ export function retargetCommittedRecipe(input: {
                 status: 'recipe',
                 grounded: batch.grounded,
                 adoptedRecipes: batch.adoptedRecipes,
+                compilations: batch.compilations,
                 creativeAuthority: batch.creativeAuthority,
             };
         default: {

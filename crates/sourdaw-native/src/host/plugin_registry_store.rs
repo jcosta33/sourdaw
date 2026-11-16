@@ -342,6 +342,9 @@ impl PersistedPluginEntry {
 enum ResolutionOutcome {
     /// A caller is inside this key's rescan right now.
     InProgress,
+    /// The rescan's helper ran out of time once, which decided nothing about
+    /// the plugin. The next claim is granted, and is the key's last.
+    TimedOutOnce,
     /// The rescan ran and the plugin was not there, with the refusal it
     /// produced.
     Refused(String),
@@ -364,7 +367,8 @@ struct StoredRegistry {
     /// [`PluginRegistryStore::apply_completed_scan_removals`].
     entries: BTreeMap<String, PersistedPluginEntry>,
     /// One entry per registry key whose miss this process has already tried to
-    /// resolve. Bounds the targeted rescan to once per key per process; see
+    /// resolve. Bounds the targeted rescan to once per key per process, plus
+    /// one retry when the first attempt's helper timed out; see
     /// [`PluginRegistryStore::claim_rescan`].
     resolutions: HashMap<String, ResolutionOutcome>,
     /// How many callers are parked in [`PluginRegistryStore::wait_for_rescan`]
@@ -392,28 +396,41 @@ struct StoredRegistry {
     quarantine_touched: BTreeSet<String>,
 }
 
-/// The verdict on a caller's request to run the one targeted rescan a registry
-/// key gets per process.
+/// The verdict on a caller's request to run the targeted rescan a registry key
+/// gets per process: one, plus one retry when the first one's helper timed out.
 pub enum RescanClaim<'a> {
-    /// Nobody has rescanned this key yet. The caller owns the attempt and must
-    /// settle it.
+    /// Nobody has rescanned this key yet, or its only rescan timed out and this
+    /// is the retry. The caller owns the attempt and must settle it.
     Granted(RescanAttempt<'a>),
-    /// A rescan already ran this process and refused, with this message.
+    /// A rescan already ran this process and refused, or timed out twice, with
+    /// this message.
     Refused(String),
     /// Another caller is inside this key's rescan right now.
     InProgress,
 }
 
-/// The one rescan a registry key gets this process, held while it runs.
+/// The rescan a registry key gets this process, held while it runs.
 ///
-/// Settle it with [`RescanAttempt::refuse`] or [`RescanAttempt::resolved`].
+/// Settle it with [`RescanAttempt::refuse`], [`RescanAttempt::resolved`] or
+/// [`RescanAttempt::inconclusive`].
 /// Dropping it unsettled — a panic in the rescan, an early return — clears the
 /// in-progress marker rather than leaving it, because a marker nothing can
 /// clear would refuse that plugin for the rest of the process.
 pub struct RescanAttempt<'a> {
     store: &'a PluginRegistryStore,
     plugin_id: String,
+    /// Whether this attempt is the retry a timeout earned.
+    after_timeout: bool,
     settled: bool,
+}
+
+/// What a timed-out rescan left the key with.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InconclusiveOutcome {
+    /// Nothing was decided about the plugin; the next load may rescan once.
+    RetryAllowed,
+    /// The retry timed out too, and the key now answers with a refusal.
+    GaveUp,
 }
 
 impl RescanAttempt<'_> {
@@ -427,6 +444,31 @@ impl RescanAttempt<'_> {
             .resolutions
             .insert(self.plugin_id.clone(), ResolutionOutcome::Refused(reason));
         self.store.rescan_settled.notify_all();
+    }
+
+    /// The rescan could not reach a verdict — its helper ran out of time. A
+    /// timeout says nothing about the plugin, so the first one records no
+    /// refusal and the next load of the same id may rescan once more. A
+    /// rescan that is already that retry and times out again records
+    /// `repeated_refusal`: activation reruns on every transport start, and an
+    /// unbounded retry is a ten-second helper per Play.
+    pub fn inconclusive(mut self, repeated_refusal: String) -> InconclusiveOutcome {
+        self.settled = true;
+        let outcome = if self.after_timeout {
+            self.store.lock_stored().resolutions.insert(
+                self.plugin_id.clone(),
+                ResolutionOutcome::Refused(repeated_refusal),
+            );
+            InconclusiveOutcome::GaveUp
+        } else {
+            self.store
+                .lock_stored()
+                .resolutions
+                .insert(self.plugin_id.clone(), ResolutionOutcome::TimedOutOnce);
+            InconclusiveOutcome::RetryAllowed
+        };
+        self.store.rescan_settled.notify_all();
+        outcome
     }
 
     /// The rescan found the plugin. Nothing is recorded: the entry is in the
@@ -443,7 +485,15 @@ impl Drop for RescanAttempt<'_> {
         if self.settled {
             return;
         }
-        self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        let mut stored = self.store.lock_stored();
+        if self.after_timeout {
+            stored
+                .resolutions
+                .insert(self.plugin_id.clone(), ResolutionOutcome::TimedOutOnce);
+        } else {
+            stored.resolutions.remove(&self.plugin_id);
+        }
+        drop(stored);
         self.store.rescan_settled.notify_all();
     }
 }
@@ -490,7 +540,10 @@ impl PluginRegistryStore {
     ///
     /// Entries are admitted only if the policy still authorizes their path and
     /// the file on disk is the file the scan recorded, at the size and age it
-    /// recorded.
+    /// recorded, and its path is not quarantined: a quarantined row stays the
+    /// last-known location but is never a registry hit, so a load misses and
+    /// takes the targeted rescan that runs the helper instead of loading a
+    /// plugin whose helper just crashed.
     /// Anything else is a plugin that has been updated, replaced or removed
     /// since, and resolving it would hand activation a path whose contents no
     /// longer match the descriptor id recorded next to it.
@@ -517,6 +570,7 @@ impl PluginRegistryStore {
         let unchanged_entries: Vec<(String, PluginRegistryEntry)> = stored
             .entries
             .iter()
+            .filter(|(_, entry)| !stored.quarantine.contains_key(&entry.plugin.path))
             .filter(|(_, entry)| entry_is_still_the_scanned_file(entry, scan_policy))
             .map(|(key, entry)| (key.clone(), entry.as_registry_entry()))
             .collect();
@@ -672,7 +726,10 @@ impl PluginRegistryStore {
         stored.quarantine_touched.extend(removed_keys);
     }
 
-    /// Claim the one targeted rescan a registry key gets this process.
+    /// Claim the targeted rescan a registry key gets this process: one, and
+    /// one more only when the first one's helper timed out, which decided
+    /// nothing about the plugin. A key whose retry times out as well answers
+    /// with a recorded refusal like any other.
     ///
     /// The in-memory registry is the only thing bounding how often activation
     /// asks for a plugin it cannot resolve, and it bounds nothing: the frontend
@@ -691,13 +748,14 @@ impl PluginRegistryStore {
     /// flight — must load both, not fail one because the other got there first.
     pub fn claim_rescan(&self, plugin_id: &str) -> RescanClaim<'_> {
         let mut stored = self.lock_stored();
-        match stored.resolutions.get(plugin_id) {
+        let after_timeout = match stored.resolutions.get(plugin_id) {
             Some(ResolutionOutcome::Refused(reason)) => {
                 return RescanClaim::Refused(reason.clone())
             }
             Some(ResolutionOutcome::InProgress) => return RescanClaim::InProgress,
-            None => {}
-        }
+            Some(ResolutionOutcome::TimedOutOnce) => true,
+            None => false,
+        };
         stored
             .resolutions
             .insert(plugin_id.to_string(), ResolutionOutcome::InProgress);
@@ -706,6 +764,7 @@ impl PluginRegistryStore {
         RescanClaim::Granted(RescanAttempt {
             store: self,
             plugin_id: plugin_id.to_string(),
+            after_timeout,
             settled: false,
         })
     }
@@ -723,11 +782,22 @@ impl PluginRegistryStore {
     /// this scan, and the scan is a fresh authoritative look at the same disk:
     /// a plugin that was missing an hour ago and is indexed now must not keep
     /// answering from the older verdict.
+    ///
+    /// A row whose path is quarantined is kept whatever the predicate says. A
+    /// quarantined candidate is scanned but publishes nothing, so the
+    /// predicate reads it as gone; dropping the row would erase the
+    /// last-known location the activation miss path rescans to surface the
+    /// real refusal, and ordinary scans skip the candidate so nothing would
+    /// ever restore it. Quarantine keys are the candidate path's display
+    /// string, the same string a row stores as its `plugin.path`.
     pub fn apply_completed_scan_removals(&self, keeps_persisted_row: impl Fn(&Path) -> bool) {
-        let mut stored = self.lock_stored();
-        stored
-            .entries
-            .retain(|_, entry| keeps_persisted_row(Path::new(&entry.plugin.path)));
+        let mut guard = self.lock_stored();
+        let stored = &mut *guard;
+        let quarantine = &stored.quarantine;
+        stored.entries.retain(|_, entry| {
+            quarantine.contains_key(&entry.plugin.path)
+                || keeps_persisted_row(Path::new(&entry.plugin.path))
+        });
         stored.resolutions.clear();
     }
 
@@ -1433,6 +1503,164 @@ mod tests {
 
     fn one_row(path: &Path, stable_id: &str) -> Vec<ScanRow> {
         rows_for(vec![(stable_id, scanned_plugin(path, stable_id))])
+    }
+
+    /// A row persisted with no file identity, whose file is gone, must not
+    /// hydrate: a missing file and a missing identity both read as `None`, and
+    /// two `None`s are equal without being the same file.
+    ///
+    /// Mutation this catches: dropping `recorded.is_some() &&` from
+    /// `entry_is_still_the_scanned_file`, which resolves the missing file.
+    #[test]
+    fn a_row_without_file_identity_whose_file_is_missing_does_not_hydrate() {
+        let test_root = TestRegistryRoot::create("registry-hydrate-no-identity-missing");
+        let missing_path = test_root.write_plugin_file("Gone.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&missing_path, "aaaa1111"));
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        let mut document: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&location).expect("the registry file was written"),
+        )
+        .expect("the registry file is JSON");
+        for row in document["entries"]
+            .as_object_mut()
+            .expect("the document has entries")
+            .values_mut()
+        {
+            row.as_object_mut()
+                .expect("a row is an object")
+                .remove("file_identity")
+                .expect("this build writes file_identity, so the fixture removes it");
+        }
+        std::fs::write(
+            &location,
+            serde_json::to_vec(&document).expect("JSON writes"),
+        )
+        .expect("the identity-less document is written back");
+        std::fs::remove_file(&missing_path).expect("the plugin file should be removable");
+
+        let next_launch = test_root.store();
+        let registry = Mutex::new(HashMap::new());
+        next_launch.hydrate_into(&registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch.last_known_entry("aaaa1111").is_some(),
+            "the row must reach the file, or this test proves nothing about hydration"
+        );
+        assert!(
+            registry
+                .lock()
+                .expect("registry lock should be available")
+                .is_empty(),
+            "a row with no recorded identity and no file must not become a registry hit"
+        );
+    }
+
+    /// A quarantined candidate is scanned but publishes nothing, so the scan's
+    /// retention predicate reads it as gone. Its row is the last-known
+    /// location the activation miss path rescans, and an ordinary scan skips
+    /// the candidate, so a dropped row would never come back.
+    #[test]
+    fn a_completed_scan_keeps_the_row_of_a_quarantined_path() {
+        let test_root = TestRegistryRoot::create("registry-removal-quarantined");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+
+        // Partial scan (nothing authorized by it) and complete scan (the root
+        // is scanned and nothing was found) both read the row as gone.
+        store.apply_completed_scan_removals(|_| false);
+        store.persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let last_known = next_launch
+            .last_known_entry("aaaa1111")
+            .expect("a quarantined path's row must survive a completed scan");
+        assert_eq!(last_known.plugin.path, plugin_path.display().to_string());
+        assert!(next_launch.is_quarantined(&plugin_path).is_some());
+    }
+
+    /// Only the quarantined path is spared: a sibling row the same scan reads
+    /// as gone still goes.
+    #[test]
+    fn a_completed_scan_still_removes_an_unquarantined_row_beside_a_quarantined_one() {
+        let test_root = TestRegistryRoot::create("registry-removal-sibling");
+        let hostile_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let gone_path = test_root.write_plugin_file("Gone.clap", b"clap-bytes-2");
+        let store = test_root.store();
+        let mut rows = one_row(&hostile_path, "hostile01");
+        rows.extend(one_row(&gone_path, "gone0001"));
+        store.persist(&rows);
+        store.quarantine_failure(&hostile_path, "Plugin scan helper timed out".to_string(), 1);
+
+        store.apply_completed_scan_removals(|_| false);
+
+        assert!(store.last_known_entry("hostile01").is_some());
+        assert!(
+            store.last_known_entry("gone0001").is_none(),
+            "a scanned, unquarantined row that published nothing is gone from disk"
+        );
+    }
+
+    /// A retry clears the quarantine before its helper runs; a row that then
+    /// publishes is replaced normally, and one that still publishes nothing
+    /// is removed like any other.
+    #[test]
+    fn a_cleared_quarantine_no_longer_spares_its_row() {
+        let test_root = TestRegistryRoot::create("registry-removal-cleared");
+        let plugin_path = test_root.write_plugin_file("Retried.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.clear_quarantine(&plugin_path);
+
+        store.apply_completed_scan_removals(|_| false);
+
+        assert!(store.last_known_entry("aaaa1111").is_none());
+    }
+
+    /// A kept quarantined row is replaced by the retry's own publication.
+    #[test]
+    fn a_kept_quarantined_row_is_replaced_when_the_retry_publishes() {
+        let test_root = TestRegistryRoot::create("registry-removal-retry-publishes");
+        let plugin_path = test_root.write_plugin_file("Retried.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.apply_completed_scan_removals(|_| false);
+
+        store.clear_quarantine(&plugin_path);
+        let mut republished = scanned_plugin(&plugin_path, "aaaa1111");
+        republished.version = "2.0.0".to_string();
+        store.persist(&rows_for(vec![("aaaa1111", republished)]));
+        store.apply_completed_scan_removals(|path| path == plugin_path);
+
+        let row = store
+            .last_known_entry("aaaa1111")
+            .expect("the republished row is kept");
+        assert_eq!(row.plugin.version, "2.0.0");
+    }
+
+    /// A kept quarantined row must not become a registry hit on the next
+    /// launch: that would load in process a plugin whose helper just crashed.
+    #[test]
+    fn hydration_keeps_a_quarantined_row_as_last_known_but_not_loadable() {
+        let test_root = TestRegistryRoot::create("registry-hydrate-quarantined");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.persist(&[]);
+
+        let next_launch = test_root.store();
+        let registry = Mutex::new(HashMap::new());
+        next_launch.hydrate_into(&registry, &test_root.scan_policy());
+
+        assert!(registry.lock().expect("registry lock").is_empty());
+        assert!(next_launch.last_known_entry("aaaa1111").is_some());
     }
 
     /// The defect: nothing survived the process, so a saved project reopened

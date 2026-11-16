@@ -24,12 +24,26 @@ export const DIALOG_OPEN_CHANNEL = 'sourdaw:dialog:open';
 export const DIALOG_SAVE_CHANNEL = 'sourdaw:dialog:save';
 export const DIALOG_MESSAGE_CHANNEL = 'sourdaw:dialog:message';
 
+/**
+ * Renderer → main, invoke: pick a folder and grant it as a plugin scan root.
+ *
+ * Takes no arguments. The folder is whatever the native picker in main
+ * returns, so no renderer message can name the path that gets granted.
+ */
+export const PLUGIN_FOLDER_ADD_CHANNEL = 'sourdaw:plugin-folders:add';
+
 /** Renderer → main, invoke: the two path helpers. */
 export const PATHS_SAMPLES_BASE_CHANNEL = 'sourdaw:paths:samples-base';
 export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
 
 /** Renderer → main, invoke: the machine's total physical memory, in bytes. */
 export const SYSTEM_TOTAL_MEMORY_CHANNEL = 'sourdaw:system:total-memory';
+
+/** Renderer → main, invoke: how much GPU memory a model's weights may occupy, when the OS reports it. */
+export const SYSTEM_GPU_MEMORY_BUDGET_CHANNEL = 'sourdaw:system:gpu-memory-budget';
+
+/** The GPU memory budget in bytes: a positive safe integer, or unknown where the OS does not report one. */
+export type GpuMemoryBudget = { readonly state: 'known'; readonly bytes: number } | { readonly state: 'unknown' };
 
 /** Preload-only capability channels for local microphone dictation. */
 export const VOICE_DICTATION_ARM_CHANNEL = 'sourdaw:voice-dictation:arm';
@@ -70,6 +84,12 @@ export type RendererSessionQuiesceResult = {
     readonly requestId: number;
     readonly outcome: RendererSessionQuiesceOutcome;
 };
+
+/** What asking main to pick and grant a plugin folder came to. */
+export type PluginFolderAddResult =
+    | { readonly status: 'cancelled' }
+    | { readonly status: 'granted'; readonly path: string }
+    | { readonly status: 'refused'; readonly reason: string };
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -176,6 +196,13 @@ export type SourdawBridge = {
         readonly save: (options?: SaveDialogOptions) => Promise<string | null>;
         readonly message: (options: MessageDialogOptions) => Promise<void>;
     };
+    /**
+     * Plugin scan folders the user grants. Deliberately outside generic
+     * `invoke`: the grant is minted in main from the picker's own answer.
+     */
+    pluginFolders: {
+        readonly add: () => Promise<PluginFolderAddResult>;
+    };
     paths: {
         /** Base URL the bundled sample content is reachable at from the renderer. */
         readonly samplesBase: () => Promise<string>;
@@ -185,6 +212,11 @@ export type SourdawBridge = {
     system: {
         /** Total physical memory of this machine, in bytes. Not free memory: it does not change while the app runs. */
         readonly totalMemoryBytes: () => Promise<number>;
+        /**
+         * What a model's weights may occupy on the GPU: the Metal working-set cap on macOS, the largest
+         * discrete adapter's dedicated memory on Windows, unknown elsewhere. It is not the system total.
+         */
+        readonly gpuMemoryBudgetBytes: () => Promise<GpuMemoryBudget>;
     };
     /** Deliberately outside generic `invoke`: start requires a preload-held activation. */
     voiceDictation: {

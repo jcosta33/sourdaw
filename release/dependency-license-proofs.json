@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "825693748bd398c20a59209b29be7276a34066b4212cf8772ca0fe1c6a237426",
+        "cargoLockSha256": "776a7a8d8a0d62cc5c7f1f0042079ab9ab91e5e6e5f65d60712220390e821656",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -57,7 +57,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "b6d2da5bb180636a1a1b68d84db629f4fa954cf76a513b1617908f10f7399646"
+                "sha256": "749a467037e950333403e8efe533e6f6477ceab987dc5f24919635f6452167fd"
             },
             {
                 "path": "electron-builder.yml",
@@ -3542,6 +3542,25 @@
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
                         "sha256": "fbe7cce7f8c879800a3c4f2751f1281665e4211a3cfb6e51490150fa131b234c"
+                    }
+                ]
+            },
+            {
+                "name": "objc2-metal",
+                "version": "0.3.2",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "Zlib OR Apache-2.0 OR MIT",
+                "legalFiles": [],
+                "metadataFiles": [
+                    {
+                        "label": "Cargo.toml",
+                        "sha256": "8ea9d2d00d2e462d2f1e0a5bb242ccc8753c2bcd3441edd1d2cf05cba69092ff"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
+                        "sha256": "581271cbd7297ef32a4ed1fcd1962a0ad19d3797e37c2852ce2a4072e4b026a6"
                     }
                 ]
             },
@@ -8661,6 +8680,21 @@
                     "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
                 }
             ]
+        },
+        "cargo:objc2-metal@0.3.2": {
+            "source": "https://crates.io/api/v1/crates/objc2-metal/0.3.2/download",
+            "revision": "sha256:a0125f776a10d00af4152d74616409f0d4a2053a6f57fa5b7d6aa2854ac04794",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "8ea9d2d00d2e462d2f1e0a5bb242ccc8753c2bcd3441edd1d2cf05cba69092ff"
+                    }
+                ],
+                "licenses": [
+                    "Apache-2.0"
+                ]
+            }
         }
     }
 }

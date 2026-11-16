@@ -23,6 +23,12 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 import { trackTemplateCache } from '../../../useCases/trackTemplate';
 import { handleLoadTrackTemplate } from '../handleLoadTrackTemplate';
 
+const notifyUserMock = vi.hoisted(() => vi.fn());
+// A refused undo reports through the notification seam, which needs the UI event bus.
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: notifyUserMock,
+}));
+
 class NoopArrangementEventBus extends ArrangementEventBus {
     async emit(): Promise<void> {}
 }
@@ -70,6 +76,7 @@ const noActionHistoryMetadataPort = {
 
 describe('loadTrackTemplate undo/redo integration', () => {
     beforeEach(() => {
+        notifyUserMock.mockClear();
         pluginHostMocks.activateExternalPlugin.mockClear();
         pluginHostMocks.unloadPlugin.mockClear();
         configureAutomergeStoragePort(null);
@@ -217,6 +224,52 @@ describe('loadTrackTemplate undo/redo integration', () => {
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
     });
 
+    async function captureLoadedPluginState(stateChunk: string): Promise<void> {
+        const device = trackStore.value!.tracks[0]!.devices[0]!;
+        await executeAppAction(
+            {
+                type: 'setExternalPluginState',
+                payload: {
+                    intent: 'capture',
+                    deviceId: device.id,
+                    stateChunk,
+                    expectedInstanceId: device.externalInstanceId!,
+                    expectedStateChunk: device.externalStateChunk ?? null,
+                },
+            },
+            { source: 'manual', skipMacroRecording: true }
+        );
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe(stateChunk);
+    }
+
+    it('redoes a template load with the plugin state a save captured, not the template chunk (issue #6597)', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        const createdId = trackStore.value!.tracks[0]!.id;
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        await captureLoadedPluginState('ZWRpdGVk');
+
+        await undo();
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
+        pluginHostMocks.activateExternalPlugin.mockClear();
+
+        await redo();
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual([createdId]);
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe('ZWRpdGVk');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ stateChunk: 'ZWRpdGVk' })
+        );
+
+        await undo();
+        expect(trackStore.value?.tracks).toEqual([]);
+    });
+
     it('gives every load of the same template a distinct instance id', async () => {
         installHostedTemplate();
         pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
@@ -254,5 +307,67 @@ describe('loadTrackTemplate undo/redo integration', () => {
         expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
             expect.objectContaining({ pluginId: 'plugin-abc', instanceId, stateChunk: 'c2F2ZWQ=' })
         );
+    });
+    function renameCreatedTrack(name: string): void {
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track, index) => (index === 0 ? { ...track, name } : track)),
+        });
+    }
+
+    it('refuses the undo and keeps the track once a collaborator edited what the template created (issue #6817)', async () => {
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-lead' } },
+            { source: 'manual' }
+        );
+        const createdId = trackStore.value!.tracks[0]!.id;
+        renameCreatedTrack('Collaborator lead');
+
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: false });
+        expect(notifyUserMock).toHaveBeenCalledWith(
+            'Cannot undo "Load Track Template": project state has changed',
+            'warning'
+        );
+        expect(trackStore.value!.tracks.map((track) => [track.id, track.name])).toEqual([
+            [createdId, 'Collaborator lead'],
+        ]);
+    });
+
+    it('undoes a template load whose only change since is a plugin state capture (issue #6817)', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        await captureLoadedPluginState('ZWRpdGVk');
+
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+    });
+
+    it('refuses the undo after a redo once a collaborator edited the restored track (issue #6817)', async () => {
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-lead' } },
+            { source: 'manual' }
+        );
+        await undo();
+        await redo();
+        renameCreatedTrack('Collaborator lead');
+
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: false });
+        expect(notifyUserMock).toHaveBeenCalledWith(
+            'Cannot undo "Load Track Template": project state has changed',
+            'warning'
+        );
+        expect(trackStore.value!.tracks.map((track) => track.name)).toEqual(['Collaborator lead']);
     });
 });

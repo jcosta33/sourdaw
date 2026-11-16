@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
     createChannel,
     beginExportFile,
+    desktopAddPluginFolder,
     appendExportFile,
     sealExportFile,
     commitExportFiles,
@@ -13,6 +14,7 @@ import {
     desktopSaveDialog,
     desktopSetZoomFactor,
     desktopSamplesBaseUrl,
+    desktopGpuMemoryBudgetBytes,
     desktopTotalMemoryBytes,
     desktopWindowControls,
     invokeForBinaryResponse,
@@ -43,12 +45,16 @@ const createBridgeMock = (platform = 'linux') => ({
         save: vi.fn().mockResolvedValue('/bridge-saved'),
         message: vi.fn().mockResolvedValue(undefined),
     },
+    pluginFolders: {
+        add: vi.fn().mockResolvedValue({ status: 'granted', path: '/bridge-granted' }),
+    },
     paths: {
         samplesBase: vi.fn().mockResolvedValue('app://sourdaw/samples'),
         join: vi.fn().mockResolvedValue('/bridge-joined'),
     },
     system: {
         totalMemoryBytes: vi.fn().mockResolvedValue(17_179_869_184),
+        gpuMemoryBudgetBytes: vi.fn().mockResolvedValue({ state: 'known', bytes: 12_713_115_648 }),
     },
     windowControls: {
         minimize: vi.fn().mockResolvedValue(undefined),
@@ -133,9 +139,11 @@ describe('desktopBridge', () => {
             ['desktopListen', async () => desktopListen('evt', () => undefined)],
             ['desktopOpenDialog', async () => desktopOpenDialog({ directory: true })],
             ['desktopSaveDialog', async () => desktopSaveDialog({ defaultPath: 'mix.wav' })],
+            ['desktopAddPluginFolder', async () => desktopAddPluginFolder()],
             ['desktopPathJoin', async () => desktopPathJoin('/exports', 'mix.wav')],
             ['desktopSamplesBaseUrl', async () => desktopSamplesBaseUrl()],
             ['desktopTotalMemoryBytes', async () => desktopTotalMemoryBytes()],
+            ['desktopGpuMemoryBudgetBytes', async () => desktopGpuMemoryBudgetBytes()],
         ])('should refuse %s loudly rather than silently no-op', async (_name, call) => {
             await expect(call()).rejects.toThrow('Sourdaw desktop bridge is not available');
         });
@@ -447,6 +455,13 @@ describe('desktopBridge', () => {
             expect(bridge.dialog.save).toHaveBeenCalledWith({ defaultPath: 'mix.wav' });
         });
 
+        it('should ask the bridge to pick and grant a plugin folder, sending nothing', async () => {
+            const bridge = installBridge();
+
+            await expect(desktopAddPluginFolder()).resolves.toEqual({ status: 'granted', path: '/bridge-granted' });
+            expect(bridge.pluginFolders.add.mock.calls).toEqual([[]]);
+        });
+
         it('should join paths through the bridge', async () => {
             const bridge = installBridge();
 
@@ -467,6 +482,20 @@ describe('desktopBridge', () => {
 
             await expect(desktopTotalMemoryBytes()).resolves.toBe(17_179_869_184);
             expect(bridge.system.totalMemoryBytes).toHaveBeenCalledTimes(1);
+        });
+
+        it('should answer a known GPU memory budget as its byte count', async () => {
+            const bridge = installBridge();
+
+            await expect(desktopGpuMemoryBudgetBytes()).resolves.toBe(12_713_115_648);
+            expect(bridge.system.gpuMemoryBudgetBytes).toHaveBeenCalledTimes(1);
+        });
+
+        it('should answer an unknown GPU memory budget as null', async () => {
+            const bridge = installBridge();
+            bridge.system.gpuMemoryBudgetBytes.mockResolvedValue({ state: 'unknown' });
+
+            await expect(desktopGpuMemoryBudgetBytes()).resolves.toBeNull();
         });
     });
 });

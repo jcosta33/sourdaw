@@ -8,6 +8,7 @@ import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Autom
 
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
+import { readAppliedAutomationValue } from '../readAppliedAutomationValue';
 
 registerDeviceEnginePorts();
 
@@ -137,5 +138,26 @@ describe('applyAutomation transport discontinuity (AU-4)', () => {
         expect(updateDeviceParam).toHaveBeenCalledTimes(1);
         const [, , , written] = vi.mocked(updateDeviceParam).mock.calls[0]!;
         expect(written).toBeCloseTo(0.56, 5);
+    });
+
+    it('advances the write sequence on a discontinuity that rewrites an unchanged value, and not on a flat tick', () => {
+        seedDeviceLane('eq-seq', 'lane-seq');
+        schedulerSession.discontinuityEpoch = 300;
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.8);
+
+        applyAutomation(0);
+        const afterEntry = readAppliedAutomationValue('eq-seq', 'eq-low-gain');
+
+        applyAutomation(1);
+        const afterFlatTick = readAppliedAutomationValue('eq-seq', 'eq-low-gain');
+
+        schedulerSession.discontinuityEpoch = 301;
+        applyAutomation(2);
+        const afterDiscontinuity = readAppliedAutomationValue('eq-seq', 'eq-low-gain');
+
+        expect(afterEntry?.value).toBe(0.8);
+        expect(afterFlatTick).toEqual(afterEntry);
+        expect(afterDiscontinuity?.value).toBe(0.8);
+        expect(afterDiscontinuity!.writeSequence).toBeGreaterThan(afterEntry!.writeSequence);
     });
 });

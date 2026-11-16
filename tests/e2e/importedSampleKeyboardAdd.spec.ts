@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { type Locator, type Page, type TestInfo } from '@playwright/test';
 
@@ -35,12 +35,13 @@ async function sampleState(page: Page): Promise<SampleState> {
                 throw new Error('The current audio track and project track authorities are unavailable');
             }
             const history = command.captureUndoHistory();
-            const summarizeUndo = (entries: typeof history.past) =>
-                entries.map((entry) =>
-                    entry.kind === 'action'
-                        ? { kind: 'action' as const, actionType: entry.action.type }
-                        : { kind: 'callback' as const, label: entry.label }
-                );
+            const summarizeUndoEntry = (entry: (typeof history.past)[number]) => {
+                if (entry.kind === 'action') {
+                    return { kind: 'action' as const, actionType: entry.action.type };
+                }
+                return { kind: 'callback' as const, label: entry.label };
+            };
+            const summarizeUndo = (entries: typeof history.past) => entries.map(summarizeUndoEntry);
             return {
                 audioTrackId: audioTrack.id,
                 raw: rootTracks.tracks.flatMap((track) => track.clips.filter((clip) => clip.name === name)),

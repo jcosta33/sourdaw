@@ -12,6 +12,7 @@ import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentCo
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { ANSWER_INTERPRETATION_TOOL_NAME, createAnswerInterpretationToolSchema } from '../models/AnswerInterpretation';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type BriefReadingOffer } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
@@ -98,6 +99,7 @@ import { resolveRawPresetActions } from './aiRuntimeQueries/resolveRawPresetActi
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
+import { compileAdoptedRecipeMetricAuthority } from './compileAdoptedRecipeMetricAuthority';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
@@ -138,7 +140,9 @@ import { readBriefMixIntent } from './readBriefMixIntent';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
-import { planVibeRunSchedule } from './vibeRun/planVibeRunSchedule';
+import { buildBriefReadings } from './vibeRun/buildBriefReadings';
+import { describeBriefReadings } from './vibeRun/describeBriefReadings';
+import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
 
 type ParsePromptToActionsInput = {
     prompt: string;
@@ -593,6 +597,7 @@ function createLastCommitContinuationResult(
                 grounded: continuation.grounded,
                 creativeAuthority: continuation.creativeAuthority,
                 adoptedRecipes: continuation.adoptedRecipes,
+                compilations: continuation.compilations,
                 origin: 'last-commit-recipe',
                 prompt,
                 context,
@@ -666,6 +671,7 @@ function createAnswerSuggestionResult(input: {
         grounded: planned.grounded,
         creativeAuthority: planned.creativeAuthority,
         adoptedRecipes: [planned.adoptedRecipe],
+        compilations: planned.compilations,
         origin: 'answer-suggestion',
         prompt: input.prompt,
         context: input.context,
@@ -676,39 +682,40 @@ function createAnswerSuggestionResult(input: {
  * The proposal of recipes the application expanded itself on tracks the user named: an answer's
  * suggestion taken up, or the last commit's recipe repeated on other tracks. It always goes to
  * confirmation and carries the recipes it adopted as its provenance; no provider is asked anything.
+ * The user chose the recipes, as they choose a preset, so the proposal states no objective of its own;
+ * what an authored recipe's own metric expectations promise is frozen as its goals, which the preview
+ * measures and Confirm waits for. A batch of presets only is a literal request with nothing to verify.
  */
 function createAdoptedRecipeResult(input: {
     grounded: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['grounded'];
     creativeAuthority: CreativeRequestAuthority;
     adoptedRecipes: NonNullable<IntentResult['adoptedRecipes']>;
+    compilations: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['compilations'];
     origin: 'answer-suggestion' | 'last-commit-recipe';
     prompt: string;
     context: ProjectContext;
 }): IntentResult {
     const { grounded, creativeAuthority } = input;
-    // The user chose a named recipe on named tracks, as they choose a preset: a literal request with
-    // no objective to verify, the recipe being attributed knowledge, never a measured claim about the
-    // project.
-    const literalAuthority: MetricRequestAuthority = {
-        schemaVersion: 1,
-        authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
+    const adopted = compileAdoptedRecipeMetricAuthority({
         origin: input.origin,
-        callId: null,
-        turn: null,
-        catalogId: creativeAuthority.catalogId,
-        requestDigest: creativeAuthority.requestDigest,
-        revision: creativeAuthority.revision,
-        projectId: captureProjectIdentity(),
-        selection: getCreativeSelectionSnapshot(input.context),
-        kind: 'literal',
-        goals: [],
+        compilations: input.compilations,
+        context: input.context,
+        prompt: input.prompt,
         creativeAuthority,
-    };
+    });
+    if (adopted.status === 'refused') {
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: `The recipe's expectations could not be prepared for verification: ${adopted.reason}.`,
+        };
+    }
     const result: IntentResult = {
         metricGoalState: serializePromptMetricState({
             actions: grounded.actions,
-            steps: [],
-            authorities: [literalAuthority],
+            steps: adopted.steps,
+            authorities: [adopted.authority],
             metricProofs: [],
             inheritedMetricState: null,
             nativeLiteralUses: [],
@@ -1756,9 +1763,9 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
                     const selectedBrief = selectedCompilations[0];
-                    const mixIntent =
-                        selectedBrief?.kind === 'brief' ? readBriefMixIntent(selectedBrief.mixIntent) : null;
-                    if (mixIntent === null) {
+                    const briefCompilation = selectedBrief?.kind === 'brief' ? selectedBrief : null;
+                    const mixIntent = briefCompilation === null ? null : readBriefMixIntent(briefCompilation.mixIntent);
+                    if (briefCompilation === null || mixIntent === null) {
                         return {
                             actions: [],
                             rawText: prompt,
@@ -1779,10 +1786,40 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: UNREADABLE_VERIFICATION_RECORD,
                         };
                     }
+                    // A request that reads more than one way plans and measures nothing: choosing a
+                    // reading on the card plans exactly that one.
+                    const readings = buildBriefReadings(briefCompilation.mixAlternatives ?? []);
+                    if (readings.length > 0) {
+                        const briefReadings: BriefReadingOffer = {
+                            catalogId: mixIntent.catalogId,
+                            metricGoalState: briefMetricGoalState,
+                            readings,
+                            brief: briefCompilation.brief,
+                        };
+                        if (providerProposal !== null) {
+                            briefReadings.providerProposal = providerProposal;
+                        }
+                        if (applicationToolReceiptFields.terminalMeasurementSettlement !== undefined) {
+                            briefReadings.terminalMeasurementSettlement =
+                                applicationToolReceiptFields.terminalMeasurementSettlement;
+                        }
+                        return {
+                            metricGoalState: briefMetricGoalState,
+                            actions: [brief.action],
+                            rawText: prompt,
+                            requiresConfirmation: true,
+                            providerKnownTargetIds: [],
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            ...(providerProposal === null ? {} : { providerProposal }),
+                            plannedRunLines: describeBriefReadings(readings),
+                            briefReadings,
+                        };
+                    }
                     const vibeRun = await planBriefVibeRun({
                         prompt,
                         context,
-                        compilations: selectedCompilations,
+                        brief: briefCompilation.brief,
                         mixIntent,
                         runId: streamIdentity?.runId,
                         sourceRevision: projectRevision,
@@ -2326,77 +2363,6 @@ const planPromptIntent = inject({ logger })(
             }
         }
 );
-
-/**
- * The vibe run a brief carries: planned from the brief the user is about to confirm, with no provider
- * call, and scheduled behind it only when it fits the run. A request that plans no batch adds nothing,
- * so its brief result is exactly what it was before runs were planned.
- */
-async function planBriefVibeRun(input: {
-    prompt: string;
-    context: ProjectContext;
-    compilations: readonly RetainedCompilation[];
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
-    runId: string | undefined;
-    sourceRevision: string | undefined;
-    signal: AbortSignal | undefined;
-    admit: MeasurementAdmitter | undefined;
-    priorReceipts: readonly ApplicationToolReceipt[];
-    onProgress: ((progress: MeasurementUnitProgress) => void) | undefined;
-}): Promise<
-    Pick<IntentResult, 'batchSchedule' | 'plannedRunLines' | 'applicationToolReceipts' | 'initialBaselineRefusal'>
-> {
-    const compiled = input.compilations.find(
-        (compilation): compilation is Extract<RetainedCompilation, { kind: 'brief' }> => compilation.kind === 'brief'
-    );
-    if (compiled === undefined) {
-        return {};
-    }
-    if (
-        input.runId === undefined ||
-        input.sourceRevision === undefined ||
-        input.signal === undefined ||
-        input.admit === undefined
-    ) {
-        return {
-            plannedRunLines: [
-                'No batches were scheduled after the brief: initial measurements require a live run, original revision, cancellation signal and budget admission.',
-            ],
-        };
-    }
-    const run = agentRunLifecycle.get(input.runId);
-    if (run === null) {
-        return {};
-    }
-    const planned = await planVibeRunSchedule({
-        prompt: input.prompt,
-        context: input.context,
-        brief: compiled.brief,
-        mixIntent: input.mixIntent,
-        budgets: run.budgets,
-        runId: input.runId,
-        sourceRevision: input.sourceRevision,
-        signal: input.signal,
-        admit: input.admit,
-        priorReceipts: input.priorReceipts,
-        onProgress: input.onProgress,
-    });
-    if (planned.status === 'none') {
-        return {};
-    }
-    if (planned.status === 'unscheduled') {
-        return {
-            plannedRunLines: planned.lines,
-            applicationToolReceipts: [...input.priorReceipts, ...(planned.receipts ?? [])],
-            initialBaselineRefusal: planned.refusal,
-        };
-    }
-    return {
-        batchSchedule: planned.schedule,
-        plannedRunLines: planned.lines,
-        applicationToolReceipts: [...input.priorReceipts, ...planned.receipts],
-    };
-}
 
 /** A request the Prompt Bar runs in the agent chat instead; it carries no batch. */
 function createChatHandOffResult(prompt: string, reason: ChatHandOffReason): IntentResult {

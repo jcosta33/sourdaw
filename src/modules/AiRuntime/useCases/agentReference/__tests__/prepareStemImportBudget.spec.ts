@@ -25,8 +25,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     detectTempo: mocks.detectTempo,
+    getAgentMeasurementMetricIds: () => [],
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
     openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     releasePreviewAudioBuffer: vi.fn(),
@@ -37,7 +39,8 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 vi.mock('#/modules/Project/useCases', () => ({
     pickFiles: mocks.pickFiles,
 }));
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     DEFAULT_TEMPO_BPM: 120,
     transportStore: { value: { tempo: 120 } },
     readBarStartBeat: vi.fn<typeof import('#/modules/Transport/stores').readBarStartBeat>(() => null),

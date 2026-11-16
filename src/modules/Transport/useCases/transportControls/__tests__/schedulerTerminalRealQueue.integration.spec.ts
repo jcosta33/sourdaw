@@ -215,7 +215,7 @@ async function openPunch(expectedClips: number, expectedCaptures: number) {
                 generation: schedulerSession.generation,
                 sequence: 1,
                 scheduledAtMs: received - 2,
-                sentAtMs: received - 1,
+                sentAtMs: received,
             },
         })
     );

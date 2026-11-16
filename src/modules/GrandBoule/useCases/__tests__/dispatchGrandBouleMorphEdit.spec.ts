@@ -50,6 +50,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: mocks.executeUserAppAction,
+    describeAppActionRefusal: vi.fn(() => ''),
+    isAppActionAdmissionRefusal: vi.fn(() => false),
+    isAppActionConflictError: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
 vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({

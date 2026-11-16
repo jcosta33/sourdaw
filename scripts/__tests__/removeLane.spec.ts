@@ -895,6 +895,53 @@ describe('lane removal', () => {
         expect(fake.calls).not.toContain(`remove:${target}`);
     });
 
+    describe('a branch name reused by several pull requests', () => {
+        const spent = () => pullRequest({ number: 6717, headRefOid: 'older-head' });
+        const current = (overrides: Partial<PullRequest> = {}) => pullRequest({ number: 6830, ...overrides });
+
+        it('removes the lane when its head is the head of exactly one of them', () => {
+            const { port, calls } = fakePort({ pullRequests: [spent(), current()] });
+
+            removeLane(target, port);
+
+            expect(calls).toContain(`remove:${target}`);
+        });
+
+        it.each([
+            ['no pull request', [], /pull request/],
+            [
+                'none heading at the lane head',
+                [spent(), pullRequest({ number: 6830, headRefOid: 'other-head' })],
+                /does not identify one pull request at head head/,
+            ],
+            [
+                'two heading at the lane head',
+                [current(), pullRequest({ number: 6831 })],
+                /one pull request at head head/,
+            ],
+            [
+                'the selected one open',
+                [spent(), current({ state: 'OPEN', mergedAt: null })],
+                /PR #6830 is still active/,
+            ],
+            [
+                'the selected one closed unmerged',
+                [spent(), current({ state: 'CLOSED', mergedAt: null })],
+                /PR #6830 is closed without a superses/,
+            ],
+            [
+                'the selected one from a fork',
+                [spent(), current({ headRepository: 'jcosta33/fork' })],
+                /PR #6830 is foreign/,
+            ],
+        ])('still refuses with %s', (_name, pullRequests, message) => {
+            const { port, calls } = fakePort({ pullRequests });
+
+            expect(() => removeLane(target, port)).toThrow(message);
+            expect(calls).not.toContain(`remove:${target}`);
+        });
+    });
+
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
         const { port, calls } = fakePort({ remoteHead: null });
 
@@ -1873,6 +1920,87 @@ describe('worktree parser', () => {
             worktree({ path: root, head: 'root', branch: 'main' }),
             worktree({ branch: undefined, detached: true, locked: true, lockReason: 'shared' }),
         ]);
+    });
+});
+
+describe('lane-removal fetch race', () => {
+    const a = 'a'.repeat(40);
+    const b = 'b'.repeat(40);
+    const c = 'c'.repeat(40);
+    const failure = new Error('git failed with exit 1');
+
+    function fetchPort(input: { fetchFails: boolean; remote?: string; local?: string }) {
+        const captured: string[][] = [];
+        const port = shellPort({
+            capture: (_command, args) => {
+                captured.push(args);
+                if (args[0] === 'ls-remote') {
+                    return input.remote ?? '';
+                }
+                if (args[0] === 'for-each-ref') {
+                    return input.local ?? '';
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: (_command, args) => {
+                if (args.join(' ') !== 'fetch --prune origin') {
+                    throw new Error(`unexpected run: ${args.join(' ')}`);
+                }
+                if (input.fetchFails) {
+                    throw failure;
+                }
+            },
+        });
+        return { port, captured };
+    }
+
+    const remote = `${a}\trefs/heads/main\n${b}\trefs/heads/feature`;
+
+    it('accepts a failed fetch whose tracking refs already mirror the remote heads', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${a} refs/remotes/origin/main\n${b} refs/remotes/origin/feature`,
+        });
+        expect(() => port.fetch()).not.toThrow();
+    });
+
+    it('ignores the origin/HEAD symref when comparing', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${a} refs/remotes/origin/HEAD\n${a} refs/remotes/origin/main\n${b} refs/remotes/origin/feature`,
+        });
+        expect(() => port.fetch()).not.toThrow();
+    });
+
+    it('rethrows when a remote head is newer than its tracking ref', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${c} refs/remotes/origin/main\n${b} refs/remotes/origin/feature`,
+        });
+        expect(() => port.fetch()).toThrow(failure);
+    });
+
+    it('rethrows when a tracking ref outlives its remote branch', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${a} refs/remotes/origin/main\n${b} refs/remotes/origin/feature\n${c} refs/remotes/origin/gone`,
+        });
+        expect(() => port.fetch()).toThrow(failure);
+    });
+
+    it('rethrows when a remote head has no tracking ref', () => {
+        const { port } = fetchPort({ fetchFails: true, remote, local: `${a} refs/remotes/origin/main` });
+        expect(() => port.fetch()).toThrow(failure);
+    });
+
+    it('reads no refs when the fetch succeeds', () => {
+        const { port, captured } = fetchPort({ fetchFails: false });
+        port.fetch();
+        expect(captured).toEqual([]);
     });
 });
 

@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     registerDialogChannels,
     registerPathChannels,
+    registerPluginFolderChannels,
     registerSystemChannels,
     registerScanCommand,
     registerNativeMenuChannels,
@@ -25,6 +26,8 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
+    SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
@@ -37,6 +40,7 @@ import {
 } from '../channels.js';
 import { commandChannel, SCAN_PLUGINS } from '../commands.js';
 
+import type { GpuMemoryBudget } from '../channels.js';
 import type { NativeHost } from '../native.js';
 import type { IpcMainLike, SenderFrameCarrier } from '../router.js';
 import type { ScanSupervisor } from '../scan.js';
@@ -584,6 +588,98 @@ describe('the grants a dialog mints', () => {
     });
 });
 
+describe('the plugin folder picker', () => {
+    const folderHandler = (
+        showOpenDialog: NativeDialogs['showOpenDialog'],
+        native: () => NativeHost | undefined
+    ): Handler | undefined => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerPluginFolderChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            dialogs: { ...cancelledDialogs(), showOpenDialog },
+            native,
+        });
+        return handlers.get(PLUGIN_FOLDER_ADD_CHANNEL);
+    };
+
+    const folderGrantRecorder = (
+        grantPluginFolder: NativeHost['grantPluginFolder'] = async (path) => path
+    ): { readonly native: () => NativeHost; readonly grantPluginFolder: NativeHost['grantPluginFolder'] } => {
+        const spy = vi.fn(grantPluginFolder);
+        return { native: () => ({ grantPluginFolder: spy }) as unknown as NativeHost, grantPluginFolder: spy };
+    };
+
+    const picking = (filePaths: readonly string[]) =>
+        vi.fn(async (_options: OpenDialogOptions) => ({ canceled: false, filePaths: [...filePaths] }));
+
+    it('opens a single directory picker and grants exactly the folder it returned', async () => {
+        const showOpenDialog = picking(['/Users/me/Plugins']);
+        const { native, grantPluginFolder } = folderGrantRecorder(async () => '/Users/me/Plugins');
+
+        await expect(folderHandler(showOpenDialog, native)?.(APP_FRAME)).resolves.toEqual({
+            status: 'granted',
+            path: '/Users/me/Plugins',
+        });
+        expect(showOpenDialog).toHaveBeenCalledWith({
+            title: 'Add Plugin Folder',
+            properties: ['openDirectory', 'createDirectory'],
+        });
+        expect(vi.mocked(grantPluginFolder).mock.calls).toEqual([['/Users/me/Plugins']]);
+    });
+
+    it('grants the picked folder, never a path the renderer sent', async () => {
+        // A forged message carrying a path must not reach the grant: the only
+        // path granted is the one the native dialog answered with.
+        const { native, grantPluginFolder } = folderGrantRecorder();
+
+        await folderHandler(picking(['/Users/me/Plugins']), native)?.(APP_FRAME, '/etc', { path: '/etc' });
+
+        expect(vi.mocked(grantPluginFolder).mock.calls).toEqual([['/Users/me/Plugins']]);
+    });
+
+    it('grants nothing when the picker is cancelled, whatever the renderer sent', async () => {
+        const { native, grantPluginFolder } = folderGrantRecorder();
+        const handler = folderHandler(
+            async (_options: OpenDialogOptions) => ({ canceled: true, filePaths: ['/Users/me/Plugins'] }),
+            native
+        );
+
+        await expect(handler?.(APP_FRAME, '/etc')).resolves.toEqual({ status: 'cancelled' });
+        await expect(folderHandler(picking([]), native)?.(APP_FRAME, '/etc')).resolves.toEqual({
+            status: 'cancelled',
+        });
+        expect(grantPluginFolder).not.toHaveBeenCalled();
+    });
+
+    it('answers a native refusal with its reason rather than throwing', async () => {
+        const { native } = folderGrantRecorder(async () => {
+            throw new Error('/Volumes/USB is a symlinked folder and cannot be scanned');
+        });
+
+        await expect(folderHandler(picking(['/Volumes/USB']), native)?.(APP_FRAME)).resolves.toEqual({
+            status: 'refused',
+            reason: '/Volumes/USB is a symlinked folder and cannot be scanned',
+        });
+    });
+
+    it('refuses with a clear reason when no addon is loaded', async () => {
+        await expect(folderHandler(picking(['/Users/me/Plugins']), noNativeHost)?.(APP_FRAME)).resolves.toEqual({
+            status: 'refused',
+            reason: 'Plugin folders cannot be added because the native host is not loaded.',
+        });
+    });
+
+    it('refuses a foreign sender before raising a picker or granting anything', () => {
+        const showOpenDialog = picking(['/Users/me/Plugins']);
+        const { native, grantPluginFolder } = folderGrantRecorder();
+
+        expect(() => folderHandler(showOpenDialog, native)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
+        expect(showOpenDialog).not.toHaveBeenCalled();
+        expect(grantPluginFolder).not.toHaveBeenCalled();
+    });
+});
+
 describe('the message box', () => {
     it('resolves to nothing rather than to a button index', async () => {
         await expect(
@@ -635,9 +731,12 @@ describe('the path helpers', () => {
 });
 
 describe('the system channel', () => {
-    const systemHandlers = (totalMemoryBytes: () => number): Map<string, Handler> => {
+    const systemHandlers = (
+        totalMemoryBytes: () => number,
+        gpuMemoryBudget: () => GpuMemoryBudget = () => ({ state: 'unknown' })
+    ): Map<string, Handler> => {
         const { ipcMain, handlers } = collectingIpc();
-        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes });
+        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes, gpuMemoryBudget });
         return handlers;
     };
 
@@ -654,19 +753,48 @@ describe('the system channel', () => {
         expect(() => handlers.get(SYSTEM_TOTAL_MEMORY_CHANNEL)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
         expect(totalMemoryBytes).not.toHaveBeenCalled();
     });
+
+    it('answers a trusted frame with the injected GPU memory budget', () => {
+        const budget: GpuMemoryBudget = { state: 'known', bytes: 12_713_115_648 };
+        const handlers = systemHandlers(
+            () => 1,
+            () => budget
+        );
+
+        expect(handlers.get(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL)?.(APP_FRAME)).toEqual(budget);
+    });
+
+    it('refuses a foreign frame without reading the GPU memory budget', () => {
+        const gpuMemoryBudget = vi.fn((): GpuMemoryBudget => ({ state: 'unknown' }));
+        const handlers = systemHandlers(() => 1, gpuMemoryBudget);
+
+        expect(() => handlers.get(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
+        expect(gpuMemoryBudget).not.toHaveBeenCalled();
+    });
 });
 
 describe('the origin guard on every non-command channel', () => {
     it('refuses a foreign frame on each one', () => {
         const { ipcMain, handlers } = collectingIpc();
         registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: cancelledDialogs(), native: noNativeHost });
+        registerPluginFolderChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            dialogs: cancelledDialogs(),
+            native: noNativeHost,
+        });
         registerPathChannels({
             ipcMain,
             isTrustedFrameUrl,
             samplesBaseUrl: 'app://sourdaw/samples',
             join: (...segments) => segments.join('/'),
         });
-        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes: () => 1 });
+        registerSystemChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            totalMemoryBytes: () => 1,
+            gpuMemoryBudget: () => ({ state: 'unknown' }),
+        });
 
         expect([...handlers.keys()].sort()).toEqual(
             [
@@ -675,6 +803,8 @@ describe('the origin guard on every non-command channel', () => {
                 DIALOG_SAVE_CHANNEL,
                 PATHS_JOIN_CHANNEL,
                 PATHS_SAMPLES_BASE_CHANNEL,
+                PLUGIN_FOLDER_ADD_CHANNEL,
+                SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
                 SYSTEM_TOTAL_MEMORY_CHANNEL,
             ].sort()
         );

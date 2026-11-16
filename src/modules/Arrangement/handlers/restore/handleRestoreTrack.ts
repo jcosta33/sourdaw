@@ -18,6 +18,7 @@ import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip'
 import { refreshToasterPadBindings } from '../../useCases/refreshToasterPadBindings';
 import { setTrackState } from '../../useCases/setTrackState';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
+import { forgetDiscardedPluginStates, overlayDiscardedPluginStates } from '../track/discardedPluginStateCarry';
 
 /**
  * Inverse-action handler for `removeTrack`. Replays snapshot data carried in the
@@ -27,8 +28,14 @@ import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPrio
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
     canReapplyAfterDivergence: () => true,
+    // The removal this undoes recorded the plugin state a save captured after the snapshot was taken.
+    materializeCommandArguments: (action, context) => {
+        if (context?.undoEntryId !== undefined) {
+            overlayDiscardedPluginStates(context.undoEntryId, [action.payload]);
+        }
+    },
     validate: (action, context) => restoreStateMatches(action, context),
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         const {
             trackKind,
             trackGain,
@@ -126,9 +133,13 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         const finalizeSidechainRestore = restoreSidechainRoutes(sidechainRouteSnapshots, {
             deferRuntimeEffect: true,
         });
+        const undoEntryId = context?.undoEntryId;
         return {
             status: 'written',
             afterCommit: () => {
+                if (undoEntryId !== undefined) {
+                    forgetDiscardedPluginStates(undoEntryId);
+                }
                 const effects: Array<() => void | Promise<void>> = [];
                 if (trackKind === 'bus') {
                     effects.push(
@@ -223,6 +234,7 @@ function decodeRestoredRows(
         !describesRow(payload, track) ||
         !keysOnlyOwnClips(payload, ownClipIds) ||
         payload.automationLaneSnapshots.some((lane) => lane.trackId !== payload.trackId) ||
+        !modulationBelongsToTrack(payload) ||
         !takeLanes ||
         takeLanes.some((lane) => lane.trackId !== payload.trackId)
     ) {
@@ -248,6 +260,19 @@ function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<
         ...Object.keys(payload.midiPitchBendByClipId),
         ...payload.clipSatellites.map((entry) => entry.clipId),
     ].every((clipId) => ownClipIds.has(clipId));
+}
+
+// The capture takes the modulators the track owns, whose own mappings may
+// target any track, and only the mappings other tracks' modulators aim at the
+// track. Restoring appends each mapping to the live modulator it names and
+// adds each owned modulator under the payload's track, so a mapping aimed
+// elsewhere or a modulator owned elsewhere would write into another track's
+// modulation.
+function modulationBelongsToTrack(payload: RestoreTrackPayload): boolean {
+    return (
+        payload.ownedModulatorSnapshots.every((modulator) => modulator.trackId === payload.trackId) &&
+        payload.incomingModulationMappingSnapshots.every((entry) => entry.mapping.targetTrackId === payload.trackId)
+    );
 }
 
 function collectLiveHeldClipIds(liveTracks: readonly Track[]): ReadonlySet<string> {

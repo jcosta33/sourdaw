@@ -56,6 +56,10 @@ const addonMethods = (): string[] =>
  * `#[napi] run_plugin_scan_worker` wrapper; it is now
  * `sourdaw-plugin-scan-helper`, a standalone executable outside the addon
  * entirely, and publishes nothing here to plumb.
+ *
+ * `stop_plugin_scan_helpers` is the scan utility's own terminate path, called
+ * by `scanWorker.ts` as that process is told to exit, so the renderer has no
+ * reason to reach it.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'with_runtime_scope_v1',
@@ -67,6 +71,7 @@ const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'resize_plugin_gui',
     'service_plugin_editor_run_loops',
     'shutdown',
+    'stop_plugin_scan_helpers',
 ]);
 
 /** Every command the product registers: the addon surface minus plumbing. */
@@ -190,6 +195,17 @@ describe('the Electron command surface', () => {
         expect(DENIED_COMMANDS).not.toContain('cancel_graph_offline');
         expect(isExposedCommand('cancel_graph_offline')).toBe(true);
         expect(SOURDAW_COMMAND_ARGUMENTS.get('cancel_graph_offline')).toEqual(['render_id']);
+    });
+
+    it('keeps grant_plugin_folder denied while its list and revoke commands stay exposed', () => {
+        // Granting widens the roots a scan loads plugin code from, so only the
+        // main-process picker may call it, with the path its own dialog
+        // returned (#6574). Listing and revoking can only report or narrow.
+        expect(DENIED_COMMANDS).toContain('grant_plugin_folder');
+        expect(EXPOSED_COMMANDS).not.toContain('grant_plugin_folder');
+        expect(isExposedCommand('grant_plugin_folder')).toBe(false);
+        expect(isExposedCommand('get_plugin_folder_grants')).toBe(true);
+        expect(isExposedCommand('revoke_plugin_folder_grant')).toBe(true);
     });
 
     it('gives a denied command no channel that collides with an exposed one', () => {
@@ -402,6 +418,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['get_crumbs_position', ['instance_id']],
     ['get_crumbs_recording_state', ['instance_id']],
     ['get_default_plugin_paths', []],
+    ['get_plugin_folder_grants', []],
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
@@ -426,6 +443,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['release_levain_bank', ['bank_key']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate', 'render_id']],
     ['retire_native_engine', []],
+    ['revoke_plugin_folder_grant', ['path']],
     ['scan_plugins', ['paths', 'retry_quarantined']],
     ['seal_export_file', ['token']],
     ['send_push_midi', ['bytes']],

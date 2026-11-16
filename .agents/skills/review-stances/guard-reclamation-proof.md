@@ -100,7 +100,19 @@ it is gone or a zombie` with an EACCES FD list progressing through live, reaped,
 Linux release from an observation that waited on an exit`, requiring a new complete process observation after
     any wait, including retention when a previously inspected process becomes a borrower; `keeps storage proof
 evidence out of the child output unless it explains retention`, where startup, superseded and successful
-    proofs leave byte-exact parseable child output and a retained run emits only its own final obstruction.
+    proofs leave byte-exact parseable child output and retained proof reports only this run's evidence. Silent
+    census/identity returns (#5274) and sticky/caught release proof (#5443, #5358) must be observed by
+    `reports the original storage proof predicate`, `keeps the first storage obstruction` and
+    `reports a safe storage release exception`: capture the original predicate, separate first obstruction/final census, and bounded
+    PID/status/errno/syscall. Removing an original reporter or collapsing first/final proof must fail; the nonblocking
+    supervisor-identity control must preserve transient retention. Emit no starts, paths, raw errors, commands or environment.
+    Positive replacement retires only that PID/start binding; `storage identity replacement` must still require fresh
+    complete current-user/file proof across local release and original/moved-claim recovery. Drive same-UID borrowers,
+    foreign-UID replacements, denied/unreadable reads and weaker later observations; independent bindings/controllers
+    retain their own authority. Mapping replacement back to unknown, bypassing file proof or caching only PID must fail.
+    The original-only raw check from #5274 must cover the current claimed alias too, using one captured census.
+    `storage payload references after claim` must retain real post-rename raw and file borrowers; removing the
+    current-alias veto or repeating the original file-proof argument must fail.
 11. **Process-group inspection EPERM is not a foreign UID (#5240).** XNU's group signal traversal
     ([`bsd/kern/kern_sig.c`][xnu-sig]) excludes zombies, so an existing all-zombie group may return EPERM until
     reap ([`bsd/kern/kern_exit.c`][xnu-exit]) removes its membership; current kernel source is not an
@@ -127,5 +139,22 @@ evidence out of the child output unless it explains retention`, where startup, s
     missing/malformed/extra positional ports, occupied origins, wrong checkout or absent/stale token, failed proof
     and failed cleanup refused. Do not infer a missing recorded port from the current environment.
 
+13. **PID/start identity grants process authority.** The seed-traversal escape originated in `0e20269791`;
+    #2449 retained the permission-error short circuit. In `scripts/__tests__/resourceGuard.spec.ts`'s
+    `process identity ownership` group, drive omitted/replaced ancestors, stale census edges, parent replacement,
+    EPERM/EACCES, unreadable probe sequences and partial lease records. Require fresh independent ownership before
+    rebinding a replacement, persistent identity-scoped retirement, conservative uncertainty and bounded census work.
+    A missing leader preserves its original group; only positive root replacement retires its group authority
+    ([POSIX Process ID Reuse][posix-pid-reuse]). Retain saved child identities across missing/empty lists, prefer
+    newer bound identities, and never turn unknown RSS into lease release or an unbound legacy root into a false identity.
+    Mutation pointers: restore unchecked historical seeds or stale-edge readmission in
+    `scripts/resourceGuardProcessTree.ts`, erase
+    the saved tuple in `reservationProcessTree`, or restore the retired-child/zero-for-unknown shortcut in
+    `reservationIsLive`; the named group must fail. It also rejects unconditional Unix-group/Windows-tree authority.
+    In `scripts/__tests__/resourceGuardStorage.spec.ts`'s `unproved guard storage` group, the survivor cases require
+    bounded cleanup predicates, stored/current identities, errnos and available/unavailable metadata without
+    command, environment or raw error text. These ordered observations claim neither atomic signaling nor a past leak's cause.
+
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c
+[posix-pid-reuse]: https://www.govinfo.gov/content/pkg/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64/pdf/GOVPUB-C13-bf1fc57a5dbcaa993cebad99aca83f64.pdf

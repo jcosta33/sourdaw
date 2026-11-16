@@ -3,6 +3,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import {
+    clearExternalPluginParameterReadState,
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
@@ -16,7 +17,7 @@ import {
 } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
-import { loadedExternalInstances } from './loadedExternalInstances';
+import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 
 /**
@@ -31,6 +32,7 @@ import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 export function clearLoadedExternalPlugins(): void {
     externalPluginStateCaptureAuthority.invalidateAll();
     loadedExternalInstances.clear();
+    loadedExternalInstancePluginIds.clear();
     externalLatencyReporters.clear();
     externalPluginActivationEpoch.current += 1;
     externalPluginActivationTasks.clear();
@@ -41,6 +43,7 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationStore.set(defaultExternalPluginActivationState);
     // The parameter snapshots belong to the outgoing generation's instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    clearExternalPluginParameterReadState();
     // So do the tails they reported.
     externalPluginTailStore.set(defaultExternalPluginTailState);
     tailRevisionsDuringLoad.clear();
