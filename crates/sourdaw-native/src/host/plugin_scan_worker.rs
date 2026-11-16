@@ -941,14 +941,33 @@ fn process_failure(
 }
 
 /// Whether a write failed because of the storage itself rather than anything
-/// a same-user process can set on a file or directory.
+/// a same-user process can set on a file or directory: a full disk, an
+/// exhausted quota, a read-only filesystem, or a device I/O error. A
+/// permission or missing-entry error is never one; see [`process_failure`].
 fn is_storage_fault(error: &std::io::Error) -> bool {
     matches!(
         error.kind(),
         std::io::ErrorKind::StorageFull
             | std::io::ErrorKind::QuotaExceeded
             | std::io::ErrorKind::ReadOnlyFilesystem
-    )
+    ) || is_device_io_error(error)
+}
+
+/// A failing disk. Matched by OS code because std leaves it uncategorized.
+#[cfg(unix)]
+fn is_device_io_error(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(libc::EIO)
+}
+
+#[cfg(windows)]
+fn is_device_io_error(error: &std::io::Error) -> bool {
+    const ERROR_IO_DEVICE: i32 = 1117;
+    error.raw_os_error() == Some(ERROR_IO_DEVICE)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn is_device_io_error(_error: &std::io::Error) -> bool {
+    false
 }
 
 /// The registry-facing reason for a response-write refusal.
@@ -2923,6 +2942,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("full disk", libc::ENOSPC),
             ("exhausted quota", libc::EDQUOT),
             ("read-only filesystem", libc::EROFS),
+            ("failing disk", libc::EIO),
         ] {
             let message = process_failure(path, &status, || {
                 Err(std::io::Error::from_raw_os_error(errno))
@@ -2930,6 +2950,39 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
 
             assert_eq!(message, write_refused("/plugins/Innocent.clap"), "{fault}");
             assert!(!message.is_process_failure(), "{fault}: {message}");
+        }
+    }
+
+    /// Which probe errors keep the non-quarantining refusal. Systemic storage
+    /// faults, including a failing disk's EIO, refuse: quarantining there
+    /// would blame every good plugin. Permission and missing-entry errors are
+    /// what a same-user plugin can arrange on the supervisor's 0700
+    /// directory, so they must stay rejected. Mutation this catches: dropping
+    /// the EIO match, or admitting `PermissionDenied`.
+    #[cfg(unix)]
+    #[test]
+    fn only_storage_faults_count_as_genuine_write_refusals() {
+        use std::io::{Error, ErrorKind};
+        let cases = [
+            ("StorageFull", Error::from(ErrorKind::StorageFull), true),
+            ("QuotaExceeded", Error::from(ErrorKind::QuotaExceeded), true),
+            (
+                "ReadOnlyFilesystem",
+                Error::from(ErrorKind::ReadOnlyFilesystem),
+                true,
+            ),
+            ("EIO", Error::from_raw_os_error(libc::EIO), true),
+            (
+                "PermissionDenied",
+                Error::from(ErrorKind::PermissionDenied),
+                false,
+            ),
+            ("EACCES", Error::from_raw_os_error(libc::EACCES), false),
+            ("NotFound", Error::from(ErrorKind::NotFound), false),
+            ("ENOENT", Error::from_raw_os_error(libc::ENOENT), false),
+        ];
+        for (name, error, refuses) in cases {
+            assert_eq!(is_storage_fault(&error), refuses, "{name}: {error}");
         }
     }
 
