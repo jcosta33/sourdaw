@@ -275,4 +275,49 @@ describe('planned bus and send', () => {
         expect(getPlannedBus('bus', [discard])).toBeUndefined();
         expect(getPlannedBus('bus', [discardOthers])?.name).toBe('Bus');
     });
+
+    it('keeps the send a restored track returns with over a later sibling restore patching the same track', () => {
+        const patchFor = (level: number, preFader: boolean): RestoreTrackPayloadSnapshot['routingPatches'] => [
+            {
+                trackId: 'track',
+                expected: { outputId: 'master', sends: [] },
+                replacement: { outputId: 'master', sends: [{ busId: 'bus', level, preFader }] },
+            },
+        ];
+        const restores: AppAction = {
+            type: 'restoreTracks',
+            payload: {
+                restores: [
+                    { ...restorePayload(sendingTrackRow), trackIndex: 0 },
+                    { ...restorePayload(busRow, patchFor(0.75, false)), trackIndex: 1 },
+                ],
+            },
+        };
+
+        expect(getPlannedSend('track', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.25, preFader: true });
+    });
+
+    it('applies restoreTracks patches ascending by trackIndex whatever order the payload lists them', () => {
+        const patchFor = (level: number): RestoreTrackPayloadSnapshot['routingPatches'] => [
+            {
+                trackId: 'other',
+                expected: { outputId: 'master', sends: [] },
+                replacement: { outputId: 'master', sends: [{ busId: 'bus', level, preFader: false }] },
+            },
+        ];
+        const restores: AppAction = {
+            type: 'restoreTracks',
+            payload: {
+                restores: [
+                    { ...restorePayload(busRow, patchFor(0.9)), trackIndex: 1 },
+                    {
+                        ...restorePayload(createTrack({ id: 'second', name: 'Second', kind: 'audio' }), patchFor(0.1)),
+                        trackIndex: 0,
+                    },
+                ],
+            },
+        };
+
+        expect(getPlannedSend('other', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.9, preFader: false });
+    });
 });
