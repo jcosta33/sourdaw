@@ -14,7 +14,17 @@ const fields = ['id', 'startBeat'];
 function contextAt(startBeat: number) {
     return {
         tracks: {
-            tracks: [{ id: 'audio', activeAlternativeId: 'main', clips: [{ id: 'recorded', startBeat }] }],
+            tracks: [
+                {
+                    id: 'audio',
+                    activeAlternativeId: 'main',
+                    clips: [
+                        { id: 'recorded', startBeat },
+                        { id: 'other', startBeat: 1 },
+                    ],
+                },
+                { id: 'second', activeAlternativeId: 'main', clips: [{ id: 'kept', startBeat: 2 }] },
+            ],
         },
     };
 }
@@ -29,7 +39,12 @@ const sources = [
 ];
 
 const contextWithoutRecording = {
-    tracks: { tracks: [{ id: 'audio', activeAlternativeId: 'main', clips: [] }] },
+    tracks: {
+        tracks: [
+            { id: 'audio', activeAlternativeId: 'main', clips: [{ id: 'other', startBeat: 1 }] },
+            { id: 'second', activeAlternativeId: 'main', clips: [{ id: 'kept', startBeat: 2 }] },
+        ],
+    },
 };
 
 describe('withoutDeferredTempoRecordingSources', () => {
