@@ -91,9 +91,10 @@ does not guard this boundary.
     months; PR #6610's review lacked a stance asking whether a relocated step still observes its targets.
     Probe: plant a known violation in a file the step claims to cover and confirm its CI run goes red, and
     compare its reported file count and duration with a directory run. In full mode the pass must receive
-    directories, never globs, and must fail when it lints far fewer files than are tracked: restoring the
-    glob targets must fail `scripts/__tests__/runLint.spec.ts` "hands a full run directories, because a
-    shell-less spawn leaves globs unexpanded".
+    directories, never globs, and must fail when it lints fewer files than the tracked, non-ignored sources
+    under its targets, or when a target contributes none: restoring the glob targets must fail
+    `scripts/__tests__/runLint.spec.ts` "hands a full run directories, because a shell-less spawn leaves
+    globs unexpanded" and "lists the tracked files of the same directories it hands the plugin pass".
 
 ## Retired lessons
 
