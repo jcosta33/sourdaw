@@ -1,5 +1,5 @@
+import { type ClipStateSnapshot, type TakeSnapshot } from '#/modules/Arrangement/events';
 import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
-import { type ClipStateSnapshot, type TakeSnapshot } from '#/utils/handlerContract';
 
 /** Source facets captured by the Arrangement owner before a tempo edit.
  * These are bounded value deltas, never replacement tracks or take lanes. */

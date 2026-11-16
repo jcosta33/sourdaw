@@ -1,5 +1,5 @@
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { type recordAutomationValue } from '#/modules/Automation/useCases';
-import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { type getTrackById } from '../../repositories/track/getTrackById';
 import { type AutomationMode } from '../../stores/trackStore';

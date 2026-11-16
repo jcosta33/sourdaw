@@ -26,23 +26,64 @@
  * fingerprint, exactly the class of bug this module exists to prevent).
  */
 
+type MultilineStringDelimiter = '"""' | "'''";
+
 type TomlLineScan = {
-    /** The line up to (excluding) a `#` comment that starts outside any string. */
+    /**
+     * The line up to (excluding) a `#` comment that starts outside any string.
+     * Whole when the line ends inside a multi-line string, which has no comments.
+     */
     code: string;
     /** Net change in `{}`/`[]` nesting depth outside strings. */
     depthDelta: number;
+    /** The multi-line string still open at the end of the line, which the next line continues. */
+    openMultiline: MultilineStringDelimiter | undefined;
 };
+
+/**
+ * Index just past the closing delimiter of a multi-line string whose content
+ * is scanned from `from`, or `undefined` when the line ends inside it. A
+ * basic `"""` string skips the character after a backslash (so `\"` never
+ * closes it); a literal `'''` string has no escapes. A closing run of four or
+ * five quotes ends at the last three: the extra one or two are content.
+ */
+function multilineStringEnd(line: string, from: number, delimiter: MultilineStringDelimiter): number | undefined {
+    for (let index = from; index < line.length; index += 1) {
+        if (delimiter === '"""' && line[index] === '\\') {
+            index += 1;
+        } else if (line.startsWith(delimiter, index)) {
+            let end = index + delimiter.length;
+            while (end - index < delimiter.length + 2 && line[end] === delimiter[0]) {
+                end += 1;
+            }
+            return end;
+        }
+    }
+    return undefined;
+}
 
 /**
  * One pass over a line tracking string state: a basic string `"..."` skips the
  * character after a backslash (so `\"` and `\\` never end or extend it), a
  * literal string `'...'` has no escapes. A `#` outside a string starts a
  * comment; brackets and braces outside a string change the nesting depth.
+ * A multi-line string (`"""` or `'''`) opened on an earlier line is passed in as
+ * `openMultiline`; one left open here is reported for the next line.
  */
-function scanTomlLine(line: string): TomlLineScan {
+function scanTomlLine(line: string, openMultiline: MultilineStringDelimiter | undefined): TomlLineScan {
     let depthDelta = 0;
     let quoteChar: string | undefined;
+    let multiline = openMultiline;
     for (let index = 0; index < line.length; index += 1) {
+        if (multiline !== undefined) {
+            const end = multilineStringEnd(line, index, multiline);
+            if (end === undefined) {
+                return { code: line, depthDelta, openMultiline: multiline };
+            }
+            multiline = undefined;
+            index = end - 1;
+            continue;
+        }
         const char = line[index];
         if (quoteChar !== undefined) {
             if (char === '\\' && quoteChar === '"') {
@@ -53,26 +94,22 @@ function scanTomlLine(line: string): TomlLineScan {
             continue;
         }
         if (char === '"' || char === "'") {
-            quoteChar = char;
+            const delimiter = char === '"' ? '"""' : "'''";
+            if (line.startsWith(delimiter, index)) {
+                multiline = delimiter;
+                index += delimiter.length - 1;
+            } else {
+                quoteChar = char;
+            }
         } else if (char === '#') {
-            return { code: line.slice(0, index), depthDelta };
+            return { code: line.slice(0, index), depthDelta, openMultiline: undefined };
         } else if (char === '{' || char === '[') {
             depthDelta += 1;
         } else if (char === '}' || char === ']') {
             depthDelta -= 1;
         }
     }
-    return { code: line, depthDelta };
-}
-
-/** Strip a TOML `#` comment (only outside a quoted string) and trailing whitespace. */
-function stripTomlCommentAndTrailingWhitespace(line: string): string {
-    return scanTomlLine(line).code.trimEnd();
-}
-
-/** Net change in unquoted `{}`/`[]` nesting depth contributed by `line`. */
-function tomlBracketDepthDelta(line: string): number {
-    return scanTomlLine(line).depthDelta;
+    return { code: line, depthDelta, openMultiline: multiline };
 }
 
 /** A TOML table-header line, e.g. `[profile.release]` or `[[bin]]`. */
@@ -108,18 +145,27 @@ export function* tomlTableLines(text: string): Generator<TomlTableLine> {
     let pendingLine: string | undefined;
     let pendingDepth = 0;
     let pendingStartLine = 0;
+    let openMultiline: MultilineStringDelimiter | undefined;
+    let multilineStartLine = 0;
     let lineNumber = 0;
 
     for (const rawLine of text.split('\n')) {
         lineNumber += 1;
-        const stripped = stripTomlCommentAndTrailingWhitespace(rawLine);
+        const continuesString = openMultiline !== undefined;
+        const scan = scanTomlLine(rawLine, openMultiline);
+        if (scan.openMultiline !== undefined && !continuesString) {
+            multilineStartLine = lineNumber;
+        }
+        openMultiline = scan.openMultiline;
+        // Inside a string the text is content: blank and trailing-space lines stay.
+        const stripped = openMultiline === undefined ? scan.code.trimEnd() : scan.code;
         if (pendingLine !== undefined) {
-            if (stripped.trim() === '') {
+            if (!continuesString && stripped.trim() === '') {
                 continue;
             }
-            pendingLine += ` ${stripped.trim()}`;
-            pendingDepth += tomlBracketDepthDelta(stripped);
-            if (pendingDepth <= 0) {
+            pendingLine += continuesString ? `\n${stripped}` : ` ${stripped.trim()}`;
+            pendingDepth += scan.depthDelta;
+            if (pendingDepth <= 0 && openMultiline === undefined) {
                 yield { header: currentHeader, line: pendingLine };
                 pendingLine = undefined;
                 pendingDepth = 0;
@@ -130,18 +176,22 @@ export function* tomlTableLines(text: string): Generator<TomlTableLine> {
             continue;
         }
         const headerMatch = tomlTableHeaderPattern.exec(stripped);
-        if (headerMatch !== null) {
+        if (headerMatch !== null && openMultiline === undefined) {
             currentHeader = requiredCapture(headerMatch, 'a table header in a TOML manifest');
             continue;
         }
-        const depth = tomlBracketDepthDelta(stripped);
-        if (depth > 0) {
+        if (scan.depthDelta > 0 || openMultiline !== undefined) {
             pendingLine = stripped.trim();
-            pendingDepth = depth;
+            pendingDepth = scan.depthDelta;
             pendingStartLine = lineNumber;
             continue;
         }
         yield { header: currentHeader, line: stripped.trim() };
+    }
+    if (openMultiline !== undefined && pendingLine !== undefined) {
+        throw new Error(
+            `Unterminated TOML multi-line string (${openMultiline}) starting at line ${multilineStartLine}: ${pendingLine}`
+        );
     }
     if (pendingLine !== undefined) {
         throw new Error(`Unterminated TOML inline table or array starting at line ${pendingStartLine}: ${pendingLine}`);

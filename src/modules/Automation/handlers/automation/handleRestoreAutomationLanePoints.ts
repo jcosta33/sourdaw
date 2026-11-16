@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AutomationPointSnapshot } from '#/utils/handlerContract';
 
+import { type AutomationPointSnapshot } from '../../events/automationSnapshots';
 import { type AutomationPoint } from '../../models/Automation';
 import { restoreAutomationLanePoints } from '../../useCases/automation/restoreAutomationLanePoints';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';

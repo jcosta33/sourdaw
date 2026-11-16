@@ -1,9 +1,10 @@
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { type TempoSourceClock } from '#/modules/Transport/stores';
-import { type AppAction, type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 
+import { type ClipAutomationLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';

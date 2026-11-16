@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSplitActionSnapshot,
+} from '../../../events/arrangementClipStateSnapshots';
 import { projectClipReplayPrefix } from '../projectClipReplayPrefix';
 
 const existingClip = ClipDummy.create({ id: 'existing', trackId: 'track', startBeat: 0, endBeat: 4 });

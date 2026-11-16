@@ -186,6 +186,94 @@ broken = { version = "1",
         expect(() => workspaceManifestFingerprintInput(manifest, new Set(['broken']))).toThrow(/line 3/);
     });
 
+    it('does not count a bracket inside a string toward the nesting depth', () => {
+        const manifest = `[workspace.dependencies]
+probe = { version = "[", note = "x" }
+later = "2"
+`;
+
+        const rendered = workspaceManifestFingerprintInput(manifest, new Set(['probe', 'later']));
+
+        expect(rendered).toBe(
+            '[workspace.dependencies]\nprobe = { version = "[", note = "x" }\n[workspace.dependencies]\nlater = "2"\n'
+        );
+    });
+
+    it.each(['"""', "'''"])('reads past a multi-line %s string holding an unbalanced bracket', (delimiter) => {
+        const manifest = `[package]
+description = ${delimiter}
+Usage: tool [opts
+${delimiter}
+
+[workspace.dependencies]
+serde = "1"
+`;
+
+        expect(workspaceManifestFingerprintInput(manifest, new Set(['serde']))).toBe(
+            '[workspace.dependencies]\nserde = "1"\n'
+        );
+    });
+
+    it('keeps quotes, escaped delimiters, and # as content of a multi-line basic string and honours a literal string backslash', () => {
+        const manifest = `[workspace.package]
+description = """
+say "hi" and \\"""quoted\\""" # not a comment
+"""
+version = "1"
+path = '''
+C:\\dir\\
+'''
+`;
+
+        expect(workspaceManifestFingerprintInput(manifest, new Set())).toBe(
+            [
+                '[workspace.package]',
+                'description = """\nsay "hi" and \\"""quoted\\""" # not a comment\n"""',
+                '[workspace.package]',
+                'version = "1"',
+                '[workspace.package]',
+                "path = '''\nC:\\dir\\\n'''",
+                '',
+            ].join('\n')
+        );
+    });
+
+    it('closes a literal multi-line string at the delimiter even when its body ends in a backslash', () => {
+        const manifest = `[workspace.package]
+x = '''
+a\\'''
+serde = "1"
+`;
+
+        expect(workspaceManifestFingerprintInput(manifest, new Set())).toBe(
+            `[workspace.package]\nx = '''\na\\'''\n[workspace.package]\nserde = "1"\n`
+        );
+    });
+
+    it.each(['""""', '"""""'])('ends a multi-line basic string at the last three of a %s closer', (closer) => {
+        const manifest = `[workspace.package]
+x = """
+a${closer}  # comment
+serde = "1"
+`;
+
+        expect(workspaceManifestFingerprintInput(manifest, new Set())).toBe(
+            `[workspace.package]\nx = """\na${closer}\n[workspace.package]\nserde = "1"\n`
+        );
+    });
+
+    it('throws naming the start line when a multi-line string is never closed', () => {
+        const manifest = `[workspace.dependencies]
+serde = "1"
+note = """
+never closed
+`;
+
+        expect(() => workspaceManifestFingerprintInput(manifest, new Set(['serde']))).toThrow(
+            /multi-line string.*line 3/
+        );
+    });
+
     it('renders the real root Cargo.toml byte-identically to the line scanner before #6889 (guards wasm closure hashes)', () => {
         const rootManifest = readFileSync(wasmArtifacts.absolute('Cargo.toml'), 'utf8');
 
@@ -251,6 +339,19 @@ windows = { workspace = true, features = [
 `;
 
         expect(workspaceDependencyNames(cargoToml)).toEqual(new Set(['windows']));
+    });
+
+    it('finds a dependency after a multi-line string whose body holds a brace', () => {
+        const cargoToml = `[package]
+readme = """
+use {
+"""
+
+[dependencies]
+serde = { workspace = true }
+`;
+
+        expect(workspaceDependencyNames(cargoToml)).toEqual(new Set(['serde']));
     });
 
     it('throws on a dependency entry it cannot classify, instead of silently dropping it', () => {

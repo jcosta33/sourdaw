@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
-import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 
+import { type ClipAutomationLaneSnapshot } from '../../../events/arrangementClipStateSnapshots';
 import { serializeClipScopedAutomationLanes } from '../serializeClipScopedAutomationLanes';
 
 function lane(id: string, clipId: string | undefined): ClipAutomationLaneSnapshot {

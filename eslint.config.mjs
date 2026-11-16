@@ -205,7 +205,6 @@ export default tseslint.config(
     },
     {
         rules: {
-            '@tanstack/query/no-rest-destructuring': 'warn',
             '@tanstack/query/no-void-query-fn': 'error',
         },
     },
