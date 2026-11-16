@@ -40,6 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     unloadPlugin: vi.fn(() => Promise.resolve()),
+    unloadPluginsBeforeProjectSwitch: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({

@@ -17,17 +17,17 @@ import { newProject } from '../newProject';
  * mounts — not like a hard failure that bounces the launch screen home.
  *
  * `#/modules/PluginHost/useCases` is deliberately NOT mocked here: project
- * activation awaits its unkeyed `unloadPlugin`, which is the call whose
+ * activation awaits its whole-runtime `unloadPluginsBeforeProjectSwitch`, the call whose
  * rejection used to fail activation. Everything else newProject touches is
  * mocked exactly as `newProject.spec.ts` mocks it.
  */
 const pluginHostMocks = vi.hoisted(() => ({
-    unloadPlugin: vi.fn(() => Promise.resolve()),
+    unloadPluginsBeforeProjectSwitch: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
-    unloadPlugin: pluginHostMocks.unloadPlugin,
+    unloadPluginsBeforeProjectSwitch: pluginHostMocks.unloadPluginsBeforeProjectSwitch,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -152,7 +152,7 @@ describe('newProject with the native host absent', () => {
         await expect(newProject('Hostless Project')).resolves.toBe(true);
 
         // Activation really drove the native teardown into the rejecting bridge.
-        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalled();
+        expect(pluginHostMocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalled();
         expect(resetCrdtProject).toHaveBeenCalledWith('Hostless Project', expect.any(Function), expect.any(Function));
 
         // `initialized: true` with `loading: false` is what AppShell's ready

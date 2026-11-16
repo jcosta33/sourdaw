@@ -938,6 +938,7 @@ describe('package scripts and gitignore', () => {
         };
         const port: DeliveryPort = {
             fetch: () => undefined,
+            lintLedgerCrossing: () => ({ mergeBase: 'merge-base', paths: [] }),
             pullRequest: (number) => {
                 if (number === 2495) {
                     return receipt === undefined ? initial : final;
@@ -1202,6 +1203,7 @@ describe('package scripts and gitignore', () => {
             'scripts/isolatedGitTransport.ts',
             'scripts/laneActivity.ts',
             'scripts/laneRemovalFetch.ts',
+            'scripts/lintLedgerCrossing.ts',
             'scripts/pnpmModulesPreflight.ts',
             'scripts/prContract.ts',
             'scripts/processSnapshot.ts',
@@ -1363,6 +1365,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/isolatedGitTransport.ts',
                     'scripts/laneActivity.ts',
                     'scripts/laneRemovalFetch.ts',
+                    'scripts/lintLedgerCrossing.ts',
                     'scripts/pnpmModulesPreflight.ts',
                     'scripts/prContract.ts',
                     'scripts/processSnapshot.ts',
@@ -3968,6 +3971,7 @@ describe('package scripts and gitignore', () => {
                 };
                 const unusedPort: DeliveryPort = {
                     fetch: () => undefined,
+                    lintLedgerCrossing: () => expect.fail('delivery domain should not run'),
                     pullRequest: (snapshotNumber) => {
                         expect(snapshotNumber).toBe(number);
                         return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
@@ -4035,6 +4039,7 @@ describe('package scripts and gitignore', () => {
         };
         const unusedPort: DeliveryPort = {
             fetch: () => undefined,
+            lintLedgerCrossing: () => expect.fail('delivery domain should not run'),
             pullRequest: (number) => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
@@ -4572,6 +4577,7 @@ describe('package scripts and gitignore', () => {
         const tracker = authentication('ghs_tracker', { issues: 'write' });
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
+            lintLedgerCrossing: () => ({ mergeBase: 'merge-base', paths: [] }),
             pullRequest: (number) => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
