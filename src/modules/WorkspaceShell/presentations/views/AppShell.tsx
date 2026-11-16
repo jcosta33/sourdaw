@@ -34,7 +34,7 @@ import {
 } from '#/modules/AiRuntime/presentations/views';
 import { TakeLanesView } from '#/modules/Arrangement/presentations/views';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
-import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
+import { detectVariationLaneEnabling } from '#/modules/Arrangement/useCases';
 import { ExportDialog } from '#/modules/AudioRendering/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
@@ -103,7 +103,6 @@ import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
-import { isSameVariationLanesShown } from '../helpers/variationLanesShown';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
@@ -112,6 +111,7 @@ import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectMutationRefusal } from '../hooks/useProjectMutationRefusal';
 import { useProjectState } from '../hooks/useProjectState';
+import { useShellTrackFacts } from '../hooks/useShellTrackFacts';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { AgentWorkspace } from './AgentWorkspace';
@@ -310,22 +310,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const { showNotice: showEngineFallbackNotice, dismissNotice: dismissEngineFallbackNotice } =
         useEngineFallbackNotice();
     const prefs = useStore(preferencesStore, defaultPreferences);
-    // The shell reads three facts from the tracks; following the whole store would render the
-    // whole chrome again for every clip edit.
-    const isAudioClipSelected = useStoreSelector(
-        trackStore,
-        (state) =>
-            selectedClipId !== null &&
-            (state?.tracks ?? []).some((track) =>
-                track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
-            )
-    );
-    const takesTabAvailable = useStoreSelector(trackStore, (state) => hasVariationLanes(state?.tracks ?? []));
-    const variationLanesShown = useStoreSelector(
-        trackStore,
-        (state) => detectVariationLaneEnabling(null, state?.tracks ?? []).shown,
-        isSameVariationLanesShown
-    );
+    const { isAudioClipSelected, takesTabAvailable, variationLanesShown } = useShellTrackFacts(selectedClipId);
     const aiPanelOpen = useStoreSelector(aiStore, (state) => state?.isPanelOpen ?? false);
     const alphaDismissed = useStore(alphaNoticeStore);
     const showAlphaNotice = project.initialized && !alphaDismissed;
