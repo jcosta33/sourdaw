@@ -7,6 +7,7 @@ import { collectHostedPluginInstances } from '../../useCases/device/collectHoste
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+import { captureCreatedTrackGuards } from '../track/captureCreatedTrackGuards';
 
 type MutableDescribeResult = {
     label: string;
@@ -25,6 +26,31 @@ const pendingDescribeResults = new WeakMap<object, MutableDescribeResult>();
 
 function isRestoreSnapshot(value: RestoreTrackPayloadSnapshot | null): value is RestoreTrackPayloadSnapshot {
     return value !== null;
+}
+
+/**
+ * Inverse and redo are emitted together or not at all. A snapshot that came back
+ * `null` means a created track was already gone, and an inverse naming ids no redo
+ * can reproduce is exactly the wedge described in `execute`; an inert entry that undo
+ * drops is the safe degradation. Each guard is the committed track, so the undo
+ * refuses once anyone edits what the template created.
+ */
+function describeCreatedTracks(
+    pending: MutableDescribeResult,
+    createdTrackIds: readonly string[],
+    restores: RestoreTrackPayloadSnapshot[]
+): void {
+    const generatedMidiStateGuards = captureCreatedTrackGuards(createdTrackIds);
+    if (restores.length === 0 || restores.length !== createdTrackIds.length || generatedMidiStateGuards === null) {
+        pending.inverseAction = null;
+        pending.redoAction = undefined;
+        return;
+    }
+    pending.inverseAction = {
+        type: 'discardCreatedTracks',
+        payload: { trackIds: createdTrackIds, generatedMidiStateGuards },
+    };
+    pending.redoAction = { type: 'restoreTracks', payload: { restores } };
 }
 
 export const handleLoadTrackTemplate = createHandler<'loadTrackTemplate'>({
@@ -48,15 +74,7 @@ export const handleLoadTrackTemplate = createHandler<'loadTrackTemplate'>({
 
         const pending = pendingDescribeResults.get(alpha);
         if (pending) {
-            // Inverse and redo are emitted together or not at all. A snapshot that came
-            // back `null` means a created track was already gone, and an inverse naming
-            // ids no redo can reproduce is exactly the wedge above; an inert entry that
-            // undo drops is the safe degradation.
-            const captured = restores.length > 0 && restores.length === createdTrackIds.length;
-            pending.inverseAction = captured
-                ? { type: 'discardCreatedTracks', payload: { trackIds: createdTrackIds } }
-                : null;
-            pending.redoAction = captured ? { type: 'restoreTracks', payload: { restores } } : undefined;
+            describeCreatedTracks(pending, createdTrackIds, restores);
         }
         const hostedTrackIds = (getTrackStoreState()?.tracks ?? [])
             .filter((track) => createdTrackIds.includes(track.id) && collectHostedPluginInstances(track).length > 0)

@@ -411,6 +411,33 @@ describe('handleDiscardCreatedTrack', () => {
             expect(validate(action, { actions: [action], actionIndex: 0 })).toBe(admits);
         });
 
+        // The chunk exemption strips device state alone: a created track's clips still
+        // count on the validate route whose guard names no MIDI clip.
+        const createdClip = { id: 'created-clip', trackId: 'created', name: 'Take', startBeat: 0, endBeat: 4 };
+        const clipCases = [
+            { drift: 'none', clip: createdClip, admits: true },
+            { drift: 'a clip rename', clip: { ...createdClip, name: 'Renamed take' }, admits: false },
+            { drift: 'a clip move', clip: { ...createdClip, startBeat: 1 }, admits: false },
+        ];
+
+        it.each(clipCases)('validate still compares the created clips: $drift', ({ clip, admits }) => {
+            const trackWithClip = { ...createdTrack, clips: [createdClip] };
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ ...trackWithClip, clips: [clip] }] });
+            const action = {
+                type: 'discardCreatedTrack' as const,
+                payload: {
+                    trackId: 'created',
+                    generatedMidiStateGuard: { entityJson: JSON.stringify(trackWithClip), midiByClipIdJson: '{}' },
+                },
+            };
+            const validate = handleDiscardCreatedTrack.validate;
+            if (!validate) {
+                throw new Error('Expected discardCreatedTrack to provide validation');
+            }
+
+            expect(validate(action, { actions: [action], actionIndex: 0 })).toBe(admits);
+        });
+
         it.each(cases)('execute admits only chunk drift: $drift', async ({ device, admits }) => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ ...createdTrack, devices: [device] }] });
 

@@ -27,6 +27,7 @@ import {
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
     PLUGIN_FOLDER_ADD_CHANNEL,
+    SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
@@ -39,6 +40,7 @@ import {
 } from '../channels.js';
 import { commandChannel, SCAN_PLUGINS } from '../commands.js';
 
+import type { GpuMemoryBudget } from '../channels.js';
 import type { NativeHost } from '../native.js';
 import type { IpcMainLike, SenderFrameCarrier } from '../router.js';
 import type { ScanSupervisor } from '../scan.js';
@@ -729,9 +731,12 @@ describe('the path helpers', () => {
 });
 
 describe('the system channel', () => {
-    const systemHandlers = (totalMemoryBytes: () => number): Map<string, Handler> => {
+    const systemHandlers = (
+        totalMemoryBytes: () => number,
+        gpuMemoryBudget: () => GpuMemoryBudget = () => ({ state: 'unknown' })
+    ): Map<string, Handler> => {
         const { ipcMain, handlers } = collectingIpc();
-        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes });
+        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes, gpuMemoryBudget });
         return handlers;
     };
 
@@ -747,6 +752,24 @@ describe('the system channel', () => {
 
         expect(() => handlers.get(SYSTEM_TOTAL_MEMORY_CHANNEL)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
         expect(totalMemoryBytes).not.toHaveBeenCalled();
+    });
+
+    it('answers a trusted frame with the injected GPU memory budget', () => {
+        const budget: GpuMemoryBudget = { state: 'known', bytes: 12_713_115_648 };
+        const handlers = systemHandlers(
+            () => 1,
+            () => budget
+        );
+
+        expect(handlers.get(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL)?.(APP_FRAME)).toEqual(budget);
+    });
+
+    it('refuses a foreign frame without reading the GPU memory budget', () => {
+        const gpuMemoryBudget = vi.fn((): GpuMemoryBudget => ({ state: 'unknown' }));
+        const handlers = systemHandlers(() => 1, gpuMemoryBudget);
+
+        expect(() => handlers.get(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
+        expect(gpuMemoryBudget).not.toHaveBeenCalled();
     });
 });
 
@@ -766,7 +789,12 @@ describe('the origin guard on every non-command channel', () => {
             samplesBaseUrl: 'app://sourdaw/samples',
             join: (...segments) => segments.join('/'),
         });
-        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes: () => 1 });
+        registerSystemChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            totalMemoryBytes: () => 1,
+            gpuMemoryBudget: () => ({ state: 'unknown' }),
+        });
 
         expect([...handlers.keys()].sort()).toEqual(
             [
@@ -776,6 +804,7 @@ describe('the origin guard on every non-command channel', () => {
                 PATHS_JOIN_CHANNEL,
                 PATHS_SAMPLES_BASE_CHANNEL,
                 PLUGIN_FOLDER_ADD_CHANNEL,
+                SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
                 SYSTEM_TOTAL_MEMORY_CHANNEL,
             ].sort()
         );

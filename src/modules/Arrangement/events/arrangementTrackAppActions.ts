@@ -353,9 +353,20 @@ export type ArrangementTrackAppAction =
     | {
           /** Inverse of track-creating commands (`createFolder`, `loadTrackTemplate`).
            *  The created ids are materialized before `describe`, so the inverse names
-           *  exactly the tracks the command appended and no later sibling. */
+           *  exactly the tracks the command appended and no later sibling.
+           *  `generatedMidiStateGuards` holds one fingerprint per created track, taken
+           *  from the committed track; the discard refuses unless every named track
+           *  still matches its own (plugin state captures aside), and removes nothing
+           *  on a refusal. Entries recorded before the guards existed carry none and
+           *  discard by id alone. */
           type: 'discardCreatedTracks';
-          payload: { trackIds: readonly string[] };
+          payload: {
+              trackIds: readonly string[];
+              generatedMidiStateGuards?: readonly {
+                  trackId: string;
+                  generatedMidiStateGuard: GeneratedMidiStateGuard;
+              }[];
+          };
       }
     | {
           /** Inverse of `deleteTrackAlternative`. Deletion drops the alternative, may
