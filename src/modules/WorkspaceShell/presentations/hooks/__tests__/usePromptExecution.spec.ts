@@ -330,6 +330,12 @@ describe('usePromptExecution', () => {
         rerender();
         expect(result.current.selectionTags).toEqual([{ id: 'track:t2', label: 'Bass', kind: 'track', icon: 'track' }]);
 
+        trackState = { tracks: [track, bass], selectedTrackId: 't1' };
+        rerender();
+        expect(result.current.selectionTags).toEqual([
+            { id: 'track:t1', label: 'Drums', kind: 'track', icon: 'track' },
+        ]);
+
         clipState = { selectedClipId: null, selectedClipIds: ['c1', 'c2'], marqueeSelection: null };
         rerender();
         expect(result.current.selectionTags).toContainEqual({
