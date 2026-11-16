@@ -27,8 +27,9 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { midiStore } from '#/modules/MIDI/stores';
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,

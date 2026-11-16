@@ -1,4 +1,4 @@
-import { type DrumPreviewCandidateSnapshot, type DrumPreviewSourceClipSnapshot } from '#/utils/handlerContract';
+import { type DrumPreviewCandidateSnapshot, type DrumPreviewSourceClipSnapshot } from './crdtDocumentSnapshots';
 
 export type DrumPreviewBranchPlanSnapshot = {
     readonly ownerId: string;

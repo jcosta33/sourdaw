@@ -1,4 +1,4 @@
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';

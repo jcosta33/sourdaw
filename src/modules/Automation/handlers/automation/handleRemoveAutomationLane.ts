@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type AutomationPointSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type AutomationPointSnapshot } from '../../events/automationSnapshots';
 import { type AutomationLane } from '../../models/Automation';
 import { removeAutomationLane } from '../../useCases/automation/removeAutomationLane';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';

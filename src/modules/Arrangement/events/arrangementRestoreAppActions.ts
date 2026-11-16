@@ -1,6 +1,7 @@
 import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot } from '#/modules/MIDI/events';
-import { type CommandSourceProof, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 
+import { type RetiredTakeLaneSnapshot } from './arrangementClipStateSnapshots';
 import { type ClipSnapshot, type RipplePlanSnapshot } from './arrangementClipSnapshots';
 import { type RestoreTrackPayloadSnapshot } from './arrangementTrackSnapshots';
 

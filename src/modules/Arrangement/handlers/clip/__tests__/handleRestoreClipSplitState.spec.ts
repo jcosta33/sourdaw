@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
+import { type AppAction } from '#/utils/handlerContract';
+
 import {
-    type AppAction,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
-    type MidiClipDataActionSnapshot,
     type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+} from '../../../events/arrangementClipStateSnapshots';
 
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');

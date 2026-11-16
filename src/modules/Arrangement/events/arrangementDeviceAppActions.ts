@@ -1,8 +1,9 @@
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
-import { type AutomationRecordingPolicy, type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
 
 import { type DeviceSnapshot } from '../models/DeviceSnapshot';
 
+import { type DeviceStateChunkSnapshot } from './arrangementDeviceStateSnapshots';
 import { type TrackKind } from './arrangementTrackSnapshots';
 
 export type BatchRestoreDeviceSnapshot = {

@@ -31,6 +31,7 @@ import {
     projectFrozenMidiTakeWindow,
     selectMidiNotesForRecordingPass,
 } from '#/modules/MIDI/stores';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import {
     isValidMidiTimeStateRestorePlan,
     prepareMidiGlobalTimeTransaction,
@@ -42,7 +43,7 @@ import {
     prepareTimelineMapStateRestore,
     prepareTimelineMapTimeOperation,
 } from '#/modules/Transport/useCases';
-import { type AppAction, type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Take } from '../../../models/TakeLane';

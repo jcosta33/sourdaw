@@ -6,14 +6,10 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type HandlerValidationContext,
-    type HandlerCommitValidation,
-    type CommandSourceProof,
-    type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
+import { type AppAction, type HandlerValidationContext, type HandlerCommitValidation } from '#/utils/handlerContract';
 
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { projectsClipsByTempo } from '../../models/ProjectsClipsByTempoActionType';
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';

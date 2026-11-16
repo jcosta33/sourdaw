@@ -1,19 +1,20 @@
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/modules/Knead/events';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
+
 import {
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
     type ClipSatelliteGainEnvelopeSnapshot,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
-    type CommandSourceProof,
     type CompRegionSnapshot,
     type CompTakeLaneSnapshot,
-    type MidiClipNoteSnapshot,
     type RetiredTakeLaneSnapshot,
     type TakeSnapshot,
-} from '#/utils/handlerContract';
-import { type TempoSourceClock } from '#/utils/tempoSourceClock';
+} from './arrangementClipStateSnapshots';
 
 import {
     type ClipAutomationLaneActionSnapshot,

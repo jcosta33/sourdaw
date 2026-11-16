@@ -1,4 +1,4 @@
-import { type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
+import { type DeviceStateChunk } from './Track';
 
 export type DeviceSnapshot = {
     readonly id: string;
@@ -9,5 +9,5 @@ export type DeviceSnapshot = {
     readonly externalPluginId?: string;
     readonly externalInstanceId?: string;
     readonly externalStateChunk?: string;
-    readonly deviceState?: DeviceStateChunkSnapshot;
+    readonly deviceState?: DeviceStateChunk;
 };

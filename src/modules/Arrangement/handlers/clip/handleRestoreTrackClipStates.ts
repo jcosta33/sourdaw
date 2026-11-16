@@ -1,14 +1,14 @@
 import { midiStore } from '#/modules/MIDI/stores';
 import { removeMidiClipData, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
+
 import {
-    type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
-    type DeviceStateChunkSnapshot,
     type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
-
+} from '../../events/arrangementClipStateSnapshots';
+import { type DeviceStateChunkSnapshot } from '../../events/arrangementDeviceStateSnapshots';
 import {
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,

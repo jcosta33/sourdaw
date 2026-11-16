@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type ClipAutomationLaneSnapshot, type ClipSatelliteEntrySnapshot } from '#/utils/handlerContract';
-
 import { ClipDummy } from '../../../__tests__/ClipDummy';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSatelliteEntrySnapshot,
+} from '../../../events/arrangementClipStateSnapshots';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type TrackClipStateSnapshot } from '../../../events/arrangementTrackSnapshots';
 import { type Clip, type Device, type Track } from '../../../stores/trackStore';

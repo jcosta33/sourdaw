@@ -15,6 +15,7 @@ import {
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
+import { type DeviceStateChunkSnapshot } from '#/modules/Arrangement/events';
 import {
     addClip,
     clampDeviceParameterValue,
@@ -42,7 +43,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
-import { type AppAction, type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';

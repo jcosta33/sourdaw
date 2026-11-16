@@ -23,7 +23,7 @@ type CapturedTake = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
-    midiSource?: import('../../src/utils/handlerContract').MidiTakeSourceSnapshot;
+    midiSource?: import('../../src/modules/MIDI/events').MidiTakeSourceSnapshot;
 };
 type OscillatorStart = {
     frequency: number;

@@ -1,4 +1,4 @@
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
