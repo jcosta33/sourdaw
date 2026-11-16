@@ -340,11 +340,18 @@ describe('agent tool catalog', () => {
                     maxItems: 4,
                     items: { type: 'string', minLength: 1, maxLength: 48 },
                 },
+                presetTerms: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 4,
+                    items: { type: 'string', minLength: 1, maxLength: 48 },
+                    description: 'Factory preset name or tag words.',
+                },
                 targetId: { type: 'string', minLength: 1, maxLength: 256 },
                 role: { type: 'string', enum: [...roles] },
                 limit: { type: 'integer', minimum: 1, maximum: 8 },
             },
-            required: ['descriptors'],
+            required: [],
             additionalProperties: false,
         });
     });
