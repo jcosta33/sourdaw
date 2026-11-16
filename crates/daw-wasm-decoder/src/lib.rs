@@ -111,7 +111,7 @@ impl DecodedAudioWasm {
 #[wasm_bindgen]
 pub fn decode_audio_bytes(bytes: &[u8]) -> Result<DecodedAudioWasm, JsError> {
     let decoded = daw_io::decode_audio_file_bytes_interleaved(bytes.to_vec())
-        .map_err(|e| JsError::new(&e))?;
+        .map_err(|error| JsError::new(&error.to_string()))?;
 
     Ok(decoded_audio_to_wasm(decoded))
 }
