@@ -380,7 +380,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
     });
 
-    it('validate admits a split restore after an editTempoMap prefix through the projected take lanes', () => {
+    it('validate refuses a split restore after an editTempoMap prefix when a restored take lane owns the minted id', () => {
         const mintedTake = {
             id: 'minted-take',
             clipId: 'c2',
@@ -390,8 +390,8 @@ describe('handleRestoreClipSplitState — satellites', () => {
             selected: false,
         };
         const colliding = { ...mintedTake, clipId: 'cr', name: 'Restored owner' };
-        // The restore prefix puts `minted-take` under another clip in a replayed take lane. The tempo projection
-        // does not carry that lane, so only the projected take lanes admit the id the re-key mints.
+        // The restore prefix puts `minted-take` under another clip in a replayed take lane. editTempoMap keeps
+        // clip state, so the replay still sees that lane and the re-key collides, as without the tempo prefix.
         const restorePrefix: AppAction = {
             type: 'restoreClip',
             payload: {
@@ -440,7 +440,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
                 actions: [restorePrefix, tempoPrefix, action],
                 actionIndex: 2,
             })
-        ).toBe(true);
+        ).toBe(false);
         expect(
             handleRestoreClipSplitState.validate?.(action, { actions: [restorePrefix, action], actionIndex: 1 })
         ).toBe(false);
