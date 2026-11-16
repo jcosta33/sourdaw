@@ -55,6 +55,9 @@ function describeOwnStep(criterion: Criterion): string {
 
 /** What admission found for one criterion: the figures it compared and whether they met the criterion. */
 function describeCriterionFigures(criterion: Criterion): string {
+    if (criterion.outcome === 'not-reached') {
+        return 'not evaluated (blocked)';
+    }
     if (criterion.outcome === 'not-evaluated') {
         return 'not evaluated: admission read no compatible baseline and preview figures for it (blocked)';
     }

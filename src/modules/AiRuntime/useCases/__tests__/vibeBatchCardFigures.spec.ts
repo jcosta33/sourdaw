@@ -304,7 +304,7 @@ describe('a vibe batch card shows what admission measured', () => {
         ]);
     });
 
-    it('says in words that a criterion admission never evaluated was not evaluated', () => {
+    it('names no figure cause for criteria admission refused before reading any figure', () => {
         const { evaluation, cardLines } = admitAndDescribe({
             recipeIds: ['drums-warm'],
             kept: [{ recipeId: 'drums-warm', metricId: 'spectralCentroid' }],
@@ -313,6 +313,41 @@ describe('a vibe batch card shows what admission measured', () => {
         });
 
         expect(evaluation.failure).toBe('stale');
+        expect(cardLines).toEqual([
+            'Fresh approval preview on Kick, arrangement [0, 4]: spectral centroid not evaluated (blocked).',
+        ]);
+    });
+
+    it('names no figure incompatibility for each criterion of a batch whose frozen criteria contradict', () => {
+        const { evaluation, cardLines } = admitAndDescribe({
+            // The warm recipe lowers the spectral centroid and the bright one raises it, on the same track.
+            recipeIds: ['drums-warm', 'drums-bright'],
+            kept: [
+                { recipeId: 'drums-warm', metricId: 'spectralCentroid' },
+                { recipeId: 'drums-bright', metricId: 'spectralCentroid' },
+            ],
+            previews: [
+                { spectralCentroid: { baseline: 2000, preview: 1900 } },
+                { spectralCentroid: { baseline: 2000, preview: 1800 } },
+            ],
+        });
+
+        expect(evaluation.failure).toBe('contradictory');
+        expect(cardLines).toHaveLength(2);
+        for (const line of cardLines) {
+            expect(line).toMatch(/not evaluated \(blocked\)\.$/);
+            expect(line).not.toContain('compatible');
+        }
+    });
+
+    it('says admission read no compatible figures for a criterion whose preview lacks its metric', () => {
+        const { evaluation, cardLines } = admitAndDescribe({
+            recipeIds: ['drums-warm'],
+            kept: [{ recipeId: 'drums-warm', metricId: 'spectralCentroid' }],
+            previews: [{ rms: { baseline: -32, preview: -31 } }],
+        });
+
+        expect(evaluation.failure).toBe('incomparable');
         expect(cardLines).toEqual([
             'Fresh approval preview on Kick, arrangement [0, 4]: spectral centroid not evaluated: admission read no compatible baseline and preview figures for it (blocked).',
         ]);

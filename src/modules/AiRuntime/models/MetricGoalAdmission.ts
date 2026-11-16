@@ -208,9 +208,11 @@ export type MetricGoalEvaluation = {
         readonly final: readonly number[];
         /**
          * What admission found for this criterion alone, whether or not an earlier one already blocked the batch:
-         * `not-evaluated` when it read no compatible figures to compare.
+         * `met` and `not-met` when it compared compatible figures; `not-evaluated` when it read the criterion
+         * and found no compatible figures to compare; `not-reached` when it refused the batch before reading
+         * any figure, so no cause concerning this criterion's figures was established.
          */
-        readonly outcome: 'met' | 'not-met' | 'not-evaluated';
+        readonly outcome: 'met' | 'not-met' | 'not-evaluated' | 'not-reached';
         /** The first pair of figures that broke the criterion, and whether it was its own step or the whole batch. */
         readonly unmet: { readonly scope: 'step' | 'batch'; readonly from: number; readonly to: number } | null;
         readonly unit: string | null;

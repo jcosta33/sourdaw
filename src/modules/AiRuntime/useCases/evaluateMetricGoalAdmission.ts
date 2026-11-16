@@ -561,7 +561,7 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
             reference: [],
             initial: [],
             final: [],
-            outcome: 'not-evaluated',
+            outcome: 'not-reached',
             unmet: null,
             unit: null,
             status: 'blocked',
