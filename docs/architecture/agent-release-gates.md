@@ -250,10 +250,53 @@ verification runs against. Schema version 1 carries:
 - `collisions` — every fixture path that more than one suite reads, with the suites that read it.
   Two suites sharing a fixture cannot record independent evidence about that file.
 
-A fixture is a path the command names under `src/`, `scripts/`, `tests/`, or `evidence/`, plus the
-source tree of every crate the command tests with `cargo test -p`. A fixture path that does not
-exist carries `"digest": null` and `"status": "absent"`. The manifest's own path is never a fixture:
+A fixture is a named file: a path the command names under `src/`, `scripts/`, `tests/`,
+`evidence/`, or `electron/`, or a data file the contract declares for the suite. The manifest pins
+files only, and the generator refuses a fixture that is a directory: a tree's digest moves with
+every unrelated edit inside it, which would fail the per-pull-request freshness check on changes
+that have nothing to do with the suite. Directory and crate trees, a tested crate's source among
+them, are covered by the record closure below. A fixture path that does not exist carries
+`"digest": null` and `"status": "absent"`; the committed manifest may not carry that state for any
+fixture, because a moved spec must be repointed, never pinned as absent
+(`agentCampaignHarness.spec.ts` enforces it). The manifest's own path is never a fixture:
 a document cannot carry the digest of its own bytes.
+
+Named fixtures are not everything a suite's evidence depends on. A suite's closure is the full set:
+
+- every tracked file its named code fixtures reach through resolved static imports, type-only
+  edges included, through the root TypeScript aliases;
+- the files each `pnpm <script>` in its command runs under, cruised the same way: the repository
+  files the script's `package.json` command names, the files its runner loads by path or
+  configuration, declared per script in `EVIDENCE_SCRIPT_RUNTIME_FILES`, and, for a Vitest run,
+  every setup file `vite.config.ts` can name, read from its `setupFiles` expression as the union of
+  its branches;
+- for each crate it tests with `cargo test -p`, the workspace `Cargo.toml`, `rust-toolchain.toml`
+  and `.cargo/config.toml`, plus that crate and its transitive workspace path-dependency closure
+  from `cargo metadata --offline --no-deps`. Each package contributes its `Cargo.toml`, its `src`
+  tree and its build script. The tested crate also contributes its dev-dependencies and its `tests`
+  directory; a dependency's dev-dependencies do not compile and are excluded;
+- its other named fixtures, and the files or trees its specs read by path, declared per suite in
+  `EVIDENCE_SUITE_CLOSURE_READS` in `scripts/agent-campaign/evidenceGateContract.ts`. A tree stands
+  for its tracked files.
+
+Derivation is offline and fails closed. An import that cannot be resolved, a reached file that is
+not tracked, a path dependency missing from the metadata, a script `package.json` does not declare
+or whose named file is missing, a `vite.config.ts` whose setup files cannot be read, or a declared
+read that names no tracked file refuses, never skips. The one exception is a bare package specifier
+the import resolver cannot follow (a package publishing only conditional `exports`) when that
+package is installed where Node looks for it: it is a dependency the lockfile pins, not a repository
+file. A relative or `#` alias specifier never takes that exception.
+
+The closure stays out of the manifest and out of `collisions`. Barrel imports pull most of the
+application into most suites, so nearly every product edit would move a manifest closure digest
+and fail the per-pull-request freshness check, and nearly every file would collide across nearly
+every suite, leaving the collision census meaningless. A record carries the closure its run observed
+instead, and release readiness recomputes it against the live tree.
+
+Path reads the closure cannot see stay a known limit: a file a spec locates through data at run time
+(the specs the source-examples corpus names), and a file a crate's `#[cfg(test)]` code embeds from
+outside its own tree with `include_str!` or `include_bytes!`, unless a suite's filtered tests reach
+it and the suite declares it.
 
 `kind` records the command's shape: `unit`, `unit+rust`, or `rust+unit` by which runner the command
 reaches first, or `manual` for a suite whose verification is not a runnable command. The runner
@@ -267,8 +310,9 @@ unless they are supplied explicitly.
 
 The runner writes one record per executed gate to `evidence/agent-campaign/records/<id>.json`. A
 record names the suite, its task, the command, the commit the run integrated, the capability
-inventory digest, the fixture and environment digests the run observed, its start time, duration,
-exit code, and outcome (`passed`, `failed`, or `blocked`). Records are run output, not source: they
+inventory digest, the fixture and environment digests the run observed, the closure it observed
+(each closure file with its digest, and one digest over that sorted list; null for a blocked run),
+its start time, duration, exit code, and outcome (`passed`, `failed`, or `blocked`). Records are run output, not source: they
 are not committed.
 
 ## Runner
@@ -282,11 +326,16 @@ readiness. Every mode requires `--manifest <path>`.
   gates is refused. A stale threshold or gate-fixture digest refuses the run and prints each stale
   path, because a suite verified against drifted inputs proves nothing about this tree. An
   absent fixture blocks the gate: the runner writes a `blocked` record and exits 2 without running
-  the command. Otherwise it runs the command through the shell with inherited stdio, writes the
-  record with the environment digests the run observed, and exits with the command's status.
+  the command. Otherwise it derives the suite's closure, which refuses the run when derivation
+  fails, runs the command through the shell with inherited stdio, and derives the closure again. A
+  closure that moved during the run prints each drifted file, writes no record, and exits 1.
+  Otherwise it writes the record with the environment digests and closure the run observed, and
+  exits with the command's status.
 - `--release` — validate, then require, for every suite, a record whose integrated commit is the
   current `HEAD`, whose recorded fixture digests match the manifest, whose recorded environment
-  digests match the live tree, and whose outcome is `passed`. It never runs a suite. It prints one
+  digests match the live tree, whose recorded closure matches the closure derived from the live
+  tree, and whose outcome is `passed`. A closure mismatch blocks once per drifted file and names
+  it; a record without a closure blocks. It never runs a suite. It prints one
   blocker line per unmet suite and exits 1 when any blocker exists. It also reads the source-examples
   register and prints `source examples corpus missing` when the file is absent, or
   `source-example <id>: unrecovered` for every example still carrying that disposition.

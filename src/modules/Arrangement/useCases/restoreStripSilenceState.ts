@@ -1,6 +1,6 @@
-import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type StripSilenceActionSnapshot } from '../events/arrangementClipSnapshots';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 

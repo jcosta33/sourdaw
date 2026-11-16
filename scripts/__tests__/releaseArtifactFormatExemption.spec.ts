@@ -11,11 +11,17 @@ import { describe, expect, it } from 'vitest';
 
 import { pathAddressedSha256, readReleaseInventory, type ReleaseInventory } from '../checkReleaseInventory';
 
+// A projection pin (`sha256:<hex>:@<projection>:<path>`) hashes a parsed view of the file, so a
+// reformat leaves it intact, but the file's generator still writes it in its own layout.
+function projectionAddressedPath(digest: string): string | undefined {
+    return /^sha256:[0-9a-f]{64}:@[a-z0-9-]+:(.+)$/u.exec(digest)?.[1];
+}
+
 function collectReleaseDigestPaths(inventory: ReleaseInventory): string[] {
     const paths = inventory.surfaces.flatMap((surface) =>
         surface.digests.flatMap((digest) => {
-            const addressed = pathAddressedSha256(digest);
-            return addressed !== undefined && addressed.path.startsWith('release/') ? [addressed.path] : [];
+            const path = pathAddressedSha256(digest)?.path ?? projectionAddressedPath(digest);
+            return path !== undefined && path.startsWith('release/') ? [path] : [];
         })
     );
     return [...new Set(paths)].sort();
@@ -28,7 +34,8 @@ const releasePaths = collectReleaseDigestPaths(inventory);
 describe('.prettierignore coverage', () => {
     it('reads the pinned inventory', () => {
         // This pin makes a path silently dropped by a widened exclusion in
-        // pathAddressedSha256 fail here instead of running fewer cases.
+        // pathAddressedSha256 or projectionAddressedPath fail here instead of
+        // running fewer cases.
         expect(releasePaths).toEqual([
             'release/dependency-license-proofs.json',
             'release/upstream-proofs/audio-export-codecs/BUILD.md',

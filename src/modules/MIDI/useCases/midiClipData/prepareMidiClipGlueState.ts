@@ -1,4 +1,5 @@
-import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipGlueActionSnapshot } from '#/modules/Arrangement/events';
+import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';

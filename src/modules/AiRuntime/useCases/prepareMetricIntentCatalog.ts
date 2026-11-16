@@ -8,8 +8,10 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
 import { readRecipeExpectationTolerance } from './metricHoldTolerances';
-import { type ComparedQuality, readComparedQualities } from './readComparedQualities';
+import { readComparedQualities } from './readComparedQualities';
+import { type ComparedQuality } from './readComparedQualityWords';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
+import { readUnaccountedQualityWord } from './readUnaccountedQualityWord';
 
 type Objective = {
     id: string;
@@ -308,6 +310,7 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
         scopes,
         ranges: input.answer.ranges,
         // Wire ids are bounded enum members; original source identities remain app-private lookup facts.
+        unaccountedQualityWord: readUnaccountedQualityWord(input.prompt, input.answer.context),
         objectives: objectives.map((objective, index) => ({ ...objective, id: `o${String(index)}` })),
     };
 }

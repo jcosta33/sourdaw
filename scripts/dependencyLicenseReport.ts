@@ -9,6 +9,13 @@ import parseSpdxExpression from 'spdx-expression-parse';
 import { list as listTarArchive } from 'tar';
 
 import { cargoMetadata } from './cargoMetadata.ts';
+import {
+    cargoWorkspaceMemberManifestPaths,
+    ELECTRON_NODE_MODULES_EXCLUSION_PATTERN,
+    LICENCE_INPUT_PROJECTIONS,
+    licenceInputDigest,
+    type LicenceInputProjection,
+} from './dependencyLicenseInputProjection.ts';
 import { parsePnpmLock } from './pnpmLock.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
@@ -63,6 +70,7 @@ export type CargoRuntimeInventorySnapshot = {
     cargoLockSha256: string;
     sourceInputs: Array<{
         path: string;
+        projection: LicenceInputProjection;
         sha256: string;
     }>;
     featureSelection: {
@@ -82,13 +90,13 @@ export type CargoRuntimeInventorySnapshot = {
 };
 
 export type DependencyLicenseProofSourceManifest = {
-    schemaVersion: 3 | 4;
+    schemaVersion: 3 | 4 | 5;
     packages: Record<string, DependencyLicenseProof>;
     cargoRuntimeInventory?: CargoRuntimeInventorySnapshot;
 };
 
 type DependencyLicenseProofManifest = DependencyLicenseProofSourceManifest & {
-    schemaVersion: 4;
+    schemaVersion: 5;
     cargoRuntimeInventory: CargoRuntimeInventorySnapshot;
 };
 
@@ -366,7 +374,7 @@ function assertBuildOnlyPlatformNpmPackage(root: string, packageId: string): voi
     const packageMetadata = readJsonFile<{
         scripts?: { build?: unknown };
     }>(resolve(root, 'package.json'));
-    if (!/^\s*- '!node_modules\/\*\*\/\*'$/mu.test(electronBuilder)) {
+    if (!electronBuilder.split('\n').some((line) => ELECTRON_NODE_MODULES_EXCLUSION_PATTERN.test(line))) {
         throw new Error(`${packageId}: electron packaging no longer excludes node_modules`);
     }
     if (packageMetadata.scripts?.build !== 'vite build') {
@@ -688,15 +696,44 @@ function cargoSourceInputs(
 ): CargoRuntimeInventorySnapshot['sourceInputs'] {
     return cargoSourceInputPaths(root, workspaceManifestPaths).map((path) => {
         assertRepositorySourceInput(root, path);
-        return { path, sha256: sha256(readFileSync(resolve(root, path))) };
+        return { path, ...licenceInputDigest(path, readFileSync(resolve(root, path))) };
     });
+}
+
+/**
+ * The manifest of every `[workspace] members` entry, read live from the root manifest, so the
+ * preflight's source-input set cannot be narrowed by editing the stored proof without Cargo.
+ */
+function liveCargoWorkspaceManifestPaths(root: string): string[] {
+    return cargoWorkspaceMemberManifestPaths(readFileSync(resolve(root, 'Cargo.toml'), 'utf8'), 'Cargo.toml');
 }
 
 function assertCargoSourceInputs(root: string, inventory: CargoRuntimeInventorySnapshot): void {
     const storedPaths = inventory.sourceInputs.map(({ path }) => path);
-    if (JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root, storedPaths))) {
+    for (const path of storedPaths) {
+        assertRepositorySourceInput(root, path);
+    }
+    const liveWorkspaceManifestPaths = liveCargoWorkspaceManifestPaths(root);
+    if (JSON.stringify(storedPaths) !== JSON.stringify(cargoSourceInputPaths(root, liveWorkspaceManifestPaths))) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
     }
+    if (
+        JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root, liveWorkspaceManifestPaths))
+    ) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
+    }
+}
+
+/** The workspace manifests `cargo metadata` reports, which must be the ones the preflight derives live. */
+function generatedCargoWorkspaceManifestPaths(root: string, metadata: CargoMetadata): string[] {
+    const reported = cargoWorkspaceManifestPaths(root, metadata);
+    const live = liveCargoWorkspaceManifestPaths(root);
+    if (JSON.stringify(cargoSourceInputPaths(root, reported)) !== JSON.stringify(cargoSourceInputPaths(root, live))) {
+        throw new Error(
+            'Cargo metadata workspace members differ from the Cargo.toml [workspace] members the licence preflight reads'
+        );
+    }
+    return reported;
 }
 
 function assertCargoRuntimeInventory(
@@ -730,6 +767,7 @@ function assertCargoRuntimeInventory(
                 input.path.length === 0 ||
                 input.path.includes('\\') ||
                 input.path.split('/').includes('..') ||
+                !LICENCE_INPUT_PROJECTIONS.includes(input.projection) ||
                 !/^[0-9a-f]{64}$/u.test(input.sha256)
         )
     ) {
@@ -1315,11 +1353,11 @@ export function readDependencyLicenseProofSourceManifest(root: string): Dependen
 
 export function readDependencyLicenseProofManifest(root: string): DependencyLicenseProofManifest {
     const manifest = readDependencyLicenseProofSourceManifest(root);
-    if (manifest.schemaVersion !== 4 || typeof manifest.packages !== 'object' || manifest.packages === null) {
+    if (manifest.schemaVersion !== 5 || typeof manifest.packages !== 'object' || manifest.packages === null) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
     return {
-        schemaVersion: 4,
+        schemaVersion: 5,
         packages: manifest.packages,
         cargoRuntimeInventory: assertCargoRuntimeInventory(manifest.cargoRuntimeInventory),
     };
@@ -1562,7 +1600,7 @@ function createCargoRuntimeInventory(
     });
     return assertCargoRuntimeInventory({
         cargoLockSha256: sha256(readFileSync(resolve(root, 'Cargo.lock'))),
-        sourceInputs: cargoSourceInputs(root, cargoWorkspaceManifestPaths(root, metadata)),
+        sourceInputs: cargoSourceInputs(root, generatedCargoWorkspaceManifestPaths(root, metadata)),
         featureSelection: {
             allFeatures: CARGO_RUNTIME_FEATURE_SELECTION.allFeatures,
             noDefaultFeatures: CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures,
@@ -1611,7 +1649,7 @@ export function buildDependencyLicenseArtifactsFromInstalledMetadata(
 ): GeneratedDependencyLicenseArtifacts {
     const sourceManifest = readDependencyLicenseProofSourceManifest(root);
     if (
-        ![3, 4].includes(sourceManifest.schemaVersion) ||
+        ![3, 4, 5].includes(sourceManifest.schemaVersion) ||
         typeof sourceManifest.packages !== 'object' ||
         sourceManifest.packages === null
     ) {
@@ -1625,7 +1663,7 @@ export function buildDependencyLicenseArtifactsFromInstalledMetadata(
         reusePnpmLockPackages(pnpmLockPackages)
     );
     const manifest: DependencyLicenseProofManifest = {
-        schemaVersion: 4,
+        schemaVersion: 5,
         cargoRuntimeInventory: createCargoRuntimeInventory(
             root,
             cargo.metadata,

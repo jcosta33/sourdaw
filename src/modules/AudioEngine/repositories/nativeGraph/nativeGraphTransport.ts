@@ -100,6 +100,11 @@ export type RenderGraphOfflineInput = Readonly<{
     batch: TimelineGraphWireBatch;
     frames: number;
     sampleRate: number;
+    /**
+     * The id `cancelNativeGraphOfflineRender` names this render by. A render
+     * without one cannot be cancelled.
+     */
+    renderId?: string;
 }>;
 
 export type ApplyGraphCommandsInput = Readonly<{
@@ -202,10 +207,12 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
         async releaseLevainBank({ bankKey }) {
             return desktopInvoke('release_levain_bank', { bankKey });
         },
-        async renderGraphOffline({ batch, frames, sampleRate }) {
+        async renderGraphOffline({ batch, frames, sampleRate, renderId }) {
+            // Explicit `null` for "no id", for the positional reason
+            // `mapGraphBatch` gives below.
             return invokeForBinaryResponse({
                 command: 'render_graph_offline',
-                args: { batch, frames, sampleRate },
+                args: { batch, frames, sampleRate, renderId: renderId ?? null },
             });
         },
         async applyGraphCommands({ batch }) {
@@ -217,4 +224,15 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
             return desktopInvoke('map_graph_batch', { prior, batch, sampleRate, session: session ?? null });
         },
     };
+}
+
+/**
+ * `cancel_graph_offline`: stop the render started under `renderId` at its next
+ * block. The render then rejects with an error starting
+ * `offline-render-cancelled`, and every plugin instance it built is released.
+ * A cancel that reaches the native side before its render is kept and still
+ * cancels it; one for a finished or unknown id does nothing.
+ */
+export async function cancelNativeGraphOfflineRender(renderId: string): Promise<void> {
+    await desktopInvoke('cancel_graph_offline', { renderId });
 }
