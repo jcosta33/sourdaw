@@ -15,7 +15,7 @@ import {
 import { type ProjectContext, type ProjectContextClip } from '../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES, type SemanticCommandListRoleFamily } from '../models/SemanticCommandList';
 import { findIntroducedObjectRanges } from '../transformers/promptParser/hasHighLevelCreationEvidence';
-import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
+import { maskQuotedTextContents, scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
 import { CREATED_OBJECT_NOUNS } from './agentReference/batchLocalBindingProducers';
 import { findNamedRoleFamilies } from './agentReference/findNamedRoleFamilies';
@@ -174,7 +174,8 @@ type RoleFamilyReading = {
     named: SemanticCommandListRoleFamily[];
     /**
      * The request points at its object without naming a family to edit: the selection ("this bass
-     * track") or an object it creates ("add a delay bus"). Either way the agent decides no target.
+     * track"), an object it creates ("add a delay bus") or a noun a family word only modifies ("add a
+     * drum machine"). Either way the agent decides no target.
      */
     pointsAtObject: boolean;
 };
@@ -205,10 +206,19 @@ function readNamedRoleFamilies(positivePrompt: string, context: ProjectContext):
     const createdObjects = findIntroducedObjectRanges(unnamed, CREATED_OBJECT_NOUN);
     const uncreated = maskRanges(unnamed, createdObjects);
     const outsideProtections = maskRanges(uncreated, slotRanges);
+    const outside = findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES);
     return {
-        named: findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES),
-        pointsAtObject: createdObjects.length > 0,
+        named: outside.named,
+        pointsAtObject: createdObjects.length > 0 || outside.modifying.length > 0,
     };
+}
+
+const SELECTION_POINTER =
+    /\b(?:(?:selected|current|this|these) (?:(?:audio|midi|bus|folder) )?(?:tracks?|clips?|regions?|notes?|selection)|the selection)\b/u;
+
+/** A request pointing at what is selected or current ("brighten the selected clip", "make this clip warmer"), whatever the object. */
+function pointsAtSelection(positivePrompt: string): boolean {
+    return SELECTION_POINTER.test(normalizeAgentReferenceText(maskQuotedTextContents(positivePrompt)));
 }
 
 function resolveRoleFamilyTrackIds(context: ProjectContext, family: SemanticCommandListRoleFamily): string[] {
@@ -288,7 +298,12 @@ function collectRequestTargets(
         return roleTargets;
     }
     const contextualTargets = collectContextualTargets(context, protectedIds);
-    if (contextualTargets.length > 0 || families.named.length > 0 || families.pointsAtObject) {
+    if (
+        contextualTargets.length > 0 ||
+        families.named.length > 0 ||
+        families.pointsAtObject ||
+        pointsAtSelection(positivePrompt)
+    ) {
         return contextualTargets;
     }
     return collectAgentDecidedTargets(context, protectedIds);

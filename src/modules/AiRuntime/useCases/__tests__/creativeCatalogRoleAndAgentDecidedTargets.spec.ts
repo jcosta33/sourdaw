@@ -187,6 +187,9 @@ describe('creative catalog role-family targets', () => {
     it.each([
         { prompt: 'tighten up the drums', family: 'drums' as const },
         { prompt: 'the bass is too muddy in the chorus', family: 'bass' as const },
+        { prompt: 'make the drums punchier', family: 'drums' as const },
+        { prompt: 'drums need more punch', family: 'drums' as const },
+        { prompt: 'the drums sound thin', family: 'drums' as const },
     ])('publishes "$prompt" as the $family family, one editable target per track', ({ prompt, family }) => {
         const context = fixtureContext();
         const catalog = prepare(prompt, context);
@@ -199,6 +202,33 @@ describe('creative catalog role-family targets', () => {
         for (const target of catalog.targets) {
             expect(slotParents(catalog, 'device')).toContain(target.candidateId);
         }
+    });
+
+    it.each([
+        'add a drum machine',
+        'add bus compression',
+        'give it a bass boost',
+        'build a vocal chain',
+        'the drum sound',
+    ])('publishes no role or agent-decided target for "%s", whose family word modifies another noun', (prompt) => {
+        expect(prepare(prompt).targets).toEqual([]);
+    });
+
+    it.each(['add bus compression', 'add a drum machine'])(
+        'keeps the selection as the edit target of "%s" rather than a family it only modifies',
+        (prompt) => {
+            const catalog = prepare(prompt, { ...fixtureContext(), selectedTrackId: 'track-snare' });
+
+            expect(provenances(catalog)).toEqual(['contextual-selection']);
+            expect(targetIds(catalog)).toEqual([['track-snare']]);
+        }
+    );
+
+    it('publishes only the track the request names when it also names a family', () => {
+        const catalog = prepare('make the kick punchier and tighten up the bass');
+
+        expect(provenances(catalog)).toEqual(['explicit-reference']);
+        expect(targetIds(catalog)).toEqual([['track-kick']]);
     });
 
     it('resolves the bass family to Bass DI under the roles production derives', () => {
@@ -328,6 +358,16 @@ describe('creative catalog agent-decided targets', () => {
         }
     );
 
+    it.each(['brighten the selected clip', 'make this clip warmer', 'warm up the selection'])(
+        'publishes no agent-decided target for "%s" when nothing is selected',
+        (prompt) => {
+            const catalog = prepare(prompt);
+
+            expect(catalog.targets).toEqual([]);
+            expect(catalog.modes).not.toContain('edit');
+        }
+    );
+
     it('publishes no agent-decided candidate beside a named track or a selection', () => {
         const named = prepare('make the guitar brighter than the hi-hat in the intro');
         const selected = prepare('polish it', { ...fixtureContext(), selectedTrackId: 'track-keys' });
@@ -361,6 +401,32 @@ describe('creative catalog agent-decided targets', () => {
 });
 
 describe('creative target rank', () => {
+    it('refuses a role-reference target the catalog published beside an explicit reference', () => {
+        const prompt = 'make the kick punchier';
+        const explicitCatalog = prepare(prompt);
+        expect(provenances(explicitCatalog)).toEqual(['explicit-reference']);
+        const catalog: CreativeInterpretationCatalog = {
+            ...explicitCatalog,
+            targets: [
+                ...explicitCatalog.targets,
+                {
+                    candidateId: 'target-role',
+                    provenance: 'role-reference',
+                    objectType: 'track',
+                    objectIds: ['track-snare'],
+                    parentTrackId: null,
+                    label: 'Snare',
+                },
+            ],
+        };
+
+        const admission = admitEdit({ prompt, trackId: 'track-snare', kind: 'literal', catalog });
+        expect(admission).toEqual({
+            status: 'rejected',
+            reason: expect.stringMatching(/^Explicit request references cannot be replaced/u),
+        });
+    });
+
     it('refuses a selected target the catalog published beside a role reference', () => {
         const prompt = 'tighten up the drums';
         const context = { ...fixtureContext(), selectedTrackId: 'track-keys' };

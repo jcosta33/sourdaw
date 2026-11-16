@@ -43,7 +43,7 @@ export function readRoleFamilyProtection(
     if (word === undefined || rest.length > 0 || !hasOnlyKindNoun) {
         return null;
     }
-    const [family, ...others] = findNamedRoleFamilies(word, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES);
+    const [family, ...others] = findNamedRoleFamilies(word, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).named;
     const trackIds = family === undefined || others.length > 0 ? [] : familyTrackIds(family);
     if (trackIds.length === 0) {
         return null;
