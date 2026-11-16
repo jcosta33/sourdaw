@@ -53,8 +53,10 @@ import { describeInitialMeasurementProgress } from './describeInitialMeasurement
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
+import { measureAdoptedRecipeProposal } from './measureAdoptedRecipeProposal';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { proposeNextScheduledBatch } from './proposeNextScheduledBatch';
+import { readAdoptedRecipeMetricState } from './readAdoptedRecipeMetricState';
 import { revertThreadCommit } from './revertThreadCommit';
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 import { refinedProposalSupersession } from './supersedeRefinedProposal';
@@ -779,6 +781,27 @@ async function dispatchPromptPlan(input: {
         // compiles a batch for approval, and preview and plan refuse a refinement before this point.
         const refinedProposal = refinement?.status === 'admitted' ? refinement.confirmation : null;
         if (compiledActionExecution.requiresConfirmation) {
+            const adoptedState = readAdoptedRecipeMetricState(compiledActionExecution);
+            const measurement =
+                adoptedState === null
+                    ? null
+                    : await measureAdoptedRecipeProposal({
+                          runId: admission.runId,
+                          assistantMessageId,
+                          prompt: request.userText,
+                          context,
+                          revision: projectRevision,
+                          compiled: compiledActionExecution,
+                          state: adoptedState,
+                      });
+            if (measurement?.status === 'stopped') {
+                updateChatMessage(assistantMessageId, {
+                    pendingActionConfirmationStatus: 'cancelled',
+                    content: 'Cancelled preparation of the proposal.',
+                });
+                return undefined;
+            }
+            const measured = measurement?.status === 'measured' ? measurement : null;
             const confirmationId = persistPromptActionConfirmation({
                 runId: admission.runId,
                 prompt: request.userText,
@@ -787,13 +810,13 @@ async function dispatchPromptPlan(input: {
                 actionLabels: confirmationDescription.actionLabels,
                 commandEnvelopes,
                 commandBatch,
-                agentApproval: compiledActionExecution.agentApproval,
+                agentApproval: measured?.agentApproval ?? compiledActionExecution.agentApproval,
                 affectedIds: confirmationDescription.affectedIds,
                 protectedUnchanged: confirmationDescription.protectedUnchanged,
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
-                metricGoalState: compiledActionExecution.metricGoalState,
+                metricGoalState: measured?.metricGoalState ?? compiledActionExecution.metricGoalState,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
                 protectionFacts,
