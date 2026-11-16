@@ -1541,7 +1541,7 @@ fn prepare_native_grinders(
             return Err("Native NAM target generation mismatch".into());
         }
         let (authority, request, applied) = if input.initial {
-            let request = next_native_nam_request()?;
+            let request = next_native_nam_request().map_err(|error| error.to_string())?;
             (Arc::new(AtomicU64::new(request)), request, None)
         } else {
             let command = mapped
@@ -1579,7 +1579,10 @@ fn prepare_native_grinders(
         metadata.push((device.native_effect_id, authority, request, applied));
     }
     // Reserve the whole atomic transaction before the first parser/constructor.
-    let mut leases = transaction.reserve(&reservations)?.into_iter();
+    let mut leases = transaction
+        .reserve(&reservations)
+        .map_err(|error| error.to_string())?
+        .into_iter();
     let mut receipts = Vec::with_capacity(inputs.len());
     for ((input, plan), (effect, authority, request, applied)) in
         inputs.iter().zip(plans).zip(metadata)
@@ -1593,7 +1596,10 @@ fn prepare_native_grinders(
                     .next()
                     .ok_or_else(|| "Native NAM reservation absent".to_string())?;
                 witness = Some(Arc::downgrade(&lease));
-                Some(NativePreparedNam::build(text, plan, lease, hash)?)
+                Some(
+                    NativePreparedNam::build(text, plan, lease, hash)
+                        .map_err(|error| error.to_string())?,
+                )
             }
             (None, None) => None,
             _ => return Err("Native NAM preflight plan absent".into()),
@@ -4491,7 +4497,7 @@ fn map_command(
                 budgets,
                 touched,
             )?;
-            let request = next_native_nam_request()?;
+            let request = next_native_nam_request().map_err(|error| error.to_string())?;
             ops.push(GraphCommand::SetGrinderModel {
                 effect_id,
                 request: Box::new(NativeGrinderModelRequest {
@@ -5380,7 +5386,9 @@ pub async fn apply_graph_commands(
             .sum();
         match NativeNamTransaction::begin(bytes, native_inputs.len()) {
             Ok(transaction) => Some(transaction),
-            Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+            Err(reason) => {
+                return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+            }
         }
     };
     // Bounded semantic preflight precedes every graph/engine critical section
@@ -5394,7 +5402,9 @@ pub async fn apply_graph_commands(
                 .and_then(|rate| NativeNamPlan::inspect(text, rate))
             {
                 Ok(plan) => Some(plan),
-                Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+                Err(reason) => {
+                    return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+                }
             },
         };
         native_plans.push(plan);
