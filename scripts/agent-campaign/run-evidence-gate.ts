@@ -15,7 +15,15 @@ import { parseArgs } from 'node:util';
 
 import { format, resolveConfig } from 'prettier';
 
-import { closureBlockers, closureDrift, readLiveClosures, testedCrates } from './evidenceClosure.ts';
+import {
+    DEFAULT_CLOSURE_IO,
+    closureBlockers,
+    readLiveClosures,
+    runAgainstStableClosure,
+    testedCrates,
+    type ClosureIo,
+    type GateRunIo,
+} from './evidenceClosure.ts';
 import { EVIDENCE_SUITE_COMMANDS, EVIDENCE_SUITE_DATA, EVIDENCE_TASK_GROUPINGS } from './evidenceGateContract.ts';
 import {
     EVIDENCE_CAMPAIGN,
@@ -26,6 +34,7 @@ import {
     EVIDENCE_SCHEMA_VERSION,
     EVIDENCE_THRESHOLDS_PATH,
     computeFixtureDigest,
+    newEvidenceRecord,
     parseEvidenceManifest,
     parseEvidenceRecord,
     sharedFixturePaths,
@@ -531,36 +540,6 @@ function blockedFixtures(root: string, suite: EvidenceSuite): readonly string[] 
         .map(({ path }) => path);
 }
 
-/** What a gate run observed of the tree it ran against. */
-type RunObservation = {
-    head: string;
-    environment: readonly EvidenceDigestedPath[];
-    closure: EvidenceClosure | null;
-};
-
-function newRecord(
-    manifest: EvidenceManifest,
-    suite: EvidenceSuite,
-    observed: RunObservation,
-    run: { startedAt: string; durationMs: number; exitCode: number; outcome: EvidenceOutcome }
-): EvidenceRecord {
-    return {
-        schemaVersion: EVIDENCE_SCHEMA_VERSION,
-        suite: suite.id,
-        task: suite.task,
-        command: suite.command,
-        integratedCommit: observed.head,
-        capabilityInventoryDigest: manifest.capabilityInventory.digest,
-        fixtures: suite.fixtures,
-        environment: observed.environment,
-        closure: observed.closure,
-        startedAt: run.startedAt,
-        durationMs: run.durationMs,
-        exitCode: run.exitCode,
-        outcome: run.outcome,
-    };
-}
-
 function runSuiteCommand(root: string, suite: EvidenceSuite): { exitCode: number; durationMs: number } {
     const contractCommand = EVIDENCE_SUITE_COMMANDS[suite.id];
     if (suite.command !== contractCommand) {
@@ -590,24 +569,19 @@ function runBlockedGate(
     }
     const run = { startedAt: new Date().toISOString(), durationMs: 0, exitCode: 0, outcome: 'blocked' } as const;
     const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closure: null };
-    writeRecord(root, newRecord(manifest, suite, observed, run));
+    writeRecord(root, newEvidenceRecord(manifest, suite, observed, run));
     return BLOCKED_EXIT_CODE;
 }
 
-async function liveClosureOf(root: string, suite: EvidenceSuite): Promise<EvidenceClosure> {
-    const closure = (await readLiveClosures(root, [suite])).get(suite.id);
-    if (closure === undefined) {
-        throw new Error(`${suite.id}: no closure was derived`);
-    }
-    return closure;
-}
+const DEFAULT_GATE_IO: GateRunIo = { ...DEFAULT_CLOSURE_IO, runCommand: runSuiteCommand };
 
-/**
- * The closure is derived before the command runs, so an unresolvable one refuses the run, and again
- * after, so a run whose subject moved under it leaves no record claiming either tree.
- */
-async function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateId: string): Promise<number> {
-    const suite = selectGate(manifest, taskId, gateId);
+async function runGate(
+    root: string,
+    manifest: EvidenceManifest,
+    selection: { task: string; gate: string },
+    io: GateRunIo
+): Promise<number> {
+    const suite = selectGate(manifest, selection.task, selection.gate);
     if (suite.kind === 'manual') {
         throw new Error(`${suite.id}: a manual suite carries no runnable command`);
     }
@@ -623,25 +597,25 @@ async function runGate(root: string, manifest: EvidenceManifest, taskId: string,
     if (stale.length > 0) {
         return report(stale);
     }
-    const closure = await liveClosureOf(root, suite);
-    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closure };
+    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
     const startedAt = new Date().toISOString();
-    const run = runSuiteCommand(root, suite);
-    const drift = closureDrift(closure, await liveClosureOf(root, suite));
-    if (drift.length > 0) {
-        return report(drift.map((path) => `${suite.id}: closure file drifted during the run: ${path}`));
+    const run = await runAgainstStableClosure(root, suite, io);
+    if (run.kind === 'drifted') {
+        return report(run.problems);
     }
     const outcome: EvidenceOutcome = run.exitCode === 0 ? 'passed' : 'failed';
-    writeRecord(root, newRecord(manifest, suite, observed, { startedAt, ...run, outcome }));
+    const result = { startedAt, durationMs: run.durationMs, exitCode: run.exitCode, outcome };
+    writeRecord(root, newEvidenceRecord(manifest, suite, { ...observed, closure: run.closure }, result));
     return run.exitCode;
 }
 
-async function runRelease(root: string, manifest: EvidenceManifest): Promise<number> {
+async function runRelease(root: string, manifest: EvidenceManifest, io: ClosureIo): Promise<number> {
     const records = readRecords(root, manifest);
     const recorded = new Set(records.filter(({ closure }) => closure !== null).map(({ suite }) => suite));
     const closures = await readLiveClosures(
         root,
-        manifest.suites.filter(({ id }) => recorded.has(id))
+        manifest.suites.filter(({ id }) => recorded.has(id)),
+        io
     );
     const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closures };
     const { blockers } = evaluateRelease(manifest, records, release);
@@ -700,7 +674,8 @@ function parseOptions(argv: readonly string[]): EvidenceGateOptions {
     };
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
+/** `io` stands in for the suite command and `cargo` under test; the CLI passes nothing. */
+export async function main(argv: readonly string[], io: GateRunIo = DEFAULT_GATE_IO): Promise<number> {
     const options = parseOptions(argv);
     const manifestPath = resolve(process.cwd(), options.manifest);
     const root = repositoryRootFor(manifestPath);
@@ -714,14 +689,14 @@ export async function main(argv: readonly string[]): Promise<number> {
         return report(structural);
     }
     if (options.task !== undefined && options.gate !== undefined) {
-        return runGate(root, manifest, options.task, options.gate);
+        return runGate(root, manifest, { task: options.task, gate: options.gate }, io);
     }
     const problems = liveProblems(root, manifest);
     if (problems.length > 0) {
         return report(problems);
     }
     if (options.release) {
-        return runRelease(root, manifest);
+        return runRelease(root, manifest, io);
     }
     return 0;
 }

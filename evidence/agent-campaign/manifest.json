@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "2f11fed836bed4e1a34dbc7a4ed7f78a013767204d651d70c69e188d67a76da4"
+        "digest": "6ac8ec15cf68978a3fd6fc526c302a99f62a93fc830ad918aa5cd0b609810dcd"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -806,7 +806,7 @@
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "beb34e6dbf546abfd19b9a8b292ecf0e27fae4f61a3b4e70de6db80c6afd2c29"
+                    "digest": "a8266237f860337398cd39a95608d19c4b9b52088594e28fd5325eb3fd2a63db"
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts",
@@ -894,7 +894,7 @@
             "fixtures": [
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "beb34e6dbf546abfd19b9a8b292ecf0e27fae4f61a3b4e70de6db80c6afd2c29"
+                    "digest": "a8266237f860337398cd39a95608d19c4b9b52088594e28fd5325eb3fd2a63db"
                 },
                 {
                     "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",

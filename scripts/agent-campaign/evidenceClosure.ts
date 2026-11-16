@@ -14,7 +14,7 @@ import { relative, resolve } from 'node:path';
 
 import { cruiseFileGraph } from '../e2eFileGraph.ts';
 
-import { EVIDENCE_SUITE_CLOSURE_READS } from './evidenceGateContract.ts';
+import { EVIDENCE_SCRIPT_RUNTIME_FILES, EVIDENCE_SUITE_CLOSURE_READS } from './evidenceGateContract.ts';
 
 import type { EvidenceClosure, EvidenceRecord, EvidenceSuite } from './evidenceManifest.ts';
 
@@ -49,6 +49,7 @@ export type ClosureInputs = {
     graph: ReadonlyMap<string, ClosureGraphNode>;
     cargo: readonly CargoPackage[];
     tracked: readonly string[];
+    root: string;
 };
 
 /** The process boundaries closure loading crosses, so a spec can stand in for `cargo`. */
@@ -147,6 +148,9 @@ function packagePaths(cargoPackage: CargoPackage, tested: boolean): readonly str
     return paths;
 }
 
+/** Workspace files every `cargo test` resolves its profiles, toolchain, and build flags from. */
+const CARGO_WORKSPACE_FILES: readonly string[] = ['Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml'];
+
 /**
  * The path-dependency closure of one tested package. Its own dev-dependencies compile under
  * `cargo test`; a dependency's dev-dependencies never do.
@@ -158,7 +162,7 @@ function cargoClosurePaths(packages: readonly CargoPackage[], crate: string): re
     }
     const byDirectory = new Map(packages.map((entry) => [entry.directory, entry]));
     const seen = new Set<string>();
-    const paths: string[] = [];
+    const paths: string[] = [...CARGO_WORKSPACE_FILES];
     const queue: CargoPackage[] = [tested];
     for (let current = queue.shift(); current !== undefined; current = queue.shift()) {
         if (seen.has(current.directory)) {
@@ -201,16 +205,43 @@ function importClosurePaths(inputs: ClosureInputs, roots: readonly string[]): re
             throw new Error(`${current}: missing from the resolved import graph`);
         }
         for (const dependency of node.dependencies) {
-            if (dependency.couldNotResolve === true) {
-                throw new Error(`${current}: cannot resolve import ${dependency.module ?? dependency.resolved}`);
+            const specifier = dependency.module ?? dependency.resolved;
+            if (dependency.couldNotResolve === true && !isInstalledPackage(inputs.root, current, specifier)) {
+                throw new Error(`${current}: cannot resolve import ${specifier}`);
             }
-            if (dependency.coreModule === true || dependency.resolved.split('/').includes('node_modules')) {
+            if (
+                dependency.couldNotResolve === true ||
+                dependency.coreModule === true ||
+                dependency.resolved.split('/').includes('node_modules')
+            ) {
                 continue;
             }
             queue.push(dependency.resolved);
         }
     }
     return [...seen];
+}
+
+/**
+ * Whether a bare specifier the resolver gave up on names a package installed where Node would look
+ * for it. The resolver misses packages that publish only conditional `exports`; those are
+ * dependencies, pinned by the lockfile, not repository files. A relative or `#` alias specifier never
+ * qualifies, so an unresolvable repository import still refuses.
+ */
+function isInstalledPackage(root: string, importer: string, specifier: string): boolean {
+    if (/^[.#/]/u.test(specifier)) {
+        return false;
+    }
+    const segments = specifier.split('/');
+    const name = segments.slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+    for (let directory = resolve(root, importer, '..'); ; directory = resolve(directory, '..')) {
+        if (existsSync(resolve(directory, 'node_modules', name, 'package.json'))) {
+            return true;
+        }
+        if (directory === resolve(root) || directory === resolve(directory, '..')) {
+            return false;
+        }
+    }
 }
 
 /** A file stands for itself; a tree for every tracked file beneath it. Neither may be empty. */
@@ -293,6 +324,7 @@ export async function loadClosureInputs(
         graph,
         cargo: needsCargo ? parseCargoMetadata(root, io.cargoMetadata(root)) : [],
         tracked: trackedFiles(root),
+        root,
     };
 }
 
@@ -309,17 +341,72 @@ export function testedCrates(command: string): readonly string[] {
     return crates;
 }
 
+/** The package scripts a command invokes with `pnpm <script>`. */
+function invokedScripts(command: string): readonly string[] {
+    const tokens = command.split(/\s+/u).filter((token) => token.length > 0);
+    return tokens.flatMap((token, index) => {
+        const script = tokens[index + 1];
+        return token === 'pnpm' && script !== undefined ? [script] : [];
+    });
+}
+
+function packageScript(root: string, script: string): string {
+    const body = field(field(JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')), 'scripts'), script);
+    if (typeof body !== 'string') {
+        throw new TypeError(`package.json declares no script ${script}`);
+    }
+    return body;
+}
+
+const VITE_CONFIG = 'vite.config.ts';
+
 /**
- * Where a suite's closure starts: its named code fixtures as import roots, the crates its command
- * tests, and its other named fixtures plus the path reads the contract declares for it.
+ * Every setup file `vite.config.ts` can hand Vitest, read from its source text as the harness specs
+ * read it: the `setupFiles` expression is a conditional, so the union of its branches is pinned.
  */
-export function suiteClosureSeed(suite: EvidenceSuite): ClosureSeed {
-    const named = suite.fixtures.map(({ path }) => path);
+function vitestSetupFiles(root: string): readonly string[] {
+    const source = readFileSync(resolve(root, VITE_CONFIG), 'utf8');
+    const expression = /\bsetupFiles:(?<body>[^;]*?\]),\n/u.exec(source)?.groups?.body;
+    const files = Array.from(
+        (expression ?? '').matchAll(/'\.\/(?<path>[^']+)'/gu),
+        (match) => match.groups?.path ?? ''
+    );
+    if (files.length === 0 || files.includes('')) {
+        throw new Error(`${VITE_CONFIG}: no Vitest setupFiles could be read`);
+    }
+    return files;
+}
+
+/**
+ * Files a package script runs under: the repository files its `package.json` command names, the
+ * files the contract declares its runner loads, and the Vitest setup files when it runs Vitest.
+ */
+function scriptRuntimeFiles(root: string, script: string): readonly string[] {
+    const named = packageScript(root, script)
+        .split(/\s+/u)
+        .filter((token) => /^[\w.-]+\/[\w./-]+\.\w+$/u.test(token));
+    const missing = named.find((path) => !existsSync(resolve(root, path)));
+    if (missing !== undefined) {
+        throw new Error(`package.json script ${script} runs ${missing}, which is not in the tree`);
+    }
+    const declared = EVIDENCE_SCRIPT_RUNTIME_FILES[script] ?? [];
+    const setup = declared.includes(VITE_CONFIG) ? vitestSetupFiles(root) : [];
+    return [...named, ...declared, ...setup];
+}
+
+/**
+ * Where a suite's closure starts: its named code fixtures and the files its package scripts run
+ * under as import roots, the crates its command tests, and its other named fixtures plus the path
+ * reads the contract declares for it.
+ */
+export function suiteClosureSeed(root: string, suite: EvidenceSuite): ClosureSeed {
+    const runtime = invokedScripts(suite.command).flatMap((script) => scriptRuntimeFiles(root, script));
     const declaredReads = EVIDENCE_SUITE_CLOSURE_READS[suite.id] ?? [];
+    const starts = [...suite.fixtures.map(({ path }) => path), ...runtime];
     return {
-        codeRoots: named.filter(isCodeFile),
+        codeRoots: starts.filter(isCodeFile),
         crates: testedCrates(suite.command),
-        reads: [...named.filter((path) => !isCodeFile(path)), ...declaredReads],
+        reads: [...starts.filter((path) => !isCodeFile(path)), ...declaredReads],
     };
 }
 
@@ -332,7 +419,7 @@ export async function readLiveClosures(
     if (suites.length === 0) {
         return new Map();
     }
-    const seeds = suites.map((suite) => ({ id: suite.id, seed: suiteClosureSeed(suite) }));
+    const seeds = suites.map((suite) => ({ id: suite.id, seed: suiteClosureSeed(root, suite) }));
     const inputs = await loadClosureInputs(
         root,
         seeds.map(({ seed }) => seed),
@@ -354,4 +441,43 @@ export function closureBlockers(
         return [`${suite.id}: no live closure was derived for the record`];
     }
     return closureDrift(record.closure, live).map((path) => `${suite.id}: closure file drifted: ${path}`);
+}
+
+/** The closure boundaries plus the suite command itself, so a spec can stand in for both. */
+export type GateRunIo = ClosureIo & {
+    runCommand: (root: string, suite: EvidenceSuite) => { exitCode: number; durationMs: number };
+};
+
+export type StableClosureRun =
+    | { kind: 'ran'; closure: EvidenceClosure; exitCode: number; durationMs: number }
+    | { kind: 'drifted'; problems: readonly string[] };
+
+async function liveClosureOf(root: string, suite: EvidenceSuite, io: ClosureIo): Promise<EvidenceClosure> {
+    const closure = (await readLiveClosures(root, [suite], io)).get(suite.id);
+    if (closure === undefined) {
+        throw new Error(`${suite.id}: no closure was derived`);
+    }
+    return closure;
+}
+
+/**
+ * Runs a suite between two closure derivations: the first refuses the run when the closure cannot
+ * be derived, and the second refuses a run whose subject moved under it, which must leave no record
+ * claiming either tree.
+ */
+export async function runAgainstStableClosure(
+    root: string,
+    suite: EvidenceSuite,
+    io: GateRunIo
+): Promise<StableClosureRun> {
+    const closure = await liveClosureOf(root, suite, io);
+    const run = io.runCommand(root, suite);
+    const drift = closureDrift(closure, await liveClosureOf(root, suite, io));
+    if (drift.length > 0) {
+        return {
+            kind: 'drifted',
+            problems: drift.map((path) => `${suite.id}: closure file drifted during the run: ${path}`),
+        };
+    }
+    return { kind: 'ran', closure, ...run };
 }

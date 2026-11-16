@@ -64,6 +64,37 @@ export type EvidenceRecord = {
 };
 
 export const EVIDENCE_SCHEMA_VERSION = 1;
+
+/** What a gate run observed of the tree it ran against. */
+export type EvidenceRunObservation = {
+    head: string;
+    environment: readonly EvidenceDigestedPath[];
+    closure: EvidenceClosure | null;
+};
+
+/** The record one gate run of `suite` writes. */
+export function newEvidenceRecord(
+    manifest: EvidenceManifest,
+    suite: EvidenceSuite,
+    observed: EvidenceRunObservation,
+    run: { startedAt: string; durationMs: number; exitCode: number; outcome: EvidenceOutcome }
+): EvidenceRecord {
+    return {
+        schemaVersion: EVIDENCE_SCHEMA_VERSION,
+        suite: suite.id,
+        task: suite.task,
+        command: suite.command,
+        integratedCommit: observed.head,
+        capabilityInventoryDigest: manifest.capabilityInventory.digest,
+        fixtures: suite.fixtures,
+        environment: observed.environment,
+        closure: observed.closure,
+        startedAt: run.startedAt,
+        durationMs: run.durationMs,
+        exitCode: run.exitCode,
+        outcome: run.outcome,
+    };
+}
 export const EVIDENCE_CAMPAIGN = 'sourdaw-agent-production-system';
 export const EVIDENCE_MANIFEST_PATH = 'evidence/agent-campaign/manifest.json';
 export const EVIDENCE_RECORDS_DIRECTORY = 'evidence/agent-campaign/records';

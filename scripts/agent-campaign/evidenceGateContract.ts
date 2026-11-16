@@ -130,6 +130,33 @@ export const EVIDENCE_SUITE_CLOSURE_READS: Readonly<Record<string, readonly stri
     'AC-060': ['vite.config.ts', 'electron/channels.ts'],
 };
 
+/**
+ * Files a package script's runner loads by path or configuration rather than through the script's
+ * own command line, per script a verify command invokes with `pnpm <script>`. The script's own file
+ * arguments are read from `package.json`; the Vitest setup files are read from `vite.config.ts`.
+ */
+export const EVIDENCE_SCRIPT_RUNTIME_FILES: Readonly<Record<string, readonly string[]>> = {
+    // runVitestZeroTestGuard.ts spawns Vitest on vite.config.ts with this reporter by path.
+    'test:run': ['vite.config.ts', 'scripts/vitestProgressReporter.ts'],
+    // Playwright loads its config, which names its global setup by path.
+    'test:e2e': ['playwright.config.ts', 'tests/e2e/firstPaintWarmup.ts'],
+    // check-dependency-boundaries.mjs cruises src/ under these configs and baselines, named by path.
+    'deps:validate': [
+        'src',
+        '.dependency-cruiser.cjs',
+        '.dependency-cruiser.module-tiers.cjs',
+        '.dependency-cruiser.reachability.cjs',
+        '.dependency-cruiser.tests.cjs',
+        '.dependency-cruiser.types.cjs',
+        '.dependency-cruiser-known-violations.json',
+        '.dependency-cruiser-known-violations-contract-reexports.json',
+        '.dependency-cruiser-known-violations-reachability.json',
+        '.dependency-cruiser-known-violations-tests.json',
+        '.dependency-cruiser-known-violations-types.json',
+        '.dependency-cruiser-known-violations-worker-spawns.json',
+    ],
+};
+
 /** Task ownership of the requirement ids. Every id above appears under exactly one task. */
 export const EVIDENCE_TASK_GROUPINGS: readonly EvidenceTaskGrouping[] = [
     { id: 'TASK-SA-00-protocol-governance', gates: ['AC-006', 'AC-007', 'AC-008', 'AC-017', 'AC-055', 'AC-060'] },

@@ -261,18 +261,27 @@ Named fixtures are not everything a suite's evidence depends on. A suite's closu
 
 - every tracked file its named code fixtures reach through resolved static imports, type-only
   edges included, through the root TypeScript aliases;
-- for each crate it tests with `cargo test -p`, that crate and its transitive workspace
-  path-dependency closure from `cargo metadata --offline --no-deps`. Each package contributes its
-  `Cargo.toml`, its `src` tree and its build script. The tested crate also contributes its
-  dev-dependencies and its `tests` directory; a dependency's dev-dependencies do not compile and
-  are excluded;
+- the files each `pnpm <script>` in its command runs under, cruised the same way: the repository
+  files the script's `package.json` command names, the files its runner loads by path or
+  configuration, declared per script in `EVIDENCE_SCRIPT_RUNTIME_FILES`, and, for a Vitest run,
+  every setup file `vite.config.ts` can name, read from its `setupFiles` expression as the union of
+  its branches;
+- for each crate it tests with `cargo test -p`, the workspace `Cargo.toml`, `rust-toolchain.toml`
+  and `.cargo/config.toml`, plus that crate and its transitive workspace path-dependency closure
+  from `cargo metadata --offline --no-deps`. Each package contributes its `Cargo.toml`, its `src`
+  tree and its build script. The tested crate also contributes its dev-dependencies and its `tests`
+  directory; a dependency's dev-dependencies do not compile and are excluded;
 - its other named fixtures, and the files or trees its specs read by path, declared per suite in
   `EVIDENCE_SUITE_CLOSURE_READS` in `scripts/agent-campaign/evidenceGateContract.ts`. A tree stands
   for its tracked files.
 
 Derivation is offline and fails closed. An import that cannot be resolved, a reached file that is
-not tracked, a path dependency missing from the metadata, or a declared read that names no tracked
-file refuses, never skips.
+not tracked, a path dependency missing from the metadata, a script `package.json` does not declare
+or whose named file is missing, a `vite.config.ts` whose setup files cannot be read, or a declared
+read that names no tracked file refuses, never skips. The one exception is a bare package specifier
+the import resolver cannot follow (a package publishing only conditional `exports`) when that
+package is installed where Node looks for it: it is a dependency the lockfile pins, not a repository
+file. A relative or `#` alias specifier never takes that exception.
 
 The closure stays out of the manifest and out of `collisions`. Barrel imports pull most of the
 application into most suites, so nearly every product edit would move a manifest closure digest
