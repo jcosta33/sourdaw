@@ -112,6 +112,7 @@ const VALIDATION_STATIC_SUITE_STEPS = [
     STATIC_SUITE_STEPS[0],
     'Hosted installer systemd proof',
     'Campaign fixture freshness',
+    'Size baseline only shrinks',
     ...STATIC_SUITE_STEPS.slice(1),
 ] as const;
 const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;
