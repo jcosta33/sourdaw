@@ -34,7 +34,7 @@ test.describe('Mixer mutation undo/redo round-trips', () => {
     test('channel gain: undo restores, redo re-applies', async ({ page }) => {
         const firstChannel = page
             .getByRole('region', { name: 'Mixer panel' })
-            .getByRole('group', { name: /channel/i })
+            .getByRole('row', { name: /channel/i })
             .first();
         const gain = firstChannel.getByRole('slider', { name: /gain/i });
         await expect(gain).toBeAttached({ timeout: 5000 });
@@ -57,7 +57,7 @@ test.describe('Mixer mutation undo/redo round-trips', () => {
     test('channel pan: undo restores, redo re-applies', async ({ page }) => {
         const firstChannel = page
             .getByRole('region', { name: 'Mixer panel' })
-            .getByRole('group', { name: /channel/i })
+            .getByRole('row', { name: /channel/i })
             .first();
         const pan = firstChannel.getByRole('slider', { name: /pan$/i });
         await expect(pan).toBeAttached({ timeout: 5000 });

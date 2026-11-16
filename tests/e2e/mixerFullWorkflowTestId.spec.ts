@@ -21,8 +21,8 @@ test.describe('Mixer mute, pan, snapshot, and master', () => {
 
     test('muting Kick on the mixer leaves Bass unmuted', async ({ page }) => {
         const mixer = page.getByRole('region', { name: 'Mixer panel', exact: true });
-        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
-        const bass = mixer.getByRole('group', { name: 'Bass channel', exact: true });
+        const kick = mixer.getByRole('row', { name: 'Kick channel', exact: true });
+        const bass = mixer.getByRole('row', { name: 'Bass channel', exact: true });
 
         await expect(kick.getByRole('button', { name: 'Mute', exact: true })).toHaveAttribute('data-active', 'false');
         await expect(bass.getByRole('button', { name: 'Mute', exact: true })).toHaveAttribute('data-active', 'false');
@@ -34,7 +34,7 @@ test.describe('Mixer mute, pan, snapshot, and master', () => {
 
     test('Kick pan starts centered and steps right', async ({ page }) => {
         const pan = page
-            .getByRole('group', { name: 'Kick channel', exact: true })
+            .getByRole('row', { name: 'Kick channel', exact: true })
             .getByRole('slider', { name: 'Kick pan', exact: true });
         await pan.scrollIntoViewIfNeeded();
         await expect(pan).toHaveAttribute('aria-valuenow', '0');

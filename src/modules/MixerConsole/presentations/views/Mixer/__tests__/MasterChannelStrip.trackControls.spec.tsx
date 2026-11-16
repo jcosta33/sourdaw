@@ -82,17 +82,27 @@ describe('MasterChannelStrip track controls', () => {
 
     it('draws the selection ring only while the master is the selected track', () => {
         const { unmount } = renderStrip({ track: createMasterTrack(), isSelected: true });
-        expect(screen.getByRole('group', { name: 'Master channel' })).toHaveClass('ring-1');
+        expect(screen.getByRole('row', { name: 'Master channel' })).toHaveClass('ring-1');
         unmount();
 
         renderStrip({ track: createMasterTrack(), isSelected: false });
-        expect(screen.getByRole('group', { name: 'Master channel' })).not.toHaveClass('ring-1');
+        expect(screen.getByRole('row', { name: 'Master channel' })).not.toHaveClass('ring-1');
     });
 
     it('selects the master when the strip is clicked', () => {
         renderStrip({ track: createMasterTrack() });
 
-        fireEvent.click(screen.getByRole('group', { name: 'Master channel' }));
+        fireEvent.click(screen.getByRole('row', { name: 'Master channel' }));
+
+        expect(mocks.selectTrack).toHaveBeenCalledExactlyOnceWith('master');
+    });
+
+    it('selects the master on Enter from the focused strip', () => {
+        renderStrip({ track: createMasterTrack() });
+        const strip = screen.getByRole('row', { name: 'Master channel' });
+        strip.focus();
+
+        fireEvent.keyDown(strip, { key: 'Enter' });
 
         expect(mocks.selectTrack).toHaveBeenCalledExactlyOnceWith('master');
     });
@@ -131,7 +141,7 @@ describe('MasterChannelStrip track controls', () => {
 
         expect(screen.getByTestId('master-gain-control')).toBeInTheDocument();
         expect(screen.queryByTestId('channel-mute-master')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('group', { name: 'Master channel' }));
+        fireEvent.click(screen.getByRole('row', { name: 'Master channel' }));
         expect(mocks.selectTrack).not.toHaveBeenCalled();
     });
 });

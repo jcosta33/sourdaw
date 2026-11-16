@@ -658,6 +658,38 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
             expect(trackClips()).toEqual(before);
         });
 
+        it('admits a detectTempo of another clip ahead of it, which writes no tempo', async () => {
+            seedProject(loopClip());
+            const quantize: QuantizeAction = {
+                type: 'quantizeTransients',
+                payload: { clipId: CLIP_ID, gridSize: 1 },
+            };
+            const handler = getExecutableCommandRegistrations().find(
+                (registration) => registration.actionType === 'quantizeTransients'
+            )?.handler;
+            const detect: AppAction = { type: 'detectTempo', payload: { clipId: 'another-clip' } };
+
+            expect(handler?.validationRefusalReason?.(quantize, { actions: [detect, quantize], actionIndex: 1 })).toBe(
+                null
+            );
+        });
+
+        it('refuses an editTempoMap ahead of it, which moves every beat the plan computed', async () => {
+            seedProject(loopClip());
+            const quantize: QuantizeAction = {
+                type: 'quantizeTransients',
+                payload: { clipId: CLIP_ID, gridSize: 1 },
+            };
+            const handler = getExecutableCommandRegistrations().find(
+                (registration) => registration.actionType === 'quantizeTransients'
+            )?.handler;
+            const edit: AppAction = { type: 'editTempoMap', payload: { edit: { type: 'add', beat: 0, tempo: 90 } } };
+
+            expect(
+                handler?.validationRefusalReason?.(quantize, { actions: [edit, quantize], actionIndex: 1 })
+            ).toContain('must not follow an edit of its clip or the tempo map');
+        });
+
         it('refuses a carried plan once the clip changed, and once the decoded source changed', async () => {
             seedProject(loopClip());
             await quantizeTransients(CLIP_ID, 1);

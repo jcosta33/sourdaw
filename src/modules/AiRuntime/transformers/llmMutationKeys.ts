@@ -434,6 +434,9 @@ function lookupMutationKeys<Type extends RuntimeActionType>(
     context: ProjectContext,
     sectionSignatures: readonly SectionPlanningSignature[]
 ): string[] {
+    if (!Object.hasOwn(mutationKeysByActionType, action.type)) {
+        return noKeys();
+    }
     return mutationKeysByActionType[action.type](action, context, sectionSignatures);
 }
 

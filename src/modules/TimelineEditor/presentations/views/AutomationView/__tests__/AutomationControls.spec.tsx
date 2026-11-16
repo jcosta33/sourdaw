@@ -136,4 +136,46 @@ describe('AutomationAddLaneControl', () => {
         fireEvent.click(paramButton);
         expect(defaultProps.onAdd).toHaveBeenCalledWith('param1', 'Parameter 1');
     });
+
+    it('closes on Escape from a menu item and claims the key', () => {
+        render(<AutomationAddLaneControl {...defaultProps} />);
+        const trigger = screen.getByRole('button', { name: /Add Lane/ });
+        fireEvent.click(trigger);
+        expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+        const claimed = !fireEvent.keyDown(screen.getByText('Parameter 1'), { key: 'Escape' });
+
+        expect(claimed).toBe(true);
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('closes when the pointer presses outside the menu', () => {
+        render(<AutomationAddLaneControl {...defaultProps} />);
+        fireEvent.click(screen.getByRole('button', { name: /Add Lane/ }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
+
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(defaultProps.onAdd).not.toHaveBeenCalled();
+    });
+});
+
+describe('AutomationModeControl keyboard dismissal', () => {
+    it('closes the mode menu on Escape from the trigger', () => {
+        render(<AutomationModeControl automationMode="read" laneCount={1} onModeChange={vi.fn()} />);
+        const trigger = screen.getByLabelText('Automation mode: read');
+        fireEvent.click(trigger);
+        expect(screen.getByRole('menu')).toBeInTheDocument();
+
+        fireEvent.keyDown(trigger, { key: 'Escape' });
+
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('leaves Escape to the window while the menu is closed', () => {
+        render(<AutomationModeControl automationMode="read" laneCount={1} onModeChange={vi.fn()} />);
+        const claimed = !fireEvent.keyDown(screen.getByLabelText('Automation mode: read'), { key: 'Escape' });
+        expect(claimed).toBe(false);
+    });
 });
