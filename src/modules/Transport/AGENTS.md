@@ -4,7 +4,7 @@ Playback lifecycle and control (play, stop, seek, record, overdub), playhead pos
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`.
 
 ## Key Subsystems
 
