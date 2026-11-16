@@ -7,8 +7,8 @@ import {
     appliedAutomationWriteSequences,
     clearAppliedAutomationBases,
 } from '../appliedAutomationBases';
-import { recordAppliedAutomationWrite } from '../recordAppliedAutomationWrite';
 import { readAppliedAutomationValue } from '../readAppliedAutomationValue';
+import { recordAppliedAutomationWrite } from '../recordAppliedAutomationWrite';
 
 describe('readAppliedAutomationValue', () => {
     afterEach(() => {
