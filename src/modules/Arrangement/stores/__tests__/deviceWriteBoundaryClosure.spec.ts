@@ -887,11 +887,22 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // state. Grounding builds immutable batch actions only; no device
         // hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts': 3,
+        // Count provenance: new file entry, measured 6 — the `compileAgentActionExecution`
+        // type import identifier and its module path (2), its `ReturnType<typeof ...>`
+        // alias (1), and the `compileAgentRiskApproval` import identifier, module path
+        // and one call that seals the adopted-recipe proposal's approval snapshot (3).
+        // Measurement and immutable approval metadata only; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/measureAdoptedRecipeProposal.ts': 6,
         // Count provenance: new file entry, measured 3 — the
         // `compileAgentRiskApproval` import, its module path in that same import,
         // and the one call that seals the next scheduled batch's approval
         // snapshot. Immutable approval metadata only; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts': 3,
+        // Count provenance: new file entry, measured 3 — the `compileAgentActionExecution`
+        // type import identifier, its module path, and its `ReturnType<typeof ...>`
+        // use in the parameter type. It only reads the metric goal state off a compiled
+        // execution; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/readAdoptedRecipeMetricState.ts': 3,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
         // Count provenance: measured 3 — the exported batch compiler's
         // declaration, plus the declaration and one call of
@@ -899,6 +910,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // immutable `addNotes` command metadata. Nothing here hydrates or
         // writes a device.
         'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 3,
+        // Count provenance: new file entry, measured 4 — the
+        // `compileRecipeBatchSteps` import identifier and its module path, plus
+        // its one call that expands the adopted recipe's batch steps. The
+        // declaration of `compileAdoptedRecipeMetricAuthority` is the fourth.
+        // Pure compilation of immutable metric authority; no device hydration or write.
+        'src/modules/AiRuntime/useCases/compileAdoptedRecipeMetricAuthority.ts': 4,
+        // Count provenance: new file entry, measured 4 — the
+        // `compilePreviewMeasurementProposal` import identifier and its module path,
+        // the exported `compileRecipeBatchSteps` declaration, and one call that
+        // measures each step's preview. Measurement over an isolated projection;
+        // no device hydration or write.
+        'src/modules/AiRuntime/useCases/compileRecipeBatchSteps.ts': 4,
         // Count provenance: new file entry, measured 1 — the `ArbitraryCommandListEvidence`
         // type import from compileArbitraryCommandList. The file only projects compiler
         // evidence into match selector records; no device hydration or write.
@@ -913,7 +936,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: three new matches are the preview-proposal
         // compiler's import identifier, module path and call. It prepares
         // immutable Command metadata for proof, not device hydration or a write.
-        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 6,
+        // Three further matches (6 to 9) are the `compileAdoptedRecipeMetricAuthority`
+        // import identifier, its module path, and its one call that derives the
+        // adopted recipe's metric authority. Pure compilation; no device write.
+        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 9,
         // Count provenance: new file entry, measured 1 — the module path in the
         // compiled-evidence type import from compileArbitraryCommandList. The file
         // splits immutable compiled evidence into slices; no device hydration or write.
@@ -1089,6 +1115,16 @@ const DEVICE_DATA_COUNTS = {
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
         'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
+        // Count provenance: 0 -> 1, measured. `devices` on a throwaway copy of
+        // the guarded track with each device's `externalStateChunk` stripped,
+        // compared against the creation fingerprint. A pure comparison; nothing
+        // is published.
+        'src/modules/Arrangement/handlers/matchesCreatedTrackFingerprint.ts': 1,
+        // Count provenance: 0 -> 1, measured. `devices:` on the restore
+        // snapshot copy that overlays the plugin chunks recorded at undo, inside
+        // the restore handler's materialize step. The registered restore action
+        // commits it through executeAppAction; no store or CRDT write here.
+        'src/modules/Arrangement/handlers/track/discardedPluginStateCarry.ts': 1,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
         // writer is `writeDeviceToProject`; this is the handler's topology
