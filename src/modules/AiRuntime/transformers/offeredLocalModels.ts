@@ -5,9 +5,8 @@ import type { MachineMemoryReading } from '../models/MachineMemoryReading';
 type OfferableModel = { id: string; tier: LocalModelTier; memoryGb: number };
 
 /**
- * Without a figure for the memory a model needs on the GPU the picker offers every tier up to this one and
- * hides the larger ones: an unknown GPU budget never hides a model that ships today, and never offers
- * Large without evidence.
+ * With no GPU memory budget the picker offers tiers up to this one on total RAM alone, and never offers a
+ * larger tier (Large) without a GPU figure that clears its need.
  */
 const LARGEST_TIER_WITHOUT_FIGURE: LocalModelTier = 'pro';
 

@@ -304,6 +304,14 @@ describe('LlmStatusBadge', () => {
             expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
             expect(screen.queryByRole('button', { name: light })).not.toBeInTheDocument();
         });
+
+        it('names the GPU memory, not the larger RAM, when the GPU budget is what excludes every model', async () => {
+            await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 1_000_000_000 });
+
+            expect(screen.getByText(/GPU can hold 1\.0 GB, and no local model fits/)).toBeInTheDocument();
+            expect(screen.queryByText(/64\.0 GB of memory/)).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
+        });
     });
 
     describe('loads started from the badge go through the offered selection', () => {
