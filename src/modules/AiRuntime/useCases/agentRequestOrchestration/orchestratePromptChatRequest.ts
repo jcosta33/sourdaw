@@ -567,6 +567,12 @@ async function completeRevertedRun(input: {
     updateChatMessage(assistantMessageId, {
         content: reverted.warning === null ? undone : `${undone}\n\nWarning: ${reverted.warning}`,
     });
+    try {
+        request.options?.onResumedPlanAccepted?.();
+    } catch (error) {
+        // The undo already landed and is recorded, so a decision that cannot be selected must not fail its run.
+        logger.error(new Error('Resumed undo landed but its decision could not be selected', { cause: error }));
+    }
 }
 
 async function dispatchPromptPlan(input: {

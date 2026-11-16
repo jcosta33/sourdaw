@@ -90,7 +90,7 @@ import {
 const workspaceRoot = join(import.meta.dirname, '..', '..');
 const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
 const WEBLLM_REQUIRED_SOURCE_LEGAL_FILES = WEBLLM_REQUIRED_LEGAL_FILES.map((path) => `public/${path}`);
-const WEBLLM_PACKAGED_PATH_LIST_DIGEST = '13914158e123ef49ef70c1beb38b31625e5404bed042729e94ae9b77f87af4b5';
+const WEBLLM_PACKAGED_PATH_LIST_DIGEST = '6862bf9fc5a4d088afba2a707ffe179ab2862b50fe7c1e552a6e7ae9d8583ba6';
 const fixtureRoots: string[] = [];
 const electronRepository = 'https://example.test/electron/electron';
 const ffmpegRepository = 'https://example.test/chromium/ffmpeg';

@@ -2,7 +2,13 @@ import { type Locator } from '@playwright/test';
 
 import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { expect, test } from './e2eTest';
-import { launch_new_project, launch_new_project_via_ui, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    launch_new_project,
+    launch_new_project_via_ui,
+    setupWorkspace,
+    wait_for_launch_first_paint,
+    wait_for_workspace_ready,
+} from './e2eUtils';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -24,6 +30,7 @@ test.describe('Launch Screen & Project Entry', () => {
 
         test('keeps every home action reachable at 900 by 700', async ({ page }) => {
             await page.setViewportSize({ width: 900, height: 700 });
+            await wait_for_launch_first_paint(page);
             const card = page.getByTestId('launch-home-card');
             const importButton = page.locator('#launch-import-dawproject');
             const exportButton = page.locator('#launch-export-dawproject');
