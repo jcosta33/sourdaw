@@ -57,12 +57,13 @@ type MainThreadTask = {
 type ElasticTaskTrace = {
     stop(): Promise<void>;
     attach(): Promise<string[]>;
-    tasks(): MainThreadTask[];
+    tasks(endpoint?: 'detect' | 'union'): MainThreadTask[];
 };
 type PreparationMeasure = {
     name: string;
     duration: number;
     startTime: number;
+    detail?: unknown;
 };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
 const armedSaveOverlaps = new WeakSet<TestInfo>();
@@ -86,13 +87,16 @@ type TraceInterval = {
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
-function readElasticTraceInterval(events: readonly Record<string, unknown>[]): TraceInterval | null {
+function readElasticTraceInterval(
+    events: readonly Record<string, unknown>[],
+    endpoint = 'elastic-detect-dom-complete'
+): TraceInterval | null {
     const input = events.find((event) => event.name === 'elastic-detect-input-start');
     if (!input || !isFiniteNumber(input.pid) || !isFiniteNumber(input.tid) || !isFiniteNumber(input.ts)) {
         return null;
     }
     const completion = events.find(
-        (event) => event.name === 'elastic-detect-dom-complete' && event.pid === input.pid && event.tid === input.tid
+        (event) => event.name === endpoint && event.pid === input.pid && event.tid === input.tid
     );
     if (!completion || !isFiniteNumber(completion.ts) || completion.ts <= input.ts) {
         return null;
@@ -130,7 +134,12 @@ const MATERIALIZATION_PHASE_NAMES: readonly string[] = [
 ];
 function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart: number, tasks: MainThreadTask[]) {
     return measures
-        .filter((measure) => MATERIALIZATION_PHASE_NAMES.includes(measure.name))
+        .filter(
+            (measure) =>
+                MATERIALIZATION_PHASE_NAMES.includes(measure.name) ||
+                measure.name.startsWith('automerge-prospective-sequence-') ||
+                measure.name === 'automerge-storage-prepared-publication'
+        )
         .map((phase) => {
             const start = phase.startTime - inputMarkStart;
             const end = start + phase.duration;
@@ -153,18 +162,112 @@ function assertMaterializationTaskSpans(phases: ReturnType<typeof materializatio
         expect(phase.enclosingTask, `Native phase has no complete enclosing RunTask: ${phase.name}`).toBeDefined();
     }
 }
-function assertMaterializationAttempts(measures: PreparationMeasure[], completedCallbacks?: number): void {
-    const responses = measures.filter((entry) => entry.name === 'automerge-prospective-response-task');
+function measureDetail(measure: PreparationMeasure): Record<string, unknown> {
+    return isRecord(measure.detail) ? measure.detail : {};
+}
+function isSequenceMeasure(measure: PreparationMeasure): boolean {
+    return typeof measureDetail(measure).sequenceIndex === 'number';
+}
+function storageRole(measure: PreparationMeasure, key: string): boolean {
+    const detail = measureDetail(measure);
+    const policy = key === 'arrangements' ? 'bounded-native-sequence-v1' : undefined;
+    return detail.primaryKey === key && detail.preparationPolicy === policy;
+}
+function assertMaterializationAttempts(
+    measures: PreparationMeasure[],
+    overlap?: Awaited<ReturnType<typeof attachSaveOverlap>>
+): void {
+    const responses = measures.filter(
+        (entry) => entry.name === 'automerge-prospective-response-task' && !isSequenceMeasure(entry)
+    );
     expect(responses.length).toBeGreaterThan(0);
-    if (completedCallbacks !== undefined) {
-        expect(responses).toHaveLength(completedCallbacks);
+    if (overlap) {
+        const detect = overlap.attempts.filter((attempt) => attempt.role === 'detect');
+        expect(detect.length).toBeGreaterThan(0);
+        for (const attempt of detect) {
+            expect(
+                attempt.cancelled || attempt.status === 'complete',
+                'Every Detect attempt needs an actual terminal outcome'
+            ).toBe(true);
+        }
+        const completed = detect.filter((attempt) => attempt.status === 'complete' && attempt.forwarded !== null);
+        expect(responses).toHaveLength(completed.length);
+        expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
+            detect.length
+        );
+        expect(
+            measures.filter(
+                (entry) =>
+                    entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'warpStates')
+            )
+        ).toHaveLength(detect.length);
+        return;
     }
     expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
         responses.length
     );
-    expect(measures.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')).toHaveLength(
-        responses.length
-    );
+    expect(
+        measures.filter(
+            (entry) =>
+                entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'warpStates')
+        )
+    ).toHaveLength(responses.length);
+}
+function assertSequenceCensus(
+    measures: PreparationMeasure[],
+    overlap: NonNullable<Awaited<ReturnType<typeof attachSaveOverlap>>>
+): void {
+    const attempts = overlap.attempts.filter((attempt) => attempt.preparationPolicy === 'bounded-native-sequence-v1');
+    expect(attempts.length, 'Actual Save must produce bounded native preparation').toBeGreaterThan(0);
+    const planning = measures.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task');
+    expect(planning).toHaveLength(attempts.length);
+    const indexed = measures.filter(isSequenceMeasure);
+    const expectedTotal = attempts.reduce((count, attempt) => count + (attempt.changeCount ?? 0), 0);
+    expect(expectedTotal, 'Native replies must independently establish a nonempty sequence census').toBeGreaterThan(0);
+    const names = [
+        'automerge-prospective-response-task',
+        'automerge-prospective-apply-task',
+        'automerge-prospective-authority-task',
+        'automerge-prospective-sequence-slice-task',
+    ];
+    for (const name of names) {
+        expect(indexed.filter((entry) => entry.name === name)).toHaveLength(expectedTotal);
+    }
+    for (const [index, attempt] of attempts.entries()) {
+        expect(attempt.role, 'Sequence role must come from the actual request').toBe('save-arrangements');
+        expect(attempt.status).toBe('complete');
+        expect(attempt.changeCount).not.toBeNull();
+        const start = planning[index].startTime;
+        const end = planning[index + 1]?.startTime ?? Infinity;
+        expect(attempt.forwarded).not.toBeNull();
+        expect(start).toBeGreaterThanOrEqual(attempt.forwarded ?? Infinity);
+        // Interleaved bounded jobs have no emitted role on their slices; refuse ambiguous attribution.
+        const next = attempts.at(index + 1);
+        if (next) {
+            expect(next.forwarded).toBeGreaterThanOrEqual(start);
+        }
+        const expected = Array.from({ length: attempt.changeCount ?? 0 }, (_, sequenceIndex) => sequenceIndex);
+        for (const name of names) {
+            const phases = indexed.filter(
+                (entry) => entry.name === name && entry.startTime >= start && entry.startTime < end
+            );
+            expect(
+                phases.map((entry) => measureDetail(entry).sequenceIndex),
+                `Incomplete or ambiguous ${name} census`
+            ).toEqual(expected);
+        }
+    }
+    expect(
+        measures.filter(
+            (entry) =>
+                entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'arrangements')
+        )
+    ).toHaveLength(attempts.length);
+    expect(
+        measures.filter(
+            (entry) => entry.name === 'automerge-storage-prepared-publication' && storageRole(entry, 'arrangements')
+        )
+    ).toHaveLength(1);
 }
 function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
     const visited = new Set<number>();
@@ -256,7 +359,12 @@ function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>
     }
     return count;
 }
-async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string): Promise<ElasticTaskTrace> {
+async function startElasticTaskTrace(
+    page: Page,
+    info: TestInfo,
+    phase: string,
+    requireUnion = false
+): Promise<ElasticTaskTrace> {
     const session = await page.context().newCDPSession(page);
     const failures: string[] = [];
     const chunks: Buffer[] = [];
@@ -264,6 +372,8 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
     let complete = false;
     let dataLossOccurred = false;
     let interval: TraceInterval | null = null;
+    let unionInterval: TraceInterval | null = null;
+    let unionTasks: MainThreadTask[] = [];
     let taskCount = 0;
     let mainThreadTasks: MainThreadTask[] = [];
     let cpuSampleCount = 0;
@@ -276,8 +386,8 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
         session.once('Tracing.tracingComplete', resolve);
     });
     const capture = {
-        tasks(): MainThreadTask[] {
-            return mainThreadTasks;
+        tasks(endpoint: 'detect' | 'union' = 'detect'): MainThreadTask[] {
+            return endpoint === 'union' ? unionTasks : mainThreadTasks;
         },
         stop(): Promise<void> {
             stopping ??= (async () => {
@@ -323,6 +433,11 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     if (!interval) {
                         throw new Error('Elastic trace omitted a complete same-page measured interval');
                     }
+                    unionInterval = readElasticTraceInterval(records, 'elastic-save-detect-union-complete');
+                    if (requireUnion && !unionInterval) {
+                        throw new Error('Elastic trace omitted the complete Save/Detect union interval');
+                    }
+                    unionTasks = unionInterval ? readElasticIntervalTasks(records, unionInterval) : [];
                     mainThreadTasks = readElasticIntervalTasks(records, interval);
                     taskCount = mainThreadTasks.length;
                     cpuSampleCount = countElasticIntervalCpuSamples(records, interval);
@@ -362,6 +477,8 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                         dataLossOccurred,
                         phaseComplete: interval !== null,
                         interval,
+                        unionInterval,
+                        unionTaskCount: unionTasks.length,
                         taskCount,
                         cpuSampleCount,
                         hasCpuStacks: cpuSampleCount > 0,
@@ -695,21 +812,28 @@ for (const projectScale of [false, true]) {
                     fixture.armElasticSaveOverlap(clipId);
                 }, targetClipId);
             }
-            const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
-            await page.evaluate(async () => {
+            const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect', projectScale);
+            await page.evaluate(async (withSave) => {
                 type Metrics = {
                     start: number;
                     end: number;
+                    detectTailEnd: number;
+                    unionEnd: number;
                     frames: number[];
                     observedFrames: number[];
                     tasks: CapturedLongTask[];
-                    measures: {
-                        name: string;
-                        duration: number;
-                        startTime: number;
-                    }[];
+                    measures: PreparationMeasure[];
                 };
-                const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
+                const metrics: Metrics = {
+                    start: 0,
+                    end: 0,
+                    detectTailEnd: 0,
+                    unionEnd: 0,
+                    frames: [],
+                    observedFrames: [],
+                    tasks: [],
+                    measures: [],
+                };
                 const target = window as Window & {
                     elasticMeasurement?: Promise<Metrics>;
                 };
@@ -717,6 +841,11 @@ for (const projectScale of [false, true]) {
                 const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
                 if (!button || !status) {
                     throw new Error('Required Detect entry and completion status must be mounted');
+                }
+                const overlapPath = '/tests/e2e/elasticSaveOverlapFixture.ts';
+                let overlap: typeof import('./elasticSaveOverlapFixture') | undefined;
+                if (withSave) {
+                    overlap = await import(overlapPath);
                 }
                 let stop = false;
                 const frame = (time: number): void => {
@@ -760,6 +889,7 @@ for (const projectScale of [false, true]) {
                                 name: entry.name,
                                 duration: entry.duration,
                                 startTime: entry.startTime,
+                                detail: entry instanceof PerformanceMeasure ? entry.detail : null,
                             });
                         }
                     }
@@ -774,10 +904,22 @@ for (const projectScale of [false, true]) {
                 };
                 target.elasticMeasurement = new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
-                        stop = true;
                         observer.disconnect();
-                        disconnectMeasurements();
-                        reject(new Error('Real Detect did not complete'));
+                        const pendingSave = overlap?.waitForElasticSaveOverlap();
+                        let saveFailure: string | undefined;
+                        void Promise.resolve(pendingSave)
+                            .catch((error: unknown) => {
+                                saveFailure = String(error);
+                            })
+                            .finally(() => {
+                                stop = true;
+                                disconnectMeasurements();
+                                reject(
+                                    new Error(
+                                        `Real Detect did not complete; retained observations until bounded Save settlement: ${saveFailure ?? 'Save settled'}`
+                                    )
+                                );
+                            });
                     }, 10000);
                     const observer = new MutationObserver(() => {
                         if (status.textContent !== 'Detection complete') {
@@ -785,19 +927,43 @@ for (const projectScale of [false, true]) {
                         }
                         metrics.end = performance.now();
                         performance.mark('elastic-detect-dom-complete');
+                        clearTimeout(timeout);
                         observer.disconnect();
-                        requestAnimationFrame((time) => {
-                            metrics.frames.push(time);
-                            metrics.observedFrames.push(performance.now());
-                            requestAnimationFrame((tailTime) => {
-                                metrics.frames.push(tailTime);
-                                metrics.observedFrames.push(performance.now());
+                        const tail = (): Promise<void> =>
+                            new Promise((resolve) => {
+                                requestAnimationFrame((time) => {
+                                    metrics.frames.push(time);
+                                    metrics.observedFrames.push(performance.now());
+                                    requestAnimationFrame((tailTime) => {
+                                        metrics.frames.push(tailTime);
+                                        metrics.observedFrames.push(performance.now());
+                                        resolve();
+                                    });
+                                });
+                            });
+                        const detectTail = tail().then(() => {
+                            metrics.detectTailEnd = performance.now();
+                            return undefined;
+                        });
+                        void Promise.all([detectTail, overlap?.waitForElasticSaveOverlap()])
+                            .then(async () => {
+                                if (overlap) {
+                                    await tail();
+                                }
+                                metrics.unionEnd = performance.now();
+                                performance.mark('elastic-save-detect-union-complete');
                                 stop = true;
                                 disconnectMeasurements();
                                 clearTimeout(timeout);
                                 resolve(metrics);
+                                return undefined;
+                            })
+                            .catch((error: unknown) => {
+                                stop = true;
+                                disconnectMeasurements();
+                                clearTimeout(timeout);
+                                reject(error instanceof Error ? error : new Error(String(error)));
                             });
-                        });
                     });
                     observer.observe(status, { childList: true, subtree: true, characterData: true });
                     button.addEventListener(
@@ -810,21 +976,19 @@ for (const projectScale of [false, true]) {
                     );
                 });
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            });
+            }, projectScale);
             await panel.getByTestId('elastic-detect-button').click();
             const measured = await page.evaluate(async () => {
                 const target = window as Window & {
                     elasticMeasurement?: Promise<{
                         start: number;
                         end: number;
+                        detectTailEnd: number;
+                        unionEnd: number;
                         frames: number[];
                         observedFrames: number[];
                         tasks: CapturedLongTask[];
-                        measures: {
-                            name: string;
-                            duration: number;
-                            startTime: number;
-                        }[];
+                        measures: PreparationMeasure[];
                     }>;
                 };
                 if (!target.elasticMeasurement) {
@@ -841,15 +1005,32 @@ for (const projectScale of [false, true]) {
             const overlap = await attachSaveOverlap(page, info);
             await coldTrace.attach();
             await info.attach('elastic-cold-raw-measurements.json', {
-                body: JSON.stringify({ ...measured, mainThreadTasks: coldTrace.tasks(), overlap }, null, 2),
+                body: JSON.stringify(
+                    {
+                        ...measured,
+                        mainThreadTasks: coldTrace.tasks(),
+                        unionMainThreadTasks: coldTrace.tasks('union'),
+                        overlap,
+                    },
+                    null,
+                    2
+                ),
                 contentType: 'application/json',
             });
             if (projectScale) {
                 expect(overlap, 'Dense Detect must overlap the actual public Save').not.toBeNull();
-                if (!overlap || !overlap.save.requested || !overlap.save.settled) {
-                    throw new Error('Required actual Save overlap did not complete');
+                if (
+                    !overlap ||
+                    !overlap.save.requested ||
+                    !overlap.save.settled ||
+                    overlap.save.preparationPosted === null
+                ) {
+                    throw new Error('Required actual Save bounded preparation and settlement were not observed');
                 }
                 expect(overlap.failures).toEqual([]);
+                expect(overlap.fallbackWarnings, 'Healthy acceptance must use actual off-thread persistence').toEqual(
+                    []
+                );
                 expect(overlap.restored).toBe(true);
                 expect(overlap.targetClipId).toBe(targetClipId);
                 expect(overlap.save.result).toBe(true);
@@ -857,33 +1038,50 @@ for (const projectScale of [false, true]) {
                 expect(overlap.save.requested.identity).toBe(overlap.armed.identity);
                 expect(overlap.save.settled.identity).toBe(overlap.armed.identity);
                 expect(overlap.save.settled.projectId).toBe(overlap.armed.projectId);
-                expect(overlap.save.settled.heads).not.toEqual(overlap.save.requested.heads);
-                expect(overlap.save.settled.revision).not.toBe(overlap.save.requested.revision);
                 expect(overlap.input).toBe(measured.inputMarkStart);
-                expect(overlap.attempts.length).toBeGreaterThanOrEqual(2);
-                const first = overlap.attempts[0];
-                expect(first.held).toBe(true);
+                const held = overlap.attempts.filter((attempt) => attempt.held);
+                expect(held).toHaveLength(1);
+                const first = held[0];
+                expect(first.role).toBe('detect');
                 expect(first.created).toBeGreaterThan(measured.inputMarkStart);
-                expect(overlap.save.requested.time).toBeGreaterThan(first.created);
-                expect(first.received).toBeGreaterThan(overlap.save.requested.time);
-                expect(first.forwarded).toBeGreaterThanOrEqual(overlap.save.settled.time);
+                expect(first.received).not.toBeNull();
+                expect(overlap.save.requested.time).toBeGreaterThan(first.received ?? Infinity);
+                expect(first.forwarded).toBeGreaterThanOrEqual(overlap.save.preparationPosted);
                 expect(first.forwarded).toBeLessThan(measured.end);
-                expect(overlap.save.settled.time).toBeLessThan(measured.end);
+                expect(overlap.save.settled.time).toBeLessThan(measured.unionEnd);
                 for (const attempt of overlap.attempts) {
-                    expect(attempt.status).toBe('complete');
-                    expect(attempt.forwarded).not.toBeNull();
+                    expect(
+                        attempt.requested,
+                        'Every observed prospective Worker must post its real request'
+                    ).not.toBeNull();
                     expect(attempt.terminated).not.toBeNull();
+                    expect(attempt.cancelled || attempt.forwarded !== null).toBe(true);
+                }
+                for (const request of overlap.incrementalRequests) {
+                    expect(request.received, 'Every observed incremental request must settle').not.toBeNull();
+                    expect(request.status).toBe('incrementalsEncoded');
+                    expect(request.results.map((document) => document.id).sort()).toEqual(
+                        request.documents.map((document) => document.id).sort()
+                    );
+                    for (const document of request.results) {
+                        expect(document.bytes).toBeGreaterThan(0);
+                        expect(document.heads).toEqual(
+                            request.documents.find((entry) => entry.id === document.id)?.heads
+                        );
+                    }
                 }
             }
             await assertPreserved();
             const after = await sourceState(page);
-            const gaps = measured.frames.slice(1).flatMap((time, index) => {
-                const previous = measured.frames[index];
+            const detectFrames = measured.frames.filter((time) => time <= measured.detectTailEnd);
+            const detectObservedFrames = measured.observedFrames.filter((time) => time <= measured.detectTailEnd);
+            const gaps = detectFrames.slice(1).flatMap((time, index) => {
+                const previous = detectFrames[index];
                 return time >= measured.start ? [time - previous] : [];
             });
-            const observedGaps = measured.observedFrames
+            const observedGaps = detectObservedFrames
                 .slice(1)
-                .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
+                .flatMap((time, index) => (time >= measured.start ? [time - detectObservedFrames[index]] : []));
             const commit = measured.measures.filter((entry) => entry.name === 'elastic-transient-commit');
             const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
             const commitTasks = measured.measures.filter(
@@ -894,17 +1092,43 @@ for (const projectScale of [false, true]) {
             const longTasks = measured.tasks.filter(
                 (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
             );
-            const preparationTasks = measured.measures.filter((entry) =>
-                MATERIALIZATION_PHASE_NAMES.includes(entry.name)
+            const preparationTasks = measured.measures.filter(
+                (entry) =>
+                    MATERIALIZATION_PHASE_NAMES.includes(entry.name) ||
+                    entry.name.startsWith('automerge-prospective-sequence-')
             );
             const preparedPublications = measured.measures.filter(
-                (entry) => entry.name === 'automerge-storage-prepared-publication'
+                (entry) => entry.name === 'automerge-storage-prepared-publication' && storageRole(entry, 'warpStates')
             );
+            const union = {
+                end: measured.unionEnd,
+                elapsedMs: measured.unionEnd - measured.start,
+                mainThreadTasks: coldTrace.tasks('union'),
+                gaps: measured.frames
+                    .slice(1)
+                    .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]] : [])),
+                observedGaps: measured.observedFrames
+                    .slice(1)
+                    .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : [])),
+                longTasks: measured.tasks.filter(
+                    (entry) => entry.start < measured.unionEnd && entry.start + entry.duration > measured.start
+                ),
+            };
             const result = {
                 ...measured,
+                union,
+                sequenceAttributionLimit:
+                    'Strict complete census; partial-prefix invalidation or interleaved jobs without an emitted operation identity refuse attribution, not accepted outcome proof',
+                persistenceEncodingObservation: overlap?.incrementalRequests.length
+                    ? 'Actual incremental Worker requests recorded'
+                    : 'No incremental Worker request observed; no incremental-route acceptance claim',
                 preparationTasks,
                 mainThreadTasks: coldTrace.tasks(),
-                nativePhases: materializationTaskSpans(measured.measures, measured.inputMarkStart, coldTrace.tasks()),
+                nativePhases: materializationTaskSpans(
+                    measured.measures,
+                    measured.inputMarkStart,
+                    projectScale ? coldTrace.tasks('union') : coldTrace.tasks()
+                ),
                 workerMaterializationWall: measured.measures.filter(
                     (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
                 ),
@@ -934,8 +1158,21 @@ for (const projectScale of [false, true]) {
                 body: JSON.stringify(result, null, 2),
                 contentType: 'application/json',
             });
+            if (projectScale) {
+                expect(union.mainThreadTasks.length).toBeGreaterThan(0);
+                expect(Math.max(...union.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(
+                    JANK_TASK_CEILING_MS
+                );
+                expect(union.gaps.length).toBeGreaterThan(1);
+                expect(Math.max(...union.gaps)).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+                expect(Math.max(...union.observedGaps)).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+                expect(union.longTasks).toEqual([]);
+            }
             assertMaterializationTaskSpans(result.nativePhases);
-            assertMaterializationAttempts(measured.measures, overlap?.attempts.length);
+            assertMaterializationAttempts(measured.measures, overlap);
+            if (overlap) {
+                assertSequenceCensus(measured.measures, overlap);
+            }
             expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(1);
             expect(after.pcm).toEqual(before.pcm);
             expect(after.raw).toEqual(after.projected);
@@ -1224,11 +1461,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
             frames: number[];
             observedFrames: number[];
             tasks: CapturedLongTask[];
-            measures: {
-                name: string;
-                duration: number;
-                startTime: number;
-            }[];
+            measures: PreparationMeasure[];
         };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & {
@@ -1279,7 +1512,12 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     entry.name === 'automerge-storage-materialization-handoff-task' ||
                     entry.name.startsWith('automerge-prospective-')
                 ) {
-                    metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
+                    metrics.measures.push({
+                        name: entry.name,
+                        duration: entry.duration,
+                        startTime: entry.startTime,
+                        detail: entry instanceof PerformanceMeasure ? entry.detail : null,
+                    });
                 }
             }
         };
@@ -1354,11 +1592,7 @@ async function assertPopulatedMeasurement(
                 frames: number[];
                 observedFrames: number[];
                 tasks: CapturedLongTask[];
-                measures: {
-                    name: string;
-                    duration: number;
-                    startTime: number;
-                }[];
+                measures: PreparationMeasure[];
             }>;
         };
         if (!target.populatedElasticMeasurement) {
@@ -1389,7 +1623,7 @@ async function assertPopulatedMeasurement(
     );
     const preparationTasks = measured.measures.filter((entry) => MATERIALIZATION_PHASE_NAMES.includes(entry.name));
     const preparedPublications = measured.measures.filter(
-        (entry) => entry.name === 'automerge-storage-prepared-publication'
+        (entry) => entry.name === 'automerge-storage-prepared-publication' && storageRole(entry, 'warpStates')
     );
     const result = {
         ...measured,
