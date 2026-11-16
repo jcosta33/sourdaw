@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ReadableStore } from '#/infra/store/types';
+
 import { type UndoEntry } from '../../../models/UndoEntry';
 import { undoStore } from '../../../stores/undoStore';
 import { UndoHistoryPanel } from '../UndoHistoryPanel';
@@ -19,7 +21,8 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/infra/store/useStoreSelector', async () => {
     const { useStore } = await import('#/infra/store/useStore');
     return {
-        useStoreSelector: (store: unknown, selector: (state: unknown) => unknown) => selector(useStore(store)),
+        useStoreSelector: (store: ReadableStore<unknown>, selector: (state: unknown) => unknown) =>
+            selector(useStore(store)),
     };
 });
 
