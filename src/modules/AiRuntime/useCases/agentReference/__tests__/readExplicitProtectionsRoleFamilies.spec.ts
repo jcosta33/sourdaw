@@ -113,6 +113,23 @@ describe('readExplicitProtections over a role family', () => {
     });
 
     it.each([
+        'make the mix warmer, leave all the drums alone',
+        "make the mix warmer, don't touch any of the drums",
+        'make the mix warmer, keep every drum track untouched',
+        'make the mix warmer, leave each of the drums alone',
+        "make the mix warmer, don't touch the drum kit",
+    ])('"%s" protects every drums-family track through a quantifier or the drum kit', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: DRUM_IDS });
+    });
+
+    it.each(["make the mix warmer, don't touch the vocal kit", "make the mix warmer, don't touch the bass kit"])(
+        '"%s" reads kit as a kind noun of the drums alone and protects nothing',
+        (prompt) => {
+            expect(readExplicitProtections(prompt, context)).toEqual(NOTHING);
+        }
+    );
+
+    it.each([
         "make the mix warmer, don't mess with the drums",
         'make the mix warmer, hands off the drums',
         'make the mix warmer, keep your hands off the drums',
