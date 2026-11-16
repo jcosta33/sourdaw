@@ -125,54 +125,67 @@ describe('MissingMediaPanel frozen source recovery', () => {
         vi.restoreAllMocks();
     });
 
-    it('withholds Locate for every alias until its frozen owner is unfrozen', async () => {
-        const frozen = {
-            ...track('track-one', [clip('clip-a', 'track-one'), clip('clip-alias', 'track-one')]),
-            frozen: true,
-            freezeState: { status: 'frozen' as const, frozenBufferId: 'frozen-render' },
-        };
-        const other = track('track-two', [clip('other', 'track-two')]);
-        trackStore.set({ tracks: [frozen, other], selectedTrackId: null });
-        io.buffers.set('frozen-render', MockAudioBuffer.create(1, 8, 48000));
-        flushAutomergeStorageWrites();
-        verifyAudioBufferReferences();
-        expect(missingMediaStore.value?.items.map(({ kind, clipId }) => ({ kind, clipId }))).toEqual([
-            { kind: 'clip', clipId: 'clip-a' },
-            { kind: 'clip', clipId: 'clip-alias' },
-            { kind: 'clip', clipId: 'other' },
-        ]);
-        const before = JSON.stringify(getCrdtDoc<Root>('root')?.tracks);
-        const view = render(<MissingMediaPanel />);
-        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
-        expect(screen.getAllByText(/Unfreeze/)).toHaveLength(3);
-        expect(screen.queryByRole('button', { name: 'Locate…' })).toBeNull();
-        expect(screen.getAllByRole('button', { name: 'Reveal clip' })).toHaveLength(3);
-        await act(async () => {
-            await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
-        });
-        expect(io.pickFiles).not.toHaveBeenCalled();
-        expect(io.decode).not.toHaveBeenCalled();
-        expect(io.discard).not.toHaveBeenCalled();
-        expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(before);
-        expect(undoHistoryStore.value?.past).toHaveLength(0);
-
-        act(() => {
-            unfreezeTrack('track-one');
+    it.each(['frozen-first', 'editable-first'] as const)(
+        'withholds Locate for every alias until its frozen owner is unfrozen, %s',
+        async (order) => {
+            const frozen = {
+                ...track('track-one', [clip('clip-a', 'track-one'), clip('clip-alias', 'track-one')]),
+                frozen: true,
+                freezeState: { status: 'frozen' as const, frozenBufferId: 'frozen-render' },
+            };
+            const other = track('track-two', [clip('other', 'track-two')]);
+            trackStore.set({
+                tracks: order === 'frozen-first' ? [frozen, other] : [other, frozen],
+                selectedTrackId: null,
+            });
+            io.buffers.set('frozen-render', MockAudioBuffer.create(1, 8, 48000));
             flushAutomergeStorageWrites();
-        });
-        expect(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.freezeState.status).toBe('unfrozen');
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Locate…' })).toBeEnabled());
-        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Locate…' })));
-        await waitFor(() => expect(rawClip('other').audioBufferId).toBe('replacement'));
-        expect(rawClip('clip-a').audioBufferId).toBe('replacement');
-        expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
-        expect(undoHistoryStore.value?.past).toHaveLength(1);
-        view.unmount();
-        await undo();
-        expect(rawClip('clip-a').audioBufferId).toBe('missing');
-        expect(rawClip('other').audioBufferId).toBe('missing');
-        await redo();
-        expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
-        expect(notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('could not relink'), 'error');
-    });
+            verifyAudioBufferReferences();
+            const expectedFrozenRows = [
+                { kind: 'clip', clipId: 'clip-a' },
+                { kind: 'clip', clipId: 'clip-alias' },
+            ];
+            const expectedEditableRows = [{ kind: 'clip', clipId: 'other' }];
+            let expectedRows = [...expectedFrozenRows, ...expectedEditableRows];
+            if (order === 'editable-first') {
+                expectedRows = [...expectedEditableRows, ...expectedFrozenRows];
+            }
+            expect(missingMediaStore.value?.items.map(({ kind, clipId }) => ({ kind, clipId }))).toEqual(expectedRows);
+            const before = JSON.stringify(getCrdtDoc<Root>('root')?.tracks);
+            const view = render(<MissingMediaPanel />);
+            fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+            expect(screen.getAllByText(/Unfreeze/)).toHaveLength(3);
+            expect(screen.queryByRole('button', { name: 'Locate…' })).toBeNull();
+            expect(screen.getAllByRole('button', { name: 'Reveal clip' })).toHaveLength(3);
+            await act(async () => {
+                await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
+            });
+            expect(io.pickFiles).not.toHaveBeenCalled();
+            expect(io.decode).not.toHaveBeenCalled();
+            expect(io.discard).not.toHaveBeenCalled();
+            expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(before);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+
+            act(() => {
+                unfreezeTrack('track-one');
+                flushAutomergeStorageWrites();
+            });
+            expect(
+                getCrdtDoc<Root>('root')?.tracks.tracks.find((owner) => owner.id === 'track-one')?.freezeState.status
+            ).toBe('unfrozen');
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Locate…' })).toBeEnabled());
+            await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Locate…' })));
+            await waitFor(() => expect(rawClip('other').audioBufferId).toBe('replacement'));
+            expect(rawClip('clip-a').audioBufferId).toBe('replacement');
+            expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            view.unmount();
+            await undo();
+            expect(rawClip('clip-a').audioBufferId).toBe('missing');
+            expect(rawClip('other').audioBufferId).toBe('missing');
+            await redo();
+            expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
+            expect(notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('could not relink'), 'error');
+        }
+    );
 });

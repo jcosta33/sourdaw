@@ -5,9 +5,12 @@ import { applyRelinkAudioSourceTargets } from '../../useCases/clipEditing/applyR
 import { captureRelinkAudioSourceCommitValidation } from '../../useCases/clipEditing/captureRelinkAudioSourceCommitValidation';
 import { relinkAudioSourceTargetsMatch } from '../../useCases/clipEditing/relinkAudioSourceTargetsMatch';
 
+import { isRelinkAudioSourceSessionEntry } from './isRelinkAudioSourceSessionEntry';
+
 export const handleRelinkClipAudioSources = createHandler<'relinkClipAudioSources'>({
     validate: (action, context) => relinkAudioSourceTargetsMatch(action.payload.targets, context),
     canReportConflict: true,
+    validateSessionEntry: isRelinkAudioSourceSessionEntry,
     execute: (action, context) => {
         if (!relinkAudioSourceTargetsMatch(action.payload.targets)) {
             return { status: 'conflict' };
