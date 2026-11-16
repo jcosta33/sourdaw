@@ -390,6 +390,9 @@ importers:
       prettier:
         specifier: ^3.10.1
         version: 3.10.1
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
       spdx-expression-parse:
         specifier: 5.0.0
         version: 5.0.0

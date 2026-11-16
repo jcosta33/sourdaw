@@ -1,7 +1,6 @@
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
-
 import { getGoverningTempoChange, getTempoAtBeat } from '../../models/TempoMap';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { type TempoSourceClock } from '../../stores/tempoAudioSourcePromotion';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 

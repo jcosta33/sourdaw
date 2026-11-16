@@ -1,4 +1,4 @@
-import { type TempoAudioSourcePresenceSnapshot } from '#/utils/handlerContract';
+import { type TempoAudioSourcePresenceSnapshot } from '#/modules/Transport/events';
 
 import {
     type CompAudioSourceFieldPresenceSnapshot,

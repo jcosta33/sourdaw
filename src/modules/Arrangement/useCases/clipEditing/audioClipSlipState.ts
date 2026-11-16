@@ -1,6 +1,6 @@
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';
 
 import { type Take, type TakeLane } from '../../models/TakeLane';

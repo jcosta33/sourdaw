@@ -1,9 +1,10 @@
-import { isAudioSourceSnapshot, type AudioSourceSnapshot } from './audioSourceTime';
-import { type TempoAudioSourcePromotionSnapshot } from './handlerContract';
-import { isRecord, valuesEqual } from './structuralEquality';
-import { type TempoSourceClock } from './tempoSourceClock';
+import { isAudioSourceSnapshot, type AudioSourceSnapshot } from '#/utils/audioSourceTime';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
-export type { TempoSourceClock } from './tempoSourceClock';
+import { type TempoAudioSourcePromotionSnapshot } from '../events/tempoAudioSourceSnapshots';
+
+export type { TempoSourceClock } from '#/utils/tempoSourceClock';
 
 export type TempoScalarTransition = {
     readonly tempoChangeId: string | null;
@@ -460,14 +461,29 @@ export function normalizeTempoSourceClockContext<Context extends RawClock>(
     return normalized;
 }
 
+/** Each expected row claims one distinct equal actual row, so a repeated row
+ * cannot stand in for a different one. */
+function sameRowsIgnoringOrder(expected: readonly unknown[], actual: readonly unknown[]): boolean {
+    if (expected.length !== actual.length) {
+        return false;
+    }
+    const claimed = new Set<number>();
+    for (const row of expected) {
+        const match = actual.findIndex((candidate, index) => !claimed.has(index) && valuesEqual(candidate, row));
+        if (match === -1) {
+            return false;
+        }
+        claimed.add(match);
+    }
+    return true;
+}
+
 export function tempoSourcePromotionsEqual(
     actual: TempoAudioSourcePromotionSnapshot,
     expected: TempoAudioSourcePromotionSnapshot
 ): boolean {
-    return (['clips', 'takes', 'regions', 'gaps'] as const).every(
-        (field) =>
-            actual[field].length === expected[field].length &&
-            expected[field].every((row) => actual[field].some((candidate) => valuesEqual(candidate, row)))
+    return (['clips', 'takes', 'regions', 'gaps'] as const).every((field) =>
+        sameRowsIgnoringOrder(expected[field], actual[field])
     );
 }
 

@@ -2,17 +2,18 @@ import {
     AutomergeStorageWriteConflictError,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { isRecord } from '#/utils/structuralEquality';
+import { readTempoMapRows, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
+
+import { type TempoAudioSourcePromotionSnapshot } from '../events/tempoAudioSourceSnapshots';
+import { tempoMapRowPlanMatchesCurrent } from '../models/TempoMapRowPlan';
+
 import {
     withoutDeferredTempoRecordingSources,
     type DeferredTempoRecordingSources,
-} from '#/utils/deferredTempoRecordingSources';
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
-import { isRecord } from '#/utils/structuralEquality';
-import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
-import { normalizeTempoSourceOwnerContext, type TempoSourceOwnerWitness } from '#/utils/tempoAudioSourcePromotion';
-import { readTempoMapRows, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
-
-import { tempoMapRowPlanMatchesCurrent } from '../models/TempoMapRowPlan';
+} from './deferredTempoRecordingSources';
+import { tempoAudioSourceCoverageMatches } from './tempoAudioSourceCoverage';
+import { normalizeTempoSourceOwnerContext, type TempoSourceOwnerWitness } from './tempoAudioSourcePromotion';
 
 type Slot = 'transport' | 'tempoMap';
 type SourcePreservation = {
