@@ -408,6 +408,52 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(carriedExternalPluginStates.size).toBe(0);
             expect(warnings()).toEqual([]);
         });
+
+        describe('when the unload tears one instance down and reports an error for the other', () => {
+            function unloadOnlyFirstInstance(): void {
+                mocks.unloadPlugin.mockImplementationOnce(() =>
+                    Promise.resolve({
+                        unloadedInstanceIds: [INSTANCE_ID],
+                        errors: [`${OTHER_INSTANCE_ID} is busy`],
+                        reports: [],
+                    })
+                );
+            }
+
+            it('carries the torn-down instance and nothing for the one left loaded', async () => {
+                await activateBothAndEdit();
+                unloadOnlyFirstInstance();
+
+                await expect(unloadPluginsBeforeProjectSwitch()).rejects.toThrow(`${OTHER_INSTANCE_ID} is busy`);
+                settleProjectSwitchPluginTeardown('refused');
+
+                expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
+                expect(loadedExternalInstances.has(OTHER_INSTANCE_ID)).toBe(true);
+                expect([...carriedExternalPluginStates.keys()]).toEqual([INSTANCE_ID]);
+                await activate(SAVED_CHUNK);
+                expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+                expect(warnings()).toEqual([]);
+            });
+
+            it('warns about the torn-down instance whose state could not be read', async () => {
+                await activateBothAndEdit();
+                mocks.getPluginState.mockImplementation((instanceId) => {
+                    if (instanceId === INSTANCE_ID) {
+                        return Promise.reject(new Error('control lock timed out'));
+                    }
+                    return Promise.resolve(OTHER_LIVE_BYTES);
+                });
+                unloadOnlyFirstInstance();
+
+                await expect(unloadPluginsBeforeProjectSwitch()).rejects.toThrow(`${OTHER_INSTANCE_ID} is busy`);
+                expect(warnings()).toEqual([]);
+                settleProjectSwitchPluginTeardown('refused');
+                await activate(SAVED_CHUNK);
+
+                expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+                expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+            });
+        });
     });
 
     describe('graph repair', () => {
