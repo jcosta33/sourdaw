@@ -103,7 +103,6 @@ export function buildEslintArgv(
     return [
         'exec',
         'eslint',
-        '--quiet',
         `--concurrency=${lintConcurrency(env)}`,
         '--cache',
         '--cache-location',
@@ -114,6 +113,24 @@ export function buildEslintArgv(
         ESLINT_SUPPRESSIONS_FILE,
         ...(options.fix ? ['--fix'] : []),
         ...eslintTargets,
+    ];
+}
+
+export function buildOxlintArgv(
+    options: Pick<Options, 'fix'>,
+    targets: string[],
+    env: NodeJS.ProcessEnv = process.env
+): string[] {
+    return [
+        'exec',
+        'oxlint',
+        // Focused JS tooling can be intentionally excluded from this pass
+        // while remaining covered by the public plugins and ESLint.
+        '--no-error-on-unmatched-pattern',
+        `--threads=${lintThreads(env)}`,
+        '--format=agent',
+        ...(options.fix ? ['--fix'] : []),
+        ...targets,
     ];
 }
 
@@ -270,18 +287,7 @@ function main(): number {
         const targets = options.full ? [...FULL_OXLINT_TARGETS] : options.files;
         const eslintTargets = options.full ? [...FULL_ESLINT_TARGETS] : options.files;
         ensureServerDependencies(targets);
-        runStep('oxlint', [
-            'exec',
-            'oxlint',
-            // Focused JS tooling can be intentionally excluded from this pass
-            // while remaining covered by the public plugins and ESLint.
-            '--no-error-on-unmatched-pattern',
-            '--quiet',
-            `--threads=${lintThreads()}`,
-            '--format=agent',
-            ...(options.fix ? ['--fix'] : []),
-            ...targets,
-        ]);
+        runStep('oxlint', buildOxlintArgv(options, targets));
         if (!options.fix) {
             // Check mode uses Oxlint for public JS rules. Fix mode keeps them
             // with Prettier so relocated diagnostics and their fixes converge.

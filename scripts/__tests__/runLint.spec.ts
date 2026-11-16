@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     assertPluginCoverage,
     buildEslintArgv,
+    buildOxlintArgv,
     buildPublicPluginsArgv,
     ensureServerDependencies,
     ESLINT_SUPPRESSIONS_FILE,
@@ -133,6 +134,19 @@ describe('eslint cache argv', () => {
         expect(check[check.indexOf('--cache-location') + 1]).toBe('node_modules/.cache/eslint/check/');
         expect(fix[fix.indexOf('--cache-location') + 1]).toBe('node_modules/.cache/eslint/cofix/');
         expect(cacheStrategy(fix)).toBe('content');
+    });
+});
+
+describe('quiet mode', () => {
+    it('hides no warnings in the main oxlint and ESLint passes, since nothing is configured at warn', () => {
+        expect(buildOxlintArgv({ fix: false }, ['src/a.ts'])).not.toContain('--quiet');
+        expect(buildOxlintArgv({ fix: true }, ['src/a.ts'])).not.toContain('--quiet');
+        expect(buildEslintArgv({ fix: false, full: false }, ['src/a.ts'])).not.toContain('--quiet');
+        expect(buildEslintArgv({ fix: true, full: false }, ['src/a.ts'])).not.toContain('--quiet');
+    });
+
+    it('keeps the public plugins pass quiet to hide the size-baseline ratchet', () => {
+        expect(buildPublicPluginsArgv(['src/a.ts'])).toContain('--quiet');
     });
 });
 
