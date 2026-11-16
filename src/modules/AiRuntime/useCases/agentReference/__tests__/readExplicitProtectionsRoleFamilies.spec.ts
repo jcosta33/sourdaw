@@ -130,6 +130,21 @@ describe('readExplicitProtections over a role family', () => {
     });
 
     it.each([
+        ['keep pan on the drums as is', ['setTrackPan']],
+        ["don't change mute or solo on the drums", ['muteTrack', 'soloTrack']],
+        ['leave faders and sends on the drums alone', ['setTrackGain', 'addSend', 'removeSend', 'setSend']],
+        ['leave fader levels of the drums alone', ['setTrackGain']],
+        ['keep fader level of the drums intact', ['setTrackGain']],
+        ['keep gain on the drums untouched', ['setTrackGain']],
+        ['keep volume on the drums as is', ['setTrackGain']],
+    ])('"%s" protects only the named drum controls through an owner preposition', (protection, actionTypes) => {
+        expect(readExplicitProtections(`make the mix warmer but ${protection}`, context)).toEqual({
+            ...NOTHING,
+            protectedControls: DRUM_IDS.map((trackId) => ({ trackId, actionTypes })),
+        });
+    });
+
+    it.each([
         "don't touch the vocals and mute the drums",
         "don't touch the vocals and pan the drums",
         "don't touch the vocals and solo the drums",

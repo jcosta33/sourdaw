@@ -23,10 +23,20 @@ function namesNoFamily(token: Token): boolean {
     return token.quoted || token.text.includes('□');
 }
 
-/** A control that opens the member as its verb ("mute the drums") changes the family; "faders of the drums" owns it. */
+/** The prepositions a control run names its owner by, as the object forms read them ("the pan on Kick"). */
+const OWNER_PREPOSITIONS: ReadonlySet<string> = new Set(['of', 'on']);
+
+/**
+ * A control run that opens the member as its verb ("mute the drums") changes the family; one followed by
+ * an owner preposition ("faders of the drums", "pan on the drums") names the family's controls.
+ */
 function opensOnControlVerb(tokens: readonly Token[]): boolean {
-    const [opening, next] = tokens;
-    return opening !== undefined && protectionObjectForms.isControl(opening.lower) && next?.lower !== 'of';
+    const runLength = tokens.findIndex((token) => !protectionObjectForms.isControl(token.lower));
+    if (runLength === 0) {
+        return false;
+    }
+    const next = runLength === -1 ? undefined : tokens[runLength];
+    return next === undefined || !OWNER_PREPOSITIONS.has(next.lower);
 }
 
 /**
