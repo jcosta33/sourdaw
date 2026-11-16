@@ -167,7 +167,7 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     await page.getByRole('radio', { name: 'Draw (D/B)' }).click();
     const drawStartX = (Math.ceil(hybridClip.endBeat) + 1) * view.pixelsPerBeat - view.scrollX;
     const drawEndX = drawStartX + view.pixelsPerBeat * 2;
-    const audioX = (audioTrack.clips[0]!.startBeat + 0.5) * view.pixelsPerBeat - view.scrollX;
+    const audioX = (audioTrack.clips[0].startBeat + 0.5) * view.pixelsPerBeat - view.scrollX;
     if (
         drawEndX >= timelineBox.width ||
         hybridX <= 0 ||
@@ -211,7 +211,7 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
         await expect(page.getByTestId('clip-editor-tray')).toHaveCount(0);
         await expect
             .poll(() => selection(page))
-            .toMatchObject({ trackId: audioTrack.id, clipId: audioTrack.clips[0]!.id });
+            .toMatchObject({ trackId: audioTrack.id, clipId: audioTrack.clips[0].id });
         const audioSelection = await selection(page);
         const audioSnapshot = await snapshot(page);
         expect(audioSnapshot).toEqual(before);

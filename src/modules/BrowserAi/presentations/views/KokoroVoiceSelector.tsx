@@ -5,6 +5,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
 
 type KokoroVoiceSelectorProps = {
+    id?: string;
     value: string;
     onChange: (voiceId: string) => void;
     disabled?: boolean;
@@ -26,6 +27,7 @@ type GroupKey = `${string}|${string}`;
 
 /** Dropdown selector exposing all 21 Kokoro TTS voices, grouped by accent and gender. */
 export function KokoroVoiceSelector({
+    id,
     value,
     onChange,
     disabled = false,
@@ -49,6 +51,7 @@ export function KokoroVoiceSelector({
 
     return (
         <DawCompactSelect
+            id={id}
             value={value}
             onChange={handleChange}
             disabled={disabled}

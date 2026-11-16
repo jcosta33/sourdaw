@@ -412,6 +412,9 @@ function lookupRoutingProjection<Type extends RuntimeActionType>(
     context: ProjectContext,
     action: ActionOf<Type>
 ): ProjectContext {
+    if (!Object.hasOwn(routingProjectionByActionType, action.type)) {
+        return unchangedContext(context);
+    }
     return routingProjectionByActionType[action.type](context, action);
 }
 

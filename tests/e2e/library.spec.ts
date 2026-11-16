@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { type Page } from '@playwright/test';
 
@@ -27,7 +27,9 @@ async function sampleClips(page: Page) {
                 throw new Error('Project track authority is unavailable');
             }
             const summarize = (value: unknown) => {
-                if (!Array.isArray(value)) throw new Error('Project tracks are unavailable');
+                if (!Array.isArray(value)) {
+                    throw new TypeError('Project tracks are unavailable');
+                }
                 const tracks: unknown[] = value;
                 const ids: string[] = [];
                 const clips = tracks.flatMap((track) => {
@@ -35,7 +37,7 @@ async function sampleClips(page: Page) {
                         throw new Error('Project track is malformed');
                     }
                     if (typeof track.id !== 'string' || !Array.isArray(track.clips)) {
-                        throw new Error('Project track identity or clips are malformed');
+                        throw new TypeError('Project track identity or clips are malformed');
                     }
                     const trackId = track.id;
                     ids.push(trackId);
@@ -44,7 +46,9 @@ async function sampleClips(page: Page) {
                         if (typeof clip !== 'object' || clip === null || !('name' in clip)) {
                             throw new Error('Project clip is malformed');
                         }
-                        if (clip.name !== name) return [];
+                        if (clip.name !== name) {
+                            return [];
+                        }
                         if (
                             !('id' in clip) ||
                             typeof clip.id !== 'string' ||
@@ -58,8 +62,9 @@ async function sampleClips(page: Page) {
                             typeof clip.audioBufferId !== 'string' ||
                             !('assetHash' in clip) ||
                             typeof clip.assetHash !== 'string'
-                        )
+                        ) {
                             throw new Error('Sample clip source or identity is malformed');
+                        }
                         return [
                             {
                                 trackId,
@@ -142,39 +147,48 @@ test.describe('Sample Library', () => {
         expect(before.raw).toEqual(before.projected);
         expect(before.projected.ids.length).toBeGreaterThan(1);
         const box = await timeline.boundingBox();
-        if (!box) throw new Error('Timeline has no drop coordinates');
+        if (!box) {
+            throw new Error('Timeline has no drop coordinates');
+        }
         await timeline.dispatchEvent('drop', { dataTransfer, clientX: box.x + 20, clientY: box.y + 20 });
 
         await expect.poll(async () => (await sampleClips(page)).projected.clips.length).toBe(1);
         const placed = await sampleClips(page);
         expect(placed.raw).toEqual(placed.projected);
         expect(placed.projected.ids).toEqual(before.projected.ids);
-        expect(before.projected.ids).toContain(placed.projected.clips[0]!.trackId);
+        expect(before.projected.ids).toContain(placed.projected.clips[0].trackId);
         expect(placed.projected.clips[0]).toMatchObject({ type: 'audio', audioBufferId: expect.any(String) });
-        expect(placed.projected.clips[0]!.assetHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-        expect(placed.projected.clips[0]!.endBeat).toBeGreaterThan(placed.projected.clips[0]!.startBeat);
+        expect(placed.projected.clips[0].assetHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+        expect(placed.projected.clips[0].endBeat).toBeGreaterThan(placed.projected.clips[0].startBeat);
         const sourceMatches = await page.evaluate(
             async ({ bufferId, entryPath }) => {
                 const { audio }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                 const actual = audio.getCachedAudioBuffer({ bufferId });
-                if (!actual) throw new Error('Placed clip audio is unavailable');
+                if (!actual) {
+                    throw new Error('Placed clip audio is unavailable');
+                }
                 const response = await fetch('/samples/levain/clarinet/DCClar_stac_F2_v1_rr1_sum.wav');
-                if (!response.ok) throw new Error('Sample fixture could not be read');
+                if (!response.ok) {
+                    throw new Error('Sample fixture could not be read');
+                }
                 const expected = await audio.getAudioContext().decodeAudioData(await response.arrayBuffer());
                 if (
                     actual.sampleRate !== expected.sampleRate ||
                     actual.length !== expected.length ||
                     actual.numberOfChannels !== expected.numberOfChannels
-                )
+                ) {
                     return false;
+                }
                 for (let channel = 0; channel < actual.numberOfChannels; channel += 1) {
                     const got = actual.getChannelData(channel);
                     const wanted = expected.getChannelData(channel);
-                    if (!got.every((sample, index) => sample === wanted[index])) return false;
+                    if (!got.every((sample, index) => sample === wanted[index])) {
+                        return false;
+                    }
                 }
                 return true;
             },
-            { bufferId: placed.projected.clips[0]!.audioBufferId, entryPath: HYDRATION_ENTRY }
+            { bufferId: placed.projected.clips[0].audioBufferId, entryPath: HYDRATION_ENTRY }
         );
         expect(sourceMatches).toBe(true);
 
