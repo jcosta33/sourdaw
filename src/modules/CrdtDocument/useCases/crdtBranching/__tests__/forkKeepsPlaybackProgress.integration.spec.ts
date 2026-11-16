@@ -112,7 +112,7 @@ class SchedulerWorkerHardware {
                 generation: this.generation,
                 sequence: ++this.sequence,
                 scheduledAtMs: receivedAtMs - 2,
-                sentAtMs: receivedAtMs - 1,
+                sentAtMs: receivedAtMs,
             },
         });
     }

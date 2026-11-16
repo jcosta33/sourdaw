@@ -658,6 +658,13 @@ impl SourdawNative {
         )?)
     }
 
+    /// Shell plumbing for the scan utility's terminate path, never a renderer
+    /// command. Synchronous so it completes before the process exits.
+    #[napi]
+    pub fn stop_plugin_scan_helpers(&self) {
+        crate::stop_plugin_scan_helpers();
+    }
+
     #[napi]
     pub async fn get_default_plugin_paths(&self) -> Result<Vec<String>> {
         reason(commands::plugins::get_default_plugin_paths().await)

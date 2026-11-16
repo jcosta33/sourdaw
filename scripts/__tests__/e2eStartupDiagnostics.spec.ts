@@ -112,23 +112,34 @@ describe('startup server diagnostics', () => {
             sequence: 1,
             readyState: 'complete',
             entryStarted: true,
-            bootstrapStarted: false,
-            appRenderIssued: false,
-            retryIssued: false,
+            bootstrapStarted: true,
+            appRenderIssued: true,
+            retryIssued: true,
             private: 'body-secret',
         };
         const post = (body: string): Promise<Response> =>
             fetch(`${item.origin}${STARTUP_DIAGNOSTIC_HEARTBEAT}?token=query-secret`, { method: 'POST', body });
         await post(JSON.stringify(beat));
         await post(JSON.stringify(beat));
+        await post(
+            JSON.stringify({
+                timeOrigin: beat.timeOrigin,
+                sequence: 2,
+                readyState: beat.readyState,
+                entryStarted: true,
+            })
+        );
         await post(JSON.stringify({ ...beat, sequence: 14 }));
         await post('oversized-secret'.repeat(100));
-        expect(item.events.filter((value) => value.event === 'renderer-heartbeat')).toHaveLength(1);
+        expect(item.events.filter((value) => value.event === 'renderer-heartbeat')).toHaveLength(2);
+        expect(event(item, 'renderer-heartbeat')).not.toHaveProperty('bootstrapStarted');
+        expect(event(item, 'renderer-heartbeat')).not.toHaveProperty('appRenderIssued');
+        expect(event(item, 'renderer-heartbeat')).not.toHaveProperty('retryIssued');
         expect(JSON.stringify(item.events)).not.toMatch(/body-secret|query-secret|oversized-secret|private/);
         for (let index = 1; index <= 128; index += 1) {
             await post(JSON.stringify({ ...beat, timeOrigin: beat.timeOrigin + index }));
         }
-        expect(item.events.filter((value) => value.event === 'renderer-heartbeat')).toHaveLength(128);
+        expect(item.events.filter((value) => value.event === 'renderer-heartbeat')).toHaveLength(129);
         for (let index = 0; index < 2_100; index += 1) {
             await item.server.environments.client.transformRequest(STARTUP_DIAGNOSTIC_TARGET);
         }

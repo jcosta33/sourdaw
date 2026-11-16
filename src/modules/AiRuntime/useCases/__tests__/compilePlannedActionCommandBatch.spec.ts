@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { defaultTimelineEditingState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -81,6 +82,7 @@ describe('compilePlannedActionCommandBatch', () => {
         clearHandlerRegistry();
         commandTrackDefaultsPort.setTrackColorProvider(null);
         midiStore.set(null);
+        timelineEditingStore.set(defaultTimelineEditingState);
     });
 
     it('binds clearSolos to the exact currently soloed track set', () => {
@@ -422,6 +424,50 @@ describe('compilePlannedActionCommandBatch', () => {
         expect(() =>
             compile([{ type: 'removeClip', payload: { clipId: 'clip-remove' } }], context, ['lane-remove'])
         ).toThrow('Dynamic command effects target protected objects: lane-remove');
+    });
+
+    it('binds a ripple clip removal to the shifted clip and its automation points', () => {
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
+        const context: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    ...track('track-1', false),
+                    clipCount: 2,
+                    clips: [
+                        { id: 'clip-early', name: 'Early', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 },
+                        { id: 'clip-later', name: 'Later', type: 'audio', startBeat: 4, endBeat: 8, noteCount: 0 },
+                    ],
+                },
+            ],
+            automationLanes: [
+                {
+                    id: 'lane-later',
+                    trackId: 'track-1',
+                    clipId: 'clip-later',
+                    parameterId: 'gain',
+                    name: 'Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 4, value: 0.5, curve: 'linear' },
+                        { beat: 5, value: 0.6, curve: 'linear' },
+                        { beat: 6, value: 0.7, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+
+        const result = compile([{ type: 'removeClip', payload: { clipId: 'clip-early' } }], context);
+
+        expect(result.commandBatch.authority.scope.targetIds).toEqual(
+            expect.arrayContaining(['track-1', 'clip-early', 'clip-later', 'lane-later'])
+        );
+        expect(result.commandBatch.authority.budgets).toMatchObject({
+            maxAffectedClips: 2,
+            maxAutomationPoints: 3,
+        });
     });
 
     it('binds the complete track-removal cascade and rejects protected survivor rewrites', () => {

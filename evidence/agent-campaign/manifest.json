@@ -383,7 +383,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
-                    "digest": "0c4e8f56363bbf241c070526539bf84a3ef07209aa020efae5b40e61b365af1a"
+                    "digest": "2fe02e06fabcb25a9a9708e4e4ce65ba5b98d2789ef3b96188bb08775b58a88d"
                 }
             ]
         },
@@ -745,11 +745,11 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "c18875ec49857fcdd4b91d282fb74d7f4de986956a51249fcbc875029e00dab0"
+                    "digest": "e8b8b4de5c2e88c59cc8de5cee24ece20c531b034240606efd57d9fe876bc7ff"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
-                    "digest": "e0715ee32a0289e1b14649e29b1baf49bbb2c2dc12f809cd10d4efffbb61d5bc"
+                    "digest": "e75e1da60d84a3a21bda087d4e74c665700158819b8ba1d61ce6ecee42230827"
                 }
             ]
         },

@@ -54,21 +54,27 @@ import {
     type ProcessTreeSnapshot,
     type ProcessTreeState,
 } from './resourceGuardProcessTree.ts';
-import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
+import {
+    areTransientProofReasons,
+    describeStorageProofFailure,
+    storageReleaseFailure,
+} from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
     diskStorageFailure,
     resolveGuardStorageRoot,
-    storageReferenceState,
     sameUserProcessIds,
     parseLsofCensus,
     readStorageOwner,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
-    type StorageProcessIdentity,
-    type StorageRecoveryPorts,
 } from './resourceGuardStorage.ts';
+import {
+    storageIdentityState,
+    storageRecoveryPorts,
+    type StorageRecoveryHost,
+} from './resourceGuardStorageProcessProof.ts';
 
 export { readGuardFailureReceipt };
 
@@ -184,8 +190,8 @@ const measuredScriptBudgets = new Map<string, number>([
     ['cargo:test', 5632 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
     ['typecheck', 3072 * 1024 ** 2],
-    // A guarded pnpm typecheck:test (tsc -p tsconfig.test.json) peaked at 6498 MiB.
-    ['typecheck:test', 7168 * 1024 ** 2],
+    // A guarded pnpm typecheck:test (tsc -p tsconfig.test.json) peaked at 7966 MiB.
+    ['typecheck:test', 9216 * 1024 ** 2],
     // A single-worker targeted browser diagnostic peaked at 7034 MiB under the guard.
     ['test:e2e', 8 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],
@@ -1115,120 +1121,13 @@ function boundedEnvironment(
 
 type ProcessMetadata = Extract<ReturnType<typeof captureProcessGroupSnapshot>, { status: 'available' }>['rows'][number];
 
-function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead' | 'unknown' {
-    try {
-        process.kill(identity.pid, 0);
-    } catch (error) {
-        return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'dead' : 'unknown';
-    }
-    const startedAt = processStartedAt(identity.pid);
-    // A reused PID is conservatively retained; it is never authority to delete storage.
-    return startedAt === identity.startedAt ? 'alive' : 'unknown';
-}
-
-// Only this run's own live supervisor can be read live to bound which processes predate it.
-// Any other owner, recovered or reused, bounds the excuse only by the start ticks its storage
-// record carries from creation (owner.startTicks), and by nothing when it carries none.
-export function startTimeExcuseSupervisor(
-    owner: StorageProcessIdentity,
-    currentPid: number,
-    hostPlatform: NodeJS.Platform,
-    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown'
-): number | undefined {
-    if (hostPlatform !== 'linux' || owner.pid !== currentPid) {
-        return undefined;
-    }
-    return identityState(owner) === 'alive' ? currentPid : undefined;
-}
-
-type StorageRecoveryHost = {
-    platform: () => NodeJS.Platform;
-    currentPid: number;
-    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown';
-    processCensus: (sessionToken: string) => { rows: ProcessRow[]; rawOutput?: string } | undefined;
-    fileState: (
-        tempDirectories: string[],
-        ownedPids: number[],
-        report: (reason: string) => void,
-        supervisorPid?: number,
-        ownerStartTicks?: number
-    ) => 'alive' | 'dead' | 'unknown';
-};
-
 const storageRecoveryHost: StorageRecoveryHost = {
     platform,
     currentPid: process.pid,
-    identityState: storageIdentityState,
+    identityState: (identity, report) => storageIdentityState(identity, report, processTreeHost),
     processCensus,
     fileState: storageFileState,
 };
-
-export function storageRecoveryPorts(
-    report: (reason: string) => void,
-    host: StorageRecoveryHost = storageRecoveryHost
-): StorageRecoveryPorts {
-    const ports: StorageRecoveryPorts = {
-        identityState: host.identityState,
-        sessionState: (owner, tempDirectory, currentTempDirectory = tempDirectory) => {
-            if (host.platform() === 'win32' && owner.phase !== 'ready') {
-                return 'unknown';
-            }
-            const census = host.processCensus(owner.token);
-            if (census === undefined) {
-                return 'unknown';
-            }
-            if (host.platform() !== 'win32') {
-                const references = storageReferenceState(census.rawOutput, tempDirectory);
-                if (references !== 'dead') {
-                    return references;
-                }
-            }
-            if (
-                census.rows.some(
-                    (row) => row.sessionOwned || (owner.child !== undefined && row.processGroupId === owner.child.pid)
-                )
-            ) {
-                return 'alive';
-            }
-            for (const identity of [...owner.tracked, ...(owner.child === undefined ? [] : [owner.child])]) {
-                const state = host.identityState(identity);
-                if (state !== 'dead') {
-                    return state;
-                }
-            }
-            if (host.platform() === 'win32') {
-                return 'dead';
-            }
-            const supervisorPid = startTimeExcuseSupervisor(
-                owner.owner,
-                host.currentPid,
-                host.platform(),
-                host.identityState
-            );
-            const ownerStartTicks = host.platform() === 'linux' ? owner.owner.startTicks : undefined;
-            return host.fileState(
-                [tempDirectory, currentTempDirectory],
-                [
-                    owner.owner.pid,
-                    ...owner.tracked.map((identity) => identity.pid),
-                    ...(owner.child === undefined ? [] : [owner.child.pid]),
-                ],
-                report,
-                supervisorPid,
-                ownerStartTicks
-            );
-        },
-        localReleaseAllowed: (owner, tempDirectory, currentTempDirectory) => {
-            // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
-            // environment census remains unknown for crash recovery, never reported dead.
-            if (host.platform() === 'win32') {
-                return true;
-            }
-            return ports.sessionState(owner, tempDirectory, currentTempDirectory) === 'dead';
-        },
-    };
-    return ports;
-}
 
 function processIsGone(pid: number): boolean {
     try {
@@ -2227,6 +2126,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     let storageRemoved = false;
     let treeExitProved = false;
     let releaseThrew = false;
+    let releaseFailure: ReturnType<typeof storageReleaseFailure> | undefined;
     const cleanupStorage = async (): Promise<boolean> => {
         if (storageRemoved) {
             return true;
@@ -2235,8 +2135,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         treeExitProved = treeStopped;
         storageProof.verdict = undefined;
         storageProof.reasons = [];
-        const removed = await storage.release(treeStopped).catch(() => {
+        const removed = await storage.release(treeStopped).catch((error: unknown) => {
             releaseThrew = true;
+            releaseFailure ??= storageReleaseFailure(error, storageProof.verdict);
             return false;
         });
         if (ownedSession && treeStopped) {
@@ -2486,14 +2387,25 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             retainedStorage = { path: storage.payloadPath(), reason: storageProof.reasons.join('; ') };
         } else {
             census = storageProof.obstruction ?? describeCensus(storageProof.verdict, storageProof.reasons);
+            const finalCensus = describeCensus(storageProof.verdict, storageProof.reasons);
             if (storageProof.diagnostic !== undefined) {
                 output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${storageProof.diagnostic}\n`));
             }
             output.append(
                 Buffer.from(
-                    `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
+                    `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${finalCensus}\n`
                 )
             );
+            const diagnostic = describeStorageProofFailure(
+                storageProof.obstruction,
+                storageProof.diagnostic,
+                storageProof.verdict,
+                storageProof.reasons,
+                releaseFailure
+            );
+            if (diagnostic !== undefined) {
+                output.append(Buffer.from(`\nguard storage diagnostic: ${diagnostic}\n`));
+            }
             reason ??= 'leak';
         }
     }
