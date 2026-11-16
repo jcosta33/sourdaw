@@ -252,6 +252,25 @@ describe('readExplicitProtections over a role family', () => {
         expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds });
     });
 
+    it.each([
+        'make the Lead Vox brighter than the Snare, leave the drums alone',
+        'make the Lead Vox brighter than Snare, leave the drums alone',
+        'add a Snare Parallel track, leave the drums alone',
+        'add a new Snare Crush bus and leave the drums alone',
+    ])('"%s" names the Snare only as a comparison reference or inside a created object and protects it', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: DRUM_IDS });
+    });
+
+    it.each([
+        // A device on the Snare is the Snare's own processing, so the request edits the Snare.
+        ["brighten the Snare's reverb, leave the drums alone", [kick.id, hiHat.id, overheads.id]],
+        // A track made for the Kick takes the Kick's send, so the request edits the Kick's routing.
+        ['add a track for the Kick, leave the drums alone', [snare.id, hiHat.id, overheads.id]],
+        ['make the Snare brighter than the Lead Vox, leave the drums alone', [kick.id, hiHat.id, overheads.id]],
+    ])('"%s" still exempts the drum track the request edits', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds });
+    });
+
     it('still protects a target the request names inside a named protection', () => {
         expect(readExplicitProtections('brighten the Snare but leave the Snare alone', context)).toEqual({
             ...NOTHING,

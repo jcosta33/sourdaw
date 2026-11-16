@@ -17,7 +17,7 @@ import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES, type SemanticCommandListRoleFamily
 import { findIntroducedObjectRanges } from '../transformers/promptParser/hasHighLevelCreationEvidence';
 import { maskQuotedTextContents, scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
-import { CREATED_OBJECT_NOUNS } from './agentReference/batchLocalBindingProducers';
+import { CREATED_OBJECT_NOUN } from './agentReference/batchLocalBindingProducers';
 import { findNamedRoleFamilies } from './agentReference/findNamedRoleFamilies';
 import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
 import { getExplicitClipProtection } from './agentReference/getExplicitlyProtectedClips';
@@ -179,13 +179,6 @@ type RoleFamilyReading = {
      */
     pointsAtObject: boolean;
 };
-
-const CREATED_OBJECT_NOUN = new RegExp(
-    Object.values(CREATED_OBJECT_NOUNS)
-        .map((noun) => noun.source)
-        .join('|'),
-    'u'
-);
 
 /**
  * The role families the request's own words name, with quotations and track names blanked so a
