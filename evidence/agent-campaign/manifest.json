@@ -174,7 +174,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
-                    "digest": "42ef7f111c9cdf426a05b4353d11cb64196f2e30fe91423ea99525f2f2bb3d74"
+                    "digest": "f25c16ae81f248c6a03512ad105a70b37150d211322d4e9d03155a11e70596b9"
                 }
             ]
         },
