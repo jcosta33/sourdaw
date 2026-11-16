@@ -5,7 +5,7 @@ import { join, relative, resolve } from 'node:path';
 
 import { clearCaches } from '@typescript-eslint/parser';
 import { ESLint, type Linter } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
@@ -265,36 +265,58 @@ const coreMigrationCases: CoreMigrationCase[] = [
 // sequential suite. A native TS program can enumerate another worker's fixture
 // before that worker deletes it, then fail when opening the missing file.
 describe('production Oxlint public-plugin migration', () => {
-    it('drops redundant no-octal only while the configured module parser rejects legacy numeric syntax', async () => {
-        const { snapshots, outside } = await lintOctalSyntax();
-        expect(snapshots.map((snapshot) => snapshot.extension)).toEqual(['js', 'jsx', 'ts', 'tsx', 'mts', 'cts']);
-        for (const snapshot of snapshots) {
-            expect(snapshot.sourceType, snapshot.extension).toBe('module');
-            expect(snapshot.legacyOn, snapshot.extension).toEqual(snapshot.legacyOff);
-            expect(snapshot.legacyOff, snapshot.extension).toEqual([
-                expect.objectContaining({
-                    fatal: true,
-                    ruleId: null,
-                    message: "Parsing error: Octal literals are not allowed. Use the syntax '0o12'.",
-                }),
-            ]);
-            expect(snapshot.modernOn, snapshot.extension).toEqual([]);
-            expect(snapshot.modernOff, snapshot.extension).toEqual([]);
-            // Numeric literals and string escapes are different parser restrictions.
-            expect(snapshot.escapeOff, snapshot.extension).toEqual([
-                expect.objectContaining({
-                    fatal: true,
-                    ruleId: null,
-                    message: expect.stringContaining('Octal escape'),
-                }),
-            ]);
-        }
-        expect(snapshots.map((snapshot) => snapshot.activeRule)).toEqual(Array(6).fill(undefined));
-        expect(outside).toEqual([
-            { extension: 'mjs', activeRule: undefined },
-            { extension: 'cjs', activeRule: undefined },
-        ]);
-    }, 120_000);
+    it.each([undefined, 'true'])(
+        'drops redundant no-octal only while physical inputs are rejected (CI=%s)',
+        async (ci) => {
+            vi.stubEnv('CI', ci);
+            try {
+                const { snapshots, script, outside } = await lintOctalSyntax();
+                expect(snapshots.map((snapshot) => snapshot.extension)).toEqual([
+                    'js',
+                    'jsx',
+                    'ts',
+                    'tsx',
+                    'mts',
+                    'cts',
+                ]);
+                for (const snapshot of snapshots) {
+                    expect(snapshot.project, snapshot.extension).toEqual(expect.stringContaining('lint-octal-'));
+                }
+                expect(script.project).toBe(false);
+                const observed = snapshots.concat(script);
+                for (const snapshot of observed) {
+                    expect(snapshot.sourceType, snapshot.extension).toBe('module');
+                    expect(snapshot.legacyOn, snapshot.extension).toEqual(snapshot.legacyOff);
+                    expect(snapshot.legacyOff, snapshot.extension).toEqual([
+                        expect.objectContaining({
+                            fatal: true,
+                            ruleId: null,
+                            message: "Parsing error: Octal literals are not allowed. Use the syntax '0o12'.",
+                        }),
+                    ]);
+                    expect(snapshot.modernOn, snapshot.extension).toEqual([]);
+                    expect(snapshot.modernOff, snapshot.extension).toEqual([]);
+                    // Numeric literals and string escapes are different parser restrictions.
+                    expect(snapshot.escapeOn, snapshot.extension).toEqual(snapshot.escapeOff);
+                    expect(snapshot.escapeOff, snapshot.extension).toEqual([
+                        expect.objectContaining({
+                            fatal: true,
+                            ruleId: null,
+                            message: expect.stringContaining('Octal escape'),
+                        }),
+                    ]);
+                }
+                expect(observed.map((snapshot) => snapshot.activeRule)).toEqual(Array(7).fill(undefined));
+                expect(outside).toEqual([
+                    { extension: 'mjs', activeRule: undefined },
+                    { extension: 'cjs', activeRule: undefined },
+                ]);
+            } finally {
+                vi.unstubAllEnvs();
+            }
+        },
+        120_000
+    );
 
     it.each([
         'src/app/parity.ts',
