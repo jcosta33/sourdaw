@@ -849,6 +849,30 @@ mod tests {
             }
         }
 
+        #[test]
+        fn a_refused_scope_widens_no_scan_policy_past_the_platform_defaults() {
+            crate::host::runtime_scope::RuntimeScope::test_in_refused_process(
+                concat!(
+                    module_path!(),
+                    "::a_refused_scope_widens_no_scan_policy_past_the_platform_defaults"
+                ),
+                || {
+                    let tree = TempTree::create("policy-refused-scope");
+                    let folder = tree.dir("Plugins");
+                    grant_at(&tree.store(), &ForbiddenRoots::default(), &folder)
+                        .expect("pick is valid");
+
+                    let policy = plugin_folder_grants::with_store_location_for_test(
+                        &tree.store(),
+                        PluginScanPolicy::production,
+                    );
+
+                    assert_eq!(policy.allowed_roots, default_plugin_scan_roots());
+                    assert!(policy.granted_roots.is_empty());
+                },
+            );
+        }
+
         #[cfg(unix)]
         #[test]
         fn plugin_scan_policy_refuses_a_granted_folder_swapped_for_a_symlink() {

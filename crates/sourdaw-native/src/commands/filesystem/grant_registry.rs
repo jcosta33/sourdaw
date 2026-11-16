@@ -407,7 +407,14 @@ fn resolve_persisted_grants(document: PersistedGrants) -> Vec<FileGrant> {
 /// excludes these paths, and an empty set would exclude nothing.
 #[cfg(not(test))]
 pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, String> {
-    Ok(grant_file_location()?
+    read_write_paths_under(grant_file_location())
+}
+
+/// [`persisted_read_write_paths`] for the grant document `location` names.
+fn read_write_paths_under(
+    location: Result<Option<PathBuf>, String>,
+) -> Result<Vec<PathBuf>, String> {
+    Ok(location?
         .map(|location| read_write_paths_at(&location))
         .unwrap_or_default())
 }
@@ -503,6 +510,15 @@ mod tests {
         assert!(
             !registry.admits(Path::new("/samples/kit-backup/snare.wav"), GrantMode::Read),
             "a sibling whose name merely shares a prefix is a different directory"
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_reads_no_renderer_writable_grants_rather_than_none() {
+        assert_eq!(read_write_paths_under(Ok(None)), Ok(Vec::new()));
+        assert_eq!(
+            read_write_paths_under(Err("refused".to_string())),
+            Err("refused".to_string())
         );
     }
 
