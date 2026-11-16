@@ -1,5 +1,8 @@
 import { type parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
+import { type AppActionType } from '#/utils/handlerContract';
+
+import { paletteColoredByActionType } from '../models/PaletteColoredByActionType';
 
 type CommandBatchEnvelope = Extract<
     ReturnType<typeof parseVersionedCommandBatchEnvelope>,
@@ -50,15 +53,19 @@ function readMintedIds(envelope: CommandBatchEnvelope): ReadonlySet<string> {
     return new Set(candidates.filter((value) => DRAWN_ID_PATTERN.test(value)));
 }
 
-/** The commands whose display color the application draws from a session palette when the batch compiles. */
-const PALETTE_COLORED_OPERATIONS: ReadonlySet<string> = new Set(['addTrack', 'createBus']);
+function hasPaletteColor(operation: AppActionType): boolean {
+    if (!Object.hasOwn(paletteColoredByActionType, operation)) {
+        return false;
+    }
+    return paletteColoredByActionType[operation];
+}
 
 /**
  * A command's arguments without the display color a new track or bus draws from the session
  * palette: every compilation draws the next one, and a color changes nothing anyone hears.
  */
 function withoutApplicationColor(command: CommandBatchEnvelope['commands'][number]): unknown {
-    if (!PALETTE_COLORED_OPERATIONS.has(command.operation)) {
+    if (!hasPaletteColor(command.operation)) {
         return command.arguments;
     }
     return Object.fromEntries(Object.entries(command.arguments).filter(([key]) => key !== 'color'));

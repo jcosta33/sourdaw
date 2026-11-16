@@ -21,7 +21,7 @@ const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTIO
 type RuntimePayloadOverrideType = keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
 
 function isRuntimePayloadOverrideType(actionType: RuntimeActionType): actionType is RuntimePayloadOverrideType {
-    return actionType in RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
+    return Object.hasOwn(RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS, actionType);
 }
 
 function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {

@@ -58,12 +58,17 @@ import { bridgeMidiToolCall } from './llmActionStrategies/midiStrategy';
 import { bridgeRoutingToolCall } from './llmActionStrategies/routingStrategy';
 import { bridgeTrackToolCall } from './llmActionStrategies/trackStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
+import { getAutomationPointLaneId } from './llmAutomationPointLaneId';
 import { getAutomationTransformLaneId } from './llmAutomationTransformLaneId';
+import { getClipDestinationTrackIds } from './llmClipDestinationTrackIds';
+import { getClipLifecycleKind } from './llmClipLifecycleKind';
 import { getClipTargetIds } from './llmClipTargetIds';
 import { getDeviceBatchTarget } from './llmDeviceBatchTarget';
-import { getClipAutomationLaneIds, getMutationKeys } from './llmMutationKeys';
+import { getMovedClipAutomationLaneIds } from './llmMovedClipAutomationLaneIds';
+import { getMutationKeys } from './llmMutationKeys';
 import { applyAcceptedRoutingAction } from './llmRoutingProjection';
 import { hasInvalidatingSidechainLifecycleMutation } from './llmSidechainLifecycle';
+import { getSplitDuplicateSubjects } from './llmSplitDuplicateSubjects';
 import { type ToolCallResult } from './toolCallParser';
 
 export type {
@@ -330,25 +335,17 @@ export function bridgeLlmToolCalls({
                         const trackId = findClip(context, clipTargetId)?.track.id;
                         return trackId ? [trackId] : [];
                     }),
-                    ...(result.type === 'moveClip' || result.type === 'addClip' ? [result.payload.trackId] : []),
-                    ...(result.type === 'drawClip' ? [result.payload.trackId] : []),
-                    ...(result.type === 'duplicateClipAt' ? [result.payload.destinationTrackId] : []),
-                    ...(result.type === 'moveClips' ? result.payload.moves.map((move) => move.trackId) : []),
+                    ...getClipDestinationTrackIds(result),
                 ]),
             ];
             const deviceTarget = getDeviceBatchTarget(result, context);
             const mutationKeysForAction = getMutationKeys(result, context, sectionSignatures);
-            const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
+            const clipLifecycleKind = getClipLifecycleKind(result);
+            const consumesClips = clipLifecycleKind === 'remove' || clipLifecycleKind === 'glue';
+            const automationPointLaneId = getAutomationPointLaneId(result);
             const automationTransformLaneId = getAutomationTransformLaneId(result);
             const automationMutationLaneId = automationPointLaneId ?? automationTransformLaneId;
-            let movedAutomationLaneIds: string[] = [];
-            if (result.type === 'moveClip') {
-                movedAutomationLaneIds = getClipAutomationLaneIds(context, result.payload.clipId);
-            } else if (result.type === 'moveClips') {
-                movedAutomationLaneIds = result.payload.moves.flatMap((move) =>
-                    getClipAutomationLaneIds(context, move.clipId)
-                );
-            }
+            const movedAutomationLaneIds = getMovedClipAutomationLaneIds(result, context);
             const hasMoveAutomationConflict =
                 movedAutomationLaneIds.some(
                     (laneId) => automationPointWriteLaneIds.has(laneId) || automationTransformLaneIds.has(laneId)
@@ -358,30 +355,24 @@ export function bridgeLlmToolCalls({
                 (automationPointLaneId !== null && automationTransformLaneIds.has(automationPointLaneId)) ||
                 (automationTransformLaneId !== null && automationPointWriteLaneIds.has(automationTransformLaneId));
             const hasClipLifecycleConflict =
-                ((result.type === 'removeClip' || result.type === 'glueClips') &&
-                    actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
+                (consumesClips && actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
                 actionClipTargetIds.some((clipTargetId) => removedClipIds.has(clipTargetId));
             const hasClipTrackLifecycleConflict = actionClipTrackIds.some((trackId) => removedTrackIds.has(trackId));
             const hasClipLockConflict =
-                (result.type === 'lockClip' &&
+                (clipLifecycleKind === 'lock' &&
                     actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
                 actionClipTargetIds.some((clipTargetId) => lockClipTargetIds.has(clipTargetId));
             const conflictingMutationKey = mutationKeysForAction.find((mutationKey) => mutationKeys.has(mutationKey));
             const hasMutationConflict = conflictingMutationKey !== undefined;
             const hasRippleCouplingConflict =
-                (result.type === 'removeClip' && actionClipTrackIds.some((trackId) => clipTrackIds.has(trackId))) ||
+                (clipLifecycleKind === 'remove' && actionClipTrackIds.some((trackId) => clipTrackIds.has(trackId))) ||
                 actionClipTrackIds.some((trackId) => removedClipTrackIds.has(trackId));
-            const duplicatedClipId =
-                result.type === 'duplicateClip' || result.type === 'duplicateClipToNextBar'
-                    ? result.payload.clipId
-                    : null;
-            const splitClipId = result.type === 'splitClip' ? result.payload.clipId : null;
+            const { addedClipTrackId, duplicatedClipId, duplicatedTrackId, gluedClipId, splitClipId } =
+                getSplitDuplicateSubjects(result);
             const splitClipOwnerTrackId =
                 splitClipId === null ? null : (findClip(context, splitClipId)?.track.id ?? null);
-            const duplicatedTrackId = result.type === 'duplicateTrack' ? result.payload.trackId : null;
             const gluedClipOwnerTrackId =
-                result.type === 'glueClips' ? (findClip(context, result.payload.clipIds[0])?.track.id ?? null) : null;
-            const addedClipTrackId = result.type === 'addClip' ? result.payload.trackId : null;
+                gluedClipId === null ? null : (findClip(context, gluedClipId)?.track.id ?? null);
             const hasSplitDuplicateConflict =
                 (duplicatedClipId !== null && splitClipIds.has(duplicatedClipId)) ||
                 (splitClipId !== null && duplicatedClipSourceIds.has(splitClipId));
@@ -416,8 +407,7 @@ export function bridgeLlmToolCalls({
                     if (!priorAction || conflictingLaneId === null) {
                         continue;
                     }
-                    const priorPointLaneId =
-                        priorAction.type === 'addAutomationPoint' ? priorAction.payload.laneId : null;
+                    const priorPointLaneId = getAutomationPointLaneId(priorAction);
                     const priorTransformKey = getMutationKeys(priorAction, context, sectionSignatures).find((key) =>
                         key.startsWith('automation-lane-points:')
                     );
@@ -534,16 +524,16 @@ export function bridgeLlmToolCalls({
             }
             for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);
-                if (result.type === 'removeClip' || result.type === 'glueClips') {
+                if (consumesClips) {
                     removedClipIds.add(clipTargetId);
                 }
-                if (result.type === 'lockClip') {
+                if (clipLifecycleKind === 'lock') {
                     lockClipTargetIds.add(clipTargetId);
                 }
             }
             for (const clipTrackId of actionClipTrackIds) {
                 clipTrackIds.add(clipTrackId);
-                if (result.type === 'removeClip') {
+                if (clipLifecycleKind === 'remove') {
                     removedClipTrackIds.add(clipTrackId);
                 }
             }
