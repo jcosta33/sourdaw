@@ -9,8 +9,8 @@ use crate::capture::{capture_ring, CaptureRingReader, CaptureShape};
 use crate::capture_clock::CaptureClock;
 use crate::device::{
     CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest, OpenInput,
-    OpenOutput, OutputBackend, OutputTiming, PlatformInputBackend, PlatformInputStream,
-    PlatformOutputBackend, PlatformStream, RenderFn, StreamErrorFn,
+    OpenOutput, OutputBackend, OutputDeviceError, OutputTiming, PlatformInputBackend,
+    PlatformInputStream, PlatformOutputBackend, PlatformStream, RenderFn, StreamErrorFn,
 };
 use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
 use crate::float_mode::FlushDenormals;
@@ -46,6 +46,126 @@ use triple_buffer::Input;
 /// `LEVAIN_BLOCK_FRAMES`, the two `MAX_BLOCK_SIZE`s, `MAX_SCRATCH_FRAMES`)
 /// and as raw 4096 literals — none of which can depend on the engine either.
 pub const MAX_CALLBACK_FRAMES: usize = 4096;
+
+/// A control-side worker thread the engine spawns around its output stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioWorker {
+    /// The thread that builds, owns and finally drops the device streams.
+    Owner,
+    /// The thread that publishes the render-stall verdict.
+    Liveness,
+    /// The thread that frees graph objects the callback retires.
+    PluginReclaimer,
+    /// The thread that frees capture buffers and completes takes.
+    CaptureReclaimer,
+}
+
+impl AudioWorker {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::Owner => "audio owner",
+            Self::Liveness => "audio liveness",
+            Self::PluginReclaimer => "plugin reclaimer",
+            Self::CaptureReclaimer => "capture reclaimer",
+        }
+    }
+}
+
+/// Why the audio thread, its output stream, or its capture worker could not
+/// be started or reached.
+///
+/// Every variant is built on a control-side thread — the caller, the owner
+/// thread, or a backend's stream thread before its buffer loop runs. The
+/// render callback reports mid-stream failures as a `Copy`
+/// [`StreamErrorKind`] and never builds one of these.
+#[derive(Debug)]
+pub enum AudioThreadError {
+    /// The operating system refused to spawn a worker thread.
+    SpawnWorker {
+        worker: AudioWorker,
+        cause: std::io::Error,
+    },
+    /// The owner thread did not report a started stream in time.
+    StartupTimedOut,
+    /// The owner thread ended before it reported a started stream.
+    OwnerExitedDuringStartup,
+    /// The stream started without publishing its capture worker.
+    StartedWithoutCaptureWorker,
+    /// The stream started without publishing the rate it opened at.
+    StartedWithoutSampleRate,
+    /// The default output device opened with no channels.
+    ZeroOutputChannels,
+    /// The capture completion worker was never published.
+    CaptureWorkerUnavailable,
+    /// The capture completion worker has stopped.
+    CaptureWorkerStopped,
+    /// The platform backend could not open or start the output device.
+    Device(OutputDeviceError),
+}
+
+impl core::fmt::Display for AudioThreadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::SpawnWorker { worker, cause } => write!(
+                f,
+                "Failed to spawn {} thread: {cause}",
+                worker.description()
+            ),
+            Self::StartupTimedOut => f.write_str("Timed out waiting for audio stream startup"),
+            Self::OwnerExitedDuringStartup => {
+                f.write_str("Audio owner thread exited during startup")
+            }
+            Self::StartedWithoutCaptureWorker => {
+                f.write_str("Audio stream started without its capture worker")
+            }
+            Self::StartedWithoutSampleRate => {
+                f.write_str("Audio stream started without reporting its sample rate")
+            }
+            Self::ZeroOutputChannels => f.write_str("Audio output device reports zero channels"),
+            Self::CaptureWorkerUnavailable => f.write_str("Capture completion worker unavailable"),
+            Self::CaptureWorkerStopped => f.write_str("Capture completion worker stopped"),
+            Self::Device(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for AudioThreadError {}
+
+impl From<OutputDeviceError> for AudioThreadError {
+    fn from(error: OutputDeviceError) -> Self {
+        Self::Device(error)
+    }
+}
+
+fn spawn_worker_error(worker: AudioWorker) -> impl FnOnce(std::io::Error) -> AudioThreadError {
+    move |cause| AudioThreadError::SpawnWorker { worker, cause }
+}
+
+/// Why a [`CaptureLifecycleDriver`] call could not drive the fixture.
+#[cfg(feature = "command-capture-fixture")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureFixtureError {
+    /// The fixture's input stream is not open.
+    InputNotOpen,
+    /// The requested render is empty or exceeds [`MAX_CALLBACK_FRAMES`].
+    FramesOutsideCapacity,
+    /// The fixture's output renderer has stopped.
+    OutputStopped,
+}
+
+#[cfg(feature = "command-capture-fixture")]
+impl core::fmt::Display for CaptureFixtureError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::InputNotOpen => "Fixture input is not open",
+            Self::FramesOutsideCapacity => "Fixture render frames outside callback capacity",
+            Self::OutputStopped => "Fixture output stopped",
+        })
+    }
+}
+
+#[cfg(feature = "command-capture-fixture")]
+impl std::error::Error for CaptureFixtureError {}
 /// The period the engine asks a device for when the device lets it choose.
 /// 512 frames is the common professional default (Live, Logic, Reaper all ship
 /// a buffer of this order): low enough for playable monitoring latency, high
@@ -309,7 +429,7 @@ impl AudioThreadHandle {
     pub(crate) fn adopt_capture_completion_service(
         &self,
         service: Box<dyn CaptureCompletionService>,
-    ) -> Result<(), String> {
+    ) -> Result<(), AudioThreadError> {
         #[cfg(any(test, feature = "command-capture-fixture"))]
         if self.capture_services.get().is_none() {
             let (_retired_tx, retired_rx) = RingBuffer::new(1);
@@ -321,10 +441,10 @@ impl AudioThreadHandle {
         }
         self.capture_services
             .get()
-            .ok_or_else(|| "Capture completion worker unavailable".to_string())?
+            .ok_or(AudioThreadError::CaptureWorkerUnavailable)?
             .sender
             .send(service)
-            .map_err(|_| "Capture completion worker stopped".to_string())
+            .map_err(|_| AudioThreadError::CaptureWorkerStopped)
     }
 
     pub(crate) fn prepare_capture(&self, period: CapturePeriod) {
@@ -423,10 +543,10 @@ fn spawn_owned_audio_stream<Stream, Factory, OnCapture>(
     factory: Factory,
     on_capture: OnCapture,
     liveness: RenderLiveness,
-) -> Result<AudioThreadHandle, String>
+) -> Result<AudioThreadHandle, AudioThreadError>
 where
     Stream: 'static,
-    Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
+    Factory: FnOnce() -> Result<Stream, AudioThreadError> + Send + 'static,
     OnCapture: FnMut(&mut Stream, OwnerCommand) + Send + 'static,
 {
     spawn_owned_audio_stream_with_timeout(
@@ -448,10 +568,10 @@ fn spawn_owned_audio_stream_with_timeout<Stream, Factory, OnCapture>(
     startup_timeout: Duration,
     liveness: RenderLiveness,
     policy: RenderLivenessPolicy,
-) -> Result<AudioThreadHandle, String>
+) -> Result<AudioThreadHandle, AudioThreadError>
 where
     Stream: 'static,
-    Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
+    Factory: FnOnce() -> Result<Stream, AudioThreadError> + Send + 'static,
     OnCapture: FnMut(&mut Stream, OwnerCommand) + Send + 'static,
 {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -487,7 +607,7 @@ where
                 let _ = ready_tx.send(Err(error));
             }
         })
-        .map_err(|error| format!("Failed to spawn audio owner thread: {error}"))?;
+        .map_err(spawn_worker_error(AudioWorker::Owner))?;
 
     match ready_rx.recv_timeout(startup_timeout) {
         Ok(Ok(())) => Ok(AudioThreadHandle {
@@ -497,12 +617,8 @@ where
             capture_services: OnceLock::new(),
         }),
         Ok(Err(error)) => Err(error),
-        Err(RecvTimeoutError::Timeout) => {
-            Err("Timed out waiting for audio stream startup".to_string())
-        }
-        Err(RecvTimeoutError::Disconnected) => {
-            Err("Audio owner thread exited during startup".to_string())
-        }
+        Err(RecvTimeoutError::Timeout) => Err(AudioThreadError::StartupTimedOut),
+        Err(RecvTimeoutError::Disconnected) => Err(AudioThreadError::OwnerExitedDuringStartup),
     }
 }
 
@@ -561,7 +677,7 @@ fn spawn_render_stall_watch(
     liveness: RenderLiveness,
     policy: RenderLivenessPolicy,
     stop_rx: Receiver<()>,
-) -> Result<(), String> {
+) -> Result<(), AudioThreadError> {
     thread::Builder::new()
         .name("sourdaw-audio-liveness".to_string())
         .spawn(move || {
@@ -580,7 +696,7 @@ fn spawn_render_stall_watch(
             }
         })
         .map(|_| ())
-        .map_err(|error| format!("Failed to spawn audio liveness thread: {error}"))
+        .map_err(spawn_worker_error(AudioWorker::Liveness))
 }
 
 /// Spawn the thread that frees everything the audio thread hands back.
@@ -593,7 +709,7 @@ fn spawn_render_stall_watch(
 /// the audio thread.
 fn spawn_retirement_reclaimer<T: Send + 'static>(
     retired_rx: Consumer<T>,
-) -> Result<(Sender<()>, Sender<Consumer<T>>), String> {
+) -> Result<(Sender<()>, Sender<Consumer<T>>), AudioThreadError> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (adopt_tx, adopt_rx) = mpsc::channel::<Consumer<T>>();
     thread::Builder::new()
@@ -630,7 +746,7 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
                 }
             }
         })
-        .map_err(|error| format!("Failed to spawn plugin reclaimer thread: {error}"))?;
+        .map_err(spawn_worker_error(AudioWorker::PluginReclaimer))?;
 
     Ok((shutdown_tx, adopt_tx))
 }
@@ -640,7 +756,7 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
 /// capture completion. Adoption occurs on the control thread, never on RT.
 fn spawn_capture_feed_reclaimer(
     mut retired: Consumer<CaptureFeed>,
-) -> Result<(Sender<()>, CaptureServiceSender), String> {
+) -> Result<(Sender<()>, CaptureServiceSender), AudioThreadError> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (adopt_tx, adopt_rx) = mpsc::channel::<Box<dyn CaptureCompletionService>>();
     thread::Builder::new()
@@ -683,7 +799,7 @@ fn spawn_capture_feed_reclaimer(
                 }
             }
         })
-        .map_err(|error| format!("Failed to spawn capture reclaimer thread: {error}"))?;
+        .map_err(spawn_worker_error(AudioWorker::CaptureReclaimer))?;
     Ok((shutdown_tx, adopt_tx))
 }
 
@@ -703,7 +819,9 @@ fn reclaim_retired<T>(retired: T) {
 /// command pushed into the caller's producer — a worse outcome than the honest
 /// failure. Callers that want the fallback build should use `EngineHandle::new`,
 /// which owns both ends and retries with the device default period.
-pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
+pub fn spawn_audio_thread(
+    command_rx: Consumer<GraphCommand>,
+) -> Result<AudioThreadHandle, AudioThreadError> {
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
@@ -777,7 +895,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     engine_event_tx: Producer<EngineEvent>,
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
-) -> Result<SpawnedAudioThread, String> {
+) -> Result<SpawnedAudioThread, AudioThreadError> {
     let capture_clock = CaptureClock::new();
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
@@ -853,7 +971,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
 
     let sender = service_adoption
         .get()
-        .ok_or_else(|| "Audio stream started without its capture worker".to_string())?
+        .ok_or(AudioThreadError::StartedWithoutCaptureWorker)?
         .clone();
     let _ = handle.capture_services.set(CaptureServiceAdoption {
         sender,
@@ -865,7 +983,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     // successful spawn implies a filled cell.
     let sample_rate = *sample_rate_cell
         .get()
-        .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
+        .ok_or(AudioThreadError::StartedWithoutSampleRate)?;
     Ok(SpawnedAudioThread {
         handle,
         capture_period_revoked,
@@ -1813,7 +1931,7 @@ fn build_audio_stream(
     capture_clock: CaptureClock,
     capture_period: CapturePeriodObservation,
     capture_service_adoption: &OnceLock<Sender<Box<dyn CaptureCompletionService>>>,
-) -> Result<OwnedDeviceStreams, String> {
+) -> Result<OwnedDeviceStreams, AudioThreadError> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
         // WASAPI Exclusive is an explicit user opt-in (ADR 0027). No engine
@@ -1825,7 +1943,7 @@ fn build_audio_stream(
 
     let negotiated = open.negotiated();
     if negotiated.channels == 0 {
-        return Err("Audio output device reports zero channels".to_string());
+        return Err(AudioThreadError::ZeroOutputChannels);
     }
 
     let sample_rate = negotiated.sample_rate;
@@ -1994,23 +2112,27 @@ impl CaptureLifecycleDriver {
         }
     }
 
-    pub fn deliver_input(&mut self, interleaved: &[f32], channels: usize) -> Result<(), String> {
+    pub fn deliver_input(
+        &mut self,
+        interleaved: &[f32],
+        channels: usize,
+    ) -> Result<(), CaptureFixtureError> {
         let stream = self
             .capture
             .as_mut()
-            .ok_or_else(|| "Fixture input is not open".to_string())?;
+            .ok_or(CaptureFixtureError::InputNotOpen)?;
         (stream.capture)(interleaved, channels);
         Ok(())
     }
 
-    pub fn render(&mut self, frames: usize) -> Result<(), String> {
+    pub fn render(&mut self, frames: usize) -> Result<(), CaptureFixtureError> {
         if frames == 0 || frames > MAX_CALLBACK_FRAMES {
-            return Err("Fixture render frames outside callback capacity".to_string());
+            return Err(CaptureFixtureError::FramesOutsideCapacity);
         }
         let renderer = self
             .renderer
             .as_mut()
-            .ok_or_else(|| "Fixture output stopped".to_string())?;
+            .ok_or(CaptureFixtureError::OutputStopped)?;
         renderer.render(&mut self.output[..frames * 2], 2, 0);
         Ok(())
     }
@@ -2061,7 +2183,7 @@ pub(crate) fn capture_lifecycle_driver(
     retired_adoptions: Receiver<Consumer<RetiredGraphObjects>>,
     refuse_input: bool,
     capture_clock: CaptureClock,
-) -> Result<CaptureLifecycleParts, String> {
+) -> Result<CaptureLifecycleParts, AudioThreadError> {
     let (owner_tx, owner_commands) = mpsc::channel();
     let (watch_stop_tx, _) = mpsc::channel();
     let (_, shutdown_complete_rx) = mpsc::channel();
@@ -4238,8 +4360,9 @@ mod capture_seam_tests {
 mod tests {
     use super::{
         new_render_liveness, spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
-        spawn_retirement_reclaimer, AudioThreadHandle, RenderLivenessPolicy, RenderStallWatch,
-        StreamWithReclaimerShutdown, AUDIO_STREAM_SHUTDOWN_TIMEOUT, RENDER_LIVENESS_POLICY,
+        spawn_retirement_reclaimer, AudioThreadError, AudioThreadHandle, AudioWorker,
+        RenderLivenessPolicy, RenderStallWatch, StreamWithReclaimerShutdown,
+        AUDIO_STREAM_SHUTDOWN_TIMEOUT, RENDER_LIVENESS_POLICY,
     };
     use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
@@ -4249,6 +4372,99 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    /// The text every audio-thread failure carries to a host, pinned so a
+    /// reworded or swapped variant fails here rather than in a renderer spec.
+    #[test]
+    fn audio_thread_errors_print_their_messages() {
+        let cases = [
+            (
+                AudioThreadError::SpawnWorker {
+                    worker: AudioWorker::Owner,
+                    cause: std::io::Error::other("no threads left"),
+                },
+                "Failed to spawn audio owner thread: no threads left",
+            ),
+            (
+                AudioThreadError::SpawnWorker {
+                    worker: AudioWorker::Liveness,
+                    cause: std::io::Error::other("no threads left"),
+                },
+                "Failed to spawn audio liveness thread: no threads left",
+            ),
+            (
+                AudioThreadError::SpawnWorker {
+                    worker: AudioWorker::PluginReclaimer,
+                    cause: std::io::Error::other("no threads left"),
+                },
+                "Failed to spawn plugin reclaimer thread: no threads left",
+            ),
+            (
+                AudioThreadError::SpawnWorker {
+                    worker: AudioWorker::CaptureReclaimer,
+                    cause: std::io::Error::other("no threads left"),
+                },
+                "Failed to spawn capture reclaimer thread: no threads left",
+            ),
+            (
+                AudioThreadError::StartupTimedOut,
+                "Timed out waiting for audio stream startup",
+            ),
+            (
+                AudioThreadError::OwnerExitedDuringStartup,
+                "Audio owner thread exited during startup",
+            ),
+            (
+                AudioThreadError::StartedWithoutCaptureWorker,
+                "Audio stream started without its capture worker",
+            ),
+            (
+                AudioThreadError::StartedWithoutSampleRate,
+                "Audio stream started without reporting its sample rate",
+            ),
+            (
+                AudioThreadError::ZeroOutputChannels,
+                "Audio output device reports zero channels",
+            ),
+            (
+                AudioThreadError::CaptureWorkerUnavailable,
+                "Capture completion worker unavailable",
+            ),
+            (
+                AudioThreadError::CaptureWorkerStopped,
+                "Capture completion worker stopped",
+            ),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_device_error_prints_the_backend_message_unchanged() {
+        let error = AudioThreadError::from(crate::device::OutputDeviceError::NoDefaultDevice);
+        assert!(matches!(error, AudioThreadError::Device(_)));
+        assert_eq!(error.to_string(), "No default audio output device found");
+    }
+
+    #[cfg(feature = "command-capture-fixture")]
+    #[test]
+    fn capture_fixture_errors_print_their_messages() {
+        use super::CaptureFixtureError;
+        assert_eq!(
+            CaptureFixtureError::InputNotOpen.to_string(),
+            "Fixture input is not open"
+        );
+        assert_eq!(
+            CaptureFixtureError::FramesOutsideCapacity.to_string(),
+            "Fixture render frames outside callback capacity"
+        );
+        assert_eq!(
+            CaptureFixtureError::OutputStopped.to_string(),
+            "Fixture output stopped"
+        );
+    }
 
     /// The stall is this many timeouts long, so a timeout that returns is
     /// unambiguously distinguished from one that waited the stall out, on any runner.
@@ -4532,7 +4748,7 @@ mod tests {
     #[test]
     fn owner_thread_reports_stream_startup_failure() {
         let result = spawn_owned_audio_stream::<ThreadBoundResource, _, _>(
-            || Err("audio device unavailable".to_string()),
+            || Err(AudioThreadError::ZeroOutputChannels),
             no_capture_open,
             new_render_liveness(),
         );
@@ -4541,7 +4757,10 @@ mod tests {
             Err(error) => error,
         };
 
-        assert_eq!(error, "audio device unavailable");
+        assert!(
+            matches!(error, AudioThreadError::ZeroOutputChannels),
+            "the factory's own failure must be the one reported, got {error:?}"
+        );
     }
 
     /// The release thread sets the flag before releasing the stall, so a call that waited the stall out sees it set.
@@ -4585,7 +4804,10 @@ mod tests {
             Err(error) => error,
         };
 
-        assert_eq!(error, "Timed out waiting for audio stream startup");
+        assert!(
+            matches!(error, AudioThreadError::StartupTimedOut),
+            "{error:?}"
+        );
         assert!(
             !released.load(Ordering::SeqCst),
             "the startup timeout must return before the stall releases"
@@ -4705,7 +4927,7 @@ mod tests {
         };
 
         let handle = spawn_owned_audio_stream_with_timeout(
-            move || Ok::<(), String>(()),
+            move || Ok::<(), AudioThreadError>(()),
             no_capture_open,
             Duration::from_secs(1),
             liveness,
@@ -4754,7 +4976,7 @@ mod tests {
         let (dropped_tx, dropped_rx) = mpsc::channel();
 
         let handle = spawn_owned_audio_stream_with_timeout(
-            move || Ok::<_, String>(DropNotifier(dropped_tx)),
+            move || Ok::<_, AudioThreadError>(DropNotifier(dropped_tx)),
             move |_stream: &mut DropNotifier, _command| {
                 blocked_tx
                     .send(())
@@ -4809,7 +5031,7 @@ mod tests {
         let (dropped_tx, dropped_rx) = mpsc::channel();
 
         let handle = spawn_owned_audio_stream(
-            move || Ok::<_, String>(DropNotifier(dropped_tx)),
+            move || Ok::<_, AudioThreadError>(DropNotifier(dropped_tx)),
             move |_stream: &mut DropNotifier, _command| {
                 panicked_tx
                     .send(())
