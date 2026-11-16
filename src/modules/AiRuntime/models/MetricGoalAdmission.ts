@@ -65,8 +65,8 @@ export type MetricRequestAuthority<MetricId extends string> = {
     /**
      * Who admitted the request's meaning: the complete literal parser, the configured joint intake, an
      * admitted workflow, or the user taking up a suggestion an answer offered, which names one recipe on
-     * one track and states no objective of its own, or the user repeating the last commit's recipe on
-     * named tracks, which likewise states no objective, or the application's reader of the request's
+     * one track, or the user repeating the last commit's recipe on named tracks, each stating no
+     * objective of its own beyond the measurable expectations an authored recipe declares, or the application's reader of the request's
      * perceptual constraints, which only restricts the batch and grants nothing, or the vibe-run plan
      * the application built for a whole-project request, whose batch promises its recipes' expectations.
      */
