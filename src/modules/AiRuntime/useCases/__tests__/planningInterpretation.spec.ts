@@ -47,6 +47,31 @@ function legacyCall(catalogId: string) {
 }
 
 describe('joint planning interpretation consumes the actual printed context view', () => {
+    it('retains the bounded public creative reading separately from authority', () => {
+        const value = fixture();
+        const call = legacyCall(value.creative.catalogId);
+        const result = admitPlanningInterpretation({
+            ...value,
+            call: { ...call, arguments: { ...call.arguments, creativeInterpretation: 'A small vintage receiver' } },
+            projectRevision: 'revision',
+        });
+        expect(result).toMatchObject({
+            status: 'admitted',
+            kind: 'creative',
+            creativeInterpretation: 'A small vintage receiver',
+        });
+    });
+    it.each(['', '   ', 'é'.repeat(257), 3])('rejects an invalid public reading %j', (creativeInterpretation) => {
+        const value = fixture();
+        const call = legacyCall(value.creative.catalogId);
+        expect(
+            admitPlanningInterpretation({
+                ...value,
+                call: { ...call, arguments: { ...call.arguments, creativeInterpretation } },
+                projectRevision: 'revision',
+            }).status
+        ).toBe('rejected');
+    });
     it.each([undefined, null])('delegates the exact original seven fields for answer=%j', (answer) => {
         const value = fixture();
         const original = legacyCall(value.creative.catalogId);
@@ -425,7 +450,10 @@ describe('joint planning interpretation consumes the actual printed context view
         expect(strict.function.parameters.required).toContain('metricIntent');
         const call = legacyCall(value.creative.catalogId);
         expect(
-            matchesJsonSchema({ ...call.arguments, answer: null, metricIntent: null }, strict.function.parameters)
+            matchesJsonSchema(
+                { ...call.arguments, answer: null, metricIntent: null, creativeInterpretation: null },
+                strict.function.parameters
+            )
         ).toBe(true);
         expect(
             admitPlanningInterpretation({

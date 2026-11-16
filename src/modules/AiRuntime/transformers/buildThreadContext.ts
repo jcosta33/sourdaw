@@ -1,5 +1,7 @@
 import { type AgentRunReceipt } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatMessage } from '../models/Chat';
+import { readPublicCreativeInterpretation } from '../models/CreativeInterpretation';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import {
     THREAD_CONTEXT_MAX_TURNS,
@@ -32,7 +34,11 @@ type ThreadConfirmation = {
     };
 };
 
-type ThreadRun = { runId: string; receipts: readonly AgentRunReceipt[] };
+type ThreadRun = {
+    runId: string;
+    receipts: readonly AgentRunReceipt[];
+    plan?: { applicationToolReceipts?: readonly ApplicationToolReceipt[] } | null;
+};
 
 type ThreadActionGroup = {
     groupId: string;
@@ -68,6 +74,11 @@ function readThreadWindow(messages: readonly ChatMessage[]): readonly ChatMessag
 
 function isOpenProjectConfirmation(confirmation: ThreadConfirmation, sources: ThreadContextSources): boolean {
     return confirmation.approvalSnapshot.commandBatch?.authority.projectId === sources.projectId;
+}
+
+function interpretationForRun(run: ThreadRun | undefined): { creativeInterpretation?: string } {
+    const interpretation = readPublicCreativeInterpretation(run?.plan?.applicationToolReceipts ?? []);
+    return interpretation === null ? {} : { creativeInterpretation: interpretation };
 }
 
 function commandsOfSnapshot(snapshot: ThreadConfirmation['approvalSnapshot']): ThreadCommand[] {
@@ -152,6 +163,9 @@ function readConfirmedCommit(
     }
     return {
         runId: confirmation.runId,
+        batchId: confirmation.batchId,
+        confirmationId: confirmation.id,
+        ...interpretationForRun(run),
         receiptIds: [receipt.receiptIdentity],
         standing: readStanding(receipt, sources),
         commands: commandsOfSnapshot(confirmation.approvalSnapshot),
@@ -179,6 +193,8 @@ function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): 
     const group = sources.actionGroups.find((candidate) => candidate.groupId === receipt.revertGroupId);
     return {
         runId,
+        batchId,
+        ...interpretationForRun(run),
         receiptIds: [receipt.receiptIdentity],
         standing: readStanding(receipt, sources),
         commands: (group?.actions ?? []).map((action) => ({ name: action.actionType, label: action.label })),
@@ -223,7 +239,37 @@ function readPendingProposal(
                 runId: pending.runId,
                 confirmationId: pending.id,
                 batchPosition: pending.approvalSnapshot.batchPosition ?? null,
+                ...interpretationForRun(sources.runs.find((run) => run.runId === pending.runId)),
                 commands: commandsOfSnapshot(pending.approvalSnapshot),
+            };
+        }
+    }
+    return null;
+}
+
+function readLastCancelled(
+    window: readonly ChatMessage[],
+    sources: ThreadContextSources
+): ThreadContext['lastCancelled'] {
+    for (const message of [...window].reverse()) {
+        const cancelled = sources.confirmations.find(
+            (candidate) =>
+                candidate.assistantMessageId === message.id &&
+                candidate.status === 'cancelled' &&
+                candidate.supersededBy === null &&
+                candidate.batchId !== null &&
+                !sources.runs
+                    .find((run) => run.runId === candidate.runId)
+                    ?.receipts.some((receipt) => receipt.workId === candidate.batchId) &&
+                isOpenProjectConfirmation(candidate, sources)
+        );
+        if (cancelled !== undefined && cancelled.batchId !== null) {
+            return {
+                runId: cancelled.runId,
+                confirmationId: cancelled.id,
+                batchId: cancelled.batchId,
+                ...interpretationForRun(sources.runs.find((run) => run.runId === cancelled.runId)),
+                commands: commandsOfSnapshot(cancelled.approvalSnapshot),
             };
         }
     }
@@ -251,12 +297,14 @@ export function buildThreadContext(sources: ThreadContextSources): ThreadContext
     const window = readThreadWindow(sources.messages);
     const pendingProposal = readPendingProposal(window, sources);
     const lastCommit = readLastCommit(window, sources);
-    if (pendingProposal === null && lastCommit === null) {
+    const lastCancelled = readLastCancelled(window, sources);
+    if (pendingProposal === null && lastCommit === null && lastCancelled === null) {
         return null;
     }
     return {
         requests: window.filter((message) => message.role === 'user').map((message) => message.content),
         pendingProposal,
         lastCommit,
+        ...(lastCancelled === null ? {} : { lastCancelled }),
     };
 }

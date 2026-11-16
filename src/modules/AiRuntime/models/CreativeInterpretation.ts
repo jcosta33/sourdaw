@@ -2,6 +2,41 @@ import { type ProjectContext } from './ProjectContext';
 import { type ToolSchema } from './ToolDefinitions';
 
 export const CREATIVE_INTERPRETATION_TOOL_NAME = 'selectCreativeInterpretation';
+export const PUBLIC_CREATIVE_INTERPRETATION_MAX_BYTES = 512;
+
+/** Public musical reading only; never model reasoning or execution authority. */
+export function isPublicCreativeInterpretation(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        value.trim().length > 0 &&
+        new TextEncoder().encode(value).byteLength <= PUBLIC_CREATIVE_INTERPRETATION_MAX_BYTES
+    );
+}
+
+/** Read only a successfully admitted creative intake, never a receipt summary or request. */
+export function readPublicCreativeInterpretation(
+    receipts: readonly { toolName: string; status: string; data: unknown }[]
+): string | null {
+    for (const receipt of receipts) {
+        if (
+            receipt.toolName !== CREATIVE_INTERPRETATION_TOOL_NAME ||
+            receipt.status !== 'success' ||
+            typeof receipt.data !== 'object' ||
+            receipt.data === null ||
+            Array.isArray(receipt.data)
+        )
+            continue;
+        const data = receipt.data as Record<string, unknown>;
+        if (
+            data.kind === 'metric-intent' &&
+            typeof data.authorityId === 'string' &&
+            data.authorityId.length > 0 &&
+            isPublicCreativeInterpretation(data.creativeInterpretation)
+        )
+            return data.creativeInterpretation;
+    }
+    return null;
+}
 
 /**
  * `brief` asks to write the project's production brief rather than to change its sound: it selects no

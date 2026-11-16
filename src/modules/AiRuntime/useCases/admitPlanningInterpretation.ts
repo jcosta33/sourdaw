@@ -1,5 +1,9 @@
 import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation';
-import { type CreativeInterpretationCatalog, type CreativeRequestAuthority } from '../models/CreativeInterpretation';
+import {
+    isPublicCreativeInterpretation,
+    type CreativeInterpretationCatalog,
+    type CreativeRequestAuthority,
+} from '../models/CreativeInterpretation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
@@ -186,7 +190,13 @@ function admitJointAnswerInterpretation(input: PlanningInterpretationInput, answ
 }
 
 export function admitPlanningInterpretation(input: PlanningInterpretationInput) {
-    const { answer, metricIntent, ...legacyArguments } = input.call.arguments;
+    const { answer, metricIntent, creativeInterpretation, ...legacyArguments } = input.call.arguments;
+    if (creativeInterpretation !== undefined && !isPublicCreativeInterpretation(creativeInterpretation)) {
+        return {
+            status: 'rejected' as const,
+            reason: 'Public creative interpretation must be nonempty and at most 512 UTF-8 bytes.',
+        };
+    }
     if (
         metricIntent !== undefined &&
         metricIntent !== null &&
@@ -208,7 +218,10 @@ export function admitPlanningInterpretation(input: PlanningInterpretationInput) 
         if (legacyArguments.modeId === 'literal') {
             return admitLiteralInterpretation(input, legacyArguments, metricIntent);
         }
-        return admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
+        const result = admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
+        return result.status === 'admitted' && creativeInterpretation !== undefined
+            ? { ...result, creativeInterpretation }
+            : result;
     }
     return admitJointAnswerInterpretation(input, answer, metricIntent);
 }

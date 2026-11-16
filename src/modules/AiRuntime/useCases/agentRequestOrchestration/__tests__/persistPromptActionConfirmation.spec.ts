@@ -198,6 +198,32 @@ describe('persistPromptActionConfirmation', () => {
         clearHandlerRegistry();
     });
 
+    it('shows the admitted public reading on the confirmation message', () => {
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        mocks.getRun.mockReturnValueOnce(null).mockReturnValueOnce({
+            plan: {
+                applicationToolReceipts: [
+                    {
+                        toolName: 'selectCreativeInterpretation',
+                        status: 'success',
+                        data: {
+                            kind: 'metric-intent',
+                            authorityId: 'authority',
+                            creativeInterpretation: 'A small vintage receiver',
+                        },
+                    },
+                ],
+            },
+        } as ReturnType<typeof agentRunLifecycle.get>);
+        persistPromptActionConfirmation(createInput());
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            'assistant-confirmation',
+            expect.objectContaining({
+                content: expect.stringContaining('Interpretation: A small vintage receiver'),
+            })
+        );
+    });
+
     it('does not transfer ownership if lease construction fails', () => {
         const acquired = vi.fn();
         mocks.createResourceLease.mockImplementation(() => {

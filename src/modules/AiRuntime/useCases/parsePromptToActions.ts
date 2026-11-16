@@ -1370,6 +1370,9 @@ const planPromptIntent = inject({ logger })(
                                                   editDimensions: admission.authority.editDimensions,
                                                   prohibitions: admission.authority.prohibitions,
                                                   creationSlots: admission.authority.creationSlots,
+                                                  ...('creativeInterpretation' in admission
+                                                      ? { creativeInterpretation: admission.creativeInterpretation }
+                                                      : {}),
                                               },
                                               summary:
                                                   'Creative interpretation admitted; acoustic goals require actual compatible preview proof before approval.',

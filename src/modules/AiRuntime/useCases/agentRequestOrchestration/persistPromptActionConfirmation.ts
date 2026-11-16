@@ -19,6 +19,7 @@ import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
 import { createPromptConfirmationId } from './createPromptConfirmationId';
+import { readPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
@@ -205,11 +206,14 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         }
 
         recordConfirmationMetricGoalPlan(input, confirmation);
+        const interpretation = readPublicCreativeInterpretation(
+            agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? []
+        );
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,
             pendingActionConfirmationStatus: 'proposed',
-            content: `${describeBatchPosition(input.batchPosition)}${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
+            content: `${describeBatchPosition(input.batchPosition)}${input.content}${interpretation === null ? '' : `\n\nInterpretation: ${interpretation}`}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
         });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,
