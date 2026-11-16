@@ -19,8 +19,8 @@ function contextAt(startBeat: number) {
                     id: 'audio',
                     activeAlternativeId: 'main',
                     clips: [
-                        { id: 'recorded', startBeat },
                         { id: 'other', startBeat: 1 },
+                        { id: 'recorded', startBeat },
                     ],
                 },
                 { id: 'second', activeAlternativeId: 'main', clips: [{ id: 'kept', startBeat: 2 }] },
