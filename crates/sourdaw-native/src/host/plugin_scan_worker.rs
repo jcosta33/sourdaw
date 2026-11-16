@@ -3335,10 +3335,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
         // SAFETY: `path` is NUL-terminated and outlives the call, and `stats`
         // is writable storage for one `statvfs`.
-        assert_eq!(
-            unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) },
-            0
-        );
+        let status = unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) };
+        assert_eq!(status, 0);
         // SAFETY: `statvfs` returned 0, so it filled `stats`.
         let stats = unsafe { stats.assume_init() };
         widened(stats.f_bavail) * widened(stats.f_frsize)
