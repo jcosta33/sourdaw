@@ -18,6 +18,23 @@ export const DEPENDENCY_BOUNDARY_BASELINE_FILES = [
     '.dependency-cruiser-known-violations-tests.json',
 ] as const;
 
+/**
+ * Baselines of gates that collapse a transitive violation path to its endpoints: a row names no file
+ * the path runs through, so a changed baseline on `main` can invalidate a pull-request edit to any file
+ * the gate cruises. Today only the reachability gate does.
+ */
+export const TRANSITIVE_BOUNDARY_BASELINE_FILES: readonly string[] = [
+    '.dependency-cruiser-known-violations-reachability.json',
+];
+
+/**
+ * What the reachability gate cruises, read by `runCruise` in `scripts/check-dependency-boundaries.mjs`
+ * (root `src`) and `.dependency-cruiser.reachability.cjs` (`options.exclude`). This module never executes
+ * tree files, so the pair is spelled here and a spec pins it to both sources.
+ */
+export const REACHABILITY_CRUISE_ROOT = 'src/';
+export const REACHABILITY_CRUISE_EXCLUDE = /\.(spec|test)\.(ts|tsx)$/u;
+
 export const LINT_LEDGER_FILES = [
     // ESLint suppression counts per file and rule: two prunes of one count leave an unused suppression.
     'eslint-suppressions.json',
@@ -44,6 +61,8 @@ export type LintLedgerCrossing = {
     mergeBase: string;
     /** Sorted paths changed on both sides since the merge base that some ledger binds. */
     paths: string[];
+    /** Set when `main` changed a transitive gate's baseline, so src paths are listed for binding the gate's whole scope. */
+    transitiveBaselineChangedOnMain?: true;
 };
 
 function normalizedLedgerPath(value: string): string {
@@ -264,6 +283,16 @@ function rebound(base: BindingIndex, side: BindingIndex): string[] {
     );
 }
 
+function inReachabilityScope(path: string): boolean {
+    const normalized = normalizedLedgerPath(path);
+    return normalized.startsWith(REACHABILITY_CRUISE_ROOT) && !REACHABILITY_CRUISE_EXCLUDE.test(normalized);
+}
+
+/** True when `main` changed, added or removed a transitive gate's baseline relative to the merge base. */
+export function mainChangedTransitiveBaseline(trees: LedgerTrees): boolean {
+    return TRANSITIVE_BOUNDARY_BASELINE_FILES.some((name) => trees.base[name] !== trees.main[name]);
+}
+
 /**
  * The paths a squash would combine unmeasured: touched since the merge base on both the `main` side
  * and the pull-request side, and named by a ledger in any of the trees involved. A side touches a
@@ -285,9 +314,15 @@ export function lintLedgerCrossingPaths(
         ...pullRequestChanged,
         ...rebound(base, bindingIndex(trees.head, 'the pull request head')),
     ]);
-    return Array.from(mainSide)
-        .filter((path) => pullRequestSide.has(path) && bound.has(path))
-        .sort();
+    const crossing = new Set(Array.from(mainSide).filter((path) => pullRequestSide.has(path) && bound.has(path)));
+    if (mainChangedTransitiveBaseline(trees)) {
+        for (const path of pullRequestSide) {
+            if (inReachabilityScope(path)) {
+                crossing.add(path);
+            }
+        }
+    }
+    return Array.from(crossing).sort();
 }
 
 function nulSeparated(output: string): string[] {
@@ -331,10 +366,15 @@ export function readLintLedgerCrossing(
     const head = commitObject(git, headRevision);
     const mergeBase = git(['merge-base', main, head]).trim();
     const trees = { base: ledgerTree(git, mergeBase), main: ledgerTree(git, main), head: ledgerTree(git, head) };
-    return {
-        mergeBase,
-        paths: lintLedgerCrossingPaths(changedPaths(git, mergeBase, main), changedPaths(git, mergeBase, head), trees),
-    };
+    const paths = lintLedgerCrossingPaths(
+        changedPaths(git, mergeBase, main),
+        changedPaths(git, mergeBase, head),
+        trees
+    );
+    if (mainChangedTransitiveBaseline(trees)) {
+        return { mergeBase, paths, transitiveBaselineChangedOnMain: true };
+    }
+    return { mergeBase, paths };
 }
 
 export function lintLedgerCrossingRefusal(number: number, crossing: LintLedgerCrossing): string | undefined {
@@ -343,9 +383,12 @@ export function lintLedgerCrossingRefusal(number: number, crossing: LintLedgerCr
     }
     const shown = crossing.paths.slice(0, REFUSAL_PATH_LIMIT);
     const more = crossing.paths.length - shown.length;
+    const reason = crossing.transitiveBaselineChangedOnMain
+        ? '; main changed the reachability baseline, which binds every file under src/ that gate cruises'
+        : '';
     return (
         `PR #${number} and main both changed lint-ledger-bound ${crossing.paths.length === 1 ? 'file' : 'files'} ` +
         `since merge base ${crossing.mergeBase}: ${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''}; ` +
-        'merge current main into the lane and publish so a fresh Gate measures the combination'
+        `merge current main into the lane and publish so a fresh Gate measures the combination${reason}`
     );
 }
