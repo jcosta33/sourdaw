@@ -7,6 +7,7 @@ import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { isLocalModelDownloadRequiredError } from '../errors/LocalModelDownloadRequiredError';
 import { isNoAiBackendError } from '../errors/NoAiBackendError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
@@ -2342,7 +2343,7 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                     };
                 }
-                if (isNoAiBackendError(error)) {
+                if (isNoAiBackendError(error) || isLocalModelDownloadRequiredError(error)) {
                     return {
                         actions: [],
                         rawText: prompt,

@@ -6,6 +6,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { LocalModelDownloadRequiredError } from '../../errors/LocalModelDownloadRequiredError';
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
@@ -20,6 +21,7 @@ import {
 import { getExplicitClipProtection } from '../agentReference/getExplicitlyProtectedClips';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
@@ -1386,6 +1388,25 @@ describe('parsePromptToActions', () => {
                 reason: 'This request needs an AI model, and none is available. To run it locally, load the local model in Settings > AI > AI Model Manager. To run it on a hosted provider, add a hosted provider in Settings > AI > Hosted AI provider (desktop app) and choose Hosted provider as the AI execution backend.',
             });
             expect(JSON.stringify(result.planningOutcome)).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
+        });
+
+        it('shows the same remedy when the local model is in the chain but its download needs consent', async () => {
+            vi.mocked(generateToolCalls).mockRejectedValue(
+                new LocalModelDownloadRequiredError(
+                    'Explicit model-download consent is required before WebLLM can fetch this artifact set.'
+                )
+            );
+
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.planningOutcome).toEqual({ kind: 'denied', reason: describeNoAiBackendRemedy() });
+            expect(JSON.stringify(result.planningOutcome)).not.toMatch(/WebLLM|OpenAI|Anthropic|Claude|GPT|Gemini/iu);
         });
 
         it('says first that Automatic never uses a configured hosted provider', async () => {
