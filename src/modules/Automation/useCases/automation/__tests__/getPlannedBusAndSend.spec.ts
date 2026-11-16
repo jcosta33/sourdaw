@@ -54,6 +54,20 @@ const busRestore: AppAction = {
     ]),
 };
 
+// A track the project holds and a restore batch does not bring back: the handler accepts a routing
+// patch on it only while its live routing equals the patch's expected routing.
+const survivorRow = createTrack({ id: 'survivor', name: 'Survivor', kind: 'audio' });
+const survivorExpected = { outputId: survivorRow.outputId, sends: [] };
+function survivorPatch(level: number, preFader = false): RestoreTrackPayloadSnapshot['routingPatches'] {
+    return [
+        {
+            trackId: 'survivor',
+            expected: survivorExpected,
+            replacement: { outputId: survivorRow.outputId, sends: [{ busId: 'bus', level, preFader }] },
+        },
+    ];
+}
+
 describe('planned bus and send', () => {
     beforeEach(() => {
         trackStore.set({
@@ -184,41 +198,21 @@ describe('planned bus and send', () => {
     });
 
     it('plans the bus and sends a restoreTracks brings back, leaving patched siblings to their own row', () => {
-        const removeAll: AppAction = { type: 'removeAllTracks' };
+        trackStore.set({ tracks: [survivorRow], selectedTrackId: null });
+        // removeAllTracks puts survivor patches on the restore with the highest trackIndex.
         const restores: AppAction = {
             type: 'restoreTracks',
             payload: {
                 restores: [
-                    { ...restorePayload(busRow), trackIndex: 1 },
-                    {
-                        ...restorePayload(sendingTrackRow, [
-                            {
-                                trackId: 'other',
-                                expected: { outputId: 'master', sends: [] },
-                                replacement: {
-                                    outputId: 'master',
-                                    sends: [{ busId: 'bus', level: 0.75, preFader: false }],
-                                },
-                            },
-                        ]),
-                        trackIndex: 0,
-                    },
+                    { ...restorePayload(busRow, survivorPatch(0.75)), trackIndex: 1 },
+                    { ...restorePayload(sendingTrackRow), trackIndex: 0 },
                 ],
             },
         };
 
-        expect(getPlannedBus('bus', [removeAll])).toBeUndefined();
-        expect(getPlannedBus('bus', [removeAll, restores])).toMatchObject({ id: 'bus', name: 'Bus' });
-        expect(getPlannedSend('track', 'bus', [removeAll, restores])).toEqual({
-            busId: 'bus',
-            level: 0.25,
-            preFader: true,
-        });
-        expect(getPlannedSend('other', 'bus', [removeAll, restores])).toEqual({
-            busId: 'bus',
-            level: 0.75,
-            preFader: false,
-        });
+        expect(getPlannedBus('bus', [restores])).toMatchObject({ id: 'bus', name: 'Bus' });
+        expect(getPlannedSend('track', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.25, preFader: true });
+        expect(getPlannedSend('survivor', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.75, preFader: false });
     });
 
     it('drops a planned send once the batch discards the imported stem set its track or bus belongs to', () => {
@@ -298,26 +292,71 @@ describe('planned bus and send', () => {
     });
 
     it('applies restoreTracks patches ascending by trackIndex whatever order the payload lists them', () => {
-        const patchFor = (level: number): RestoreTrackPayloadSnapshot['routingPatches'] => [
-            {
-                trackId: 'other',
-                expected: { outputId: 'master', sends: [] },
-                replacement: { outputId: 'master', sends: [{ busId: 'bus', level, preFader: false }] },
-            },
-        ];
+        trackStore.set({ tracks: [survivorRow], selectedTrackId: null });
         const restores: AppAction = {
             type: 'restoreTracks',
             payload: {
                 restores: [
-                    { ...restorePayload(busRow, patchFor(0.9)), trackIndex: 1 },
+                    { ...restorePayload(busRow, survivorPatch(0.9)), trackIndex: 1 },
                     {
-                        ...restorePayload(createTrack({ id: 'second', name: 'Second', kind: 'audio' }), patchFor(0.1)),
+                        ...restorePayload(
+                            createTrack({ id: 'second', name: 'Second', kind: 'audio' }),
+                            survivorPatch(0.1)
+                        ),
                         trackIndex: 0,
                     },
                 ],
             },
         };
 
-        expect(getPlannedSend('other', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.9, preFader: false });
+        expect(getPlannedSend('survivor', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.9, preFader: false });
+    });
+
+    it('plans the kind of a restored track that is not a bus', () => {
+        const restore: AppAction = { type: 'restoreTrack', payload: restorePayload(sendingTrackRow) };
+
+        expect(getPlannedBus('track', [restore])).toMatchObject({ id: 'track', kind: 'audio', name: 'Track' });
+    });
+
+    it('applies no routing patch to a track the restore names in its batch list', () => {
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        const restoreOwner: AppAction = { type: 'restoreTrack', payload: restorePayload(sendingTrackRow) };
+        const restorePatching: AppAction = {
+            type: 'restoreTrack',
+            payload: {
+                ...restorePayload(busRow, [
+                    {
+                        trackId: 'track',
+                        expected: { outputId: 'master', sends: [] },
+                        replacement: { outputId: 'master', sends: [{ busId: 'bus', level: 0.9, preFader: false }] },
+                    },
+                ]),
+                batchRestoreTracks: [
+                    { trackId: 'track', trackIndex: 0 },
+                    { trackId: 'bus', trackIndex: 1 },
+                ],
+            },
+        };
+
+        expect(getPlannedSend('track', 'bus', [restoreOwner, restorePatching])).toEqual({
+            busId: 'bus',
+            level: 0.25,
+            preFader: true,
+        });
+    });
+
+    it('plans a bus restored after another restore in the same restoreTracks', () => {
+        const restores: AppAction = {
+            type: 'restoreTracks',
+            payload: {
+                restores: [
+                    { ...restorePayload(sendingTrackRow), trackIndex: 0 },
+                    { ...restorePayload(busRow), trackIndex: 1 },
+                ],
+            },
+        };
+
+        expect(getPlannedBus('bus', [removeBus])).toBeUndefined();
+        expect(getPlannedBus('bus', [removeBus, restores])).toMatchObject({ id: 'bus', name: 'Bus' });
     });
 });
