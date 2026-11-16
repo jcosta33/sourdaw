@@ -246,7 +246,7 @@ async function tick(expectedCaptures: number): Promise<void> {
                 generation: schedulerSession.generation,
                 sequence: expectedCaptures,
                 scheduledAtMs: now - 2,
-                sentAtMs: now - 1,
+                sentAtMs: now,
             },
         })
     );

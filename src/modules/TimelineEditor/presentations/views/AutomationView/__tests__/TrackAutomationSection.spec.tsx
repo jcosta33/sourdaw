@@ -1,6 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { useStore } from '#/infra/store/useStore';
+import { toggleLaneCollapsed } from '#/modules/Automation/useCases';
+
 import { TrackAutomationSection } from '../TrackAutomationSection';
 
 vi.mock('#/utils/Styles/cn', () => ({
@@ -101,6 +104,7 @@ describe('TrackAutomationSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(useStore).mockReturnValue({ lanes: [] });
     });
 
     it('should render without crashing', () => {
@@ -139,6 +143,37 @@ describe('TrackAutomationSection', () => {
             // After clicking, the lanes section should be collapsed
             expect(screen.queryByTestId('add-lane-control')).not.toBeInTheDocument();
         }
+    });
+
+    it('makes a collapsed lane sparkline a native button that expands the lane', () => {
+        vi.mocked(useStore).mockReturnValue({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    minValue: -1,
+                    maxValue: 1,
+                    collapsed: true,
+                    points: [
+                        { beat: 0, value: 0 },
+                        { beat: 4, value: 1 },
+                    ],
+                },
+            ],
+        });
+        render(<TrackAutomationSection {...defaultProps} />);
+        const sparkline = screen.getByRole('button', { name: 'Expand Pan lane' });
+        expect(sparkline).toHaveAttribute('aria-expanded', 'false');
+        // A native button is what makes Enter and Space activate it; jsdom does
+        // not synthesise that activation, so the click stands in for it.
+        expect(sparkline.tagName).toBe('BUTTON');
+        expect(sparkline).toHaveAttribute('type', 'button');
+
+        fireEvent.click(sparkline);
+
+        expect(toggleLaneCollapsed).toHaveBeenCalledExactlyOnceWith('lane-1');
     });
 
     it('should show lane count in mode control', () => {

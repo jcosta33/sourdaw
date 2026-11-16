@@ -32,7 +32,8 @@ export type LastCommitRequest =
 
 const NONE: LastCommitRequest = { kind: 'none' };
 
-const OPENERS = String.raw`(?:(?:please|ok|okay|now|and|then|just|yes|actually),?\s+)*`;
+// A bare leading "Thanks" may be a track's name, so thanks opens a request only before a comma.
+const OPENERS = String.raw`(?:(?:(?:please|ok|okay|now|and|then|just|yes|actually),?|(?:thanks|thank you),)\s+)*`;
 const CLOSERS = String.raw`(?:,?\s+(?:please|thanks|thank you))?`;
 const END = String.raw`\s*[.!]?$`;
 
@@ -55,6 +56,15 @@ const VAGUE = wholeRequest(
 const RECIPE = wholeRequest(String.raw`(?:apply|use)\s+(?:that|the same)\s+recipe\s+(?:to|on)\s+(.+?)`);
 const SAME = wholeRequest(String.raw`(?:(?:do|apply)\s+the\s+same|(?:the\s+)?same)\s+(?:to|on|for)\s+(.+?)`);
 const TOO = wholeRequest(String.raw`(.+?)\s+(?:too|as well)`);
+
+/** The grammar has no question form, so a target the lazy capture closed on a `?` is no continuation. */
+function readRetargetText(match: RegExpExecArray | null): string | null {
+    const target = match?.[1];
+    if (target === undefined || target.endsWith('?')) {
+        return null;
+    }
+    return target;
+}
 
 function escapeRegExp(text: string): string {
     return text.replaceAll(/[.*+?^${}()|[\]\\/]/gu, String.raw`\$&`);
@@ -144,13 +154,18 @@ export function readLastCommitRequest(prompt: string, units: readonly string[] =
     if (vague !== null) {
         return { kind: 'continue', phrasing: 'comparative', comparative: vague, figure: null };
     }
-    const recipe = RECIPE.exec(text)?.[1];
-    if (recipe !== undefined) {
+    const recipeMatch = RECIPE.exec(text);
+    const recipe = readRetargetText(recipeMatch);
+    if (recipe !== null) {
         return { kind: 'retarget', form: 'recipe', targetText: recipe };
     }
-    const same = SAME.exec(text)?.[1];
-    if (same !== undefined) {
+    const sameMatch = SAME.exec(text);
+    const same = readRetargetText(sameMatch);
+    if (same !== null) {
         return { kind: 'retarget', form: 'same', targetText: same };
+    }
+    if (recipeMatch !== null || sameMatch !== null) {
+        return NONE;
     }
     const too = TOO.exec(text)?.[1];
     if (too !== undefined) {

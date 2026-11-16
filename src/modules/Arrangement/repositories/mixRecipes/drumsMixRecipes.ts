@@ -262,10 +262,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip when the kit already sounds hollow between the kick and the snare crack.',
             'Skip when the same cut is already applied on a parent bus.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'rms', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
         source: 'Drum boxiness collects between 300 Hz and 450 Hz where shell resonance and close-mic proximity overlap, and a bell narrow enough to sit between the kick fundamental and the snare body removes it without thinning either. Cutting more than 5 dB starts to hollow the kit rather than clear it.',
     },
     {

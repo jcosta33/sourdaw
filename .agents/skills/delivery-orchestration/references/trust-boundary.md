@@ -83,13 +83,18 @@ the config it reads defines any `hook.*` key. Transports are an allowlist of `ht
 defence in depth beside the isolated directory. The GitHub CLI holds the token and starts Git
 itself, so every token-bearing `gh` child starts in a fresh empty directory that Git cannot climb
 out of, with inherited repository routing removed: any Git it runs finds no repository and reads no
-repository config. Each such call therefore names its repository with `--repo` or an explicit API
+repository config. A child is gh when the command its caller names is `gh`, with any `.exe` suffix
+and in any case, or is exactly the launcher's trusted gh path, whatever that path's file name. Each
+such call therefore names its repository with `--repo` or an explicit API
 path. The one exception is the exact checkout repository query (`gh repo view --json nameWithOwner
 --jq .nameWithOwner`), which reads remote names in the caller's repository with `git remote -v` and
 `git config --get-regexp`; those read config but start no config-selected program. That query
 answers from config any lane can write, where `remote.<name>.gh-resolved` overrides the remote URL,
 so a command reads it once, asserts it names the required repository, and passes that asserted name
 to every later call; a second read would let a lane move the calls after the check.
+The nightly CodeQL evidence reporter keeps its `gh` in place: its workflow checks out only the
+reporter's own files from the trusted commit into a fresh runner, so there is no lane config for
+Git to read, and importing the placement helper would break that sparse checkout.
 Keeping the token secret from same-account processes is outside this
 boundary. Every Git-read environment
 ignores replace refs. The
