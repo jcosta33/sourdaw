@@ -29,7 +29,7 @@
         },
         "perceptual-multi-target": {
             "sealed": false,
-            "pendingContract": "recipe.discover and recipe.expand"
+            "pendingContract": "analysis.measure previews one recipe; a multi-target batch needs a multi-recipe preview"
         },
         "whole-project-vibe-with-constraint": {
             "sealed": true
