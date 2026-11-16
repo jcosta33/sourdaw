@@ -40,8 +40,8 @@ pnpm release:propose
 ```
 
 It rewrites the version and the changelog entry, both from the base revision. No release gate pins
-the version: the dependency-license proofs and the release inventory pin `package.json` by the
-licence fields the proof generator reads, so the bump moves no digest. Running it again rebuilds that proposal from scratch —
+the version: the dependency-license proofs and the release inventory pin `package.json` by every key
+the packaging path reads except `version`, so the bump moves no digest. Running it again rebuilds that proposal from scratch —
 it drops every changelog entry above the newest released one, so a rerun after `main` moved replaces
 the stale proposal rather than recording a version that was never tagged. A released entry is a fact
 and is never touched. Commit it with the conventional subject it prints, then open the pull request

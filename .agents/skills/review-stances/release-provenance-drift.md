@@ -26,10 +26,14 @@ limitation, never as passed.
    proof's `sourceInputs` and the inventory's `package.json` and `Cargo.toml` snapshots pin each manifest by
    the projection `scripts/dependencyLicenseInputProjection.ts` names: every Cargo dependency table,
    `[features]`, `[patch*]`, `[replace]`, `[workspace]` members/exclude/default-members/resolver and the
-   licence keys; `package.json` `license` and `scripts.build`; every other input, `electron-builder.yml` included
-   (its ordered `files` patterns can re-include `node_modules` after the exclusion), is pinned whole. An edit to any of those must move the restamp artifacts under `release/` in the same diff
-   (`pnpm release:restamp`); an edit to anything else in those files (a script, a crate `version`, `[lints]`,
-   a comment) must leave them untouched. The inventory pins the proof file only by its curated `packages`;
+   licence keys; every `package.json` key but `version`, with `scripts` cut to the packaging closure (`build`,
+   `desktop:build`, npm lifecycle hooks, their `pre`/`post` hooks, and every script they run by name), because
+   electron-builder and npm read `build`, `main`, `files` and dependencies too; every other input,
+   `electron-builder.yml` included (its ordered `files` patterns can re-include `node_modules` after the
+   exclusion), is pinned whole. An edit to any of those must move the restamp artifacts under `release/` in the same diff
+   (`pnpm release:restamp`); an edit to anything else in those files (a script outside the packaging closure, the
+   `package.json` or crate `version`, `[lints]`, a comment) must leave them untouched. Probe a packaging escape by
+   moving electron-builder's config into a top-level `package.json` `build` key and confirming the pin moves. The inventory pins the proof file only by its curated `packages`;
    the generated Cargo runtime inventory is checked live by the licence preflight. A diff that narrows a
    projection must show a still-fail spec row for every field it drops.
 3. **A new URL literal lacks its external-reference assignment (#3127, #5625).** Runs: CI; the reviewer reads the

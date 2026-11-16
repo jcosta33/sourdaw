@@ -4,9 +4,10 @@
  * `release/dependency-license-proofs.json` and `release/open-source-inventory.json` pin the
  * manifests the licence generator resolves from. A whole-file digest made every unrelated edit —
  * a new `package.json` script, a crate `version` or `description`, a `[lints]` table, a comment —
- * restamp both files, so unrelated pull requests conflicted there. Each projection below renders
- * only what the generator or `cargo metadata --features <runtime set>` can read, so the pin still
- * moves for every change that can alter the proof and for nothing else:
+ * restamp both files, so unrelated pull requests conflicted there. Each projection below drops
+ * only what neither the generator, `cargo metadata --features <runtime set>`, nor the packaging
+ * path can read, so the pin still moves for every change that can alter the proof or what the
+ * bundle ships:
  *
  * - a `Cargo.toml` is parsed as TOML and keeps every dependency table (normal, `dev-`, `build-`,
  *   `target.*.`, and `[workspace.dependencies]`), `[features]`, `[patch]`, `[replace]`,
@@ -20,7 +21,10 @@
  *   dependencies into the proof. Dev-dependencies stay because `cargo metadata` unifies features
  *   across dependency kinds: a dev-dependency that enables an optional dependency adds a normal edge
  *   to the runtime graph.
- * - `package.json` keeps `license` and `scripts.build`, the only fields the generator reads.
+ * - `package.json` keeps every key but `version` and the scripts the packaging and release path
+ *   never runs. The generator reads only `license` and `scripts.build`, but electron-builder and
+ *   npm read `build`, `main`, `files`, `dependencies` and more, so a selection of the keys known to
+ *   matter today would let the next one change the bundle unpinned.
  *
  * Every other input is pinned whole, `electron-builder.yml` included: electron-builder applies its
  * `files` patterns in order, so a later pattern can re-include `node_modules` past the exclusion
@@ -37,7 +41,7 @@ import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const LICENCE_INPUT_PROJECTIONS = [
     'cargo-manifest-licence-graph',
-    'package-json-licence-fields',
+    'package-json-packaging',
     'whole-file',
 ] as const;
 
@@ -81,6 +85,21 @@ const CARGO_LICENCE_GRAPH_SELECTION: CargoSelection = {
     },
 };
 
+/** The scripts the release path runs: `pnpm build` and the nightly's `pnpm desktop:build` package step. */
+const PACKAGING_SCRIPT_ROOTS = ['build', 'desktop:build'] as const;
+
+/** The scripts npm and pnpm run on their own during install, pack and publish. */
+const NPM_LIFECYCLE_SCRIPTS = [
+    'preinstall',
+    'install',
+    'postinstall',
+    'prepare',
+    'prepublish',
+    'prepublishOnly',
+    'prepack',
+    'postpack',
+] as const;
+
 const TOML_BARE_KEY_PATTERN = /^[A-Za-z0-9_-]+$/u;
 const CARGO_WORKSPACE_MEMBER_GLOB_PATTERN = /[*?[\]]/u;
 
@@ -89,7 +108,7 @@ export function licenceInputProjectionKind(path: string): LicenceInputProjection
         return 'cargo-manifest-licence-graph';
     }
     if (path === 'package.json') {
-        return 'package-json-licence-fields';
+        return 'package-json-packaging';
     }
     return 'whole-file';
 }
@@ -223,9 +242,69 @@ export function cargoWorkspaceMemberManifestPaths(text: string, path: string): s
     });
 }
 
-export function packageJsonLicenceFieldsProjection(text: string, path: string): string {
-    const manifest = parseJsonWithUniqueKeys<{ license?: JsonValue; scripts?: { build?: JsonValue } }>(text, path);
-    return `${canonicalJson({ license: manifest.license ?? null, scripts: { build: manifest.scripts?.build ?? null } })}\n`;
+function isJsonObject(value: JsonValue | undefined): value is { [key: string]: JsonValue } {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The script names a command runs through `pnpm <name>`, `pnpm run <name>` or `npm run <name>`. */
+function invokedScriptNames(command: string): string[] {
+    const tokens = command.split(/[\s;&|()'"`]+/u).filter((token) => token.length > 0);
+    const names: string[] = [];
+    for (const [index, token] of tokens.entries()) {
+        if (token !== 'pnpm' && token !== 'npm') {
+            continue;
+        }
+        const operands = tokens.slice(index + 1).filter((operand) => !operand.startsWith('-'));
+        const [first, second] = operands;
+        if (first === 'run' || first === 'run-script') {
+            if (second !== undefined) {
+                names.push(second);
+            }
+        } else if (token === 'pnpm' && first !== undefined) {
+            names.push(first);
+        }
+    }
+    return names;
+}
+
+/**
+ * The scripts the packaging and release path can run: the roots, every npm lifecycle hook, the
+ * `pre`/`post` hook of each kept script, and every script a kept script invokes by name.
+ */
+function packagingScripts(scripts: { [key: string]: JsonValue }): { [key: string]: JsonValue } {
+    const pending: string[] = [...PACKAGING_SCRIPT_ROOTS, ...NPM_LIFECYCLE_SCRIPTS];
+    const kept = new Set<string>();
+    for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+        const command = scripts[name];
+        if (kept.has(name) || command === undefined) {
+            continue;
+        }
+        kept.add(name);
+        pending.push(`pre${name}`, `post${name}`);
+        if (typeof command === 'string') {
+            pending.push(...invokedScriptNames(command));
+        }
+    }
+    return Object.fromEntries(Object.entries(scripts).filter(([name]) => kept.has(name)));
+}
+
+/**
+ * The canonical JSON of `package.json` minus what the packaging and release path never reads:
+ * `version`, which a release bump moves, and every script outside `packagingScripts`. Every other
+ * key, known or future, stays: electron-builder and npm read `build`, `main`, `files`,
+ * `dependencies` and more, and any of them can change what the bundle ships.
+ */
+export function packageJsonPackagingProjection(text: string, path: string): string {
+    const manifest = parseJsonWithUniqueKeys<JsonValue>(text, path);
+    if (!isJsonObject(manifest)) {
+        throw new TypeError(`${path}: package.json must be an object`);
+    }
+    const { version: _version, scripts, ...pinned } = manifest;
+    if (scripts !== undefined && !isJsonObject(scripts)) {
+        throw new TypeError(`${path}: package.json scripts must be an object`);
+    }
+    const projection = scripts === undefined ? pinned : { ...pinned, scripts: packagingScripts(scripts) };
+    return `${canonicalJson(projection)}\n`;
 }
 
 function projectedBytes(path: string, projection: LicenceInputProjection, bytes: Buffer): Buffer {
@@ -236,7 +315,7 @@ function projectedBytes(path: string, projection: LicenceInputProjection, bytes:
     if (projection === 'cargo-manifest-licence-graph') {
         return Buffer.from(cargoManifestLicenceGraphProjection(text, path), 'utf8');
     }
-    return Buffer.from(packageJsonLicenceFieldsProjection(text, path), 'utf8');
+    return Buffer.from(packageJsonPackagingProjection(text, path), 'utf8');
 }
 
 /** The projection `path` is pinned by and the SHA-256 of that projection of `bytes`. */

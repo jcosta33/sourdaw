@@ -4610,6 +4610,8 @@ describe('release inventory', () => {
         it.each([
             ['package.json', '"license": "Apache-2.0"', '"license": "MIT"'],
             ['package.json', '"build": "vite build"', '"build": "vite build --mode bundled"'],
+            ['package.json', ' --config electron-builder.yml', ''],
+            ['package.json', '"private": true,', '"private": true,\n    "build": { "files": ["node_modules/**/*"] },'],
             ['Cargo.toml', 'windows = "0.62.2"', 'windows = "0.63.0"'],
             ['Cargo.toml', '[workspace.dependencies]\n', '[workspace.dependencies]\nlibc = "0.2"\n'],
             ['Cargo.toml', '"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n'],
@@ -4623,7 +4625,8 @@ describe('release inventory', () => {
 
         it.each([
             ['package.json', '"build": "vite build",', '"build": "vite build",\n        "fixture:extra": "true",'],
-            ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+            ['package.json', '"version": "', '"version": "9'],
+            ['package.json', '"desktop:dev": "', '"desktop:dev": "true && '],
             ['Cargo.toml', 'todo = "deny"', 'todo = "warn"'],
             ['Cargo.toml', 'lto = true', 'lto = false'],
             ['Cargo.toml', '[workspace.package]\n', '# Inherited by every member.\n[workspace.package]\n'],
@@ -4639,7 +4642,7 @@ describe('release inventory', () => {
             cargoLock!.projection = 'cargo-manifest-licence-graph';
             expect(validateReleaseInventory(value, snapshot())).toEqual(
                 expect.arrayContaining([
-                    'package.json: snapshot must pin the package-json-licence-fields projection',
+                    'package.json: snapshot must pin the package-json-packaging projection',
                     'Cargo.lock: snapshot must pin the whole file',
                 ])
             );

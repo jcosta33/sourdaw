@@ -6,7 +6,7 @@ import {
     curatedDependencyLicenseProofsProjection,
     licenceInputDigest,
     licenceInputProjectionKind,
-    packageJsonLicenceFieldsProjection,
+    packageJsonPackagingProjection,
 } from '../dependencyLicenseInputProjection';
 
 const MANIFEST = `[workspace]
@@ -68,9 +68,13 @@ function projectEdit(before: string, after: string): string {
 
 const PACKAGE_JSON = `{
     "name": "fixture",
+    "version": "1.0.0",
     "license": "Apache-2.0",
+    "main": "electron/out/main.js",
     "scripts": {
         "build": "vite build",
+        "desktop:build": "pnpm run native:addon && electron-builder --config electron-builder.yml --publish never",
+        "native:addon": "node scripts/buildNativeAddon.ts",
         "test": "vitest"
     },
     "dependencies": {
@@ -409,22 +413,61 @@ serde = "1"
         ['license', '"license": "Apache-2.0"', '"license": "MIT"', true],
         ['scripts.build', '"build": "vite build"', '"build": "vite build --mode bundled"', true],
         ['scripts.build removed', '"build": "vite build",\n', '', true],
-        ['a script other than build', '"test": "vitest"', '"test": "vitest",\n        "lint": "oxlint"', false],
-        ['name', '"name": "fixture"', '"name": "renamed"', false],
-        ['dependencies, which pnpm-lock.yaml pins', '"react": "19.0.0"', '"react": "19.1.0"', false],
+        ['desktop:build dropping its electron-builder config', ' --config electron-builder.yml', '', true],
+        [
+            'a top-level electron-builder build key',
+            '"main": "electron/out/main.js",',
+            '"main": "electron/out/main.js",\n    "build": { "files": ["node_modules/**/*"] },',
+            true,
+        ],
+        ['main', '"main": "electron/out/main.js"', '"main": "electron/out/other.js"', true],
+        ['files', '"main": "electron/out/main.js",', '"main": "electron/out/main.js",\n    "files": ["dist"],', true],
+        ['an added dependency', '"react": "19.0.0"', '"react": "19.0.0",\n        "left-pad": "1.3.0"', true],
+        ['a re-versioned dependency', '"react": "19.0.0"', '"react": "19.1.0"', true],
+        [
+            'a script desktop:build runs through pnpm run',
+            '"native:addon": "node scripts/buildNativeAddon.ts"',
+            '"native:addon": "node scripts/buildNativeAddonRenamed.ts"',
+            true,
+        ],
+        [
+            'an added postinstall hook',
+            '"test": "vitest"',
+            '"test": "vitest",\n        "postinstall": "node fetch.js"',
+            true,
+        ],
+        [
+            'an added pre hook of a packaging script',
+            '"test": "vitest"',
+            '"test": "vitest",\n        "predesktop:build": "node fetch.js"',
+            true,
+        ],
+        ['an unknown top-level key', '"name": "fixture",', '"name": "fixture",\n    "future": true,', true],
+        ['name', '"name": "fixture"', '"name": "renamed"', true],
+        ['version', '"version": "1.0.0"', '"version": "1.1.0"', false],
+        ['an added unrelated script', '"test": "vitest"', '"test": "vitest",\n        "lint:foo": "oxlint"', false],
+        ['an unrelated existing script', '"test": "vitest"', '"test": "vitest run"', false],
     ])(
-        'moves the package.json projection on an edit to %s only when the generator reads it',
+        'moves the package.json projection on an edit to %s only when packaging can read it',
         (_field, before, after, moves) => {
             expect(PACKAGE_JSON).toContain(before);
-            const baselineProjection = packageJsonLicenceFieldsProjection(PACKAGE_JSON, 'package.json');
-            const edited = packageJsonLicenceFieldsProjection(PACKAGE_JSON.replace(before, after), 'package.json');
+            const baselineProjection = packageJsonPackagingProjection(PACKAGE_JSON, 'package.json');
+            const edited = packageJsonPackagingProjection(PACKAGE_JSON.replace(before, after), 'package.json');
             expect(edited !== baselineProjection).toBe(moves);
         }
     );
 
+    it('keeps a script a packaging script names without run, and drops an unrelated one', () => {
+        const manifest = (scripts: Record<string, string>): string =>
+            JSON.stringify({ license: 'MIT', scripts: { 'desktop:build': 'pnpm --silent pack:app', ...scripts } });
+        const kept = packageJsonPackagingProjection(manifest({ 'pack:app': 'a', lint: 'x' }), 'package.json');
+        expect(kept).not.toBe(packageJsonPackagingProjection(manifest({ 'pack:app': 'b', lint: 'x' }), 'package.json'));
+        expect(kept).toBe(packageJsonPackagingProjection(manifest({ 'pack:app': 'a', lint: 'y' }), 'package.json'));
+    });
+
     it('rejects a package.json with duplicate keys', () => {
         expect(() =>
-            packageJsonLicenceFieldsProjection('{"license":"MIT","license":"Apache-2.0"}', 'package.json')
+            packageJsonPackagingProjection('{"license":"MIT","license":"Apache-2.0"}', 'package.json')
         ).toThrow('duplicate key');
     });
 
@@ -488,7 +531,7 @@ serde = "1"
     it.each([
         ['Cargo.toml', 'cargo-manifest-licence-graph'],
         ['crates/sourdaw-native/Cargo.toml', 'cargo-manifest-licence-graph'],
-        ['package.json', 'package-json-licence-fields'],
+        ['package.json', 'package-json-packaging'],
         ['server/package.json', 'whole-file'],
         ['electron-builder.yml', 'whole-file'],
         ['rust-toolchain.toml', 'whole-file'],

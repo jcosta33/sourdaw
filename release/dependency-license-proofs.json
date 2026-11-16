@@ -80,8 +80,8 @@
             },
             {
                 "path": "package.json",
-                "projection": "package-json-licence-fields",
-                "sha256": "591fef2ce9b3effbf48d21d9c165f0db8a3655b636505ef03f961242c60c8c78"
+                "projection": "package-json-packaging",
+                "sha256": "59e41a0f87ad36a861f17c897091a7e895407ad15dca7f2454cf8e540048f711"
             },
             {
                 "path": "rust-toolchain.toml",
