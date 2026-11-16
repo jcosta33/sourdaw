@@ -588,6 +588,26 @@ describe('lint ledger crossing over a real repository', () => {
         expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
     });
 
+    it.each(DEPENDENCY_BOUNDARY_BASELINE_FILES)(
+        'reads %s from the repository and refuses main deleting a row for a file the pull request edits',
+        (baseline) => {
+            const { git, write } = scratchRepository();
+            const row = { type: 'contract-reexport', from: 'x.ts', to: 'y.ts', rule: { severity: 'error', name: 'r' } };
+            write(baseline, JSON.stringify([row]));
+            write('x.ts', 'one;\n');
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            git(['switch', '--quiet', '-c', 'b']);
+            write('x.ts', 'two;\n');
+            git(['commit', '--quiet', '-am', 'b edits the row file']);
+            git(['switch', '--quiet', 'main']);
+            write(baseline, '[]');
+            git(['commit', '--quiet', '-am', 'main deletes the row']);
+
+            expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+        }
+    );
+
     it('crosses when main renames a bound file the pull request edits', () => {
         const { git, write } = scratchRepository();
         mkdirSync(join(directory ?? '', 'scripts'), { recursive: true });
