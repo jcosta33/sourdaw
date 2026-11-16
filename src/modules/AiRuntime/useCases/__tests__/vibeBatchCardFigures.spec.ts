@@ -249,11 +249,11 @@ describe('a vibe batch card shows what admission measured', () => {
     });
 
     it('shows the second criterion its own figures and verdict when the first criterion blocks the batch', () => {
-        // The muddy RMS must fall but rises in its step, which blocks the batch before the warm centroid is read.
+        // The gate's RMS must fall but rises in its step, which blocks the batch before the warm centroid is read.
         const { evaluation, cardLines } = admitAndDescribe({
-            recipeIds: ['drums-muddy', 'drums-warm'],
+            recipeIds: ['drums-controlled-gate', 'drums-warm'],
             kept: [
-                { recipeId: 'drums-muddy', metricId: 'rms' },
+                { recipeId: 'drums-controlled-gate', metricId: 'rms' },
                 { recipeId: 'drums-warm', metricId: 'spectralCentroid' },
             ],
             previews: [
@@ -271,12 +271,12 @@ describe('a vibe batch card shows what admission measured', () => {
     });
 
     it('shows a two-step target from its initial figure to its final one, the pair admission compared', () => {
-        // The muddy step falls (-31.49 to -31.91) but the batch rose from where it began (-32.48).
+        // The gate step falls (-31.49 to -31.91) but the batch rose from where it began (-32.48).
         const { evaluation, cardLines } = admitAndDescribe({
-            recipeIds: ['drums-warm', 'drums-muddy'],
+            recipeIds: ['drums-warm', 'drums-controlled-gate'],
             kept: [
                 { recipeId: 'drums-warm', metricId: 'spectralCentroid' },
-                { recipeId: 'drums-muddy', metricId: 'rms' },
+                { recipeId: 'drums-controlled-gate', metricId: 'rms' },
             ],
             previews: [
                 { rms: { baseline: -32.48, preview: -31.49 }, spectralCentroid: { baseline: 2000, preview: 1900 } },
@@ -291,10 +291,10 @@ describe('a vibe batch card shows what admission measured', () => {
     });
 
     it('names the step figures when a step breaks its criterion though the batch as a whole moved the right way', () => {
-        // The muddy step rises (-32 to -31.5), yet the batch falls from -31 to -31.5 overall.
+        // The gate step rises (-32 to -31.5), yet the batch falls from -31 to -31.5 overall.
         const { evaluation, cardLines } = admitAndDescribe({
-            recipeIds: ['drums-warm', 'drums-muddy'],
-            kept: [{ recipeId: 'drums-muddy', metricId: 'rms' }],
+            recipeIds: ['drums-warm', 'drums-controlled-gate'],
+            kept: [{ recipeId: 'drums-controlled-gate', metricId: 'rms' }],
             previews: [{ rms: { baseline: -31, preview: -32 } }, { rms: { baseline: -31, preview: -31.5 } }],
         });
 
@@ -355,9 +355,9 @@ describe('a vibe batch card shows what admission measured', () => {
 
     it('keeps the verdict and reason of a batch whose first criterion fails, whatever the later ones read', () => {
         const blockedFirst = admitAndDescribe({
-            recipeIds: ['drums-muddy', 'drums-warm'],
+            recipeIds: ['drums-controlled-gate', 'drums-warm'],
             kept: [
-                { recipeId: 'drums-muddy', metricId: 'rms' },
+                { recipeId: 'drums-controlled-gate', metricId: 'rms' },
                 { recipeId: 'drums-warm', metricId: 'spectralCentroid' },
             ],
             previews: [
