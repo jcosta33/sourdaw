@@ -6,7 +6,7 @@ import {
     withoutDeferredTempoRecordingSources,
     type DeferredTempoRecordingSources,
 } from '#/utils/deferredTempoRecordingSources';
-import { type CompAudioSourceInputProof, type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
+import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
 import {
@@ -18,6 +18,8 @@ import {
     type TempoSourceOwnerWitness,
 } from '#/utils/tempoAudioSourcePromotion';
 import { observeTempoMapRowPlan, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
+
+import { type CompAudioSourceInputProof } from '../events/arrangementClipSnapshots';
 
 import { captureCompAudioSourceInputProof, type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {

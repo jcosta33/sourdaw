@@ -340,7 +340,7 @@ async function observeRendererBackingStorageHighWater<TResult>(
 }
 
 async function evaluateProbe<TResult>(page: Page, method: string): Promise<TResult> {
-    return page.evaluate(async (methodName) => {
+    return page.evaluate((methodName) => {
         const probe = (
             globalThis as typeof globalThis & {
                 browserAiModelStorageProbe?: Record<string, () => unknown>;

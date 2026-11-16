@@ -5,7 +5,7 @@ import type { ProjectSessionQuiesceOutcome } from './projectSessionQuiesceOutcom
 /** Retire only renderer-owned project runtime before a macOS window closes. */
 export async function quiesceProjectSession(
     requestId: number,
-    beginDestructiveTeardown: () => Promise<boolean> = async () => true
+    beginDestructiveTeardown: () => Promise<boolean> = () => Promise.resolve(true)
 ): Promise<ProjectSessionQuiesceOutcome> {
     return projectSessionQuiescer.request(requestId, beginDestructiveTeardown);
 }

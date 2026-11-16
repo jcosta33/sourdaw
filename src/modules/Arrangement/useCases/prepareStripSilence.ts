@@ -2,9 +2,9 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
+import { type StripSilenceActionSnapshot } from '../events/arrangementClipSnapshots';
 import { type Clip } from '../models/Track';
 import { type WarpState } from '../models/WarpMarker';
 import { getTrackState, type TrackState } from '../repositories/track/getTrackState';

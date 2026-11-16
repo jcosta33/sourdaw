@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
-
+import { type RestoreTrackPayloadSnapshot } from '../../../events/arrangementTrackSnapshots';
 import { applyRecordingHostEffect, recordingHostEffectByActionType } from '../recordingHostEffectByActionType';
 
 function restorePayload(trackId: string): RestoreTrackPayloadSnapshot {

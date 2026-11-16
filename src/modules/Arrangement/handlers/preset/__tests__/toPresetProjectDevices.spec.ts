@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type DeviceSnapshot } from '#/utils/handlerContract';
-
+import { type DeviceSnapshot } from '../../../models/DeviceSnapshot';
 import { toPresetProjectDevices } from '../toPresetProjectDevices';
 
 const hostedSnapshot: DeviceSnapshot = {

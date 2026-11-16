@@ -73,6 +73,7 @@ import {
     BATCH_LOCAL_BUS_CAPABILITIES,
     BATCH_LOCAL_CLIP_CAPABILITIES,
     BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND,
+    CREATED_OBJECT_NOUNS,
     GENERATED_BATCH_LOCAL_ID_PREFIXES,
     type BatchLocalBindingProducer,
     type BatchLocalBindingProducerName,
@@ -5482,13 +5483,6 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
-const CREATED_OBJECT_NOUNS: Readonly<Record<BatchLocalBindingProducerName, RegExp>> = {
-    addAutomationLane: /\b(?:automation )?lanes?\b/u,
-    addClip: /\bclips?\b/u,
-    addDevice: /\b(?:devices?|plugins?|effects?)\b/u,
-    addTrack: /\btracks?\b/u,
-    createBus: /\bbus(?:es)?\b/u,
-};
 const CREATED_OBJECT_ACTION_TYPES: readonly BatchLocalBindingProducerName[] = [
     'addAutomationLane',
     'addClip',

@@ -699,15 +699,19 @@ export function parseRulesetHardeningArgs(args: string[]): RulesetHardeningArgs 
     return fail(RULESET_HARDENING_USAGE);
 }
 
-export async function runRulesetHardeningCli(
+export function runRulesetHardeningCli(
     args: string[],
     dependencies?: RulesetHardeningCoordinatorDependencies
 ): Promise<number> {
-    const parsed = parseRulesetHardeningArgs(args);
-    if (parsed.help) {
-        console.log(`Usage: ${RULESET_HARDENING_USAGE.slice('usage: '.length)}`);
-        return 0;
-    }
-    coordinateRulesetHardening(parsed.apply, dependencies);
-    return 0;
+    // The executor runs synchronously, so a refusal still rejects rather than throws.
+    return new Promise((resolve) => {
+        const parsed = parseRulesetHardeningArgs(args);
+        if (parsed.help) {
+            console.log(`Usage: ${RULESET_HARDENING_USAGE.slice('usage: '.length)}`);
+            resolve(0);
+            return;
+        }
+        coordinateRulesetHardening(parsed.apply, dependencies);
+        resolve(0);
+    });
 }

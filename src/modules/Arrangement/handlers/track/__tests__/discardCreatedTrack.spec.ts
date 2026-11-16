@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),
     unloadPlugin: mocks.unloadPlugin,
+    // The discard unload carries live state; its instance ids are this spec's subject.
+    unloadPluginCarryingLiveState: mocks.unloadPlugin,
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),

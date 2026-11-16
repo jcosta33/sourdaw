@@ -31,8 +31,9 @@ export async function audioBufferToMp3(
     const pcm = createPcmBlockReader({ source: buffer, bitDepth: 16, dither, channelLimit: 2 });
     const chunks: Uint8Array[] = [];
     const destination = writer ?? {
-        write: async (bytes: Uint8Array) => {
+        write: (bytes: Uint8Array) => {
             chunks.push(bytes.slice());
+            return Promise.resolve();
         },
     };
     for (let start = 0; start < buffer.length; start += 1152) {

@@ -17,6 +17,11 @@ async function palette(page: Page, name: string): Promise<void> {
     await expect(option).toBeVisible();
     await option.click();
     await expect(input).toHaveCount(0);
+    // The dialog hands focus back to its opener from a timer after it unmounts; until then focus
+    // sits on <body>, and a key pressed after the test moves focus would land on the opener instead.
+    await expect
+        .poll(() => page.evaluate(() => document.activeElement !== null && document.activeElement !== document.body))
+        .toBe(true);
 }
 
 async function readOpenProject(page: Page): Promise<{ projectId: string; name: string }> {

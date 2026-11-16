@@ -1,6 +1,7 @@
 import { undoHistoryStore } from '#/modules/Command/stores';
-import { type DeviceSnapshot, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
+import { type RestoreTrackPayloadSnapshot } from '../../events/arrangementTrackSnapshots';
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { type Device } from '../../models/Track';
 import { decodeTrackSnapshot, type Track } from '../../stores/trackStore';
 
