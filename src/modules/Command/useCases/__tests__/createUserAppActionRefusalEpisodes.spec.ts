@@ -611,6 +611,28 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).not.toHaveBeenCalled();
         });
 
+        it('does not deliver an episode a newer commit saved when the project unlocks before that dispatch resolves', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            const newerSettled = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockImplementationOnce(async (_action, options) => {
+                options?.onCommitted?.();
+                await newerSettled.promise;
+            });
+            const newerCommitted = episodes.execute('A', action);
+
+            unlock();
+            await afterMicrotasks();
+            newerSettled.resolve();
+            await expect(newerCommitted).resolves.toBe('committed');
+
+            // The newer commit already saved the key's session state.
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
         it('opens no episode for a refusal older than the newest commit when an oldest commit lands last', async () => {
             const onAdmitted = vi.fn();
             const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });

@@ -65,7 +65,7 @@ export function createUserAppActionRefusalEpisodes(
                     ...executeOptions,
                     onCommitted: () => {
                         dispatch.committed = true;
-                        episodes.recordCommitted(key, start.order);
+                        episodes.closeCommitted(key, start.order);
                         executeOptions?.onCommitted?.();
                     },
                 });
@@ -77,7 +77,6 @@ export function createUserAppActionRefusalEpisodes(
                 return 'refused';
             }
             if (dispatch.committed) {
-                episodes.closeCommitted(key, start.order);
                 return 'committed';
             }
             episodes.settleUncommitted(key);
