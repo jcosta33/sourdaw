@@ -113,6 +113,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    changing one phase measure or moving history beyond completion does not bound either task.
    An observational census keeps heads, history and JSON-size diagnostics on one settled root without
    awaiting authorization serialization or warming a native encoder before the measured command.
+   Exercise cold Detect with current dense native history while a real public Save overlaps its pending
+   Worker. Attribute snapshot refresh, incremental export and their callers inside complete tasks and frames
+   over the union of both operations until both settle; retain the separate original Detect click-to-DOM wall
+   bound. Do not defer autosave, shrink the input or hold Detect for the entire asynchronous Save to manufacture
+   overlap. #3877 establishes Save durability and cold reopen, not this combined performance claim; #5843's
+   retained evidence leaves dense concurrent-Save coverage unverified. The older synchronous saved-snapshot
+   origins have no located associated PR or review record, so their missed stance remains unknown.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**

@@ -128,6 +128,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    For keyboard controls, assert owned effects and that unowned keys during playback cause no state change or
    default prevention. Follow surviving Tab and focus moves needs a browser case: read the affected end-to-end
    job that runs it on the head, since a component case cannot show it.
+   One accepted logical publication can follow multiple real Worker attempts. Retain every reply callback and
+   cancellation or stale outcome, distinguish responses from accepted publication, and never select the first,
+   last or fastest attempt or assume response singleton counts. Derive the required phase census independently
+   from actual Worker progress or native additions, accounting for supplemental changes; require a nonempty
+   complete set of sequential indices before checking its values. Removing phase emission must fail rather
+   than make `.every` vacuously pass. Indexed Node phase checks establish emission and admission coverage,
+   not browser enclosing-task or frame coverage.
    (#5243, #3548, #3170)
 
 8. **The evidence claims more than its scope.**

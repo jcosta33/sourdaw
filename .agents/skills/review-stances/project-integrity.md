@@ -38,6 +38,12 @@ Split out (a stance matching one carries that file, not this one): replay agains
    discarding an obsolete failed full bundle after membership returns to its original shape still retains the root
    edit, and the next edit exports once. Generation/HMR fences invalidate discarded progress; descendant or foreign
    frontiers outside active history cannot suppress output. Redundant history proves excess export, not data loss.
+   Carry actual native history, applied-frontier membership and a nonempty source-cursor baseline through
+   adoption, real Save, cold reload, then a later edit, Save and reload. A received but unapplied queued head
+   can be absent from `getMissingDeps`; missing-dependency output alone cannot establish applied ancestry.
+   Compare replay and later deltas against the final saved native bytes and authorized Save metadata changes,
+   rather than demanding pre-Save heads survive unchanged. Restoring cursor-consuming capture or accepting
+   an unapplied frontier must fail the native replay and omission controls.
 2. **Cold-cache consumers rebuild every durable reference and report owner results (#187, #4496).** Failure:
    export, mixdown, stems or recovery use a warm cache or a mocked owner, miss a buffer or swallow a failure.
    Probe: cold project with an ordinary clip and an active frozen print whose PCM has its own ID; both IDs reach
@@ -66,6 +72,12 @@ Split out (a stance matching one carries that file, not this one): replay agains
    Arrangement already wrote. Keep valid null, present-empty and legacy-alias controls, and keep restore
    validation with the owner: admitting a forward action to the session mirror must not add it to executable
    action discovery.
+   Admit the paired native document and JSON snapshot from one actual Save through the directory reader.
+   Separate successful IDB-native reload and JSON hydration do not prove the pair agrees. Capture an active
+   snapshot, make a later real track or clip edit, and retain a distinct inactive snapshot: the stored active
+   cache must match live owner state before the serialization revision is captured, and both saved forms must
+   reopen together. Keep inactive ownership, unmanifested-media and tamper refusals, and compare admitted
+   native bytes with the live export; ignoring cached rows or normalizing away the disagreement must fail.
 4. **Saved replay binds relationships between individually valid rows (#5064, #3328, #4108, #4519).** Failure: each
    captured row passes its own shape check but its owner, identity or operation is foreign, so replay writes into
    an unrelated clip, track, lane or action. Probe: from a genuine saved entry change one relation only: a

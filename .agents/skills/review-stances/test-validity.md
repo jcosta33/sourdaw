@@ -201,6 +201,13 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    long-task gate. Hold the parsed handle before adoption and require abort or replaced authority to free it
    without publication. A mock that always returns
    empty hits proves neither suppression nor completion.
+   Admit concurrent Save/Detect through both real public routes on the same populated project, with current
+   native history and a genuine prospective Worker pending. Require successful durable Save, completed Detect
+   and unchanged correctness gates; a started Save or a held synthetic reply proves no overlap. Preserve the
+   Worker's real computation and reply, and observe Save settlement independently rather than holding Detect
+   for all of Save. If claiming replanning, show the actual captured input revision changed: overlapping Save
+   alone does not prove invalidation or require another attempt. Removing the Save invocation or preventing
+   its completion must fail admission before a performance pass can be reported.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**
