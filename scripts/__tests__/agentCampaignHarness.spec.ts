@@ -143,19 +143,18 @@ describe('agent campaign evidence fixtures', () => {
     });
 
     it('refuses a pinned test file or crate source that is absent from the tree', () => {
-        const [first] = manifest.suites;
         const withFixtures = (fixtures: EvidenceSuite['fixtures']): EvidenceManifest => ({
             ...manifest,
-            suites: [{ ...first, fixtures }],
+            suites: [{ id: 'AC-SYNTHETIC', task: 'TASK-SYNTHETIC', kind: 'unit', command: 'pnpm test:run', fixtures }],
         });
         const movedSpec = 'src/modules/Gone/__tests__/moved.spec.ts';
 
         expect(absentFixtureProblems(withFixtures([{ path: movedSpec, digest: null, status: 'absent' }]))).toEqual([
-            `suite ${first.id} pins ${movedSpec}, which is not in the tree`,
+            `suite AC-SYNTHETIC pins ${movedSpec}, which is not in the tree`,
         ]);
         expect(
             absentFixtureProblems(withFixtures([{ path: 'crates/gone/src', digest: null, status: 'absent' }]))
-        ).toEqual([`suite ${first.id} pins crates/gone/src, which is not in the tree`]);
+        ).toEqual(['suite AC-SYNTHETIC pins crates/gone/src, which is not in the tree']);
     });
 
     it('shares the fixture-path collisions the baseline spec pins', () => {
