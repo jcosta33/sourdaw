@@ -563,6 +563,19 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         expect(newestCommittedTrackIds()).toEqual(['lead-d']);
     });
 
+    it('reads an order answer for a shared name holding regex metacharacters as that track', () => {
+        setProjectTracks([
+            ['take-a', 'Lead (take'],
+            ['bass', 'Bass'],
+            ['take-b', 'Lead (take'],
+        ]);
+
+        expect(readNamedTracks('the second Lead (take', getProjectContext())).toEqual({
+            status: 'named',
+            ids: ['take-b'],
+        });
+    });
+
     it('reads "the first First Lead" as the first of the tracks named First Lead, not a Lead', () => {
         setProjectTracks([
             ['first-a', 'First Lead'],
