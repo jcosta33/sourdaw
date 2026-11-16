@@ -510,9 +510,10 @@ pub struct PluginRegistryStore {
 }
 
 impl PluginRegistryStore {
-    /// The registry file in the platform's app-data directory.
-    pub fn at_default_location() -> Self {
-        Self::new(default_registry_location())
+    /// The registry file in the platform's app-data directory, or the runtime
+    /// scope's refusal.
+    pub fn at_default_location() -> Result<Self, String> {
+        Ok(Self::new(default_registry_location()?))
     }
 
     /// A store over an explicit file.
@@ -960,15 +961,11 @@ impl PluginRegistryStore {
     }
 }
 
-fn default_registry_location() -> Option<PathBuf> {
-    if let Some(data) = crate::host::runtime_scope::RuntimeScope::path("native/data") {
-        return Some(data.join(REGISTRY_FILE_NAME));
+fn default_registry_location() -> Result<Option<PathBuf>, String> {
+    if let Some(data) = crate::host::runtime_scope::RuntimeScope::path("native/data")? {
+        return Ok(Some(data.join(REGISTRY_FILE_NAME)));
     }
-    Some(
-        dirs::data_dir()?
-            .join(APP_DIR_NAME)
-            .join(REGISTRY_FILE_NAME),
-    )
+    Ok(dirs::data_dir().map(|data| data.join(APP_DIR_NAME).join(REGISTRY_FILE_NAME)))
 }
 
 #[test]
@@ -977,7 +974,7 @@ fn scoped_plugin_registry_location() {
         concat!(module_path!(), "::scoped_plugin_registry_location"),
         |root| {
             assert_eq!(
-                default_registry_location().unwrap(),
+                default_registry_location().unwrap().unwrap(),
                 root.join("native/data").join(REGISTRY_FILE_NAME)
             );
         },

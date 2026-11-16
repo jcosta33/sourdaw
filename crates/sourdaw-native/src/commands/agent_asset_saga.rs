@@ -403,7 +403,7 @@ pub(crate) fn with_handles_for_test<T>(
     let reset = || {
         write_assets().clear();
         write_sagas().clear();
-        let _ = fs::remove_dir_all(staging_root());
+        let _ = fs::remove_dir_all(staging_root().unwrap());
     };
 
     reset();
@@ -416,12 +416,12 @@ pub(crate) fn with_handles_for_test<T>(
 
 /// Where staged export bytes live: inside the IPC scratch root, which is the
 /// app's own storage rather than anywhere the user keeps work.
-fn staging_root() -> PathBuf {
-    ipc_temp_dir().join(STAGING_DIR_NAME)
+fn staging_root() -> Result<PathBuf, String> {
+    Ok(ipc_temp_dir()?.join(STAGING_DIR_NAME))
 }
 
-fn staged_path_for(saga_id: &str) -> PathBuf {
-    staging_root().join(format!("{saga_id}.tmp"))
+fn staged_path_for(saga_id: &str) -> Result<PathBuf, String> {
+    Ok(staging_root()?.join(format!("{saga_id}.tmp")))
 }
 
 fn new_handle_id() -> String {
@@ -750,7 +750,7 @@ pub async fn agent_asset_stage_export(
         return Ok(receipt);
     }
 
-    let staged_path = staged_path_for(&saga_id);
+    let staged_path = staged_path_for(&saga_id)?;
     write_sagas().insert(
         saga_id.clone(),
         SagaRow {
@@ -1100,7 +1100,7 @@ pub async fn agent_asset_cleanup(
     let owner = parse_owner(owner)?;
     match saga_id {
         Some(saga_id) => Ok(cleanup_one_saga(saga_id, owner)),
-        None => Ok(sweep_orphaned_stages(owner)),
+        None => sweep_orphaned_stages(owner),
     }
 }
 
@@ -1172,7 +1172,8 @@ fn cleanup_one_saga(saga_id: String, owner: AgentWorkOwner) -> AgentAssetSagaRec
     }
 }
 
-fn sweep_orphaned_stages(owner: AgentWorkOwner) -> AgentAssetSagaReceipt {
+fn sweep_orphaned_stages(owner: AgentWorkOwner) -> Result<AgentAssetSagaReceipt, String> {
+    let staging_root = staging_root()?;
     // A row with no staged path left has no compensation left either — a
     // committed finalize and a claimed cleanup both clear it already — so it
     // is safe to drop here. Later than the terminal action itself, because a
@@ -1187,7 +1188,7 @@ fn sweep_orphaned_stages(owner: AgentWorkOwner) -> AgentAssetSagaReceipt {
     };
 
     let mut removed = 0_u32;
-    if let Ok(entries) = fs::read_dir(staging_root()) {
+    if let Ok(entries) = fs::read_dir(staging_root) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|value| value.to_str()) != Some("tmp") {
@@ -1210,7 +1211,7 @@ fn sweep_orphaned_stages(owner: AgentWorkOwner) -> AgentAssetSagaReceipt {
         AgentAssetCompensation::Completed,
     );
     receipt.message = Some(format!("Removed {removed} orphaned staged asset files"));
-    receipt
+    Ok(receipt)
 }
 
 #[cfg(test)]
@@ -1270,7 +1271,7 @@ mod tests {
 
     impl BuiltInRootFile {
         fn create() -> Self {
-            let directory = ipc_temp_dir();
+            let directory = ipc_temp_dir().unwrap();
             fs::create_dir_all(&directory).expect("ipc temp dir should be creatable");
             let path = directory.join(format!(
                 "agent-asset-saga-builtin-{}.bin",
@@ -1543,7 +1544,7 @@ mod tests {
             );
             assert_eq!(receipt.compensation, AgentAssetCompensation::Completed);
             assert!(
-                !staged_path_for(&receipt.saga_id).exists(),
+                !staged_path_for(&receipt.saga_id).unwrap().exists(),
                 "unverified bytes must not be left staged"
             );
         });
@@ -1575,7 +1576,7 @@ mod tests {
                 b"original-stem".to_vec()
             );
             assert!(
-                staged_path_for(&saga_id).exists(),
+                staged_path_for(&saga_id).unwrap().exists(),
                 "an unauthorized finalize must keep the staged bytes"
             );
 
@@ -1591,7 +1592,7 @@ mod tests {
                 Some(digest_of(replacement).as_str())
             );
             assert!(
-                !staged_path_for(&saga_id).exists(),
+                !staged_path_for(&saga_id).unwrap().exists(),
                 "a committed finalize must drop the staged bytes"
             );
         });
@@ -1682,13 +1683,13 @@ mod tests {
             let baseline = saga_row_count();
             let cleaned_handle = handle_for(&directory.join("cleaned.wav"), "read-write", &owner);
             let cleaned_saga = stage(&cleaned_handle, &owner, &digest_of(cleaned), cleaned).saga_id;
-            assert!(staged_path_for(&cleaned_saga).exists());
+            assert!(staged_path_for(&cleaned_saga).unwrap().exists());
 
             let claimed = cleanup(Some(&cleaned_saga), &owner);
             assert_eq!(claimed.state, AgentAssetSagaState::Committed);
             assert_eq!(claimed.compensation, AgentAssetCompensation::Completed);
             assert_eq!(claimed.cleanup_owner.as_deref(), Some("lease-cleanup"));
-            assert!(!staged_path_for(&cleaned_saga).exists());
+            assert!(!staged_path_for(&cleaned_saga).unwrap().exists());
 
             let repeated = cleanup(Some(&cleaned_saga), &owner);
             assert_eq!(repeated.state, AgentAssetSagaState::Refused);
@@ -1706,7 +1707,7 @@ mod tests {
 
             let pending_handle = handle_for(&directory.join("pending.wav"), "read-write", &owner);
             let pending_saga = stage(&pending_handle, &owner, &digest_of(pending), pending).saga_id;
-            let orphan = staged_path_for(&new_saga_id());
+            let orphan = staged_path_for(&new_saga_id()).unwrap();
             fs::write(&orphan, b"abandoned").expect("orphan should be planted");
 
             let swept = cleanup(None, &owner);
@@ -1717,7 +1718,7 @@ mod tests {
             );
             assert!(!orphan.exists(), "an orphan tmp file must be swept");
             assert!(
-                staged_path_for(&pending_saga).exists(),
+                staged_path_for(&pending_saga).unwrap().exists(),
                 "a live external-pending saga keeps its staged bytes"
             );
             assert_eq!(
@@ -1749,7 +1750,7 @@ mod tests {
             assert_eq!(refused.failure, Some(AgentAssetFailureKind::AccessDenied));
             assert_eq!(refused.cleanup_owner, None);
             assert!(
-                staged_path_for(&saga_id).exists(),
+                staged_path_for(&saga_id).unwrap().exists(),
                 "a refused cleanup must leave the staged bytes behind"
             );
 

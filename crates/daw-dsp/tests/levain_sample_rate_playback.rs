@@ -13,7 +13,11 @@
 //! the voice spends (duration) and the rising crossings per output second
 //! (pitch).
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::levain::LevainInstance;
 
