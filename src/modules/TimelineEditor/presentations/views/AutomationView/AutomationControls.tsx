@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type KeyboardEvent, type ReactElement, useState } from 'react';
 
 import { Plus } from 'lucide-react';
 
@@ -21,6 +21,31 @@ type AutomationParamOption = {
     id: string;
     name: string;
 };
+
+// The dropdown owns Escape while open, so it does not also reach the window
+// shortcut layer behind it.
+const closeMenuOnEscape = (event: KeyboardEvent, open: boolean, setOpen: (open: boolean) => void): void => {
+    if (!open || event.key !== 'Escape') {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+};
+
+// A pointer press outside the open dropdown closes it; the same transparent
+// native button `DawContextMenuSurface` lays under its menus.
+const MenuBackdrop = ({ onClose }: { onClose: () => void }): ReactElement => (
+    <button
+        type="button"
+        aria-label="Close menu"
+        className="fixed inset-0 z-40 cursor-default appearance-none border-0 bg-transparent p-0"
+        onClick={(event) => {
+            event.stopPropagation();
+            onClose();
+        }}
+    />
+);
 
 type AutomationModeControlProps = {
     automationMode: AutomationMode;
@@ -62,6 +87,9 @@ export const AutomationModeControl = ({
                     event.stopPropagation();
                     setOpen(!open);
                 }}
+                onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
+                aria-haspopup="menu"
+                aria-expanded={open}
                 aria-label={`Automation mode: ${automationMode}`}
             >
                 {modeConfig.label}
@@ -69,19 +97,14 @@ export const AutomationModeControl = ({
 
             {open ? (
                 <>
-                    <div
-                        className="fixed inset-0 z-40"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            setOpen(false);
-                        }}
-                    />
+                    <MenuBackdrop onClose={() => setOpen(false)} />
                     <div
                         className={cn(
                             'daw-floating-surface absolute top-full z-50 mt-1 min-w-[100px] rounded-md py-1',
                             menuPositionClassName
                         )}
                         role="menu"
+                        onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                     >
                         {AUTOMATION_MODE_OPTIONS.map((option) => {
                             const config = AUTOMATION_MODE_CONFIG[option.value];
@@ -146,6 +169,9 @@ export const AutomationAddLaneControl = ({
                 type="button"
                 className="flex w-full items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => setOpen((current) => !current)}
+                onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
+                aria-haspopup="menu"
+                aria-expanded={open}
             >
                 <Plus className="size-3" />
                 Add Lane
@@ -156,10 +182,11 @@ export const AutomationAddLaneControl = ({
 
             {open ? (
                 <>
-                    <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                    <MenuBackdrop onClose={() => setOpen(false)} />
                     <div
                         className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[300px] min-w-[200px] overflow-y-auto rounded-md py-1"
                         role="menu"
+                        onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                     >
                         <DawEyebrowLabel className="block px-2 py-1 text-[8px]">Add parameter</DawEyebrowLabel>
                         <div className="max-h-[200px] overflow-y-auto">

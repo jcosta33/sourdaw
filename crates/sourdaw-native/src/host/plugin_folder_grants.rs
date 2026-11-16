@@ -228,10 +228,58 @@ pub(crate) fn production_store_location() -> Option<PathBuf> {
 }
 
 /// Tests never touch the developer's own grant file: a unit test that inherited
-/// real grants would pass or fail on what happens to be on that machine.
+/// real grants would pass or fail on what happens to be on that machine. A test
+/// that needs a store installs a temporary one for its own thread with
+/// [`with_store_location_for_test`].
 #[cfg(test)]
 pub(crate) fn production_store_location() -> Option<PathBuf> {
-    None
+    TEST_STORE_LOCATION.with(|location| location.borrow().clone())
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_STORE_LOCATION: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Point [`production_store_location`] at `location` on this thread for the
+/// duration of `body`. Thread-local, so tests running alongside keep seeing no
+/// store.
+#[cfg(test)]
+pub(crate) fn with_store_location_for_test<T>(location: &Path, body: impl FnOnce() -> T) -> T {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_STORE_LOCATION.with(|location| *location.borrow_mut() = self.0.take());
+        }
+    }
+
+    let previous =
+        TEST_STORE_LOCATION.with(|current| current.replace(Some(location.to_path_buf())));
+    let _restore = Restore(previous);
+    body()
+}
+
+/// Every folder the plugin scan loads code from: the platform's plugin folders,
+/// resolved the way picks are, and every stored plugin folder grant.
+///
+/// A renderer write into any of them plants native code the next scan runs.
+/// A stored grant counts even while it is unavailable: once its folder is back
+/// it is authority again, with whatever was written there in the meantime.
+pub(crate) fn plugin_code_roots() -> Vec<PathBuf> {
+    plugin_code_roots_at(production_store_location().as_deref())
+}
+
+/// [`plugin_code_roots`] over the grant store at `store`, if any.
+pub(crate) fn plugin_code_roots_at(store: Option<&Path>) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = default_plugin_scan_roots()
+        .iter()
+        .map(|root| resolve_forbidden_root(root))
+        .collect();
+    if let Some(location) = store {
+        roots.extend(read_grants(location));
+    }
+    roots
 }
 
 /// Validate a folder the user picked, answering with its canonical path.
@@ -467,6 +515,12 @@ fn save_grants(location: &Path, grants: &[PathBuf]) -> Result<(), PluginFolderRe
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::{Path, PathBuf};
+
+    /// Store `grants` at `location` as the grant command would, without the
+    /// folder checks, so a test can hold a grant whose folder is missing.
+    pub(crate) fn store_grants(location: &Path, grants: &[PathBuf]) {
+        super::save_grants(location, grants).expect("grant store should be written");
+    }
 
     /// A temporary directory, canonicalized so no test path carries the
     /// platform's own temp-directory symlink (`/var` on macOS).
@@ -906,5 +960,42 @@ mod tests {
         );
 
         assert!(valid_grants_at(&tree.store(), &forbidden).is_empty());
+    }
+
+    #[test]
+    fn a_stored_grant_that_resolves_to_another_path_grants_nothing() {
+        let tree = TempTree::create("resolves-elsewhere");
+        let forbidden = forbidden_in(&tree);
+        let folder = tree.dir("Plugins/Vendor");
+        let spelled_elsewhere = folder.join("..").join("Vendor");
+        save_grants(&tree.store(), std::slice::from_ref(&spelled_elsewhere))
+            .expect("store should be written");
+
+        let statuses = list_at(&tree.store(), &forbidden);
+        assert!(
+            matches!(
+                statuses.as_slice(),
+                [GrantStatus {
+                    unavailable: Some(PluginFolderRefusal::ResolvesElsewhere { now, .. }),
+                    ..
+                }] if *now == folder
+            ),
+            "unexpected statuses {statuses:?}"
+        );
+        assert!(valid_grants_at(&tree.store(), &forbidden).is_empty());
+    }
+
+    #[test]
+    fn plugin_code_roots_include_every_stored_grant_available_or_not() {
+        let tree = TempTree::create("code-roots");
+        let available = tree.dir("Plugins/Available");
+        let unplugged = tree.path("Unplugged/Plugins");
+        save_grants(&tree.store(), &[available.clone(), unplugged.clone()])
+            .expect("store should be written");
+
+        let roots = plugin_code_roots_at(Some(&tree.store()));
+        assert!(roots.contains(&available), "{roots:?}");
+        assert!(roots.contains(&unplugged), "{roots:?}");
+        assert!(!plugin_code_roots_at(None).contains(&available));
     }
 }

@@ -7,14 +7,13 @@ import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
-import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { type renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
+import { removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
@@ -32,7 +31,7 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
+import { getProjectHandlers, parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -76,7 +75,11 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../useCases/__tests__/aiWorkflowCommandPreflightFixture';
-import { advertisedAnswerCandidateId, advertisedAnswerIntake } from '../useCases/__tests__/answerWireFixture';
+import {
+    advertisedAnswerCandidateId,
+    advertisedAnswerIntake,
+    advertisedAnswerSchema,
+} from '../useCases/__tests__/answerWireFixture';
 import {
     assertDiscoveredCommandSchemas,
     declineCall,
@@ -84,24 +87,41 @@ import {
     isRecord,
     proposeCall,
     proposeDiscoveredCalls,
+    readCreativeInterpretationCatalog,
     scriptProviderTurns,
     searchCalls,
+    selectCreativeInterpretationCall,
     type ProviderCall,
+    type ScriptedCreativeCatalog,
     type ScriptedTurn,
 } from '../useCases/__tests__/highLevelIntentWorkflowFixture';
-import { literalMetricIntakeTurn } from '../useCases/__tests__/metricGoalWorkflowFixture';
+import {
+    literalMetricIntakeTurn,
+    metricGoalProviderPlan,
+    provideMetricGoalWindowBuffers,
+    readMetricPublication,
+} from '../useCases/__tests__/metricGoalWorkflowFixture';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
+import { materializePromptCommandPlan } from '../useCases/agentRequestOrchestration/materializePromptCommandPlan';
+import { agentRunLifecycle } from '../useCases/agentRunLifecycle';
+import { agentWorkBudget } from '../useCases/agentWorkBudget';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
+import { evaluateMetricGoalAdmission } from '../useCases/evaluateMetricGoalAdmission';
+import { getBriefMixIntentCatalog } from '../useCases/getBriefMixIntentCatalog';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { getProjectContext } from '../useCases/getProjectContext';
 import { type ObjectiveMetricId } from '../useCases/metricGoalContractTypes';
+import { metricGoalStateCodec } from '../useCases/metricGoalStateCodec';
 import { OBJECTIVE_METRIC_LABELS, objectiveMetricProjection } from '../useCases/objectiveMetricProjection';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
+import { skipPendingVibeBatch } from '../useCases/skipPendingVibeBatch';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
+import { installProviderHostGuard } from './acceptanceProviderHostGuard';
+import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
 registerDeviceEnginePorts();
 
@@ -110,8 +130,9 @@ type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'
 const runtimeMocks = vi.hoisted(() => ({
     generateWebLlmCompletion: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
-    renderAgentMeasurementScope:
-        vi.fn<typeof import('#/modules/AudioRendering/useCases').renderAgentMeasurementScope>(),
+    renderOffline: vi.fn<typeof import('#/modules/AudioEngine/useCases').renderOffline>(),
+    renderOfflineInput: vi.fn<typeof import('#/modules/AudioEngine/useCases').renderOfflineInput>(),
+    renderTrackSubgraphOffline: vi.fn<typeof import('#/modules/AudioEngine/useCases').renderTrackSubgraphOffline>(),
     resolveToasterPadBinding: vi.fn(() => null),
     retainAgentMeasurementRenders: vi.fn<
         typeof import('#/modules/AudioRendering/useCases').retainAgentMeasurementRenders
@@ -120,7 +141,68 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackMute: vi.fn(),
     setTrackPan: vi.fn(),
     setTrackSoloGate: vi.fn(),
+    updateDeviceParam: vi.fn(),
 }));
+
+// A confirmed vibe batch builds a live strip and its devices on this context, whose stubbed params
+// carry no schedulable timeline; the per-parameter write to a live node is stubbed with the renders.
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    const createNode = () => ({
+        connect: (destination: unknown) => destination,
+        disconnect: () => undefined,
+    });
+    function AudioContextWithDeviceNodes(options?: AudioContextOptions): AudioContext {
+        return Object.assign(new OriginalAudioContext(options), {
+            currentTime: 0,
+            createStereoPanner: () => ({ ...createNode(), pan: createAudioParam(0) }),
+            createBiquadFilter: () => ({
+                ...createNode(),
+                type: 'lowpass',
+                frequency: createAudioParam(350),
+                Q: createAudioParam(1),
+                gain: createAudioParam(0),
+                detune: createAudioParam(0),
+            }),
+            createDynamicsCompressor: () => ({
+                ...createNode(),
+                threshold: createAudioParam(-24),
+                knee: createAudioParam(30),
+                ratio: createAudioParam(12),
+                attack: createAudioParam(0.003),
+                release: createAudioParam(0.25),
+                reduction: 0,
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithDeviceNodes,
+    });
+    const OriginalAudioWorkletNode = globalThis.AudioWorkletNode;
+    class AudioWorkletNodeWithClosablePort extends OriginalAudioWorkletNode {
+        constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
+            super(context, name, options);
+            if (typeof this.port.close !== 'function') {
+                Object.defineProperty(this.port, 'close', { configurable: true, value: () => undefined });
+            }
+        }
+    }
+    Object.defineProperty(globalThis, 'AudioWorkletNode', {
+        configurable: true,
+        writable: true,
+        value: AudioWorkletNodeWithClosablePort,
+    });
+});
 
 /** What the chat route planned for the request it last sent, read where the route itself reads it. */
 const chatPlanning = vi.hoisted(() => ({ last: null as PlannedChatRequest | null }));
@@ -148,19 +230,22 @@ vi.mock('../repositories/webLlm/generateWebLlmCompletion', () => ({
 }));
 vi.mock('../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
 
+// The offline render is the one measurement step node cannot run; everything around it stays real.
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    renderOffline: runtimeMocks.renderOffline,
+    renderOfflineInput: runtimeMocks.renderOfflineInput,
+    renderTrackSubgraphOffline: runtimeMocks.renderTrackSubgraphOffline,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
     setTrackGain: runtimeMocks.setTrackGain,
     setTrackMute: runtimeMocks.setTrackMute,
     setTrackPan: runtimeMocks.setTrackPan,
     setTrackSoloGate: runtimeMocks.setTrackSoloGate,
+    updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
-// The offline render is the one measurement step node cannot run; everything around it stays real.
 vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
-    renderAgentMeasurementScope: runtimeMocks.renderAgentMeasurementScope,
     retainAgentMeasurementRenders: runtimeMocks.retainAgentMeasurementRenders,
 }));
 
@@ -196,6 +281,15 @@ const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
 /** Bounds one test that drives a corpus case through the chat route, a refinement case twice. */
 const CORPUS_RUN_TIMEOUT_MS = 60_000;
 
+/** The prompt class whose requests write a production brief and run one measured batch per role family behind it. */
+const VIBE_PROMPT_CLASS: AgentPromptClass = 'whole-project-vibe-with-constraint';
+
+/**
+ * A vibe run measures the whole arrangement before its brief card and previews every batch before
+ * its card, so one case renders far more than any single-turn case.
+ */
+const VIBE_RUN_TIMEOUT_MS = 300_000;
+
 /** How many cases a sealed scored prompt class must carry before its floors mean anything. */
 const MINIMUM_SEALED_CLASS_CASES = 3;
 
@@ -228,6 +322,13 @@ type CorpusProviderTurn =
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
     | ProposeCommandsTurn
+    | MetricIntakeTurn
+    | RecipeExpansionTurn
+    | PreviewMeasureTurn
+    | ProposeCompiledTurn
+    | BriefIntakeTurn
+    | BriefCompileTurn
+    | ProposeBriefTurn
     | { kind: 'decline'; args: Record<string, unknown> }
     | { kind: 'query' | 'answer'; id: string; args: Record<string, unknown> };
 
@@ -247,6 +348,68 @@ type RecipeDiscoveryTurn = {
     role?: string;
     limit: number;
 };
+
+/**
+ * One metric objective a perceptual or comparative intake selects from the publication the provider
+ * was offered: an authored recipe's (perceptual) or a comparison policy's at one relation
+ * (comparative), scoped to the named fixture track, compared against the named reference track, and
+ * ranged over the named fixture section.
+ */
+type CorpusObjectiveSelection = {
+    recipeId?: string;
+    policyId?: string;
+    relation?: string;
+    targetName: string;
+    referenceName?: string;
+    rangeName: string;
+};
+
+/**
+ * A perceptual or comparative request's intake: an edit of the processing of the named tracks, with
+ * room for a device on each, and the metric objectives the request states.
+ */
+type MetricIntakeTurn = {
+    kind: 'intake';
+    intent: 'perceptual' | 'comparative';
+    targets: string[];
+    objectives: CorpusObjectiveSelection[];
+};
+
+/**
+ * One `recipe.expand` call: the recipe on the named fixture track, at the catalogue's values, with
+ * the recipe role the discovery receipt reported, since the fixture authors no canonical roles.
+ */
+type RecipeExpansionTurn = { kind: 'expand'; id: string; recipeId: string; targetName: string; role: string };
+
+/**
+ * One `analysis.measure` of a preview over the named fixture section: of an earlier recipe expansion,
+ * or of a list of plain commands. Every named target renders in the live project and in the preview.
+ */
+type PreviewMeasureTurn = {
+    kind: 'measure-preview';
+    id: string;
+    targets: string[];
+    rangeName: string;
+    metrics: string[];
+    recipeCallId?: string;
+    items?: Record<string, unknown>[];
+};
+
+/** A proposal adopting earlier compilations by call id, scoped to the named fixture tracks. */
+type ProposeCompiledTurn = { kind: 'propose-compiled'; compiledCallIds: string[]; targets: string[] };
+
+/** A whole-project vibe request's intake: the brief branch, recording project intent with no acoustic objective. */
+type BriefIntakeTurn = { kind: 'intake'; intent: 'brief' };
+
+/** One `brief.compile` call: the vision and the mix-intent descriptors the request names, from the published catalogue. */
+type BriefCompileTurn = { kind: 'brief-compile'; vision: string; descriptors: string[] };
+
+/**
+ * The proposal adopting the compiled brief. It targets nothing and protects exactly the fixture
+ * tracks named here: the application reads the request's own protections and refuses a plan that
+ * omits or enlarges them.
+ */
+type ProposeBriefTurn = { kind: 'propose-brief'; protectedTargets: string[] };
 
 /** What a measured question measures: the master output, or the one fixture track of this name. */
 type CorpusMeasuredTarget = { kind: 'master' } | { kind: 'track'; name: string };
@@ -305,14 +468,43 @@ type CorpusOracleInvariants = {
     maxCommands: number;
 };
 
+/**
+ * One goal the measured preview a proposal rests on must hold: the metric (and band) moved on the
+ * named target, in the stated relation, against the named reference target for a comparison.
+ */
+type CorpusMeasuredGoal = { metric: string; band?: string; relation: string; target: string; reference?: string };
+
+/**
+ * One batch a vibe run proposes after its brief: the commands its card carries, and what the musician
+ * decides on it. A skipped batch must write nothing and leave the rest of the run correct.
+ */
+type CorpusVibeBatchOracle = { decision: 'confirm' | 'skip'; actions: CorpusOracleAction[] };
+
+/**
+ * The batches a vibe run proposes after its brief, in order, and the headline of the summary it posts
+ * once they are decided. The lines below the headline restate measured figures, which an oracle
+ * never copies from a run.
+ */
+type CorpusVibeRunOracle = { batches: CorpusVibeBatchOracle[]; summary: string };
+
 type CorpusOracle =
     | CorpusAnswerOracle
     | {
           kind: 'proposal';
           actions: CorpusOracleAction[];
           invariants?: CorpusOracleInvariants;
+          /**
+           * A perceptual or comparative proposal's goals: the planned batch must carry a measured
+           * preview bound to it in which every one of exactly these goals is admitted.
+           */
+          measuredGoals?: CorpusMeasuredGoal[];
           /** A refinement's replacement: the batch must supersede the card the prior turn left pending. */
           replaces?: 'prior-proposal';
+          /**
+           * A whole-project vibe request's run behind its brief: `actions` is the brief card alone, and
+           * these are the batches the run then proposes one card at a time, in order.
+           */
+          vibeRun?: CorpusVibeRunOracle;
       }
     | { kind: 'revert'; group: 'prior-commit' }
     | { kind: 'clarify' }
@@ -605,65 +797,252 @@ function metricAnswerCall(turn: MetricAnswerTurn): ProviderCall & { id: string }
     };
 }
 
-/** Each measured target's own sine level, so two targets never measure alike and a wrong target cannot match. */
-function fixtureMeasurementAmplitude(targetId: string): number {
-    if (targetId === 'master') {
-        return 0.3;
-    }
-    const index = context.tracks.findIndex((track) => track.id === targetId);
-    if (index < 0) {
-        throw new Error(`The fixture project holds no measurement target ${targetId}`);
-    }
-    return 0.02 * (index + 1);
+/** The device creation slots the published catalog hangs under each named track, so the edit may insert one there. */
+function deviceSlotIds(catalog: ScriptedCreativeCatalog, trackIds: readonly string[]): string[] {
+    return catalog.creationSlots
+        .filter(
+            (slot) =>
+                slot.objectType === 'device' &&
+                catalog.targets.some(
+                    (target) =>
+                        target.candidateId === slot.parentCandidateId &&
+                        target.objectIds.length === 1 &&
+                        trackIds.includes(target.objectIds[0] ?? '')
+                )
+        )
+        .map((slot) => slot.candidateId);
 }
 
-/** Four seconds of a 1 kHz stereo sine at the target's own level, as the measured-answer specs render. */
-function fixtureMeasurementBuffer(amplitude: number): AudioBuffer {
-    const frames = 192_000;
-    const channel = Float32Array.from(
-        { length: frames },
-        (_, index) => amplitude * Math.sin((2 * Math.PI * 1000 * index) / 48_000)
-    );
-    const buffer = MockAudioBuffer.create(2, frames, 48_000);
-    buffer.copyToChannel(channel, 0);
-    buffer.copyToChannel(channel, 1);
-    return buffer;
+/** The one published objective a selection names; none or several is a corpus defect, never a guess. */
+function publishedObjectiveId(
+    publication: ReturnType<typeof readMetricPublication>,
+    selection: CorpusObjectiveSelection
+): string {
+    const matches = publication.filter((objective) => {
+        if (selection.recipeId !== undefined) {
+            return objective.recipeId === selection.recipeId;
+        }
+        return objective.goals.some(
+            (goal) => goal.policyId === selection.policyId && goal.relation === selection.relation
+        );
+    });
+    const [objective] = matches;
+    if (matches.length !== 1 || objective?.id === undefined) {
+        throw new Error(`The intake publishes ${String(matches.length)} objectives for ${JSON.stringify(selection)}`);
+    }
+    return objective.id;
 }
 
 /**
- * The offline render node cannot run, answered deterministically per target. Only the render is
- * doubled: the reduction, the receipt and the answer composed from it stay the production route's.
+ * A perceptual or comparative request's intake, every id read from the catalog and the metric
+ * publication the provider was actually offered, so the corpus names tracks, sections, recipes and
+ * policies and never a candidate id.
  */
-const renderFixtureMeasurementScope: typeof renderAgentMeasurementScope = async ({ scope }) => ({
-    status: 'rendered',
-    soloActive: false,
-    warnings: [],
-    targets: (scope.kind === 'master' ? ['master'] : scope.ids).map((targetId) => ({
-        targetId,
-        targetKind: measuredTargetKind(scope.kind),
-        route: scope.kind === 'master' ? 'mixdown' : 'isolated-subgraph',
-        liveAudibility: 'audible',
-        buffer: fixtureMeasurementBuffer(fixtureMeasurementAmplitude(targetId)),
-        artifact: {
-            contentAddress: `sha256:${targetId}`,
-            sampleRate: 48_000,
-            frameCount: 192_000,
-            channelCount: 2,
-            durationSeconds: 4,
-        },
-    })),
-});
-
-function measuredTargetKind(
-    scopeKind: Parameters<typeof renderAgentMeasurementScope>[0]['scope']['kind']
-): 'master' | 'track' | 'bus' {
-    if (scopeKind === 'master') {
-        return 'master';
-    }
-    return scopeKind === 'tracks' ? 'track' : 'bus';
+function metricIntakeTurn(turn: MetricIntakeTurn): ScriptedTurn {
+    const trackIds = turn.targets.map(fixtureTrackId);
+    return (userMessage, providerView) => {
+        const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+        const base = selectCreativeInterpretationCall({
+            catalog,
+            modeId: 'edit',
+            targetObjectIds: trackIds,
+            dimensions: ['processing'],
+        });
+        const schema = advertisedAnswerSchema(providerView);
+        const publication = readMetricPublication({
+            function: { description: schema.description, parameters: schema.parameters },
+        });
+        const wire = [providerView, userMessage];
+        const objectives = turn.objectives.map((selection) => ({
+            objectiveId: publishedObjectiveId(publication, selection),
+            scopeCandidateId: advertisedAnswerCandidateId(wire, fixtureTrackId(selection.targetName)),
+            referenceScopeCandidateId: referenceScopeCandidateId(wire, selection),
+            rangeCandidateId: advertisedAnswerCandidateId(wire, selection.rangeName, 'ranges'),
+        }));
+        return [
+            {
+                ...base,
+                id: 'intake',
+                arguments: {
+                    ...base.arguments,
+                    creationSlotIds: deviceSlotIds(catalog, trackIds),
+                    answer: null,
+                    metricIntent: { kind: turn.intent, uncertainty: 'none', objectives },
+                },
+            },
+        ];
+    };
 }
 
-runtimeMocks.renderAgentMeasurementScope.mockImplementation(renderFixtureMeasurementScope);
+/** The candidate a comparative objective's reference track was advertised under; a perceptual one names none. */
+function referenceScopeCandidateId(wire: readonly unknown[], selection: CorpusObjectiveSelection): string | null {
+    if (selection.referenceName === undefined) {
+        return null;
+    }
+    return advertisedAnswerCandidateId(wire, fixtureTrackId(selection.referenceName));
+}
+
+/** The `analysis.measure` scope naming fixture tracks or fixture buses by name; a mix of both is a corpus defect. */
+function namedTrackScope(names: readonly string[]): Record<string, unknown> {
+    const tracks = names.map((name) => context.tracks.find((track) => track.id === fixtureTrackId(name)));
+    const buses = tracks.filter((track) => track?.kind === 'bus');
+    if (buses.length > 0 && buses.length !== tracks.length) {
+        throw new Error(`A measured scope mixes tracks and buses: ${names.join(', ')}`);
+    }
+    return { kind: buses.length === 0 ? 'tracks' : 'buses', ids: names.map(fixtureTrackId) };
+}
+
+/** What a preview measures: an earlier recipe expansion by call id, or the plain commands the turn lists. */
+function previewSource(turn: PreviewMeasureTurn): Record<string, unknown> {
+    if (turn.recipeCallId !== undefined) {
+        return { recipeCallId: turn.recipeCallId };
+    }
+    return { proposal: { schemaVersion: 1, items: turn.items ?? [] } };
+}
+
+function previewMeasureCall(turn: PreviewMeasureTurn): ProviderCall & { id: string } {
+    const { startBeat, endBeat } = fixtureSection(turn.rangeName);
+    return {
+        id: turn.id,
+        name: 'analysis.measure',
+        arguments: {
+            subject: 'preview',
+            scope: namedTrackScope(turn.targets),
+            range: { startBeat, endBeat },
+            metrics: turn.metrics,
+            ...previewSource(turn),
+        },
+    };
+}
+
+function proposeCompiledCall(turn: ProposeCompiledTurn): ProviderCall & { id: string } {
+    return {
+        id: 'proposal',
+        name: 'command.batch.propose',
+        arguments: {
+            commands: [],
+            compiledCallIds: turn.compiledCallIds,
+            plan: metricGoalProviderPlan(
+                'Apply the measured change the request asks for.',
+                turn.targets.map(fixtureTrackId)
+            ),
+        },
+    };
+}
+
+/** The brief branch of the interpretation selector the provider was actually offered, stating no acoustic objective. */
+const briefIntakeTurn: ScriptedTurn = (userMessage, providerView) => {
+    const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+    const call = selectCreativeInterpretationCall({ catalog, modeId: 'brief' });
+    return [
+        {
+            ...call,
+            arguments: {
+                ...call.arguments,
+                answer: null,
+                metricIntent: { kind: 'non-acoustic', uncertainty: 'none', objectives: [] },
+            },
+        },
+    ];
+};
+
+function briefCompileCall(turn: BriefCompileTurn): ProviderCall & { id: string } {
+    return {
+        id: 'brief-compile',
+        name: 'brief.compile',
+        arguments: {
+            vision: turn.vision,
+            mixIntent: {
+                catalogId: getBriefMixIntentCatalog().catalogId,
+                requestedDescriptors: turn.descriptors,
+            },
+        },
+    };
+}
+
+function proposeBriefCall(turn: ProposeBriefTurn): ProviderCall & { id: string } {
+    return {
+        id: 'brief-proposal',
+        name: 'command.batch.propose',
+        arguments: {
+            commands: [],
+            compiledCallIds: ['brief-compile'],
+            plan: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Record the project intent the request describes.',
+                constraints: [],
+                scope: {
+                    targetIds: [],
+                    targetRanges: [],
+                    protectedTargetIds: turn.protectedTargets.map(fixtureTrackId),
+                    protectedRanges: [],
+                },
+                capabilityIds: [],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Compare the brief revision before writing.'],
+                stoppingConditions: ['Stop if the brief changes before Confirm.'],
+            },
+        },
+    };
+}
+
+/**
+ * How many offline renders a case's own measurements make: one per target a project measurement
+ * names, and two per target a preview names (the live project and the preview). No case may lean on
+ * the render double beyond what it measures.
+ */
+function expectedRenderCount(testCase: CorpusCase): number {
+    return testCase.providerTurns.reduce((total, turn) => {
+        if (turn.kind === 'measure') {
+            return total + 1;
+        }
+        if (turn.kind === 'measure-preview') {
+            return total + 2 * turn.targets.length;
+        }
+        return total;
+    }, 0);
+}
+
+function renderCount(): number {
+    return (
+        runtimeMocks.renderTrackSubgraphOffline.mock.calls.length +
+        runtimeMocks.renderOffline.mock.calls.length +
+        runtimeMocks.renderOfflineInput.mock.calls.length
+    );
+}
+
+/** A case whose route reads the open project: a question, and a proposal its preview measures. */
+function plansAgainstLiveProject(testCase: CorpusCase): boolean {
+    return testCase.oracle.kind === 'answer' || testCase.providerTurns.some((turn) => turn.kind === 'measure-preview');
+}
+
+/** A fixture track's position in the fixture project, which alone fixes the source the render law sounds. */
+function fixtureTrackPosition(trackId: string): number {
+    const index = context.tracks.findIndex((track) => track.id === trackId);
+    if (index < 0) {
+        throw new Error(`The fixture project holds no track ${trackId}`);
+    }
+    return index;
+}
+
+const renderLaw = createAcceptanceRenderLaw({
+    trackPosition: fixtureTrackPosition,
+    tempo: () => transportStore.value?.tempo ?? context.tempo,
+    liveTracks: () => trackStore.value?.tracks ?? [],
+    masterGain: () => (transportStore.value?.masterGain ?? context.masterGain * 100) / 100,
+});
+
+/** Arms the one render law on every offline render a measurement reaches. */
+function armRenderLaw(): void {
+    runtimeMocks.renderTrackSubgraphOffline.mockImplementation(async (input) => renderLaw.renderTrack(input));
+    runtimeMocks.renderOffline.mockImplementation(async (input) => renderLaw.renderMixdown(input));
+    runtimeMocks.renderOfflineInput.mockImplementation(async () => {
+        throw new Error('No acceptance case measures the master of an isolated preview.');
+    });
+}
+
+armRenderLaw();
 
 /**
  * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
@@ -687,6 +1066,12 @@ function toScriptedTurn(
             if (turn.intent === 'answer-measured') {
                 return measuredAnswerIntakeTurn(turn);
             }
+            if (turn.intent === 'perceptual' || turn.intent === 'comparative') {
+                return metricIntakeTurn(turn);
+            }
+            if (turn.intent === 'brief') {
+                return briefIntakeTurn;
+            }
             throw new TypeError('The corpus intake variant has no configured producer.');
         case 'recipe': {
             const call = recipeDiscoveryCall(turn);
@@ -694,6 +1079,30 @@ function toScriptedTurn(
         }
         case 'measure': {
             const call = measureCall(turn);
+            return () => [call];
+        }
+        case 'expand': {
+            const call = {
+                id: turn.id,
+                name: 'recipe.expand',
+                arguments: { recipeId: turn.recipeId, targetId: fixtureTrackId(turn.targetName), role: turn.role },
+            };
+            return () => [call];
+        }
+        case 'measure-preview': {
+            const call = previewMeasureCall(turn);
+            return () => [call];
+        }
+        case 'propose-compiled': {
+            const call = proposeCompiledCall(turn);
+            return () => [call];
+        }
+        case 'brief-compile': {
+            const call = briefCompileCall(turn);
+            return () => [call];
+        }
+        case 'propose-brief': {
+            const call = proposeBriefCall(turn);
             return () => [call];
         }
         case 'metric-answer': {
@@ -794,6 +1203,40 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 
 /** One scored case and the writes it made that its oracle never asked for. */
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
+
+/** The prompt classes a measurement decides: a sealed case in one must act or answer, never give up. */
+const MEASURED_PROMPT_CLASSES: ReadonlySet<AgentPromptClass> = new Set([
+    'comparative-by-measurement',
+    'perceptual-single-target',
+    'perceptual-multi-target',
+    'whole-project-vibe-with-constraint',
+]);
+
+/** The outcomes that leave a request unanswered: asking back, abstaining, or declining it. */
+const GIVE_UP_OUTCOME_CLASSES: ReadonlySet<AgentAcceptanceOutcomeClass> = new Set([
+    'clarify-required',
+    'abstain-unsupported',
+    'deny-policy',
+]);
+
+/** Every sealed measured-class result that asked, abstained or declined instead of acting (AC-068). */
+function measuredResultsThatGaveUp(
+    results: readonly AgentAcceptanceCaseResult[],
+    sealed: readonly AgentPromptClass[]
+): string[] {
+    const sealedMeasured = new Set(sealed.filter((promptClass) => MEASURED_PROMPT_CLASSES.has(promptClass)));
+    return results
+        .filter((result) => sealedMeasured.has(result.promptClass) && GIVE_UP_OUTCOME_CLASSES.has(result.observed))
+        .map((result) => `${result.id} (${result.promptClass}) observed ${result.observed}`);
+}
+
+/** A case whose plan renders and measures the project, before or after a previewed change. */
+function measuresProject(testCase: CorpusCase): boolean {
+    if (testCase.promptClass === VIBE_PROMPT_CLASS) {
+        return true;
+    }
+    return testCase.providerTurns.some((turn) => turn.kind === 'measure' || turn.kind === 'measure-preview');
+}
 
 type ProjectTruth = Record<string, Record<string, unknown>>;
 type ProjectObservation = { kind: 'full' | 'root'; truth: ProjectTruth };
@@ -1151,11 +1594,15 @@ async function runCorpusCase(
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
     }
-    if (testCase.oracle.kind !== 'answer') {
+    if (testCase.promptClass === VIBE_PROMPT_CLASS) {
+        return runVibeRunCase(testCase, barrel, alongside);
+    }
+    if (!plansAgainstLiveProject(testCase)) {
         return runSingleTurnCase(testCase, barrel, alongside);
     }
-    // `project.query` reads the open project, so a question is asked of the fixture project loaded
-    // into the real stores and document, under a canonical identity a semantic query can answer for.
+    // `project.query` reads the open project and a preview grounds against it, so a question or a
+    // measured proposal is planned against the fixture project loaded into the real stores and
+    // document, under a canonical identity a semantic query can answer for.
     const projectBefore = projectStore.value;
     openChatProject();
     projectStore.set({
@@ -1220,18 +1667,46 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
             testCase.providerTurns.map((turn) => toScriptedTurn(turn))
         );
     }
-    const projectRevision = testCase.oracle.kind === 'answer' ? captureSettledRevision() : `revision-${testCase.id}`;
-    const rendersBefore = runtimeMocks.renderAgentMeasurementScope.mock.calls.length;
-    const result = await parsePromptToActions({
-        prompt: testCase.prompt,
-        context,
-        projectRevision,
-    });
-    // Only a measured question reaches the render boundary, once; no other case may lean on its double.
+    const projectRevision = plansAgainstLiveProject(testCase) ? captureSettledRevision() : `revision-${testCase.id}`;
+    const rendersBefore = renderCount();
+    const runId = `acceptance-${testCase.id}`;
+    const measuresPreview = testCase.providerTurns.some((turn) => turn.kind === 'measure-preview');
+    if (measuresPreview) {
+        expect(
+            agentRunLifecycle.create({
+                runId,
+                request: testCase.prompt,
+                mode: 'apply',
+                createdRevision: projectRevision,
+            })
+        ).toEqual({ status: 'created' });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+    }
+    try {
+        return await scorePlannedCorpusCase(testCase, { projectRevision, rendersBefore, runId, measuresPreview });
+    } finally {
+        if (measuresPreview) {
+            agentRunLifecycle.clear();
+        }
+    }
+}
+
+async function scorePlannedCorpusCase(
+    testCase: CorpusCase,
+    run: { projectRevision: string; rendersBefore: number; runId: string; measuresPreview: boolean }
+): Promise<AgentAcceptanceCaseResult> {
+    const { projectRevision, runId } = run;
+    const request: Parameters<typeof parsePromptToActions>[0] = { prompt: testCase.prompt, context, projectRevision };
+    if (run.measuresPreview) {
+        // A preview spends its renders from a live run, so the request names that run's stream.
+        request.streamIdentity = { runId, requestId: runId, cancellationGeneration: 0 };
+        request.onMeasurementAttempt = agentWorkBudget.admitMeasurement(runId);
+    }
+    const result = await parsePromptToActions(request);
     expect(
-        runtimeMocks.renderAgentMeasurementScope.mock.calls.length - rendersBefore,
-        `Case ${testCase.id} rendered a measurement scope a different number of times than its kind allows`
-    ).toBe(testCase.questionKind === 'measured' ? 1 : 0);
+        renderCount() - run.rendersBefore,
+        `Case ${testCase.id} rendered a different number of times than its own measurements ask for`
+    ).toBe(expectedRenderCount(testCase));
 
     if (testCase.providerTurns.length > 0) {
         expect(
@@ -1279,6 +1754,16 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
         if (testCase.oracle.invariants !== undefined) {
             assertProposalInvariants(testCase.id, result.actions, testCase.oracle.invariants);
         }
+        if (testCase.oracle.measuredGoals !== undefined) {
+            const goalsHold = await measuredGoalsHold({
+                testCase,
+                goals: testCase.oracle.measuredGoals,
+                planned: result,
+                runId,
+                projectRevision,
+            });
+            matchesOracle = matchesOracle && goalsHold;
+        }
     }
     return scoreAgentAcceptanceCase({
         id: testCase.id,
@@ -1288,6 +1773,70 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
         observed,
         matchesOracle,
     });
+}
+
+/** A goal as the corpus names it, its target and reference read as fixture track ids. */
+function expectedGoal(goal: CorpusMeasuredGoal) {
+    return {
+        metric: goal.metric,
+        band: goal.band ?? null,
+        relation: goal.relation,
+        targetIds: [fixtureTrackId(goal.target)],
+        referenceTargetIds: goal.reference === undefined ? [] : [fixtureTrackId(goal.reference)],
+    };
+}
+
+/**
+ * The measurement a perceptual or comparative card rests on (AC-021): the planned batch carries a
+ * measured preview, its goals are exactly the oracle's, and the batch the card would hold admits
+ * every one of them against that preview — so Confirm would be admitted, not refused as unverified.
+ */
+async function measuredGoalsHold(input: {
+    testCase: CorpusCase;
+    goals: readonly CorpusMeasuredGoal[];
+    planned: Awaited<ReturnType<typeof parsePromptToActions>>;
+    runId: string;
+    projectRevision: string;
+}): Promise<boolean> {
+    const { planned, runId, projectRevision } = input;
+    if (planned.measuredPreview === undefined) {
+        return false;
+    }
+    const materialized = materializePromptCommandPlan({
+        userText: input.testCase.prompt,
+        runId,
+        assistantMessageId: `${runId}-assistant`,
+        interactionMode: 'apply',
+        trustCeiling: undefined,
+        resume: undefined,
+        onResumedPlanAccepted: undefined,
+        projectRevision,
+        context,
+        result: { ...planned, planningOutcome: { kind: 'proposal' } },
+        actionLabels: planned.actions.map((action) => action.type),
+        protectedTargetIds: [],
+    });
+    if (materialized.status !== 'prepared') {
+        await materialized.completion;
+        return false;
+    }
+    const compiled = materialized.compiledActionExecution;
+    const state = metricGoalStateCodec(compiled.metricGoalState);
+    const observedGoals = (state?.authorities ?? []).flatMap((authority) =>
+        authority.goals.map((goal) => ({
+            metric: goal.metricId,
+            band: goal.band,
+            relation: goal.relation,
+            targetIds: [...goal.targetIds],
+            referenceTargetIds: [...goal.referenceTargetIds],
+        }))
+    );
+    const evaluation = evaluateMetricGoalAdmission({
+        state,
+        commandBatch: compiled.commandBatch,
+        currentRevision: projectRevision,
+    });
+    return evaluation.status === 'verified' && isDeepStrictEqual(observedGoals, input.goals.map(expectedGoal));
 }
 
 function readStoreTrackKind(kind: string): Track['kind'] {
@@ -1825,6 +2374,326 @@ async function runRefinementCase(
     }
 }
 
+/** The project's edit timestamp, which every committed edit stamps and which carries no project content. */
+const EDIT_TIMESTAMP_PATH = 'root.projectMeta.updatedAt';
+
+/** The project field a confirmed brief writes: the brief itself, and nothing else in the project. */
+const BRIEF_PATH = 'root.projectMeta.productionBrief';
+
+/** The project field a confirmed vibe batch writes: the tracks, within which only its own may change. */
+const VIBE_BATCH_PATH = 'root.tracks.tracks';
+
+type VibeCard = NonNullable<ReturnType<typeof getPendingActionConfirmation>>;
+
+/**
+ * A vibe run measures audio, and the fixture project records no clips, so every track that is not a
+ * bus holds one take across the arrangement here; the schedule reads its ranges from the fixture's
+ * sections in the marker store, and the brief is written by the project's own handlers.
+ */
+function openVibeRunProject(): void {
+    provideMetricGoalWindowBuffers();
+    openChatProject();
+    registerHandlerMap(getProjectHandlers());
+    const sections = context.sections ?? [];
+    const arrangementEnd = Math.max(...sections.map((section) => section.endBeat));
+    trackStore.set({
+        tracks: (trackStore.value?.tracks ?? []).map((track) => withArrangementTake(track, arrangementEnd)),
+        selectedTrackId: null,
+        ghostClips: [],
+    });
+    markerStore.set({ markers: [], sections: sections.map((section) => ({ ...section, color: '#ffffff' })) });
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        projectId: FIXTURE_PROJECT_ID,
+        initialized: true,
+        loading: false,
+    });
+}
+
+function withArrangementTake(track: Track, endBeat: number): Track {
+    if (track.kind !== 'audio' && track.kind !== 'midi') {
+        return track;
+    }
+    const take: Track['clips'][number] = {
+        id: `${track.id}-take`,
+        trackId: track.id,
+        name: 'Take',
+        type: track.kind,
+        startBeat: 0,
+        endBeat,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+    if (track.kind === 'audio') {
+        take.audioBufferId = `${track.id}-buffer`;
+    }
+    return { ...track, clips: [take] };
+}
+
+/** The one card the run holds for the musician; none or several is a run that went off its schedule. */
+function soleVibeCard(id: string, step: string): VibeCard {
+    const proposed = proposedConfirmationIds();
+    expect(proposed, `Case ${id} holds no single card at ${step}: ${lastAssistantReply()}`).toHaveLength(1);
+    const card = getPendingActionConfirmation(proposed[0] ?? '');
+    if (card === null) {
+        throw new Error(`Case ${id} lost its pending card at ${step}.`);
+    }
+    return card;
+}
+
+/**
+ * Every `doc.slot.field` whose materialized value differs between two project captures, read one level
+ * inside each slot so a write to one field of a shared slot (the brief beside the project name) is told
+ * apart from a write to its neighbours.
+ */
+function changedProjectPaths(before: ProjectTruth, after: ProjectTruth): string[] {
+    const paths: string[] = [];
+    for (const docId of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        const beforeDoc = before[docId] ?? {};
+        const afterDoc = after[docId] ?? {};
+        for (const slot of new Set([...Object.keys(beforeDoc), ...Object.keys(afterDoc)])) {
+            paths.push(...changedFieldPaths(`${docId}.${slot}`, beforeDoc[slot], afterDoc[slot]));
+        }
+    }
+    return paths.toSorted();
+}
+
+function changedFieldPaths(path: string, before: unknown, after: unknown): string[] {
+    if (isDeepStrictEqual(before, after)) {
+        return [];
+    }
+    if (!isProjectMap(before) || !isProjectMap(after)) {
+        return [path];
+    }
+    return Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+        .filter((field) => !isDeepStrictEqual(before[field], after[field]))
+        .map((field) => `${path}.${field}`);
+}
+
+function projectTracksById(truth: ProjectTruth): Map<string, unknown> {
+    const slot = truth.root?.tracks;
+    if (!isProjectMap(slot) || !Array.isArray(slot.tracks)) {
+        throw new TypeError('The acceptance project has no materialized track collection.');
+    }
+    return new Map(
+        slot.tracks.map((track): [string, unknown] => {
+            if (!isProjectMap(track) || typeof track.id !== 'string') {
+                throw new TypeError('An acceptance track must be a project map with an id.');
+            }
+            return [track.id, track];
+        })
+    );
+}
+
+/** The tracks outside `admitted` whose materialized state differs between two project captures. */
+function tracksChangedOutside(before: ProjectTruth, after: ProjectTruth, admitted: ReadonlySet<string>): string[] {
+    const beforeTracks = projectTracksById(before);
+    const afterTracks = projectTracksById(after);
+    return Array.from(new Set([...beforeTracks.keys(), ...afterTracks.keys()])).filter(
+        (trackId) => !admitted.has(trackId) && !isDeepStrictEqual(beforeTracks.get(trackId), afterTracks.get(trackId))
+    );
+}
+
+/** The fixture tracks a card's commands act on. */
+function cardTrackIds(card: VibeCard): Set<string> {
+    const fixtureTrackIds = new Set(context.tracks.map((track) => track.id));
+    return new Set(
+        card.actions.flatMap((action) => getPlannedActionAffectedIds(action)).filter((id) => fixtureTrackIds.has(id))
+    );
+}
+
+type VibeDecisionWrites = {
+    status: string;
+    barrelActions: LandedAction[];
+    newGroups: PastEntry[][];
+    projectBefore: ProjectTruth;
+    projectAfter: ProjectTruth;
+};
+
+function applyVibeDecision(card: VibeCard, decision: CorpusVibeBatchOracle['decision']) {
+    if (decision === 'confirm') {
+        return confirmPendingChatActions({ confirmationId: card.id });
+    }
+    return skipPendingVibeBatch({ confirmationId: card.id });
+}
+
+/** Confirms or skips one card, recording every write the decision and the run's next preparation made. */
+async function decideVibeCard(
+    card: VibeCard,
+    decision: CorpusVibeBatchOracle['decision'],
+    barrel: BarrelWriteLog
+): Promise<VibeDecisionWrites> {
+    const projectBefore = captureProjectTruth();
+    const entriesBefore = new Set(pastEntries());
+    const mark = barrel.mark();
+    const outcome = await applyVibeDecision(card, decision);
+    return {
+        status: outcome.status,
+        barrelActions: barrel.actionsSince(mark),
+        newGroups: groupsAddedSince(entriesBefore),
+        projectBefore,
+        projectAfter: captureProjectTruth(),
+    };
+}
+
+/**
+ * A confirmed card commits exactly its own commands as one undo group, outside the public barrel, and
+ * writes only `path` (and the edit timestamp) and, within the tracks, only `admitted`: the preview the run then prepares for
+ * its next card writes nothing. Returns how many writes went beyond that.
+ */
+function assertConfirmedCardWrites(input: {
+    id: string;
+    step: string;
+    card: VibeCard;
+    writes: VibeDecisionWrites;
+    path: string;
+    admitted: ReadonlySet<string>;
+}): number {
+    const { id, step, card, writes } = input;
+    expect(writes.status, `Case ${id} ${step} did not execute: ${lastAssistantReply()}`).toBe('executed');
+    const [group, ...otherGroups] = writes.newGroups;
+    const committed = group === undefined ? null : committedGroupActions(group);
+    expect(committed, `Case ${id} ${step} committed other than its card's commands`).toEqual(card.actions);
+    const changedPaths = changedProjectPaths(writes.projectBefore, writes.projectAfter);
+    expect(changedPaths, `Case ${id} ${step} committed nothing to ${input.path}`).toContain(input.path);
+    const strayPaths = changedPaths.filter((path) => path !== input.path && path !== EDIT_TIMESTAMP_PATH);
+    const strayTracks = tracksChangedOutside(writes.projectBefore, writes.projectAfter, input.admitted);
+    expect(strayPaths, `Case ${id} ${step} wrote outside what its card commits (AC-078)`).toEqual([]);
+    expect(strayTracks, `Case ${id} ${step} changed tracks its card does not name (AC-078)`).toEqual([]);
+    return writes.barrelActions.length + otherGroups.length + strayPaths.length + strayTracks.length;
+}
+
+/** A skipped card executes nothing: no undo entry, no barrel call and no project change. */
+function assertSkippedCardWrites(id: string, step: string, writes: VibeDecisionWrites): number {
+    expect(writes.status, `Case ${id} ${step} was not skipped`).toBe('skipped');
+    const writeCount = Math.max(
+        writes.barrelActions.length,
+        writes.newGroups.length,
+        projectDifferences(writes.projectBefore, writes.projectAfter)
+    );
+    expect(writeCount, `Case ${id} ${step} wrote to the project although it was skipped (AC-078)`).toBe(0);
+    return writeCount;
+}
+
+/**
+ * Runs one whole-project vibe case through the chat route: the request plans a brief card and its
+ * run, then each card is confirmed or skipped as the oracle decides, one at a time, as the musician
+ * would. The planning turn must write nothing, the brief's Confirm only the brief, each batch's
+ * Confirm only its own card, and a skip nothing at all (AC-078).
+ */
+async function runVibeRunCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
+    const { oracle } = testCase;
+    if (oracle.kind !== 'proposal' || oracle.vibeRun === undefined || oracle.invariants === undefined) {
+        throw new Error(`Vibe case ${testCase.id} carries no vibe-run proposal oracle with invariants.`);
+    }
+    assertOracleKindFitsClass(testCase);
+    const { invariants, vibeRun } = oracle;
+    const projectBefore = projectStore.value;
+    const markersBefore = markerStore.value;
+    openVibeRunProject();
+    try {
+        const projectBeforeRun = captureProjectTruth();
+        const planning = await sendScriptedChatTurn({
+            id: testCase.id,
+            prompt: testCase.prompt,
+            providerTurns: testCase.providerTurns,
+            priorProposalId: () => undefined,
+            barrel,
+            alongside,
+        });
+        let unintendedMutations = anyWrites(planning);
+        expect(unintendedMutations, `Case ${testCase.id} wrote before its brief Confirm (AC-078)`).toBe(0);
+        const outcome = chatPlanning.last?.planningOutcome;
+        if (outcome === undefined) {
+            throw new Error(`Case ${testCase.id} was never planned: ${lastAssistantReply()}`);
+        }
+        const observed = classifyPlanningOutcome(outcome, chatPlanning.last?.actions.length ?? 0);
+        if (observed === null) {
+            throw new Error(`Case ${testCase.id} observed no scorable outcome class (kind=${outcome.kind})`);
+        }
+        const total = vibeRun.batches.length + 1;
+        const briefCard = soleVibeCard(testCase.id, 'the brief');
+        assertProposalInvariants(testCase.id, briefCard.actions, invariants);
+        const matches = [
+            isDeepStrictEqual(briefCard.approvalSnapshot.batchPosition, { index: 1, total }),
+            landedActionsMatch(testCase.id, briefCard.actions, oracle.actions),
+        ];
+        unintendedMutations += assertConfirmedCardWrites({
+            id: testCase.id,
+            step: 'the brief',
+            card: briefCard,
+            writes: await decideVibeCard(briefCard, 'confirm', barrel),
+            path: BRIEF_PATH,
+            admitted: new Set(),
+        });
+        const leftAlone = new Set(invariants.protectedIds);
+        for (const [index, batch] of vibeRun.batches.entries()) {
+            const step = `batch ${String(index + 2)} of ${String(total)}`;
+            const card = soleVibeCard(testCase.id, step);
+            assertProposalInvariants(testCase.id, card.actions, invariants);
+            matches.push(
+                isDeepStrictEqual(card.approvalSnapshot.batchPosition, { index: index + 2, total }),
+                landedActionsMatch(`${testCase.id} ${step}`, card.actions, batch.actions)
+            );
+            const admitted = cardTrackIds(card);
+            const writes = await decideVibeCard(card, batch.decision, barrel);
+            if (batch.decision === 'skip') {
+                unintendedMutations += assertSkippedCardWrites(testCase.id, step, writes);
+                for (const trackId of admitted) {
+                    leftAlone.add(trackId);
+                }
+                continue;
+            }
+            unintendedMutations += assertConfirmedCardWrites({
+                id: testCase.id,
+                step,
+                card,
+                writes,
+                path: VIBE_BATCH_PATH,
+                admitted,
+            });
+        }
+        expect(proposedConfirmationIds(), `Case ${testCase.id} proposed beyond its last batch`).toEqual([]);
+        const projectAfterRun = captureProjectTruth();
+        const touchedLeftAlone = Array.from(leftAlone).filter(
+            (trackId) =>
+                !isDeepStrictEqual(
+                    projectTracksById(projectBeforeRun).get(trackId),
+                    projectTracksById(projectAfterRun).get(trackId)
+                )
+        );
+        expect(touchedLeftAlone, `Case ${testCase.id} changed a protected or skipped track`).toEqual([]);
+        matches.push(lastAssistantReply().split('\n')[0] === vibeRun.summary);
+        return {
+            result: scoreAgentAcceptanceCase({
+                id: testCase.id,
+                expectedClass: testCase.class,
+                promptClass: testCase.promptClass,
+                oracleKind: testCase.oracle.kind,
+                observed,
+                matchesOracle: matches.every(Boolean),
+            }),
+            unintendedMutations: unintendedMutations + touchedLeftAlone.length,
+        };
+    } finally {
+        // A confirmed batch builds live strips in the engine, which outlive the project's stores.
+        for (const track of context.tracks) {
+            removeTrackStrip(track.id);
+        }
+        projectStore.set(projectBefore);
+        markerStore.set(markersBefore);
+        closeChatProject();
+    }
+}
+
 type ThresholdCells = { development: number; heldOut: number };
 
 function extractCellNumber(cell: string): number {
@@ -2162,6 +3031,8 @@ describe('agent acceptance corpora', () => {
                         (turn) =>
                             turn.kind === 'propose' ||
                             turn.kind === 'propose-commands' ||
+                            turn.kind === 'propose-compiled' ||
+                            turn.kind === 'propose-brief' ||
                             turn.kind === 'answer' ||
                             turn.kind === 'metric-answer'
                     );
@@ -2213,16 +3084,28 @@ describe('agent acceptance corpora', () => {
                             completed.set(testCase.id, run);
                         }
                     });
-                    await fixtureLifetime.track(async () => {
-                        const barrel = spyOnBarrelWrites();
-                        try {
-                            run = await runCorpusCase(testCase, barrel.log);
-                        } finally {
-                            barrel.restore();
-                        }
-                    });
+                    const guard = installProviderHostGuard();
+                    try {
+                        await fixtureLifetime.track(async () => {
+                            const barrel = spyOnBarrelWrites();
+                            try {
+                                run = await runCorpusCase(testCase, barrel.log);
+                            } finally {
+                                barrel.restore();
+                            }
+                        });
+                    } finally {
+                        guard.restore();
+                    }
+                    expect(guard.attempts(), `Case ${testCase.id} reached a remote host`).toEqual([]);
+                    if (measuresProject(testCase)) {
+                        expect(
+                            run?.unintendedMutations,
+                            `Case ${testCase.id} wrote to the project while planning, measuring or previewing`
+                        ).toBe(0);
+                    }
                 },
-                CORPUS_RUN_TIMEOUT_MS
+                testCase.promptClass === VIBE_PROMPT_CLASS ? VIBE_RUN_TIMEOUT_MS : CORPUS_RUN_TIMEOUT_MS
             );
         }
         afterAll(() => {
@@ -2238,6 +3121,10 @@ describe('agent acceptance corpora', () => {
             const unintendedMutations = runs.reduce((total, run) => total + run.unintendedMutations, 0);
             const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
             expect(metrics.unintendedMutations).toBe(0);
+            expect(
+                measuredResultsThatGaveUp(results, sealedClasses(corpora[corpusName])),
+                'A sealed measured case asked, abstained or declined instead of acting'
+            ).toEqual([]);
             expect(
                 failedAgentAcceptanceThresholds(metrics, corpusName, sealedScoredClasses(corpora[corpusName]))
             ).toEqual([]);
@@ -2332,6 +3219,138 @@ describe('agent acceptance corpora', () => {
                     measurement: { ...developmentOracle.measurement, metrics: { truePeak } },
                 })
             ).not.toThrow();
+        });
+    });
+
+    describe('measured-run gate self-checks', { timeout: CORPUS_RUN_TIMEOUT_MS }, () => {
+        function seededResult(
+            id: string,
+            promptClass: AgentPromptClass,
+            observed: AgentAcceptanceOutcomeClass
+        ): AgentAcceptanceCaseResult {
+            return { id, class: 'execute-exact', promptClass, oracleKind: 'proposal', observed, exactMatch: false };
+        }
+
+        it('reports a sealed measured case that asked, abstained or declined, and nothing else', () => {
+            const results = [
+                seededResult('clarified', 'perceptual-single-target', 'clarify-required'),
+                seededResult('abstained', 'comparative-by-measurement', 'abstain-unsupported'),
+                seededResult('declined', 'comparative-by-measurement', 'deny-policy'),
+                seededResult('executed', 'perceptual-single-target', 'execute-exact'),
+                seededResult('boundary', 'boundary', 'clarify-required'),
+                seededResult('unsealed', 'perceptual-multi-target', 'clarify-required'),
+            ];
+            expect(
+                measuredResultsThatGaveUp(results, [
+                    'boundary',
+                    'comparative-by-measurement',
+                    'perceptual-single-target',
+                ])
+            ).toEqual([
+                'clarified (perceptual-single-target) observed clarify-required',
+                'abstained (comparative-by-measurement) observed abstain-unsupported',
+                'declined (comparative-by-measurement) observed deny-policy',
+            ]);
+        });
+
+        it.each([
+            'https://storage.googleapis.com/probe',
+            'https://models.example.test/v1',
+            'https://api.anthropic.com/v1/messages',
+        ])('refuses and records a fetch to the unlisted remote host %s', async (remoteUrl) => {
+            const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+            vi.stubGlobal('fetch', transport);
+            const guard = installProviderHostGuard();
+            try {
+                await expect(fetch(remoteUrl)).rejects.toThrow(/remote host/u);
+                expect(guard.attempts()).toEqual([remoteUrl]);
+                expect(transport).not.toHaveBeenCalled();
+            } finally {
+                guard.restore();
+                vi.unstubAllGlobals();
+            }
+        });
+
+        it('passes a local host through to the installed transport', async () => {
+            const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+            vi.stubGlobal('fetch', transport);
+            const guard = installProviderHostGuard();
+            try {
+                await fetch('http://localhost:5173/asset');
+                await fetch('http://127.0.0.1:8080/asset');
+                expect(transport).toHaveBeenCalledTimes(2);
+                expect(guard.attempts()).toEqual([]);
+            } finally {
+                guard.restore();
+                vi.unstubAllGlobals();
+            }
+        });
+
+        it('refuses and records a planning run that reaches a provider host', async () => {
+            const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+            vi.stubGlobal('fetch', transport);
+            const guard = installProviderHostGuard();
+            const providerUrl = 'https://api.anthropic.com/v1/messages';
+            try {
+                await fetch('http://localhost:5173/elsewhere');
+                expect(transport).toHaveBeenCalledTimes(1);
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+                runtimeMocks.generateWebLlmCompletion.mockImplementation(async () => {
+                    await fetch(providerUrl);
+                    return '[]';
+                });
+                const result = await parsePromptToActions({
+                    prompt: corpusCase('development', 'AC067-DEV-PERCEPTUAL-1').prompt,
+                    context,
+                    projectRevision: 'revision-provider-host-guard',
+                });
+                expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalled();
+                expect(result.planningOutcome.kind).toBe('denied');
+                if (result.planningOutcome.kind === 'denied') {
+                    expect(result.planningOutcome.reason).toMatch(
+                        new RegExp(`^${PROVIDER_FAILURE_REASON_PREFIX}`, 'u')
+                    );
+                }
+                expect(guard.attempts()).toEqual([providerUrl]);
+                expect(transport).toHaveBeenCalledTimes(1);
+            } finally {
+                guard.restore();
+                vi.unstubAllGlobals();
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+            }
+        });
+
+        it('counts a project write a preview render makes against its measured case', async () => {
+            const testCase = corpusCase('development', 'AC067-DEV-PERCEPTUAL-1');
+            let previewWrites = 0;
+            runtimeMocks.renderTrackSubgraphOffline.mockImplementation(async (input) => {
+                const kickGain = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
+                if (input.source !== undefined && previewWrites === 0 && kickGain !== undefined) {
+                    previewWrites += 1;
+                    await commandUseCases.executeAppAction(
+                        {
+                            type: 'setTrackGain',
+                            payload: { trackId: 'track-kick', deltaDb: -1, expectedGain: kickGain },
+                        },
+                        { skipUndo: true }
+                    );
+                }
+                return renderLaw.renderTrack(input);
+            });
+            try {
+                const run = await fixtureLifetime.track(async () => {
+                    const barrel = spyOnBarrelWrites();
+                    try {
+                        return await runCorpusCase(testCase, barrel.log);
+                    } finally {
+                        barrel.restore();
+                    }
+                });
+                expect(previewWrites).toBe(1);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                armRenderLaw();
+            }
         });
     });
 

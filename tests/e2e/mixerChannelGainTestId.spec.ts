@@ -19,7 +19,7 @@ test.describe('Mixer channel gain — keyboard response', () => {
 
     test('channel gain fader responds to ArrowUp', async ({ page }) => {
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
+        const kick = mixer.getByRole('row', { name: 'Kick channel', exact: true });
         await expect(kick).toBeVisible({ timeout: 5000 });
 
         const gainSlider = kick.getByRole('slider', { name: 'Kick gain', exact: true });
@@ -34,8 +34,8 @@ test.describe('Mixer channel gain — keyboard response', () => {
     test('track gain menu enters, resets, copies, pastes, and replays a gain change', async ({ page }) => {
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        const first = mixer.getByRole('group', { name: 'Kick channel', exact: true });
-        const second = mixer.getByRole('group', { name: 'Clap channel', exact: true });
+        const first = mixer.getByRole('row', { name: 'Kick channel', exact: true });
+        const second = mixer.getByRole('row', { name: 'Clap channel', exact: true });
         await expect(first).toBeVisible({ timeout: 5000 });
         await expect(second).toBeVisible({ timeout: 5000 });
         const firstGain = first.getByRole('slider', { name: 'Kick gain', exact: true });
@@ -85,6 +85,9 @@ test.describe('Mixer channel gain — keyboard response', () => {
         await prompt.getByRole('button', { name: 'Set Gain' }).click();
         await expect(first.getByText('-6.0 dB')).toBeVisible();
         const copiedValue = await firstGain.getAttribute('aria-valuenow');
+        if (copiedValue === null) {
+            throw new Error('Track gain has no aria-valuenow to copy');
+        }
 
         await firstCap.click({ button: 'right' });
         await firstMenu.getByRole('menuitem', { name: 'Copy Value' }).click();
@@ -99,7 +102,7 @@ test.describe('Mixer channel gain — keyboard response', () => {
         expect(beforePaste).not.toBe(copiedValue);
         await secondCap.click({ button: 'right' });
         await secondMenu.getByRole('menuitem', { name: 'Paste Value' }).click();
-        await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
+        await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue);
 
         const undo = page.getByRole('button', { name: 'Undo', exact: true });
         const redo = page.getByRole('button', { name: 'Redo', exact: true });
@@ -108,21 +111,21 @@ test.describe('Mixer channel gain — keyboard response', () => {
         await expect(secondGain).toHaveAttribute('aria-valuenow', beforePaste ?? '');
         await expect(redo).toBeEnabled();
         await redo.click();
-        await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
+        await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue);
 
         await secondCap.click({ button: 'right' });
         await expect(secondMenu).toBeVisible();
         await page.evaluate(() => navigator.clipboard.writeText('gain:invalid'));
         await secondMenu.getByRole('menuitem', { name: 'Paste Value' }).click();
-        await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
+        await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue);
         await expect(page.getByText('Clipboard does not contain a valid track gain value.')).toBeVisible();
     });
 
     test('track pan menu resets, enters exact values, copies, pastes, and replays pan changes', async ({ page }) => {
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
-        const clap = mixer.getByRole('group', { name: 'Clap channel', exact: true });
+        const kick = mixer.getByRole('row', { name: 'Kick channel', exact: true });
+        const clap = mixer.getByRole('row', { name: 'Clap channel', exact: true });
         await expect(kick).toBeVisible({ timeout: 5000 });
         await expect(clap).toBeVisible({ timeout: 5000 });
         const kickPan = kick.getByRole('slider', { name: 'Kick pan', exact: true });

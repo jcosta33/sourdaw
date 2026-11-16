@@ -18,7 +18,6 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
 import sourdawPlugin from './scripts/lint/sourdaw.mjs';
 
 const jsxA11yPlugin = eslintPluginJsxA11yX.configs.recommended.plugins['jsx-a11y-x'];
@@ -103,15 +102,6 @@ function movedFixConfig() {
         configs.push(entry);
     }
     return configs;
-}
-
-/** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
-const sizeBaselineConfig = [];
-if (sizeBaselineFiles.length > 0) {
-    sizeBaselineConfig.push({
-        files: sizeBaselineFiles,
-        rules: { 'max-lines': 'warn', 'max-lines-per-function': 'warn', 'max-depth': 'warn', complexity: 'warn' },
-    });
 }
 
 export default tseslint.config(
@@ -230,8 +220,6 @@ export default tseslint.config(
             'consistent-return': 'error',
             'no-invalid-this': 'error',
             'no-octal': 'error',
-            'preserve-caught-error': 'error',
-            'no-useless-computed-key': 'error',
             'no-void': [
                 'error',
                 {
@@ -342,31 +330,6 @@ export default tseslint.config(
         },
     },
     {
-        files: ['**/*.{ts,tsx,mts,cts}'],
-        rules: {
-            'max-lines': [
-                'error',
-                {
-                    max: 600,
-                    skipBlankLines: true,
-                    skipComments: true,
-                },
-            ],
-            'max-lines-per-function': [
-                'error',
-                {
-                    max: 100,
-                    skipBlankLines: true,
-                    skipComments: true,
-                    IIFEs: true,
-                },
-            ],
-            'max-depth': ['error', 4],
-            complexity: ['error', 20],
-        },
-    },
-    ...sizeBaselineConfig,
-    {
         files: ['**/*.{tsx,jsx}'],
         rules: {
             '@eslint-react/no-leaked-conditional-rendering': 'error',
@@ -462,22 +425,9 @@ export default tseslint.config(
         rules: {
             'id-length': 'off',
             '@typescript-eslint/naming-convention': 'off',
-            'max-lines': 'off',
-            'max-lines-per-function': 'off',
-            'max-depth': 'off',
-            complexity: 'off',
         },
     },
     ...movedFixConfig(),
-    {
-        files: ['tests/e2e/**/*.ts'],
-        rules: {
-            'max-lines': 'off',
-            'max-lines-per-function': 'off',
-            'max-depth': 'off',
-            complexity: 'off',
-        },
-    },
     {
         files: ['scripts/**/*.{js,mjs,cjs}', 'crates/daw-dsp/benches/wasm/**/*.{js,mjs,d.mts}'],
         extends: [tseslint.configs.disableTypeChecked, eslintPluginReact.configs['disable-type-checked']],

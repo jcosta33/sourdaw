@@ -13,6 +13,8 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 
+import { recordDiscardedPluginStates } from './discardedPluginStateCarry';
+
 // `removeTrack` refuses the master bus, so "all tracks" never includes it and
 // its undo must not try to put the surviving master back.
 function getRemovableTracks() {
@@ -80,10 +82,14 @@ function restoreSurvivorRoutingOnce(
 }
 
 export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
-    execute: () => {
+    execute: (_action, context) => {
         const state = getTrackStoreState();
         if (!state || state.tracks.length === 0) {
             return { status: 'no-write' };
+        }
+        // A redo replays this removal with the first run's restore snapshots.
+        if (context?.undoEntryId !== undefined) {
+            recordDiscardedPluginStates(context.undoEntryId, state.tracks);
         }
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const removals: Array<{

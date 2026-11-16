@@ -97,15 +97,13 @@ async function statusGeometry(frame: Frame): Promise<StatusGeometry> {
             const strip = footer?.firstElementChild;
             const labelGeometry = labels.map((label) => {
                 const element = Array.from(footer?.querySelectorAll<HTMLElement>('*') ?? []).find(
-                    (candidate) => candidate.children.length === 0 && candidate.textContent?.trim() === label
+                    (candidate) => candidate.children.length === 0 && candidate.textContent.trim() === label
                 );
+                const group = element?.parentElement;
                 return {
                     label,
                     labelRects: element === undefined ? [] : Array.from(element.getClientRects(), copy),
-                    group:
-                        element?.parentElement instanceof HTMLElement
-                            ? copy(element.parentElement.getBoundingClientRect())
-                            : null,
+                    group: group instanceof HTMLElement ? copy(group.getBoundingClientRect()) : null,
                 };
             });
             const controls = Array.from(
@@ -118,17 +116,14 @@ async function statusGeometry(frame: Frame): Promise<StatusGeometry> {
                     name:
                         element.getAttribute('aria-label') ??
                         element.getAttribute('title') ??
-                        element.textContent?.trim() ??
-                        '',
+                        element.textContent.trim(),
                     rect: copy(element.getBoundingClientRect()),
                 }));
+            const root = document.querySelector<HTMLElement>('#root');
+            const header = document.querySelector<HTMLElement>('header');
             return {
-                root: document.querySelector<HTMLElement>('#root')
-                    ? copy(document.querySelector<HTMLElement>('#root')!.getBoundingClientRect())
-                    : null,
-                header: document.querySelector<HTMLElement>('header')
-                    ? copy(document.querySelector<HTMLElement>('header')!.getBoundingClientRect())
-                    : null,
+                root: root ? copy(root.getBoundingClientRect()) : null,
+                header: header ? copy(header.getBoundingClientRect()) : null,
                 footer: footer ? copy(footer.getBoundingClientRect()) : null,
                 strip: strip ? copy(strip.getBoundingClientRect()) : null,
                 labels: labelGeometry,
@@ -165,14 +160,13 @@ function expectExpandedLayout(geometry: StatusGeometry): void {
     const intersections = geometry.labels.flatMap((label, index) =>
         geometry.labels
             .slice(index + 1)
-            .flatMap((candidate) =>
+            .filter((candidate) =>
                 intersects(
                     requireValue(label.group, `${label.label} group`),
                     requireValue(candidate.group, `${candidate.label} group`)
                 )
-                    ? [`${label.label} / ${candidate.label}`]
-                    : []
             )
+            .map((candidate) => `${label.label} / ${candidate.label}`)
     );
     expect(intersections, 'metric group intersections').toEqual([]);
 }
@@ -343,13 +337,14 @@ test('restores focus from portaled Project Links items after each mode change at
         await expect(details).toHaveCount(0);
         evidence.focusAfterResize = await frame.evaluate(() => {
             const active = document.activeElement;
-            return active instanceof HTMLElement
-                ? {
-                      ariaLabel: active.getAttribute('aria-label'),
-                      tagName: active.tagName,
-                      text: active.textContent?.trim() ?? '',
-                  }
-                : null;
+            if (!(active instanceof HTMLElement)) {
+                return null;
+            }
+            return {
+                ariaLabel: active.getAttribute('aria-label'),
+                tagName: active.tagName,
+                text: active.textContent.trim(),
+            };
         });
         const expandedProjectLinks = app.getByRole('button', { name: 'Project links' });
         await expect(expandedProjectLinks).toBeFocused();
@@ -365,9 +360,10 @@ test('restores focus from portaled Project Links items after each mode change at
         await expect(app.getByRole('dialog', { name: 'More application status' })).toHaveCount(0);
         evidence.focusAfterCompactResize = await frame.evaluate(() => {
             const active = document.activeElement;
-            return active instanceof HTMLElement
-                ? { ariaLabel: active.getAttribute('aria-label'), tagName: active.tagName }
-                : null;
+            if (!(active instanceof HTMLElement)) {
+                return null;
+            }
+            return { ariaLabel: active.getAttribute('aria-label'), tagName: active.tagName };
         });
         await expect(app.getByRole('button', { name: 'More application status' })).toBeFocused();
     } finally {

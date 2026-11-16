@@ -189,6 +189,19 @@ export function pushUndo(entry: UndoEntry): void {
     pushUndoEntries([entry]);
 }
 
+/**
+ * Raw setter. Empties the future stack and leaves past untouched, for an edit
+ * that lands without an undo entry of its own. The branching undo tree keeps
+ * its nodes: it records branches, not the redo stack.
+ */
+export function discardRedoFuture(): void {
+    const state = undoStore.value;
+    if (!state || state.future.length === 0) {
+        return;
+    }
+    undoStore.set({ past: state.past, future: [] });
+}
+
 export function pushUndoEntries(entries: readonly UndoEntry[]): void {
     if (pendingSessionRestore) {
         pendingSessionRestore = undefined;

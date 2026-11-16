@@ -15,6 +15,7 @@
 //! The event sink is a threadsafe function registered once at construction. It
 //! takes owned arguments and is never reachable from the render callback.
 
+mod gpu;
 mod windows;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -656,6 +657,13 @@ impl SourdawNative {
             commands::plugins::scan_plugins(paths, retry_quarantined, &self.singletons.app_state)
                 .await,
         )?)
+    }
+
+    /// Shell plumbing for the scan utility's terminate path, never a renderer
+    /// command. Synchronous so it completes before the process exits.
+    #[napi]
+    pub fn stop_plugin_scan_helpers(&self) {
+        crate::stop_plugin_scan_helpers();
     }
 
     #[napi]

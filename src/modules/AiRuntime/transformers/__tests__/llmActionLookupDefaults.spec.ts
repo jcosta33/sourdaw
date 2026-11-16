@@ -60,6 +60,36 @@ describe('LLM bridge per-action lookups: default entries', () => {
     });
 });
 
+describe('LLM bridge per-action lookups: inherited Object.prototype names', () => {
+    const inheritedAction: RuntimeAction = JSON.parse('{"type":"constructor","payload":{}}');
+
+    it('gives an inherited name no mutation keys', () => {
+        expect(getMutationKeys(inheritedAction, context, [])).toEqual([]);
+    });
+
+    it('gives an inherited name no clip targets', () => {
+        expect(getClipTargetIds(inheritedAction)).toEqual([]);
+    });
+
+    it('gives an inherited name no automation transform lane', () => {
+        expect(getAutomationTransformLaneId(inheritedAction)).toBeNull();
+    });
+
+    it('gives an inherited name no device batch target', () => {
+        expect(getDeviceBatchTarget(inheritedAction, context)).toBeNull();
+    });
+
+    it('leaves the routing context unchanged for an inherited name', () => {
+        // `constructor` would return its first argument, so a name that returns something else tells the guard apart.
+        const stringifyingAction: RuntimeAction = JSON.parse('{"type":"toString","payload":{}}');
+        expect(applyAcceptedRoutingAction(context, stringifyingAction)).toBe(context);
+    });
+
+    it('never treats an inherited name as a sidechain lifecycle invalidation', () => {
+        expect(hasInvalidatingSidechainLifecycleMutation([inheritedAction], context)).toBe(false);
+    });
+});
+
 describe('LLM bridge per-action lookups: listed entries', () => {
     it('reads the lane of an automation transform and its mutation key', () => {
         const action: RuntimeAction = { type: 'thinAutomation', payload: { laneId: 'lane-1', tolerance: 0.1 } };

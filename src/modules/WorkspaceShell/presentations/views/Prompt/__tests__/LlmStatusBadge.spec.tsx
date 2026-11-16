@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -134,6 +137,7 @@ describe('LlmStatusBadge', () => {
         const light = /^Light/;
         const standard = /^Standard/;
         const pro = /^Pro/;
+        const large = /^Large/;
 
         async function openPicker(reading: MachineMemoryReading, onLoad = vi.fn()): Promise<void> {
             capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
@@ -153,40 +157,58 @@ describe('LlmStatusBadge', () => {
                 label: '8 GB clears Light and Standard only',
                 bytes: 8_000_000_000,
                 listed: [light, standard],
-                hidden: [pro],
+                hidden: [pro, large],
             },
             {
                 label: '16 GB clears Light, Standard and Pro',
                 bytes: 16_000_000_000,
                 listed: [light, standard, pro],
+                hidden: [large],
+            },
+            {
+                label: '64 GB clears every tier',
+                bytes: 64_000_000_000,
+                listed: [light, standard, pro, large],
                 hidden: [],
+            },
+            {
+                label: 'exactly the Large figure clears Large',
+                bytes: 42_100_000_000,
+                listed: [light, standard, pro, large],
+                hidden: [],
+            },
+            {
+                label: 'one byte under the Large figure does not',
+                bytes: 42_099_999_999,
+                listed: [light, standard, pro],
+                hidden: [large],
             },
             {
                 label: 'exactly the Pro figure clears Pro',
                 bytes: 10_300_000_000,
                 listed: [light, standard, pro],
-                hidden: [],
+                hidden: [large],
             },
             {
                 label: 'one byte under the Pro figure does not',
                 bytes: 10_299_999_999,
                 listed: [light, standard],
-                hidden: [pro],
+                hidden: [pro, large],
             },
             {
                 label: 'exactly the Standard figure clears Standard',
                 bytes: 4_300_000_000,
                 listed: [light, standard],
-                hidden: [pro],
+                hidden: [pro, large],
             },
             {
                 label: 'one byte under the Standard figure does not',
                 bytes: 4_299_999_999,
                 listed: [light],
-                hidden: [standard, pro],
+                hidden: [standard, pro, large],
             },
         ])('lists only what the reported memory clears: $label', async ({ bytes, listed, hidden }) => {
-            await openPicker({ state: 'known', totalBytes: bytes });
+            await openPicker({ state: 'known', totalBytes: bytes, gpuBudgetBytes: bytes });
 
             for (const name of listed) {
                 expect(screen.getByRole('button', { name })).toBeInTheDocument();
@@ -205,11 +227,68 @@ describe('LlmStatusBadge', () => {
             expect(screen.getByRole('button', { name: light })).toHaveTextContent('~2.7 GB');
             expect(screen.getByRole('button', { name: standard })).toHaveTextContent('~4.3 GB');
             expect(screen.getByRole('button', { name: pro })).toHaveTextContent('~10.3 GB');
+            expect(screen.queryByRole('button', { name: large })).not.toBeInTheDocument();
+        });
+
+        it('lists the Large model as one that plans project edits, with its memory figure', async () => {
+            await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
+
+            const card = screen.getByRole('button', { name: large });
+            expect(card).toHaveTextContent('plans project edits');
+            expect(card).toHaveTextContent('~42.1 GB');
+            expect(card).toHaveTextContent('~31.80 GB');
+        });
+
+        describe('the Llama 3.1 Community License duties', () => {
+            const builtWithLlama = /Built with Llama/;
+            const licenceName = /Llama 3\.1 Community License/;
+            const attribution =
+                'Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.';
+            const consent = 'Downloads and verifies this model for private use in this browser.';
+
+            it('shows the notice on the Large card and in the consent line once Large is selected', async () => {
+                await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
+
+                const card = screen.getByRole('button', { name: large });
+                expect(card).toHaveTextContent(builtWithLlama);
+                expect(card).toHaveTextContent(licenceName);
+                expect(card).toHaveTextContent(attribution);
+
+                fireEvent.click(card);
+                const consentLine = screen.getByText(new RegExp(`^${consent.replace('.', '\\.')}`));
+                expect(consentLine).toHaveTextContent(builtWithLlama);
+                expect(consentLine).toHaveTextContent(licenceName);
+                expect(consentLine).toHaveTextContent(attribution);
+            });
+
+            it('keeps the notice off the Qwen cards and their consent line', async () => {
+                await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
+
+                for (const name of [light, standard, pro]) {
+                    expect(screen.getByRole('button', { name })).not.toHaveTextContent(builtWithLlama);
+                }
+                fireEvent.click(screen.getByRole('button', { name: pro }));
+                const consentLine = screen.getByText(consent);
+                expect(consentLine).not.toHaveTextContent(builtWithLlama);
+                expect(consentLine).not.toHaveTextContent(licenceName);
+            });
+
+            it('is carried by the open-source inventory entry that ships the model', () => {
+                const inventory = JSON.parse(
+                    readFileSync(resolve(__dirname, '../../../../../../../release/open-source-inventory.json'), 'utf8')
+                ) as { surfaces: Array<{ id: string; paths: string[]; obligations: string[] }> };
+                const surface = inventory.surfaces.find((entry) => entry.id === 'webllm-qwen-artifacts');
+
+                expect(surface?.paths).toContain('public/legal/Llama-3.1-LICENSE.txt');
+                const obligations = surface?.obligations.join('\n') ?? '';
+                expect(obligations).toMatch(builtWithLlama);
+                expect(obligations).toMatch(licenceName);
+            });
         });
 
         it('selects the largest offered model, not the unoffered default, and loads that one', async () => {
             const onLoad = vi.fn();
-            await openPicker({ state: 'known', totalBytes: 8_000_000_000 }, onLoad);
+            await openPicker({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null }, onLoad);
 
             const downloadButton = screen.getByRole('button', { name: /^Download & Load/ });
             expect(downloadButton).toHaveTextContent('Download & Load Standard');
@@ -219,11 +298,19 @@ describe('LlmStatusBadge', () => {
         });
 
         it('states the machine memory and offers no download when no local model fits', async () => {
-            await openPicker({ state: 'known', totalBytes: 1_000_000_000 });
+            await openPicker({ state: 'known', totalBytes: 1_000_000_000, gpuBudgetBytes: null });
 
             expect(screen.getByText(/1\.0 GB of memory, and no local model fits/)).toBeInTheDocument();
             expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
             expect(screen.queryByRole('button', { name: light })).not.toBeInTheDocument();
+        });
+
+        it('names the GPU memory, not the larger RAM, when the GPU budget is what excludes every model', async () => {
+            await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 1_000_000_000 });
+
+            expect(screen.getByText(/GPU can hold 1\.0 GB, and no local model fits/)).toBeInTheDocument();
+            expect(screen.queryByText(/64\.0 GB of memory/)).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
         });
     });
 
@@ -238,7 +325,7 @@ describe('LlmStatusBadge', () => {
 
         // The engine's active model id is the Pro default: the model the retry used to fall back to.
         it('retries with the largest offered model, not the unoffered active default, on an 8 GB machine', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null });
             const onLoad = vi.fn();
             render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
 
@@ -247,8 +334,47 @@ describe('LlmStatusBadge', () => {
             expect(onLoad).toHaveBeenCalledWith('Qwen3-4B-q4f16_1-MLC');
         });
 
+        it('retries a Qwen model directly on a 64 GB machine, as it always did', () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
+            const onLoad = vi.fn();
+            render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Retry Model Download' }));
+
+            expect(onLoad).toHaveBeenCalledWith('Qwen3-8B-q4f16_1-MLC');
+            expect(screen.queryByText(/Built with Llama/)).not.toBeInTheDocument();
+        });
+
+        it('shows the Llama notice before retrying the Large download, and loads only on Download & Load', async () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
+            const onLoad = vi.fn();
+            const { rerender } = render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
+            fireEvent.click(screen.getByRole('button', { name: /^Large/ }));
+            // The first attempt closes the panel, as it does for a user; it then fails.
+            fireEvent.click(screen.getByRole('button', { name: 'Download & Load Large' }));
+            onLoad.mockClear();
+            rerender(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
+
+            fireEvent.click(await screen.findByRole('button', { name: 'Retry Model Download' }));
+
+            expect(onLoad).not.toHaveBeenCalled();
+            const consentLine = screen.getByText(/^Downloads and verifies this model for private use/);
+            expect(consentLine).toHaveTextContent(/Built with Llama/);
+            expect(consentLine).toHaveTextContent(/Llama 3\.1 Community License/);
+            expect(consentLine).toHaveTextContent(
+                'Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.'
+            );
+            expect(screen.getByRole('alert')).toHaveTextContent('The model download failed.');
+
+            fireEvent.click(screen.getByRole('button', { name: 'Download & Load Large' }));
+
+            expect(onLoad).toHaveBeenCalledTimes(1);
+            expect(onLoad).toHaveBeenCalledWith('Llama-3.1-70B-Instruct-q3f16_1-MLC');
+        });
+
         it('offers no local retry when no local model fits', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 1_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 1_000_000_000, gpuBudgetBytes: null });
             render(<LlmStatusBadge status={errorStatus} onLoad={vi.fn()} />);
 
             expect(screen.queryByRole('button', { name: 'Retry Model Download' })).not.toBeInTheDocument();
@@ -269,7 +395,7 @@ describe('LlmStatusBadge', () => {
                 });
             });
             aiBackendPreferenceStore.set('cloud');
-            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null });
             const onLoad = vi.fn();
             try {
                 render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
@@ -285,7 +411,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('describes the model that is loaded, not the one the picker would select', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 16_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 16_000_000_000, gpuBudgetBytes: null });
             render(
                 <LlmStatusBadge
                     status={{ state: 'ready', backend: 'webllm', modelId: 'Qwen3-1.7B-q4f16_1-MLC' }}

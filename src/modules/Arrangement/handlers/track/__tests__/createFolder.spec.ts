@@ -49,7 +49,7 @@ describe('handleCreateFolder', () => {
         expect(desc.label).toBe('Create folder "Drums"');
     });
 
-    it('emits an inverse naming exactly the materialized folder track id, and a redo of the original action', () => {
+    it('leaves the inverse and redo for execute to finalize from the committed folder', () => {
         const action = {
             type: 'createFolder' as const,
             payload: { name: 'Drums', folderTrackId: 'folder-1' },
@@ -57,11 +57,23 @@ describe('handleCreateFolder', () => {
 
         const desc = handleCreateFolder.describe(action);
 
-        expect(desc.inverseAction).toEqual({
-            type: 'discardCreatedTracks',
-            payload: { trackIds: ['folder-1'] },
-        });
-        expect(desc.redoAction).toBe(action);
+        expect(desc.inverseAction).toBeNull();
+        expect(desc.redoAction).toBeUndefined();
+    });
+
+    it('emits neither inverse nor redo when the committed folder cannot be read back', async () => {
+        // The use case is mocked, so the store never holds the folder: a guard cannot be finalized.
+        mocks.createFolder.mockReturnValue(true);
+        const action = {
+            type: 'createFolder' as const,
+            payload: { name: 'Drums', folderTrackId: 'folder-1' },
+        };
+
+        const desc = handleCreateFolder.describe(action);
+        await handleCreateFolder.execute(action);
+
+        expect(desc.inverseAction).toBeNull();
+        expect(desc.redoAction).toBeUndefined();
     });
 
     it('emits no inverse when the folder track id was never materialized', () => {

@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
+
 import { getPluginParameters } from '../../../repositories/pluginBridge/getPluginParameters';
 import { type PluginParameter } from '../../../repositories/pluginBridge/types';
 import {
+    clearExternalPluginParameterReadState,
     defaultExternalPluginParameterState,
+    dropExternalPluginParameterSnapshot,
     externalPluginParameterStore,
+    patchExternalPluginParameterValue,
+    readExternalPluginParameterReadIssue,
     writeExternalPluginParameterSnapshot,
 } from '../../../stores/externalPluginParameterStore';
 import { loadedExternalInstances } from '../loadedExternalInstances';
@@ -13,6 +19,10 @@ import { toExternalPluginParameters } from '../toExternalPluginParameters';
 
 vi.mock('../../../repositories/pluginBridge/getPluginParameters', () => ({
     getPluginParameters: vi.fn(),
+}));
+
+vi.mock('#/infra/ordering/observationSequence', () => ({
+    readLastObservationSequence: vi.fn<() => number>(),
 }));
 
 function pluginParameter(overrides: Partial<PluginParameter> & Pick<PluginParameter, 'id' | 'name'>): PluginParameter {
@@ -30,6 +40,8 @@ function pluginParameter(overrides: Partial<PluginParameter> & Pick<PluginParame
 describe('refreshExternalPluginParameters', () => {
     beforeEach(() => {
         vi.mocked(getPluginParameters).mockReset();
+        vi.mocked(readLastObservationSequence).mockReset();
+        vi.mocked(readLastObservationSequence).mockReturnValue(0);
         loadedExternalInstances.clear();
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
     });
@@ -105,10 +117,244 @@ describe('refreshExternalPluginParameters', () => {
         });
         vi.mocked(getPluginParameters).mockRejectedValue(new Error('instance is gone'));
 
-        await expect(refreshExternalPluginParameters('inst-1')).resolves.toBeUndefined();
+        await expect(refreshExternalPluginParameters('inst-1')).resolves.toEqual([]);
 
         expect(externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters).toEqual([
             expect.objectContaining({ id: 4, name: 'Mix' }),
         ]);
+    });
+
+    describe('against newer facts', () => {
+        const deferredRead = (): { resolve: (parameters: PluginParameter[]) => void } => {
+            let resolveRead: (parameters: PluginParameter[]) => void = () => {};
+            vi.mocked(getPluginParameters).mockImplementationOnce(
+                () =>
+                    new Promise<PluginParameter[]>((resolve) => {
+                        resolveRead = resolve;
+                    })
+            );
+            return { resolve: (parameters) => resolveRead(parameters) };
+        };
+
+        const seedLoaded = (): void => {
+            loadedExternalInstances.add('inst-1');
+            writeExternalPluginParameterSnapshot('inst-1', {
+                engineAttached: true,
+                parameters: toExternalPluginParameters([
+                    pluginParameter({ id: 1, name: 'Decay', value: 0.1 }),
+                    pluginParameter({ id: 2, name: 'Mix', value: 0.1 }),
+                ]),
+            });
+        };
+
+        const storedValue = (parameterId: number): number | undefined =>
+            externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters.find(
+                (parameter) => parameter.id === parameterId
+            )?.value;
+
+        it('keeps a value edited while the host was answering and takes the host value for the rest', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            patchExternalPluginParameterValue('inst-1', 1, 0.3);
+            read.resolve([
+                pluginParameter({ id: 1, name: 'Decay', value: 0.5 }),
+                pluginParameter({ id: 2, name: 'Mix', value: 0.6 }),
+            ]);
+            const published = await pending;
+
+            expect(storedValue(1)).toBe(0.3);
+            expect(storedValue(2)).toBe(0.6);
+            expect(published).toEqual([expect.objectContaining({ id: 2, value: 0.6 })]);
+        });
+
+        it('does not publish an older re-read that resolves after a newer one', async () => {
+            seedLoaded();
+            const older = deferredRead();
+            const olderPending = refreshExternalPluginParameters('inst-1');
+            const newer = deferredRead();
+            const newerPending = refreshExternalPluginParameters('inst-1');
+
+            newer.resolve([pluginParameter({ id: 1, name: 'Decay', value: 0.7 })]);
+            const newerPublished = await newerPending;
+            older.resolve([pluginParameter({ id: 1, name: 'Decay', value: 0.2 })]);
+            const olderPublished = await olderPending;
+
+            expect(olderPublished).toEqual([]);
+            expect(newerPublished).toEqual([expect.objectContaining({ id: 1, value: 0.7 })]);
+            expect(storedValue(1)).toBe(0.7);
+        });
+
+        const reseededParameters = (): ReturnType<typeof toExternalPluginParameters> =>
+            toExternalPluginParameters([
+                pluginParameter({ id: 1, name: 'Decay', value: 0.9 }),
+                pluginParameter({ id: 2, name: 'Mix', value: 0.9 }),
+            ]);
+
+        const staleAnswer = (): PluginParameter[] => [
+            pluginParameter({ id: 1, name: 'Decay', value: 0.2 }),
+            pluginParameter({ id: 2, name: 'Mix', value: 0.2 }),
+        ];
+
+        it('drops a re-read issued before the read state was cleared and the instance re-seeded', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            clearExternalPluginParameterReadState();
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([]);
+            expect(storedValue(1)).toBe(0.9);
+            expect(storedValue(2)).toBe(0.9);
+        });
+
+        it('drops a re-read issued before the snapshot was dropped and the instance re-seeded', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            dropExternalPluginParameterSnapshot('inst-1');
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([]);
+            expect(storedValue(1)).toBe(0.9);
+            expect(storedValue(2)).toBe(0.9);
+        });
+
+        it('drops a re-read issued before an activation seed replaced the snapshot', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([]);
+            expect(storedValue(1)).toBe(0.9);
+            expect(storedValue(2)).toBe(0.9);
+        });
+
+        it('publishes a re-read issued after the read state was cleared and the instance re-seeded', async () => {
+            seedLoaded();
+            clearExternalPluginParameterReadState();
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([expect.objectContaining({ id: 1 }), expect.objectContaining({ id: 2 })]);
+            expect(storedValue(1)).toBe(0.2);
+            expect(storedValue(2)).toBe(0.2);
+        });
+
+        it('publishes a re-read issued after the snapshot was dropped and the instance re-seeded', async () => {
+            seedLoaded();
+            dropExternalPluginParameterSnapshot('inst-1');
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([expect.objectContaining({ id: 1 }), expect.objectContaining({ id: 2 })]);
+            expect(storedValue(1)).toBe(0.2);
+            expect(storedValue(2)).toBe(0.2);
+        });
+
+        it('publishes a re-read issued after an activation seed replaced the snapshot', async () => {
+            seedLoaded();
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([expect.objectContaining({ id: 1 }), expect.objectContaining({ id: 2 })]);
+            expect(storedValue(1)).toBe(0.2);
+            expect(storedValue(2)).toBe(0.2);
+        });
+
+        it('publishes an answer whose newer re-read then fails', async () => {
+            seedLoaded();
+            const older = deferredRead();
+            const olderPending = refreshExternalPluginParameters('inst-1');
+            vi.mocked(getPluginParameters).mockRejectedValueOnce(new Error('instance is gone'));
+            const newerPending = refreshExternalPluginParameters('inst-1');
+
+            older.resolve([pluginParameter({ id: 1, name: 'Decay', value: 0.6 })]);
+            const olderPublished = await olderPending;
+            await newerPending;
+
+            expect(olderPublished).toEqual([expect.objectContaining({ id: 1, value: 0.6 })]);
+            expect(storedValue(1)).toBe(0.6);
+        });
+
+        it('keeps an edit made while a re-read was in flight when that re-read then fails', async () => {
+            seedLoaded();
+            vi.mocked(getPluginParameters).mockRejectedValueOnce(new Error('instance is gone'));
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            patchExternalPluginParameterValue('inst-1', 1, 0.3);
+            await pending;
+
+            expect(storedValue(1)).toBe(0.3);
+        });
+
+        it('tags each published object with the scheduler write that was latest when the read was issued', async () => {
+            seedLoaded();
+            vi.mocked(readLastObservationSequence).mockReturnValue(5);
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            vi.mocked(readLastObservationSequence).mockReturnValue(9);
+            patchExternalPluginParameterValue('inst-1', 1, 0.3);
+            read.resolve([
+                pluginParameter({ id: 1, name: 'Decay', value: 0.5 }),
+                pluginParameter({ id: 2, name: 'Mix', value: 0.6 }),
+            ]);
+            const published = await pending;
+
+            const stored = externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters ?? [];
+            const [edited, republished] = stored;
+            expect(published).toEqual([republished]);
+            expect(republished && readExternalPluginParameterReadIssue(republished)).toBe(5);
+            expect(edited && readExternalPluginParameterReadIssue(edited)).toBeUndefined();
+        });
+
+        it('publishes and returns nothing when the host refuses the read', async () => {
+            seedLoaded();
+            vi.mocked(getPluginParameters).mockRejectedValueOnce(new Error('instance is gone'));
+
+            await expect(refreshExternalPluginParameters('inst-1')).resolves.toEqual([]);
+
+            expect(storedValue(1)).toBe(0.1);
+        });
+
+        it('returns exactly the objects it put in the store', async () => {
+            seedLoaded();
+            vi.mocked(getPluginParameters).mockResolvedValueOnce([
+                pluginParameter({ id: 1, name: 'Decay', value: 0.4 }),
+                pluginParameter({ id: 2, name: 'Mix', value: 0.5 }),
+            ]);
+
+            const published = await refreshExternalPluginParameters('inst-1');
+
+            expect(published).toHaveLength(2);
+            expect(published).toEqual(externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters);
+            for (const [index, parameter] of published.entries()) {
+                expect(externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters[index]).toBe(parameter);
+            }
+        });
     });
 });

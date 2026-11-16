@@ -16,6 +16,7 @@ import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeCl
 import { serializeProjectedClipScopedAutomationLanes } from '../useCases/clip/serializeProjectedClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
+import { matchesCreatedTrackFingerprint } from './matchesCreatedTrackFingerprint';
 import { type ProjectedClipState } from './projectClipThroughPriorBatchActions';
 
 type IsGeneratedMidiStateCurrentInput = {
@@ -179,6 +180,17 @@ function resolveGuardedEntity(
     return { entity: track, clipIds: collectTrackClipIds(track) };
 }
 
+function matchesGuardedEntity(
+    entity: GuardedEntity['entity'],
+    entityType: 'clip' | 'track',
+    entityJson: string
+): boolean {
+    if (entityType === 'track') {
+        return matchesCreatedTrackFingerprint(entity, entityJson);
+    }
+    return matchesJsonFingerprint(entity, entityJson);
+}
+
 /**
  * Whether the generated entity still carries exactly the state its generation
  * left behind.
@@ -208,7 +220,7 @@ export function isGeneratedMidiStateCurrent({
     }
     const { entity, clipIds } = guarded;
 
-    if (!matchesJsonFingerprint(entity, guard.entityJson)) {
+    if (!matchesGuardedEntity(entity, entityType, guard.entityJson)) {
         return false;
     }
     if (

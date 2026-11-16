@@ -61,6 +61,13 @@ renderer-provided absolute path is not enough authority, and no other route adds
   the user granted read-write file access to, and a stored grant becomes unavailable once such a
   file grant appears. A pick inside an existing grant is refused; one containing existing grants
   replaces them, so grants never overlap.
+- **No file writes into plugin folders.** The other direction holds at the file commands: no
+  read-write file grant admits a write inside a default plugin folder or a stored plugin folder
+  grant, available or not, and a read-write pick inside one is refused at the dialog. A pick that
+  contains one, such as the home folder, stays writable everywhere else, because refusing it would
+  refuse the most ordinary project folder choice on Linux. A folder that does not exist yet keeps
+  the renderer's spelling, so containment compares names as the volume does: case-folded on macOS
+  and Windows, Unicode-normalized on macOS, and without trailing dots and spaces on Windows.
 - **Ranking.** Granted folders rank after every default folder, in grant order, so a copy of a
   plugin in a default folder always wins.
 - **Revocation.** Revoking removes the stored grant; the next policy built refuses the folder and
