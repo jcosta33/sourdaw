@@ -1606,7 +1606,9 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         'cargo test --package daw-core --package daw-dsp --package daw-engine --all-features'
     );
     for (const job of [nativeSeed, nativeConsumer]) {
-        expect(stepNamed(job, 'Lint the native crate').run).toBe('cargo clippy --package sourdaw-native --all-targets');
+        expect(stepNamed(job, 'Lint the native crate').run).toBe(
+            'cargo clippy --package sourdaw-native --all-targets --features napi-addon'
+        );
     }
     expect(stepNamed(nativeSeed, 'Test the native crate').run).toBe('cargo test --package sourdaw-native');
 

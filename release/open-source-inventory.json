@@ -172,7 +172,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:3cf59e8f920d5cabb9c7469d8599d16309cfdd163757f12893d11eda15615b4f:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:b962f6aac4cfd37169bede08edfcf107f4402dc8bfc698863cbd11cd35b8ced1:release/dependency-license-proofs.json"
+                "sha256:7a28a068f7b88ac06e80c694f3556d7b57800ca1d9be677284c1ef262925ce9b:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1926,7 +1926,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "acec56def2686b5e9925b1afecb5de895597b99d35597dad172cfaa6d135c14e"
+            "sha256": "980989da64dd8f71a720aabe1b29cf135f0c8520216b3705cf6855b7293bc907"
         },
         {
             "path": "Cargo.lock",

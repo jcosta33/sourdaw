@@ -98,7 +98,7 @@ jobs:
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
       - name: Lint the native crate
-        run: cargo clippy --package sourdaw-native --all-targets
+        run: cargo clippy --package sourdaw-native --all-targets --features napi-addon
 
       - name: Test the native crate
         run: cargo test --package sourdaw-native
