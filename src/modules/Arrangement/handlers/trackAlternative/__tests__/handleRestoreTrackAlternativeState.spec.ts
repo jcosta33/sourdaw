@@ -498,6 +498,8 @@ describe('handleRestoreTrackAlternativeState', () => {
                         midiPitchBendByClipId: {},
                         clipSatellites: [],
                         clipAutomationLanes: [],
+                        takeLaneIds: [],
+                        takeLanes: [],
                     },
                 },
             },
