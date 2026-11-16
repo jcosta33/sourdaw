@@ -3463,11 +3463,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Intro” (beats 0–16), “Lead Vocal” integrated loudness is -20.18 LUFS (exact).\n\nOver “Intro” (beats 0–16), “Lead Vocal” RMS level is -26.49 dBFS (exact).",
+                "text": "Over “Intro” (beats 0–16), “Lead Vocal” integrated loudness is -20.1 LUFS (exact).\n\nOver “Intro” (beats 0–16), “Lead Vocal” RMS level is -26.41 dBFS (exact).",
                 "measurement": {
                     "target": { "kind": "track", "name": "Lead Vocal" },
                     "rangeName": "Intro",
-                    "metrics": { "integratedLoudness": -20.18, "rms": -26.49 }
+                    "metrics": { "integratedLoudness": -20.1, "rms": -26.41 }
                 }
             }
         },
@@ -3502,11 +3502,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Verse” (beats 16–48), Master output crest factor is 12.06 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is 7.22 dBTP (exact).",
+                "text": "Over “Verse” (beats 16–48), Master output crest factor is 12.63 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is 7.83 dBTP (exact).",
                 "measurement": {
                     "target": { "kind": "master" },
                     "rangeName": "Verse",
-                    "metrics": { "crestFactor": 12.06, "truePeak": 7.22 }
+                    "metrics": { "crestFactor": 12.63, "truePeak": 7.83 }
                 }
             }
         },
@@ -3657,17 +3657,17 @@
             "id": "AC067-HO-COMPARE-2",
             "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "make the Overheads less dynamic than the Lead Vocal in the verse",
+            "prompt": "make the Bass DI less dynamic than the Lead Vocal in the verse",
             "providerTurns": [
                 {
                     "kind": "intake",
                     "intent": "comparative",
-                    "targets": ["Overheads"],
+                    "targets": ["Bass DI"],
                     "objectives": [
                         {
                             "policyId": "crest-factor-comparison-v1",
                             "relation": "less-than-current",
-                            "targetName": "Overheads",
+                            "targetName": "Bass DI",
                             "referenceName": "Lead Vocal",
                             "rangeName": "Verse"
                         }
@@ -3676,7 +3676,7 @@
                 {
                     "kind": "measure-preview",
                     "id": "preview",
-                    "targets": ["Overheads", "Lead Vocal"],
+                    "targets": ["Bass DI", "Lead Vocal"],
                     "rangeName": "Verse",
                     "metrics": ["crestFactor"],
                     "items": [
@@ -3691,7 +3691,7 @@
                                 "targetArgument": "trackId",
                                 "entity": "track",
                                 "where": {
-                                    "name": "Overheads"
+                                    "name": "Bass DI"
                                 },
                                 "quantity": {
                                     "unit": "targets",
@@ -3725,7 +3725,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "comp-attack",
-                                "value": 2
+                                "value": 0.1
                             },
                             "dependsOn": ["insert"]
                         },
@@ -3735,7 +3735,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "comp-release",
-                                "value": 120
+                                "value": 50
                             },
                             "dependsOn": ["insert"]
                         }
@@ -3744,7 +3744,7 @@
                 {
                     "kind": "propose-compiled",
                     "compiledCallIds": ["preview"],
-                    "targets": ["Overheads"]
+                    "targets": ["Bass DI"]
                 }
             ],
             "oracle": {
@@ -3753,7 +3753,7 @@
                     {
                         "type": "addDevice",
                         "payload": {
-                            "trackId": "track-overheads",
+                            "trackId": "track-bass-di",
                             "deviceType": "builtin-compressor"
                         }
                     },
@@ -3775,14 +3775,14 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-attack",
-                            "value": 2
+                            "value": 0.1
                         }
                     },
                     {
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-release",
-                            "value": 120
+                            "value": 50
                         }
                     }
                 ],
@@ -3790,7 +3790,7 @@
                     {
                         "metric": "crestFactor",
                         "relation": "less-than-current",
-                        "target": "Overheads",
+                        "target": "Bass DI",
                         "reference": "Lead Vocal"
                     }
                 ]

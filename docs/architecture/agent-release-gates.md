@@ -177,6 +177,9 @@ relation, target, reference?}`: the agent metric (and band for a band metric), t
   master gain shape it as the law's doc comment states. Every measured figure an oracle pins is
   derived from that law, independently of the spec, never copied from a run, and the law is never
   tuned to make a case pass; a change to it moves the pinned figures, which must be derived again.
+  Every source strike rises over a few milliseconds before it decays, so the peak arrives after the
+  beat and a fast-attack compressor can clamp it; a strike that peaked on its first sample would
+  make every compressor without lookahead raise crest.
   The law has limits a case must respect. Its spectrum is discrete partials at fixed band points,
   centred by track position rather than by role, so a figure read between partials (a spectral
   rolloff, a band's share where an edit moves only its neighbours) can stand still or move against a

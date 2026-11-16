@@ -18,6 +18,14 @@ const PARTIAL_HZ = [110, 330, 1000, 3000, 6000, 12_000] as const;
 const STRIKE_DECAY_SECONDS = 0.03;
 
 /**
+ * A strike rises over a half cosine this long before it decays. A struck source reaches its peak a few
+ * milliseconds after the beat, which is what lets a fast-attack compressor react before the peak. A
+ * zero-rise strike peaks on its first sample, so no compressor without lookahead could clamp it and
+ * every one would overshoot by construction.
+ */
+const STRIKE_RISE_SECONDS = 0.005;
+
+/**
  * The offline render node cannot run, so the acceptance corpora render through this one law, the
  * same for every case, every route and every document — the live project and an isolated preview.
  *
@@ -25,7 +33,8 @@ const STRIKE_DECAY_SECONDS = 0.03;
  * chooses. It sounds one partial per band at `PARTIAL_HZ`, weighted `2^-|k - p mod 6|` around its own
  * spectral centre and normalised to unit energy, at level `0.12 + 0.03 · (p mod 4)`. The right channel
  * runs each partial `k` late by `(p mod 3) · (k + 1) · π / 18`, so tracks differ in stereo
- * decorrelation. Every beat the source strikes and decays over `STRIKE_DECAY_SECONDS` to a sustain floor
+ * decorrelation. Every beat the source strikes and rises over `STRIKE_RISE_SECONDS` (a half cosine, so the
+ * peak lands a few milliseconds after the beat) and decays over `STRIKE_DECAY_SECONDS` to a sustain floor
  * of `0.2 + 0.2 · (p mod 4)` of its strike, so tracks differ in peak-to-average shape. Time is read on
  * the project timeline, so a window renders the same samples whatever span it is cut from. A bus has
  * no source of its own.
@@ -74,7 +83,10 @@ export function createAcceptanceRenderLaw(input: {
         for (let frame = 0; frame < frames; frame++) {
             const time = start + frame / SAMPLE_RATE;
             const sinceStrike = time % beatSeconds;
-            const envelope = level * (sustain + (1 - sustain) * Math.exp(-sinceStrike / STRIKE_DECAY_SECONDS));
+            const risen = Math.min(sinceStrike, STRIKE_RISE_SECONDS);
+            const rise = 0.5 * (1 - Math.cos((Math.PI * risen) / STRIKE_RISE_SECONDS));
+            const decay = Math.exp(-Math.max(0, sinceStrike - STRIKE_RISE_SECONDS) / STRIKE_DECAY_SECONDS);
+            const envelope = level * (sustain + (1 - sustain) * rise * decay);
             let l = 0;
             let r = 0;
             for (let index = 0; index < PARTIAL_HZ.length; index++) {

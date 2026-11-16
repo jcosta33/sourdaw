@@ -3522,11 +3522,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -0.99 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -5.09 dBFS (exact).",
+                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -0.94 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -5.05 dBFS (exact).",
                 "measurement": {
                     "target": { "kind": "master" },
                     "rangeName": "Chorus",
-                    "metrics": { "integratedLoudness": -0.99, "rms": -5.09 }
+                    "metrics": { "integratedLoudness": -0.94, "rms": -5.05 }
                 }
             }
         },
@@ -3561,11 +3561,11 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -14.34 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -26.49 dBFS (exact).",
+                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -13.5 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -26.4 dBFS (exact).",
                 "measurement": {
                     "target": { "kind": "track", "name": "Snare" },
                     "rangeName": "Verse",
-                    "metrics": { "truePeak": -14.34, "rms": -26.49 }
+                    "metrics": { "truePeak": -13.5, "rms": -26.4 }
                 }
             }
         },

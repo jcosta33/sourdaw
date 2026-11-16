@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "34c745957e690824f4383fbee954eaa2483d3503f13d46a3faf9d21361edaa18"
+        "digest": "eb5a0cce594f4f14adcfd61e7735a2566647b225735b2a031f5b0dcf5a5720d8"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "77d3aeecb7579c22443bdcb79afc8a659335ff826c6b40a9f64015cd0a811cfe"
+                    "digest": "ea1484b38be594a2cd9d54119094ea157ff1ba7881b423f67225fdb22878b3c7"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -805,7 +805,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "b0d777e1bda2e0cb55c2270bffce4915186a1aad790b4fdb614976f6000c0e49"
+                    "digest": "e2fe4c59c5211836bbda281ba3ec1ac28786b9af3df2ba30dfafc954e2afa8ae"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
