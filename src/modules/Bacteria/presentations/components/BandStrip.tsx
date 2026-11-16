@@ -6,6 +6,7 @@ import { type ReactElement } from 'react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { handleRovingRowKeyDown } from '#/utils/UI/rovingRowKeyboard';
 
 import { type BacteriaBand } from '../../models/BacteriaPatch';
 
@@ -31,10 +32,15 @@ const EFFECT_INDICATORS = [
 
 export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: BandStripProps): ReactElement => (
     <div
-        className={`flex flex-col gap-1 p-1.5 rounded-md border transition-colors cursor-pointer min-w-[104px] ${
+        role="row"
+        tabIndex={isActive ? 0 : -1}
+        aria-selected={isActive}
+        aria-label={`Band ${index + 1}`}
+        className={`flex flex-col gap-1 p-1.5 rounded-md border transition-colors cursor-pointer min-w-[104px] outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70 ${
             isActive ? 'border-rose-500/40 bg-rose-500/5' : 'border-border/20 hover:border-border/40'
         }`}
         onClick={onSelect}
+        onKeyDown={(event) => handleRovingRowKeyDown(event, 'horizontal', onSelect)}
     >
         {/* Band header */}
         <Row justify="between">

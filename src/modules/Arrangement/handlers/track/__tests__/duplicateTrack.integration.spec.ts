@@ -109,6 +109,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/
 import {
     clearUndoHistory,
     executeAppAction,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -197,6 +198,25 @@ async function duplicateTrack(): Promise<void> {
     expect(trackStore.value!.tracks).toHaveLength(2);
 }
 
+/** The save path's write: a non-undoable capture of the copy's live plugin state. */
+async function captureCopyPluginState(stateChunk: string): Promise<void> {
+    const device = copyTrack().devices[0]!;
+    await executeAppAction(
+        {
+            type: 'setExternalPluginState',
+            payload: {
+                intent: 'capture',
+                deviceId: device.id,
+                stateChunk,
+                expectedInstanceId: device.externalInstanceId!,
+                expectedStateChunk: device.externalStateChunk ?? null,
+            },
+        },
+        { source: 'manual', skipMacroRecording: true }
+    );
+    expect(copyTrack().devices[0]!.externalStateChunk).toBe(stateChunk);
+}
+
 async function expectUndoRefused(): Promise<void> {
     const result = await undo();
     expect(result).toEqual({ headConsumed: false });
@@ -242,6 +262,20 @@ describe('handleDuplicateTrack atomic integration', () => {
 
         await undo();
 
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
+    });
+
+    it('redoes the exact copy it undid, so a second undo removes it again', async () => {
+        trackStore.set({ tracks: [sourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        await duplicateTrack();
+        const committedCopy = structuredClone(copyTrack());
+        await undo();
+
+        await redo();
+
+        expect(copyTrack()).toEqual(committedCopy);
+        const second = await undo();
+        expect(second).toEqual({ headConsumed: true });
         expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
     });
 
@@ -365,6 +399,109 @@ describe('handleDuplicateTrack atomic integration', () => {
         const instanceIds = trackStore.value!.tracks.map((track) => track.devices[0]!.externalInstanceId);
         expect(instanceIds).toHaveLength(3);
         expect(new Set(instanceIds).size).toBe(3);
+    });
+
+    it('undoes the duplicate after a save captured new plugin state on the copy, unloading the copy (issue #6597)', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await duplicateTrack();
+        const copiedInstanceId = copyTrack().devices[0]!.externalInstanceId;
+
+        await captureCopyPluginState('ZWRpdGVk');
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: true });
+        expect(notifyUserMock).not.toHaveBeenCalled();
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(copiedInstanceId);
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe('c2F2ZWQ=');
+    });
+
+    it('undoes the duplicate after the first save writes a chunk onto a copy that carried none (issue #6597)', async () => {
+        const source = hostedPluginSourceTrack();
+        delete source.devices[0]!.externalStateChunk;
+        trackStore.set({ tracks: [source], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await duplicateTrack();
+
+        await captureCopyPluginState('Zmlyc3Q=');
+        await undo();
+
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
+    });
+
+    it('redoes the duplicate with the plugin state the save captured, and undoes it again (issue #6597)', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await duplicateTrack();
+        await captureCopyPluginState('ZWRpdGVk');
+        await undo();
+        pluginHostMocks.activateExternalPlugin.mockClear();
+
+        await redo();
+
+        expect(trackStore.value!.tracks).toHaveLength(2);
+        const redoneDevice = copyTrack().devices[0]!;
+        expect(redoneDevice.externalStateChunk).toBe('ZWRpdGVk');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ instanceId: redoneDevice.externalInstanceId, stateChunk: 'ZWRpdGVk' })
+        );
+
+        const second = await undo();
+        expect(second).toEqual({ headConsumed: true });
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
+    });
+
+    it('keeps the captured plugin state for a redo retried after a refused redo', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await duplicateTrack();
+        const copyId = copyTrack().id;
+        await captureCopyPluginState('ZWRpdGVk');
+        await undo();
+        const blocked = trackStore.value!;
+        trackStore.set({
+            ...blocked,
+            tracks: [...blocked.tracks, TrackDummy.create({ id: copyId, name: 'Blocker', kind: 'audio' })],
+        });
+
+        await redo();
+        expect(trackStore.value!.tracks.find((track) => track.id === copyId)!.name).toBe('Blocker');
+        trackStore.set(blocked);
+        await redo();
+
+        expect(trackStore.value!.tracks.find((track) => track.id === copyId)!.devices[0]!.externalStateChunk).toBe(
+            'ZWRpdGVk'
+        );
+    });
+
+    it('still refuses undo when the copy device changed beyond its captured state, and redo stays empty', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        await duplicateTrack();
+        await captureCopyPluginState('ZWRpdGVk');
+        const copyId = copyTrack().id;
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== copyId) {
+                    return track;
+                }
+                return { ...track, devices: track.devices.map((device) => ({ ...device, bypassed: true })) };
+            }),
+        });
+
+        await expectUndoRefused();
+        await redo();
+
+        expect(trackStore.value!.tracks).toHaveLength(2);
+        expect(copyTrack().devices[0]!.bypassed).toBe(true);
+        expect(copyTrack().devices[0]!.externalStateChunk).toBe('ZWRpdGVk');
     });
 
     it('activates the copy with its committed id and copied chunk when commit status is ambiguous', async () => {

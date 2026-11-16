@@ -2646,6 +2646,24 @@ describe('relative to the last commit', () => {
                 reason: 'A 0 dB change leaves every committed level where it is.',
             });
         });
+
+        it('keeps a decibel level continuation a literal request that states no goal', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            const planned = await parsePromptToActions({
+                prompt: 'another 2 dB',
+                context: getProjectContext(),
+                thread: readChatThreadContext(),
+            });
+
+            const state = JSON.parse(planned.metricGoalState ?? 'null') as {
+                authorities: { origin: string; kind: string; goals: unknown[] }[];
+            };
+            expect(state.authorities).toMatchObject([
+                { origin: 'complete-literal-parser', kind: 'literal', goals: [] },
+            ]);
+        });
     });
 
     describe('undoes only a group the undo and AI histories hold applied whole', () => {
