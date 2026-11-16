@@ -127,3 +127,32 @@ describe('BandStrip — card click', () => {
         expect(onSelect).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('BandStrip — keyboard selection', () => {
+    it.each(['Enter', ' '])('calls onSelect on %j from the focused card and claims the key', (key) => {
+        const { onSelect } = renderStrip(makeBand());
+        const card = screen.getByRole('row', { name: 'Band 1' });
+        card.focus();
+
+        const claimed = !fireEvent.keyDown(card, { key });
+
+        expect(onSelect).toHaveBeenCalledTimes(1);
+        expect(claimed).toBe(true);
+    });
+
+    it('is the Tab stop while it is the active band', () => {
+        renderStrip(makeBand(), { isActive: true });
+        expect(screen.getByRole('row', { name: 'Band 1' })).toHaveAttribute('tabindex', '0');
+    });
+
+    it('is not a Tab stop while another band is active', () => {
+        renderStrip(makeBand());
+        expect(screen.getByRole('row', { name: 'Band 1' })).toHaveAttribute('tabindex', '-1');
+    });
+
+    it('leaves Enter on the solo button to the button', () => {
+        const { onSelect } = renderStrip(makeBand());
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Solo band 1' }), { key: 'Enter' });
+        expect(onSelect).not.toHaveBeenCalled();
+    });
+});

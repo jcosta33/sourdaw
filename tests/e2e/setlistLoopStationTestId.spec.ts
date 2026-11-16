@@ -28,7 +28,7 @@ test.describe('Setlist & loop station — test-id targeted', () => {
         await expect(add).toBeVisible();
         await add.click();
 
-        const items = page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem');
+        const items = page.getByRole('grid', { name: 'Setlist items' }).getByRole('row');
         await expect(items).toHaveCount(1);
         await expect(items.first()).toContainText('Song 1');
     });

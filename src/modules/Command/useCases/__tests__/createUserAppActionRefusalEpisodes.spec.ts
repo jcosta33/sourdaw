@@ -5,7 +5,10 @@ import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
-import { createUserAppActionRefusalEpisodes } from '../createUserAppActionRefusalEpisodes';
+import {
+    createUserAppActionRefusalEpisodes,
+    type UserAppActionRefusalEpisodes,
+} from '../createUserAppActionRefusalEpisodes';
 import { executeAppAction } from '../executeAppAction';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
@@ -77,6 +80,59 @@ describe('createUserAppActionRefusalEpisodes', () => {
             await episodes.execute('device-1', action);
 
             expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
+
+        it('opens no episode for a refusal whose key was ended while it was dispatched', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const dispatch = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+            const outcome = episodes.execute('device-1', action);
+
+            episodes.end('device-1');
+            dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+
+            await expect(outcome).resolves.toBe('refused');
+            expect(notifyUser).not.toHaveBeenCalled();
+            // The ended key keeps no episode: its next refusal is a new one.
+            refuse();
+            await episodes.execute('device-1', action);
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('still warns for an in-flight refusal when a different key is ended', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const dispatch = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+            const outcome = episodes.execute('device-2', action);
+
+            episodes.end('device-1');
+            dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+
+            await expect(outcome).resolves.toBe('refused');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('opens no episode for a refusal dispatched before endAll()', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const dispatch = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+            const outcome = episodes.execute('device-1', action);
+
+            episodes.endAll();
+            dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+
+            await expect(outcome).resolves.toBe('refused');
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('still opens the episode of a refusal whose key was ended before it was dispatched', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            episodes.end('device-1');
+            refuse();
+
+            await episodes.execute('device-1', action);
+
+            expect(notifyUser).toHaveBeenCalledTimes(1);
         });
 
         it('starts new episodes for every key after endAll()', async () => {
@@ -446,6 +502,30 @@ describe('createUserAppActionRefusalEpisodes', () => {
 
             expect(onAdmitted).not.toHaveBeenCalled();
         });
+
+        it.each([
+            ['end', (episodes: UserAppActionRefusalEpisodes) => episodes.end('A')],
+            ['endAll', (episodes: UserAppActionRefusalEpisodes) => episodes.endAll()],
+        ])(
+            'does not deliver a refusal admitted by the time it lands when %s() ran while it was dispatched',
+            async (_name, endKey) => {
+                const onAdmitted = vi.fn();
+                const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+                lock();
+                const dispatch = Promise.withResolvers<void>();
+                vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+                const outcome = episodes.execute('A', action);
+
+                endKey(episodes);
+                unlock();
+                dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+                await expect(outcome).resolves.toBe('refused');
+                await afterMicrotasks();
+
+                expect(onAdmitted).not.toHaveBeenCalled();
+                expect(notifyUser).not.toHaveBeenCalled();
+            }
+        );
 
         it('opens no episode for a refusal whose project was replaced while it was dispatched', async () => {
             const onAdmitted = vi.fn();

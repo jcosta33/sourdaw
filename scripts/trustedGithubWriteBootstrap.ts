@@ -204,6 +204,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/resourceGuardProcessTree.ts',
         'scripts/resourceGuardProofReasons.ts',
         'scripts/resourceGuardStorage.ts',
+        'scripts/resourceGuardStorageProcessProof.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/reviewDiffSummary.ts',
         'scripts/reviewDossier.ts',

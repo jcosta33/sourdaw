@@ -1,0 +1,17 @@
+{
+    // Type-resolution project for the browser end-to-end specs.
+    //
+    // It sits at `tests/` for the same reason `scripts/tsconfig.json` does:
+    // oxlint's type-aware pass (tsgolint) discovers the nearest `tsconfig.json`
+    // per file, and the root project covers only `src`. Without it every spec
+    // falls back to an inferred, non-strict program that cannot resolve the
+    // `/src/*` alias, so type-aware rules see `error` types instead of real ones.
+    //
+    // It adds nothing of its own: `tsconfig.e2e.json` stays the single
+    // definition that `pnpm typecheck:e2e` and ESLint also read.
+    //
+    // Playwright also reads the nearest `tsconfig.json`, but only for `paths`
+    // in Node-side module resolution; the extra `/src/*` mapping matches no
+    // Node-side import here, so test loading is unchanged.
+    "extends": "../tsconfig.e2e.json"
+}

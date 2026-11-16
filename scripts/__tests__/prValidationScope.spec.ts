@@ -1386,6 +1386,7 @@ describe('required affected verification', () => {
                 'scripts/resourceGuard.ts',
                 'scripts/resourceGuardProcessTree.ts',
                 'scripts/resourceGuardStorage.ts',
+                'scripts/resourceGuardStorageProcessProof.ts',
                 'scripts/pnpmModulesPreflight.ts',
             ])
         );
@@ -1393,6 +1394,10 @@ describe('required affected verification', () => {
         const toolingPaths = closure.filter((path) => selectValidationPlan([path], INVENTORY).profile !== 'broad');
         expect(toolingPaths).toEqual([]);
         expect(selectValidationPlan(['scripts/resourceGuardProcessTree.ts'], INVENTORY)).toMatchObject({
+            ...BROAD_WITHOUT_BROWSER,
+            codeql: true,
+        });
+        expect(selectValidationPlan(['scripts/resourceGuardStorageProcessProof.ts'], INVENTORY)).toMatchObject({
             ...BROAD_WITHOUT_BROWSER,
             codeql: true,
         });

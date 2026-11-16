@@ -76,11 +76,13 @@ for (const hmr of [false, true]) {
                             record('pending-App-request', request.url);
                             pendingApp.complete();
                             response.once('close', () => record('App-response-close', response.writableFinished));
-                            void releaseApp.promise.then(() => {
+                            const continueWhenReleased = async () => {
+                                await releaseApp.promise;
                                 if (!response.destroyed) {
                                     next();
                                 }
-                            });
+                            };
+                            void continueWhenReleased();
                         });
                     },
                 },

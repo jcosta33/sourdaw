@@ -2566,6 +2566,7 @@ dependencies = [
  "dirs",
  "futures-util",
  "hound",
+ "icu_normalizer",
  "libc",
  "midir",
  "napi",

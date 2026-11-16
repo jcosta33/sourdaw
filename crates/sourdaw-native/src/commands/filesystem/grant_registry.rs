@@ -37,6 +37,7 @@ use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use super::{canonicalize_through_missing_tail, private_state_directory};
+use crate::host::plugin_folder_grants;
 
 const GRANT_FILE_NAME: &str = "file-grants.json";
 
@@ -163,8 +164,82 @@ fn write_registry() -> RwLockWriteGuard<'static, GrantRegistry> {
 }
 
 /// Whether the live registry admits `path` at `mode`.
+///
+/// No grant admits a write inside a plugin folder. A directory pick may
+/// contain one — a home folder holds the per-user plugin folders on every
+/// platform — and stays writable everywhere else, but a page writing into a
+/// plugin folder would be planting native code the next scan executes.
 pub(crate) fn admits(path: &Path, mode: GrantMode) -> bool {
+    if mode == GrantMode::ReadWrite
+        && plugin_folder_containing(path, &plugin_folder_grants::plugin_code_roots()).is_some()
+    {
+        return false;
+    }
     read_registry().admits(path, mode)
+}
+
+/// The plugin folder that `path` is inside of or equal to, if any.
+///
+/// Compared component by component, so a sibling sharing a name prefix is not
+/// inside, and with names compared the way the platform's filesystem compares
+/// them. A folder that does not exist yet keeps whatever spelling the renderer
+/// sent, and `Plug-Ins/clap` is the CLAP folder on a case-insensitive volume.
+pub(crate) fn plugin_folder_containing<'a>(
+    path: &Path,
+    plugin_folders: &'a [PathBuf],
+) -> Option<&'a PathBuf> {
+    let path = comparable_components(path);
+    plugin_folders
+        .iter()
+        .find(|folder| path.starts_with(&comparable_components(folder)))
+}
+
+fn comparable_components(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|component| comparable_name(&component.as_os_str().to_string_lossy()))
+        .collect()
+}
+
+/// macOS and Windows volumes are case-insensitive by default; folding on a
+/// case-sensitive one only refuses more. Windows also drops trailing dots and
+/// spaces from a name on its way to the filesystem, and APFS treats every
+/// Unicode normalization of a name as the same name.
+#[cfg(target_os = "windows")]
+fn comparable_name(name: &str) -> String {
+    name.trim_end_matches(['.', ' ']).to_lowercase()
+}
+
+#[cfg(target_os = "macos")]
+fn comparable_name(name: &str) -> String {
+    icu_normalizer::DecomposingNormalizerBorrowed::new_nfd()
+        .normalize(&name.to_lowercase())
+        .into_owned()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn comparable_name(name: &str) -> String {
+    name.to_string()
+}
+
+/// Refuse a read-write pick that is inside or equal to a plugin folder, so the
+/// user learns at the dialog that it cannot be written to rather than from a
+/// later write that fails. A read pick there is harmless and stays allowed.
+pub(crate) fn refuse_write_grant_in_plugin_folder(
+    canonical: &Path,
+    mode: GrantMode,
+    plugin_folders: &[PathBuf],
+) -> Result<(), String> {
+    if mode != GrantMode::ReadWrite {
+        return Ok(());
+    }
+    match plugin_folder_containing(canonical, plugin_folders) {
+        Some(folder) => Err(format!(
+            "{} is inside the plugin folder {}, and Sourdaw never writes into plugin folders. Choose another folder.",
+            canonical.display(),
+            folder.display()
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Record a grant and persist it. The one production route into the registry.
@@ -573,5 +648,181 @@ mod tests {
         assert_eq!(read.grants[0].path, "/samples/kit");
         assert_eq!(read.grants[0].mode, GrantMode::ReadWrite);
         assert!(read.grants[0].recursive);
+    }
+
+    #[test]
+    fn a_read_write_pick_inside_a_plugin_folder_is_refused() {
+        let plugin_folders = vec![PathBuf::from("/plugins/VST3")];
+
+        for (name, path, mode, refused) in [
+            (
+                "the folder itself",
+                "/plugins/VST3",
+                GrantMode::ReadWrite,
+                true,
+            ),
+            (
+                "inside it",
+                "/plugins/VST3/Vendor",
+                GrantMode::ReadWrite,
+                true,
+            ),
+            (
+                "a bundle in it",
+                "/plugins/VST3/Evil.vst3",
+                GrantMode::ReadWrite,
+                true,
+            ),
+            ("containing it", "/plugins", GrantMode::ReadWrite, false),
+            (
+                "a prefix sibling",
+                "/plugins/VST3-backup",
+                GrantMode::ReadWrite,
+                false,
+            ),
+            (
+                "read-only inside it",
+                "/plugins/VST3/Vendor",
+                GrantMode::Read,
+                false,
+            ),
+            (
+                "inside it in another case",
+                "/plugins/vst3/Evil.vst3",
+                GrantMode::ReadWrite,
+                cfg!(any(target_os = "macos", target_os = "windows")),
+            ),
+        ] {
+            let result =
+                refuse_write_grant_in_plugin_folder(Path::new(path), mode, &plugin_folders);
+            assert_eq!(
+                result.is_err(),
+                refused,
+                "{name}: unexpected result {result:?}"
+            );
+        }
+        let message = refuse_write_grant_in_plugin_folder(
+            Path::new("/plugins/VST3/Vendor"),
+            GrantMode::ReadWrite,
+            &plugin_folders,
+        )
+        .expect_err("a write pick inside a plugin folder is refused");
+        assert!(message.contains("/plugins/VST3"), "{message}");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_plugin_folder_spelled_with_a_trailing_dot_or_space_is_the_same_folder() {
+        let plugin_folders = vec![PathBuf::from(r"C:\Plugins\VST3")];
+        for spelling in [r"C:\Plugins\VST3.\Evil.vst3", r"C:\Plugins\VST3 \Evil.vst3"] {
+            assert!(
+                plugin_folder_containing(Path::new(spelling), &plugin_folders).is_some(),
+                "{spelling} should be inside the plugin folder"
+            );
+        }
+    }
+
+    #[test]
+    fn a_grant_containing_a_platform_plugin_folder_never_admits_writes_into_it() {
+        let plugin_folder = plugin_folder_grants::plugin_code_roots()
+            .into_iter()
+            .next()
+            .expect("every supported platform defines a plugin folder");
+        let parent = plugin_folder
+            .parent()
+            .expect("a plugin folder has a parent")
+            .to_path_buf();
+        let bundle = plugin_folder.join("Evil.clap");
+        let folder_name = plugin_folder
+            .file_name()
+            .expect("a plugin folder has a name")
+            .to_string_lossy()
+            .into_owned();
+        let respelled_name = swap_case(&folder_name);
+        assert_ne!(respelled_name, folder_name, "the respelling must differ");
+        let respelled_bundle = parent.join(respelled_name).join("Evil.clap");
+        let elsewhere = parent.join("sourdaw-not-a-plugin-folder").join("song.wav");
+
+        with_grants_for_test(
+            vec![FileGrant {
+                canonical: parent,
+                mode: GrantMode::ReadWrite,
+                recursive: true,
+            }],
+            || {
+                assert!(admits(&elsewhere, GrantMode::ReadWrite));
+                assert!(!admits(&bundle, GrantMode::ReadWrite));
+                assert!(!admits(&plugin_folder, GrantMode::ReadWrite));
+                if cfg!(any(target_os = "macos", target_os = "windows")) {
+                    assert!(!admits(&respelled_bundle, GrantMode::ReadWrite));
+                }
+                assert!(admits(&bundle, GrantMode::Read));
+            },
+        );
+    }
+
+    fn swap_case(name: &str) -> String {
+        name.chars()
+            .flat_map(|character| {
+                if character.is_uppercase() {
+                    character.to_lowercase().collect::<Vec<_>>()
+                } else {
+                    character.to_uppercase().collect::<Vec<_>>()
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_plugin_folder_spelled_in_another_unicode_normalization_is_the_same_folder() {
+        let folders = vec![PathBuf::from("/Users/u/Plugins/Caf\u{e9}")];
+
+        for inside in [
+            "/Users/u/Plugins/Cafe\u{301}/Evil.clap",
+            "/Users/u/Plugins/CAFE\u{301}/Evil.clap",
+            "/Users/u/Plugins/CAF\u{c9}/Evil.clap",
+        ] {
+            assert!(
+                plugin_folder_containing(Path::new(inside), &folders).is_some(),
+                "{inside:?} is inside the plugin folder"
+            );
+        }
+        assert!(
+            plugin_folder_containing(Path::new("/Users/u/Plugins/Cafe/Evil.clap"), &folders)
+                .is_none(),
+            "a name without the accent is another folder"
+        );
+    }
+
+    #[test]
+    fn a_stored_plugin_folder_grant_refuses_writes_through_admits_available_or_not() {
+        use crate::host::plugin_folder_grants::test_support::{store_grants, TempTree};
+
+        let tree = TempTree::create("admits-stored-grant");
+        let available = tree.dir("Music/Plugins/Available");
+        let unplugged = tree.path("Music/Plugins/Caf\u{e9}");
+        store_grants(&tree.store(), &[available.clone(), unplugged.clone()]);
+        let song = tree.path("Music/song.wav");
+
+        plugin_folder_grants::with_store_location_for_test(&tree.store(), || {
+            with_grants_for_test(
+                vec![FileGrant {
+                    canonical: tree.root.clone(),
+                    mode: GrantMode::ReadWrite,
+                    recursive: true,
+                }],
+                || {
+                    assert!(admits(&song, GrantMode::ReadWrite));
+                    assert!(!admits(&available.join("Evil.clap"), GrantMode::ReadWrite));
+                    assert!(!admits(&unplugged.join("Evil.clap"), GrantMode::ReadWrite));
+                    assert!(admits(&available.join("Evil.clap"), GrantMode::Read));
+                    if cfg!(target_os = "macos") {
+                        let decomposed = tree.path("Music/Plugins/Cafe\u{301}/Evil.clap");
+                        assert!(!admits(&decomposed, GrantMode::ReadWrite));
+                    }
+                },
+            );
+        });
     }
 }

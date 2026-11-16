@@ -9,7 +9,7 @@ test.describe('Command Palette', () => {
 
     test('Can open the command palette and execute a command', async ({ page }) => {
         // Press 'Cmd+K' / 'Ctrl+K' to open the Command Palette
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
         const palette = page.getByRole('dialog', { name: /Command Palette/i });
@@ -45,7 +45,7 @@ test.describe('Command Palette', () => {
         // closing the palette without dispatching cannot satisfy this case.
         const metronome = page.getByRole('button', { name: 'Metronome', exact: true });
         await expect(metronome).toHaveAttribute('aria-pressed', 'false');
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
         const palette = page.getByRole('dialog', { name: /Command Palette/i });
