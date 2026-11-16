@@ -18,6 +18,7 @@ import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip'
 import { refreshToasterPadBindings } from '../../useCases/refreshToasterPadBindings';
 import { setTrackState } from '../../useCases/setTrackState';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
+import { forgetDiscardedPluginStates, overlayDiscardedPluginStates } from '../track/discardedPluginStateCarry';
 
 /**
  * Inverse-action handler for `removeTrack`. Replays snapshot data carried in the
@@ -27,8 +28,14 @@ import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPrio
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
     canReapplyAfterDivergence: () => true,
+    // The removal this undoes recorded the plugin state a save captured after the snapshot was taken.
+    materializeCommandArguments: (action, context) => {
+        if (context?.undoEntryId !== undefined) {
+            overlayDiscardedPluginStates(context.undoEntryId, [action.payload]);
+        }
+    },
     validate: (action, context) => restoreStateMatches(action, context),
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         const {
             trackKind,
             trackGain,
@@ -126,9 +133,13 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         const finalizeSidechainRestore = restoreSidechainRoutes(sidechainRouteSnapshots, {
             deferRuntimeEffect: true,
         });
+        const undoEntryId = context?.undoEntryId;
         return {
             status: 'written',
             afterCommit: () => {
+                if (undoEntryId !== undefined) {
+                    forgetDiscardedPluginStates(undoEntryId);
+                }
                 const effects: Array<() => void | Promise<void>> = [];
                 if (trackKind === 'bus') {
                     effects.push(

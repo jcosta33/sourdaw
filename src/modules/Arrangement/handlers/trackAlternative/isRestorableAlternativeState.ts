@@ -1,6 +1,6 @@
-import { type ClipSnapshot } from '#/utils/handlerContract';
 import { isRecord } from '#/utils/structuralEquality';
 
+import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
 import { type Clip, type TrackAlternative } from '../../models/Track';
 import { isClipShape } from '../../stores/isExactClipSnapshot';
 

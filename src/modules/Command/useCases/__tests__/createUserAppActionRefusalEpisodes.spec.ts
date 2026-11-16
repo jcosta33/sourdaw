@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRootIdentity,
+    createCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
@@ -331,6 +336,26 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(notifyUser).toHaveBeenCalledTimes(2);
         });
 
+        it('reports a key when the project unlocks after a peer sync added a document to it', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            const documentIdentity = captureProjectIdentity();
+            const rootIdentity = captureProjectRootIdentity();
+
+            // A sync that brings a peer's new document materialises it before applying its changes.
+            createCrdtDoc('peer-track-6888');
+            expect(captureProjectIdentity()).not.toBe(documentIdentity);
+            expect(captureProjectRootIdentity()).toBe(rootIdentity);
+
+            unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
         it('keeps an episode open when a dispatch resolves without committing while still refused', async () => {
             const onAdmitted = vi.fn();
             const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
@@ -565,6 +590,102 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 
+        it('opens no episode for an older refusal that lands after a newer dispatch on the key committed', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const older = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(older.promise);
+            const olderRefused = episodes.execute('A', action);
+            await expect(episodes.execute('A', action)).resolves.toBe('committed');
+
+            lock();
+            older.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(olderRefused).resolves.toBe('refused');
+            unlock();
+            await afterMicrotasks();
+
+            // The newer edit already reached the project, so nothing is unsaved.
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('opens no episode for an older refusal that lands after a newer commit, before that dispatch resolves', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const older = Promise.withResolvers<void>();
+            const newerSettled = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction)
+                .mockReturnValueOnce(older.promise)
+                .mockImplementationOnce(async (_action, options) => {
+                    options?.onCommitted?.();
+                    await newerSettled.promise;
+                });
+            const olderRefused = episodes.execute('A', action);
+            const newerCommitted = episodes.execute('A', action);
+
+            // The newer edit is in the project; its dispatch has not resolved yet.
+            lock();
+            older.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(olderRefused).resolves.toBe('refused');
+            newerSettled.resolve();
+            await expect(newerCommitted).resolves.toBe('committed');
+            unlock();
+            await afterMicrotasks();
+
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('does not deliver an episode a newer commit saved when the project unlocks before that dispatch resolves', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            const newerSettled = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockImplementationOnce(async (_action, options) => {
+                options?.onCommitted?.();
+                await newerSettled.promise;
+            });
+            const newerCommitted = episodes.execute('A', action);
+
+            unlock();
+            await afterMicrotasks();
+            newerSettled.resolve();
+            await expect(newerCommitted).resolves.toBe('committed');
+
+            // The newer commit already saved the key's session state.
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('opens no episode for a refusal older than the newest commit when an oldest commit lands last', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const oldest = Promise.withResolvers<void>();
+            const middle = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction)
+                .mockImplementationOnce(async (_action, options) => {
+                    await oldest.promise;
+                    options?.onCommitted?.();
+                })
+                .mockReturnValueOnce(middle.promise);
+            const oldestCommitted = episodes.execute('A', action);
+            const middleRefused = episodes.execute('A', action);
+            await expect(episodes.execute('A', action)).resolves.toBe('committed');
+
+            oldest.resolve();
+            await expect(oldestCommitted).resolves.toBe('committed');
+            lock();
+            middle.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(middleRefused).resolves.toBe('refused');
+            unlock();
+            await afterMicrotasks();
+
+            // The newest commit started after the refused edit, so its state is saved.
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
         it('stays silent for a warned episode refused again while admitted and relocked before delivery', async () => {
             const onAdmitted = vi.fn();
             const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
@@ -689,6 +810,23 @@ describe('createUserAppActionRefusalEpisodes', () => {
             unlock();
             await afterMicrotasks();
             expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('warns and later reports a refusal whose dispatch saw a peer sync add a document', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            vi.mocked(executeAppAction).mockImplementationOnce(async () => {
+                createCrdtDoc('peer-track-6888-in-flight');
+                throw new AppActionAdmissionRefusedError('addTrack');
+            });
+
+            await expect(episodes.execute('A', action)).resolves.toBe('refused');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+
+            unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 
         it('holds the brief subscription only while an episode is open', async () => {

@@ -5,14 +5,16 @@ import {
     type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
-    type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
     type RetiredTakeLaneSnapshot,
+} from '#/utils/handlerContract';
+
+import {
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
-} from '#/utils/handlerContract';
-
+} from '../../events/arrangementTrackSnapshots';
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { getHeldClips } from '../../models/TrackAlternativeClips';
 import {
     normalizeClipSatelliteEntry,
