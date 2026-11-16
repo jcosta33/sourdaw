@@ -180,8 +180,8 @@ verification runs against. Schema version 1 carries:
 A fixture is a path the command names under `src/`, `scripts/`, `tests/`, `evidence/`, or `electron/`, plus the
 source tree of every crate the command tests with `cargo test -p`. A fixture path that does not
 exist carries `"digest": null` and `"status": "absent"`; the committed manifest may not
-carry that state for a test file (under `__tests__/` or named `*.spec.ts(x)`), because a moved spec
-must be repointed, never pinned as absent (`agentCampaignHarness.spec.ts` enforces it). The manifest's own path is never a fixture:
+carry that state for any fixture, because a moved spec or removed crate must be repointed, never
+pinned as absent (`agentCampaignHarness.spec.ts` enforces it). The manifest's own path is never a fixture:
 a document cannot carry the digest of its own bytes.
 
 `kind` records the command's shape: `unit`, `unit+rust`, or `rust+unit` by which runner the command

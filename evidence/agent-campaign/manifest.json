@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "0087b19b381d4e57a3d20748eff5d8d3bfd5ebf6794441523a81d97648b2f1e3"
+        "digest": "3f6a7926474e363739b6662316467bbd441f48e26224189033e23f477ce6e20e"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -474,12 +474,11 @@
             "id": "AC-030",
             "task": "TASK-SA-04-providers",
             "kind": "rust+unit",
-            "command": "cargo test -p sourdaw provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
+            "command": "cargo test -p sourdaw-native provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
             "fixtures": [
                 {
-                    "path": "crates/sourdaw/src",
-                    "digest": null,
-                    "status": "absent"
+                    "path": "crates/sourdaw-native/src",
+                    "digest": "d88555e52bc15d98cbfe403523b29b48a5c9d949b5beba6813369346c145eb49"
                 },
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
@@ -723,12 +722,11 @@
             "id": "AC-049",
             "task": "TASK-SA-06-devices-assets-audio",
             "kind": "rust+unit",
-            "command": "cargo test -p sourdaw agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
+            "command": "cargo test -p sourdaw-native agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
             "fixtures": [
                 {
-                    "path": "crates/sourdaw/src",
-                    "digest": null,
-                    "status": "absent"
+                    "path": "crates/sourdaw-native/src",
+                    "digest": "d88555e52bc15d98cbfe403523b29b48a5c9d949b5beba6813369346c145eb49"
                 },
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
@@ -848,11 +846,15 @@
             "id": "AC-057",
             "task": "TASK-SA-08-adapters-and-platform",
             "kind": "rust+unit",
-            "command": "cargo test -p sourdaw-native provider_gateway_webview_boundary && pnpm test:run electron/__tests__/webviewSecurity.spec.ts",
+            "command": "cargo test -p sourdaw-native provider_gateway_webview_boundary && pnpm test:run electron/__tests__/webviewSecurity.spec.ts electron/__tests__/commands.spec.ts",
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
                     "digest": "d88555e52bc15d98cbfe403523b29b48a5c9d949b5beba6813369346c145eb49"
+                },
+                {
+                    "path": "electron/__tests__/commands.spec.ts",
+                    "digest": "23f63b9aa06d832b518e5b1baae16161d0d885ee342fb74633986cf0f7d8fc77"
                 },
                 {
                     "path": "electron/__tests__/webviewSecurity.spec.ts",
@@ -896,7 +898,7 @@
                 },
                 {
                     "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",
-                    "digest": "d323da0f8543920f15c1fa9f00d5a48b85f19657bf0e006bd1a8f8999ba5db63"
+                    "digest": "d50163df1c48dc76d1139c0b56f900bc5e9dce39894ed91c93baf9e38d232d5e"
                 }
             ]
         },
@@ -939,8 +941,8 @@
     ],
     "collisions": [
         {
-            "path": "crates/sourdaw/src",
-            "suites": ["AC-030", "AC-049"]
+            "path": "crates/sourdaw-native/src",
+            "suites": ["AC-030", "AC-049", "AC-057"]
         },
         {
             "path": "scripts/agent-campaign/run-evidence-gate.ts",

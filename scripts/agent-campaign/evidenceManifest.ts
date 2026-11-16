@@ -80,8 +80,6 @@ export const EVIDENCE_ENVIRONMENT_PATHS = [
 const SUITE_KINDS: readonly EvidenceSuiteKind[] = ['unit', 'unit+rust', 'rust+unit', 'manual'];
 const OUTCOMES: readonly EvidenceOutcome[] = ['passed', 'failed', 'blocked'];
 const SHA256_HEX = /^[0-9a-f]{64}$/u;
-/** A spec a suite runs, as opposed to a crate source tree or data file. */
-const TEST_FILE_PATH = /(?:^|\/)__tests__\/|\.spec\.tsx?$/u;
 
 function hashFile(absolute: string): string {
     return createHash('sha256').update(readFileSync(absolute)).digest('hex');
@@ -379,15 +377,15 @@ function validateDigestedPaths(manifest: EvidenceManifest): readonly string[] {
 }
 
 /**
- * Test files a manifest pins as absent. Not part of `validateEvidenceManifest`: the runner
+ * Fixtures a manifest pins as absent. Not part of `validateEvidenceManifest`: the runner
  * legitimately generates and blocks on absent fixtures in scratch trees. The committed manifest
- * must name none, since a moved spec would leave its suite proving nothing.
+ * must name none, since a moved spec or crate would leave its suite proving nothing.
  */
-export function absentTestFileFixtures(manifest: EvidenceManifest): readonly string[] {
+export function absentFixtureProblems(manifest: EvidenceManifest): readonly string[] {
     return manifest.suites.flatMap((suite) =>
         suite.fixtures
-            .filter((fixture) => fixture.digest === null && TEST_FILE_PATH.test(fixture.path))
-            .map((fixture) => `suite ${suite.id} pins the test file ${fixture.path}, which is not in the tree`)
+            .filter((fixture) => fixture.digest === null)
+            .map((fixture) => `suite ${suite.id} pins ${fixture.path}, which is not in the tree`)
     );
 }
 

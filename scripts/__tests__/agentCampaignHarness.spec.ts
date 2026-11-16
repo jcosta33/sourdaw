@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     EVIDENCE_MANIFEST_PATH,
-    absentTestFileFixtures,
+    absentFixtureProblems,
     computeFixtureDigest,
     parseEvidenceManifest,
     sharedFixturePaths,
@@ -27,7 +27,7 @@ const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..'
  * share an import because `src/` may not import `scripts/`.
  */
 const EXPECTED_COLLISIONS: readonly EvidenceCollision[] = [
-    { path: 'crates/sourdaw/src', suites: ['AC-030', 'AC-049'] },
+    { path: 'crates/sourdaw-native/src', suites: ['AC-030', 'AC-049', 'AC-057'] },
     { path: 'scripts/agent-campaign/run-evidence-gate.ts', suites: ['AC-054', 'AC-060'] },
     {
         path: 'src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts',
@@ -138,11 +138,11 @@ describe('agent campaign evidence fixtures', () => {
         expect(validateEvidenceManifest(manifest)).toEqual([]);
     });
 
-    it('pins no test file as absent in the committed manifest', () => {
-        expect(absentTestFileFixtures(manifest)).toEqual([]);
+    it('pins no fixture as absent in the committed manifest', () => {
+        expect(absentFixtureProblems(manifest)).toEqual([]);
     });
 
-    it('refuses a pinned test file that is absent from the tree, and admits an absent crate source', () => {
+    it('refuses a pinned test file or crate source that is absent from the tree', () => {
         const [first] = manifest.suites;
         const withFixtures = (fixtures: EvidenceSuite['fixtures']): EvidenceManifest => ({
             ...manifest,
@@ -150,12 +150,12 @@ describe('agent campaign evidence fixtures', () => {
         });
         const movedSpec = 'src/modules/Gone/__tests__/moved.spec.ts';
 
-        expect(absentTestFileFixtures(withFixtures([{ path: movedSpec, digest: null, status: 'absent' }]))).toEqual([
-            `suite ${first.id} pins the test file ${movedSpec}, which is not in the tree`,
+        expect(absentFixtureProblems(withFixtures([{ path: movedSpec, digest: null, status: 'absent' }]))).toEqual([
+            `suite ${first.id} pins ${movedSpec}, which is not in the tree`,
         ]);
         expect(
-            absentTestFileFixtures(withFixtures([{ path: 'crates/gone/src', digest: null, status: 'absent' }]))
-        ).toEqual([]);
+            absentFixtureProblems(withFixtures([{ path: 'crates/gone/src', digest: null, status: 'absent' }]))
+        ).toEqual([`suite ${first.id} pins crates/gone/src, which is not in the tree`]);
     });
 
     it('shares the fixture-path collisions the baseline spec pins', () => {
