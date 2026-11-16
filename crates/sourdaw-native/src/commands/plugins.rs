@@ -271,6 +271,21 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 /// the cap quietly stops meaning what it says.
 pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
 
+/// The most bytes of one candidate's helper failure text a scan reports.
+///
+/// That text can be the helper's own `Err`, which is the plugin's bytes and
+/// bounded only by the response limit (16 MiB). A few hundred bytes carry any
+/// real diagnostic; the rest is cut on a character boundary and marked with
+/// [`TRUNCATED_SCAN_ERROR_MARKER`].
+const MAX_SCAN_ERROR_TEXT_BYTES: usize = 512;
+
+const TRUNCATED_SCAN_ERROR_MARKER: &str = "… (truncated)";
+
+/// The most candidate failures one scan reports by name. The rest are
+/// counted in one closing entry, so a folder of broken bundles answers with a
+/// short list rather than one row per candidate the walk reached.
+const MAX_REPORTED_CANDIDATE_ERRORS: usize = 32;
+
 /// The whole enumeration's clock.
 ///
 /// Sized against the shell supervisor that owns the scan invocation
@@ -539,6 +554,45 @@ fn quarantine_if_process_failure(
     }
 }
 
+/// `text` cut to [`MAX_SCAN_ERROR_TEXT_BYTES`] on a character boundary, with
+/// the marker appended when anything was cut.
+fn bounded_scan_error_text(text: &str) -> String {
+    if text.len() <= MAX_SCAN_ERROR_TEXT_BYTES {
+        return text.to_string();
+    }
+    let kept = &text[..text.floor_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES)];
+    format!("{kept}{TRUNCATED_SCAN_ERROR_MARKER}")
+}
+
+/// The candidate failures one scan reports: each one's text bounded, the
+/// first [`MAX_REPORTED_CANDIDATE_ERRORS`] by name and the rest counted.
+#[derive(Default)]
+struct CandidateErrors {
+    reported: Vec<String>,
+    omitted: usize,
+}
+
+impl CandidateErrors {
+    fn record(&mut self, path: &Path, error: &ScanFailure) {
+        if self.reported.len() >= MAX_REPORTED_CANDIDATE_ERRORS {
+            self.omitted += 1;
+            return;
+        }
+        self.reported.push(format!(
+            "{}: {}",
+            path.display(),
+            bounded_scan_error_text(&error.to_string())
+        ));
+    }
+
+    /// The entries in report order, the omitted count last.
+    fn into_entries(self) -> impl Iterator<Item = String> {
+        let summary = (self.omitted > 0)
+            .then(|| format!("{} more plugin scan errors were not listed", self.omitted));
+        self.reported.into_iter().chain(summary)
+    }
+}
+
 /// Apply one instance-pass outcome to its descriptor row.
 ///
 /// Success fills in parameters and capabilities. Failure always leaves the
@@ -717,6 +771,7 @@ async fn scan_plugins_with_backend(
             let mut plugins = Vec::new();
             let mut fingerprints = ScanFingerprints::new();
             let mut scanned_paths = Vec::new();
+            let mut candidate_errors = CandidateErrors::default();
             for candidate in candidates {
                 if !covers_a_whole_candidate(deadline, budget) {
                     scan_errors.push("Plugin scan time limit exceeded".to_string());
@@ -817,10 +872,11 @@ async fn scan_plugins_with_backend(
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
-                        scan_errors.push(format!("{}: {error}", candidate.path.display()))
+                        candidate_errors.record(&candidate.path, &error);
                     }
                 }
             }
+            scan_errors.extend(candidate_errors.into_entries());
             retain_first_plugin_per_identity(&mut plugins);
             // Deliberately not `publish_scan_results_in_registry`'s predicate:
             // that one drops every registry entry under a scanned root and
@@ -8549,6 +8605,104 @@ mod tests {
             recording_instance_scan(Arc::clone(instance_calls)),
         ))
         .expect("a scan over an authorized fixture root should succeed")
+    }
+
+    /// A scan over `count` fixture candidates whose descriptor helper reports
+    /// `error_text` as its `Err` — the plugin's own bytes.
+    fn scan_with_failing_candidates(
+        test_name: &str,
+        count: usize,
+        error_text: String,
+    ) -> ScanResult {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        for index in 0..count {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, _path, _timeout| Err(ScanFailure::Refused(error_text.clone())),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan whose candidates fail still answers");
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// #6661: a helper's `Err` text is bounded before it is reported. The cut
+    /// falls inside a two-byte character, so a byte cut would split it; the
+    /// entry keeps the whole characters before it and is marked. Mutation
+    /// this catches: pushing the text whole, or cutting at the byte bound.
+    #[test]
+    fn a_huge_helper_error_is_reported_bounded_on_a_character_boundary() {
+        let text = format!("a{}", "é".repeat(512 * 1024));
+        assert!(
+            !text.is_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES),
+            "the fixture's cut point must fall inside a character"
+        );
+
+        let scan = scan_with_failing_candidates("scan-huge-error", 1, text.clone());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!(
+                "one failing candidate reports one entry: {:?}",
+                scan.errors.len()
+            );
+        };
+        let (_path, reported) = entry
+            .split_once(": ")
+            .expect("an entry names its candidate first");
+        assert!(
+            reported.ends_with(TRUNCATED_SCAN_ERROR_MARKER),
+            "{reported}"
+        );
+        let kept = reported
+            .strip_suffix(TRUNCATED_SCAN_ERROR_MARKER)
+            .expect("the marker was just found");
+        assert!(
+            kept.len() <= MAX_SCAN_ERROR_TEXT_BYTES,
+            "{} bytes kept",
+            kept.len()
+        );
+        assert_eq!(kept, &text[..MAX_SCAN_ERROR_TEXT_BYTES - 1]);
+    }
+
+    /// Text within the bound is reported as the helper wrote it, unmarked.
+    #[test]
+    fn a_short_helper_error_is_reported_whole() {
+        let scan = scan_with_failing_candidates("scan-short-error", 1, "bad entry".to_string());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!("one failing candidate reports one entry: {:?}", scan.errors);
+        };
+        assert!(entry.ends_with(": bad entry"), "{entry}");
+    }
+
+    /// #6661: a folder of broken bundles reports the first failures by name
+    /// and counts the rest in one closing entry. Mutation this catches:
+    /// dropping the cap, or the summary's count.
+    #[test]
+    fn many_failing_candidates_report_a_capped_list_and_the_omitted_count() {
+        let failing = MAX_REPORTED_CANDIDATE_ERRORS + 9;
+
+        let scan = scan_with_failing_candidates("scan-many-errors", failing, "bad".to_string());
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(": bad")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("9 more plugin scan errors were not listed")
+        );
     }
 
     /// A candidate replaced after its helper read it, while the walk was still
