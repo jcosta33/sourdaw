@@ -293,16 +293,23 @@ describe('planned bus and send', () => {
 
     it('applies restoreTracks patches ascending by trackIndex whatever order the payload lists them', () => {
         trackStore.set({ tracks: [survivorRow], selectedTrackId: null });
+        // Each patch expects the routing the previous one leaves, so only ascending order executes.
+        const afterFirst = { outputId: survivorRow.outputId, sends: [{ busId: 'bus', level: 0.1, preFader: false }] };
+        const afterSecond = { outputId: survivorRow.outputId, sends: [{ busId: 'bus', level: 0.9, preFader: false }] };
         const restores: AppAction = {
             type: 'restoreTracks',
             payload: {
                 restores: [
-                    { ...restorePayload(busRow, survivorPatch(0.9)), trackIndex: 1 },
                     {
-                        ...restorePayload(
-                            createTrack({ id: 'second', name: 'Second', kind: 'audio' }),
-                            survivorPatch(0.1)
-                        ),
+                        ...restorePayload(busRow, [
+                            { trackId: 'survivor', expected: afterFirst, replacement: afterSecond },
+                        ]),
+                        trackIndex: 1,
+                    },
+                    {
+                        ...restorePayload(createTrack({ id: 'second', name: 'Second', kind: 'audio' }), [
+                            { trackId: 'survivor', expected: survivorExpected, replacement: afterFirst },
+                        ]),
                         trackIndex: 0,
                     },
                 ],
@@ -310,6 +317,34 @@ describe('planned bus and send', () => {
         };
 
         expect(getPlannedSend('survivor', 'bus', [restores])).toEqual({ busId: 'bus', level: 0.9, preFader: false });
+    });
+
+    it('plans no send to the target bus when the restored row sends only to another bus', () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'other-bus', name: 'Other', kind: 'bus' }), busRow],
+            selectedTrackId: null,
+        });
+        const row: Track = { ...sendingTrackRow, sends: [{ busId: 'other-bus', level: 0.3, preFader: true }] };
+        const restore: AppAction = { type: 'restoreTrack', payload: restorePayload(row) };
+
+        expect(getPlannedSend('track', 'bus', [restore])).toBeUndefined();
+    });
+
+    it('plans the target bus send of a restored row that holds several sends', () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'other-bus', name: 'Other', kind: 'bus' }), busRow],
+            selectedTrackId: null,
+        });
+        const row: Track = {
+            ...sendingTrackRow,
+            sends: [
+                { busId: 'other-bus', level: 0.3, preFader: true },
+                { busId: 'bus', level: 0.6, preFader: false },
+            ],
+        };
+        const restore: AppAction = { type: 'restoreTrack', payload: restorePayload(row) };
+
+        expect(getPlannedSend('track', 'bus', [restore])).toEqual({ busId: 'bus', level: 0.6, preFader: false });
     });
 
     it('plans the kind of a restored track that is not a bus', () => {
