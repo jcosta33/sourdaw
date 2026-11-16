@@ -113,23 +113,42 @@ function selectRequestedRecipes(
     const tokens = new Map(
         catalog.recipes.map((recipe) => [recipe.id, readPresetTokens(recipe, presetNames)] as const)
     );
-    const tokensOf = (recipe: MixRecipe): ReadonlySet<string> => tokens.get(recipe.id) ?? new Set();
-    const browsesPresets = namesNoDescriptorTerm && presetTerms.length === 0;
-    const isRequested = (recipe: MixRecipe): boolean => {
-        if (recipe.descriptor !== null && resolvedDescriptors.includes(recipe.descriptor)) {
-            return true;
-        }
-        return (
-            recipe.origin !== undefined &&
-            (browsesPresets || presetTerms.some((term) => matchesPresetTerm(tokensOf(recipe), term)))
-        );
+    const selection: RecipeSelection = {
+        resolvedDescriptors,
+        presetTerms,
+        browsesPresets: namesNoDescriptorTerm && presetTerms.length === 0,
+        tokens,
     };
     return {
-        recipes: catalog.recipes.filter(isRequested),
+        recipes: catalog.recipes.filter((recipe) => isRequestedRecipe(recipe, selection)),
         unmatchedPresetTerms: presetTerms.filter(
-            (term) => !catalog.recipes.some((recipe) => matchesPresetTerm(tokensOf(recipe), term))
+            (term) => !catalog.recipes.some((recipe) => matchesPresetTerm(readRecipeTokens(selection, recipe), term))
         ),
     };
+}
+
+type RecipeSelection = {
+    resolvedDescriptors: readonly RecipeDescriptor[];
+    presetTerms: readonly string[];
+    browsesPresets: boolean;
+    tokens: ReadonlyMap<string, ReadonlySet<string>>;
+};
+
+function readRecipeTokens(selection: RecipeSelection, recipe: MixRecipe): ReadonlySet<string> {
+    return selection.tokens.get(recipe.id) ?? new Set();
+}
+
+function isRequestedRecipe(recipe: MixRecipe, selection: RecipeSelection): boolean {
+    if (recipe.descriptor !== null && selection.resolvedDescriptors.includes(recipe.descriptor)) {
+        return true;
+    }
+    if (recipe.origin === undefined) {
+        return false;
+    }
+    return (
+        selection.browsesPresets ||
+        selection.presetTerms.some((term) => matchesPresetTerm(readRecipeTokens(selection, recipe), term))
+    );
 }
 
 function dedupeInFirstSeenOrder(values: readonly RecipeDescriptor[]): RecipeDescriptor[] {

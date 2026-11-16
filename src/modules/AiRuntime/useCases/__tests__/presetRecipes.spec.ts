@@ -507,11 +507,13 @@ describe('preset recipes', () => {
 
         // Red when the table drifts from the catalogue: an adoptable chain publishing no descriptor must be queried here.
         it('is listed here exactly when the catalogue publishes it without a descriptor and it fits the ceiling', () => {
-            const adoptable = getMixRecipeCatalog()
-                .recipes.filter((recipe) => recipe.origin !== undefined && recipe.descriptor === null)
-                .filter((recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS)
-                .map((recipe) => recipe.id)
-                .sort();
+            const descriptorless = getMixRecipeCatalog().recipes.filter(
+                (recipe) => recipe.origin !== undefined && recipe.descriptor === null
+            );
+            const fitting = descriptorless.filter(
+                (recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS
+            );
+            const adoptable = fitting.map((recipe) => recipe.id).sort();
 
             expect(adoptable).toEqual(PRESET_IDS.map(descriptorLessRecipeId).sort());
         });
@@ -916,6 +918,9 @@ describe('preset recipes', () => {
         // Red when a preset recipe gets its own expansion path: the same chain, authored, must lower identically.
         it('lowers a preset recipe exactly as it lowers the same steps held by an authored recipe', async () => {
             const preset = presetRecipeOf('preset:two-device:glued', TWO_DEVICE_CHAIN);
+            if (preset.descriptor === null) {
+                throw new TypeError('The test preset recipe must carry a descriptor an authored recipe can hold.');
+            }
             const handBuilt = {
                 id: 'hand-built-vocal-chain',
                 descriptor: preset.descriptor,

@@ -254,10 +254,10 @@ describe('factory preset recipes', () => {
         const badRoles = presetRecipes.filter((recipe) =>
             recipe.roles.some((role) => !MIX_RECIPE_ROLES.includes(role))
         );
-        const unknownPresets = presetRecipes.filter((recipe) => !presetsById.has(recipe.origin?.presetId ?? ''));
+        const unknownPresets = presetRecipes.filter((recipe) => !presetsById.has(recipe.origin.presetId));
         const staleVersions = presetRecipes.filter((recipe) => {
-            const preset = presetsById.get(recipe.origin?.presetId ?? '');
-            return preset === undefined || getPresetContractVersion(preset) !== recipe.origin?.presetVersion;
+            const preset = presetsById.get(recipe.origin.presetId);
+            return preset === undefined || getPresetContractVersion(preset) !== recipe.origin.presetVersion;
         });
 
         expect(badRoles).toEqual([]);
