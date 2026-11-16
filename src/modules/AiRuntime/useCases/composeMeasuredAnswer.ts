@@ -228,7 +228,11 @@ function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): s
             ];
         })
     );
-    let text = `The catalog recipe ${quoteSourceData(recipe.title)} describes ${quoteSourceData(recipe.descriptor)} (${quoteSourceData(recipe.effect)}). These are authored suggestions, not measurements of this project.`;
+    const character =
+        recipe.descriptor === null || recipe.effect === null
+            ? 'carries no perceptual descriptor'
+            : `describes ${quoteSourceData(recipe.descriptor)} (${quoteSourceData(recipe.effect)})`;
+    let text = `The catalog recipe ${quoteSourceData(recipe.title)} ${character}. These are authored suggestions, not measurements of this project.`;
     if (recipe.prerequisites.length > 0) {
         text += ` Prerequisites: ${recipe.prerequisites.map(quoteSourceData).join('; ')}.`;
     }
