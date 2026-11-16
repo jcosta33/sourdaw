@@ -46,7 +46,7 @@ function orderAmongSameName(track: ListedTrack, tracks: readonly ListedTrack[]):
 
 type OrdinalReading =
     | { status: 'read'; ranges: NamedRange[] }
-    | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] }
+    | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[]; start: number; end: number }
     | { status: 'collision'; text: string; name: string; start: number; end: number };
 
 /**
@@ -94,7 +94,7 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
             }
             const target = sharing[ORDINAL_WORDS.indexOf(match[1]!.toLowerCase())];
             if (target === undefined) {
-                return { status: 'beyond-the-tracks', text: match[0], sharing };
+                return { status: 'beyond-the-tracks', text: match[0], sharing, start, end };
             }
             ranges.push({ id: target.id, start, end });
         }
@@ -117,13 +117,28 @@ function joinsEveryName(text: string, ranges: ReadonlyArray<{ start: number; end
     });
 }
 
-/** Whether the text is nothing but the ranges, the list's own words and a joiner between every two ranges. */
-function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
-    const words = blank(text, ranges)
+/** Whether every word outside the ranges is one of the list's own words. */
+function holdsOnlyListWords(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
+    return blank(text, ranges)
         .toLowerCase()
         .split(/[\s,]+/u)
-        .filter((word) => word.length > 0);
-    return ranges.length > 0 && words.every((word) => TARGET_LIST_WORDS.has(word)) && joinsEveryName(text, ranges);
+        .filter((word) => word.length > 0)
+        .every((word) => TARGET_LIST_WORDS.has(word));
+}
+
+/** Whether the text is nothing but the ranges, the list's own words and a joiner between every two ranges. */
+function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
+    return ranges.length > 0 && holdsOnlyListWords(text, ranges) && joinsEveryName(text, ranges);
+}
+
+/** The phrase beside every other name the text reads, in text order, as one list to check. */
+function listWithPhrase(
+    text: string,
+    phrase: { start: number; end: number },
+    tracks: readonly ListedTrack[]
+): Array<{ start: number; end: number }> {
+    const others = getBestAgentReferenceNameRanges(blank(text, [phrase]), tracks, 'with-number-forms');
+    return [...others, phrase].toSorted((left, right) => left.start - right.start || left.end - right.end);
 }
 
 /**
@@ -135,19 +150,19 @@ function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: n
 export function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
+    // Every ask is a verdict about a list: text that is otherwise no list stays unread, as it does without ordinals.
     if (ordinal.status === 'collision') {
-        // A collision is a verdict about a list: text that is otherwise no list stays unread, as it does without ordinals.
-        const phrase = { start: ordinal.start, end: ordinal.end };
-        const others = getBestAgentReferenceNameRanges(blank(text, [phrase]), tracks, 'with-number-forms');
-        const listed = [...others, phrase].toSorted((left, right) => left.start - right.start || left.end - right.end);
-        if (!readsAsList(text, listed)) {
+        if (!readsAsList(text, listWithPhrase(text, { start: ordinal.start, end: ordinal.end }, tracks))) {
             return { status: 'unread' };
         }
         return { status: 'collision', text: ordinal.text, name: ordinal.name };
     }
     if (ordinal.status === 'beyond-the-tracks') {
         // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
-        if (ordinal.sharing.length < 2) {
+        if (
+            ordinal.sharing.length < 2 ||
+            !readsAsList(text, listWithPhrase(text, { start: ordinal.start, end: ordinal.end }, tracks))
+        ) {
             return { status: 'unread' };
         }
         return {
@@ -163,6 +178,9 @@ export function readNamedTracks(text: string, context: ProjectContext): NamedTra
     for (const [index, range] of ranges.entries()) {
         const next = ranges[index + 1];
         if (next !== undefined && next.start < range.end) {
+            if (!holdsOnlyListWords(text, ranges)) {
+                return { status: 'unread' };
+            }
             const shared = ranges.filter((candidate) => candidate.start < range.end && candidate.end > range.start);
             const ids = new Set(shared.map((candidate) => candidate.id));
             return {
