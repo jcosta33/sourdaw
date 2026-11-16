@@ -158,3 +158,42 @@ export function hasHighLevelContentCreationEvidence(request: string): boolean {
         .split(CLAUSE_SEPARATOR_PATTERN)
         .some((clause) => hasUnnegatedCreationVerb(clause) && namesMusicalContentToCreate(clause));
 }
+
+const CLAUSE_SEPARATORS = new RegExp(CLAUSE_SEPARATOR_PATTERN.source, 'giu');
+
+function readClauses(request: string): { start: number; text: string }[] {
+    const clauses: { start: number; text: string }[] = [];
+    let start = 0;
+    for (const separator of request.matchAll(CLAUSE_SEPARATORS)) {
+        clauses.push({ start, text: request.slice(start, separator.index) });
+        start = separator.index + separator[0].length;
+    }
+    clauses.push({ start, text: request.slice(start) });
+    return clauses;
+}
+
+/**
+ * Where the request introduces an object `objectNoun` names, from its determiner through the noun
+ * ("a delay bus", "a new bass track"), read by the clause, verb, preposition and referring-word rules
+ * the creation evidence above reads. Offsets index `request`. The same request alone is the argument.
+ */
+export function findIntroducedObjectRanges(request: string, objectNoun: RegExp): { start: number; end: number }[] {
+    const phrase = new RegExp(
+        `\\b(?:a|an|new|some|another|\\d+)\\s+((?:\\w+\\s+){0,2}?)(?:${objectNoun.source})`,
+        'giu'
+    );
+    return readClauses(request)
+        .filter((clause) => hasUnnegatedCreationVerb(clause.text))
+        .flatMap((clause) =>
+            Array.from(clause.text.matchAll(phrase))
+                .filter(
+                    (match) =>
+                        !PRECEDING_PREPOSITION_PATTERN.test(clause.text.slice(0, match.index)) &&
+                        !REFERRING_GAP_PATTERN.test(match[1] ?? '')
+                )
+                .map((match) => ({
+                    start: clause.start + match.index,
+                    end: clause.start + match.index + match[0].length,
+                }))
+        );
+}

@@ -1,5 +1,4 @@
-import { type FreezeStateSnapshot } from '#/utils/handlerContract';
-
+import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { type Track } from '../../stores/trackStore';
 
 /** The state `unfreezeTrack` leaves behind. Named once so the freeze handlers guard

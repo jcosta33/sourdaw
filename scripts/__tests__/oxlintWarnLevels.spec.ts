@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
 
 const ALLOWED_WARN_RULES: ReadonlyArray<readonly [entry: string, reason: string]> = [
-    ['root:typescript/require-await', TRACKED_IN_6486],
     ['root:jsx-a11y/click-events-have-key-events', TRACKED_IN_6486],
     ['root:jsx-a11y/label-has-associated-control', TRACKED_IN_6486],
     ['root:jsx-a11y/no-static-element-interactions', TRACKED_IN_6486],

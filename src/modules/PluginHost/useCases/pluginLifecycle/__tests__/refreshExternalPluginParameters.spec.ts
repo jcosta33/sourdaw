@@ -5,7 +5,9 @@ import { readLastObservationSequence } from '#/infra/ordering/observationSequenc
 import { getPluginParameters } from '../../../repositories/pluginBridge/getPluginParameters';
 import { type PluginParameter } from '../../../repositories/pluginBridge/types';
 import {
+    clearExternalPluginParameterReadState,
     defaultExternalPluginParameterState,
+    dropExternalPluginParameterSnapshot,
     externalPluginParameterStore,
     patchExternalPluginParameterValue,
     readExternalPluginParameterReadIssue,
@@ -182,6 +184,105 @@ describe('refreshExternalPluginParameters', () => {
             expect(olderPublished).toEqual([]);
             expect(newerPublished).toEqual([expect.objectContaining({ id: 1, value: 0.7 })]);
             expect(storedValue(1)).toBe(0.7);
+        });
+
+        const reseededParameters = (): ReturnType<typeof toExternalPluginParameters> =>
+            toExternalPluginParameters([
+                pluginParameter({ id: 1, name: 'Decay', value: 0.9 }),
+                pluginParameter({ id: 2, name: 'Mix', value: 0.9 }),
+            ]);
+
+        const staleAnswer = (): PluginParameter[] => [
+            pluginParameter({ id: 1, name: 'Decay', value: 0.2 }),
+            pluginParameter({ id: 2, name: 'Mix', value: 0.2 }),
+        ];
+
+        it('drops a re-read issued before the read state was cleared and the instance re-seeded', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            clearExternalPluginParameterReadState();
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([]);
+            expect(storedValue(1)).toBe(0.9);
+            expect(storedValue(2)).toBe(0.9);
+        });
+
+        it('drops a re-read issued before the snapshot was dropped and the instance re-seeded', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            dropExternalPluginParameterSnapshot('inst-1');
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([]);
+            expect(storedValue(1)).toBe(0.9);
+            expect(storedValue(2)).toBe(0.9);
+        });
+
+        it('drops a re-read issued before an activation seed replaced the snapshot', async () => {
+            seedLoaded();
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([]);
+            expect(storedValue(1)).toBe(0.9);
+            expect(storedValue(2)).toBe(0.9);
+        });
+
+        it('publishes a re-read issued after the read state was cleared and the instance re-seeded', async () => {
+            seedLoaded();
+            clearExternalPluginParameterReadState();
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([expect.objectContaining({ id: 1 }), expect.objectContaining({ id: 2 })]);
+            expect(storedValue(1)).toBe(0.2);
+            expect(storedValue(2)).toBe(0.2);
+        });
+
+        it('publishes a re-read issued after the snapshot was dropped and the instance re-seeded', async () => {
+            seedLoaded();
+            dropExternalPluginParameterSnapshot('inst-1');
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([expect.objectContaining({ id: 1 }), expect.objectContaining({ id: 2 })]);
+            expect(storedValue(1)).toBe(0.2);
+            expect(storedValue(2)).toBe(0.2);
+        });
+
+        it('publishes a re-read issued after an activation seed replaced the snapshot', async () => {
+            seedLoaded();
+            writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: reseededParameters() });
+            const read = deferredRead();
+            const pending = refreshExternalPluginParameters('inst-1');
+
+            read.resolve(staleAnswer());
+            const published = await pending;
+
+            expect(published).toEqual([expect.objectContaining({ id: 1 }), expect.objectContaining({ id: 2 })]);
+            expect(storedValue(1)).toBe(0.2);
+            expect(storedValue(2)).toBe(0.2);
         });
 
         it('publishes an answer whose newer re-read then fails', async () => {

@@ -1,7 +1,8 @@
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
 import { createPatternInstance } from '../../useCases/patternInstance/createPatternInstance';
 import { prepareCreatedClipRedoGuard } from '../clip/prepareCreatedClipRedoGuard';
 import { stampCreatedClipStateGuard } from '../clip/stampCreatedClipStateGuard';

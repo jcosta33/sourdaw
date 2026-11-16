@@ -25,6 +25,7 @@ import {
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
     PLUGIN_FOLDER_ADD_CHANNEL,
+    SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     VOICE_DICTATION_ARM_CHANNEL,
@@ -45,6 +46,7 @@ import {
     RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type GpuMemoryBudget,
     type PluginFolderAddResult,
     type SourdawBridge,
 } from './channels.js';
@@ -73,6 +75,25 @@ const toPluginFolderAddResult = (value: unknown): PluginFolderAddResult => {
         }
     }
     throw new TypeError('pluginFolders.add returned an unsupported payload');
+};
+
+const isPositiveSafeInteger = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+
+/** The budget a payload names, or null when it is not exactly a known positive byte count or unknown. */
+const asGpuMemoryBudget = (value: unknown): GpuMemoryBudget | null => {
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+    const state: unknown = Reflect.get(value, 'state');
+    if (state === 'unknown') {
+        return { state };
+    }
+    const bytes: unknown = Reflect.get(value, 'bytes');
+    if (state === 'known' && isPositiveSafeInteger(bytes)) {
+        return { state, bytes };
+    }
+    return null;
 };
 
 const rejectUnknownCommand = (command: string): void => {
@@ -418,6 +439,16 @@ export const createSourdawBridge = (
                     throw new TypeError('system.totalMemoryBytes returned a payload that is not a positive integer');
                 }
                 return result;
+            },
+            gpuMemoryBudgetBytes: async () => {
+                const result: unknown = await ipc.invoke(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL);
+                const budget = asGpuMemoryBudget(result);
+                if (budget === null) {
+                    throw new TypeError(
+                        'system.gpuMemoryBudgetBytes returned a payload that is not a GPU memory budget'
+                    );
+                }
+                return budget;
             },
         },
 
