@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     assertPluginCoverage,
     buildEslintArgv,
+    buildOxlintArgv,
     buildPublicPluginsArgv,
     ensureServerDependencies,
     ESLINT_SUPPRESSIONS_FILE,
@@ -125,6 +126,24 @@ describe('public plugin pass coverage', () => {
         expect(isIgnoredByPattern('electron/outer.ts', 'electron/out/**')).toBe(false);
     });
 
+    it('matches a slashless pattern against the basename at any depth, as gitignore does', () => {
+        expect(isIgnoredByPattern('test-debug.mjs', 'test-debug.mjs')).toBe(true);
+        expect(isIgnoredByPattern('scripts/tools/test-debug.mjs', 'test-debug.mjs')).toBe(true);
+        expect(isIgnoredByPattern('scripts/tools/my-test-debug.mjs', 'test-debug.mjs')).toBe(false);
+        expect(isIgnoredByPattern('scripts/test-debug.mjs/x.ts', 'test-debug.mjs')).toBe(false);
+    });
+
+    it('applies the live config ignorePatterns when listing the files a pass must lint', () => {
+        const generatedWasm = 'src/modules/AudioEngine/wasm/daw_dsp.js';
+        const tracked = spawnSync('git', ['ls-files', '--', generatedWasm], { encoding: 'utf8' }).stdout;
+        expect(tracked.trim()).toBe(generatedWasm);
+
+        const expected = expectedPluginFiles(['src/modules/AudioEngine/wasm', 'scripts/runLint.ts']);
+
+        expect(expected).toContain('scripts/runLint.ts');
+        expect(expected).not.toContain(generatedWasm);
+    });
+
     it('expects exactly the tracked source files under the targets that its config does not ignore', () => {
         const expected = expectedPluginFiles(['scripts/lint']);
 
@@ -222,6 +241,20 @@ describe('eslint cache argv', () => {
         expect(check[check.indexOf('--cache-location') + 1]).toBe('node_modules/.cache/eslint/check/');
         expect(fix[fix.indexOf('--cache-location') + 1]).toBe('node_modules/.cache/eslint/cofix/');
         expect(cacheStrategy(fix)).toBe('content');
+    });
+});
+
+describe('quiet mode', () => {
+    it('hides no warnings in the main oxlint pass or check-mode ESLint, since nothing is configured at warn', () => {
+        expect(buildOxlintArgv({ fix: false }, ['src/a.ts'])).not.toContain('--quiet');
+        expect(buildOxlintArgv({ fix: true }, ['src/a.ts'])).not.toContain('--quiet');
+        expect(buildEslintArgv({ fix: false, full: false }, ['src/a.ts'])).not.toContain('--quiet');
+        expect(buildEslintArgv({ fix: false, full: true }, [...FULL_ESLINT_TARGETS])).not.toContain('--quiet');
+    });
+
+    it('keeps fix-mode ESLint and the public plugins pass quiet to hide the size-baseline ratchet', () => {
+        expect(buildEslintArgv({ fix: true, full: false }, ['src/a.ts'])).toContain('--quiet');
+        expect(buildPublicPluginsArgv(['src/a.ts'])).toContain('--quiet');
     });
 });
 
