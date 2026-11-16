@@ -5465,6 +5465,12 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(code).toBe(1);
         expect(result?.reason).toBe('leak');
         const verdict = when === 'before' ? 'unobserved' : 'dead';
+        expect(result?.census).toBe(verdict);
+        expect(
+            proofOutput(result)
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage final census: '))
+        ).toEqual([`guard storage final census: ${verdict}`]);
         expect(proofObservation(proofOutput(result))).toEqual({
             firstObstruction: null,
             finalObservation: { verdict },
@@ -5505,18 +5511,32 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 },
             });
             expect(result?.reason).toBe('leak');
+            expect(attempts).toBe(2);
+            expect(result?.census).toBe('unknown session-process-census-unavailable');
+            const receipt = JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8'));
+            expect(receipt.census).toBe('unknown session-process-census-unavailable');
             const observation = proofObservation(proofOutput(result));
             expect(observation.firstObstruction).toEqual({
                 verdict: 'unknown',
                 predicate: 'session-process-census-unavailable',
             });
             if (when === 'reference-unknown') {
+                expect(
+                    proofOutput(result)
+                        .split('\n')
+                        .filter((line) => line.startsWith('guard storage final census: '))
+                ).toEqual(['guard storage final census: unknown session-reference-unavailable']);
                 expect(observation.finalObservation).toEqual({
                     verdict: 'unknown',
                     predicate: 'session-reference-unavailable',
                 });
                 expect(observation.releaseFailure).toBeUndefined();
             } else {
+                expect(
+                    proofOutput(result)
+                        .split('\n')
+                        .filter((line) => line.startsWith('guard storage final census: '))
+                ).toEqual(['guard storage final census: unobserved']);
                 expect(observation.finalObservation).toEqual({ verdict: 'unobserved' });
                 expect(observation.releaseFailure).toEqual({ errno: 'EIO', syscall: 'lstat', census: 'unobserved' });
             }
@@ -5553,6 +5573,15 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             },
         });
         expect(result?.reason).toBe('leak');
+        expect(attempts).toBe(2);
+        expect(result?.census).toBe('unknown session-process-census-unavailable');
+        const receipt = JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8'));
+        expect(receipt.census).toBe('unknown session-process-census-unavailable');
+        expect(
+            proofOutput(result)
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage final census: '))
+        ).toEqual(['guard storage final census: dead']);
         expect(proofObservation(proofOutput(result))).toEqual({
             firstObstruction: { verdict: 'unknown', predicate: 'session-process-census-unavailable' },
             finalObservation: { verdict: 'dead' },

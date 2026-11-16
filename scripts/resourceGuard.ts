@@ -2387,12 +2387,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             retainedStorage = { path: storage.payloadPath(), reason: storageProof.reasons.join('; ') };
         } else {
             census = storageProof.obstruction ?? describeCensus(storageProof.verdict, storageProof.reasons);
+            const finalCensus = describeCensus(storageProof.verdict, storageProof.reasons);
             if (storageProof.diagnostic !== undefined) {
                 output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${storageProof.diagnostic}\n`));
             }
             output.append(
                 Buffer.from(
-                    `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
+                    `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${finalCensus}\n`
                 )
             );
             const diagnostic = describeStorageProofFailure(
