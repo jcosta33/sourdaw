@@ -262,10 +262,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when one source is responsible; cut it there instead of thinning the whole group.',
             'Skip when the group already sounds hollow in the lower mids.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'rms', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
         source: 'Several sources each carrying a modest 250 Hz to 400 Hz shoulder sum into a buildup none of them shows alone, which is exactly the case a bus cut answers. The bell sits below the mid band the descriptor usually reaches because that is where the summation happens.',
     },
     {

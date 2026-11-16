@@ -743,6 +743,47 @@ describe('ArrangeView', () => {
         expect(setScrollX).not.toHaveBeenCalled();
     });
 
+    it('exposes the thumb as a focusable horizontal scrollbar over the timeline column', () => {
+        const thumb = renderOverflowingTimeline();
+
+        expect(thumb).toHaveAttribute('role', 'scrollbar');
+        expect(thumb).toHaveAttribute('tabindex', '0');
+        expect(thumb).toHaveAttribute('aria-orientation', 'horizontal');
+        expect(thumb).toHaveAttribute('aria-valuemin', '0');
+        expect(thumb).toHaveAttribute('aria-valuemax', '3800');
+        expect(thumb).toHaveAttribute('aria-valuenow', '0');
+        const controlled = document.getElementById(thumb.getAttribute('aria-controls') ?? '');
+        expect(controlled).toContainElement(screen.getByTestId('arrangement-bar'));
+    });
+
+    it.each([
+        ['ArrowRight', 12],
+        ['PageDown', 1000],
+        ['End', 3800],
+        ['Home', 0],
+    ])('scrolls the timeline from the focused thumb on %s and claims the key', (key, scrollX) => {
+        const thumb = renderOverflowingTimeline();
+        thumb.focus();
+
+        const claimed = !fireEvent.keyDown(thumb, { key });
+
+        expect(claimed).toBe(true);
+        expect(readFirstScrollbarCall()).toEqual({ scrollX, maxScrollX: 3800 });
+    });
+
+    it.each([
+        ['a', {}],
+        ['ArrowRight', { shiftKey: true }],
+        ['ArrowRight', { metaKey: true }],
+    ])('leaves %s %o on the thumb to the window shortcut layer', (key, modifiers) => {
+        const thumb = renderOverflowingTimeline();
+
+        const claimed = !fireEvent.keyDown(thumb, { key, ...modifiers });
+
+        expect(claimed).toBe(false);
+        expect(setTimelineHorizontalScrollbarScrollX).not.toHaveBeenCalled();
+    });
+
     it('projects one persisted minimap height across the canvas, separator, and track-list header', () => {
         preferencesMocks.store.value = {
             preferencesSchemaVersion: 1,

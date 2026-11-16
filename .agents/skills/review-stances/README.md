@@ -81,7 +81,7 @@ file updates its line in the same change.
 - [project-integrity.md](project-integrity.md): saved, imported, recovered or delivered project truth disagrees with what the musician committed.
 - [provider-egress.md](provider-egress.md): provider requests or AI diagnostics leak credentials, misaccount usage, or cross the gateway after cancellation.
 - [public-repair-records.md](public-repair-records.md): repair replies or record values are admitted with wrong identity, ordering, serialization, diagnostics or credential material.
-- [release-provenance-drift.md](release-provenance-drift.md): a source, literal or merge edit leaves release digests or provenance records stale.
+- [release-provenance-drift.md](release-provenance-drift.md): a script, literal, name or merge edit leaves release digests or provenance records stale.
 - [rendered-ui-layout.md](rendered-ui-layout.md): rendered layout, paint, contrast or repeated rows differ from what class, state or data implies.
 - [replay-authority.md](replay-authority.md): Undo, Redo or a deferred continuation writes over truth other than the one it captured.
 - [review-authorization.md](review-authorization.md): review evidence keeps authorizing delivery after its artifacts, live state or token permissions stop supporting it.

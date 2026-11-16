@@ -16,7 +16,7 @@ test.describe('Branch Manager (command-palette entry)', () => {
     });
 
     test('Running "Open Branch Manager" from the command palette opens the branch dialog', async ({ page }) => {
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
         const palette = page.getByRole('dialog', { name: /Command Palette/i });

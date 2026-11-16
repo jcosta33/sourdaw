@@ -1,0 +1,14 @@
+{
+    // Type-resolution project for the collaboration server's specs.
+    //
+    // oxlint's type-aware pass (tsgolint) discovers the nearest `tsconfig.json`
+    // per file. The server's build project (`../tsconfig.json`) includes only
+    // its sources, so the specs need their own project; it does not emit, so
+    // `npm run build` never compiles specs into `dist`.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "declaration": false
+    },
+    "include": ["."]
+}
