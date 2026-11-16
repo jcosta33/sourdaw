@@ -477,6 +477,12 @@ describe('project license', () => {
         ['crates/sourdaw-native/Cargo.toml', 'rtrb = "0.4"\n', 'rtrb = "0.4"\nitoa = "1"\n'],
         ['crates/sourdaw-native/Cargo.toml', 'license.workspace = true', 'license = "MIT"'],
         ['electron-builder.yml', "    - '!node_modules/**/*'\n", ''],
+        [
+            'electron-builder.yml',
+            "    - '!node_modules/**/*'\n",
+            "    - '!node_modules/**/*'\n    - 'node_modules/**/*'\n",
+        ],
+        ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
         ['package.json', '"license": "Apache-2.0"', '"license": "MIT"'],
         ['package.json', '"build": "vite build"', '"build": "vite build --mode bundled"'],
         ['scripts/buildNativeAddon.ts', "'napi-addon'", "'napi-addon-renamed'"],
@@ -532,7 +538,6 @@ describe('project license', () => {
         ['crates/sourdaw-native/Cargo.toml', 'description = "Sourdaw', 'description = "The Sourdaw'],
         ['crates/sourdaw-native/Cargo.toml', '[dependencies]\n', '[dependencies]\n# Runtime dependencies.\n'],
         ['crates/sourdaw-native/Cargo.toml', 'serde_json = "1"\ndirs = "7.0"\n', 'dirs = "7.0"\nserde_json = "1"\n'],
-        ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
         ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
         ['package.json', '"build": "vite build",', '"build": "vite build",\n        "fixture:extra": "true",'],
     ])('accepts licence-irrelevant drift in %s without a restamp', (path, before, after) => {

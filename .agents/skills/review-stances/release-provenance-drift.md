@@ -26,8 +26,8 @@ limitation, never as passed.
    proof's `sourceInputs` and the inventory's `package.json` and `Cargo.toml` snapshots pin each manifest by
    the projection `scripts/dependencyLicenseInputProjection.ts` names: every Cargo dependency table,
    `[features]`, `[patch*]`, `[replace]`, `[workspace]` members/exclude/default-members/resolver and the
-   licence keys; `package.json` `license` and `scripts.build`; the `electron-builder.yml` `node_modules`
-   exclusion. An edit to any of those must move the restamp artifacts under `release/` in the same diff
+   licence keys; `package.json` `license` and `scripts.build`; every other input, `electron-builder.yml` included
+   (its ordered `files` patterns can re-include `node_modules` after the exclusion), is pinned whole. An edit to any of those must move the restamp artifacts under `release/` in the same diff
    (`pnpm release:restamp`); an edit to anything else in those files (a script, a crate `version`, `[lints]`,
    a comment) must leave them untouched. The inventory pins the proof file only by its curated `packages`;
    the generated Cargo runtime inventory is checked live by the licence preflight. A diff that narrows a

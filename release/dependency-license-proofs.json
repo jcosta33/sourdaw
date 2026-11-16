@@ -75,8 +75,8 @@
             },
             {
                 "path": "electron-builder.yml",
-                "projection": "electron-builder-node-modules-exclusion",
-                "sha256": "7daa518cfcd58535e1da6e73de94e6f4f68ab65b83370dbb3a85adcd68af76aa"
+                "projection": "whole-file",
+                "sha256": "6c0fc543587be211dc9e41bd04ccf05f36b9f74180d117eea83b6141df11e14b"
             },
             {
                 "path": "package.json",

@@ -14,16 +14,17 @@
  *   the `license`/`license-file` keys of `[package]` and `[workspace.package]`, workspace-inherited
  *   and underscore-separated forms included, rendered as canonical JSON. Parsing rather than line
  *   matching means quoting, escapes, comments and multi-line strings mean what Cargo reads them as.
- *   Any other key ending in `dependencies` outside `[*.metadata]` fails closed, so a table spelling
+ *   Any other key ending in `dependencies` outside `package.metadata` and `workspace.metadata` fails closed, so a table spelling
  *   the selection does not know cannot reach the graph unpinned, and an unparseable manifest fails
  *   closed too. Members are the roots the runtime graph walks from, so a new member brings its
  *   dependencies into the proof. Dev-dependencies stay because `cargo metadata` unifies features
  *   across dependency kinds: a dev-dependency that enables an optional dependency adds a normal edge
  *   to the runtime graph.
  * - `package.json` keeps `license` and `scripts.build`, the only fields the generator reads.
- * - `electron-builder.yml` keeps the `node_modules` exclusion lines the generator matches.
  *
- * Every other input is pinned whole.
+ * Every other input is pinned whole, `electron-builder.yml` included: electron-builder applies its
+ * `files` patterns in order, so a later pattern can re-include `node_modules` past the exclusion
+ * the generator matches, and no line projection sees that.
  */
 
 import { createHash } from 'node:crypto';
@@ -37,7 +38,6 @@ import { parseJsonWithUniqueKeys } from './strictJson.ts';
 export const LICENCE_INPUT_PROJECTIONS = [
     'cargo-manifest-licence-graph',
     'package-json-licence-fields',
-    'electron-builder-node-modules-exclusion',
     'whole-file',
 ] as const;
 
@@ -90,9 +90,6 @@ export function licenceInputProjectionKind(path: string): LicenceInputProjection
     }
     if (path === 'package.json') {
         return 'package-json-licence-fields';
-    }
-    if (path === 'electron-builder.yml') {
-        return 'electron-builder-node-modules-exclusion';
     }
     return 'whole-file';
 }
@@ -231,13 +228,6 @@ export function packageJsonLicenceFieldsProjection(text: string, path: string): 
     return `${canonicalJson({ license: manifest.license ?? null, scripts: { build: manifest.scripts?.build ?? null } })}\n`;
 }
 
-export function electronBuilderNodeModulesExclusionProjection(text: string): string {
-    return `${text
-        .split('\n')
-        .filter((line) => ELECTRON_NODE_MODULES_EXCLUSION_PATTERN.test(line))
-        .join('\n')}\n`;
-}
-
 function projectedBytes(path: string, projection: LicenceInputProjection, bytes: Buffer): Buffer {
     if (projection === 'whole-file') {
         return bytes;
@@ -246,10 +236,7 @@ function projectedBytes(path: string, projection: LicenceInputProjection, bytes:
     if (projection === 'cargo-manifest-licence-graph') {
         return Buffer.from(cargoManifestLicenceGraphProjection(text, path), 'utf8');
     }
-    if (projection === 'package-json-licence-fields') {
-        return Buffer.from(packageJsonLicenceFieldsProjection(text, path), 'utf8');
-    }
-    return Buffer.from(electronBuilderNodeModulesExclusionProjection(text), 'utf8');
+    return Buffer.from(packageJsonLicenceFieldsProjection(text, path), 'utf8');
 }
 
 /** The projection `path` is pinned by and the SHA-256 of that projection of `bytes`. */

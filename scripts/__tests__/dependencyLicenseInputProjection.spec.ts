@@ -4,7 +4,6 @@ import {
     cargoManifestLicenceGraphProjection,
     cargoWorkspaceMemberManifestPaths,
     curatedDependencyLicenseProofsProjection,
-    electronBuilderNodeModulesExclusionProjection,
     licenceInputDigest,
     licenceInputProjectionKind,
     packageJsonLicenceFieldsProjection,
@@ -429,19 +428,25 @@ serde = "1"
         ).toThrow('duplicate key');
     });
 
+    // electron-builder applies `files` patterns in order, so any line can change what the bundle ships.
     it.each([
-        ['the node_modules exclusion removed', "    - '!node_modules/**/*'\n", '', true],
-        ['the node_modules exclusion rewritten', "'!node_modules/**/*'", "'!node_modules/**'", true],
-        ['another packaging line', 'from: crates/sourdaw-native', 'from: crates/renamed', false],
-    ])(
-        'moves the electron-builder.yml projection on %s only when the generator reads it',
-        (_change, before, after, moves) => {
-            expect(ELECTRON_BUILDER).toContain(before);
-            const baselineProjection = electronBuilderNodeModulesExclusionProjection(ELECTRON_BUILDER);
-            const edited = electronBuilderNodeModulesExclusionProjection(ELECTRON_BUILDER.replace(before, after));
-            expect(edited !== baselineProjection).toBe(moves);
-        }
-    );
+        ['the node_modules exclusion removed', "    - '!node_modules/**/*'\n", ''],
+        ['the node_modules exclusion rewritten', "'!node_modules/**/*'", "'!node_modules/**'"],
+        [
+            'node_modules re-included after the exclusion',
+            "    - '!node_modules/**/*'\n",
+            "    - '!node_modules/**/*'\n    - 'node_modules/**/*'\n",
+        ],
+        ['another packaging line', 'from: crates/sourdaw-native', 'from: crates/renamed'],
+    ])('moves the electron-builder.yml pin on %s', (_change, before, after) => {
+        expect(ELECTRON_BUILDER).toContain(before);
+        const baseline = licenceInputDigest('electron-builder.yml', Buffer.from(ELECTRON_BUILDER, 'utf8'));
+        const edited = licenceInputDigest(
+            'electron-builder.yml',
+            Buffer.from(ELECTRON_BUILDER.replace(before, after), 'utf8')
+        );
+        expect(edited.sha256).not.toBe(baseline.sha256);
+    });
 
     it.each([
         [
@@ -485,7 +490,7 @@ serde = "1"
         ['crates/sourdaw-native/Cargo.toml', 'cargo-manifest-licence-graph'],
         ['package.json', 'package-json-licence-fields'],
         ['server/package.json', 'whole-file'],
-        ['electron-builder.yml', 'electron-builder-node-modules-exclusion'],
+        ['electron-builder.yml', 'whole-file'],
         ['rust-toolchain.toml', 'whole-file'],
         ['.cargo/config.toml', 'whole-file'],
         ['scripts/buildNativeAddon.ts', 'whole-file'],
