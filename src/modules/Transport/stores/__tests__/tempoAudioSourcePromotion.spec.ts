@@ -361,6 +361,25 @@ describe('tempoSourcePromotionsEqual', () => {
     });
 });
 
+describe('tempoSourcePromotionsEqual duplicate rows', () => {
+    function withClips(ids: readonly string[]): TempoAudioSourcePromotionSnapshot {
+        const base = plan();
+        return { ...base, clips: ids.map((clipId) => ({ ...base.clips[0]!, clipId })) };
+    }
+
+    it('is unequal when the actual list repeats a row the expected list has once', () => {
+        expect(tempoSourcePromotionsEqual(withClips(['a', 'a']), withClips(['a', 'b']))).toBe(false);
+    });
+
+    it('is unequal when the expected list repeats a row the actual list has once', () => {
+        expect(tempoSourcePromotionsEqual(withClips(['a', 'b']), withClips(['a', 'a']))).toBe(false);
+    });
+
+    it('is equal when the same repeated rows appear in another order', () => {
+        expect(tempoSourcePromotionsEqual(withClips(['a', 'b', 'a']), withClips(['a', 'a', 'b']))).toBe(true);
+    });
+});
+
 describe('readTempoSourceClockValue', () => {
     it('reads the base tempo, not a default', () => {
         expect(readTempoSourceClockValue({ transport: { tempo: 93 } }, null)).toBe(93);
