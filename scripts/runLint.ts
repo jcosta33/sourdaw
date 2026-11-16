@@ -100,8 +100,10 @@ export const ESLINT_SUPPRESSIONS_FILE = 'eslint-suppressions.json';
 export function buildEslintArgv(
     options: Pick<Options, 'fix' | 'full'>,
     eslintTargets: string[],
-    env: NodeJS.ProcessEnv = process.env
+    env: NodeJS.ProcessEnv = process.env,
+    cacheGroup?: string
 ): string[] {
+    const cacheRoot = options.fix ? 'node_modules/.cache/eslint/cofix/' : 'node_modules/.cache/eslint/check/';
     return [
         'exec',
         'eslint',
@@ -111,7 +113,7 @@ export function buildEslintArgv(
         `--concurrency=${lintConcurrency(env)}`,
         '--cache',
         '--cache-location',
-        options.fix ? 'node_modules/.cache/eslint/cofix/' : 'node_modules/.cache/eslint/check/',
+        cacheGroup === undefined ? cacheRoot : `${cacheRoot}${cacheGroup}/`,
         '--cache-strategy',
         'content',
         '--suppressions-location',
@@ -175,13 +177,38 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
     }
 }
 
-export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
-export const FULL_ESLINT_TARGETS = [
-    'src/**/*.{ts,tsx}',
-    'scripts/**/*.ts',
-    'electron/**/*.ts',
-    'scripts/lint/sourdaw.mjs',
-] as const;
+export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron', 'tests/e2e', 'server'] as const;
+
+type EslintPass = { label: string; cacheGroup: string | undefined; targets: readonly string[] };
+
+/**
+ * Every ESLint worker builds one type-aware program per tsconfig its files
+ * use. The browser end-to-end and server programs are separate runs, so no
+ * worker holds all of them at once and each keeps its own cache.
+ */
+export const FULL_ESLINT_PASSES: readonly EslintPass[] = [
+    {
+        label: 'eslint',
+        cacheGroup: undefined,
+        targets: ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'electron/**/*.ts', 'scripts/lint/sourdaw.mjs'],
+    },
+    { label: 'eslint e2e-server', cacheGroup: 'e2e-server', targets: ['tests/e2e/**/*.ts', 'server/**/*.ts'] },
+];
+export const FULL_ESLINT_TARGETS: readonly string[] = FULL_ESLINT_PASSES.flatMap((pass) => pass.targets);
+
+function eslintPasses(options: Pick<Options, 'files' | 'full'>): readonly EslintPass[] {
+    return options.full ? FULL_ESLINT_PASSES : [{ label: 'eslint', cacheGroup: undefined, targets: options.files }];
+}
+
+function runEslintPasses(options: Options): void {
+    for (const pass of eslintPasses(options)) {
+        runStep(
+            pass.label,
+            buildEslintArgv(options, [...pass.targets], process.env, pass.cacheGroup),
+            eslintEnvironment(process.env, options.fix)
+        );
+    }
+}
 
 /**
  * Oxlint expands directories itself but not shell globs, and this runner spawns
@@ -338,7 +365,6 @@ function main(): number {
     try {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? [...FULL_OXLINT_TARGETS] : options.files;
-        const eslintTargets = options.full ? [...FULL_ESLINT_TARGETS] : options.files;
         ensureServerDependencies(targets);
         runStep('oxlint', buildOxlintArgv(options, targets));
         if (!options.fix) {
@@ -346,7 +372,7 @@ function main(): number {
             // with Prettier so relocated diagnostics and their fixes converge.
             checkPublicPlugins(options);
         }
-        runStep('eslint', buildEslintArgv(options, eslintTargets), eslintEnvironment(process.env, options.fix));
+        runEslintPasses(options);
         if (options.fix) {
             // Preserve Oxlint's parser and target-admission contracts on the
             // final bytes without introducing another writer or fix loop.
