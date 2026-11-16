@@ -472,6 +472,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: Some(Arc::clone(&queue)),
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
 

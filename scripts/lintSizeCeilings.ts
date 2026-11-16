@@ -183,6 +183,7 @@ export function countFileLines(repoRoot: string, path: string): number {
 export type SizeBaselineGrowth = {
     addedPaths: string[];
     addedCeilingKeys: string[];
+    removedCeilingKeys: string[];
     raisedCeilings: { path: string; from: number; to: number }[];
 };
 
@@ -192,12 +193,23 @@ export type SizeBaselineSnapshot = {
 };
 
 /** Everything the head added to the size baseline or raised, relative to the base; paths and ceilings may only leave or go down. */
-export function findSizeBaselineGrowth(base: SizeBaselineSnapshot, head: SizeBaselineSnapshot): SizeBaselineGrowth {
+export function findSizeBaselineGrowth(
+    base: SizeBaselineSnapshot,
+    head: SizeBaselineSnapshot,
+    headExemptPaths: readonly string[]
+): SizeBaselineGrowth {
+    const headExempt = new Set(headExemptPaths);
     const basePaths = new Set(base.baselineFiles);
     const headCeilingKeys = Object.keys(head.ceilings);
+    const headPaths = new Set(head.baselineFiles);
     return {
         addedPaths: head.baselineFiles.filter((path) => !basePaths.has(path)),
         addedCeilingKeys: headCeilingKeys.filter((path) => !Object.hasOwn(base.ceilings, path)),
+        // A key may leave with its path (a burn-down) or because the head exempts a generated file; dropping it
+        // while the path stays baselined and unexempt frees the file from every limit.
+        removedCeilingKeys: Object.keys(base.ceilings).filter(
+            (path) => headPaths.has(path) && !headExempt.has(path) && !Object.hasOwn(head.ceilings, path)
+        ),
         raisedCeilings: headCeilingKeys.flatMap((path) => {
             if (!Object.hasOwn(base.ceilings, path)) {
                 return [];
@@ -219,6 +231,10 @@ export function describeSizeBaselineGrowth(growth: SizeBaselineGrowth): string[]
         ...growth.addedCeilingKeys.map(
             (path) => `${path}: new ceiling in ${SIZE_CEILINGS_PATH}; ceilings exist only for files already baselined.`
         ),
+        ...growth.removedCeilingKeys.map(
+            (path) =>
+                `${path}: ceiling removed from ${SIZE_CEILINGS_PATH} while the file is still baselined; it would then grow unchecked.`
+        ),
         ...growth.raisedCeilings.map(
             ({ path, from, to }) =>
                 `${path}: ceiling raised from ${from} to ${to} in ${SIZE_CEILINGS_PATH}; ceilings are never raised.`
@@ -230,7 +246,7 @@ export function describeSizeBaselineGrowth(growth: SizeBaselineGrowth): string[]
  * The paths quoted inside the `sizeBaselineFiles` array literal of the baseline module's text, read as text so
  * the base's code is never evaluated. Only quoted strings, commas, whitespace and comments may appear inside the
  * array; any other token (template literal, spread, identifier, nested bracket) throws, because a form this reader
- * cannot see would be dropped from the comparison. Throws when no array or no entry is found.
+ * cannot see would be dropped from the comparison. Throws when no array is found; an empty array is a fully burned-down base and reads as no paths.
  */
 export function parseSizeBaselineFilesText(text: string): string[] {
     const declaration = /\bsizeBaselineFiles\s*=\s*\[/.exec(text);
@@ -268,9 +284,6 @@ export function parseSizeBaselineFilesText(text: string): string[] {
     }
     if (index >= text.length) {
         throw new Error('the sizeBaselineFiles array is not closed.');
-    }
-    if (paths.length === 0) {
-        throw new Error('the sizeBaselineFiles array holds no entries; refusing to compare against an empty base.');
     }
     return paths;
 }

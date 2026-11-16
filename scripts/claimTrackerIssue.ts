@@ -621,7 +621,14 @@ function realClaimCliDeps(runtime: TrustedClaimRuntime): ClaimCliDeps {
     };
 }
 
-export async function runClaimTrackerIssueCli(args: string[], deps?: ClaimCliDeps): Promise<number> {
+export function runClaimTrackerIssueCli(args: string[], deps?: ClaimCliDeps): Promise<number> {
+    // The executor runs synchronously, so a refusal still rejects rather than throws.
+    return new Promise((resolve) => {
+        resolve(claimTrackerIssueFromCli(args, deps));
+    });
+}
+
+function claimTrackerIssueFromCli(args: string[], deps?: ClaimCliDeps): number {
     const parsed = parseClaimArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${CLAIM_USAGE.slice('usage: '.length)}`);
