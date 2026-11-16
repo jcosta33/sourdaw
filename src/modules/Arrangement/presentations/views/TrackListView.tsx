@@ -356,19 +356,16 @@ export const TrackListView = ({
             >
                 <MiniMasterSpectrum />
             </DawHeaderBand>
+            {/* The handlers sit on this wrapper, not the grid: a focusable grid would take focus from a click on empty space and claim keys meant for the window shortcut layer. */}
             <div
                 ref={scrollRef}
+                role="presentation"
                 className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
+                onKeyDown={handleKeyDown}
+                onClick={handleRowClick}
             >
-                {/* Programmatically focusable only: the selected row carries the roving Tab stop. */}
-                <div
-                    role="grid"
-                    tabIndex={-1}
-                    aria-label="Track list"
-                    onKeyDown={handleKeyDown}
-                    onClick={handleRowClick}
-                >
+                <div role="grid" aria-label="Track list">
                     {visibleTracks.map((track, index) => {
                         return (
                             <div

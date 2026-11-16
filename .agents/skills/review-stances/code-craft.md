@@ -92,5 +92,7 @@ findings without a concrete break ("I'd prefer if") are discarded.
     asking whether a moved lint step still observes its files. Input: plant a known violation of an
     error-level plugin rule in a file the step claims to cover and confirm that step's CI run goes red;
     compare the step's reported file count and duration with a directory run of the same config. A step
-    whose count is a small fraction of the tracked sources must fail `scripts/__tests__/runLint.spec.ts`
-    "fails a pass that linted far fewer files than its targets track".
+    that lints even one file fewer than the tracked, non-ignored sources under its targets must fail
+    `scripts/__tests__/runLint.spec.ts` "fails a pass one file short, however large the tree", and
+    deleting the coverage assertion from the full run must fail "fails a plugin pass that lints fewer
+    files than the targets track, before ESLint runs".
