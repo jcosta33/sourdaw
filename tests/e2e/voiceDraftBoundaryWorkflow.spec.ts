@@ -152,7 +152,10 @@ test('native transcript stays a draft until explicit submission and confirmation
             },
             pluginFolders: { add: () => refuse('pluginFolders.add') },
             paths: { samplesBase: () => refuse('paths.samplesBase'), join: () => refuse('paths.join') },
-            system: { totalMemoryBytes: async () => 16_000_000_000 },
+            system: {
+                totalMemoryBytes: async () => 16_000_000_000,
+                gpuMemoryBudgetBytes: async () => ({ state: 'unknown' }),
+            },
             voiceDictation: {
                 start: async (sessionId) => {
                     probe.starts.push(sessionId);

@@ -127,6 +127,79 @@ Schema version 2 carries, per corpus file:
   leaves undone whole. A revert is an executed reversible change and scores as `execute-exact`. A
   write the prior turn makes to reach its commit is the case's setup; any other write its oracle
   does not name is an unintended mutation.
+- Measured proposal turns — a measured proposal (a perceptual or comparative case) scripts the
+  production planning route, never a shortcut past it. Four turn kinds join the earlier ones:
+  `intake` selects the creative interpretation with a `perceptual` or `comparative` intent, its
+  targets, and its objectives chosen by recipe or policy, target, optional reference and section
+  from the objectives the run itself published, never by a minted id; `expand` calls
+  `recipe.expand` for one recipe on one named track, stating the role the recipe serves; and
+  `measure-preview` calls `analysis.measure` with subject `preview` over one named section, measuring
+  an earlier expansion or a list of plain commands in the live project and in the isolated preview;
+  `propose-compiled` then adopts those measured commands by call id and adds none of its own, so the
+  figures stay bound to the exact batch that persists. A comparative names its subject and reference
+  exactly, and the subject comes before the reference in the fixture's track order, because the
+  catalog places a device slot only under the first track target; a case that needs a role target
+  or a slot under a second track waits rather than leaning on that order.
+- `cases[].oracle.measuredGoals` — a measured proposal's metric claims, each `{metric, band?,
+relation, target, reference?}`: the agent metric (and band for a band metric), the relation the
+  goal states (`increase`, `decrease`, or a comparative policy such as `greater-than-current`), the
+  track it holds over and, for a comparative, the track it is compared with. The scorer reads them
+  from the planned result through the one production route: materialize the batch, decode its goal
+  state with the metric-goal codec, and evaluate admission against the run's own preview receipts.
+  The case matches only when admission returns `verified` and the decoded goals equal the oracle's
+  exactly, so a batch the preview does not support, or one claiming a goal the oracle does not, fails
+  the case however its actions read.
+- Vibe runs — a `whole-project-vibe-with-constraint` case runs the chat route end to end on the
+  local chain: `intake` with the `brief` intent, `brief-compile` naming the vision and the mix-intent
+  descriptors, and `propose-brief` adopting the compiled brief with exactly the tracks the request
+  protects by name, since the application reads those protections itself and refuses a plan that
+  omits or enlarges them. Every case states a constraint, a hold or an exclusion. Its oracle is a
+  `proposal` whose `actions` are the brief card alone and whose `vibeRun` lists, in order, each later
+  batch's commands and whether the musician confirms or skips it, then the summary's headline; the
+  lines beneath it restate measured figures and are never pinned. The runner holds the card the run
+  proposes at each position to its batch, confirms or skips it, and requires the planning turn to
+  write nothing, the brief's Confirm to write only the brief, each batch's Confirm to commit exactly
+  its card as one undo group and touch no other track, and a skip to write nothing at all (AC-078);
+  a protected or skipped track ends the run as it began. Every batch is held to the oracle's
+  invariants, its command ceiling included (AC-069). The fixture records no clips, so the runner
+  gives each non-bus track one take across the arrangement, without which a run schedules nothing.
+  A run spends its renders from its own budget, measuring the arrangement before the brief card and
+  previewing each batch before its card, so the render count below binds single-turn cases only.
+  A held-out case differs from every development one in its vibe, the target of its constraint, or
+  where it skips.
+- Render count — every single-turn case must render exactly as often as its own measurements ask: one render
+  per target a project measurement names and two per target a preview names, the live project and
+  the preview. A case leaning on the render double beyond what it measures is a corpus defect, never
+  a free measurement.
+- Render law — measured figures come from one stated, deterministic law that stands in for the
+  offline renderer (`src/modules/AiRuntime/__tests__/acceptanceRenderLaw.ts`): each track sounds a
+  source fixed by its position in the fixture, and the built-in devices, pans, sends, buses and
+  master gain shape it as the law's doc comment states. Every measured figure an oracle pins is
+  derived from that law, independently of the spec, never copied from a run, and the law is never
+  tuned to make a case pass; a change to it moves the pinned figures, which must be derived again.
+  Every source strike rises over a few milliseconds before it decays, so the peak arrives after the
+  beat and a fast-attack compressor can clamp it; a strike that peaked on its first sample would
+  make every compressor without lookahead raise crest.
+  The law has limits a case must respect. Its spectrum is discrete partials at fixed band points,
+  centred by track position rather than by role, so a figure read between partials (a spectral
+  rolloff, a band's share where an edit moves only its neighbours) can stand still or move against a
+  real recording's. Its sources strike below the default threshold of the glue recipes, so a
+  catalogue-default compressor leaves them untouched. A case whose objective the law cannot move is
+  never sealed: its refusal would measure the law, not the agent.
+- Measured outcomes never give up — a sealed `comparative-by-measurement`, `perceptual-single-target`,
+  `perceptual-multi-target` or `whole-project-vibe-with-constraint` result that observes
+  `clarify-required`, `abstain-unsupported` or `deny-policy` fails the corpus run (AC-068), whatever
+  the thresholds would admit: these requests are answerable by measurement, so asking back,
+  abstaining or declining is a failure, never a safe outcome. A request that is truly underspecified
+  belongs in `boundary`.
+- No provider and no writes — every corpus case runs under a network guard refusing fetch,
+  XMLHttpRequest and WebSocket to every non-local http(s) or ws(s) origin (AC-074). The guard denies
+  by default: only localhost, 127.0.0.1, [::1] and non-network schemes pass, so a provider, artifact
+  origin or user-configured base URL is refused without a list to maintain. Any attempt fails its
+  case. Every case that measures the project, before or after a previewed change,
+  must make no project write across planning, measuring and previewing (AC-078), counted from the
+  command barrel, the materialized project before and after, and every observed transition between.
+  Each gate carries a self-check showing it fails when it stops observing.
 
 ## Frozen thresholds
 

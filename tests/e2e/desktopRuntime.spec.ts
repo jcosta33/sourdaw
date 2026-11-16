@@ -135,6 +135,7 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
             // Boot reads the machine memory once to size the local model list.
             system: {
                 totalMemoryBytes: () => Promise.resolve(16_000_000_000),
+                gpuMemoryBudgetBytes: () => Promise.resolve({ state: 'unknown' }),
             },
             voiceDictation: {
                 start: () => Promise.reject(new Error('Unexpected native dictation call: start')),

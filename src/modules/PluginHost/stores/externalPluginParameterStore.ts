@@ -67,6 +67,7 @@ export function writeExternalPluginParameterSnapshot(
     instanceId: string,
     snapshot: ExternalPluginParameterSnapshot
 ): void {
+    readsRetiredThrough.set(instanceId, lastReadToken);
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;
         return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: snapshot } };
@@ -256,6 +257,14 @@ export type ExternalPluginParameterReadTicket = {
 const editGenerations = new Map<string, Map<number, number>>();
 /** Per instance, the token of the newest re-read whose answer reached the store; an older one is dropped. */
 const publishedReadToken = new Map<string, number>();
+/**
+ * Per instance, the newest token an unload or an activation seed has retired: an answer to a read issued at or
+ * before it describes a snapshot that no longer exists. Survives the drop on purpose — a re-activated instance
+ * reuses the id the old read was issued against.
+ */
+const readsRetiredThrough = new Map<string, number>();
+/** The newest token a whole-state reset has retired, for every instance. */
+let everyReadRetiredThrough = 0;
 /** Global, so a token issued before an instance was dropped never matches one issued after. */
 let lastReadToken = 0;
 /** Which scheduler write was latest when the re-read that published a parameter object was issued. */
@@ -287,7 +296,9 @@ export function readExternalPluginParameterReadIssue(parameter: object): number 
 }
 
 /**
- * Publish a host answer unless a newer re-read's answer has already been
+ * Publish a host answer unless a reset, an unload or an activation seed retired
+ * its read after it was issued (the snapshot it answers is gone, and a
+ * re-activated instance may reuse the id), or a newer re-read's answer has already been
  * published (an answer superseded by one that then failed still publishes), and
  * keep the store's own object for every parameter edited since the ticket: the
  * host answered before that edit, so its value is the older one. Returns the
@@ -300,6 +311,9 @@ export function publishExternalPluginParameterRead(
     ticket: ExternalPluginParameterReadTicket,
     hostParameters: readonly ExternalPluginParameter[]
 ): readonly ExternalPluginParameter[] {
+    if (ticket.token <= Math.max(everyReadRetiredThrough, readsRetiredThrough.get(instanceId) ?? 0)) {
+        return [];
+    }
     if (ticket.token < (publishedReadToken.get(instanceId) ?? 0)) {
         return [];
     }
@@ -337,11 +351,14 @@ export function publishExternalPluginParameterRead(
 export function clearExternalPluginParameterReadState(): void {
     editGenerations.clear();
     publishedReadToken.clear();
+    everyReadRetiredThrough = lastReadToken;
+    readsRetiredThrough.clear();
 }
 
 export function dropExternalPluginParameterSnapshot(instanceId: string): void {
     editGenerations.delete(instanceId);
     publishedReadToken.delete(instanceId);
+    readsRetiredThrough.set(instanceId, lastReadToken);
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;
         const byInstanceId = { ...current.byInstanceId };
