@@ -491,6 +491,38 @@ describe('project license', () => {
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
     });
 
+    it('rejects a workspace member manifest dropped from the stored source inputs', () => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const manifest = readCargoInventoryFixtureManifest(root);
+        const inputs = manifest.cargoRuntimeInventory!.sourceInputs;
+        expect(inputs.map(({ path }) => path)).toContain('crates/daw-core/Cargo.toml');
+        manifest.cargoRuntimeInventory!.sourceInputs = inputs.filter(
+            ({ path }) => path !== 'crates/daw-core/Cargo.toml'
+        );
+        writeCargoInventoryFixtureManifest(root, manifest);
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    it('rejects a workspace member added with its manifest but without a restamp', () => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const cargoPath = join(root, 'Cargo.toml');
+        const rootManifest = readFileSync(cargoPath, 'utf8');
+        expect(rootManifest).toContain('"crates/sourdaw-native"\n');
+        writeFileSync(
+            cargoPath,
+            rootManifest.replace('"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n')
+        );
+        write(root, 'crates/new-member/Cargo.toml', '[package]\nname = "new-member"\n\n[dependencies]\nitoa = "1"\n');
+        // Restamp only the root manifest's own digest, so only the missing member entry can fail the check.
+        const manifest = readCargoInventoryFixtureManifest(root);
+        restampCargoInventoryFixtureDigests(root, manifest);
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
     // Each row edits a field neither the licence generator nor `cargo metadata`'s runtime graph reads.
     it.each([
         ['Cargo.toml', 'todo = "deny"', 'todo = "warn"'],

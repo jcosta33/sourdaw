@@ -10,6 +10,7 @@ import { list as listTarArchive } from 'tar';
 
 import { cargoMetadata } from './cargoMetadata.ts';
 import {
+    cargoWorkspaceMemberManifestPaths,
     ELECTRON_NODE_MODULES_EXCLUSION_PATTERN,
     LICENCE_INPUT_PROJECTIONS,
     licenceInputDigest,
@@ -699,11 +700,40 @@ function cargoSourceInputs(
     });
 }
 
+/**
+ * The manifest of every `[workspace] members` entry, read live from the root manifest, so the
+ * preflight's source-input set cannot be narrowed by editing the stored proof without Cargo.
+ */
+function liveCargoWorkspaceManifestPaths(root: string): string[] {
+    return cargoWorkspaceMemberManifestPaths(readFileSync(resolve(root, 'Cargo.toml'), 'utf8'), 'Cargo.toml');
+}
+
 function assertCargoSourceInputs(root: string, inventory: CargoRuntimeInventorySnapshot): void {
     const storedPaths = inventory.sourceInputs.map(({ path }) => path);
-    if (JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root, storedPaths))) {
+    for (const path of storedPaths) {
+        assertRepositorySourceInput(root, path);
+    }
+    const liveWorkspaceManifestPaths = liveCargoWorkspaceManifestPaths(root);
+    if (JSON.stringify(storedPaths) !== JSON.stringify(cargoSourceInputPaths(root, liveWorkspaceManifestPaths))) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
     }
+    if (
+        JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root, liveWorkspaceManifestPaths))
+    ) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
+    }
+}
+
+/** The workspace manifests `cargo metadata` reports, which must be the ones the preflight derives live. */
+function generatedCargoWorkspaceManifestPaths(root: string, metadata: CargoMetadata): string[] {
+    const reported = cargoWorkspaceManifestPaths(root, metadata);
+    const live = liveCargoWorkspaceManifestPaths(root);
+    if (JSON.stringify(cargoSourceInputPaths(root, reported)) !== JSON.stringify(cargoSourceInputPaths(root, live))) {
+        throw new Error(
+            'Cargo metadata workspace members differ from the Cargo.toml [workspace] members the licence preflight reads'
+        );
+    }
+    return reported;
 }
 
 function assertCargoRuntimeInventory(
@@ -1570,7 +1600,7 @@ function createCargoRuntimeInventory(
     });
     return assertCargoRuntimeInventory({
         cargoLockSha256: sha256(readFileSync(resolve(root, 'Cargo.lock'))),
-        sourceInputs: cargoSourceInputs(root, cargoWorkspaceManifestPaths(root, metadata)),
+        sourceInputs: cargoSourceInputs(root, generatedCargoWorkspaceManifestPaths(root, metadata)),
         featureSelection: {
             allFeatures: CARGO_RUNTIME_FEATURE_SELECTION.allFeatures,
             noDefaultFeatures: CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures,

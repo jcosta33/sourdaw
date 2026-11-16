@@ -8,29 +8,31 @@
  * only what the generator or `cargo metadata --features <runtime set>` can read, so the pin still
  * moves for every change that can alter the proof and for nothing else:
  *
- * - a `Cargo.toml` keeps every dependency table (normal, `dev-`, `build-`, `target.*.`, and
- *   `[workspace.dependencies]`), `[features]`, `[patch*]`, `[replace]`, `[workspace]` `members`,
- *   `exclude`, `default-members` and `resolver`, and the `license`/`license-file` keys of
- *   `[package]` and `[workspace.package]`, workspace-inherited and underscore-separated forms
- *   included. Keys match after TOML unquoting, so `["dependencies"]` or `"features".x` count as the
- *   bare spelling Cargo reads them as. Any other key segment ending in `dependencies` outside `[*.metadata]` fails closed,
- *   so a table spelling the projection does not know cannot reach the graph unpinned. Members are the
- *   roots the runtime graph walks from, so a new member brings its dependencies into the proof.
- *   Dev-dependencies stay because `cargo metadata` unifies features across dependency kinds: a
- *   dev-dependency that enables an optional dependency adds a normal edge to the runtime graph.
+ * - a `Cargo.toml` is parsed as TOML and keeps every dependency table (normal, `dev-`, `build-`,
+ *   `target.*.`, and `[workspace.dependencies]`), `[features]`, `[patch]`, `[replace]`,
+ *   `[workspace]` `members`, `exclude`, `default-members` and `resolver`, `package.resolver`, and
+ *   the `license`/`license-file` keys of `[package]` and `[workspace.package]`, workspace-inherited
+ *   and underscore-separated forms included, rendered as canonical JSON. Parsing rather than line
+ *   matching means quoting, escapes, comments and multi-line strings mean what Cargo reads them as.
+ *   Any other key ending in `dependencies` outside `[*.metadata]` fails closed, so a table spelling
+ *   the selection does not know cannot reach the graph unpinned, and an unparseable manifest fails
+ *   closed too. Members are the roots the runtime graph walks from, so a new member brings its
+ *   dependencies into the proof. Dev-dependencies stay because `cargo metadata` unifies features
+ *   across dependency kinds: a dev-dependency that enables an optional dependency adds a normal edge
+ *   to the runtime graph.
  * - `package.json` keeps `license` and `scripts.build`, the only fields the generator reads.
  * - `electron-builder.yml` keeps the `node_modules` exclusion lines the generator matches.
  *
- * Every other input is pinned whole. The TOML scanner is the canonical one in
- * `workspaceManifestFingerprint.ts`; it is line-oriented, so a manifest shape it cannot read
- * fails closed instead of narrowing the projection.
+ * Every other input is pinned whole.
  */
 
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
+
+import { parse as parseToml, type TomlTable, type TomlValue } from 'smol-toml';
 
 import { canonicalJson, type JsonValue } from './canonicalRecord.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
-import { tomlTableLines } from './workspaceManifestFingerprint.ts';
 
 export const LICENCE_INPUT_PROJECTIONS = [
     'cargo-manifest-licence-graph',
@@ -46,19 +48,41 @@ export type LicenceInputDigest = { projection: LicenceInputProjection; sha256: s
 /** The packaging line that keeps `node_modules` out of the desktop bundle; the generator relies on it. */
 export const ELECTRON_NODE_MODULES_EXCLUSION_PATTERN = /^\s*- '!node_modules\/\*\*\/\*'$/u;
 
-// Each multi-word key accepts `_` as well as `-`: Cargo reads `[dev_dependencies]` and
-// `[build_dependencies]` as the hyphenated tables (deprecated, accepted before the 2024 edition),
-// and projecting an underscore spelling Cargo ignores costs only a spurious restamp.
-const CARGO_DEPENDENCY_KEY_PATTERN = /(?:^|\.)(?:dependencies|dev[-_]dependencies|build[-_]dependencies)(?:\.|$)/u;
-const CARGO_FEATURES_KEY_PATTERN = /^features(?:\.|$)/u;
-const CARGO_SOURCE_OVERRIDE_KEY_PATTERN = /^(?:patch|replace)(?:\.|$)/u;
-const CARGO_WORKSPACE_GRAPH_KEY_PATTERN = /^workspace\.(?:members|exclude|default[-_]members|resolver)$/u;
-const CARGO_PACKAGE_LICENCE_KEY_PATTERN = /^(?:package|workspace\.package)\.(?:license|license[-_]file)(?:\.|$)/u;
-const CARGO_PACKAGE_RESOLVER_KEY = 'package.resolver';
-/** A key segment naming a dependency table; one the patterns above miss is a spelling they do not know. */
-const CARGO_DEPENDENCY_SEGMENT_PATTERN = /(?:^|\.)[^.]*dependencies(?:\.|$)/u;
-/** Tables Cargo ignores and leaves to other tools, so any key may live there. */
-const CARGO_METADATA_KEY_PATTERN = /^(?:package|workspace)\.metadata(?:\.|$)/u;
+/**
+ * What the licence graph reads from a parsed manifest, by key: `keep` projects the value whole,
+ * `ignore` drops a table Cargo leaves to other tools, a nested selection descends, and `*` matches
+ * any key (the `cfg` of a `[target.<cfg>]` table). Keys match after `_` becomes `-`: Cargo reads
+ * `[dev_dependencies]` or `default_members` as the hyphenated spelling (deprecated, accepted before
+ * the 2024 edition), and projecting an underscore spelling Cargo ignores costs only a spurious restamp.
+ */
+type CargoSelection = 'keep' | 'ignore' | { readonly [key: string]: CargoSelection };
+
+const CARGO_DEPENDENCY_TABLES = {
+    dependencies: 'keep',
+    'dev-dependencies': 'keep',
+    'build-dependencies': 'keep',
+} as const satisfies CargoSelection;
+
+const CARGO_LICENCE_GRAPH_SELECTION: CargoSelection = {
+    ...CARGO_DEPENDENCY_TABLES,
+    features: 'keep',
+    patch: 'keep',
+    replace: 'keep',
+    target: { '*': CARGO_DEPENDENCY_TABLES },
+    package: { license: 'keep', 'license-file': 'keep', resolver: 'keep', metadata: 'ignore' },
+    workspace: {
+        members: 'keep',
+        exclude: 'keep',
+        'default-members': 'keep',
+        resolver: 'keep',
+        dependencies: 'keep',
+        package: { license: 'keep', 'license-file': 'keep' },
+        metadata: 'ignore',
+    },
+};
+
+const TOML_BARE_KEY_PATTERN = /^[A-Za-z0-9_-]+$/u;
+const CARGO_WORKSPACE_MEMBER_GLOB_PATTERN = /[*?[\]]/u;
 
 export function licenceInputProjectionKind(path: string): LicenceInputProjection {
     if (path === 'Cargo.toml' || path.endsWith('/Cargo.toml')) {
@@ -73,169 +97,133 @@ export function licenceInputProjectionKind(path: string): LicenceInputProjection
     return 'whole-file';
 }
 
-const TOML_BASIC_STRING_ESCAPES: Readonly<Record<string, string>> = {
-    b: '\b',
-    t: '\t',
-    n: '\n',
-    f: '\f',
-    r: '\r',
-    e: '\u001B',
-    '"': '"',
-    '\\': '\\',
-};
-const TOML_BARE_KEY_CHARACTER_PATTERN = /^[A-Za-z0-9_-]$/u;
-const TOML_UNICODE_ESCAPE_DIGIT_COUNTS: Readonly<Record<string, number>> = { u: 4, U: 8 };
+function parseCargoManifest(text: string, path: string): TomlTable {
+    try {
+        return parseToml(text, { unsafeKeyBehaviour: 'throw' });
+    } catch (error) {
+        const reason = error instanceof Error ? (error.message.split('\n')[0] ?? '') : String(error);
+        throw new Error(`${path}: unparseable Cargo manifest: ${reason}`, { cause: error });
+    }
+}
 
-type TomlKeySegmentScan = { segment: string; end: number };
+function isTomlTable(value: TomlValue): value is TomlTable {
+    return typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
+}
 
-/** The decoded value of the basic string key segment (`"..."`) whose opening quote sits at `start`. */
-function scanTomlBasicStringSegment(text: string, start: number, failure: () => Error): TomlKeySegmentScan {
-    let segment = '';
-    let index = start + 1;
-    while (index < text.length) {
-        const char = text.charAt(index);
-        if (char === '"') {
-            return { segment, end: index + 1 };
+function normalizedCargoKey(key: string): string {
+    return key.replaceAll('_', '-');
+}
+
+/** A dotted key path as TOML would spell it, so an error names the key the manifest wrote. */
+function tomlKeyPath(segments: readonly string[]): string {
+    return segments
+        .map((segment) => (TOML_BARE_KEY_PATTERN.test(segment) ? segment : JSON.stringify(segment)))
+        .join('.');
+}
+
+function tomlJsonValue(value: TomlValue): JsonValue {
+    if (Array.isArray(value)) {
+        return value.map((entry) => tomlJsonValue(entry));
+    }
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+    if (typeof value === 'bigint') {
+        return value.toString();
+    }
+    if (typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, tomlJsonValue(entry)]));
+    }
+    return value;
+}
+
+/** Fails on any key ending in `dependencies` below an unselected key: a spelling the selection does not know. */
+function assertNoDependencyKeys(value: TomlValue, segments: readonly string[], path: string): void {
+    if (Array.isArray(value)) {
+        for (const entry of value) {
+            assertNoDependencyKeys(entry, segments, path);
         }
-        if (char !== '\\') {
-            segment += char;
-            index += 1;
-            continue;
+        return;
+    }
+    if (!isTomlTable(value)) {
+        return;
+    }
+    for (const [key, entry] of Object.entries(value)) {
+        const keySegments = [...segments, key];
+        if (normalizedCargoKey(key).endsWith('dependencies')) {
+            throw new Error(`${path}: unrecognised dependency table key ${tomlKeyPath(keySegments)}`);
         }
-        const escape = text.charAt(index + 1);
-        const digitCount = TOML_UNICODE_ESCAPE_DIGIT_COUNTS[escape];
-        if (digitCount !== undefined) {
-            const digits = text.slice(index + 2, index + 2 + digitCount);
-            if (!new RegExp(`^[0-9A-Fa-f]{${digitCount}}$`, 'u').test(digits)) {
-                throw failure();
+        assertNoDependencyKeys(entry, keySegments, path);
+    }
+}
+
+function selectCargoKeys(
+    table: TomlTable,
+    selection: { readonly [key: string]: CargoSelection },
+    segments: readonly string[],
+    path: string
+): { [key: string]: JsonValue } {
+    const projection: { [key: string]: JsonValue } = {};
+    for (const [key, value] of Object.entries(table)) {
+        const keySegments = [...segments, key];
+        const keySelection = selection[normalizedCargoKey(key)] ?? selection['*'];
+        if (keySelection === undefined) {
+            if (normalizedCargoKey(key).endsWith('dependencies')) {
+                throw new Error(`${path}: unrecognised dependency table key ${tomlKeyPath(keySegments)}`);
             }
-            segment += String.fromCodePoint(Number.parseInt(digits, 16));
-            index += 2 + digitCount;
+            assertNoDependencyKeys(value, keySegments, path);
             continue;
         }
-        const decoded = TOML_BASIC_STRING_ESCAPES[escape];
-        if (decoded === undefined) {
-            throw failure();
+        if (keySelection === 'ignore') {
+            continue;
         }
-        segment += decoded;
-        index += 2;
-    }
-    throw failure();
-}
-
-/** One key segment at `start`: a basic string, a literal string (`'...'`, taken verbatim), or a bare key. */
-function scanTomlKeySegment(text: string, start: number, failure: () => Error): TomlKeySegmentScan {
-    const opening = text.charAt(start);
-    if (opening === '"') {
-        return scanTomlBasicStringSegment(text, start, failure);
-    }
-    if (opening === "'") {
-        const closing = text.indexOf("'", start + 1);
-        if (closing === -1) {
-            throw failure();
+        if (keySelection === 'keep') {
+            projection[key] = tomlJsonValue(value);
+            continue;
         }
-        return { segment: text.slice(start + 1, closing), end: closing + 1 };
+        if (!isTomlTable(value)) {
+            throw new Error(`${path}: Cargo manifest key ${tomlKeyPath(keySegments)} must be a table`);
+        }
+        projection[key] = selectCargoKeys(value, keySelection, keySegments, path);
     }
-    let end = start;
-    while (end < text.length && TOML_BARE_KEY_CHARACTER_PATTERN.test(text.charAt(end))) {
-        end += 1;
-    }
-    if (end === start) {
-        throw failure();
-    }
-    return { segment: text.slice(start, end), end };
-}
-
-function skipTomlWhitespace(text: string, start: number): number {
-    let index = start;
-    while (text.charAt(index) === ' ' || text.charAt(index) === '\t') {
-        index += 1;
-    }
-    return index;
+    return projection;
 }
 
 /**
- * The unquoted segments of the dotted TOML key at the start of `text`, and the index just past it
- * and any trailing whitespace. A dot inside a quoted segment stays in it, so
- * `'cfg(target_os = "macos")'` is one segment.
- */
-function scanTomlDottedKey(text: string, failure: () => Error): { segments: string[]; end: number } {
-    const segments: string[] = [];
-    let index = skipTomlWhitespace(text, 0);
-    for (;;) {
-        const scanned = scanTomlKeySegment(text, index, failure);
-        segments.push(scanned.segment);
-        index = skipTomlWhitespace(text, scanned.end);
-        if (text.charAt(index) !== '.') {
-            return { segments, end: index };
-        }
-        index = skipTomlWhitespace(text, index + 1);
-    }
-}
-
-/** `[header]` and the key of one content line, whitespace around dots removed, as written. */
-function cargoRawKeyPath(header: string, line: string): string {
-    const key = line.slice(0, Math.max(line.indexOf('='), 0)).trim();
-    const trimmedHeader = header.trim();
-    return (trimmedHeader === '' ? key : `${trimmedHeader}.${key}`).replaceAll(/\s*\.\s*/gu, '.');
-}
-
-/**
- * `[header]` and the key of one content line as one dotted path of unquoted segments, so a quoted
- * spelling such as `["dependencies"]` or `"features".x` matches the patterns as Cargo reads it.
- */
-function cargoKeyPath(header: string, line: string, path: string): string {
-    const trimmedHeader = header.trim();
-    // `[[bin]]` reaches here as `[bin]`: an array of tables matches like a table.
-    const tableName =
-        trimmedHeader.startsWith('[') && trimmedHeader.endsWith(']') ? trimmedHeader.slice(1, -1) : trimmedHeader;
-    const headerFailure = (): Error => new Error(`${path}: unreadable Cargo manifest header [${header}]`);
-    const headerSegments: string[] = [];
-    if (tableName.trim() !== '') {
-        const scannedHeader = scanTomlDottedKey(tableName, headerFailure);
-        if (scannedHeader.end !== tableName.length) {
-            throw headerFailure();
-        }
-        headerSegments.push(...scannedHeader.segments);
-    }
-    const lineFailure = (): Error => new Error(`${path}: unrecognised Cargo manifest line under [${header}]: ${line}`);
-    const scannedKey = scanTomlDottedKey(line, lineFailure);
-    if (line.charAt(scannedKey.end) !== '=') {
-        throw lineFailure();
-    }
-    return [...headerSegments, ...scannedKey.segments].join('.');
-}
-
-function isCargoLicenceGraphKey(keyPath: string): boolean {
-    return (
-        CARGO_DEPENDENCY_KEY_PATTERN.test(keyPath) ||
-        CARGO_FEATURES_KEY_PATTERN.test(keyPath) ||
-        CARGO_SOURCE_OVERRIDE_KEY_PATTERN.test(keyPath) ||
-        CARGO_WORKSPACE_GRAPH_KEY_PATTERN.test(keyPath) ||
-        CARGO_PACKAGE_LICENCE_KEY_PATTERN.test(keyPath) ||
-        keyPath === CARGO_PACKAGE_RESOLVER_KEY
-    );
-}
-
-/**
- * The sorted `[header]`/line pairs of a Cargo manifest that reach the runtime licence graph.
- * Sorting makes key and table order irrelevant, as it is to Cargo.
+ * The canonical JSON of the parts of a Cargo manifest that reach the runtime licence graph.
+ * Canonical key order makes key and table order irrelevant, as it is to Cargo.
  */
 export function cargoManifestLicenceGraphProjection(text: string, path: string): string {
-    // A multi-line string can hold text the line scanner would read as a header or a key.
-    if (text.includes('"""') || text.includes("'''")) {
-        throw new Error(`${path}: multi-line TOML strings are not supported by the licence input projection`);
+    const manifest = parseCargoManifest(text, path);
+    return `${canonicalJson(selectCargoKeys(manifest, CARGO_LICENCE_GRAPH_SELECTION, [], path))}\n`;
+}
+
+/**
+ * The repository-relative manifest path of every `[workspace] members` entry of a root manifest.
+ * Glob members fail closed: no Sourdaw workspace uses one, and expanding them here would need
+ * Cargo's own glob and `exclude` semantics.
+ */
+export function cargoWorkspaceMemberManifestPaths(text: string, path: string): string[] {
+    const workspace = parseCargoManifest(text, path).workspace;
+    if (workspace === undefined) {
+        return [];
     }
-    const entries: string[] = [];
-    for (const { header, line } of tomlTableLines(text)) {
-        const keyPath = cargoKeyPath(header, line, path);
-        if (isCargoLicenceGraphKey(keyPath)) {
-            entries.push(`[${header.trim()}]\n${line}`);
-        } else if (CARGO_DEPENDENCY_SEGMENT_PATTERN.test(keyPath) && !CARGO_METADATA_KEY_PATTERN.test(keyPath)) {
-            throw new Error(`${path}: unrecognised dependency table key ${cargoRawKeyPath(header, line)}`);
+    if (!isTomlTable(workspace)) {
+        throw new Error(`${path}: Cargo manifest key workspace must be a table`);
+    }
+    const members = workspace.members ?? [];
+    if (!Array.isArray(members)) {
+        throw new TypeError(`${path}: workspace.members must be an array of strings`);
+    }
+    return members.map((member) => {
+        if (typeof member !== 'string') {
+            throw new TypeError(`${path}: workspace.members must be an array of strings`);
         }
-    }
-    return `${entries.sort().join('\n')}\n`;
+        if (CARGO_WORKSPACE_MEMBER_GLOB_PATTERN.test(member)) {
+            throw new Error(`${path}: glob workspace member ${member} is not supported by the licence inputs`);
+        }
+        return posix.join(member, 'Cargo.toml');
+    });
 }
 
 export function packageJsonLicenceFieldsProjection(text: string, path: string): string {

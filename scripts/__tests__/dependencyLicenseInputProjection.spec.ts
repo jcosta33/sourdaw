@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     cargoManifestLicenceGraphProjection,
+    cargoWorkspaceMemberManifestPaths,
     curatedDependencyLicenseProofsProjection,
     electronBuilderNodeModulesExclusionProjection,
     licenceInputDigest,
@@ -240,7 +241,8 @@ cpal = { path = "vendor/cpal" }
         ["['build-dependencies'] add", 'cc = "1"\n', 'cc = "1"\nnapi-build = "2"\n'],
         ['[target.x."dependencies"] add', 'libc = "0.2"\n', 'libc = "0.2"\nnix = "0.29"\n'],
         [`[target.'cfg(unix)'."dev-dependencies"] add`, 'tempfile = "3"\n', 'tempfile = "3"\nproptest = "1"\n'],
-        ['root "dependencies".evil add', '"features".x', '"dependencies".evil = "1"\n"features".x'],
+        // A root dotted key cannot also define the `["dependencies"]` table, so it extends another dependency table.
+        ['root "dev-dependencies".evil add', '"features".x', '"dev-dependencies".evil = "1"\n"features".x'],
         ['root "features".x change', '"features".x = ["a"]', '"features".x = ["a", "b"]'],
         [
             '["patch".crates-io] add',
@@ -275,26 +277,94 @@ libc = "0.2"
 nix = "0.29"
 `;
         expect(cargoManifestLicenceGraphProjection(manifest, 'Cargo.toml')).toBe(
-            `[target."cfg(all(unix, target_env = \\"gnu\\"))".dependencies]\nlibc = "0.2"\n` +
-                `[target.'cfg(target_os = "macos")'.dependencies]\ncoreaudio-rs = "0.13"\n` +
-                `[target.'cfg(unix)'.dev_dependencies]\nnix = "0.29"\n`
+            `${JSON.stringify({
+                target: {
+                    'cfg(all(unix, target_env = "gnu"))': { dependencies: { libc: '0.2' } },
+                    'cfg(target_os = "macos")': { dependencies: { 'coreaudio-rs': '0.13' } },
+                    'cfg(unix)': { dev_dependencies: { nix: '0.29' } },
+                },
+            })}\n`
         );
-        // The digest the pre-unquoting matcher gave this fixture: unquoting changes which keys match, never the bytes.
+        // The digest of this fixture's canonical JSON projection: a format change must restamp the committed pins.
         expect(licenceInputDigest('Cargo.toml', Buffer.from(MANIFEST, 'utf8')).sha256).toBe(
-            'fd584f235c7b542351fb43f1b8e7568c322fce84506fd9a014850312197395a9'
+            '852290e45dbe79e16b919115088353f90be2e5b4e8a66ca60b0605ce3785db98'
         );
     });
 
     it('fails closed on a dependency table spelling the projection does not know', () => {
         expect(() =>
             cargoManifestLicenceGraphProjection('[target.\'cfg(unix)\'.devdependencies]\nlibc = "0.2"\n', 'Cargo.toml')
-        ).toThrow("unrecognised dependency table key target.'cfg(unix)'.devdependencies.libc");
+        ).toThrow('unrecognised dependency table key target."cfg(unix)".devdependencies');
         expect(() =>
             cargoManifestLicenceGraphProjection('[package]\nnormal_dependencies = []\n', 'Cargo.toml')
         ).toThrow('unrecognised dependency table key package.normal_dependencies');
+        expect(() =>
+            cargoManifestLicenceGraphProjection('[[bin]]\nname = "x"\nextra-dependencies = []\n', 'Cargo.toml')
+        ).toThrow('unrecognised dependency table key bin.extra-dependencies');
         expect(
             cargoManifestLicenceGraphProjection('[package.metadata.machete]\nignored-dependencies = []\n', 'Cargo.toml')
-        ).toBe('\n');
+        ).toBe('{"package":{}}\n');
+        expect(
+            cargoManifestLicenceGraphProjection('[workspace.metadata.x]\nignored-dependencies = []\n', 'Cargo.toml')
+        ).toBe('{"workspace":{}}\n');
+    });
+
+    // The parse reads strings, escapes and comments as Cargo does, so text inside them can neither
+    // hide a later key nor be read as one.
+    const ESCAPE_MANIFEST = `[dependencies]
+# A comment holding " and # must not open a string.
+foo = { version = "1", note = "\\" #", features = ["a"] }
+serde = "1"
+`;
+    const MULTILINE_STRING_MANIFEST = `[package]
+name = "demo"
+description = """
+A crate whose description holds what looks like a table:
+[dependencies]
+evil = "1"
+"""
+
+[dependencies]
+serde = "1"
+`;
+
+    it.each([
+        ['a feature change after an escaped quote and #', ESCAPE_MANIFEST, 'features = ["a"]', 'features = ["a", "b"]'],
+        ['a dependency change after a comment holding " and #', ESCAPE_MANIFEST, 'serde = "1"', 'serde = "2"'],
+        [
+            'a dependency added after a comment holding " and #',
+            ESCAPE_MANIFEST,
+            'serde = "1"\n',
+            'serde = "1"\nrtrb = "0.4"\n',
+        ],
+        [
+            'a dependency change after a multi-line basic string',
+            MULTILINE_STRING_MANIFEST,
+            'serde = "1"',
+            'serde = "2"',
+        ],
+    ])('moves the Cargo projection on %s', (_change, manifest, before, after) => {
+        expect(manifest).toContain(before);
+        const baselineProjection = cargoManifestLicenceGraphProjection(manifest, 'Cargo.toml');
+        const edited = cargoManifestLicenceGraphProjection(manifest.replace(before, after), 'Cargo.toml');
+        expect(edited).not.toBe(baselineProjection);
+    });
+
+    it('reads string and comment text as Cargo does, not as keys', () => {
+        const escapeBaseline = cargoManifestLicenceGraphProjection(ESCAPE_MANIFEST, 'Cargo.toml');
+        expect(JSON.parse(escapeBaseline)).toEqual({
+            dependencies: { foo: { version: '1', note: '" #', features: ['a'] }, serde: '1' },
+        });
+        const recommented = ESCAPE_MANIFEST.replace('# A comment holding " and #', '# Another comment holding " and #');
+        expect(cargoManifestLicenceGraphProjection(recommented, 'Cargo.toml')).toBe(escapeBaseline);
+        const multilineBaseline = cargoManifestLicenceGraphProjection(MULTILINE_STRING_MANIFEST, 'Cargo.toml');
+        expect(JSON.parse(multilineBaseline)).toEqual({ package: {}, dependencies: { serde: '1' } });
+        expect(
+            cargoManifestLicenceGraphProjection(
+                MULTILINE_STRING_MANIFEST.replace('evil = "1"', 'evil = "2"'),
+                'Cargo.toml'
+            )
+        ).toBe(multilineBaseline);
     });
 
     it('leaves the Cargo projection alone on table reorder', () => {
@@ -304,12 +374,35 @@ nix = "0.29"
         expect(cargoManifestLicenceGraphProjection(reordered, 'Cargo.toml')).toBe(baseline);
     });
 
-    it('fails closed on a manifest shape the line scanner cannot read', () => {
-        expect(() =>
-            cargoManifestLicenceGraphProjection('[package]\ndescription = """\n[dependencies]\n"""\n', 'Cargo.toml')
-        ).toThrow('multi-line TOML strings are not supported');
+    it('fails closed on a manifest TOML cannot parse', () => {
         expect(() => cargoManifestLicenceGraphProjection('[dependencies]\nserde\n', 'Cargo.toml')).toThrow(
-            'unrecognised Cargo manifest line'
+            'Cargo.toml: unparseable Cargo manifest'
+        );
+        expect(() =>
+            cargoManifestLicenceGraphProjection('[dependencies]\nfoo = { version = "1", note = "\\" }\n', 'Cargo.toml')
+        ).toThrow('Cargo.toml: unparseable Cargo manifest');
+        expect(() =>
+            cargoManifestLicenceGraphProjection('[dependencies]\nserde = "1"\nserde = "2"\n', 'Cargo.toml')
+        ).toThrow('Cargo.toml: unparseable Cargo manifest');
+    });
+
+    it('derives workspace member manifests from the parsed members list', () => {
+        expect(cargoWorkspaceMemberManifestPaths(MANIFEST, 'Cargo.toml')).toEqual([
+            'crates/a/Cargo.toml',
+            'crates/b/Cargo.toml',
+        ]);
+        expect(
+            cargoWorkspaceMemberManifestPaths(
+                '[workspace]\nmembers = [\n    "crates/a", # first\n    "./crates/b/",\n]\n',
+                'Cargo.toml'
+            )
+        ).toEqual(['crates/a/Cargo.toml', 'crates/b/Cargo.toml']);
+        expect(cargoWorkspaceMemberManifestPaths('[package]\nname = "solo"\n', 'Cargo.toml')).toEqual([]);
+        expect(() => cargoWorkspaceMemberManifestPaths('[workspace]\nmembers = ["crates/*"]\n', 'Cargo.toml')).toThrow(
+            'glob workspace member crates/* is not supported'
+        );
+        expect(() => cargoWorkspaceMemberManifestPaths('[workspace]\nmembers = [1]\n', 'Cargo.toml')).toThrow(
+            'workspace.members must be an array of strings'
         );
     });
 
