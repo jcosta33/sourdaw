@@ -103,7 +103,7 @@ import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
-import { findEnabledVariationLaneTrackIds, isSameVariationLanesShown } from '../helpers/variationLanesShown';
+import { isSameVariationLanesShown } from '../helpers/variationLanesShown';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
@@ -463,8 +463,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // the comparison.
     const variationLanesShownRef = useRef<ReadonlyMap<string, boolean> | null>(null);
     useEffect(() => {
-        const enabledTrackIds = findEnabledVariationLaneTrackIds(variationLanesShownRef.current, variationLanesShown);
-        variationLanesShownRef.current = variationLanesShown;
+        const { shown, enabledTrackIds } = detectVariationLaneEnabling(
+            variationLanesShownRef.current,
+            trackStore.value?.tracks ?? []
+        );
+        variationLanesShownRef.current = shown;
         if (enabledTrackIds.length === 0) {
             return;
         }

@@ -98,18 +98,16 @@ const pushUndo = (label: string): void => {
 };
 
 const pushHistory = (id: string): void => {
+    const entries = actionHistoryStore.value?.entries ?? [];
     actionHistoryStore.set({
-        entries: [
-            ...(actionHistoryStore.value?.entries ?? []),
-            {
-                id,
-                label: `Action ${id}`,
-                actionKind: 'clip.update',
-                source: 'manual',
-                timestamp: Date.now(),
-                reverted: false,
-            },
-        ],
+        entries: entries.concat({
+            id,
+            label: `Action ${id}`,
+            actionKind: 'clip.update',
+            source: 'manual',
+            timestamp: Date.now(),
+            reverted: false,
+        }),
     });
 };
 

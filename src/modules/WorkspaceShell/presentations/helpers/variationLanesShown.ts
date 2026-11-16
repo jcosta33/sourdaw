@@ -11,20 +11,3 @@ export const isSameVariationLanesShown = (a: VariationLanesShown, b: VariationLa
     }
     return true;
 };
-
-/** Tracks that were present with variation lanes off in `previous` and have them on in `current`. */
-export const findEnabledVariationLaneTrackIds = (
-    previous: VariationLanesShown | null,
-    current: VariationLanesShown
-): string[] => {
-    if (previous === null) {
-        return [];
-    }
-    const enabledTrackIds: string[] = [];
-    for (const [trackId, shown] of current) {
-        if (shown && previous.get(trackId) === false) {
-            enabledTrackIds.push(trackId);
-        }
-    }
-    return enabledTrackIds;
-};

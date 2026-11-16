@@ -378,6 +378,7 @@ let projectLoadFailureState: ProjectLoadFailureState | null;
 let alphaNoticeDismissed: boolean;
 let onboardingState: typeof defaultOnboardingState;
 let trackStoreState: TrackStoreState;
+let trackValueSpy: { mockRestore: () => void } | null = null;
 let selectedClipIdState: string | null;
 let workspaceState: WorkspaceState;
 let agentProjectRepairState: AgentProjectRepairState | null;
@@ -402,6 +403,8 @@ describe('AppShell', () => {
         selectedClipIdState = null;
         agentProjectRepairState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
+        // The Takes-lane effect reads the store directly, so serve it the same fixture.
+        trackValueSpy = vi.spyOn(trackStore, 'value', 'get').mockImplementation(() => trackStoreState);
         vi.mocked(useStoreSelector).mockImplementation((store, selector, equalityFn) => {
             if (store === trackStore) {
                 return selector(trackStoreState);
@@ -463,6 +466,8 @@ describe('AppShell', () => {
     });
 
     afterEach(() => {
+        trackValueSpy?.mockRestore();
+        trackValueSpy = null;
         vi.useRealTimers();
     });
 
