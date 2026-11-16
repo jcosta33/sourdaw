@@ -207,8 +207,18 @@ function interpretationCall(revision: string, prompt = PROMPT): ToolCallResult {
     });
     const drums = catalog.targets.find((target) => target.objectIds.includes('drums'));
     const processing = catalog.dimensions.find((dimension) => dimension.dimension === 'processing');
-    const deviceSlot = catalog.creationSlots.find((slot) => slot.objectType === 'device');
-    if (drums === undefined || processing === undefined || deviceSlot === undefined) {
+    const trackSlotIds = catalog.creationSlots
+        .filter((slot) => slot.objectType === 'track')
+        .map((slot) => slot.candidateId);
+    // Each published target carries its own slots, so only the drums' own and the new-track ones are selectable here.
+    const ownSlots = catalog.creationSlots.filter(
+        (slot) =>
+            (slot.objectType === 'device' || slot.objectType === 'track') &&
+            (slot.parentCandidateId === null ||
+                slot.parentCandidateId === drums?.candidateId ||
+                trackSlotIds.includes(slot.parentCandidateId))
+    );
+    if (drums === undefined || processing === undefined || !ownSlots.some((slot) => slot.objectType === 'device')) {
         throw new Error('Expected the creative catalog to offer the drums track, its processing and a device.');
     }
     return {
@@ -222,9 +232,7 @@ function interpretationCall(revision: string, prompt = PROMPT): ToolCallResult {
                 .filter(({ dimension }) => dimension === 'processing' || dimension === 'arrangement')
                 .map(({ candidateId }) => candidateId),
             constraintCandidateIds: [],
-            creationSlotIds: catalog.creationSlots
-                .filter((slot) => slot.objectType === 'device' || slot.objectType === 'track')
-                .map((slot) => slot.candidateId),
+            creationSlotIds: ownSlots.map((slot) => slot.candidateId),
             uncertainty: 'none',
         },
     };

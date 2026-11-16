@@ -100,6 +100,9 @@ type SourdawDesktopBridge = {
     };
     system: {
         readonly totalMemoryBytes: () => Promise<number>;
+        readonly gpuMemoryBudgetBytes: () => Promise<
+            { readonly state: 'known'; readonly bytes: number } | { readonly state: 'unknown' }
+        >;
     };
     voiceDictation: {
         readonly start: (sessionId: string) => Promise<string>;

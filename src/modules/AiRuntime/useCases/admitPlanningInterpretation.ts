@@ -1,5 +1,5 @@
 import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation';
-import { type CreativeInterpretationCatalog } from '../models/CreativeInterpretation';
+import { type CreativeInterpretationCatalog, type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
@@ -9,6 +9,18 @@ import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
 
 const BRIEF_REQUIRES_NON_ACOUSTIC =
     'A brief interpretation classifies the whole request in metricIntent as non-acoustic with no objectives.';
+const AGENT_DECIDED_REQUIRES_ACOUSTIC_INTENT =
+    'An agent-decided target is admitted only for a request whose metricIntent is perceptual or comparative.';
+
+/**
+ * The catalog offers agent-decided targets whenever a request names nothing, because it cannot know
+ * the request's metric kind; the provider states that kind here, in the same call. Only a perceptual
+ * or comparative request leaves the choice of object to the agent, so every other kind, and a
+ * selection with no metric intent at all, may not keep a target the user never pointed at.
+ */
+function selectsAgentDecidedTarget(authority: CreativeRequestAuthority): boolean {
+    return authority.targets.some((target) => target.provenance === 'agent-decided');
+}
 
 type PlanningInterpretationInput = {
     creative: CreativeInterpretationCatalog;
@@ -39,6 +51,12 @@ function admitLiteralInterpretation(
         return {
             status: 'rejected' as const,
             reason: 'Literal metric intake cannot grant creative authority.',
+        };
+    }
+    if (input.metric.unaccountedQualityWord !== null) {
+        return {
+            status: 'rejected' as const,
+            reason: `The request names "${input.metric.unaccountedQualityWord}", a perceptual quality, so it is not a literal request. Interpret it as a perceptual or comparative goal instead.`,
         };
     }
     const admitted = admitMetricIntent({
@@ -78,6 +96,9 @@ function admitCreativeInterpretationWithMetricIntent(
         return { status: 'rejected' as const, reason: BRIEF_REQUIRES_NON_ACOUSTIC };
     }
     if (metricIntent === undefined || metricIntent === null) {
+        if (selectsAgentDecidedTarget(result.authority)) {
+            return { status: 'rejected' as const, reason: AGENT_DECIDED_REQUIRES_ACOUSTIC_INTENT };
+        }
         return { ...result, kind: 'creative' as const };
     }
     if (input.metric === undefined) {
@@ -92,6 +113,13 @@ function admitCreativeInterpretationWithMetricIntent(
     });
     if (admitted.status !== 'admitted') {
         return admitted;
+    }
+    if (
+        selectsAgentDecidedTarget(result.authority) &&
+        admitted.authority.kind !== 'perceptual' &&
+        admitted.authority.kind !== 'comparative'
+    ) {
+        return { status: 'rejected' as const, reason: AGENT_DECIDED_REQUIRES_ACOUSTIC_INTENT };
     }
     if (admitted.authority.kind === 'literal') {
         return {

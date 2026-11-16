@@ -329,7 +329,7 @@ fn scoped_scan_response_directory() {
 impl ResponseDirectory {
     fn create() -> Result<Self, String> {
         let parent =
-            crate::host::runtime_scope::RuntimeScope::path("native/data/private/scan-responses")
+            crate::host::runtime_scope::RuntimeScope::path("native/data/private/scan-responses")?
                 .unwrap_or_else(std::env::temp_dir);
         let path = parent.join(format!("sourdaw-plugin-scan-{}", uuid::Uuid::new_v4()));
         let mut builder = fs::DirBuilder::new();

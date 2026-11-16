@@ -54,6 +54,7 @@ unused_assignments = "warn"
 [workspace.lints.clippy]
 all ={ level = "deny", priority = -1 }
 dbg_macro = "deny"
+expect_used = "deny"
 get_unwrap = "deny"
 panic = "deny"
 todo = "deny"

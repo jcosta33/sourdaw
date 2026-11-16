@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "f722457778ebfab41a52c059e1946d0f8c189134854752229fd64d3ecdb4fded"
+        "digest": "059c9d705853b5a34af7a37d8b5e46f7597569b160ef0ec2f0d6db4cfb4f6754"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -146,12 +146,11 @@
             "id": "AC-005",
             "task": "TASK-SA-01-project-model-and-query",
             "kind": "unit",
-            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/resolveAgentReference.spec.ts",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts",
             "fixtures": [
                 {
-                    "path": "src/modules/AiRuntime/useCases/__tests__/resolveAgentReference.spec.ts",
-                    "digest": null,
-                    "status": "absent"
+                    "path": "src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts",
+                    "digest": "e41cba2248e2b5cc948ae7bfdb264552df09453d9c0bd19bc1ed04a1c0ff2488"
                 }
             ]
         },
@@ -175,7 +174,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
-                    "digest": "42ef7f111c9cdf426a05b4353d11cb64196f2e30fe91423ea99525f2f2bb3d74"
+                    "digest": "f25c16ae81f248c6a03512ad105a70b37150d211322d4e9d03155a11e70596b9"
                 }
             ]
         },
@@ -475,13 +474,8 @@
             "id": "AC-030",
             "task": "TASK-SA-04-providers",
             "kind": "rust+unit",
-            "command": "cargo test -p sourdaw provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
+            "command": "cargo test -p sourdaw-native provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
             "fixtures": [
-                {
-                    "path": "crates/sourdaw/src",
-                    "digest": null,
-                    "status": "absent"
-                },
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
                     "digest": "2a4b51ffb904e3f86630fbbfc21ef194f31fcb0016c9c081afe5036d5828445a"
@@ -619,16 +613,12 @@
             "command": "pnpm test:run src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts && cargo test -p daw-engine audio_deadline",
             "fixtures": [
                 {
-                    "path": "crates/daw-engine/src",
-                    "digest": "a63c3a9b935e308c5af6f11bb45abcae06dd0504c1636230cb0222a7c4c87dca"
-                },
-                {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
                     "digest": "b378dd27df075cd186132d2d558e8fbd583265d6bd4dd4e3b681c772145c8423"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
-                    "digest": "2e6fb938db9ea38757d765861f5f1f0457bb0505af6c288a88691639b7505e00"
+                    "digest": "abb83018a3de03718544ea397dabc257ff2783c01fb8a261bff5e5699e926d7a"
                 }
             ]
         },
@@ -724,13 +714,8 @@
             "id": "AC-049",
             "task": "TASK-SA-06-devices-assets-audio",
             "kind": "rust+unit",
-            "command": "cargo test -p sourdaw agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
+            "command": "cargo test -p sourdaw-native agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
             "fixtures": [
-                {
-                    "path": "crates/sourdaw/src",
-                    "digest": null,
-                    "status": "absent"
-                },
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
                     "digest": "a5b81b563e8e0589fa9ed9229f826b55f75164ec798513f7516174ad3199197f"
@@ -797,19 +782,19 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "c21be7cd5f2f9f7fdb8eeab073aa201b573ac4d9c7ecc4bfd8332c65dea86472"
+                    "digest": "ea1484b38be594a2cd9d54119094ea157ff1ba7881b423f67225fdb22878b3c7"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
-                    "digest": "b5615d7e95539640cae79a2e9277383376ee6b1acc0957c8583ab99f120ebef5"
+                    "digest": "e3b1e894ebde7239b5ea9f5bb602090331f52707f60c60ee1d89ed3a3e559448"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "fc78e2dc345d9bf684a19a10db7a2149b07efd9498f9ad29a0e2d7374199cf97"
+                    "digest": "e2fe4c59c5211836bbda281ba3ec1ac28786b9af3df2ba30dfafc954e2afa8ae"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
+                    "digest": "a712dbc0ac4275ec37de3ad1c5f71bb4033b3fddb6c9300b8e2c8b84b8eb082e"
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts",
@@ -817,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "80ddd59f6b25c31ac0b47a4517e412c374a24068ca1b5870b089489b77e88c39"
+                    "digest": "5ca5fd53b70cd183725ceb5eeeb1286883d71653e8f56ba593335826c959d975"
                 }
             ]
         },
@@ -849,17 +834,15 @@
             "id": "AC-057",
             "task": "TASK-SA-08-adapters-and-platform",
             "kind": "rust+unit",
-            "command": "cargo test -p sourdaw provider_gateway_webview_boundary && pnpm test:run src/utils/__tests__/agentWebviewSecurity.spec.ts",
+            "command": "cargo test -p sourdaw-native provider_gateway_webview_boundary && pnpm test:run electron/__tests__/webviewSecurity.spec.ts electron/__tests__/commands.spec.ts",
             "fixtures": [
                 {
-                    "path": "crates/sourdaw/src",
-                    "digest": null,
-                    "status": "absent"
+                    "path": "electron/__tests__/commands.spec.ts",
+                    "digest": "a54958d251eded5b34d210d91383c507903d6efb78999c15447f9b1cf74a400d"
                 },
                 {
-                    "path": "src/utils/__tests__/agentWebviewSecurity.spec.ts",
-                    "digest": null,
-                    "status": "absent"
+                    "path": "electron/__tests__/webviewSecurity.spec.ts",
+                    "digest": "8553df970b36739eebe198519c1adbee9e3e52c7ed4e2332819f5ffb354fac5b"
                 }
             ]
         },
@@ -883,7 +866,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "c481da2e6b08cadda774e15868adb6a9e6cc72237a7f3c7a678fb389df97bbf3"
+                    "digest": "88f3e6bf1109f1e8b6e5d7d3fa6a5c12604b2519c2404d3e5e86d8a75285b9dd"
                 }
             ]
         },
@@ -895,11 +878,11 @@
             "fixtures": [
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
+                    "digest": "a712dbc0ac4275ec37de3ad1c5f71bb4033b3fddb6c9300b8e2c8b84b8eb082e"
                 },
                 {
                     "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",
-                    "digest": "1a9656a913723b2092d708ce8342979a8105e36e87ab5fed83c2db753fb6cb82"
+                    "digest": "93db87a9f5af3d5aeb762b58e5ee210096c72068b85819a6812b16a8a9cb5059"
                 }
             ]
         },
@@ -941,10 +924,6 @@
         }
     ],
     "collisions": [
-        {
-            "path": "crates/sourdaw/src",
-            "suites": ["AC-030", "AC-049", "AC-057"]
-        },
         {
             "path": "scripts/agent-campaign/run-evidence-gate.ts",
             "suites": ["AC-054", "AC-060"]

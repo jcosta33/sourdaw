@@ -1,4 +1,4 @@
-import { automergeRepository } from '../repositories/automergeRepository';
+import { captureProjectRootIdentity as captureStoredProjectRootIdentity } from '../stores/rootIdentityEpoch';
 
 /**
  * Capture the runtime identity of the installed active root document. The value
@@ -6,5 +6,5 @@ import { automergeRepository } from '../repositories/automergeRepository';
  * a persisted project identifier.
  */
 export function captureProjectRootIdentity(): string {
-    return JSON.stringify({ rootIdentityEpoch: automergeRepository.getRootIdentityEpoch() });
+    return captureStoredProjectRootIdentity();
 }

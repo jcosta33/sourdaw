@@ -69,6 +69,12 @@ vi.mock('#/modules/Transport/stores', () => ({
     playheadPositionRef: { current: 0 },
     readBarStartBeat: vi.fn(),
     readBarAtBeat: vi.fn(() => ({ bar: 1, opensBar: true })),
+    captureTempoSourceOwnerValue: vi.fn(),
+    normalizeTempoSourceClockContext: vi.fn(),
+    normalizeTempoSourceOwnerContext: vi.fn(),
+    readTempoSourceClockValue: vi.fn(),
+    tempoAudioSourceCoverageMatches: vi.fn(),
+    withoutDeferredTempoRecordingSources: vi.fn(),
 }));
 
 // Wrap (not replace) the real formatLoopProgress so the rest of the suite

@@ -1,5 +1,4 @@
-import { type ClipStateSnapshot } from '#/utils/handlerContract';
-
+import { type ClipStateSnapshot } from '../events/arrangementClipStateSnapshots';
 import { type Clip } from '../stores/trackStore';
 
 /**

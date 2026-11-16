@@ -19,6 +19,11 @@ impl ScopeSelection {
             _ => Err("Native runtime scope was already selected differently".to_string()),
         }
     }
+
+    /// The selection, settling on the legacy layout when none was made.
+    fn root(&self) -> Result<Option<PathBuf>, String> {
+        self.0.get_or_init(|| Ok(None)).clone()
+    }
 }
 
 pub struct RuntimeScope;
@@ -148,17 +153,15 @@ impl RuntimeScope {
         Ok(())
     }
 
-    pub fn root() -> Option<PathBuf> {
-        PROCESS_SCOPE
-            .0
-            .get_or_init(|| Ok(None))
-            .as_ref()
-            .expect("An invalid native scope cannot fall back to legacy state")
-            .clone()
+    /// The selected scope root, `None` for the legacy unscoped layout, or the
+    /// selection's refusal. A refused selection never answers `None`: that
+    /// would send the caller to legacy state the scope was chosen to avoid.
+    pub fn root() -> Result<Option<PathBuf>, String> {
+        PROCESS_SCOPE.root()
     }
 
-    pub fn path(relative: &str) -> Option<PathBuf> {
-        Self::root().map(|root| root.join(relative))
+    pub fn path(relative: &str) -> Result<Option<PathBuf>, String> {
+        Ok(Self::root()?.map(|root| root.join(relative)))
     }
 
     #[cfg(test)]
@@ -232,6 +235,19 @@ mod tests {
     }
 
     #[test]
+    fn invalid_selection_answers_its_refusal_rather_than_the_legacy_layout() {
+        let selection = ScopeSelection::default();
+        assert!(selection.select(Some(Path::new(""))).is_err());
+        assert_eq!(
+            selection.root(),
+            Err(
+                "Native runtime scope must be an existing canonical UUID directory in the reserved namespace"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
     fn selection_requires_canonical_reserved_uuid_root() {
         let fixture = RuntimeScope::test_root();
         assert!(RuntimeScope::validate(&fixture.root).is_ok());
@@ -280,7 +296,7 @@ mod tests {
         let fixture = RuntimeScope::test_root();
         std::fs::write(fixture.root.join("native"), b"occupied").unwrap();
         assert!(RuntimeScope::select(Some(&fixture.root)).is_err());
-        assert_eq!(RuntimeScope::root(), Some(fixture.root.clone()));
+        assert_eq!(RuntimeScope::root(), Ok(Some(fixture.root.clone())));
         assert!(RuntimeScope::select(None).is_err());
         #[cfg(unix)]
         {

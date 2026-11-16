@@ -204,7 +204,7 @@
     "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx": 600,
     "src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx": 600,
     "src/modules/AudioEngine/repositories/audioRecorder/recording.ts": 600,
-    "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": 3098,
+    "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": 2725,
     "src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts": 600,
     "src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts": 1323,
     "src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts": 692,
@@ -529,6 +529,5 @@
     "src/modules/Yeast/workers/processors/ChordGenerator.ts": 600,
     "src/modules/Yeast/workers/processors/GrooveModule.ts": 600,
     "src/modules/Yeast/workers/yeastWorker.ts": 600,
-    "src/utils/automationCurve.ts": 600,
-    "src/utils/handlerContract.ts": 1412
+    "src/utils/automationCurve.ts": 600
 }

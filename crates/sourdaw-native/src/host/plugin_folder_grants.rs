@@ -179,19 +179,22 @@ pub(crate) struct ForbiddenRoots {
 impl ForbiddenRoots {
     /// The real forbidden set, resolved the way picks are: canonical where the
     /// folder exists, through its deepest existing ancestor where it does not.
-    pub(crate) fn production() -> Self {
-        Self {
+    ///
+    /// A refused runtime scope is an error, never an empty storage set: without
+    /// the scope no folder can be shown to lie outside the app's own storage.
+    pub(crate) fn production() -> Result<Self, String> {
+        Ok(Self {
             home: dirs::home_dir().map(|home| fs::canonicalize(&home).unwrap_or(home)),
             default_roots: default_plugin_scan_roots()
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
-            app_storage_roots: built_in_roots()
+            app_storage_roots: built_in_roots()?
                 .iter()
                 .map(|root| resolve_forbidden_root(root))
                 .collect(),
-            renderer_writable_grants: grant_registry::persisted_read_write_paths(),
-        }
+            renderer_writable_grants: grant_registry::persisted_read_write_paths()?,
+        })
     }
 }
 
@@ -222,9 +225,15 @@ struct PersistedGrants {
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Where the production grant document lives.
+///
+/// A refused runtime scope has no store, so it grants no folder and every
+/// grant or revoke is refused.
 #[cfg(not(test))]
 pub(crate) fn production_store_location() -> Option<PathBuf> {
-    Some(crate::commands::filesystem::private_state_directory()?.join(GRANT_FILE_NAME))
+    let directory = crate::commands::filesystem::private_state_directory()
+        .ok()
+        .flatten()?;
+    Some(directory.join(GRANT_FILE_NAME))
 }
 
 /// Tests never touch the developer's own grant file: a unit test that inherited

@@ -30,11 +30,17 @@ impl PluginScanPolicy {
     /// The one production route that widens a policy past the defaults. The
     /// grant store is read fresh on every call, so a grant the main process
     /// just recorded or revoked is what the scan process enforces next.
+    ///
+    /// A refused runtime scope leaves only the platform defaults: no grant can
+    /// be validated against storage the scope would have located.
     pub fn production() -> Self {
+        let Ok(forbidden) = ForbiddenRoots::production() else {
+            return Self::platform_defaults();
+        };
         Self::over_grant_store(
             default_plugin_scan_roots(),
             plugin_folder_grants::production_store_location().as_deref(),
-            &ForbiddenRoots::production(),
+            &forbidden,
         )
     }
 

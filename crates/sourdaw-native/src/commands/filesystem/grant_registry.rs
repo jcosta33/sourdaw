@@ -311,8 +311,8 @@ struct PersistedGrants {
 
 /// Where the grant document lives: inside the private directory the resolver
 /// refuses ahead of every built-in root and every grant.
-pub(crate) fn grant_file_location() -> Option<PathBuf> {
-    Some(private_state_directory()?.join(GRANT_FILE_NAME))
+pub(crate) fn grant_file_location() -> Result<Option<PathBuf>, String> {
+    Ok(private_state_directory()?.map(|directory| directory.join(GRANT_FILE_NAME)))
 }
 
 fn persisted_document(registry: &GrantRegistry) -> PersistedGrants {
@@ -332,7 +332,7 @@ fn persisted_document(registry: &GrantRegistry) -> PersistedGrants {
 
 fn save_grants(document: &PersistedGrants) -> Result<(), String> {
     let location =
-        grant_file_location().ok_or_else(|| "No application data directory".to_string())?;
+        grant_file_location()?.ok_or_else(|| "No application data directory".to_string())?;
     let directory = location
         .parent()
         .ok_or_else(|| "Grant file has no parent directory".to_string())?;
@@ -362,7 +362,9 @@ fn save_grants(document: &PersistedGrants) -> Result<(), String> {
 fn restore_grants() -> GrantRegistry {
     super::ensure_private_state_directory();
 
-    let Some(location) = grant_file_location() else {
+    // A refused runtime scope restores nothing: the only document it could
+    // name is the legacy one the scope was selected to keep out of reach.
+    let Ok(Some(location)) = grant_file_location() else {
         return GrantRegistry::empty();
     };
     let Some(document) = read_grant_document(&location) else {
@@ -400,18 +402,21 @@ fn resolve_persisted_grants(document: PersistedGrants) -> Vec<FileGrant> {
 /// Read from disk rather than from the live registry because the plugin scan
 /// runs in a utility process whose addon instance holds its own registry, which
 /// never sees the main process's picks.
+///
+/// A refused runtime scope is an error rather than an empty set: the caller
+/// excludes these paths, and an empty set would exclude nothing.
 #[cfg(not(test))]
-pub(crate) fn persisted_read_write_paths() -> Vec<PathBuf> {
-    grant_file_location()
+pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, String> {
+    Ok(grant_file_location()?
         .map(|location| read_write_paths_at(&location))
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 /// Tests never read the developer's own grant file; they supply the set
 /// through the plugin folder validator's forbidden roots instead.
 #[cfg(test)]
-pub(crate) fn persisted_read_write_paths() -> Vec<PathBuf> {
-    Vec::new()
+pub(crate) fn persisted_read_write_paths() -> Result<Vec<PathBuf>, String> {
+    Ok(Vec::new())
 }
 
 /// The canonical paths of the read-write grants in the document at

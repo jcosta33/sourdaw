@@ -1,4 +1,4 @@
-import { type TempoAudioSourcePresenceSnapshot } from '#/utils/handlerContract';
+import { type TempoAudioSourcePresenceSnapshot } from '#/modules/Transport/events';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion } from '../models/TakeLane';

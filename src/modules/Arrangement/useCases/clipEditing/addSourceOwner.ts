@@ -1,4 +1,4 @@
-import { type TempoSourceOwner } from '#/utils/tempoAudioSourcePromotion';
+import { type TempoSourceOwner } from '#/modules/Transport/stores';
 
 export type OwnerFields = { owner: TempoSourceOwner; fields: Set<string> };
 

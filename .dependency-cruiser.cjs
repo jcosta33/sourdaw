@@ -480,9 +480,10 @@ module.exports = {
             name: 'events-are-pure',
             severity: 'error',
             comment:
-                'Event contracts must stay pure: same-module events/models and shared utils/infra only. ' +
-                'No useCases/, repositories/, stores/, handlers/, presentations/, or engine/ from any ' +
-                'module (including foreign contract barrels).',
+                'Event contracts must stay pure: they may import the events and models of their own module, the events/ barrels of other modules, ' +
+                'plus shared utils/infra. They may never import useCases/, repositories/, stores/, ' +
+                'handlers/, presentations/, engine/, worklets/, workers/, runtime/, services/, ' +
+                'validators/, or transformers/ from any module.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'events/.+' + SOURCE_FILE_RE,
             },

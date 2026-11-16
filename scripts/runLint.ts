@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import ts from 'typescript';
 
 type Options = {
     files: string[];
@@ -103,7 +105,9 @@ export function buildEslintArgv(
     return [
         'exec',
         'eslint',
-        '--quiet',
+        // Fix mode loads the moved plugin overrides, whose size rules warn on the eslint.size-baseline.mjs
+        // files under their own burn-down ratchet; check mode has no warn rules.
+        ...(options.fix ? ['--quiet'] : []),
         `--concurrency=${lintConcurrency(env)}`,
         '--cache',
         '--cache-location',
@@ -114,6 +118,24 @@ export function buildEslintArgv(
         ESLINT_SUPPRESSIONS_FILE,
         ...(options.fix ? ['--fix'] : []),
         ...eslintTargets,
+    ];
+}
+
+export function buildOxlintArgv(
+    options: Pick<Options, 'fix'>,
+    targets: string[],
+    env: NodeJS.ProcessEnv = process.env
+): string[] {
+    return [
+        'exec',
+        'oxlint',
+        // Focused JS tooling can be intentionally excluded from this pass
+        // while remaining covered by the public plugins and ESLint.
+        '--no-error-on-unmatched-pattern',
+        `--threads=${lintThreads(env)}`,
+        '--format=agent',
+        ...(options.fix ? ['--fix'] : []),
+        ...targets,
     ];
 }
 
@@ -153,18 +175,6 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
     }
 }
 
-function checkPublicPlugins(targets: string[]): void {
-    runStep('oxlint-plugins', [
-        'exec',
-        'oxlint',
-        '--config=.oxlint-plugins.json',
-        '--quiet',
-        `--threads=${lintThreads()}`,
-        '--format=agent',
-        ...targets,
-    ]);
-}
-
 export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
 export const FULL_ESLINT_TARGETS = [
     'src/**/*.{ts,tsx}',
@@ -173,34 +183,174 @@ export const FULL_ESLINT_TARGETS = [
     'scripts/lint/sourdaw.mjs',
 ] as const;
 
+/**
+ * Oxlint expands directories itself but not shell globs, and this runner spawns
+ * without a shell: a glob target matches nothing and the pass lints only the
+ * literal plugin file while still reporting success. The full run therefore
+ * hands the plugins pass directories, never the ESLint glob targets.
+ */
+export function publicPluginTargets(options: Pick<Options, 'files' | 'full'>): string[] {
+    return options.full ? [...FULL_OXLINT_TARGETS] : options.files;
+}
+
+/**
+ * The agent format omits the linted-file count, so a full run uses the default
+ * format, whose summary line carries it.
+ */
+export function buildPublicPluginsArgv(
+    targets: string[],
+    env: NodeJS.ProcessEnv = process.env,
+    format: 'agent' | 'default' = 'agent'
+): string[] {
+    return [
+        'exec',
+        'oxlint',
+        '--config=.oxlint-plugins.json',
+        // The only warn rules here are the size rules on the eslint.size-baseline.mjs
+        // files, which have their own burn-down ratchet; without --quiet every run
+        // would print the known baseline warnings.
+        '--quiet',
+        `--threads=${lintThreads(env)}`,
+        `--format=${format}`,
+        ...targets,
+    ];
+}
+
+const OXLINT_SOURCE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
+
+/**
+ * Oxlint prints "Finished in 1.2s on 12481 files with 102 rules using 12 threads."
+ */
+export function parseLintedFileCount(output: string): number | undefined {
+    const match = /Finished in \S+ on (\d+) files?\b/.exec(output);
+    return match?.[1] === undefined ? undefined : Number(match[1]);
+}
+
+const PUBLIC_PLUGINS_CONFIG = '.oxlint-plugins.json';
+
+/**
+ * Gitignore-style, as the linter reads them: `dir/` names a directory at any
+ * depth, a pattern without a slash matches the basename at any depth, anything
+ * else is a glob over the repository-relative path.
+ */
+export function isIgnoredByPattern(file: string, pattern: string): boolean {
+    if (pattern.endsWith('/')) {
+        const directory = pattern.slice(0, -1);
+        return file.split('/').slice(0, -1).includes(directory);
+    }
+    if (!pattern.includes('/')) {
+        return matchesGlob(file.slice(file.lastIndexOf('/') + 1), pattern);
+    }
+    return matchesGlob(file, pattern);
+}
+
+export function unignoredSourceFiles(files: readonly string[], ignorePatterns: readonly string[]): string[] {
+    return files.filter(
+        (file) =>
+            OXLINT_SOURCE_EXTENSION.test(file) && !ignorePatterns.some((pattern) => isIgnoredByPattern(file, pattern))
+    );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function readIgnorePatterns(rootDir: string): string[] {
+    const parsed = ts.parseConfigFileTextToJson(
+        PUBLIC_PLUGINS_CONFIG,
+        readFileSync(resolve(rootDir, PUBLIC_PLUGINS_CONFIG), 'utf8')
+    );
+    const config: unknown = parsed.config;
+    const patterns: unknown = isRecord(config) ? config.ignorePatterns : undefined;
+    if (parsed.error !== undefined || !Array.isArray(patterns) || !patterns.every((p) => typeof p === 'string')) {
+        throw new Error(`${PUBLIC_PLUGINS_CONFIG} has no readable ignorePatterns list`);
+    }
+    return patterns;
+}
+
+/**
+ * Every tracked source file the pass must lint: the ones under its targets that
+ * the config does not ignore. The linter may lint more (untracked files), never
+ * fewer, so the count is compared exactly rather than against a tolerance that
+ * would let a whole skipped target through.
+ */
+export function expectedPluginFiles(targets: string[], rootDir: string = process.cwd()): string[] {
+    const result = spawnSync('git', ['ls-files', '-z', '--', ...targets], {
+        cwd: rootDir,
+        encoding: 'utf8',
+        maxBuffer: 256 * 1024 * 1024,
+    });
+    if (result.error !== undefined || result.status !== 0) {
+        throw new Error('git ls-files failed while listing the plugin pass targets');
+    }
+    return unignoredSourceFiles([...new Set(result.stdout.split('\0'))], readIgnorePatterns(rootDir));
+}
+
+export function assertPluginCoverage(
+    linted: number | undefined,
+    expectedFiles: readonly string[],
+    targets: readonly string[]
+): void {
+    if (linted === undefined) {
+        throw new Error('oxlint-plugins reported no linted file count, so its coverage cannot be verified');
+    }
+    if (linted < expectedFiles.length) {
+        throw new Error(
+            `oxlint-plugins linted ${linted} files but ${expectedFiles.length} tracked source files lie under its targets`
+        );
+    }
+    for (const target of targets) {
+        const contributes = expectedFiles.some((file) => file === target || file.startsWith(`${target}/`));
+        if (!contributes) {
+            throw new Error(`oxlint-plugins target ${target} contributes no tracked source file to the pass`);
+        }
+    }
+}
+
+function checkPublicPlugins(options: Pick<Options, 'files' | 'full'>): void {
+    const targets = publicPluginTargets(options);
+    if (!options.full) {
+        runStep('oxlint-plugins', buildPublicPluginsArgv(targets));
+        return;
+    }
+    console.log('lint: oxlint-plugins started');
+    const started = performance.now();
+    const result = spawnSync('pnpm', buildPublicPluginsArgv(targets, process.env, 'default'), {
+        encoding: 'utf8',
+        maxBuffer: 256 * 1024 * 1024,
+    });
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+    const elapsed = `${Math.round(performance.now() - started)} ms`;
+    if (result.error !== undefined || result.status !== 0) {
+        console.log(`lint: oxlint-plugins failed (${elapsed})`);
+        throw new Error(
+            result.error === undefined
+                ? 'oxlint-plugins failed'
+                : `oxlint-plugins failed to start: ${result.error.message}`
+        );
+    }
+    assertPluginCoverage(parseLintedFileCount(result.stdout), expectedPluginFiles(targets), targets);
+    console.log(`lint: oxlint-plugins passed (${elapsed})`);
+}
+
 function main(): number {
     try {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? [...FULL_OXLINT_TARGETS] : options.files;
         const eslintTargets = options.full ? [...FULL_ESLINT_TARGETS] : options.files;
         ensureServerDependencies(targets);
-        runStep('oxlint', [
-            'exec',
-            'oxlint',
-            // Focused JS tooling can be intentionally excluded from this pass
-            // while remaining covered by the public plugins and ESLint.
-            '--no-error-on-unmatched-pattern',
-            '--quiet',
-            `--threads=${lintThreads()}`,
-            '--format=agent',
-            ...(options.fix ? ['--fix'] : []),
-            ...targets,
-        ]);
+        runStep('oxlint', buildOxlintArgv(options, targets));
         if (!options.fix) {
             // Check mode uses Oxlint for public JS rules. Fix mode keeps them
             // with Prettier so relocated diagnostics and their fixes converge.
-            checkPublicPlugins(eslintTargets);
+            checkPublicPlugins(options);
         }
         runStep('eslint', buildEslintArgv(options, eslintTargets), eslintEnvironment(process.env, options.fix));
         if (options.fix) {
             // Preserve Oxlint's parser and target-admission contracts on the
             // final bytes without introducing another writer or fix loop.
-            checkPublicPlugins(eslintTargets);
+            checkPublicPlugins(options);
         }
         return 0;
     } catch (error) {

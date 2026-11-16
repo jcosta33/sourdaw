@@ -1,4 +1,4 @@
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 
 type MidiGenerationClipReplaySnapshot = {
     id: string;

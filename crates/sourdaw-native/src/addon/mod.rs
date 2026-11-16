@@ -15,6 +15,7 @@
 //! The event sink is a threadsafe function registered once at construction. It
 //! takes owned arguments and is never reachable from the render callback.
 
+mod gpu;
 mod windows;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -128,32 +129,33 @@ impl SourdawNative {
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Result<Self> {
         reason(RuntimeScope::select(None))?;
-        Ok(Self::build(on_event))
+        reason(Self::build(on_event))
     }
 
     /// Main-process-only selection. A legacy constructor cannot accept this contract.
     #[napi(factory)]
     pub fn with_runtime_scope_v1(on_event: EventEmitter, root: String) -> Result<Self> {
         reason(RuntimeScope::select(Some(std::path::Path::new(&root))))?;
-        Ok(Self::build(on_event))
+        reason(Self::build(on_event))
     }
 
     #[napi]
-    pub fn runtime_scope_info_v1(&self) -> Value {
-        serde_json::json!({
+    pub fn runtime_scope_info_v1(&self) -> Result<Value> {
+        let path = |relative| reason(RuntimeScope::path(relative));
+        Ok(serde_json::json!({
             "version": 1,
-            "root": RuntimeScope::root(),
-            "data": RuntimeScope::path("native/data"),
-            "private": RuntimeScope::path("native/data/private"),
-            "cache": RuntimeScope::path("native/cache"),
-            "ipc": RuntimeScope::path("native/ipc"),
-            "projects": RuntimeScope::path("native/projects"),
-            "scanResponses": RuntimeScope::path("native/data/private/scan-responses"),
+            "root": reason(RuntimeScope::root())?,
+            "data": path("native/data")?,
+            "private": path("native/data/private")?,
+            "cache": path("native/cache")?,
+            "ipc": path("native/ipc")?,
+            "projects": path("native/projects")?,
+            "scanResponses": path("native/data/private/scan-responses")?,
             "exportStateAvailable": self.export_files.is_ok(),
-        })
+        }))
     }
 
-    fn build(on_event: EventEmitter) -> Self {
+    fn build(on_event: EventEmitter) -> std::result::Result<Self, String> {
         // Before any command can be dispatched. `ensure_allowed_root` answers
         // an application-data path from the built-in roots without touching
         // the grant registry, so a private directory created lazily by the
@@ -162,12 +164,14 @@ impl SourdawNative {
         // has nothing to correct the caller's spelling against.
         commands::filesystem::ensure_private_state_directory();
         let export_files = commands::filesystem::private_state_directory()
-            .ok_or_else(|| "Private export state is unavailable".to_string())
+            .and_then(|directory| {
+                directory.ok_or_else(|| "Private export state is unavailable".to_string())
+            })
             .and_then(|directory| commands::filesystem::ExportFileRegistry::open(&directory))
             .map(Mutex::new);
 
         let events: Arc<dyn EventSink> = Arc::new(TsfnEventSink { emit: on_event });
-        let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events)));
+        let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events))?);
 
         crate::host::latency_watcher::start(
             Arc::clone(&events),
@@ -184,13 +188,13 @@ impl SourdawNative {
             Arc::clone(&singletons.app_state.engine_plugins),
         );
 
-        Self {
+        Ok(Self {
             singletons,
             export_files,
             // Until the shell registers its window host this refuses rather
             // than pretends.
             windows: RwLock::new(Arc::new(NoWindowHost)),
-        }
+        })
     }
 
     /// The current window host, cloned out so no caller holds the lock.
@@ -929,22 +933,39 @@ impl SourdawNative {
     /// Render a command batch deterministically with no audio device: the
     /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
     /// PCM; a refused batch is an error carrying the batch's refusal reasons.
+    /// `render_id`, when given, is what `cancel_graph_offline` names to stop
+    /// it; a cancelled render's error starts `offline-render-cancelled`.
     #[napi]
     pub async fn render_graph_offline(
         &self,
         batch: Value,
         frames: u32,
         sample_rate: f64,
+        render_id: Option<String>,
     ) -> Result<Buffer> {
+        let windows = self.window_host();
         Ok(Buffer::from(reason(
             commands::graph::render_graph_offline(
                 batch,
                 frames,
                 sample_rate,
+                render_id,
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
         )?))
+    }
+
+    /// Cancel the offline render started under `render_id`, between its
+    /// blocks. A cancel that arrives before its render starts still cancels
+    /// it; one for an unknown or finished id does nothing.
+    #[napi]
+    pub fn cancel_graph_offline(&self, render_id: String) -> Result<()> {
+        reason(commands::offline_plugins::cancel_graph_offline(
+            render_id,
+            &self.singletons.app_state,
+        ))
     }
 
     /// Map one graph batch against the graph a prior wire-command sequence
