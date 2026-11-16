@@ -27,7 +27,6 @@ const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..'
  * share an import because `src/` may not import `scripts/`.
  */
 const EXPECTED_COLLISIONS: readonly EvidenceCollision[] = [
-    { path: 'crates/sourdaw-native/src', suites: ['AC-030', 'AC-049', 'AC-057'] },
     { path: 'scripts/agent-campaign/run-evidence-gate.ts', suites: ['AC-054', 'AC-060'] },
     {
         path: 'src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts',

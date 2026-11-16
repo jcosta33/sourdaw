@@ -1,8 +1,13 @@
 import { from } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
-import { type TempoAudioSourcePromotionSnapshot } from '../handlerContract';
-import { captureTempoSourceOwnerValue, isTempoAudioSourcePromotion } from '../tempoAudioSourcePromotion';
+import { type TempoAudioSourcePromotionSnapshot } from '../../events/tempoAudioSourceSnapshots';
+import {
+    captureTempoSourceOwnerValue,
+    isTempoAudioSourcePromotion,
+    readTempoSourceClockValue,
+    tempoSourcePromotionsEqual,
+} from '../tempoAudioSourcePromotion';
 
 function plan(): TempoAudioSourcePromotionSnapshot {
     return {
@@ -280,5 +285,124 @@ describe('tempo source-promotion value decoder', () => {
                 ],
             })
         ).toBe(false);
+    });
+});
+
+describe('tempoSourcePromotionsEqual', () => {
+    it('treats two separately built structurally equal promotions as the same', () => {
+        expect(tempoSourcePromotionsEqual(plan(), plan())).toBe(true);
+    });
+
+    it.each([
+        [
+            'clips',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                clips: [{ ...promotion.clips[0]!, after: { ...promotion.clips[0]!.after, audioOffsetSeconds: 7.25 } }],
+            }),
+        ],
+        [
+            'takes',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                takes: [{ ...promotion.takes[0]!, after: { sourceOffsetSeconds: 3.75 } }],
+            }),
+        ],
+        [
+            'regions',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                regions: [{ ...promotion.regions[0]!, endBeat: 9.5 }],
+            }),
+        ],
+        [
+            'gaps',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                gaps: [{ ...promotion.gaps[0]!, clipId: 'other-source' }],
+            }),
+        ],
+    ])('is unequal in both directions when only %s differ', (_field, change) => {
+        const changed = change(plan());
+
+        expect(tempoSourcePromotionsEqual(plan(), changed)).toBe(false);
+        expect(tempoSourcePromotionsEqual(changed, plan())).toBe(false);
+    });
+
+    it.each(['clips', 'takes', 'regions', 'gaps'] as const)('is unequal when %s gain a row', (field) => {
+        const base = plan();
+        const grown = { ...plan(), [field]: [...base[field], ...base[field]] };
+
+        expect(tempoSourcePromotionsEqual(base, grown)).toBe(false);
+        expect(tempoSourcePromotionsEqual(grown, base)).toBe(false);
+    });
+
+    it('ignores row order within a collection', () => {
+        const base = plan();
+        const second = { ...base.clips[0]!, clipId: 'second', trackId: 'audio-2' };
+        const forward = { ...base, clips: [base.clips[0]!, second] };
+        const reversed = { ...base, clips: [second, base.clips[0]!] };
+
+        expect(tempoSourcePromotionsEqual(forward, reversed)).toBe(true);
+        expect(tempoSourcePromotionsEqual(reversed, forward)).toBe(true);
+    });
+
+    it('still tells a reordered pair from one whose second row differs', () => {
+        const base = plan();
+        const second = { ...base.clips[0]!, clipId: 'second' };
+        const third = { ...base.clips[0]!, clipId: 'third' };
+
+        expect(
+            tempoSourcePromotionsEqual(
+                { ...base, clips: [base.clips[0]!, second] },
+                { ...base, clips: [third, base.clips[0]!] }
+            )
+        ).toBe(false);
+    });
+});
+
+describe('tempoSourcePromotionsEqual duplicate rows', () => {
+    function withClips(ids: readonly string[]): TempoAudioSourcePromotionSnapshot {
+        const base = plan();
+        return { ...base, clips: ids.map((clipId) => ({ ...base.clips[0]!, clipId })) };
+    }
+
+    it('is unequal when the actual list repeats a row the expected list has once', () => {
+        expect(tempoSourcePromotionsEqual(withClips(['a', 'a']), withClips(['a', 'b']))).toBe(false);
+    });
+
+    it('is unequal when the expected list repeats a row the actual list has once', () => {
+        expect(tempoSourcePromotionsEqual(withClips(['a', 'b']), withClips(['a', 'a']))).toBe(false);
+    });
+
+    it('is equal when the same repeated rows appear in another order', () => {
+        expect(tempoSourcePromotionsEqual(withClips(['a', 'b', 'a']), withClips(['a', 'a', 'b']))).toBe(true);
+    });
+});
+
+describe('readTempoSourceClockValue', () => {
+    it('reads the base tempo, not a default', () => {
+        expect(readTempoSourceClockValue({ transport: { tempo: 93 } }, null)).toBe(93);
+    });
+
+    it('reads the named tempo-map change, not the base tempo', () => {
+        const context = {
+            transport: { tempo: 93 },
+            tempoMap: {
+                changes: [
+                    { id: 'first', tempo: 141 },
+                    { id: 'second', tempo: 77.5 },
+                ],
+            },
+        };
+
+        expect(readTempoSourceClockValue(context, 'second')).toBe(77.5);
+    });
+
+    it('reads nothing for an unknown change or a non-positive base tempo', () => {
+        expect(
+            readTempoSourceClockValue({ tempoMap: { changes: [{ id: 'first', tempo: 141 }] } }, 'missing')
+        ).toBeNull();
+        expect(readTempoSourceClockValue({ transport: { tempo: 0 } }, null)).toBeNull();
     });
 });

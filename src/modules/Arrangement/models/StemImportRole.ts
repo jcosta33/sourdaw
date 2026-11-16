@@ -1,0 +1,15 @@
+export type StemImportRole =
+    | 'kick'
+    | 'snare'
+    | 'hi-hat'
+    | 'tom'
+    | 'percussion'
+    | 'bass'
+    | 'guitar-left'
+    | 'guitar-right'
+    | 'keys'
+    | 'synth'
+    | 'lead-vocal'
+    | 'backing-vocal'
+    | 'fx'
+    | 'other';

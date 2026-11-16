@@ -670,6 +670,34 @@ describe('size baseline check against the merge base', () => {
         ]);
     });
 
+    it('should accept a head that removes the ceiling of a real generated exemption still baselined', async () => {
+        const exemptPath = GENERATED_SIZE_EXEMPTIONS[0]?.path;
+        if (exemptPath === undefined) {
+            throw new Error('GENERATED_SIZE_EXEMPTIONS is empty; this case needs a real exemption.');
+        }
+        writeBaseline(['a.ts', exemptPath], { 'a.ts': 700, [exemptPath]: 800 });
+        commit('base with generated exemption');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['a.ts', exemptPath], { 'a.ts': 700 });
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
+    });
+
+    it('should still report a ceiling removed for a path that is not a generated exemption', async () => {
+        const exemptPath = GENERATED_SIZE_EXEMPTIONS[0]?.path;
+        if (exemptPath === undefined) {
+            throw new Error('GENERATED_SIZE_EXEMPTIONS is empty; this case needs a real exemption.');
+        }
+        writeBaseline(['a.ts', exemptPath], { 'a.ts': 700, [exemptPath]: 800 });
+        commit('base with generated exemption');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['a.ts', exemptPath], { [exemptPath]: 800 });
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([
+            `a.ts: ceiling removed from ${SIZE_CEILINGS_PATH} while the file is still baselined; it would then grow unchecked.`,
+        ]);
+    });
+
     it('should report every ceiling when the head deletes the ceilings file', async () => {
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         git('rm', '-q', SIZE_CEILINGS_PATH);

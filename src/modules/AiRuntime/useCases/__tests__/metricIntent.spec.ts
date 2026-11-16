@@ -154,6 +154,91 @@ describe('positive whole-request metric intent', () => {
         expect(admitted).not.toHaveProperty('authority');
     });
 
+    it.each([
+        ['Make Lead Vocal brighter', 'brighter'],
+        ['Make Lead Vocal warmer', 'warmer'],
+        ['Make Lead Vocal punchier', 'punchier'],
+        ['Make Lead Vocal louder than Bass', 'louder'],
+        ['Make the drums glue together more', 'glue'],
+        ['Set Bass gain to -3 dB so the Lead Vocal sounds brighter', 'brighter'],
+        ['Make Lead Vocal brighter / set Bass gain to -3 dB', 'brighter'],
+        ['Quieter than Kick', 'quieter'],
+        ['Make the vocal brighter at 8 kHz', 'brighter'],
+        ['Make Lead Vocal 3 dB louder than Bass', 'louder'],
+        ['Set Bass gain to -3 dB so the Lead Vocal sounds louder', 'louder'],
+        ['Lower Bass 3 dB to make the Lead Vocal louder', 'louder'],
+        ['Set Bass gain to -3 dB which makes the Lead Vocal louder', 'louder'],
+        ['Increase the loudness of the vocal', 'loudness'],
+        ['Make the vocal loudness bigger', 'loudness'],
+        ['Make the vocal brighter by 8 kHz', 'brighter'],
+        ['Add more punch in the chorus', 'more punch'],
+        ['Give the drums more punch', 'more punch'],
+        ['Rename Drums to Bass and make it warmer', 'warmer'],
+        ['make the snare punch out', 'punch'],
+        ['Increase the width of the vocal', 'width'],
+        ['Make the vocal wider', 'wider'],
+        ['Make the drums tight with the catalog drums-tight-transient recipe', 'tight'],
+        ['Use a recipe to make the drums punchy', 'punchy'],
+    ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
+        const value = fixture(prompt);
+        const admitted = admitPlanningInterpretation({
+            ...value,
+            projectRevision: 'metric-revision',
+            turn: 1,
+        });
+        expect(admitted.status).toBe('rejected');
+        expect(admitted).toMatchObject({ reason: expect.stringContaining(`"${word}", a perceptual quality`) });
+    });
+
+    it.each([
+        'Set Lead Vocal gain to -3 dB',
+        'Cut 200 Hz by 2 dB on Bass',
+        'Make Lead Vocal 3 dB louder',
+        'Set Lead Vocal gain to 70%',
+        'Raise "Bright" by 2 dB',
+        'Set device drums-trim gain-level to -6.02 over Chorus',
+        'Keep the Lead Vocal intimate and set Bass gain to -3 dB',
+        'Glue the MIDI clips',
+        'Set punch in at beat 20',
+        'Set the punch in at beat 20',
+        'Move the punch in to beat 20',
+        'Punch in at beat 20',
+        'Enable punch in',
+        'Turn punch in on',
+        'Disable punch out',
+        'Rename Drums to Bright Keys',
+        'Rename Drums to Warm Pad',
+        'Add an audio track named Dark Room',
+        'Add a marker called Bright Chorus',
+        'Set the volume of the three vocal tracks to -4 dB.',
+        'Set the volume of Bass to -6 dB',
+        'Set the level of the Bass to -3 dB',
+        'Make Lead Vocal louder by 3 dB',
+        'Turn the Lead Vocal volume down 3 dB.',
+        'Bring the Bass volume up 2 dB.',
+        'Set the Lead Vocal volume down to -6 dB',
+        'Set the volume of Bass to 60%',
+        'Set the level of the Bass to 60%',
+        'Turn the Bass loudness down 3 dB',
+        'Reduce the loudness of the Bass by 3 dB',
+        'Set the width of the Stereo Widener to 2',
+        'Set the Stereo Widener width to 2',
+        'On the Stereo Widener set width to 2',
+        'Load the Bright Strings preset on Pad',
+        'Set the Bass Reverb size to 0.5',
+        'Add Transient Shaper to Close Drums and set its sustainGain to 0.625 using the catalog drums-tight-transient recipe. Prepare it for my confirmation.',
+        'Add Transient Shaper to Close Drums and set its attackGain to 1.375 using the catalog drums-punchy-transient recipe. Prepare it for my confirmation.',
+        'Add Noise Gate to Close Drums using the controlled recipe. Set its threshold to -42.5 dB. Prepare it for confirmation.',
+    ])('still admits the literal label on a request with no unaccounted quality: %s', (prompt) => {
+        const value = fixture(prompt);
+        const admitted = admitPlanningInterpretation({
+            ...value,
+            projectRevision: 'metric-revision',
+            turn: 1,
+        });
+        expect(admitted).toMatchObject({ status: 'admitted', kind: 'literal' });
+    });
+
     it.each([false, 3, 'literal', [], { kind: 'literal', objectives: [], uncertainty: 'none', value: 1 }])(
         'refuses malformed non-null intent %j before falling back to creative admission',
         (metricIntent) => {
