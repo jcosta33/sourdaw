@@ -1,11 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-const syncCurrentArrangementToStoreMock = vi.hoisted(() => vi.fn());
 const flushAutomergeStorageWritesMock = vi.hoisted(() => vi.fn());
 const captureProjectRevisionMock = vi.hoisted(() => vi.fn<() => string>());
-vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({
-    syncCurrentArrangementToStore: syncCurrentArrangementToStoreMock,
-}));
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
     flushAutomergeStorageWrites: flushAutomergeStorageWritesMock,
@@ -23,7 +19,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: captureProjectRevisionMock,
 }));
 
-const trackStoreMock = vi.hoisted((): { value: { tracks: unknown[] } } => ({ value: { tracks: [] } }));
+const trackStoreMock = vi.hoisted((): { value: { tracks: unknown[]; selectedTrackId: string | null } } => ({
+    value: { tracks: [], selectedTrackId: null },
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: trackStoreMock,
     markerStore: { value: { markers: [] } },
@@ -144,7 +142,6 @@ describe('buildProjectData', () => {
         for (const key of Object.keys(yeastRacksMock)) {
             delete yeastRacksMock[key];
         }
-        syncCurrentArrangementToStoreMock.mockClear();
         flushAutomergeStorageWritesMock.mockClear();
         captureProjectRevisionMock.mockReset();
         captureProjectRevisionMock.mockReturnValue('snapshot-revision');
@@ -216,7 +213,6 @@ describe('buildProjectData', () => {
 
         await expect(buildProjectData({ includeAudioBuffers: true })).resolves.toBeNull();
 
-        expect(syncCurrentArrangementToStoreMock).not.toHaveBeenCalled();
         expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
     });
 
@@ -279,7 +275,7 @@ describe('buildProjectData', () => {
         await expect(buildPromise).resolves.toBeNull();
     });
 
-    it('captures the snapshot revision after flushing the arrangement synchronization', async () => {
+    it('captures the snapshot revision after flushing pending owner writes', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],
             activeArrangementId: null,
@@ -288,10 +284,8 @@ describe('buildProjectData', () => {
         const built = await buildProjectData({ includeAudioBuffers: false });
 
         expect(built?.snapshotRevision).toBe('snapshot-revision');
-        const syncOrder = syncCurrentArrangementToStoreMock.mock.invocationCallOrder[0];
         const flushOrder = flushAutomergeStorageWritesMock.mock.invocationCallOrder[0];
         const captureOrder = captureProjectRevisionMock.mock.invocationCallOrder[0];
-        expect(syncOrder ?? 0).toBeLessThan(flushOrder ?? 0);
         expect(flushOrder ?? 0).toBeLessThan(captureOrder ?? 0);
     });
 
@@ -383,6 +377,100 @@ describe('buildProjectData', () => {
         expect(built?.data.yeast).toBeUndefined();
     });
 
+    it('uses the fresh active projection for audio ownership, freeze tags and every Yeast rack', async () => {
+        function sourceTrack(id: string, bufferIds: string[], frozenBufferId: string) {
+            return {
+                ...yeastDeviceTrack(id, `${id}-device`),
+                freezeState: { status: 'frozen', frozenBufferId },
+                clips: bufferIds.map((audioBufferId, index) => ({
+                    id: `${id}-clip-${index}`,
+                    trackId: id,
+                    name: audioBufferId,
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'audio',
+                    audioBufferId,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#ffffff',
+                    locked: false,
+                    muted: false,
+                })),
+            };
+        }
+        const fixture = sanitize_arrangement_store_state({
+            arrangements: [
+                {
+                    id: 'active',
+                    name: 'Active',
+                    tracks: {
+                        tracks: [sourceTrack('obsolete', ['obsolete-buffer', 'live-freeze'], 'obsolete-freeze')],
+                    },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+                {
+                    id: 'inactive',
+                    name: 'Inactive',
+                    tracks: { tracks: [sourceTrack('inactive', ['inactive-buffer'], 'inactive-freeze')] },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+                {
+                    id: 'live',
+                    name: 'Live fixture',
+                    tracks: { tracks: [sourceTrack('live', ['live-buffer'], 'live-freeze')] },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+            ],
+            activeArrangementId: 'active',
+        });
+        expect(fixture.arrangements.map((snapshot) => snapshot.id)).toEqual(['active', 'inactive', 'live']);
+        arrangementStoreMock.value = { ...fixture, arrangements: fixture.arrangements.slice(0, 2) };
+        trackStoreMock.value.tracks = fixture.arrangements[2]?.tracks.tracks ?? [];
+        const processor = {
+            id: 'transpose',
+            type: 'transposer',
+            name: 'Up',
+            bypassed: false,
+            params: { semitones: 12 },
+        };
+        for (const id of ['obsolete', 'inactive', 'live']) {
+            yeastRacksMock[`${id}-device`] = { processors: [processor] };
+        }
+        const buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] };
+        exportCachedAudioBuffersMock.mockResolvedValue({
+            'live-buffer': buffer,
+            'live-freeze': buffer,
+            'inactive-buffer': buffer,
+            'inactive-freeze': buffer,
+        });
+
+        const built = await buildProjectData({ includeAudioBuffers: true });
+
+        const required = ['live-buffer', 'live-freeze', 'inactive-buffer', 'inactive-freeze'];
+        expect(new Set(built?.requiredAudioBufferIds)).toEqual(new Set(required));
+        expect(exportCachedAudioBuffersMock).toHaveBeenCalledWith({ bufferIds: expect.arrayContaining(required) });
+        expect(exportCachedAudioBuffersMock.mock.calls[0]?.[0].bufferIds).toHaveLength(required.length);
+        expect(built?.missingBufferCount).toBe(0);
+        expect(built?.data.audioBuffers).toEqual({
+            'live-buffer': buffer,
+            'live-freeze': { ...buffer, freezeProjectId: 1 },
+            'inactive-buffer': buffer,
+            'inactive-freeze': { ...buffer, freezeProjectId: 1 },
+        });
+        expect(built?.data.yeast).toEqual({
+            racks: {
+                'live-device': { processors: [processor] },
+                'inactive-device': { processors: [processor] },
+            },
+        });
+        expect(built?.data.arrangements?.[0]?.tracks?.tracks.map((track) => track.id)).toEqual(['live']);
+        expect(built?.data.arrangements?.[1]?.tracks?.tracks.map((track) => track.id)).toEqual(['inactive']);
+    });
+
     it('refuses to serialize a version-2 snapshot before identity migration', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],
@@ -439,7 +527,7 @@ describe('buildProjectData', () => {
     });
 
     it('binds only freeze-exclusive exports to the project envelope', async () => {
-        arrangementStoreMock.value = sanitize_arrangement_store_state({
+        const arrangements = sanitize_arrangement_store_state({
             arrangements: [
                 {
                     id: 'arrangement-1',
@@ -539,6 +627,8 @@ describe('buildProjectData', () => {
             ],
             activeArrangementId: 'arrangement-1',
         });
+        arrangementStoreMock.value = arrangements;
+        trackStoreMock.value.tracks = arrangements.arrangements[0]?.tracks.tracks ?? [];
         const buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] };
         exportCachedAudioBuffersMock.mockResolvedValue({
             'alternative-buffer': buffer,
@@ -683,6 +773,7 @@ describe('buildProjectData', () => {
             ],
             activeArrangementId: 'legacy-arrangement',
         };
+        midiStoreMock.value.notesByClipId = { legacy: [] };
 
         const built = await buildProjectData();
         const arrangementMidi = built?.data.arrangements?.[0]?.midi;
