@@ -112,6 +112,14 @@ describe('readExplicitProtections over a role family', () => {
         expect(reading.resolvedTrackClauses).toHaveLength(1);
     });
 
+    it.each([
+        "make the mix warmer, don't mess with the drums",
+        'make the mix warmer, hands off the drums',
+        'make the mix warmer, keep your hands off the drums',
+    ])('"%s" opens a protection like "don\'t touch" and protects every drums-family track', (prompt) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds: DRUM_IDS });
+    });
+
     it('protects only the operations a control of the family names', () => {
         expect(readExplicitProtections("make the mix warmer but leave the drums' faders alone", context)).toEqual({
             ...NOTHING,
