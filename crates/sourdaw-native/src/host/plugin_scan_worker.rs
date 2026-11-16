@@ -104,14 +104,6 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 #[cfg(test)]
 const MAX_RESPONSE_PARAMETERS: usize = 16_384;
 
-/// The refusal for a response whose compact serialization measures past
-/// [`MAX_RESPONSE_BYTES`], as the message the leaf writes. Both sides of the
-/// process boundary use it: the leaf refuses to write such a response, and the
-/// supervisor refuses to read one ([`ScanFailure::ResponseOverLimit`]).
-fn oversized_response_error(bytes: usize) -> String {
-    ScanFailure::ResponseOverLimit { bytes }.to_string()
-}
-
 /// Why a scan through the bounded helper failed, as the supervisor sees it.
 ///
 /// The variants are the failure kinds the supervisor treats differently:
@@ -122,8 +114,8 @@ fn oversized_response_error(bytes: usize) -> String {
 /// `electron/` first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScanFailure {
-    /// The helper child exited with a non-zero status other than
-    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`].
+    /// The helper child exited with a non-zero status, including a
+    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] the supervisor could not confirm.
     ExitedUnsuccessfully { path: PathBuf },
     /// The helper child ran past its bound and was killed.
     TimedOut,
@@ -134,8 +126,9 @@ pub enum ScanFailure {
     ResponseTampered { path: PathBuf },
     /// The response measured past [`MAX_RESPONSE_BYTES`].
     ResponseOverLimit { bytes: usize },
-    /// The helper self-reported that it could not write its response; see
-    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`].
+    /// The helper reported that it could not write its response, and the
+    /// supervisor's own write into the same directory failed with a storage
+    /// fault; see [`process_failure`].
     ResponseWriteRefused { path: PathBuf },
     /// Any other refusal: the read failed, not the plugin's process, so it is
     /// never quarantine evidence.
@@ -205,9 +198,8 @@ impl std::fmt::Display for ScanFailure {
 
 impl std::error::Error for ScanFailure {}
 
-/// The leaf worker's exit code for a self-diagnosed refusal to write its
-/// response — a malformed payload, the response exceeding
-/// [`MAX_RESPONSE_BYTES`], or the response file itself failing to write.
+/// The leaf worker's exit code when it could not create or write its
+/// response file.
 ///
 /// Distinct from the generic non-zero exit ([`WorkerRole::Malformed`], no
 /// backend for the format) on purpose: those and a crashing plugin all share
@@ -215,19 +207,15 @@ impl std::error::Error for ScanFailure {}
 /// every one of them is either a genuine process failure or a caller error
 /// that never reaches a real plugin. A response-write refusal is neither — it
 /// can fire for every candidate in one scan on a systemic fault (a full disk,
-/// a read-only temp directory) that has nothing to do with any plugin being
-/// dangerous, and folding it into the same exit code as a crash would
-/// quarantine every binary the process ever touched. See
-/// [`process_failure`], which is what keeps it out of
-/// [`ScanFailure::is_process_failure`].
+/// an exhausted quota, a filesystem gone read-only) that has nothing to do
+/// with any plugin being dangerous, and folding it into the same exit code as
+/// a crash would quarantine every binary the process ever touched.
 ///
-/// The inverse residual is accepted, not closed: a plugin whose own static
-/// initializer happens to call `exit(3)` reads as a self-diagnosed write
-/// refusal and escapes quarantine. That plugin still costs no more than one
-/// bounded spawn per scan — nothing near the deadline-exhausting repeat
-/// spawns an unquarantined *hang* would cost — because a plugin that hangs
-/// instead is still caught by `wait_bounded`'s timeout, which classifies
-/// entirely on elapsed time and never looks at an exit code at all.
+/// The code alone proves nothing, though: the plugin runs inside the helper
+/// and can call `exit(3)` itself (#6662). [`process_failure`] therefore keeps
+/// the refusal class only when the supervisor's own write into the same
+/// directory fails with a storage fault too; an exit 3 without that is a
+/// process failure and quarantines.
 const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
 
 /// Env var a host sets to describe how a leaf worker process is launched.
@@ -308,14 +296,27 @@ struct WorkerResponse<T> {
     worker_pid: u32,
     result: Result<T, String>,
 }
-struct ResponseDirectory(PathBuf);
+/// The private directory one helper writes its response into.
+///
+/// `pin` is the supervisor's own handle on the directory it created. The
+/// plugin runs in the helper, is handed this path, and may rename the
+/// directory or leave a symlink in its place before it exits; the pin is what
+/// keeps [`ResponseDirectory::probe_write`] checking the directory the
+/// supervisor made rather than whatever the path names by then. On Unix the
+/// probe creates through the pinned descriptor; on Windows the pin is opened
+/// without delete sharing, so the directory cannot be renamed or removed while
+/// it is held. It is `None` only on platforms that have neither.
+struct ResponseDirectory {
+    path: PathBuf,
+    pin: Option<fs::File>,
+}
 #[test]
 fn scoped_scan_response_directory() {
     crate::host::runtime_scope::RuntimeScope::test_in_process(
         concat!(module_path!(), "::scoped_scan_response_directory"),
         |root| {
             let directory = ResponseDirectory::create().unwrap();
-            let path = directory.0.clone();
+            let path = directory.path.clone();
             assert_eq!(
                 path.parent().unwrap(),
                 root.join("native/data/private/scan-responses")
@@ -351,12 +352,94 @@ impl ResponseDirectory {
         builder
             .create(&path)
             .map_err(|error| format!("Cannot create plugin scan response directory: {error}"))?;
-        Ok(Self(path))
+        // Owned before the pin is opened, so a refused pin still removes the
+        // directory on the way out.
+        let mut directory = Self { path, pin: None };
+        directory.pin = pin_directory(&directory.path)
+            .map_err(|error| format!("Cannot open plugin scan response directory: {error}"))?;
+        Ok(directory)
+    }
+
+    /// Write a small file of the supervisor's own into this directory and
+    /// flush it to storage, so a full disk shows here and not only on a later
+    /// writeback.
+    fn probe_write(&self) -> std::io::Result<()> {
+        let name = format!("write-probe-{}", uuid::Uuid::new_v4());
+        let mut probe = self.create_probe(&name)?;
+        probe.write_all(b"probe")?;
+        probe.sync_all()
+    }
+
+    #[cfg(unix)]
+    fn create_probe(&self, name: &str) -> std::io::Result<fs::File> {
+        use std::os::fd::{AsRawFd, FromRawFd};
+        let pin = self
+            .pin
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("the response directory is not pinned"))?;
+        let name = std::ffi::CString::new(name).map_err(std::io::Error::other)?;
+        // SAFETY: the pinned descriptor is open for as long as `self`, `name`
+        // is a NUL-terminated string that outlives the call, and the mode is
+        // the variadic argument O_CREAT requires.
+        let descriptor = unsafe {
+            libc::openat(
+                pin.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600 as libc::c_uint,
+            )
+        };
+        if descriptor < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: `descriptor` was just opened by this call and nothing else
+        // owns it.
+        Ok(unsafe { fs::File::from_raw_fd(descriptor) })
+    }
+
+    #[cfg(not(unix))]
+    fn create_probe(&self, name: &str) -> std::io::Result<fs::File> {
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(self.path.join(name))
     }
 }
+
+#[cfg(unix)]
+fn pin_directory(path: &Path) -> std::io::Result<Option<fs::File>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map(Some)
+}
+
+#[cfg(windows)]
+fn pin_directory(path: &Path) -> std::io::Result<Option<fs::File>> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 0x1;
+    const FILE_SHARE_WRITE: u32 = 0x2;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .map(Some)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn pin_directory(_path: &Path) -> std::io::Result<Option<fs::File>> {
+    Ok(None)
+}
+
 impl Drop for ResponseDirectory {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        // The Windows pin forbids removing the directory while it is open.
+        drop(self.pin.take());
+        let _ = fs::remove_dir_all(&self.path);
     }
 }
 /// The bounded child's entries for one plugin format.
@@ -757,19 +840,43 @@ fn terminate_current_process(code: i32) {
     std::process::exit(code);
 }
 
+/// Write the helper's answer, returning `Err` only when the response file
+/// itself cannot be created or written — the one failure
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] reports and the supervisor can check.
+///
+/// The two answers the helper cannot write in full still leave a file, so
+/// neither reaches that exit code. A response that does not serialize is
+/// replaced by an `Err` naming why, which the supervisor reads as a data-level
+/// refusal. A response past [`MAX_RESPONSE_BYTES`] is stated as its length
+/// alone: the file is extended to the serialized size without its bytes
+/// (sparse where the filesystem allows), and the supervisor's own size check
+/// reads that as [`ScanFailure::ResponseOverLimit`] with the true size.
 fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
-    let bytes = serde_json::to_vec(response)
-        .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))?;
-    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(oversized_response_error(bytes.len()));
-    }
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
         .map_err(|error| format!("Cannot create plugin scan response: {error}"))?;
+    let bytes = match serde_json::to_vec(response) {
+        Ok(bytes) => bytes,
+        Err(error) => unserializable_response(response.worker_pid, &error)?,
+    };
+    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+        return file
+            .set_len(bytes.len() as u64)
+            .map_err(|error| format!("Cannot write plugin scan response: {error}"));
+    }
     file.write_all(&bytes)
         .map_err(|error| format!("Cannot write plugin scan response: {error}"))
+}
+
+/// The response that stands in for one that would not serialize.
+fn unserializable_response(worker_pid: u32, error: &serde_json::Error) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(&WorkerResponse::<()> {
+        worker_pid,
+        result: Err(format!("Cannot serialize plugin scan response: {error}")),
+    })
+    .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))
 }
 /// Read every plugin descriptor a file declares through that format's
 /// registered backend, in a bounded child process.
@@ -798,30 +905,69 @@ pub fn scan_instance_metadata(
     )
 }
 
-/// The refusal `scan_worker` reports for a helper that exited unsuccessfully,
-/// shaped by which of two things that exit code means.
+/// The refusal `scan_worker` reports for a helper that exited unsuccessfully.
 ///
-/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] is [`ScanFailure::ResponseWriteRefused`],
-/// which [`ScanFailure::is_process_failure`] never classifies as evidence
-/// worth quarantining a binary over. Every other non-zero exit — a crash,
-/// `WorkerRole::Malformed`, no backend for the format — is
-/// [`ScanFailure::ExitedUnsuccessfully`], which it does.
+/// Every non-zero exit is [`ScanFailure::ExitedUnsuccessfully`], which
+/// quarantines, unless the helper exited [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`]
+/// *and* `probe_write` — the supervisor's own write into the same response
+/// directory — fails with a storage fault. Only then is it
+/// [`ScanFailure::ResponseWriteRefused`], which never quarantines.
 ///
-/// The message states what happened (the helper could not write) and the one
-/// helper fact every exit-3 cause shares (its response limit). It deliberately
-/// does not claim which cause fired: an oversize refusal and a broken
-/// environment share the exit code, and the child has no channel that could
-/// carry the distinction — stderr is null, and a refusal sidecar would carry
-/// text from the same process the plugin's own code ran in toward strings the
-/// registry publishes, which the reason contract forbids. The measured size
-/// therefore appears only where it is observable, in
-/// [`ScanFailure::ResponseOverLimit`]'s read-side refusal.
-fn process_failure(path: &Path, status: &ExitStatus) -> ScanFailure {
+/// Anything the helper writes or exits with, the plugin running inside it can
+/// write or exit with too, so the helper's word decides nothing (#6662). The
+/// probe is evidence from outside the helper: a storage fault is a property of
+/// the filesystem, which a plugin can produce only by making it true — and a
+/// disk that is genuinely full is exactly the systemic fault this class exists
+/// to keep from quarantining every candidate. A permission refusal is not
+/// such evidence: the supervisor created the directory writable moments ago,
+/// so a directory that refuses it now was changed by a process of this user,
+/// and the plugin is one.
+///
+/// The probe runs only for exit 3, after the helper is gone, so a storage
+/// fault that clears in between reads as a process failure; a full rescan
+/// clears that quarantine.
+fn process_failure(
+    path: &Path,
+    status: &ExitStatus,
+    probe_write: impl FnOnce() -> std::io::Result<()>,
+) -> ScanFailure {
     let path = path.to_path_buf();
-    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
+    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE)
+        && probe_write().is_err_and(|error| is_storage_fault(&error))
+    {
         return ScanFailure::ResponseWriteRefused { path };
     }
     ScanFailure::ExitedUnsuccessfully { path }
+}
+
+/// Whether a write failed because of the storage itself rather than anything
+/// a same-user process can set on a file or directory: a full disk, an
+/// exhausted quota, a read-only filesystem, or a device I/O error. A
+/// permission or missing-entry error is never one; see [`process_failure`].
+fn is_storage_fault(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::StorageFull
+            | std::io::ErrorKind::QuotaExceeded
+            | std::io::ErrorKind::ReadOnlyFilesystem
+    ) || is_device_io_error(error)
+}
+
+/// A failing disk. Matched by OS code because std leaves it uncategorized.
+#[cfg(unix)]
+fn is_device_io_error(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(libc::EIO)
+}
+
+#[cfg(windows)]
+fn is_device_io_error(error: &std::io::Error) -> bool {
+    const ERROR_IO_DEVICE: i32 = 1117;
+    error.raw_os_error() == Some(ERROR_IO_DEVICE)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn is_device_io_error(_error: &std::io::Error) -> bool {
+    false
 }
 
 /// The registry-facing reason for a response-write refusal.
@@ -865,7 +1011,7 @@ fn scan_worker_with<T: DeserializeOwned>(
     worker_argument: &str,
 ) -> Result<T, ScanFailure> {
     let response_directory = ResponseDirectory::create().map_err(ScanFailure::Refused)?;
-    let response_path = response_directory.0.join("metadata.json");
+    let response_path = response_directory.path.join("metadata.json");
     let mut command = Command::new(&launcher.program);
     command
         .args(&launcher.args)
@@ -886,7 +1032,9 @@ fn scan_worker_with<T: DeserializeOwned>(
         .stderr(Stdio::null());
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
-        return Err(process_failure(path, &status));
+        return Err(process_failure(path, &status, || {
+            response_directory.probe_write()
+        }));
     }
     let bytes = read_response_bytes(&response_path, path)?;
     let response: WorkerResponse<T> = serde_json::from_slice(&bytes).map_err(|error| {
@@ -1583,6 +1731,7 @@ mod tests {
 unsafe extern "C" fn init(_: *const c_char)->bool{
  #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){fork_a_spinning_child_then_hang(pid_file);}
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
+ if let Some(code)=std::env::var("SOURDAW_TEST_PLUGIN_EXIT_CODE").ok().and_then(|code|code.parse().ok()){std::process::exit(code);}
  std::process::abort();
 }
 #[no_mangle] static clap_entry:Entry=Entry{version:Version{major:1,minor:2,revision:0},init:Some(init),deinit:None,get_factory:None};"#,
@@ -2344,6 +2493,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             let failure = process_failure(
                 Path::new("/plugins/Wedged.clap"),
                 &exit_status_for_code(code),
+                storage_full_probe,
             );
             assert!(failure.is_process_failure(), "exit {code}: {failure}");
         }
@@ -2404,10 +2554,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ScanFailure::Refused("No plugin scan backend for format vst2".to_string()).to_string(),
             "No plugin scan backend for format vst2"
         );
-        assert_eq!(
-            oversized_response_error(1),
-            ScanFailure::ResponseOverLimit { bytes: 1 }.to_string()
-        );
     }
 
     /// Each variant answers both classification questions exactly as the
@@ -2444,29 +2590,246 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// bound, so a read that blocks fails the test instead of hanging it.
     #[cfg(unix)]
     fn scan_with_stand_in_helper(script: String) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
-        let launcher = ScanWorkerCommand {
+        scan_descriptor_through(
+            stand_in_launcher(script, BTreeMap::new()),
+            Path::new("/plugins/Stand-in.clap"),
+        )
+    }
+
+    #[cfg(unix)]
+    fn stand_in_launcher(script: String, env: BTreeMap<String, String>) -> ScanWorkerCommand {
+        ScanWorkerCommand {
             program: PathBuf::from("/bin/sh"),
             args: vec![
                 "-c".to_string(),
                 format!("eval \"out=\\${{$#}}\"\n{script}"),
                 "sh".to_string(),
             ],
-            env: BTreeMap::new(),
-        };
+            env,
+        }
+    }
+
+    /// One descriptor pass through the real `scan_worker_with`, bounded on
+    /// its own thread so a read that blocks fails the test.
+    #[cfg(unix)]
+    fn scan_descriptor_through(
+        launcher: ScanWorkerCommand,
+        plugin_path: &Path,
+    ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+        let plugin_path = plugin_path.to_path_buf();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = sender.send(scan_worker_with::<Vec<ScannedDescriptor>>(
                 &launcher,
                 PluginFormat::Clap,
-                Path::new("/plugins/Stand-in.clap"),
+                &plugin_path,
                 None,
                 WORKER_TIMEOUT,
                 WORKER_ARGUMENT,
             ));
         });
         receiver
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(WORKER_TIMEOUT + Duration::from_secs(5))
             .expect("the scan must return instead of blocking on the response")
+    }
+
+    #[cfg(unix)]
+    const REAL_WORKER_EXE_ENV: &str = "SOURDAW_TEST_REAL_WORKER_EXE";
+    const REAL_WORKER_PLUGIN_ENV: &str = "SOURDAW_TEST_REAL_WORKER_PLUGIN";
+    const REAL_WORKER_RESPONSE_ENV: &str = "SOURDAW_TEST_REAL_WORKER_RESPONSE";
+
+    /// The real worker entry, re-entered from this test binary with the
+    /// descriptor pass's arguments handed over by environment, because the
+    /// test harness would refuse the worker marker as an unknown option.
+    #[test]
+    fn real_worker_entry_child() {
+        let (Some(plugin_path), Some(response_path)) = (
+            std::env::var_os(REAL_WORKER_PLUGIN_ENV),
+            std::env::var_os(REAL_WORKER_RESPONSE_ENV),
+        ) else {
+            return;
+        };
+        let code = run_from_args([
+            OsString::from("sourdaw-real-worker-child"),
+            OsString::from(WORKER_ARGUMENT),
+            OsString::from(PluginFormat::Clap.wire_name()),
+            plugin_path,
+            response_path,
+        ]);
+        std::process::exit(code.unwrap_or(2));
+    }
+
+    /// A launcher that runs [`real_worker_entry_child`] for the descriptor
+    /// pass the supervisor asks for: `$3` is the plugin, `$4` the response.
+    #[cfg(unix)]
+    fn real_worker_launcher(mut env: BTreeMap<String, String>) -> ScanWorkerCommand {
+        env.insert(
+            REAL_WORKER_EXE_ENV.to_string(),
+            std::env::current_exe()
+                .expect("test executable should exist")
+                .display()
+                .to_string(),
+        );
+        stand_in_launcher(
+            format!(
+                "export {REAL_WORKER_PLUGIN_ENV}=\"$3\" {REAL_WORKER_RESPONSE_ENV}=\"$out\"\n\
+                 exec \"${REAL_WORKER_EXE_ENV}\" --exact \
+                 host::plugin_scan_worker::tests::real_worker_entry_child"
+            ),
+            env,
+        )
+    }
+
+    /// #6662, end to end: a plugin whose `init` calls `exit(3)` picks the
+    /// helper's write-refusal exit code, but the response directory the
+    /// supervisor probes is writable, so the scan reports a process failure —
+    /// what quarantines the binary. Mutation this catches: classifying exit 3
+    /// without the supervisor's own probe.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_that_exits_3_from_init_is_a_process_failure() {
+        let fixture = build_hostile_clap("exit3");
+        let env = BTreeMap::from([(
+            "SOURDAW_TEST_PLUGIN_EXIT_CODE".to_string(),
+            RESPONSE_WRITE_REFUSAL_EXIT_CODE.to_string(),
+        )]);
+
+        let error = scan_descriptor_through(real_worker_launcher(env), &fixture.plugin_path)
+            .expect_err("a plugin that exits from init must fail its scan");
+
+        assert_eq!(
+            error,
+            ScanFailure::ExitedUnsuccessfully {
+                path: fixture.plugin_path.clone()
+            }
+        );
+        assert!(error.is_process_failure(), "{error}");
+    }
+
+    /// The launcher reaches the real entry and the entry writes its answer,
+    /// so the test above observes the plugin's exit code and not a launcher
+    /// that failed to start: a launch failure would also read as a process
+    /// failure, but never as this data-level refusal.
+    #[cfg(unix)]
+    #[test]
+    fn the_real_worker_launcher_runs_the_worker_entry() {
+        let error = scan_descriptor_through(
+            real_worker_launcher(BTreeMap::new()),
+            Path::new("/nonexistent/sourdaw-missing.clap"),
+        )
+        .expect_err("a missing plugin cannot be described");
+
+        assert!(
+            matches!(error, ScanFailure::Refused(_)),
+            "the worker entry must have answered: {error}"
+        );
+    }
+
+    /// The forgeries a plugin can arrange before exiting 3, each of which
+    /// must still quarantine: no fault at all, a directory it made
+    /// unwritable, and the directory moved aside for a symlink to a
+    /// read-only volume. The last is what the supervisor's pinned handle is
+    /// for: probing by path would follow the link and meet a genuine
+    /// read-only filesystem.
+    #[cfg(unix)]
+    #[test]
+    fn an_exit_3_a_plugin_arranged_still_quarantines() {
+        let moved_aside = RemovedOnDrop(
+            std::env::temp_dir().join(format!("sourdaw-moved-response-{}", uuid::Uuid::new_v4())),
+        );
+        let moved = moved_aside.0.display();
+        for (forgery, script) in [
+            ("plain exit 3", "exit 3".to_string()),
+            (
+                "unwritable directory",
+                "chmod 500 \"$(dirname \"$out\")\"\nexit 3".to_string(),
+            ),
+            (
+                "directory swapped for a symlink",
+                format!("d=\"$(dirname \"$out\")\"\nmv \"$d\" \"{moved}\"\nln -s / \"$d\"\nexit 3"),
+            ),
+        ] {
+            let error =
+                scan_with_stand_in_helper(script).expect_err("an exit 3 must fail the scan");
+
+            assert!(error.is_process_failure(), "{forgery}: {error}");
+        }
+        assert!(
+            moved_aside.0.is_dir(),
+            "the symlink case must have run: the moved directory is its proof"
+        );
+    }
+
+    /// A directory a test's helper creates outside any response directory,
+    /// removed however the test ends.
+    #[cfg(unix)]
+    struct RemovedOnDrop(PathBuf);
+
+    #[cfg(unix)]
+    impl Drop for RemovedOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A response past the limit is written as its length alone and read
+    /// back as the helper's limit with the true size — never exit 3, which
+    /// would now quarantine a plugin for being large (#3866).
+    #[test]
+    fn an_oversized_answer_reaches_the_supervisor_as_a_limit_refusal() {
+        let directory =
+            ResponseDirectory::create().expect("the response directory should be created");
+        let response_path = directory.path.join("metadata.json");
+        let response = WorkerResponse {
+            worker_pid: std::process::id().wrapping_add(1),
+            result: Ok::<_, String>("a".repeat(MAX_RESPONSE_BYTES as usize + 1)),
+        };
+        let serialized = serde_json::to_vec(&response)
+            .expect("the response should serialize")
+            .len();
+
+        write_response(&response_path, &response)
+            .expect("an oversized answer must still leave a response, not refuse");
+
+        assert_eq!(
+            read_response_bytes(&response_path, Path::new("/plugins/Large.clap")),
+            Err(ScanFailure::ResponseOverLimit { bytes: serialized })
+        );
+    }
+
+    struct Unserializable;
+
+    impl Serialize for Unserializable {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("refused by the fixture"))
+        }
+    }
+
+    /// A response that will not serialize is replaced by an `Err` the
+    /// supervisor reads as data, never exit 3.
+    #[test]
+    fn an_unserializable_answer_is_written_as_a_data_level_error() {
+        let directory =
+            ResponseDirectory::create().expect("the response directory should be created");
+        let response_path = directory.path.join("metadata.json");
+
+        write_response(
+            &response_path,
+            &WorkerResponse {
+                worker_pid: std::process::id().wrapping_add(1),
+                result: Ok::<_, String>(Unserializable),
+            },
+        )
+        .expect("an unserializable answer must still leave a response");
+
+        let bytes = read_response_bytes(&response_path, Path::new("/plugins/Odd.clap"))
+            .expect("the stand-in response should be readable");
+        let response: WorkerResponse<Vec<ScannedDescriptor>> =
+            serde_json::from_slice(&bytes).expect("the stand-in response should parse");
+        assert_eq!(
+            response.result,
+            Err("Cannot serialize plugin scan response: refused by the fixture".to_string())
+        );
     }
 
     /// A response `scan_worker` accepts: a pid that is not this process's.
@@ -2556,35 +2919,119 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .expect("sh should run")
     }
 
+    /// A supervisor probe that met a full disk, as the OS reports one.
+    #[cfg(unix)]
+    fn storage_full_probe() -> std::io::Result<()> {
+        Err(std::io::Error::from_raw_os_error(libc::ENOSPC))
+    }
+
     /// The hardening this exit code exists for (#2911): a systemic fault that
-    /// stops the worker from writing *any* response — a full disk, a
-    /// read-only temp directory — must not read as a crashing plugin, or a
-    /// single bad environment quarantines every candidate the process ever
-    /// touches on one scan.
+    /// stops the worker from writing *any* response must not read as a
+    /// crashing plugin, or a single bad environment quarantines every
+    /// candidate the process ever touches on one scan. Each fault is the OS
+    /// error the supervisor's own probe meets, so the platform's mapping of it
+    /// is what is under test. Mutation this catches: dropping a kind from
+    /// `is_storage_fault`, or ignoring the probe's verdict.
     #[cfg(unix)]
     #[test]
-    fn a_response_write_refusal_is_not_a_process_failure() {
+    fn an_exit_3_the_supervisors_probe_confirms_is_a_write_refusal() {
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure(path, &status);
+        for (fault, errno) in [
+            ("full disk", libc::ENOSPC),
+            ("exhausted quota", libc::EDQUOT),
+            ("read-only filesystem", libc::EROFS),
+            ("failing disk", libc::EIO),
+        ] {
+            let message = process_failure(path, &status, || {
+                Err(std::io::Error::from_raw_os_error(errno))
+            });
 
-        assert!(
-            !message.is_process_failure(),
-            "a response-write refusal must never be classified as a process failure: {message}"
-        );
+            assert_eq!(message, write_refused("/plugins/Innocent.clap"), "{fault}");
+            assert!(!message.is_process_failure(), "{fault}: {message}");
+        }
+    }
+
+    /// Which probe errors keep the non-quarantining refusal. Systemic storage
+    /// faults, including a failing disk's EIO, refuse: quarantining there
+    /// would blame every good plugin. Permission and missing-entry errors are
+    /// what a same-user plugin can arrange on the supervisor's 0700
+    /// directory, so they must stay rejected. Mutation this catches: dropping
+    /// the EIO match, or admitting `PermissionDenied`.
+    #[cfg(unix)]
+    #[test]
+    fn only_storage_faults_count_as_genuine_write_refusals() {
+        use std::io::{Error, ErrorKind};
+        let cases = [
+            ("StorageFull", Error::from(ErrorKind::StorageFull), true),
+            ("QuotaExceeded", Error::from(ErrorKind::QuotaExceeded), true),
+            (
+                "ReadOnlyFilesystem",
+                Error::from(ErrorKind::ReadOnlyFilesystem),
+                true,
+            ),
+            ("EIO", Error::from_raw_os_error(libc::EIO), true),
+            (
+                "PermissionDenied",
+                Error::from(ErrorKind::PermissionDenied),
+                false,
+            ),
+            ("EACCES", Error::from_raw_os_error(libc::EACCES), false),
+            ("NotFound", Error::from(ErrorKind::NotFound), false),
+            ("ENOENT", Error::from_raw_os_error(libc::ENOENT), false),
+        ];
+        for (name, error, refuses) in cases {
+            assert_eq!(is_storage_fault(&error), refuses, "{name}: {error}");
+        }
+    }
+
+    /// #6662: the plugin runs inside the helper and can exit 3 itself. An exit
+    /// 3 the supervisor's own write contradicts — it succeeds, or fails in a
+    /// way a same-user process can arrange on the directory — is the plugin's,
+    /// and quarantines. Mutation this catches: trusting the exit code alone.
+    #[cfg(unix)]
+    #[test]
+    fn an_exit_3_the_supervisors_probe_contradicts_is_a_process_failure() {
+        let path = Path::new("/plugins/Hostile.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        for (probe, outcome) in [
+            ("writable", Ok(())),
+            (
+                "permission denied",
+                Err(std::io::Error::from_raw_os_error(libc::EACCES)),
+            ),
+            (
+                "operation not permitted",
+                Err(std::io::Error::from_raw_os_error(libc::EPERM)),
+            ),
+            (
+                "probe already present",
+                Err(std::io::Error::from_raw_os_error(libc::EEXIST)),
+            ),
+        ] {
+            let message = process_failure(path, &status, || outcome);
+
+            assert_eq!(
+                message,
+                exited_unsuccessfully("/plugins/Hostile.clap"),
+                "{probe}"
+            );
+            assert!(message.is_process_failure(), "{probe}: {message}");
+        }
     }
 
     /// The other half: every other non-zero exit — a crash, `Malformed`, no
     /// backend — must keep classifying as a process failure exactly as
-    /// before this exit code existed.
+    /// before this exit code existed, whatever the probe would have said.
     #[cfg(unix)]
     #[test]
     fn any_other_nonzero_exit_still_reads_as_a_process_failure() {
         let path = Path::new("/plugins/Hostile.clap");
         let status = exit_status_for_code(2);
 
-        let message = process_failure(path, &status);
+        let message = process_failure(path, &status, storage_full_probe);
 
         assert!(
             message.is_process_failure(),
@@ -2693,7 +3140,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
 
         let directory =
             ResponseDirectory::create().expect("the response directory should be created");
-        let response_path = directory.0.join("metadata.json");
+        let response_path = directory.path.join("metadata.json");
 
         write_response(&response_path, &response)
             .expect("a parameter list over the former cap must be written in full");
@@ -2727,7 +3174,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure(path, &status);
+        let message = process_failure(path, &status, storage_full_probe);
 
         assert!(
             message

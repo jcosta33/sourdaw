@@ -271,6 +271,21 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 /// the cap quietly stops meaning what it says.
 pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
 
+/// The most bytes of one candidate's helper failure text a scan reports.
+///
+/// That text can be the helper's own `Err`, which is the plugin's bytes and
+/// bounded only by the response limit (16 MiB). A few hundred bytes carry any
+/// real diagnostic; the rest is cut on a character boundary and marked with
+/// [`TRUNCATED_SCAN_ERROR_MARKER`].
+const MAX_SCAN_ERROR_TEXT_BYTES: usize = 512;
+
+const TRUNCATED_SCAN_ERROR_MARKER: &str = "… (truncated)";
+
+/// The most candidate failures one scan reports by name. The rest are
+/// counted in one closing entry, so a folder of broken bundles answers with a
+/// short list rather than one row per candidate the walk reached.
+const MAX_REPORTED_CANDIDATE_ERRORS: usize = 32;
+
 /// The whole enumeration's clock.
 ///
 /// Sized against the shell supervisor that owns the scan invocation
@@ -539,6 +554,66 @@ fn quarantine_if_process_failure(
     }
 }
 
+/// `text` cut to [`MAX_SCAN_ERROR_TEXT_BYTES`] on a character boundary, with
+/// the marker appended when anything was cut.
+fn bounded_scan_error_text(text: &str) -> String {
+    if text.len() <= MAX_SCAN_ERROR_TEXT_BYTES {
+        return text.to_string();
+    }
+    let kept = &text[..text.floor_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES)];
+    format!("{kept}{TRUNCATED_SCAN_ERROR_MARKER}")
+}
+
+/// The candidate failures one scan reports: each one's text bounded, the
+/// first [`MAX_REPORTED_CANDIDATE_ERRORS`] by name and the rest counted.
+#[derive(Default)]
+struct CandidateErrors {
+    reported: Vec<String>,
+    omitted: usize,
+}
+
+impl CandidateErrors {
+    /// A candidate whose helper failed, its failure text bounded.
+    fn record(&mut self, path: &Path, error: &ScanFailure) {
+        self.push(|| {
+            format!(
+                "{}: {}",
+                path.display(),
+                bounded_scan_error_text(&error.to_string())
+            )
+        });
+    }
+
+    /// A candidate that changed while the helper read it.
+    fn record_changed_file(&mut self, path: &Path) {
+        self.push(|| {
+            format!(
+                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
+                path.display()
+            )
+        });
+    }
+
+    /// The row is built only when it will be reported.
+    fn push(&mut self, row: impl FnOnce() -> String) {
+        if self.reported.len() >= MAX_REPORTED_CANDIDATE_ERRORS {
+            self.omitted += 1;
+            return;
+        }
+        self.reported.push(row());
+    }
+
+    /// The entries in report order, the omitted count last.
+    fn into_entries(self) -> impl Iterator<Item = String> {
+        let summary = match self.omitted {
+            0 => None,
+            1 => Some("1 more plugin scan error was not listed".to_string()),
+            omitted => Some(format!("{omitted} more plugin scan errors were not listed")),
+        };
+        self.reported.into_iter().chain(summary)
+    }
+}
+
 /// Apply one instance-pass outcome to its descriptor row.
 ///
 /// Success fills in parameters and capabilities. Failure always leaves the
@@ -717,6 +792,7 @@ async fn scan_plugins_with_backend(
             let mut plugins = Vec::new();
             let mut fingerprints = ScanFingerprints::new();
             let mut scanned_paths = Vec::new();
+            let mut candidate_errors = CandidateErrors::default();
             for candidate in candidates {
                 if !covers_a_whole_candidate(deadline, budget) {
                     scan_errors.push("Plugin scan time limit exceeded".to_string());
@@ -809,18 +885,16 @@ async fn scan_plugins_with_backend(
                             }
                             // Not quarantined: nothing about the helper
                             // failed, and the next scan reads the file afresh.
-                            None => scan_errors.push(format!(
-                                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
-                                candidate.path.display()
-                            )),
+                            None => candidate_errors.record_changed_file(&candidate.path),
                         }
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
-                        scan_errors.push(format!("{}: {error}", candidate.path.display()))
+                        candidate_errors.record(&candidate.path, &error);
                     }
                 }
             }
+            scan_errors.extend(candidate_errors.into_entries());
             retain_first_plugin_per_identity(&mut plugins);
             // Deliberately not `publish_scan_results_in_registry`'s predicate:
             // that one drops every registry entry under a scanned root and
@@ -8549,6 +8623,226 @@ mod tests {
             recording_instance_scan(Arc::clone(instance_calls)),
         ))
         .expect("a scan over an authorized fixture root should succeed")
+    }
+
+    /// A scan over `count` fixture candidates whose descriptor helper reports
+    /// `error_text` as its `Err` — the plugin's own bytes.
+    fn scan_with_failing_candidates(
+        test_name: &str,
+        count: usize,
+        error_text: String,
+    ) -> ScanResult {
+        scan_fixture_candidates(test_name, count, move |_path| {
+            Err(ScanFailure::Refused(error_text.clone()))
+        })
+    }
+
+    /// A scan over `count` fixture candidates whose descriptor pass answers
+    /// with `outcome` for each path.
+    fn scan_fixture_candidates(
+        test_name: &str,
+        count: usize,
+        outcome: impl Fn(&Path) -> Result<Vec<ScannedDescriptor>, ScanFailure> + Send + 'static,
+    ) -> ScanResult {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        for index in 0..count {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, _timeout| outcome(path),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan whose candidates fail still answers");
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// A descriptor answer for a file that is then changed in place, as a
+    /// write landing while the helper read it would.
+    fn changed_while_scanned(path: &Path) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+        std::fs::write(path, b"a different, longer plugin file").expect("fixture rewritten");
+        Ok(vec![descriptor_for(path)])
+    }
+
+    const CHANGED_FILE_ROW_SUFFIX: &str = ": the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.";
+
+    /// The file-changed row is a candidate error like any other: it counts
+    /// under the same cap and the same closing summary. Mutation this
+    /// catches: pushing it straight into `scan_errors`.
+    #[test]
+    fn file_changed_rows_count_under_the_candidate_error_cap() {
+        let scan = scan_fixture_candidates(
+            "scan-many-changed",
+            MAX_REPORTED_CANDIDATE_ERRORS + 5,
+            changed_while_scanned,
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(CHANGED_FILE_ROW_SUFFIX)));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("5 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Process failures and file-changed rows share one cap, not one each.
+    #[test]
+    fn helper_failures_and_file_changed_rows_share_one_cap() {
+        let scan = scan_fixture_candidates(
+            "scan-mixed-errors",
+            MAX_REPORTED_CANDIDATE_ERRORS + 8,
+            |path| {
+                let index: usize = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .and_then(|stem| stem.strip_prefix("Broken"))
+                    .and_then(|index| index.parse().ok())
+                    .expect("fixture names carry their index");
+                if index.is_multiple_of(2) {
+                    Err(ScanFailure::ExitedUnsuccessfully {
+                        path: path.to_path_buf(),
+                    })
+                } else {
+                    changed_while_scanned(path)
+                }
+            },
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        let listed = &scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS];
+        assert!(listed
+            .iter()
+            .any(|entry| entry.ends_with(CHANGED_FILE_ROW_SUFFIX)));
+        assert!(listed
+            .iter()
+            .any(|entry| entry.contains("Plugin scan helper exited unsuccessfully")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("8 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Exactly the cap lists every failure with no summary; one past it
+    /// lists the cap and counts the one.
+    #[test]
+    fn the_candidate_error_cap_is_exact_at_its_boundary() {
+        let at_cap = scan_with_failing_candidates(
+            "scan-errors-at-cap",
+            MAX_REPORTED_CANDIDATE_ERRORS,
+            "bad".to_string(),
+        );
+        assert_eq!(at_cap.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS);
+        assert!(at_cap.errors.iter().all(|entry| entry.ends_with(": bad")));
+
+        let past_cap = scan_with_failing_candidates(
+            "scan-errors-past-cap",
+            MAX_REPORTED_CANDIDATE_ERRORS + 1,
+            "bad".to_string(),
+        );
+        assert_eq!(past_cap.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert_eq!(
+            past_cap.errors.last().map(String::as_str),
+            Some("1 more plugin scan error was not listed")
+        );
+    }
+
+    /// Text of exactly the bound is kept whole and unmarked; one byte more
+    /// is cut, on a character boundary, and marked. The 513-byte text ends in
+    /// a two-byte character spanning the bound, so a byte cut would split it.
+    #[test]
+    fn the_error_text_bound_is_exact_at_its_boundary() {
+        let at_bound = "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES);
+        assert_eq!(bounded_scan_error_text(&at_bound), at_bound);
+
+        let past_bound = format!("{}é", "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES - 1));
+        assert_eq!(past_bound.len(), MAX_SCAN_ERROR_TEXT_BYTES + 1);
+        assert_eq!(
+            bounded_scan_error_text(&past_bound),
+            format!(
+                "{}{TRUNCATED_SCAN_ERROR_MARKER}",
+                "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES - 1)
+            )
+        );
+    }
+
+    /// #6661: a helper's `Err` text is bounded before it is reported. The cut
+    /// falls inside a two-byte character, so a byte cut would split it; the
+    /// entry keeps the whole characters before it and is marked. Mutation
+    /// this catches: pushing the text whole, or cutting at the byte bound.
+    #[test]
+    fn a_huge_helper_error_is_reported_bounded_on_a_character_boundary() {
+        let text = format!("a{}", "é".repeat(512 * 1024));
+        assert!(
+            !text.is_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES),
+            "the fixture's cut point must fall inside a character"
+        );
+
+        let scan = scan_with_failing_candidates("scan-huge-error", 1, text.clone());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!(
+                "one failing candidate reports one entry: {:?}",
+                scan.errors.len()
+            );
+        };
+        let (_path, reported) = entry
+            .split_once(": ")
+            .expect("an entry names its candidate first");
+        assert!(
+            reported.ends_with(TRUNCATED_SCAN_ERROR_MARKER),
+            "{reported}"
+        );
+        let kept = reported
+            .strip_suffix(TRUNCATED_SCAN_ERROR_MARKER)
+            .expect("the marker was just found");
+        assert!(
+            kept.len() <= MAX_SCAN_ERROR_TEXT_BYTES,
+            "{} bytes kept",
+            kept.len()
+        );
+        assert_eq!(kept, &text[..MAX_SCAN_ERROR_TEXT_BYTES - 1]);
+    }
+
+    /// Text within the bound is reported as the helper wrote it, unmarked.
+    #[test]
+    fn a_short_helper_error_is_reported_whole() {
+        let scan = scan_with_failing_candidates("scan-short-error", 1, "bad entry".to_string());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!("one failing candidate reports one entry: {:?}", scan.errors);
+        };
+        assert!(entry.ends_with(": bad entry"), "{entry}");
+    }
+
+    /// #6661: a folder of broken bundles reports the first failures by name
+    /// and counts the rest in one closing entry. Mutation this catches:
+    /// dropping the cap, or the summary's count.
+    #[test]
+    fn many_failing_candidates_report_a_capped_list_and_the_omitted_count() {
+        let failing = MAX_REPORTED_CANDIDATE_ERRORS + 9;
+
+        let scan = scan_with_failing_candidates("scan-many-errors", failing, "bad".to_string());
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(": bad")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("9 more plugin scan errors were not listed")
+        );
     }
 
     /// A candidate replaced after its helper read it, while the walk was still
