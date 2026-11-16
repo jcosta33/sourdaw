@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 
 import { cruiseFileGraph } from '../e2eFileGraph.ts';
 
@@ -157,9 +157,14 @@ const CARGO_WORKSPACE_FILES: readonly string[] = [
     '.cargo/config.toml',
 ];
 
-/** Trees `cargo test` compiles for the tested crate; a crate without one contributes nothing. */
+/**
+ * The source directory of every target the tested crate declares, so a target `Cargo.toml` points
+ * outside the default layout still counts. A directory with no listed file contributes nothing, and
+ * a target at the crate root stands for its file alone, never the whole crate directory.
+ */
 function optionalTestedTrees(cargoPackage: CargoPackage): readonly string[] {
-    return [`${cargoPackage.directory}/examples`, `${cargoPackage.directory}/benches`];
+    const directories = cargoPackage.targets.map((target) => dirname(target.source));
+    return [...new Set(directories)].filter((directory) => directory !== cargoPackage.directory).sort();
 }
 
 type CargoClosurePaths = { readonly required: readonly string[]; readonly optionalTrees: readonly string[] };

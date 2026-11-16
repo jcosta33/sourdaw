@@ -273,8 +273,9 @@ Named fixtures are not everything a suite's evidence depends on. A suite's closu
 - for each crate it tests with `cargo test -p`, the workspace `Cargo.toml`, `Cargo.lock`,
   `rust-toolchain.toml` and `.cargo/config.toml`, plus that crate and its transitive workspace path-dependency closure
   from `cargo metadata --offline --no-deps`. Each package contributes its `Cargo.toml`, its `src`
-  tree and its build script. The tested crate also contributes its dev-dependencies and its `tests`,
-  `examples` and `benches` directories (a missing one contributes nothing); a dependency's dev-dependencies do not compile and are excluded;
+  tree and its build script. The tested crate also contributes its dev-dependencies and its `tests`
+  directory and every target's source directory from cargo metadata (`examples`, `benches`, or wherever
+  `Cargo.toml` points; a directory with no files contributes nothing); a dependency's dev-dependencies do not compile and are excluded;
 - its other named fixtures, and the files or trees its specs read by path, declared per suite in
   `EVIDENCE_SUITE_CLOSURE_READS` in `scripts/agent-campaign/evidenceGateContract.ts`. A tree stands
   for its tracked files.

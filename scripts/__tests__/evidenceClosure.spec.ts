@@ -105,6 +105,9 @@ function cargoMetadataFor(root: string, packages: readonly string[]): string {
             targets: [
                 { kind: ['lib'], src_path: join(root, 'crates/root-crate/src/lib.rs') },
                 { kind: ['test'], src_path: join(root, 'crates/root-crate/tests/it.rs') },
+                { kind: ['example'], src_path: join(root, 'crates/root-crate/examples/demo.rs') },
+                { kind: ['bench'], src_path: join(root, 'crates/root-crate/benches/speed.rs') },
+                { kind: ['example'], src_path: join(root, 'crates/root-crate/demos/demo.rs') },
             ],
         },
         'dep-crate': {
@@ -343,6 +346,24 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
             `${SUITE.id}: closure file drifted: crates/root-crate/benches/speed.rs`,
             `${SUITE.id}: closure file drifted: crates/root-crate/examples/demo.rs`,
         ]);
+    });
+
+    it('refuses a record once a file a declared example target points at changes, naming it', async () => {
+        const { root, io } = workspace();
+        const demo = 'crates/root-crate/demos/demo.rs';
+        write(
+            root,
+            'crates/root-crate/Cargo.toml',
+            '[package]\nname = "root-crate"\n\n[[example]]\nname = "demo"\npath = "demos/demo.rs"\n'
+        );
+        write(root, demo, 'fn main() {}\n');
+        execFileSync('git', ['add', '.'], { cwd: root });
+        execFileSync('git', [...GIT_IDENTITY, 'commit', '-q', '-m', 'declare example'], { cwd: root });
+        const record = await recordedRun(root, io);
+        expect(record.closure?.files.map(({ path }) => path)).toContain(demo);
+        write(root, demo, 'fn main() { let _ = 1; }\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${demo}`]);
     });
 
     it('refuses a record once a tracked file in its closure is deleted', async () => {
