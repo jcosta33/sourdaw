@@ -21,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
+import { handleRovingRowKeyDown } from '#/utils/UI/rovingRowKeyboard';
 
 import { setlistStore, type SetlistState } from '../../stores/setlistStore';
 import { addSetlistItem } from '../../useCases/setlist/addSetlistItem';
@@ -279,14 +280,17 @@ export const SetlistPanel = (): ReactElement => {
 
             <div className="flex-1 overflow-y-auto">
                 {hasItems ? (
-                    <div role="list" aria-label="Setlist items">
+                    <div role="grid" aria-label="Setlist items">
                         {state.items.map((item, index) => {
                             const isCurrent = index === state.currentIndex;
+                            const isTabStop = index === Math.max(state.currentIndex, 0);
                             const isEditing = editingNameItemId === item.id;
                             return (
                                 <div
                                     key={item.id}
-                                    role="listitem"
+                                    role="row"
+                                    tabIndex={isTabStop ? 0 : -1}
+                                    aria-selected={isCurrent}
                                     draggable
                                     onDragStart={(event) => {
                                         event.dataTransfer.effectAllowed = 'move';
@@ -300,8 +304,11 @@ export const SetlistPanel = (): ReactElement => {
                                     }}
                                     onDragEnd={handleDragEnd}
                                     onClick={() => navigate(() => goToItem(index))}
+                                    onKeyDown={(event) =>
+                                        handleRovingRowKeyDown(event, 'vertical', () => navigate(() => goToItem(index)))
+                                    }
                                     className={cn(
-                                        'group flex items-center gap-2 border-b border-border-hairline px-2 py-1.5 cursor-pointer',
+                                        'group flex items-center gap-2 border-b border-border-hairline px-2 py-1.5 cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70',
                                         isCurrent ? 'bg-surface-overlay' : 'hover:bg-surface-panel',
                                         dragOverIndex === index ? 'border-t-2 border-t-ring' : ''
                                     )}

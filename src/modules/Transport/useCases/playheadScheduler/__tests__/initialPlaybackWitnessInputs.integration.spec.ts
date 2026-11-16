@@ -286,7 +286,7 @@ async function tick(): Promise<void> {
                 generation: schedulerSession.generation,
                 sequence: 1,
                 scheduledAtMs: now - 2,
-                sentAtMs: now - 1,
+                sentAtMs: now,
             },
         })
     );

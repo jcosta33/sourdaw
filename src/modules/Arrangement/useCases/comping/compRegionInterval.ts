@@ -7,6 +7,8 @@ import {
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompSelectionSpanSnapshot } from '../../events/arrangementTakeAppActions';
+import { changesCompSource } from '../../models/ChangesCompSourceByActionType';
+import { changesTempo } from '../../models/ChangesTempoByActionType';
 import { type Clip, type Track } from '../../models/Track';
 import { type CompAudioSourceInputContext } from '../../stores/compAudioSourceInputs';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
@@ -309,65 +311,6 @@ function projectTakeLaneStateThroughActionPrefix(
     return state;
 }
 
-const sourceChangingActions = new Set([
-    'addClip',
-    'moveClip',
-    'restoreClipPlacement',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'removeClip',
-    'restoreClip',
-    'discardDuplicatedClip',
-    'splitClip',
-    'restoreClipSplitState',
-    'trimClipStart',
-    'trimClipEnd',
-    'slipClipContent',
-    'drawClip',
-    'discardDrawnClip',
-    'restoreDrawnClip',
-    'duplicateClipAt',
-    'moveClips',
-    'restoreClipMoves',
-    'cutClip',
-    'pasteClip',
-    'reverseClip',
-    'restoreReversedClip',
-    'glueClips',
-    'restoreClipGlueState',
-    'nudgeClip',
-    'crossfadeClips',
-    'restoreCrossfadeClips',
-    'setClipLoop',
-    'restoreClipLoop',
-    'setClipLoopLength',
-    'restoreClipLoopLength',
-    'setClipStretchMode',
-    'setClipStretchRatio',
-    'restoreClipStretchState',
-    'fitClipToBeats',
-    'restoreClipFileId',
-    'restoreTrackClipStates',
-    'removeTrack',
-    'restoreTrack',
-    'flattenTrack',
-    'bounceTrack',
-    'freezeTrack',
-    'unfreezeTrack',
-    'detectTempo',
-]);
-const sourceClockActions = new Set([
-    'setTempo',
-    'addTempoChange',
-    'updateTempoChange',
-    'removeTempoChange',
-    'restoreTempoMapState',
-    'deleteTime',
-    'insertTime',
-    'duplicateTime',
-    'restoreTimeOperationState',
-]);
-
 function mentionsSourceOwner(
     value: unknown,
     trackId: string,
@@ -431,10 +374,10 @@ function supportsSourceCapturePrefix(trackId: string, context: TakeLanePrefixCon
     // promotion-dependent combinations refuse before any command publishes.
     return prefix.every(
         (action) =>
-            !sourceClockActions.has(action.type) &&
+            !changesTempo(action.type) &&
             (action.type === 'restoreTrack' ||
                 action.type === 'removeTrack' ||
-                !sourceChangingActions.has(action.type) ||
+                !changesCompSource(action.type) ||
                 (action.payload !== undefined && !mentionsSourceOwner(action.payload, trackId, ids)))
     );
 }

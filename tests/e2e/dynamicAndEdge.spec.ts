@@ -77,7 +77,9 @@ test.describe('MIDI editor note operations', () => {
         const undo = page.getByRole('button', { name: 'Undo', exact: true });
 
         const box = await piano_roll.boundingBox();
-        if (!box) throw new Error('piano roll missing');
+        if (!box) {
+            throw new Error('piano roll missing');
+        }
         await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
         await page.waitForTimeout(500);
 

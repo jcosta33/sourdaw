@@ -217,6 +217,52 @@ describe('loadTrackTemplate undo/redo integration', () => {
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
     });
 
+    async function captureLoadedPluginState(stateChunk: string): Promise<void> {
+        const device = trackStore.value!.tracks[0]!.devices[0]!;
+        await executeAppAction(
+            {
+                type: 'setExternalPluginState',
+                payload: {
+                    intent: 'capture',
+                    deviceId: device.id,
+                    stateChunk,
+                    expectedInstanceId: device.externalInstanceId!,
+                    expectedStateChunk: device.externalStateChunk ?? null,
+                },
+            },
+            { source: 'manual', skipMacroRecording: true }
+        );
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe(stateChunk);
+    }
+
+    it('redoes a template load with the plugin state a save captured, not the template chunk (issue #6597)', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        const createdId = trackStore.value!.tracks[0]!.id;
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        await captureLoadedPluginState('ZWRpdGVk');
+
+        await undo();
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
+        pluginHostMocks.activateExternalPlugin.mockClear();
+
+        await redo();
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual([createdId]);
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe('ZWRpdGVk');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ stateChunk: 'ZWRpdGVk' })
+        );
+
+        await undo();
+        expect(trackStore.value?.tracks).toEqual([]);
+    });
+
     it('gives every load of the same template a distinct instance id', async () => {
         installHostedTemplate();
         pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));

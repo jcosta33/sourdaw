@@ -87,12 +87,44 @@ describe('buildPresetMixRecipes', () => {
         expect(recipe?.title).toContain('Factory preset');
     });
 
-    // Red when a preset with no resolvable descriptor is published anyway.
+    // Red when a preset naming no produced descriptor is dropped, or given a perceptual claim to be found by.
     it.each([
-        ['tags that name no descriptor', chainPreset({ tags: ['vocal', 'channel-strip'] })],
-        ['only a corrective descriptor', chainPreset({ tags: ['vocal', 'thin', 'muddy'] })],
-    ])('does not publish a preset with %s', (_label, preset) => {
-        expect(buildPresetMixRecipes([preset])).toEqual([]);
+        ['tags that name no descriptor', chainPreset({ tags: ['vocal', 'channel-strip'] }), ['vocal']],
+        ['only a corrective descriptor', chainPreset({ tags: ['thin', 'muddy'] }), []],
+    ])(
+        'publishes a preset with %s as one recipe with no descriptor, metric or prerequisite',
+        (_label, preset, roles) => {
+            const recipes = buildPresetMixRecipes([preset]);
+
+            expect(recipes).toEqual([
+                {
+                    id: 'preset:test-vocal-chain',
+                    origin: {
+                        kind: 'preset',
+                        presetId: 'test-vocal-chain',
+                        presetVersion: getPresetContractVersion(preset),
+                        tags: preset.tags,
+                    },
+                    descriptor: null,
+                    roles,
+                    title: 'Factory preset "Test Vocal Chain"',
+                    steps: buildPresetMixRecipes([chainPreset({ tags: ['warm'] })])[0]?.steps,
+                    prerequisites: [],
+                    contraindications: [],
+                    metrics: [],
+                    source: expect.stringContaining('carries no perceptual descriptor'),
+                },
+            ]);
+        }
+    );
+
+    // Red when a preset that already names a descriptor also publishes a second, descriptor-less recipe.
+    it('publishes no descriptor-less recipe beside the descriptor recipes of a preset that names one', () => {
+        const recipes = buildPresetMixRecipes([chainPreset({ tags: ['vocal', 'warm'] })]);
+
+        expect(recipes.map((recipe) => [recipe.id, recipe.descriptor])).toEqual([
+            ['preset:test-vocal-chain:warm', 'warm'],
+        ]);
     });
 
     // Red when a generic processor is dropped, or given a role neither its category nor its tags name.
@@ -100,6 +132,9 @@ describe('buildPresetMixRecipes', () => {
         const recipes = buildPresetMixRecipes([chainPreset({ tags: ['glue', 'compression'] })]);
 
         expect(recipes.map((recipe) => [recipe.id, recipe.roles])).toEqual([['preset:test-vocal-chain:glued', []]]);
+        expect(buildPresetMixRecipes([chainPreset({ tags: ['compression'] })]).map((recipe) => recipe.roles)).toEqual([
+            [],
+        ]);
     });
 
     it('takes a role from the category when the category is itself a role', () => {
@@ -219,10 +254,10 @@ describe('factory preset recipes', () => {
         const badRoles = presetRecipes.filter((recipe) =>
             recipe.roles.some((role) => !MIX_RECIPE_ROLES.includes(role))
         );
-        const unknownPresets = presetRecipes.filter((recipe) => !presetsById.has(recipe.origin?.presetId ?? ''));
+        const unknownPresets = presetRecipes.filter((recipe) => !presetsById.has(recipe.origin.presetId));
         const staleVersions = presetRecipes.filter((recipe) => {
-            const preset = presetsById.get(recipe.origin?.presetId ?? '');
-            return preset === undefined || getPresetContractVersion(preset) !== recipe.origin?.presetVersion;
+            const preset = presetsById.get(recipe.origin.presetId);
+            return preset === undefined || getPresetContractVersion(preset) !== recipe.origin.presetVersion;
         });
 
         expect(badRoles).toEqual([]);

@@ -152,7 +152,7 @@ describe('mounted mixer snapshot project truth and history', () => {
         ]);
         expectAuthority();
         expect(
-            within(screen.getByRole('group', { name: 'First channel' })).getByRole('slider', { name: 'First gain' })
+            within(screen.getByRole('row', { name: 'First channel' })).getByRole('slider', { name: 'First gain' })
         ).toHaveAttribute('aria-valuenow', '0.25');
 
         await act(async () => {
@@ -172,7 +172,7 @@ describe('mounted mixer snapshot project truth and history', () => {
         expectOtherContent();
         expectAuthority();
         expect(
-            within(screen.getByRole('group', { name: 'First channel' })).getByRole('slider', { name: 'First gain' })
+            within(screen.getByRole('row', { name: 'First channel' })).getByRole('slider', { name: 'First gain' })
         ).toHaveAttribute('aria-valuenow', '0.8');
 
         await act(async () => {
@@ -184,7 +184,7 @@ describe('mounted mixer snapshot project truth and history', () => {
         expectOtherContent();
         expectAuthority();
         expect(
-            within(screen.getByRole('group', { name: 'First channel' })).getByRole('slider', { name: 'First gain' })
+            within(screen.getByRole('row', { name: 'First channel' })).getByRole('slider', { name: 'First gain' })
         ).toHaveAttribute('aria-valuenow', '0.25');
     });
 });

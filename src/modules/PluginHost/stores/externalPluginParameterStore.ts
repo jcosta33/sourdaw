@@ -1,3 +1,4 @@
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
 import { createStore } from '#/infra/store/createStore';
 
 /**
@@ -234,11 +235,113 @@ export function patchExternalPluginParameterValue(instanceId: string, parameterI
         const parameters = snapshot.parameters.map((parameter) =>
             parameter.id === parameterId ? { ...parameter, value } : parameter
         );
+        bumpEditGeneration(instanceId, parameterId);
         return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters } } };
     });
 }
 
+/**
+ * What a host re-read must not displace, captured when the read is issued: the
+ * edits and the newer re-reads that land while the host is still answering, and
+ * the scheduler write the answer cannot know about.
+ */
+export type ExternalPluginParameterReadTicket = {
+    token: number;
+    editGenerations: ReadonlyMap<number, number>;
+    /** The scheduler's latest automation write sequence when the read was issued. */
+    automationWriteSequence: number;
+};
+
+/** Per instance, how many value edits each parameter has taken; absent means none. */
+const editGenerations = new Map<string, Map<number, number>>();
+/** Per instance, the token of the newest re-read whose answer reached the store; an older one is dropped. */
+const publishedReadToken = new Map<string, number>();
+/** Global, so a token issued before an instance was dropped never matches one issued after. */
+let lastReadToken = 0;
+/** Which scheduler write was latest when the re-read that published a parameter object was issued. */
+const readIssues = new WeakMap<object, number>();
+
+function bumpEditGeneration(instanceId: string, parameterId: number): void {
+    const generations = editGenerations.get(instanceId) ?? new Map<number, number>();
+    generations.set(parameterId, (generations.get(parameterId) ?? 0) + 1);
+    editGenerations.set(instanceId, generations);
+}
+
+export function issueExternalPluginParameterRead(instanceId: string): ExternalPluginParameterReadTicket {
+    lastReadToken += 1;
+    return {
+        token: lastReadToken,
+        editGenerations: new Map(editGenerations.get(instanceId)),
+        automationWriteSequence: readLastObservationSequence(),
+    };
+}
+
+/**
+ * The scheduler write that was latest when the re-read that put `parameter` in the store was issued, or
+ * `undefined` for an object no re-read published (an edit's patch, or the activation snapshot). A re-read
+ * issued before a write says nothing about that write, so a reader following automation can tell a stale
+ * answer from news.
+ */
+export function readExternalPluginParameterReadIssue(parameter: object): number | undefined {
+    return readIssues.get(parameter);
+}
+
+/**
+ * Publish a host answer unless a newer re-read's answer has already been
+ * published (an answer superseded by one that then failed still publishes), and
+ * keep the store's own object for every parameter edited since the ticket: the
+ * host answered before that edit, so its value is the older one. Returns the
+ * parameter objects this call put in the store, each tagged with the write
+ * sequence captured at issue (see {@link readExternalPluginParameterReadIssue}).
+ * An instance with no snapshot publishes nothing.
+ */
+export function publishExternalPluginParameterRead(
+    instanceId: string,
+    ticket: ExternalPluginParameterReadTicket,
+    hostParameters: readonly ExternalPluginParameter[]
+): readonly ExternalPluginParameter[] {
+    if (ticket.token < (publishedReadToken.get(instanceId) ?? 0)) {
+        return [];
+    }
+    let published: readonly ExternalPluginParameter[] = [];
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot) {
+            return current;
+        }
+        const generations = editGenerations.get(instanceId);
+        const edited = new Map(snapshot.parameters.map((parameter) => [parameter.id, parameter]));
+        const merged = hostParameters.map((parameter) => {
+            const unedited = (generations?.get(parameter.id) ?? 0) === (ticket.editGenerations.get(parameter.id) ?? 0);
+            if (unedited) {
+                return parameter;
+            }
+            return edited.get(parameter.id) ?? parameter;
+        });
+        const fromHost = new Set(hostParameters);
+        published = merged.filter((parameter) => fromHost.has(parameter));
+        for (const parameter of published) {
+            readIssues.set(parameter, ticket.automationWriteSequence);
+        }
+        publishedReadToken.set(instanceId, ticket.token);
+        return {
+            ...current,
+            byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters: merged } },
+        };
+    });
+    return published;
+}
+
+/** Forget the read bookkeeping of every instance, with the snapshots that owned it. */
+export function clearExternalPluginParameterReadState(): void {
+    editGenerations.clear();
+    publishedReadToken.clear();
+}
+
 export function dropExternalPluginParameterSnapshot(instanceId: string): void {
+    editGenerations.delete(instanceId);
+    publishedReadToken.delete(instanceId);
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;
         const byInstanceId = { ...current.byInstanceId };

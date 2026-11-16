@@ -6,7 +6,7 @@ import { expect } from './e2eTest';
 export async function chooseProjectDirectory(page: Page): Promise<void> {
     const selected = await page.evaluate(async () => {
         if (typeof window.showDirectoryPicker !== 'function') {
-            throw new Error('The project-save case requires native File System Access');
+            throw new TypeError('The project-save case requires native File System Access');
         }
         const root = await navigator.storage.getDirectory();
         const directory = await root.getDirectoryHandle('chosen-project-directory', { create: true });
