@@ -8,7 +8,8 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { pickFiles } from '#/modules/Project/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { AUDIO_EXTENSION_ROSTER } from '#/utils/audioFileExtensions';
-import { type StemImportRole } from '#/utils/handlerContract';
+
+import { type StemImportRole } from '../../models/StemImportRole';
 
 import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
 

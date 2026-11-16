@@ -1,6 +1,7 @@
-import { type AppAction, type StemImportRole } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
+import { type StemImportRole } from '../../models/StemImportRole';
 import { type StemImportPromptScope, type StemImportProviderCall } from '../../models/StemImportCapability';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 

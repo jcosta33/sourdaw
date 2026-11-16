@@ -405,22 +405,6 @@ export type RetiredTakeLaneSnapshot = {
 };
 export type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
 
-export type StemImportRole =
-    | 'kick'
-    | 'snare'
-    | 'hi-hat'
-    | 'tom'
-    | 'percussion'
-    | 'bass'
-    | 'guitar-left'
-    | 'guitar-right'
-    | 'keys'
-    | 'synth'
-    | 'lead-vocal'
-    | 'backing-vocal'
-    | 'fx'
-    | 'other';
-
 export type DrumPreviewSourceClipSnapshot = {
     readonly trackId: string;
     readonly trackName: string;

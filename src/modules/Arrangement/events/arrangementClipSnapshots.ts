@@ -5,8 +5,9 @@ import {
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
     type MidiClipDataActionSnapshot,
-    type StemImportRole,
 } from '#/utils/handlerContract';
+
+import { type StemImportRole } from '../models/StemImportRole';
 
 export type ClipSnapshot = {
     readonly id: string;
