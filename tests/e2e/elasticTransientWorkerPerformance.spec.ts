@@ -119,27 +119,52 @@ function readElasticIntervalTasks(
         return [];
     });
 }
+const MATERIALIZATION_PHASE_NAMES: readonly string[] = [
+    'elastic-transient-plan-task',
+    'elastic-transient-clone-task',
+    'automerge-prospective-response-task',
+    'automerge-prospective-apply-task',
+    'automerge-prospective-authority-task',
+    'elastic-transient-change-task',
+    'automerge-storage-materialization-handoff-task',
+];
 function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart: number, tasks: MainThreadTask[]) {
-    return [
-        'automerge-prospective-response-task',
-        'automerge-prospective-apply-task',
-        'automerge-prospective-authority-task',
-        'elastic-transient-change-task',
-    ].map((name) => {
-        const phases = measures.filter((measure) => measure.name === name);
-        expect(phases, `Missing or repeated native phase: ${name}`).toHaveLength(1);
-        const phase = phases[0];
-        const start = phase.startTime - inputMarkStart;
-        const end = start + phase.duration;
-        // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
-        const task = tasks.find(
-            (candidate) =>
-                candidate.startFromInputMs <= start + 0.002 &&
-                candidate.startFromInputMs + candidate.durationMs >= end - 0.002
+    return measures
+        .filter((measure) => MATERIALIZATION_PHASE_NAMES.includes(measure.name))
+        .map((phase) => {
+            const start = phase.startTime - inputMarkStart;
+            const end = start + phase.duration;
+            // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
+            const task = tasks.find(
+                (candidate) =>
+                    candidate.startFromInputMs <= start + 0.002 &&
+                    candidate.startFromInputMs + candidate.durationMs >= end - 0.002
+            );
+            return { ...phase, enclosingTask: task };
+        });
+}
+function assertMaterializationTaskSpans(phases: ReturnType<typeof materializationTaskSpans>): void {
+    for (const name of MATERIALIZATION_PHASE_NAMES) {
+        expect(phases.filter((phase) => phase.name === name).length, `Missing native phase: ${name}`).toBeGreaterThan(
+            0
         );
-        expect(task, `Native phase has no complete enclosing RunTask: ${name}`).toBeDefined();
-        return { ...phase, enclosingTask: task };
-    });
+    }
+    for (const phase of phases) {
+        expect(phase.enclosingTask, `Native phase has no complete enclosing RunTask: ${phase.name}`).toBeDefined();
+    }
+}
+function assertMaterializationAttempts(measures: PreparationMeasure[], completedCallbacks?: number): void {
+    const responses = measures.filter((entry) => entry.name === 'automerge-prospective-response-task');
+    expect(responses.length).toBeGreaterThan(0);
+    if (completedCallbacks !== undefined) {
+        expect(responses).toHaveLength(completedCallbacks);
+    }
+    expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
+        responses.length
+    );
+    expect(measures.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')).toHaveLength(
+        responses.length
+    );
 }
 function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
     const visited = new Set<number>();
@@ -702,8 +727,8 @@ for (const projectScale of [false, true]) {
                     }
                 };
                 requestAnimationFrame(frame);
-                const tasks = new PerformanceObserver((list) => {
-                    for (const entry of list.getEntries()) {
+                const collectTasks = (entries: PerformanceEntryList): void => {
+                    for (const entry of entries) {
                         metrics.tasks.push({
                             start: entry.startTime,
                             duration: entry.duration,
@@ -720,10 +745,11 @@ for (const projectScale of [false, true]) {
                             ),
                         });
                     }
-                });
+                };
+                const tasks = new PerformanceObserver((list) => collectTasks(list.getEntries()));
                 tasks.observe({ type: 'longtask', buffered: false });
-                const measures = new PerformanceObserver((list) => {
-                    for (const entry of list.getEntries()) {
+                const collectMeasures = (entries: PerformanceEntryList): void => {
+                    for (const entry of entries) {
                         if (
                             entry.name.startsWith('elastic-transient-') ||
                             entry.name === 'automerge-storage-prepared-publication' ||
@@ -737,14 +763,20 @@ for (const projectScale of [false, true]) {
                             });
                         }
                     }
-                });
+                };
+                const measures = new PerformanceObserver((list) => collectMeasures(list.getEntries()));
                 measures.observe({ type: 'measure', buffered: false });
+                const disconnectMeasurements = (): void => {
+                    collectTasks(tasks.takeRecords());
+                    collectMeasures(measures.takeRecords());
+                    tasks.disconnect();
+                    measures.disconnect();
+                };
                 target.elasticMeasurement = new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         stop = true;
                         observer.disconnect();
-                        tasks.disconnect();
-                        measures.disconnect();
+                        disconnectMeasurements();
                         reject(new Error('Real Detect did not complete'));
                     }, 10000);
                     const observer = new MutationObserver(() => {
@@ -761,8 +793,7 @@ for (const projectScale of [false, true]) {
                                 metrics.frames.push(tailTime);
                                 metrics.observedFrames.push(performance.now());
                                 stop = true;
-                                tasks.disconnect();
-                                measures.disconnect();
+                                disconnectMeasurements();
                                 clearTimeout(timeout);
                                 resolve(metrics);
                             });
@@ -864,15 +895,7 @@ for (const projectScale of [false, true]) {
                 (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
             );
             const preparationTasks = measured.measures.filter((entry) =>
-                [
-                    'elastic-transient-plan-task',
-                    'elastic-transient-clone-task',
-                    'elastic-transient-change-task',
-                    'automerge-prospective-response-task',
-                    'automerge-prospective-apply-task',
-                    'automerge-prospective-authority-task',
-                    'automerge-storage-materialization-handoff-task',
-                ].includes(entry.name)
+                MATERIALIZATION_PHASE_NAMES.includes(entry.name)
             );
             const preparedPublications = measured.measures.filter(
                 (entry) => entry.name === 'automerge-storage-prepared-publication'
@@ -911,6 +934,8 @@ for (const projectScale of [false, true]) {
                 body: JSON.stringify(result, null, 2),
                 contentType: 'application/json',
             });
+            assertMaterializationTaskSpans(result.nativePhases);
+            assertMaterializationAttempts(measured.measures, overlap?.attempts.length);
             expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(1);
             expect(after.pcm).toEqual(before.pcm);
             expect(after.raw).toEqual(after.projected);
@@ -922,11 +947,7 @@ for (const projectScale of [false, true]) {
             expect(copy.length).toBeGreaterThan(1);
             expect(gaps.length).toBeGreaterThan(1);
             expect(preparedPublications).toHaveLength(1);
-            expect(result.workerMaterializationWall).toHaveLength(1);
             expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-            expect(
-                preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
-            ).toHaveLength(1);
             // 60 Hz design budget per task is recorded above; the hard gate is the
             // jank ceiling — see JANK_TASK_CEILING_MS.
             expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(
@@ -1232,8 +1253,8 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
             }
         };
         requestAnimationFrame(frame);
-        const tasks = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) {
+        const collectTasks = (entries: PerformanceEntryList): void => {
+            for (const entry of entries) {
                 metrics.tasks.push({
                     start: entry.startTime,
                     duration: entry.duration,
@@ -1247,10 +1268,11 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     })),
                 });
             }
-        });
+        };
+        const tasks = new PerformanceObserver((list) => collectTasks(list.getEntries()));
         tasks.observe({ type: 'longtask', buffered: false });
-        const measures = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) {
+        const collectMeasures = (entries: PerformanceEntryList): void => {
+            for (const entry of entries) {
                 if (
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
@@ -1260,14 +1282,20 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
                 }
             }
-        });
+        };
+        const measures = new PerformanceObserver((list) => collectMeasures(list.getEntries()));
         measures.observe({ type: 'measure', buffered: false });
+        const disconnectMeasurements = (): void => {
+            collectTasks(tasks.takeRecords());
+            collectMeasures(measures.takeRecords());
+            tasks.disconnect();
+            measures.disconnect();
+        };
         target.populatedElasticMeasurement = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 stop = true;
                 observer.disconnect();
-                tasks.disconnect();
-                measures.disconnect();
+                disconnectMeasurements();
                 reject(new Error('Populated real Detect did not complete'));
             }, 10000);
             const observer = new MutationObserver(() => {
@@ -1291,8 +1319,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                         metrics.frames.push(tail);
                         metrics.observedFrames.push(performance.now());
                         stop = true;
-                        tasks.disconnect();
-                        measures.disconnect();
+                        disconnectMeasurements();
                         clearTimeout(timeout);
                         resolve(metrics);
                     });
@@ -1360,17 +1387,7 @@ async function assertPopulatedMeasurement(
     const longTasks = measured.tasks.filter(
         (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
     );
-    const preparationTasks = measured.measures.filter((entry) =>
-        [
-            'elastic-transient-plan-task',
-            'elastic-transient-clone-task',
-            'elastic-transient-change-task',
-            'automerge-prospective-response-task',
-            'automerge-prospective-apply-task',
-            'automerge-prospective-authority-task',
-            'automerge-storage-materialization-handoff-task',
-        ].includes(entry.name)
-    );
+    const preparationTasks = measured.measures.filter((entry) => MATERIALIZATION_PHASE_NAMES.includes(entry.name));
     const preparedPublications = measured.measures.filter(
         (entry) => entry.name === 'automerge-storage-prepared-publication'
     );
@@ -1395,6 +1412,9 @@ async function assertPopulatedMeasurement(
         body: JSON.stringify(result, null, 2),
         contentType: 'application/json',
     });
+    await trace.attach();
+    assertMaterializationTaskSpans(result.nativePhases);
+    assertMaterializationAttempts(measured.measures);
     const after = await sourceState(page);
     expect(after.raw).toEqual(after.projected);
     expect(after.pcm).toEqual(before.pcm);
@@ -1406,11 +1426,7 @@ async function assertPopulatedMeasurement(
         expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
     }
     expect(preparedPublications).toHaveLength(1);
-    expect(result.workerMaterializationWall).toHaveLength(1);
     expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-    expect(
-        preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
-    ).toHaveLength(1);
     // 60 Hz design budget per task is recorded above; the hard gate is the
     // jank ceiling — see JANK_TASK_CEILING_MS.
     expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);

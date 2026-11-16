@@ -92,9 +92,12 @@ export function armElasticSaveOverlap(targetClipId: string): void {
     let stopping: Promise<void> | undefined;
     let stopped = false;
     const ObservedWorker = new Proxy(NativeWorker, {
-        construct(Constructor, args: ConstructorParameters<typeof Worker>): Worker {
+        construct(Constructor, args: ConstructorParameters<typeof Worker>, newTarget): object {
             // Construction and postMessage remain native: Save does not gate startup.
-            const worker = new Constructor(...args);
+            const instance: unknown = Reflect.construct(Constructor, args, newTarget);
+            if (typeof instance !== 'object' || instance === null) {
+                throw new TypeError('Native Worker construction did not return an object');
+            }
             const url = new URL(args[0], location.href);
             const input = performance.getEntriesByName('elastic-detect-input-start').at(-1);
             if (
@@ -103,8 +106,12 @@ export function armElasticSaveOverlap(targetClipId: string): void {
                 input.startTime < report.armed.time ||
                 stopped
             ) {
-                return worker;
+                return instance;
             }
+            if (!(instance instanceof NativeWorker)) {
+                throw new TypeError('Observed prospective constructor must retain the native Worker prototype');
+            }
+            const worker = instance;
             report.input ??= input.startTime;
             const attempt: Attempt = {
                 url: url.href,
@@ -117,9 +124,12 @@ export function armElasticSaveOverlap(targetClipId: string): void {
             };
             report.attempts.push(attempt);
             const terminate = worker.terminate;
-            worker.terminate = () => {
-                attempt.terminated = performance.now();
-                terminate.call(worker);
+            const terminateDescriptor = Object.getOwnPropertyDescriptor(worker, 'terminate');
+            worker.terminate = function (this: Worker): void {
+                terminate.call(this);
+                if (this === worker) {
+                    attempt.terminated = performance.now();
+                }
             };
             const onError = (): void => {
                 report.failures.push(`Native prospective attempt ${report.attempts.indexOf(attempt)} failed`);
@@ -167,7 +177,11 @@ export function armElasticSaveOverlap(targetClipId: string): void {
                 worker.removeEventListener('message', onMessage, { capture: true });
                 worker.removeEventListener('error', onError);
                 worker.removeEventListener('messageerror', onError);
-                worker.terminate = terminate;
+                if (terminateDescriptor) {
+                    Object.defineProperty(worker, 'terminate', terminateDescriptor);
+                } else if (!Reflect.deleteProperty(worker, 'terminate')) {
+                    throw new Error('Observed Worker termination descriptor could not be restored');
+                }
             });
             if (attempt.held) {
                 saveWork = hostTask(async () => {
@@ -196,7 +210,11 @@ export function armElasticSaveOverlap(targetClipId: string): void {
                 await forwardWork;
                 stopped = true;
                 for (const cleanup of cleanups) {
-                    cleanup();
+                    try {
+                        cleanup();
+                    } catch (error) {
+                        report.failures.push(String(error));
+                    }
                 }
                 if (window.Worker === ObservedWorker) {
                     window.Worker = NativeWorker;
