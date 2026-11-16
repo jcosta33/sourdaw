@@ -40,6 +40,7 @@ import {
     type GuardFailureReceipt,
 } from './prContract.ts';
 import { captureProcessGroupOfPid, captureProcessGroupSnapshot } from './processSnapshot.ts';
+import { isVerifiedE2eServerStop } from './resourceGuardE2eStop.ts';
 import {
     boundedProcessTreeObservation,
     createProcessTreeState,
@@ -238,6 +239,10 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
         return arg;
     }
     return undefined;
+}
+
+function isCleanExit(result: GuardedCommandResult): boolean {
+    return result.code === 0 && result.reason === undefined;
 }
 
 type ExplicitRecoveryProof = {
@@ -3346,7 +3351,7 @@ export async function main(
             }
             if (explicitProof !== undefined && observationResult !== undefined) {
                 const { observed, mismatch } = observationResult;
-                if (result.code === 0 && result.reason === undefined && !observed) {
+                if (isCleanExit(result) && !observed) {
                     emitGuardedResult(recoveryCommand, result, input.showOutput);
                     error(
                         `guard: explicit recovery proof did not verify the recorded dev server at ${explicitProof.origin}; lane ${lane.laneName} remains stopped${mismatch === undefined ? '' : `: ${mismatch}`}`
@@ -3354,7 +3359,11 @@ export async function main(
                     return 1;
                 }
             }
-            if (result.code === 0 && result.reason === undefined) {
+            const stoppedVerifiedE2eServer =
+                receipt.command === 'node' &&
+                observationResult !== undefined &&
+                isVerifiedE2eServerStop(result, observationResult);
+            if (isCleanExit(result) || stoppedVerifiedE2eServer) {
                 emitGuardedResult(recoveryCommand, result, input.showOutput);
                 const cleared = clearGuardFailureReceiptIfUnchanged(
                     lane.primaryRoot,
