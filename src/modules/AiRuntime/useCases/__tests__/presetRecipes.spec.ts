@@ -621,6 +621,19 @@ describe('preset recipes', () => {
             expect(discoveredIds([], null, null, ['cut'])).toContain('preset:fx-eq-mid-forward');
         });
 
+        // Red when a multi-word term selects a preset carrying only one of its words.
+        it('selects, for a multi-word term, only a preset carrying every word', () => {
+            const vocalOnly = discoveredIds([], null, null, ['vocal']);
+            const eqOnly = discoveredIds([], null, null, ['eq']);
+            const both = discoveredIds([], null, null, ['vocal eq']);
+
+            expect(vocalOnly).toContain('preset:fx-comp-vocal-glue:glued');
+            expect(eqOnly).toContain('preset:fx-eq-bass-scoop');
+            expect(both).toContain('preset:fx-eq-vocal-presence');
+            expect(both).not.toContain('preset:fx-comp-vocal-glue:glued');
+            expect(both).not.toContain('preset:fx-eq-bass-scoop');
+        });
+
         // Red when a role-only call stops listing the presets of that role, or lists an authored recipe.
         it('is listed by role alone among the preset recipes serving that role, never an authored recipe', () => {
             const listed = discoverAll([], 'drums').data.candidates;
@@ -639,11 +652,13 @@ describe('preset recipes', () => {
             expect(result.warnings.join(' ')).toContain('No factory preset name or tag matches: no-such-preset-word');
         });
 
-        // Red when a preset term also selects authored recipes, or reads as a descriptor.
+        // Red when a preset term also selects authored recipes, reads as a descriptor, or selects presets not carrying it.
         it('selects only preset recipes, even for a word that is also a descriptor term', () => {
             const listed = discoverAll([], null, null, ['warm']).data.candidates;
 
             expect(listed.length).toBeGreaterThan(0);
+            expect(listed.map((entry) => entry.id)).toContain('preset:fx-eq-high-cut:warm');
+            expect(listed.map((entry) => entry.id)).not.toContain('preset:fx-eq-vocal-presence');
             expect(listed.every((entry) => entry.origin !== undefined)).toBe(true);
             expect(discoverAll([], null, null, ['warm']).data.candidates).not.toEqual(
                 discoverAll(['warm'], null).data.candidates
