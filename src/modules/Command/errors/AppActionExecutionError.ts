@@ -26,3 +26,12 @@ export class AppActionConflictError extends Error {
         this.reason = reason;
     }
 }
+
+/**
+ * The admission gate refused the action (repair required or production brief locked),
+ * either at the preflight before any handler ran or at the commit, when the gate
+ * started refusing while the handler ran. Handlers report their own conflicts as plain
+ * `AppActionConflictError`s, so only this subclass means "the project can't be changed".
+ * It keeps the parent's `name` so name-based checks still treat it as a conflict.
+ */
+export class AppActionAdmissionRefusedError extends AppActionConflictError {}

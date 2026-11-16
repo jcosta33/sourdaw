@@ -1,6 +1,5 @@
-import { type SendAutomationRangeSnapshot } from '#/utils/handlerContract';
-
 import { type AutomationLane, type AutomationPoint } from '../models/Automation';
+import { type SendAutomationRangeSnapshot } from '../models/SendAutomationRangeSnapshot';
 
 type BuildSendAutomationRangesLaneInput = {
     trackId: string;

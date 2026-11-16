@@ -43,11 +43,11 @@ impl SamplerEngine {
     pub fn new() -> Self {
         // Initialize with a saw-like waveform as default "sample"
         let mut buffer = vec![0.0f32; SAMPLE_BUFFER_SIZE];
-        for i in 0..SAMPLE_BUFFER_SIZE {
+        for (i, slot) in buffer.iter_mut().enumerate() {
             let t = i as f32 / SAMPLE_BUFFER_SIZE as f32;
             // Default: a decaying saw burst (interesting for percussion)
             let env = (-t * 8.0).exp();
-            buffer[i] = (t * 440.0 * core::f32::consts::TAU).sin() * env;
+            *slot = (t * 440.0 * core::f32::consts::TAU).sin() * env;
         }
 
         Self {
@@ -202,6 +202,12 @@ impl SamplerEngine {
         }
 
         sample
+    }
+}
+
+impl Default for SamplerEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

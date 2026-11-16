@@ -2,6 +2,7 @@ import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, u
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { llmStatusStore, pendingActionConfirmationStore } from '#/modules/AiRuntime/stores';
 import {
     submitAdmittedPromptRequest,
@@ -14,12 +15,9 @@ import {
     initEngine,
     createVoicePromptDraftAdmission,
 } from '#/modules/AiRuntime/useCases';
-import {
-    clipSelectionStore,
-    defaultClipSelectionState,
-    defaultTrackState,
-    trackStore,
-} from '#/modules/Arrangement/stores';
+import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
+
+import { isSamePromptTrackFacts, readPromptTrackFacts } from '../helpers/promptTrackFacts';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 
@@ -126,21 +124,27 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     const llmStatus = useStore(llmStatusStore, defaultLlmStatus);
-    const trackState = useStore(trackStore, defaultTrackState);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
-
-    // ── Derive selection tags ───────────────────────────────────────────
-    const selectionTags: SelectionTag[] = [];
-    const selectedTrackId = trackState?.selectedTrackId;
-    const selectedTrack = trackState?.tracks.find((track) => track.id === selectedTrackId);
     const selectedClipId = clipSelection.selectedClipId;
     const selectedClipIds = clipSelection.selectedClipIds;
 
+    // The prompt bar shows only the selection and the preset context, so a clip edit that changes
+    // none of these facts must not render it again.
+    const trackFacts = useStoreSelector(
+        trackStore,
+        (state) => readPromptTrackFacts(state, selectedClipId),
+        isSamePromptTrackFacts
+    );
+    const selectedTrackId = trackFacts.selectedTrackId;
+
+    // ── Derive selection tags ───────────────────────────────────────────
+    const selectionTags: SelectionTag[] = [];
+
     if (selectedTrackId) {
-        if (selectedTrack && !dismissedTags.has(`track:${selectedTrackId}`)) {
+        if (trackFacts.selectedTrackName !== undefined && !dismissedTags.has(`track:${selectedTrackId}`)) {
             selectionTags.push({
                 id: `track:${selectedTrackId}`,
-                label: selectedTrack.name,
+                label: trackFacts.selectedTrackName,
                 kind: 'track',
                 icon: 'track',
             });
@@ -152,24 +156,23 @@ export const usePromptExecution = (): PromptExecutionState => {
             selectionTags.push({ id: key, label: `${selectedClipIds.length} clips`, kind: 'clips', icon: 'clips' });
         }
     } else if (selectedClipId) {
-        const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
-        const clip = allClips.find((context) => context.id === selectedClipId);
-        if (clip && !dismissedTags.has(`clip:${selectedClipId}`)) {
-            selectionTags.push({ id: `clip:${selectedClipId}`, label: clip.name, kind: 'clip', icon: 'clip' });
+        if (trackFacts.selectedClipName !== undefined && !dismissedTags.has(`clip:${selectedClipId}`)) {
+            selectionTags.push({
+                id: `clip:${selectedClipId}`,
+                label: trackFacts.selectedClipName,
+                kind: 'clip',
+                icon: 'clip',
+            });
         }
     }
 
     // ── Build preset context ────────────────────────────────────────────
     const presetContext = {
         selectedTrackId: selectedTrackId ?? undefined,
-        selectedTrackKind: selectedTrack?.kind,
+        selectedTrackKind: trackFacts.selectedTrackKind,
         selectedClipId: selectedClipId ?? undefined,
-        selectedClipType: (() => {
-            const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
-            const clip = allClips.find((context) => context.id === selectedClipId);
-            return clip?.type;
-        })(),
-        trackCount: trackState?.tracks.length ?? 0,
+        selectedClipType: trackFacts.selectedClipType,
+        trackCount: trackFacts.trackCount,
     };
 
     // ── Reset dismissed tags when selection changes ─────────────────────
@@ -213,7 +216,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             setFuzzyResults(results);
         }
         setSelectedIndex(-1);
-    }, [value, approval, isFocused, isProcessing, trackState, clipSelection]);
+    }, [value, approval, isFocused, isProcessing, trackFacts, clipSelection]);
 
     // ── Execute preset directly ─────────────────────────────────────────
     const executePreset = async (result: PromptFuzzyResult): Promise<void> => {

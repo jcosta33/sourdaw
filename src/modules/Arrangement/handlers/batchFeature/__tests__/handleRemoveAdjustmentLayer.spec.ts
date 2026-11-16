@@ -15,8 +15,8 @@ describe('handleRemoveAdjustmentLayer', () => {
         vi.clearAllMocks();
     });
 
-    it('invokes removeAdjustmentLayer with the payload layer id', () => {
-        handleRemoveAdjustmentLayer.execute({
+    it('invokes removeAdjustmentLayer with the payload layer id', async () => {
+        await handleRemoveAdjustmentLayer.execute({
             type: 'removeAdjustmentLayer',
             payload: { layerId: 'layer-42' },
         });

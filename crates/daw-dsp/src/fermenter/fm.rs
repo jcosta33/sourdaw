@@ -43,6 +43,12 @@ impl FmOperator {
     }
 }
 
+impl Default for FmOperator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 4-operator FM engine with routing matrix.
 /// Routing: matrix[i][j] means operator i modulates operator j.
 /// Carriers are operators whose output goes to the final mix.
@@ -196,9 +202,9 @@ impl FmEngine {
         // Use previous frame's outputs for modulation (1-sample delay, DX7-style)
         for i in (0..4).rev() {
             let mut mod_input = 0.0f32;
-            for j in 0..4 {
+            for (j, &previous) in outputs.iter().enumerate() {
                 if self.matrix[j][i].abs() > 0.001 {
-                    mod_input += outputs[j] * self.matrix[j][i] * TAU;
+                    mod_input += previous * self.matrix[j][i] * TAU;
                 }
             }
             outputs[i] = self.ops[i].tick(base_freq, sample_rate, mod_input);
@@ -206,12 +212,18 @@ impl FmEngine {
 
         // Sum carrier outputs
         let mut mix = 0.0f32;
-        for i in 0..4 {
+        for (i, &output) in outputs.iter().enumerate() {
             if self.carriers & (1 << i) != 0 {
-                mix += outputs[i];
+                mix += output;
             }
         }
         mix
+    }
+}
+
+impl Default for FmEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

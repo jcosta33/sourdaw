@@ -170,7 +170,9 @@ describe('RetainedSectionRenderManualReview', () => {
             throw new Error('Expected the preview completion callback.');
         }
 
-        act(() => onEnded());
+        act(() => {
+            onEnded();
+        });
 
         expect(mocks.stop).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('cached-stereo-verse');
@@ -209,7 +211,9 @@ describe('RetainedSectionRenderManualReview', () => {
         }
         fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
 
-        act(() => verseOnEnded());
+        act(() => {
+            verseOnEnded();
+        });
 
         expect(mocks.stop).toHaveBeenCalledOnce();
         expect(mocks.releasePreviewAudioBuffer.mock.calls).toEqual([['cached-stereo-verse']]);
@@ -234,7 +238,9 @@ describe('RetainedSectionRenderManualReview', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Stop Verse' }));
         fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
 
-        act(() => firstOnEnded());
+        act(() => {
+            firstOnEnded();
+        });
 
         expect(firstStop).toHaveBeenCalledOnce();
         expect(secondStop).not.toHaveBeenCalled();

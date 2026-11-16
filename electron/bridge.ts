@@ -24,6 +24,9 @@ import {
     EVENT_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
+    SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
+    SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     VOICE_DICTATION_ARM_CHANNEL,
     VOICE_DICTATION_CANCEL_CHANNEL,
@@ -43,6 +46,8 @@ import {
     RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type GpuMemoryBudget,
+    type PluginFolderAddResult,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -51,6 +56,44 @@ import { commandChannel, isExposedCommand } from './commands.js';
 export type RendererIpc = {
     invoke: (channel: string, ...args: readonly unknown[]) => Promise<unknown>;
     on: (channel: string, listener: (event: unknown, ...args: readonly unknown[]) => void) => void;
+};
+
+/** Narrow main's plugin-folder answer to the three shapes it may take. */
+const toPluginFolderAddResult = (value: unknown): PluginFolderAddResult => {
+    if (typeof value === 'object' && value !== null) {
+        const status: unknown = Reflect.get(value, 'status');
+        const path: unknown = Reflect.get(value, 'path');
+        const reason: unknown = Reflect.get(value, 'reason');
+        if (status === 'cancelled') {
+            return { status };
+        }
+        if (status === 'granted' && typeof path === 'string') {
+            return { status, path };
+        }
+        if (status === 'refused' && typeof reason === 'string') {
+            return { status, reason };
+        }
+    }
+    throw new TypeError('pluginFolders.add returned an unsupported payload');
+};
+
+const isPositiveSafeInteger = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+
+/** The budget a payload names, or null when it is not exactly a known positive byte count or unknown. */
+const asGpuMemoryBudget = (value: unknown): GpuMemoryBudget | null => {
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+    const state: unknown = Reflect.get(value, 'state');
+    if (state === 'unknown') {
+        return { state };
+    }
+    const bytes: unknown = Reflect.get(value, 'bytes');
+    if (state === 'known' && isPositiveSafeInteger(bytes)) {
+        return { state, bytes };
+    }
+    return null;
 };
 
 const rejectUnknownCommand = (command: string): void => {
@@ -367,6 +410,11 @@ export const createSourdawBridge = (
             },
         },
 
+        pluginFolders: {
+            // No arguments cross: main grants only the folder its own picker returns.
+            add: async () => toPluginFolderAddResult(await ipc.invoke(PLUGIN_FOLDER_ADD_CHANNEL)),
+        },
+
         paths: {
             samplesBase: async () => {
                 const result = await ipc.invoke(PATHS_SAMPLES_BASE_CHANNEL);
@@ -381,6 +429,26 @@ export const createSourdawBridge = (
                     throw new TypeError('The joined path is not a string');
                 }
                 return result;
+            },
+        },
+
+        system: {
+            totalMemoryBytes: async () => {
+                const result = await ipc.invoke(SYSTEM_TOTAL_MEMORY_CHANNEL);
+                if (typeof result !== 'number' || !Number.isSafeInteger(result) || result <= 0) {
+                    throw new TypeError('system.totalMemoryBytes returned a payload that is not a positive integer');
+                }
+                return result;
+            },
+            gpuMemoryBudgetBytes: async () => {
+                const result: unknown = await ipc.invoke(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL);
+                const budget = asGpuMemoryBudget(result);
+                if (budget === null) {
+                    throw new TypeError(
+                        'system.gpuMemoryBudgetBytes returned a payload that is not a GPU memory budget'
+                    );
+                }
+                return budget;
             },
         },
 

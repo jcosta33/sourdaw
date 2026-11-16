@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     buildEslintArgv,
     ensureServerDependencies,
+    ESLINT_SUPPRESSIONS_FILE,
     eslintEnvironment,
     FULL_ESLINT_TARGETS,
     FULL_OXLINT_TARGETS,
@@ -42,6 +43,7 @@ describe('full-run lint targets', () => {
         expect(FULL_ESLINT_TARGETS).toContain('src/**/*.{ts,tsx}');
         expect(FULL_ESLINT_TARGETS).toContain('scripts/**/*.ts');
         expect(FULL_ESLINT_TARGETS).toContain('electron/**/*.ts');
+        expect(FULL_ESLINT_TARGETS).toContain('scripts/lint/sourdaw.mjs');
     });
 });
 
@@ -60,6 +62,19 @@ describe('eslint cache argv', () => {
         expect(cacheStrategy(argv)).toBe('content');
     });
 
+    it.each([
+        [{ fix: false, full: false }, ['src/a.ts']],
+        [{ fix: false, full: true }, [...FULL_ESLINT_TARGETS]],
+        [{ fix: true, full: false }, ['src/a.ts']],
+    ])('names the committed suppressions file for %j', (options, targets) => {
+        const argv = buildEslintArgv(options, targets);
+        const index = argv.indexOf('--suppressions-location');
+
+        expect(argv[index + 1]).toBe(ESLINT_SUPPRESSIONS_FILE);
+        expect(existsSync(resolve(ESLINT_SUPPRESSIONS_FILE))).toBe(true);
+        expect(argv).not.toContain('--pass-on-unpruned-suppressions');
+    });
+
     it('passes fix and targets through unchanged', () => {
         const argv = buildEslintArgv({ fix: true, full: false }, ['scripts/runLint.ts'], {
             SOURDAW_LINT_CONCURRENCY: '4',
@@ -68,6 +83,14 @@ describe('eslint cache argv', () => {
         expect(argv).toContain('--fix');
         expect(argv).toContain('scripts/runLint.ts');
         expect(argv).toContain('--concurrency=4');
+    });
+
+    it('separates check and cofix caches while keeping content keys', () => {
+        const check = buildEslintArgv({ fix: false, full: false }, ['src/a.ts']);
+        const fix = buildEslintArgv({ fix: true, full: false }, ['src/a.ts']);
+        expect(check[check.indexOf('--cache-location') + 1]).toBe('node_modules/.cache/eslint/check/');
+        expect(fix[fix.indexOf('--cache-location') + 1]).toBe('node_modules/.cache/eslint/cofix/');
+        expect(cacheStrategy(fix)).toBe('content');
     });
 });
 
@@ -95,13 +118,21 @@ describe('eslint heap ceiling', () => {
         // ceiling rather than raise a default.
         const guarded = { NODE_OPTIONS: '--max-old-space-size=2048' };
 
-        expect(eslintEnvironment(guarded)).toBe(guarded);
+        expect(eslintEnvironment(guarded).NODE_OPTIONS).toBe(guarded.NODE_OPTIONS);
+        expect(guarded).toEqual({ NODE_OPTIONS: '--max-old-space-size=2048' });
     });
 
     it('keeps unrelated node options', () => {
         expect(eslintEnvironment({ NODE_OPTIONS: '--enable-source-maps' }).NODE_OPTIONS).toBe(
             '--enable-source-maps --max-old-space-size=6144'
         );
+    });
+
+    it('selects cofix explicitly and removes inherited cofix intent from checks', () => {
+        const source = { SOURDAW_LINT_COFIX: '1', NODE_OPTIONS: '--max-old-space-size=2048' };
+        expect(eslintEnvironment(source).SOURDAW_LINT_COFIX).toBe('0');
+        expect(eslintEnvironment(source, true).SOURDAW_LINT_COFIX).toBe('1');
+        expect(source).toEqual({ SOURDAW_LINT_COFIX: '1', NODE_OPTIONS: '--max-old-space-size=2048' });
     });
 });
 
@@ -168,15 +199,28 @@ describe('ensureServerDependencies', () => {
 });
 
 describe('lint entrypoint phase reporting', () => {
-    function runLint(failingEngine = '') {
+    function runLint(failingEngine = '', fix = false) {
         const directory = mkdtempSync(join(tmpdir(), 'run-lint-test-'));
         try {
             const executable = join(directory, 'pnpm');
-            writeFileSync(executable, '#!/bin/sh\necho "$2 output"\nif [ "$2" = "$FAIL_ENGINE" ]; then exit 2; fi\n');
+            writeFileSync(
+                executable,
+                '#!/bin/sh\nengine="$2"\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then engine="oxlint-plugins"; fi\necho "$engine output"\nif [ "$engine" = "$FAIL_ENGINE" ]; then exit 2; fi\nif [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "eslint" ]; then echo "cofix=$SOURDAW_LINT_COFIX args=$*"; fi\nif [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "oxlint-plugins" ]; then echo "public-args=$*"; fi\n'
+            );
             chmodSync(executable, 0o755);
-            return spawnSync(process.execPath, [resolve('scripts/runLint.ts'), 'src/a.ts'], {
+            const args = [resolve('scripts/runLint.ts'), 'src/a.ts'];
+            if (fix) {
+                args.push('--fix');
+            }
+            return spawnSync(process.execPath, args, {
                 encoding: 'utf8',
-                env: { ...process.env, PATH: directory, FAIL_ENGINE: failingEngine },
+                env: {
+                    ...process.env,
+                    PATH: directory,
+                    FAIL_ENGINE: failingEngine,
+                    REPORT_CONFIG: fix ? '1' : '0',
+                    SOURDAW_LINT_COFIX: '1',
+                },
             });
         } finally {
             rmSync(directory, { recursive: true, force: true });
@@ -189,11 +233,39 @@ describe('lint entrypoint phase reporting', () => {
         expect(result.status).toBe(0);
         expect(result.stderr).toBe('');
         expect(result.stdout).toMatch(
-            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\n$/
+            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: oxlint-plugins started\noxlint-plugins output\nlint: oxlint-plugins passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\n$/
         );
     });
 
-    it.each(['oxlint', 'eslint'])('reports %s failure and retains the original error', (engine) => {
+    it('routes fixes through ESLint cofix before a non-fixing public-plugin validation', () => {
+        const result = runLint('', true);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toMatch(/lint: oxlint passed[^]*lint: eslint started/);
+        expect(result.stdout).toMatch(/lint: eslint passed[^]*lint: oxlint-plugins started/);
+        expect(result.stdout).toContain('cofix=1 args=exec eslint');
+        expect(result.stdout).toContain('node_modules/.cache/eslint/cofix/');
+        expect(result.stdout).toContain('--fix src/a.ts');
+        const publicArgs = result.stdout.split('\n').find((line) => line.startsWith('public-args='));
+        expect(publicArgs).toContain('--config=.oxlint-plugins.json');
+        expect(publicArgs).not.toContain('--fix');
+    });
+
+    it('retains fail-fast reporting when the explicit cofix engine fails', () => {
+        const result = runLint('eslint', true);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toBe('eslint failed\n');
+        expect(result.stdout).toContain('lint: eslint failed');
+        expect(result.stdout).not.toContain('oxlint-plugins');
+    });
+
+    it('fails if final public validation rejects the fixed bytes', () => {
+        const result = runLint('oxlint-plugins', true);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toBe('oxlint-plugins failed\n');
+        expect(result.stdout).toMatch(/lint: eslint passed[^]*lint: oxlint-plugins failed/);
+    });
+
+    it.each(['oxlint', 'oxlint-plugins', 'eslint'])('reports %s failure and retains the original error', (engine) => {
         const result = runLint(engine);
 
         expect(result.status).toBe(1);
@@ -202,8 +274,11 @@ describe('lint entrypoint phase reporting', () => {
             new RegExp(`lint: ${engine} started\\n${engine} output\\nlint: ${engine} failed \\(\\d+ ms\\)`)
         );
         expect(result.stdout).not.toContain(`lint: ${engine} passed`);
-        if (engine === 'oxlint') {
+        if (engine !== 'eslint') {
             expect(result.stdout).not.toContain('eslint');
+        }
+        if (engine === 'oxlint') {
+            expect(result.stdout).not.toContain('oxlint-plugins');
         }
     });
 });

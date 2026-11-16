@@ -15,6 +15,7 @@
 //! The event sink is a threadsafe function registered once at construction. It
 //! takes owned arguments and is never reachable from the render callback.
 
+mod gpu;
 mod windows;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -195,7 +196,12 @@ impl SourdawNative {
 
     /// The current window host, cloned out so no caller holds the lock.
     fn window_host(&self) -> Arc<dyn PluginWindowHost> {
-        Arc::clone(&self.windows.read().expect("window host lock poisoned"))
+        Arc::clone(
+            &self
+                .windows
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
     }
 
     /// Register the shell's plugin-window callbacks (packet T-4).
@@ -236,7 +242,10 @@ impl SourdawNative {
                 show: show_editor_window,
             },
         )?;
-        *self.windows.write().expect("window host lock poisoned") = Arc::new(host);
+        *self
+            .windows
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Arc::new(host);
         Ok(())
     }
 
@@ -650,6 +659,13 @@ impl SourdawNative {
         )?)
     }
 
+    /// Shell plumbing for the scan utility's terminate path, never a renderer
+    /// command. Synchronous so it completes before the process exits.
+    #[napi]
+    pub fn stop_plugin_scan_helpers(&self) {
+        crate::stop_plugin_scan_helpers();
+    }
+
     #[napi]
     pub async fn get_default_plugin_paths(&self) -> Result<Vec<String>> {
         reason(commands::plugins::get_default_plugin_paths().await)
@@ -658,6 +674,34 @@ impl SourdawNative {
     #[napi]
     pub async fn is_scan_path_authorized(&self, path: String) -> Result<bool> {
         reason(commands::plugins::is_scan_path_authorized(path).await)
+    }
+
+    /// Grant one plugin folder the user picked. Main process only.
+    ///
+    /// The shell withholds this from the renderer's command surface, and that
+    /// is the whole point of it: a page that could mint its own plugin folder
+    /// could have the scan and the loader execute native code from anywhere.
+    /// The shell calls it with the path a native folder dialog just returned,
+    /// and gets back the canonical path that was granted.
+    #[napi]
+    pub async fn grant_plugin_folder(&self, path: String) -> Result<String> {
+        reason(commands::plugin_folders::grant_plugin_folder(path).await)
+    }
+
+    /// The granted plugin folders, each with the reason it is unavailable
+    /// when it is.
+    #[napi]
+    pub async fn get_plugin_folder_grants(&self) -> Result<Value> {
+        json(reason(
+            commands::plugin_folders::get_plugin_folder_grants().await,
+        )?)
+    }
+
+    /// Revoke one granted plugin folder. Safe for the renderer: revoking only
+    /// narrows what the scan may reach.
+    #[napi]
+    pub async fn revoke_plugin_folder_grant(&self, path: String) -> Result<()> {
+        reason(commands::plugin_folders::revoke_plugin_folder_grant(path).await)
     }
 
     #[napi]
@@ -886,22 +930,39 @@ impl SourdawNative {
     /// Render a command batch deterministically with no audio device: the
     /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
     /// PCM; a refused batch is an error carrying the batch's refusal reasons.
+    /// `render_id`, when given, is what `cancel_graph_offline` names to stop
+    /// it; a cancelled render's error starts `offline-render-cancelled`.
     #[napi]
     pub async fn render_graph_offline(
         &self,
         batch: Value,
         frames: u32,
         sample_rate: f64,
+        render_id: Option<String>,
     ) -> Result<Buffer> {
+        let windows = self.window_host();
         Ok(Buffer::from(reason(
             commands::graph::render_graph_offline(
                 batch,
                 frames,
                 sample_rate,
+                render_id,
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
         )?))
+    }
+
+    /// Cancel the offline render started under `render_id`, between its
+    /// blocks. A cancel that arrives before its render starts still cancels
+    /// it; one for an unknown or finished id does nothing.
+    #[napi]
+    pub fn cancel_graph_offline(&self, render_id: String) -> Result<()> {
+        reason(commands::offline_plugins::cancel_graph_offline(
+            render_id,
+            &self.singletons.app_state,
+        ))
     }
 
     /// Map one graph batch against the graph a prior wire-command sequence

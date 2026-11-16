@@ -71,6 +71,8 @@ beforeAll(() => {
 vi.mock('#/modules/Command/useCases', () => ({
     commitUndoEntry: vi.fn(),
     createUndoEntry: vi.fn(),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     syncActionReplayMetadata: command_mocks.sync_action_replay_metadata,
     getExecutableAppActionEffect: command_mocks.get_executable_app_action_effect,

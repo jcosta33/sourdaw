@@ -90,7 +90,7 @@ mod tests {
                 let jittered = cap(nominal, &mut state);
                 let ratio = jittered / nominal;
                 assert!(
-                    ratio >= 0.80 && ratio <= 1.20,
+                    (0.80..=1.20).contains(&ratio),
                     "Capacitor jitter ratio {ratio:.3} out of ±20% range for seed {seed}"
                 );
             }
@@ -104,7 +104,7 @@ mod tests {
                 let jittered = res(nominal, &mut state);
                 let ratio = jittered / nominal;
                 assert!(
-                    ratio >= 0.95 && ratio <= 1.05,
+                    (0.95..=1.05).contains(&ratio),
                     "Resistor jitter ratio {ratio:.3} out of ±5% range for seed {seed}"
                 );
             }

@@ -53,7 +53,7 @@ describe('initCrumbsDeviceStatePersistence', () => {
         notify({ 'dev-1': makeState('slicer', 'a.wav', 's1') });
 
         expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledTimes(1);
-        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-1');
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-1', expect.anything());
     });
 
     it('does not commit on first sight (records without committing)', () => {
@@ -90,7 +90,7 @@ describe('initCrumbsDeviceStatePersistence', () => {
         vi.clearAllMocks();
         notify({ 'dev-1': makeState('sampler', 'b.wav', 's2') });
 
-        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-1');
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-1', expect.anything());
     });
 
     it('clears committed map when instances become null', () => {
@@ -164,7 +164,7 @@ describe('initCrumbsDeviceStatePersistence', () => {
         });
         // The released device commits; the still-held one stays quiet.
         expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledTimes(1);
-        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-2');
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-2', expect.anything());
 
         endCrumbsPairedReconcile('dev-1');
         notify({
@@ -173,6 +173,6 @@ describe('initCrumbsDeviceStatePersistence', () => {
         });
         // And the held device commits the full state once released.
         expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledTimes(2);
-        expect(mocks.commitCrumbsDeviceState).toHaveBeenLastCalledWith('dev-1');
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenLastCalledWith('dev-1', expect.anything());
     });
 });

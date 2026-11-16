@@ -122,7 +122,7 @@ fn scoring_per_quantum_cost() {
     let mut left = [0.0_f32; QUANTUM];
     let mut right = [0.0_f32; QUANTUM];
 
-    let mut fill = |block: usize, left: &mut [f32; QUANTUM], right: &mut [f32; QUANTUM]| {
+    let fill = |block: usize, left: &mut [f32; QUANTUM], right: &mut [f32; QUANTUM]| {
         for frame in 0..QUANTUM {
             let (l, r) = excitation(block * QUANTUM + frame);
             left[frame] = l;
@@ -154,8 +154,6 @@ fn scoring_per_quantum_cost() {
     let floor = quantile(&samples, 0.01);
     let median = quantile(&samples, 0.5);
     let p95 = quantile(&samples, 0.95);
-    let p99 = quantile(&samples, 0.99);
-    let max = *samples.last().expect("timed at least one quantum") as f64;
     let pct = |ns: f64| (ns / BUDGET_NS) * 100.0;
 
     eprintln!("\n=== Scoring / Tuner per-quantum cost — NATIVE ===\n");

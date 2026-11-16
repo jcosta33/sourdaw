@@ -71,7 +71,7 @@ import { getProjectContext } from '../getProjectContext';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
-import { advertisedAnswerSchema } from './answerWireFixture';
+import { advertisedAnswerSchema, readLocalPromptTool } from './answerWireFixture';
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
@@ -754,10 +754,12 @@ function toolCallsResponse(calls: readonly { name: string; arguments: Record<str
 /** The hosted-provider equivalent of {@link createTurnTrackedWebLlmResponder}. */
 function createTurnTrackedHostedResponder(
     buildFinalCalls: (userMessage: string) => Array<{ name: string; arguments: Record<string, unknown> }>,
-    intake: ScriptedTurn = literalMetricIntakeTurn
+    intake: ScriptedTurn = literalMetricIntakeTurn,
+    planningRounds = 1
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
     let turn = 0;
-    const maxTurns = intake === maskingMetricIntake ? 4 : 3;
+    const turnsPerRound = intake === maskingMetricIntake ? 4 : 3;
+    const maxTurns = planningRounds * turnsPerRound;
     return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
@@ -767,11 +769,12 @@ function createTurnTrackedHostedResponder(
             throw new Error(`Expected at most ${maxTurns} hosted provider turns`);
         }
         const userMessage = getHostedUserMessage(init.body);
-        if (turn === 1) {
+        const phase = (turn - 1) % turnsPerRound;
+        if (phase === 0) {
             const request = JSON.parse(init.body) as { tools: ToolSchema[] };
             return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
         }
-        if (turn === 4 && intake === maskingMetricIntake) {
+        if (phase === 3) {
             return Promise.resolve(
                 toolCallsResponse([
                     {
@@ -782,7 +785,7 @@ function createTurnTrackedHostedResponder(
             );
         }
         const finalCalls = buildFinalCalls(userMessage);
-        if (turn === 2) {
+        if (phase === 1) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), finalCalls);
@@ -1183,11 +1186,7 @@ const maskingMetricIntake: ScriptedTurn = (userMessage, providerView) => {
     }
     let workflowParameters: unknown;
     if (typeof providerView === 'string') {
-        const line = providerView.split('\n').find((entry) => entry.startsWith('- selectWorkflowCapability:'));
-        const offset = line?.lastIndexOf(' {"type":"object"') ?? -1;
-        if (line !== undefined && offset >= 0) {
-            workflowParameters = JSON.parse(line.slice(offset + 1));
-        }
+        workflowParameters = readLocalPromptTool(providerView, 'selectWorkflowCapability')?.parameters;
     } else {
         workflowParameters = providerView?.find((tool) => tool.function.name === 'selectWorkflowCapability')?.function
             .parameters;
@@ -3608,21 +3607,25 @@ describe('drum bus prompt workflow', () => {
         }
     });
 
+    // Hosted: a local turn is offered only the workflows whose capability data its message kept, and
+    // this project publishes no drum routing capability, so only a hosted provider can select it.
     it('fails closed when an editable audio track has no application-owned role evidence', async () => {
         setMf01Project({ 'track-room': (track) => ({ ...track, name: 'Audio 1' }) });
-        runtimeMocks.generateWebLlmCompletion.mockImplementation(
-            createTurnTrackedWebLlmResponder(
+        runtimeMocks.backend.value = 'cloud';
+        runtimeMocks.fetch.mockImplementation(
+            createTurnTrackedHostedResponder(
                 () =>
                     withWorkflowCapabilitySelection(
                         'drum-routing',
                         asCommandBatchProposal(mf01ProviderPlan.slice(0, 3))
                     ),
+                literalMetricIntakeTurn,
                 // The rejection is correctable now, so the app gives the provider
                 // one bounded repair round. Role evidence is application-owned:
                 // the provider cannot manufacture it, so it re-proposes the same
                 // routes and the app rejects the batch again — still failed shut,
                 // with no proposal ever reaching confirmation.
-                { planningRounds: 2 }
+                2
             )
         );
 

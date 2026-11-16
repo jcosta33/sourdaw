@@ -6,7 +6,11 @@
 
 #![cfg_attr(
     test,
-    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+    allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "tests assert by unwrapping and fail by panicking"
+    )
 )]
 
 pub mod convolution;

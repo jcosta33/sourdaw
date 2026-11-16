@@ -9,10 +9,6 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => mockScratchPadState),
 }));
 
-const removeScratchPadSection = vi.fn();
-const renameScratchPadSection = vi.fn();
-const setScratchPadSectionColor = vi.fn();
-const reorderScratchPadSection = vi.fn();
 const clearScratchPad = vi.fn();
 const captureArrangementToScratchPad = vi.fn();
 const commitScratchPadToArrangement = vi.fn();
@@ -23,10 +19,6 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    removeScratchPadSection: (...args: unknown[]) => removeScratchPadSection(...args),
-    renameScratchPadSection: (...args: unknown[]) => renameScratchPadSection(...args),
-    setScratchPadSectionColor: (...args: unknown[]) => setScratchPadSectionColor(...args),
-    reorderScratchPadSection: (...args: unknown[]) => reorderScratchPadSection(...args),
     clearScratchPad: (...args: unknown[]) => clearScratchPad(...args),
     captureArrangementToScratchPad: (...args: unknown[]) => captureArrangementToScratchPad(...args),
     commitScratchPadToArrangement: (...args: unknown[]) => commitScratchPadToArrangement(...args),
@@ -123,7 +115,10 @@ describe('ScratchPadView', () => {
         fireEvent.change(input, { target: { value: 'Intro' } });
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(renameScratchPadSection).toHaveBeenCalledWith('s1', 'Intro');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameScratchPadSection',
+            payload: { sectionId: 's1', name: 'Intro' },
+        });
         expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     });
 
@@ -134,7 +129,7 @@ describe('ScratchPadView', () => {
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Intro' } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
 
-        expect(renameScratchPadSection).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(screen.getByText('Verse')).toBeInTheDocument();
     });
 
@@ -145,7 +140,7 @@ describe('ScratchPadView', () => {
         fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
 
-        expect(renameScratchPadSection).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('opens a context menu with Rename, Color, Move and Delete actions', () => {
@@ -166,7 +161,10 @@ describe('ScratchPadView', () => {
         fireEvent.contextMenu(screen.getByText('Verse'));
         fireEvent.click(screen.getByLabelText('Set color oklch(0.40 0.08 150)'));
 
-        expect(setScratchPadSectionColor).toHaveBeenCalledWith('s1', 'oklch(0.40 0.08 150)');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setScratchPadSectionColor',
+            payload: { sectionId: 's1', color: 'oklch(0.40 0.08 150)' },
+        });
         expect(screen.queryByText('Color')).not.toBeInTheDocument();
     });
 
@@ -175,11 +173,17 @@ describe('ScratchPadView', () => {
         render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Chorus'));
         fireEvent.click(screen.getByText('Move Left'));
-        expect(reorderScratchPadSection).toHaveBeenCalledWith('s2', 'left');
+        expect(executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'reorderScratchPadSection',
+            payload: { sectionId: 's2', direction: 'left' },
+        });
 
         fireEvent.contextMenu(screen.getByText('Verse'));
         fireEvent.click(screen.getByText('Move Right'));
-        expect(reorderScratchPadSection).toHaveBeenCalledWith('s1', 'right');
+        expect(executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'reorderScratchPadSection',
+            payload: { sectionId: 's1', direction: 'right' },
+        });
     });
 
     it('opens the rename input from the context menu Rename action', () => {
@@ -197,7 +201,10 @@ describe('ScratchPadView', () => {
         render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
         fireEvent.click(screen.getByText('Delete'));
-        expect(removeScratchPadSection).toHaveBeenCalledWith('s1');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeScratchPadSection',
+            payload: { sectionId: 's1' },
+        });
     });
 
     it('closes an open context menu on an outside click', () => {

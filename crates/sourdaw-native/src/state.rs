@@ -1,5 +1,7 @@
+use crate::commands::plugins::VettedRegistryEntry;
 use crate::host::native_bridge::SharedHostedPlugin;
-use crate::host::ui_thread::UiThread;
+use crate::host::plugin_registry_store::FileFingerprint;
+use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::ScannedPlugin;
@@ -44,6 +46,9 @@ pub struct PluginInstanceData {
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
     pub chain_kind: DeviceKind,
+    /// The registry entry the load opened, with the fingerprint it vetted,
+    /// carried through the attach onto `EnginePluginInstanceData`.
+    pub(crate) load_resolution: VettedRegistryEntry,
 }
 
 impl PluginInstanceData {
@@ -62,6 +67,7 @@ impl PluginInstanceData {
             parameters: plugin.get_parameters(),
             has_gui: plugin.has_gui(),
             chain_kind: DeviceKind::Effect,
+            load_resolution: VettedRegistryEntry::fixture(),
             plugin,
         }
     }
@@ -88,6 +94,13 @@ pub struct EnginePluginInstanceData {
     /// it would trade a knob's latency for a dropout. `None` for a backend that
     /// reports no plugin-side edits.
     pub parameter_events: Option<Arc<PluginParameterEventQueue>>,
+    /// The registry entry the load opened and the fingerprint it vetted,
+    /// recorded at load the way `chain_kind` is. An offline render rebuilds
+    /// this instance from exactly that file, re-vetted against exactly that
+    /// fingerprint (`commands::offline_plugins`), and never resolves the plugin
+    /// by name again: a rescan since the load may have moved the name to a
+    /// different file.
+    pub(crate) load_resolution: VettedRegistryEntry,
 }
 
 /// The signal one editor teardown completes on.
@@ -335,6 +348,10 @@ pub struct AppState {
     /// every method on it touches the filesystem. See
     /// `host::plugin_registry_store`.
     pub plugin_registry_store: Arc<crate::host::plugin_registry_store::PluginRegistryStore>,
+    /// The offline renders in flight, by the id their caller named, and the
+    /// cancels that arrived before their render did. See
+    /// `commands::offline_plugins::OfflineRenders`.
+    pub offline_renders: Arc<Mutex<crate::commands::offline_plugins::OfflineRenders>>,
 }
 
 /// One registered piece of timeline material: planar stereo PCM and the rate
@@ -538,14 +555,6 @@ impl Default for TimelineSamplePool {
     }
 }
 
-impl std::ops::Index<&str> for TimelineSamplePool {
-    type Output = TimelineSample;
-
-    fn index(&self, id: &str) -> &Self::Output {
-        self.get(id).expect("no entry found for key")
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct PluginRegistryEntry {
     pub path: String,
@@ -576,6 +585,14 @@ pub struct PluginRegistryEntry {
     /// at load (`commands::plugins::load_plugin`) and carried onto the
     /// instance record so a chain splice never has to re-read the registry.
     pub chain_kind: DeviceKind,
+    /// The fingerprint of `path`'s file when this entry was last checked
+    /// against it: at the scan that published it, at the hydration that
+    /// admitted it, or around the targeted rescan that refreshed it.
+    ///
+    /// A load compares the file against this before it opens anything
+    /// (`commands::plugins::resolve_registry_entry`), so `None` — an entry
+    /// nobody fingerprinted — is a mismatch, never a pass.
+    pub(crate) scanned_fingerprint: Option<FileFingerprint>,
 }
 
 impl PluginRegistryEntry {
@@ -589,7 +606,13 @@ impl PluginRegistryEntry {
     /// `capability_metadata_reason` travels with the values it qualifies and is
     /// never dropped on the way through. A row that kept the counts and lost
     /// the reason would state as fact what the scan recorded as unknown.
-    pub fn from_scanned(plugin: &ScannedPlugin) -> Self {
+    ///
+    /// The fingerprint is the caller's, because only the caller knows when it
+    /// last looked at the file; see [`Self::scanned_fingerprint`].
+    pub(crate) fn from_scanned(
+        plugin: &ScannedPlugin,
+        scanned_fingerprint: Option<FileFingerprint>,
+    ) -> Self {
         Self {
             path: plugin.path.clone(),
             stable_id: plugin.id.clone(),
@@ -601,6 +624,7 @@ impl PluginRegistryEntry {
             has_custom_ui: plugin.has_custom_ui,
             capability_metadata_reason: plugin.capability_metadata_reason.clone(),
             chain_kind: chain_kind_for_category(&plugin.category),
+            scanned_fingerprint,
         }
     }
 }
@@ -682,6 +706,9 @@ impl Default for AppState {
             plugin_registry_store: Arc::new(
                 crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
             ),
+            offline_renders: Arc::new(Mutex::new(
+                crate::commands::offline_plugins::OfflineRenders::default(),
+            )),
         }
     }
 }
@@ -808,18 +835,35 @@ fn take_released_retired_runtimes<Runtime>(
 /// would park every concurrent `retain_retired_engine_plugin` (i.e. every
 /// unload) for the whole teardown, so the released entries are taken out under
 /// the lock, the guard is released, and only then are they dropped.
-fn sweep_retired_runtimes<Runtime>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>) {
-    let released_runtimes = {
-        let mut retired_runtimes = match retired_runtimes.lock() {
-            Ok(retired_runtimes) => retired_runtimes,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        take_released_retired_runtimes(&mut retired_runtimes)
-    };
+///
+/// The teardown itself runs on the shell's UI thread, because both formats bind
+/// it to the main thread: CLAP marks `deactivate` and `destroy` `[main-thread]`,
+/// and VST3 binds `setActive`, `terminate` and the module's exit to the UI
+/// thread. A sweep whose hop never lands puts the runtimes back, so the next
+/// sweep tries again; tearing them down here instead would make the plugin's
+/// teardown the crash a Qt-based plugin turns an off-thread call into.
+fn sweep_retired_runtimes<Runtime, Ui>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>, ui: &Ui)
+where
+    Runtime: Send + Sync + 'static,
+    Ui: UiThread + ?Sized,
+{
+    let released_runtimes =
+        take_released_retired_runtimes(&mut locked_or_poisoned(retired_runtimes));
+    if released_runtimes.is_empty() {
+        return;
+    }
 
-    // Guard released. Plugin teardown runs here, on this non-RT thread, with the
-    // retirement mutex free.
-    drop(released_runtimes);
+    // Guard released. Plugin teardown runs with the retirement mutex free.
+    if let Err((unreleased, reason)) = release_on_ui_thread(ui, released_runtimes) {
+        eprintln!(
+            "[Plugin] {} retired runtime(s) kept for the next sweep: {reason}",
+            unreleased.len()
+        );
+        let mut retired_runtimes = locked_or_poisoned(retired_runtimes);
+        for runtime in unreleased {
+            retain_runtime_once(&mut retired_runtimes, runtime);
+        }
+    }
 }
 
 impl AppState {
@@ -941,8 +985,10 @@ impl AppState {
     /// plugin's memory is about to be wanted again, plus the terminal one — and
     /// frees only runtimes the scheduler has demonstrably released. Teardown
     /// runs with the retirement mutex free; see `sweep_retired_runtimes`.
-    pub fn sweep_retired_engine_plugins(&self) {
-        sweep_retired_runtimes(&self.retired_engine_plugins);
+    ///
+    /// `ui` is the thread that teardown runs on; see `sweep_retired_runtimes`.
+    pub fn sweep_retired_engine_plugins<Ui: UiThread + ?Sized>(&self, ui: &Ui) {
+        sweep_retired_runtimes(&self.retired_engine_plugins, ui);
     }
 }
 
@@ -1046,10 +1092,13 @@ mod tests {
         }
     }
 
+    /// The `(width, height)` sizes a recording window was told, in order.
+    type WindowSizes = Arc<Mutex<Vec<(u32, u32)>>>;
+
     /// The host window a self-resizing editor reaches.
     fn recording_resizer(
         calls: &Arc<Mutex<Vec<&'static str>>>,
-    ) -> (EditorWindowResizer, Arc<Mutex<Vec<(u32, u32)>>>) {
+    ) -> (EditorWindowResizer, WindowSizes) {
         let sizes = Arc::new(Mutex::new(Vec::new()));
         let recorded = Arc::clone(&sizes);
         let calls = Arc::clone(calls);
@@ -1300,7 +1349,7 @@ mod tests {
                 retirement_lock_was_free: Arc::clone(&retirement_lock_was_free),
             }));
 
-        sweep_retired_runtimes(&retired_runtimes);
+        sweep_retired_runtimes(&retired_runtimes, &NoWindowHost);
 
         assert!(
             retirement_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),
@@ -1402,6 +1451,7 @@ mod tests {
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
                     parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
         assert!(
@@ -1416,6 +1466,93 @@ mod tests {
             processing.has_pending_stop(),
             "a runtime must leave the store with its stop already requested: the audio thread's chance to perform it ends with the scheduler removal that follows"
         );
+    }
+
+    /// A retired runtime whose teardown records the thread it ran on.
+    fn retired_runtime_recording_teardown(
+        state: &AppState,
+    ) -> Arc<Mutex<Vec<std::thread::ThreadId>>> {
+        let torn_down_on = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&torn_down_on);
+        let mut wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "UI-thread teardown fixture",
+            Vec::new(),
+            false,
+        );
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            log.lock()
+                .expect("teardown log")
+                .push(std::thread::current().id());
+        }));
+        state.retain_retired_engine_plugin(Arc::new(SharedHostedPlugin::new(wrapper.into())));
+        torn_down_on
+    }
+
+    /// The sweep is a plugin's teardown — CLAP `deactivate` and `destroy`, VST3
+    /// `setActive(false)`, `terminate` and module exit — and both formats bind
+    /// it to the main thread, so it runs on the shell's UI thread whichever
+    /// thread swept.
+    #[test]
+    fn a_sweep_tears_released_runtimes_down_on_the_shells_ui_thread() {
+        let state = AppState::default();
+        let torn_down_on = retired_runtime_recording_teardown(&state);
+        let windows = crate::host::plugin_window::testing::DedicatedUiWindowHost::start();
+
+        state.sweep_retired_engine_plugins(&windows);
+
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
+        assert_eq!(
+            *torn_down_on.lock().expect("teardown log"),
+            [windows.thread_id]
+        );
+        assert!(state
+            .retired_engine_plugins
+            .lock()
+            .expect("retirement lock")
+            .is_empty());
+    }
+
+    /// A sweep that cannot reach the UI thread must neither tear the runtime
+    /// down where it stands nor lose it: it stays retired for the next sweep.
+    #[test]
+    fn a_sweep_that_cannot_reach_the_ui_thread_keeps_the_runtime_for_the_next_one() {
+        struct Unreachable;
+        impl UiThread for Unreachable {
+            fn is_ui_thread(&self) -> bool {
+                false
+            }
+            fn run_on_ui_thread(
+                &self,
+                _task: &Arc<crate::host::ui_thread::UiThreadTask>,
+            ) -> Result<(), String> {
+                Err("the shell's UI thread is wedged".to_string())
+            }
+        }
+        let state = AppState::default();
+        let torn_down_on = retired_runtime_recording_teardown(&state);
+
+        state.sweep_retired_engine_plugins(&Unreachable);
+
+        assert!(
+            torn_down_on.lock().expect("teardown log").is_empty(),
+            "an unreachable UI thread must not turn into a teardown on this one"
+        );
+        assert_eq!(
+            state
+                .retired_engine_plugins
+                .lock()
+                .expect("retirement lock")
+                .len(),
+            1,
+            "the runtime must still be retired, for the next sweep to free"
+        );
+
+        state.sweep_retired_engine_plugins(&NoWindowHost);
+        assert_eq!(torn_down_on.lock().expect("teardown log").len(), 1);
     }
 
     /// Load/unload cycling is what accumulates retirements, so the sweep has to
@@ -1441,7 +1578,7 @@ mod tests {
 
             // The scheduler still holds this one, exactly as it does between
             // the queued removal and the audio thread dropping the slot.
-            state.sweep_retired_engine_plugins();
+            state.sweep_retired_engine_plugins(&NoWindowHost);
             assert_eq!(
                 state
                     .retired_engine_plugins
@@ -1453,7 +1590,7 @@ mod tests {
             );
 
             drop(runtime);
-            state.sweep_retired_engine_plugins();
+            state.sweep_retired_engine_plugins(&NoWindowHost);
             assert!(
                 state
                     .retired_engine_plugins
@@ -1491,7 +1628,8 @@ mod tests {
     /// signal instead of joining it.
     #[test]
     fn an_instrument_registry_entry_splices_as_a_generator() {
-        let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category("instrument"));
+        let entry =
+            PluginRegistryEntry::from_scanned(&scanned_plugin_with_category("instrument"), None);
 
         assert_eq!(entry.chain_kind, DeviceKind::Generator);
     }
@@ -1503,7 +1641,8 @@ mod tests {
     #[test]
     fn an_effect_registry_entry_splices_as_an_effect() {
         for category in ["effect", "reverb", ""] {
-            let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category(category));
+            let entry =
+                PluginRegistryEntry::from_scanned(&scanned_plugin_with_category(category), None);
 
             assert_eq!(
                 entry.chain_kind,

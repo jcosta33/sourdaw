@@ -22,6 +22,7 @@ import {
     type AgentRunCommittedWork,
     type AgentRunDecision,
     type AgentRunError,
+    AGENT_RUN_MAX_TEXT_LENGTH,
     type AgentRunPlan,
     type AgentRunPendingEffect,
     type AgentRunPendingEffectContinuation,
@@ -48,6 +49,7 @@ import {
     type ThreadContextEvidence,
 } from '../models/ThreadContext';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
+import { readAgentRunAudibleImpact } from '../validators/readAgentRunAudibleImpact';
 import { readPerceptualConstraintReading } from '../validators/readPerceptualConstraintReading';
 import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan';
 
@@ -69,7 +71,7 @@ export const MAX_PLAN_APPLICATION_TOOL_RECEIPTS = 1024;
  * the allowance every other collection keeps.
  */
 export const MAX_PLAN_CAPABILITIES = MAX_PLAN_APPLICATION_TOOL_RECEIPTS + MAX_COLLECTION_LENGTH;
-const MAX_TEXT_LENGTH = 128 * 1024;
+const MAX_TEXT_LENGTH = AGENT_RUN_MAX_TEXT_LENGTH;
 const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
 
 type UnknownRecord = Record<string, unknown>;
@@ -1534,10 +1536,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
         isRecord(value.expectedImpact) && isRecord(value.expectedImpact.audible)
             ? {
                   project: readStringArray(value.expectedImpact.project),
-                  audible:
-                      value.expectedImpact.audible.status === 'not-claimed'
-                          ? { status: 'not-claimed' as const, reason: readString(value.expectedImpact.audible.reason) }
-                          : null,
+                  audible: readAgentRunAudibleImpact(value.expectedImpact.audible),
               }
             : null;
     const capabilities = readCollection(
@@ -1595,7 +1594,6 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
         expectedImpact === null ||
         expectedImpact.project === null ||
         expectedImpact.audible === null ||
-        expectedImpact.audible.reason === null ||
         capabilities === null ||
         risks === null ||
         approvalPoints === null ||
@@ -1630,7 +1628,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               steps,
               expectedImpact: {
                   project: expectedImpact.project,
-                  audible: { status: 'not-claimed', reason: expectedImpact.audible.reason },
+                  audible: expectedImpact.audible,
               },
               capabilities: capabilities as AgentRunPlan['capabilities'],
               risks,

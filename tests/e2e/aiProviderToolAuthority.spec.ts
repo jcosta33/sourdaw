@@ -23,7 +23,7 @@ function receiptData(request: ScriptedToolRequest, callId: string): Record<strin
         (candidate) => candidate.role === 'tool' && candidate.tool_call_id === callId
     );
     if (typeof message?.content !== 'string') {
-        throw new Error(`No application receipt for ${callId}.`);
+        throw new TypeError(`No application receipt for ${callId}.`);
     }
     const receipt: unknown = JSON.parse(message.content);
     if (!isRecord(receipt) || receipt.status !== 'success' || !isRecord(receipt.data)) {
@@ -37,7 +37,7 @@ function targetsFromReceipt(request: ScriptedToolRequest, names: string[]): Targ
     expect(receipt.schema).toBe('sourdaw.semantic-project-query');
     expect(receipt.nextCursor).toBeNull();
     if (!Array.isArray(receipt.items)) {
-        throw new Error('Project query returned no items.');
+        throw new TypeError('Project query returned no items.');
     }
     const items: unknown[] = receipt.items;
     return names.map((name) => {
@@ -57,15 +57,16 @@ async function readProject(page: Page) {
         const { trackStore } = await import('/src/modules/Arrangement/stores/index.ts');
         const { getTrackStrip } = await import('/src/modules/AudioEngine/useCases/index.ts');
         const { undoHistoryStore } = await import('/src/modules/Command/stores/index.ts');
-        const root = getCrdtDoc<{ tracks: { tracks: Array<{ id: string; gain: number }> } }>('root');
-        if (root === undefined || !Array.isArray(root.tracks?.tracks)) {
+        const root = getCrdtDoc<{ tracks?: { tracks?: Array<{ id: string; gain: number }> } }>('root');
+        const rawTracks = root?.tracks?.tracks;
+        if (root === undefined || !Array.isArray(rawTracks)) {
             throw new Error('The real Automerge root has no track slot.');
         }
         const audioTracks = (trackStore.value?.tracks ?? []).filter((track) => track.kind === 'audio');
         return {
             document: JSON.stringify(root),
             revision: captureProjectRevision(),
-            rawTracks: root.tracks.tracks.map((track) => ({ id: track.id, gain: track.gain })),
+            rawTracks: rawTracks.map((track) => ({ id: track.id, gain: track.gain })),
             tracks: audioTracks.map((track) => ({
                 id: track.id,
                 name: track.name,
@@ -272,7 +273,7 @@ test.describe('provider tool authority through the live chat composition', () =>
                 await composer.press('Enter');
                 await expect
                     .poll(() => provider.requests.length, { timeout: 30_000 })
-                    .toBe(scenario === 'undisclosed' ? 3 : scenario === 'malformed' ? 8 : 4);
+                    .toBe({ approved: 4, malformed: 8, undisclosed: 3 }[scenario]);
                 expect(provider.failures).toEqual([]);
                 expect(disclosedTargets.map((track) => track.id)).toEqual(targets.map((track) => track.id));
                 const confirm = page.getByRole('button', { name: 'Confirm pending actions', exact: true });

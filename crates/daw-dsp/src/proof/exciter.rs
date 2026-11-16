@@ -256,11 +256,15 @@ fn transistor_clip(x: f32, drive: f32, knee: f32) -> f32 {
     } else {
         let excess = x.abs() - threshold;
         let knee_region = excess / (knee + 1e-6);
-        let clipped = threshold
-            + knee
-                * (2.0 * knee_region - knee_region * knee_region)
-                    .max(0.0)
-                    .min(1.0);
+        let shape = 2.0 * knee_region - knee_region * knee_region;
+        // An infinite input makes `shape` NaN; `clamp` would pass it on, so
+        // it is pinned to the lower bound the old max/min chain produced.
+        let shape = if shape.is_nan() {
+            0.0
+        } else {
+            shape.clamp(0.0, 1.0)
+        };
+        let clipped = threshold + knee * shape;
         clipped * x.signum() / drive.max(0.01)
     }
 }
@@ -268,6 +272,21 @@ fn transistor_clip(x: f32, drive: f32, knee: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transistor_clip_rounds_the_knee_inside_the_range() {
+        // threshold 0.8, knee_region 0.5, shape 0.75 -> 0.8 + 0.2 * 0.75.
+        let out = transistor_clip(0.9, 1.0, 0.2);
+        assert!((out - 0.95).abs() < 1e-5, "knee output {out}");
+    }
+
+    #[test]
+    fn transistor_clip_pins_an_infinite_input_to_the_threshold() {
+        // `inf - inf` makes the knee shape NaN; it must read as 0.0, leaving
+        // the threshold, not propagate NaN into the signal.
+        let out = transistor_clip(f32::INFINITY, 1.0, 0.2);
+        assert!((out - 0.8).abs() < 1e-6, "infinite input gave {out}");
+    }
 
     fn blend_response_ratio(freq: f32) -> f32 {
         let mut band = BandExciter::new(48000.0);

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
-
+import { type RenderProjectSectionJobSnapshot } from '../../events/audioRenderingAppActions';
 import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSectionRenderRetentionPolicy';
 import { agentSectionRenderArtifactStore } from '../../stores/agentSectionRenderArtifactStore';
 import { disposeExactAgentSectionRenderArtifact } from '../disposeExactAgentSectionRenderArtifact';

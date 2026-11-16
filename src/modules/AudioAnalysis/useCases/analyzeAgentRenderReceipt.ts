@@ -1,5 +1,5 @@
+import { type RenderProjectSectionJobSnapshot } from '#/modules/AudioRendering/events';
 import { getExactAgentSectionRenderArtifact } from '#/modules/AudioRendering/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import {
     type AgentObjectiveAnalysisReceipt,

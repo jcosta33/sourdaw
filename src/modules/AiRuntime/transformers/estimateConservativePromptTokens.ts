@@ -22,7 +22,9 @@ function estimateByCharacters(text: string): number {
 }
 
 /**
- * The tokens a text is budgeted at for Qwen3: the larger of two counts. One is the number of
+ * The tokens a text is budgeted at for Qwen3, and for Llama 3.1, whose pre-tokenizer split is the same
+ * except that it groups digits in threes (`\p{N}{1,3}`) where Qwen's takes one, so Qwen's chunk count is
+ * never below Llama's for the same text: the larger of two counts. One is the number of
  * chunks Qwen's pre-tokenizer splits the text into, which the model's own count can never fall
  * below, since each chunk is encoded on its own; it governs identifier-dense text, where every
  * digit and every letter or punctuation run is its own chunk. The other is one token per digit plus

@@ -887,15 +887,22 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // state. Grounding builds immutable batch actions only; no device
         // hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts': 3,
+        // Count provenance: new file entry, measured 6 — the `compileAgentActionExecution`
+        // type import identifier and its module path (2), its `ReturnType<typeof ...>`
+        // alias (1), and the `compileAgentRiskApproval` import identifier, module path
+        // and one call that seals the adopted-recipe proposal's approval snapshot (3).
+        // Measurement and immutable approval metadata only; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/measureAdoptedRecipeProposal.ts': 6,
         // Count provenance: new file entry, measured 3 — the
         // `compileAgentRiskApproval` import, its module path in that same import,
         // and the one call that seals the next scheduled batch's approval
         // snapshot. Immutable approval metadata only; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts': 3,
-        // Count provenance: new file entry, measured 1 — the single
-        // `providerProtocol.compileRequest` call, extracted from
-        // sendChatMessage (#2975). Provider-request compilation only.
-        'src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts': 1,
+        // Count provenance: new file entry, measured 3 — the `compileAgentActionExecution`
+        // type import identifier, its module path, and its `ReturnType<typeof ...>`
+        // use in the parameter type. It only reads the metric goal state off a compiled
+        // execution; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/readAdoptedRecipeMetricState.ts': 3,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
         // Count provenance: measured 3 — the exported batch compiler's
         // declaration, plus the declaration and one call of
@@ -903,6 +910,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // immutable `addNotes` command metadata. Nothing here hydrates or
         // writes a device.
         'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 3,
+        // Count provenance: new file entry, measured 4 — the
+        // `compileRecipeBatchSteps` import identifier and its module path, plus
+        // its one call that expands the adopted recipe's batch steps. The
+        // declaration of `compileAdoptedRecipeMetricAuthority` is the fourth.
+        // Pure compilation of immutable metric authority; no device hydration or write.
+        'src/modules/AiRuntime/useCases/compileAdoptedRecipeMetricAuthority.ts': 4,
+        // Count provenance: new file entry, measured 4 — the
+        // `compilePreviewMeasurementProposal` import identifier and its module path,
+        // the exported `compileRecipeBatchSteps` declaration, and one call that
+        // measures each step's preview. Measurement over an isolated projection;
+        // no device hydration or write.
+        'src/modules/AiRuntime/useCases/compileRecipeBatchSteps.ts': 4,
         // Count provenance: new file entry, measured 1 — the `ArbitraryCommandListEvidence`
         // type import from compileArbitraryCommandList. The file only projects compiler
         // evidence into match selector records; no device hydration or write.
@@ -917,7 +936,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: three new matches are the preview-proposal
         // compiler's import identifier, module path and call. It prepares
         // immutable Command metadata for proof, not device hydration or a write.
-        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 6,
+        // Three further matches (6 to 9) are the `compileAdoptedRecipeMetricAuthority`
+        // import identifier, its module path, and its one call that derives the
+        // adopted recipe's metric authority. Pure compilation; no device write.
+        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 9,
         // Count provenance: new file entry, measured 1 — the module path in the
         // compiled-evidence type import from compileArbitraryCommandList. The file
         // splits immutable compiled evidence into slices; no device hydration or write.
@@ -1093,6 +1115,18 @@ const DEVICE_DATA_COUNTS = {
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
         'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
+        // Count provenance: 0 -> 1, measured. The typed `devices` local holding
+        // the guarded track's devices with each `externalStateChunk` stripped,
+        // compared against the creation fingerprint. A pure comparison; nothing
+        // is published.
+        'src/modules/Arrangement/handlers/matchesCreatedTrackFingerprint.ts': 1,
+        // Count provenance: 0 -> 1 -> 3, measured. `devices:` on the restore
+        // snapshot copy that overlays the plugin chunks recorded at undo, inside
+        // the restore handler's materialize step, plus the two typed `devices`
+        // parameters of the removal-route record and overlay helpers. The
+        // registered restore actions commit the overlaid snapshots through
+        // executeAppAction; no store or CRDT write here.
+        'src/modules/Arrangement/handlers/track/discardedPluginStateCarry.ts': 3,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
         // writer is `writeDeviceToProject`; this is the handler's topology
@@ -1228,6 +1262,23 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 1,
     },
     static: {
+        // Count provenance: measured 1 — the `expectedBefore.devices` guard type on
+        // the `reorderDevices` payload, moved from `src/utils/handlerContract.ts`
+        // (outside this census) when the device action types joined their module.
+        // Type-only device-data shape: an action payload declaration, not an access.
+        'src/modules/Arrangement/events/arrangementDeviceAppActions.ts': 1,
+        // Count provenance: measured 1 — the `devices` field of the preset chain
+        // restore payload, moved from `src/utils/handlerContract.ts` with the
+        // preset action types. Type-only payload declaration, not an access.
+        'src/modules/Arrangement/events/arrangementPresetAppActions.ts': 1,
+        // Count provenance: measured 2 — the `devices` fields of the track and
+        // track-removal snapshot types, moved from `src/utils/handlerContract.ts`
+        // with the track action types. Type-only snapshot shapes, not accesses.
+        'src/modules/Arrangement/events/arrangementTrackSnapshots.ts': 2,
+        // Count provenance: measured 1 — the device snapshot shape moved from
+        // `src/utils/handlerContract.ts` when the legacy union retired.
+        // Type-only snapshot declaration, not an access.
+        'src/modules/Arrangement/models/DeviceSnapshot.ts': 1,
         // Count provenance: measured 1 each — only neutral footprint and
         // planned-owner type fields; neither file executes a project write.
         'src/modules/Arrangement/models/DevicePatchState.ts': 1,

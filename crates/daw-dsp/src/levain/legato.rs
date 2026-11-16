@@ -35,24 +35,13 @@ const PORTAMENTO_VELOCITY_THRESHOLD: u8 = 64;
 const MAX_HELD_NOTES: usize = 16;
 
 /// Tracks a currently held note for polyphonic legato.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct HeldNote {
     pub note: u8,
     pub voice_index: usize,
     pub active: bool,
     /// Time this note was triggered (sample count from engine start).
     pub trigger_time: u64,
-}
-
-impl Default for HeldNote {
-    fn default() -> Self {
-        Self {
-            note: 0,
-            voice_index: 0,
-            active: false,
-            trigger_time: 0,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +104,16 @@ impl LegatoTransitionStore {
 
     pub fn len(&self) -> usize {
         self.transitions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.transitions.is_empty()
+    }
+}
+
+impl Default for LegatoTransitionStore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

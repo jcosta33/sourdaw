@@ -1,3 +1,6 @@
+import { type AppActionType } from '#/utils/handlerContract';
+
+import { commandRequiresSeedByActionType } from '../models/StochasticOperationPolicy';
 import {
     VERSIONED_COMMAND_SCHEMA_VERSION,
     type CommandApplicationAssignedId,
@@ -11,21 +14,23 @@ import { collectCommandIdReferences } from './collectCommandIdReferences';
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
+import { getRequiredApplicationAssignedIdArguments } from './getRequiredApplicationAssignedIdArguments';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { getVersionedCommandReferencedTargets } from './getVersionedCommandReferencedTargets';
-import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
+import { hasDeterministicSerializedArguments } from './hasDeterministicSerializedArguments';
 import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
     { status: 'valid'; envelope: VersionedCommandEnvelope } | { status: 'invalid'; reason: string };
 
-const STOCHASTIC_OPERATIONS = new Set([
-    'generateChordProgression',
-    'generateDrumPattern',
-    'generateMelody',
-    'humanizeNotes',
-]);
+function isKnownActionType(operation: string): operation is AppActionType {
+    return Object.hasOwn(commandRequiresSeedByActionType, operation);
+}
+
+function isStochasticOperation(operation: string): boolean {
+    return isKnownActionType(operation) && commandRequiresSeedByActionType[operation];
+}
 
 const ENVELOPE_KEYS = [
     'schemaVersion',
@@ -152,71 +157,7 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
     if (materializedArgumentsValidator !== undefined) {
         return materializedArgumentsValidator(value);
     }
-    if (operation === 'addTrack') {
-        return (
-            isNonEmptyString(value.id) &&
-            isNonEmptyString(value.initialAlternativeId) &&
-            isNonEmptyString(value.color) &&
-            (value.kind !== 'midi' || isNonEmptyString(value.initialDeviceId))
-        );
-    }
-    if (operation === 'createBus') {
-        return (
-            isNonEmptyString(value.busId) &&
-            isNonEmptyString(value.initialAlternativeId) &&
-            isNonEmptyString(value.color)
-        );
-    }
-    if (operation === 'duplicateClip' || operation === 'duplicateClipToNextBar' || operation === 'duplicateTrack') {
-        return false;
-    }
-    return true;
-}
-
-function getRequiredApplicationAssignedIdArguments(
-    operation: string,
-    argumentsValue: Record<string, unknown>
-): string[] {
-    if (operation === 'addNotes') {
-        const notes = argumentsValue.notes;
-        if (!Array.isArray(notes)) {
-            return [];
-        }
-        return notes.map((_, index) => `notes[${String(index)}].id`);
-    }
-    if (operation === 'addTrack') {
-        return argumentsValue.kind === 'midi'
-            ? ['id', 'initialAlternativeId', 'initialDeviceId']
-            : ['id', 'initialAlternativeId'];
-    }
-    if (operation === 'createBus') {
-        return ['busId', 'initialAlternativeId'];
-    }
-    if (operation === 'armTrack') {
-        return typeof argumentsValue.midiInputOwnerId === 'string' ? ['midiInputOwnerId'] : [];
-    }
-    if (operation === 'importStemSet') {
-        const stems = argumentsValue.stems;
-        if (!Array.isArray(stems)) {
-            return [];
-        }
-        const argumentsList = ['folderId'];
-        if (typeof argumentsValue.folderAlternativeId === 'string') {
-            argumentsList.push('folderAlternativeId');
-        }
-        for (const [index, stem] of stems.entries()) {
-            argumentsList.push(`stems[${String(index)}].trackId`, `stems[${String(index)}].clipId`);
-            if (isRecord(stem) && typeof stem.trackAlternativeId === 'string') {
-                argumentsList.push(`stems[${String(index)}].trackAlternativeId`);
-            }
-        }
-        return argumentsList;
-    }
-    const rule = COMMAND_APPLICATION_ID_RULES[operation as keyof typeof COMMAND_APPLICATION_ID_RULES];
-    if (!rule || typeof argumentsValue[rule.argument] !== 'string') {
-        return [];
-    }
-    return [rule.argument];
+    return hasDeterministicSerializedArguments(operation, value);
 }
 
 /**
@@ -325,7 +266,7 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     if (value.seed !== null && !isFiniteNumber(value.seed)) {
         return { status: 'invalid', reason: 'Command seed is invalid' };
     }
-    if (STOCHASTIC_OPERATIONS.has(value.operation) && value.seed === null) {
+    if (isStochasticOperation(value.operation) && value.seed === null) {
         return { status: 'invalid', reason: 'Stochastic commands require an explicit seed' };
     }
     if (

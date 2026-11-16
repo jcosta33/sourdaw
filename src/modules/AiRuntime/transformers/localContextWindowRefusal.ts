@@ -1,5 +1,5 @@
 import { LOCAL_PLANNING_REPLY_RESERVE_TOKENS } from '../models/LocalPlanningBudget';
-import { WEBLLM_MODELS, WEBLLM_PLANNING_MODEL_IDS } from '../models/ModelInfo';
+import { WEBLLM_MODELS } from '../models/ModelInfo';
 
 const TOKEN_FORMAT = new Intl.NumberFormat('en-US');
 
@@ -10,13 +10,19 @@ const ENGINE_CONTEXT_WINDOW_FIGURES = /number of prompt tokens: (\d+); context w
 
 export type LocalContextWindowShortfall = { neededTokens: number; windowTokens: number };
 
-/** The user-visible refusal of a planning request made on a local model that does not plan. */
-export function describeLocalPlannerRequired(activeModelId: string): string {
+/**
+ * The user-visible refusal of a planning request made on a local model that does not plan.
+ * `offeredPlannerNames` are the display names of the planning models this machine is offered;
+ * with none, the refusal points to a hosted model alone.
+ */
+export function describeLocalPlannerRequired(activeModelId: string, offeredPlannerNames: readonly string[]): string {
     const active = WEBLLM_MODELS.find((model) => model.id === activeModelId)?.displayName ?? 'This';
-    const planners = WEBLLM_MODELS.filter((model) => WEBLLM_PLANNING_MODEL_IDS.has(model.id)).map(
-        (model) => `the ${model.displayName} local model`
-    );
-    return `The ${active} local model cannot plan project edits. Switch to ${planners.join(' or ')}, or use a hosted model.`;
+    const refusal = `The ${active} local model cannot plan project edits.`;
+    if (offeredPlannerNames.length === 0) {
+        return `${refusal} Use a hosted model.`;
+    }
+    const planners = offeredPlannerNames.map((name) => `the ${name} local model`);
+    return `${refusal} Switch to ${planners.join(' or ')}, or use a hosted model.`;
 }
 
 /**

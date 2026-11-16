@@ -54,7 +54,14 @@ function readEvidenceStatus(masterAnalyser: AnalyserNode, masterPeakDb: number):
     return { availability: 'measured', provenance };
 }
 
-export async function analyzeMix(signal?: AbortSignal): Promise<AnalyzeMixOutput> {
+export function analyzeMix(signal?: AbortSignal): Promise<AnalyzeMixOutput> {
+    // The executor runs synchronously, so an abort or an unusable analyser still rejects rather than throws.
+    return new Promise((resolve) => {
+        resolve(measureMix(signal));
+    });
+}
+
+function measureMix(signal?: AbortSignal): AnalyzeMixOutput {
     signal?.throwIfAborted();
     const masterAnalyser = getMasterAnalyser();
     const masterLevels = readLevels(masterAnalyser);

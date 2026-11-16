@@ -7,11 +7,19 @@ function createEdgeNode() {
 }
 
 function createContextStub() {
-    const oscillators: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }> = [];
-    const envelopes: Array<{ gain: { setValueAtTime: ReturnType<typeof vi.fn> } }> = [];
+    const oscillators: Array<{
+        start: ReturnType<typeof vi.fn>;
+        stop: ReturnType<typeof vi.fn>;
+        onended: (() => void) | null;
+    }> = [];
+    const envelopes: Array<{
+        gain: { setValueAtTime: ReturnType<typeof vi.fn>; exponentialRampToValueAtTime: ReturnType<typeof vi.fn> };
+        connect: ReturnType<typeof vi.fn>;
+        disconnect: ReturnType<typeof vi.fn>;
+    }> = [];
     const raw = {
         currentTime: 3,
-        destination: {},
+        destination: { label: 'destination' },
         createOscillator: vi.fn(() => {
             const oscillator = {
                 type: 'square',
@@ -126,5 +134,85 @@ describe('createAudioPreview', () => {
         expect(envelopes[0]?.gain.setValueAtTime).toHaveBeenCalledExactlyOnceWith(0.4, 3);
         expect(oscillators[0]?.start).toHaveBeenCalledTimes(1);
         expect(oscillators[0]?.stop).toHaveBeenCalledExactlyOnceWith(3.5);
+    });
+
+    describe('preview tone lifecycle', () => {
+        it('stops and disconnects a started tone when its intent is disposed', () => {
+            const { preview, oscillators, envelopes } = createFixture();
+
+            preview.playTone(440, 0.5, preview.beginOrdinaryIntent());
+            expect(oscillators[0]?.stop).toHaveBeenCalledTimes(1);
+            preview.disposeIntents();
+
+            expect(oscillators[0]?.stop).toHaveBeenCalledTimes(2);
+            expect(oscillators[0]?.stop).toHaveBeenLastCalledWith();
+            expect(envelopes[0]?.disconnect).toHaveBeenCalledTimes(1);
+        });
+
+        it('releases a tone when the oscillator ends naturally and a later abort does not stop it again', () => {
+            const { preview, oscillators, envelopes } = createFixture();
+
+            preview.playTone(440, 0.5, preview.beginOrdinaryIntent());
+            oscillators[0]?.onended?.();
+
+            expect(envelopes[0]?.disconnect).toHaveBeenCalledTimes(1);
+            preview.disposeIntents();
+
+            expect(oscillators[0]?.stop).toHaveBeenCalledTimes(1);
+            expect(envelopes[0]?.disconnect).toHaveBeenCalledTimes(1);
+        });
+
+        it('finishes once when stopped twice', () => {
+            const { preview, oscillators, envelopes } = createFixture();
+
+            const tone = preview.playTone(440, 0.5, preview.beginOrdinaryIntent());
+            tone?.stop();
+            tone?.stop();
+
+            expect(oscillators[0]?.stop).toHaveBeenCalledTimes(2);
+            expect(envelopes[0]?.disconnect).toHaveBeenCalledTimes(1);
+        });
+
+        it('gives the tone a 0.4 to 0.001 exponential envelope routed to the destination', () => {
+            const { preview, raw, envelopes } = createFixture();
+
+            preview.playTone(440, 0.5, preview.beginOrdinaryIntent());
+
+            expect(envelopes[0]?.gain.setValueAtTime).toHaveBeenCalledExactlyOnceWith(0.4, 3);
+            expect(envelopes[0]?.gain.exponentialRampToValueAtTime).toHaveBeenCalledExactlyOnceWith(0.001, 3.5);
+            expect(envelopes[0]?.connect).toHaveBeenCalledExactlyOnceWith(raw.destination);
+        });
+
+        it('does not start a tone whose intent is no longer current when its start is reached', () => {
+            const { preview, oscillators } = createFixture();
+            const intent = { ...preview.beginOrdinaryIntent(), isCurrent: vi.fn() };
+            intent.isCurrent.mockReturnValueOnce(true).mockReturnValue(false);
+
+            preview.playTone(440, 0.5, intent);
+
+            expect(oscillators[0]?.start).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('programme gate guards', () => {
+        it('leaves the programme gate untouched while the engine is in fallback', () => {
+            const { preview, gate } = createFixture({ isFallback: () => true });
+
+            preview.setProgrammeSuppressed(true);
+            preview.setProgrammeSuppressed(false);
+
+            expect(gate.disconnect).not.toHaveBeenCalled();
+            expect(gate.connect).not.toHaveBeenCalled();
+        });
+
+        it('leaves the programme gate untouched once the engine is disposed', () => {
+            const { preview, gate } = createFixture({ isDisposed: () => true });
+
+            preview.setProgrammeSuppressed(true);
+            preview.setProgrammeSuppressed(false);
+
+            expect(gate.disconnect).not.toHaveBeenCalled();
+            expect(gate.connect).not.toHaveBeenCalled();
+        });
     });
 });

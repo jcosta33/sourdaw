@@ -5,8 +5,8 @@
  * one line ceiling per baselined file: a file over the floor is recorded at its line count plus the
  * headroom, a file within the floor at the floor. A file may not exceed its ceiling, and a ceiling more
  * than the slack above the ceiling the file's current length earns is stale and must be lowered to it.
- * Ceilings are never raised: review refuses any raised figure, and the spec catches a raise only when it
- * ends more than the slack above the ceiling the file's current length earns. Generated files listed in
+ * Ceilings are never raised and no path is added to the baseline: scripts/checkSizeBaselineShrinks.ts
+ * refuses both by comparing the head with its merge base on origin/main (findSizeBaselineGrowth). Generated files listed in
  * GENERATED_SIZE_EXEMPTIONS carry no ceiling: their size follows their generator's input.
  */
 
@@ -178,4 +178,121 @@ export function readSizeCeilings(repoRoot: string): Record<string, number> {
 /** Counts newline characters, as `wc -l` does, in the file at `path` relative to `repoRoot`. */
 export function countFileLines(repoRoot: string, path: string): number {
     return readFileSync(resolve(repoRoot, path), 'utf8').split('\n').length - 1;
+}
+
+export type SizeBaselineGrowth = {
+    addedPaths: string[];
+    addedCeilingKeys: string[];
+    removedCeilingKeys: string[];
+    raisedCeilings: { path: string; from: number; to: number }[];
+};
+
+export type SizeBaselineSnapshot = {
+    baselineFiles: readonly string[];
+    ceilings: Readonly<Record<string, number>>;
+};
+
+/** Everything the head added to the size baseline or raised, relative to the base; paths and ceilings may only leave or go down. */
+export function findSizeBaselineGrowth(
+    base: SizeBaselineSnapshot,
+    head: SizeBaselineSnapshot,
+    headExemptPaths: readonly string[]
+): SizeBaselineGrowth {
+    const headExempt = new Set(headExemptPaths);
+    const basePaths = new Set(base.baselineFiles);
+    const headCeilingKeys = Object.keys(head.ceilings);
+    const headPaths = new Set(head.baselineFiles);
+    return {
+        addedPaths: head.baselineFiles.filter((path) => !basePaths.has(path)),
+        addedCeilingKeys: headCeilingKeys.filter((path) => !Object.hasOwn(base.ceilings, path)),
+        // A key may leave with its path (a burn-down) or because the head exempts a generated file; dropping it
+        // while the path stays baselined and unexempt frees the file from every limit.
+        removedCeilingKeys: Object.keys(base.ceilings).filter(
+            (path) => headPaths.has(path) && !headExempt.has(path) && !Object.hasOwn(head.ceilings, path)
+        ),
+        raisedCeilings: headCeilingKeys.flatMap((path) => {
+            if (!Object.hasOwn(base.ceilings, path)) {
+                return [];
+            }
+            const from = base.ceilings[path];
+            const to = head.ceilings[path];
+            return from !== undefined && to !== undefined && to > from ? [{ path, from, to }] : [];
+        }),
+    };
+}
+
+/** One instruction per finding, in the order a future author reads them. */
+export function describeSizeBaselineGrowth(growth: SizeBaselineGrowth): string[] {
+    return [
+        ...growth.addedPaths.map(
+            (path) =>
+                `${path}: added to eslint.size-baseline.mjs; no file is ever added. Split the file below the size rules instead.`
+        ),
+        ...growth.addedCeilingKeys.map(
+            (path) => `${path}: new ceiling in ${SIZE_CEILINGS_PATH}; ceilings exist only for files already baselined.`
+        ),
+        ...growth.removedCeilingKeys.map(
+            (path) =>
+                `${path}: ceiling removed from ${SIZE_CEILINGS_PATH} while the file is still baselined; it would then grow unchecked.`
+        ),
+        ...growth.raisedCeilings.map(
+            ({ path, from, to }) =>
+                `${path}: ceiling raised from ${from} to ${to} in ${SIZE_CEILINGS_PATH}; ceilings are never raised.`
+        ),
+    ];
+}
+
+/**
+ * The paths quoted inside the `sizeBaselineFiles` array literal of the baseline module's text, read as text so
+ * the base's code is never evaluated. Only quoted strings, commas, whitespace and comments may appear inside the
+ * array; any other token (template literal, spread, identifier, nested bracket) throws, because a form this reader
+ * cannot see would be dropped from the comparison. Throws when no array is found; an empty array is a fully burned-down base and reads as no paths.
+ */
+export function parseSizeBaselineFilesText(text: string): string[] {
+    const declaration = /\bsizeBaselineFiles\s*=\s*\[/.exec(text);
+    if (declaration === null) {
+        throw new Error('no sizeBaselineFiles array found in the baseline text.');
+    }
+    const paths: string[] = [];
+    let index = declaration.index + declaration[0].length;
+    while (index < text.length && text.charAt(index) !== ']') {
+        const char = text.charAt(index);
+        if (/[\s,]/.test(char)) {
+            index += 1;
+        } else if (text.startsWith('//', index)) {
+            const newline = text.indexOf('\n', index);
+            index = newline === -1 ? text.length : newline + 1;
+        } else if (text.startsWith('/*', index)) {
+            const close = text.indexOf('*/', index + 2);
+            if (close === -1) {
+                throw new Error('unterminated block comment in the sizeBaselineFiles array.');
+            }
+            index = close + 2;
+        } else if (char === "'" || char === '"') {
+            const close = text.indexOf(char, index + 1);
+            const value = close === -1 ? '' : text.slice(index + 1, close);
+            if (close === -1 || value.includes('\n') || value.includes('\\')) {
+                throw new Error(`unreadable string at offset ${index} in the sizeBaselineFiles array.`);
+            }
+            paths.push(value);
+            index = close + 1;
+        } else {
+            throw new Error(
+                `unsupported token ${JSON.stringify(text.slice(index, index + 12))} in the sizeBaselineFiles array; only quoted strings and comments are readable.`
+            );
+        }
+    }
+    if (index >= text.length) {
+        throw new Error('the sizeBaselineFiles array is not closed.');
+    }
+    return paths;
+}
+
+/** Parses ceilings text with the same shape check `readSizeCeilings` applies to the file. */
+export function parseSizeCeilingsText(text: string): Record<string, number> {
+    const parsed: unknown = JSON.parse(text);
+    if (!isCeilingRecord(parsed)) {
+        throw new Error(`${SIZE_CEILINGS_PATH} must be one flat object mapping each path to a number.`);
+    }
+    return parsed;
 }

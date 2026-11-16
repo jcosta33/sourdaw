@@ -37,10 +37,11 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 ///
 /// Every variant here is raised from a callback its format marks `[main-thread]`,
 /// and the wake behind them allocates. An ask a plugin may raise from the audio
-/// thread therefore has no variant here at all: `clap_host_params.request_flush`
-/// and `clap_host_gui.request_resize`, which CLAP marks `[thread-safe]`, are
-/// recorded as a flag or a size slot plus a process-wide hint and answered by
-/// the parameter drain, because a channel send on the render thread is a missed
+/// thread therefore has no variant here at all: `clap_host.request_callback`,
+/// `clap_host_params.request_flush` and `clap_host_gui.request_resize`, which
+/// CLAP marks `[thread-safe]`, are recorded as a flag or a size slot plus a
+/// process-wide hint and answered by the request watcher's sweep or the
+/// parameter drain, because a channel send on the render thread is a missed
 /// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
@@ -51,12 +52,6 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
-    /// The plugin asked the host to call `on_main_thread` on it — CLAP's
-    /// `clap_host::request_callback` — so work it deferred to the main thread
-    /// (a worker result, an editor update) can complete. Recorded as a flag and
-    /// coalesced like every other ask here: one drain calls the plugin once,
-    /// which completes whatever it parked on the request.
-    MainThreadCallback,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -98,6 +93,19 @@ pub const DEFAULT_EDITOR_CONTENT_SCALE: f64 = 1.0;
 /// list sized under it drops the tail of a full block — the latest notes, the
 /// note-offs among them — after the slot has already counted them delivered.
 pub const MAX_MIDI_EVENTS_PER_BLOCK: usize = 128;
+
+/// How a hosted plugin's audio will be consumed: as it plays, or rendered
+/// faster or slower than real time for an export.
+///
+/// Fixed when a wrapper is constructed and never changed on a live instance:
+/// VST3 states the mode through `setupProcessing`, which may not be re-entered
+/// under the audio thread, and an export builds an independent instance rather
+/// than re-moding the one the engine plays through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcessMode {
+    Realtime,
+    Offline,
+}
 
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -566,6 +574,25 @@ pub trait HostedPluginRuntime: AudioPlugin {
     /// visit driven by [`take_pending_process_refusal_signal`] calls it on every
     /// instance, and only the one that failed has anything to say.
     fn report_plugin_observations(&mut self) {}
+
+    /// Whether the plugin has failed a process call since it was created — the
+    /// latch [`Self::report_plugin_observations`] reports from. Control path
+    /// only. A block it failed passed through dry or silent, so a caller that
+    /// needs every block processed (an offline print) refuses on it. The
+    /// default is `false`: a backend with no failure signal has none to latch.
+    fn has_failed_a_process_call(&self) -> bool {
+        false
+    }
+
+    /// Whether a block was passed through untouched because the plugin was not
+    /// in the processing state the host asked it into — it refused to start
+    /// processing. A block after a requested stop does not count. Control path
+    /// only; a realtime host keeps passing such blocks through, and a caller
+    /// that needs every block processed refuses on it. The default is `false`,
+    /// for a backend with no processing state to refuse.
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        false
+    }
 }
 
 /// Process-wide hint that some plugin latched a process failure.

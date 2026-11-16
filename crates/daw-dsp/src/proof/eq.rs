@@ -98,7 +98,7 @@ impl MasteringEq {
         let bands = (0..NUM_BANDS)
             .map(|i| {
                 let mut band = MasteringEqBand::new(default_freqs[i], default_types[i], sr);
-                if i >= 2 && i <= 5 {
+                if (2..=5).contains(&i) {
                     band.enabled = true;
                 }
                 band
@@ -216,7 +216,7 @@ impl MasteringEq {
                 }
 
                 // One ramp step per band per sample, shared by both channels.
-                let coeffs = band.coeffs.next();
+                let coeffs = band.coeffs.next_coeffs();
 
                 match band.channel {
                     EqBandChannel::Stereo => {

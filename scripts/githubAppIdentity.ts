@@ -2,9 +2,17 @@ import { spawnSync } from 'node:child_process';
 import { createSign } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
+import {
+    assertTokenBearingGitChildIsHookFree,
+    isGitChild,
+    tokenFreeGitEnv,
+    withGhChildLocation,
+} from './tokenBearingChildPlacement.ts';
+
+export { tokenFreeGitEnv } from './tokenBearingChildPlacement.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -399,12 +407,12 @@ const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_
  * runs `core.gitProxy`. That proxy key is multi-valued and the repository's value matches first, so
  * no environment value disarms it; refusing the `git` transport is the defence.
  *
- * This list is not complete. Keys whose names the lane chooses — a `.gitattributes` filter, a merge or
- * diff driver, a custom `name::` remote helper — cannot be named here and still run. Network settings
- * that run no program — URL-scoped or plain `http.*` keys such as `http.curloptResolve`,
- * `http.sslCAInfo`, or `http.proxy` — can still redirect a token-bearing request. Any further
- * fixed-name key not listed here is also outside it (#6448). Keeping the token from same-account
- * processes is outside this boundary.
+ * Keys whose names the lane chooses — a `.gitattributes` filter, a merge or diff driver, a custom
+ * `name::` remote helper — and URL-scoped `http.<url>.*` settings cannot be named here. They are kept
+ * from the token instead: a git child never receives a GitHub token variable (`tokenFreeGitEnv`), and the only
+ * git children that hold a credential, the network transports, run against a script-written git
+ * directory (`withIsolatedGitTransport`) and read no lane-writable config.
+ * Keeping the token from same-account processes is outside this boundary.
  */
 const REPOSITORY_PROGRAM_OVERRIDES = [
     ['core.hooksPath', '/dev/null'],
@@ -455,6 +463,10 @@ export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.en
         env[`GIT_CONFIG_VALUE_${String(index)}`] = value;
     }
     return env;
+}
+
+function childEnvironment(isGit: boolean, env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
+    return isGit ? tokenFreeGitEnv(env ?? process.env) : env;
 }
 
 /**
@@ -618,10 +630,13 @@ export type OrchestratorAuthenticationInput = {
 
 export type OrchestratorAuthentication = { minted: { actorNodeId: string }; session: GhSession };
 
-export async function authenticateOrchestrator(
+export function authenticateOrchestrator(
     input: OrchestratorAuthenticationInput = {}
 ): Promise<OrchestratorAuthentication> {
-    return authenticateOrchestratorSession(input);
+    // The executor runs synchronously, so a refused credential still rejects rather than throws.
+    return new Promise((resolve) => {
+        resolve(authenticateOrchestratorSession(input));
+    });
 }
 
 /**
@@ -698,112 +713,6 @@ export function gitAuthenticatedArgs(token: string, helperDir: string, args: str
     return ['-c', 'credential.helper=', '-c', `credential.helper=${gitCredentialHelperValue(helperPath)}`, ...args];
 }
 
-const VALUELESS_GIT_GLOBAL_OPTIONS = new Set([
-    '--no-replace-objects',
-    '--no-pager',
-    '--no-optional-locks',
-    '--literal-pathspecs',
-    '--bare',
-]);
-
-/**
- * The options before a git subcommand, which can change the repository and config it reads. `-C` and
- * `-c` pairs, `--name=value` forms, and the listed valueless flags are recognised; any other leading
- * option throws, because the hook listing must read the repository the child will run in.
- */
-function gitGlobalOptions(args: readonly string[]): string[] {
-    const options: string[] = [];
-    for (let index = 0; index < args.length; index += 1) {
-        const arg = args[index];
-        if (arg === undefined) {
-            return options;
-        }
-        if (arg === '-C' || arg === '-c') {
-            const value = args[index + 1];
-            if (value === undefined) {
-                throw new Error(`git option ${arg} has no value`);
-            }
-            options.push(arg, value);
-            index += 1;
-        } else if ((arg.startsWith('--') && arg.includes('=')) || VALUELESS_GIT_GLOBAL_OPTIONS.has(arg)) {
-            options.push(arg);
-        } else if (arg.startsWith('-')) {
-            throw new Error(`refusing a token-bearing git child: unrecognised leading option ${arg}`);
-        } else {
-            return options;
-        }
-    }
-    return options;
-}
-
-/**
- * A git child carries a token when `GH_TOKEN` is in its environment, or when its arguments install a
- * credential helper: a hook could call `git credential fill` through the `-c` overrides git passes
- * down in `GIT_CONFIG_PARAMETERS` and read the token back.
- */
-function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv): boolean {
-    if (env.GH_TOKEN !== undefined) {
-        return true;
-    }
-    return args.some(
-        (arg, index) => args[index - 1] === '-c' && arg.startsWith('credential.helper=') && arg !== 'credential.helper='
-    );
-}
-
-/**
- * Config-defined hooks (`hook.<name>.event` with `hook.<name>.command`) run whatever
- * `core.hooksPath` says, and `<name>` is the lane's choice, so no fixed-name override disarms them.
- * A token-bearing git child therefore refuses to start while its repository config defines any
- * `hook.*` key. The listing runs in the child's repository without the token; reading config runs no
- * hook or fsmonitor. `git config --get-regexp` exits 1 with no output when nothing matches; any other
- * failure refuses.
- *
- * The refusal reads only the repository the child runs in. A lane-chosen URL rewrite can still send a
- * token-bearing command to another repository over `file`, whose own config then runs programs (a push
- * runs `receive-pack` there). Listing and starting the child are separate steps, so config written in
- * between goes unseen. Both residuals are tracked in #6448.
- */
-function assertNoConfigDefinedHooks(
-    childCommand: string,
-    args: readonly string[],
-    cwd: string,
-    env: NodeJS.ProcessEnv
-): void {
-    const tokenFree: NodeJS.ProcessEnv = { ...env };
-    delete tokenFree.GH_TOKEN;
-    const listing = spawnSync(childCommand, [...gitGlobalOptions(args), 'config', '-z', '--get-regexp', '^hook\\.'], {
-        cwd,
-        env: tokenFree,
-        encoding: 'utf8',
-        shell: false,
-    });
-    if (listing.error !== undefined) {
-        throw listing.error;
-    }
-    if (listing.status === 1 && listing.stdout === '') {
-        return;
-    }
-    if (listing.status !== 0) {
-        throw new Error(
-            `refusing a token-bearing git child: cannot list hook config (${listing.stderr.trim() || `exit ${String(listing.status ?? 'signal')}`})`
-        );
-    }
-    const firstKey = listing.stdout.split('\n')[0];
-    throw new Error(`refusing a token-bearing git child: repository config defines ${firstKey}`);
-}
-
-function assertTokenBearingGitChildIsHookFree(
-    childCommand: string,
-    args: readonly string[],
-    cwd: string,
-    env: NodeJS.ProcessEnv
-): void {
-    if (basename(childCommand) !== 'git' || !isTokenBearingGitChild(args, env)) {
-        return;
-    }
-    assertNoConfigDefinedHooks(childCommand, args, cwd, env);
-}
-
 const DEFAULT_CAPTURE_BUFFER_BYTES = 64 * 1024 * 1024;
 const MAX_CAPTURE_BUFFER_BYTES = 512 * 1024 * 1024;
 
@@ -821,16 +730,25 @@ export function spawnCaptureBytes(command: string, args: string[], options: Capt
     }
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
-    assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
-    const result = spawnSync(childCommand, args, {
+    assertTokenBearingGitChildIsHookFree(
+        command,
+        childCommand,
+        args,
         cwd,
-        env: options.env,
-        // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
-        // Overflow still throws through result.error rather than returning a partial capture.
-        maxBuffer: maxBufferBytes,
-        shell: false,
-        input: options.input,
-    });
+        options.env ?? process.env,
+        githubAuthorizationGitEnv({})
+    );
+    const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
+        spawnSync(childCommand, args, {
+            cwd: location.cwd,
+            env: childEnvironment(isGitChild(command, options.env ?? process.env), location.env),
+            // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
+            // Overflow still throws through result.error rather than returning a partial capture.
+            maxBuffer: maxBufferBytes,
+            shell: false,
+            input: options.input,
+        })
+    );
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -858,15 +776,24 @@ export function spawnRun(
 ): void {
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
-    assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
-    const result = spawnSync(childCommand, args, {
+    assertTokenBearingGitChildIsHookFree(
+        command,
+        childCommand,
+        args,
         cwd,
-        env: options.env,
-        // Captured stderr keeps a failing child's own words in the thrown error (#4344).
-        stdio: ['inherit', 'inherit', 'pipe'],
-        maxBuffer: 64 * 1024 * 1024,
-        shell: false,
-    });
+        options.env ?? process.env,
+        githubAuthorizationGitEnv({})
+    );
+    const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
+        spawnSync(childCommand, args, {
+            cwd: location.cwd,
+            env: childEnvironment(isGitChild(command, options.env ?? process.env), location.env),
+            // Captured stderr keeps a failing child's own words in the thrown error (#4344).
+            stdio: ['inherit', 'inherit', 'pipe'],
+            maxBuffer: 64 * 1024 * 1024,
+            shell: false,
+        })
+    );
     if (result.error !== undefined) {
         throw result.error;
     }

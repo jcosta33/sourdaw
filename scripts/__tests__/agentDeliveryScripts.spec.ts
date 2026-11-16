@@ -543,6 +543,8 @@ function trustedPublishFixture(root: string, policy: string): void {
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         ...stackSummarySources,
+        'scripts/tokenBearingChildPlacement.ts',
+        'scripts/isolatedGitTransport.ts',
         'scripts/testInstructions.ts',
         'scripts/testInstructionVocabulary.ts',
     ]) {
@@ -632,6 +634,8 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         'githubAppIdentity.ts',
+        'tokenBearingChildPlacement.ts',
+        'isolatedGitTransport.ts',
         'reconstructReviewRounds.ts',
         'reviewRoundEscalation.ts',
         'reviewPublicationLegacyIncidents.ts',
@@ -934,6 +938,7 @@ describe('package scripts and gitignore', () => {
         };
         const port: DeliveryPort = {
             fetch: () => undefined,
+            lintLedgerCrossing: () => ({ mergeBase: 'merge-base', paths: [] }),
             pullRequest: (number) => {
                 if (number === 2495) {
                     return receipt === undefined ? initial : final;
@@ -1193,8 +1198,12 @@ describe('package scripts and gitignore', () => {
             'scripts/e2eServerIdentity.ts',
             'scripts/evidenceSafety.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/tokenBearingChildPlacement.ts',
             'scripts/guardRecoveryProof.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/laneActivity.ts',
+            'scripts/laneRemovalFetch.ts',
+            'scripts/lintLedgerCrossing.ts',
             'scripts/pnpmModulesPreflight.ts',
             'scripts/prContract.ts',
             'scripts/processSnapshot.ts',
@@ -1206,8 +1215,10 @@ describe('package scripts and gitignore', () => {
             'scripts/resourceGuard.ts',
             'scripts/resourceGuardDisk.ts',
             'scripts/resourceGuardLsofDiagnostics.ts',
+            'scripts/resourceGuardProcessTree.ts',
             'scripts/resourceGuardProofReasons.ts',
             'scripts/resourceGuardStorage.ts',
+            'scripts/resourceGuardStorageProcessProof.ts',
             'scripts/reviewBundleLocator.ts',
             'scripts/reviewDiffSummary.ts',
             'scripts/reviewDossier.ts',
@@ -1258,6 +1269,8 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewBundleLocator.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/tokenBearingChildPlacement.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/prContract.ts',
             ...approvalSources,
         ]);
@@ -1347,8 +1360,12 @@ describe('package scripts and gitignore', () => {
                     'scripts/e2eServerIdentity.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
                     'scripts/guardRecoveryProof.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/laneActivity.ts',
+                    'scripts/laneRemovalFetch.ts',
+                    'scripts/lintLedgerCrossing.ts',
                     'scripts/pnpmModulesPreflight.ts',
                     'scripts/prContract.ts',
                     'scripts/processSnapshot.ts',
@@ -1360,8 +1377,10 @@ describe('package scripts and gitignore', () => {
                     'scripts/resourceGuard.ts',
                     'scripts/resourceGuardDisk.ts',
                     'scripts/resourceGuardLsofDiagnostics.ts',
+                    'scripts/resourceGuardProcessTree.ts',
                     'scripts/resourceGuardProofReasons.ts',
                     'scripts/resourceGuardStorage.ts',
+                    'scripts/resourceGuardStorageProcessProof.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/reviewDiffSummary.ts',
                     'scripts/reviewDossier.ts',
@@ -1409,6 +1428,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
                 ],
@@ -1444,6 +1465,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
                 ],
@@ -1483,6 +1506,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
                 ],
@@ -1514,6 +1539,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/workspaceManifestFingerprint.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -1529,6 +1555,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/canonicalRecord.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -1550,6 +1577,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/reviewShadowStatus.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -1562,6 +1590,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/rulesetHardening.ts',
                     'scripts/canonicalRecord.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -1574,6 +1603,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/syncParentLane.ts',
                     'scripts/publishLane.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     'scripts/testInstructions.ts',
                     'scripts/testInstructionVocabulary.ts',
@@ -1588,6 +1619,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/claimTrackerIssue.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/tokenBearingChildPlacement.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -2545,6 +2577,8 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishLane.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/tokenBearingChildPlacement.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/prContract.ts',
             'scripts/testInstructions.ts',
             'scripts/testInstructionVocabulary.ts',
@@ -3268,6 +3302,7 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/claimTrackerIssue.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/tokenBearingChildPlacement.ts',
             'scripts/prContract.ts',
         ]);
     });
@@ -3936,6 +3971,7 @@ describe('package scripts and gitignore', () => {
                 };
                 const unusedPort: DeliveryPort = {
                     fetch: () => undefined,
+                    lintLedgerCrossing: () => expect.fail('delivery domain should not run'),
                     pullRequest: (snapshotNumber) => {
                         expect(snapshotNumber).toBe(number);
                         return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
@@ -4003,6 +4039,7 @@ describe('package scripts and gitignore', () => {
         };
         const unusedPort: DeliveryPort = {
             fetch: () => undefined,
+            lintLedgerCrossing: () => expect.fail('delivery domain should not run'),
             pullRequest: (number) => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
@@ -4540,6 +4577,7 @@ describe('package scripts and gitignore', () => {
         const tracker = authentication('ghs_tracker', { issues: 'write' });
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
+            lintLedgerCrossing: () => ({ mergeBase: 'merge-base', paths: [] }),
             pullRequest: (number) => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });

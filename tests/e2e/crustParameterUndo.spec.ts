@@ -47,7 +47,7 @@ async function capture(page: Page) {
                 return { type: 'bytes', value: Array.from(value) };
             }
             if (typeof value !== 'object' || value instanceof Map || value instanceof Set) {
-                throw new Error(`Unsupported evidence value: ${typeof value}`);
+                throw new TypeError(`Unsupported evidence value: ${typeof value}`);
             }
             return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encode(item)]));
         }
@@ -101,8 +101,11 @@ test('Crust numeric keyboard and pointer gestures undo without removing the effe
     await expect(row).toBeVisible();
     await row.click();
     const seeded = await capture(page);
-    expect(seeded.selectedTrackId).toEqual(expect.any(String));
-    await expect(row.getByTestId(`track-arm-${seeded.selectedTrackId}`)).toBeVisible();
+    const { selectedTrackId } = seeded;
+    if (typeof selectedTrackId !== 'string') {
+        throw new TypeError('The clicked MIDI track was not selected.');
+    }
+    await expect(row.getByTestId(`track-arm-${selectedTrackId}`)).toBeVisible();
     const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
     await inspector.getByRole('button', { name: 'Add device', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Crust', exact: true }).click();
@@ -119,7 +122,7 @@ test('Crust numeric keyboard and pointer gestures undo without removing the effe
     expect(before.actionTypes).toContain('addTrack');
     expect(before.actionTypes.at(-1)).toBe('addDevice');
     expect(JSON.parse(before.rawTracks)).toEqual(JSON.parse(before.persistedProjection));
-    const device = before.devices[0];
+    const device = before.devices.at(0);
     if (!device) {
         throw new Error('Missing UI-created Crust');
     }

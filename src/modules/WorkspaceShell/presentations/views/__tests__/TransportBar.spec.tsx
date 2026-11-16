@@ -67,7 +67,7 @@ vi.mock('../../hooks/useAudioRecordingState', () => ({
 const undoState = vi.hoisted(() => ({ canUndo: false, canRedo: false }));
 const undoMock = vi.hoisted(() => vi.fn());
 vi.mock('../../hooks/useUndoState', () => ({
-    useUndoState: undoMock.mockReturnValue(undoState),
+    useUndoAvailability: undoMock.mockReturnValue(undoState),
 }));
 
 const projectState = vi.hoisted(() => ({ name: 'Test', dirty: false }));
@@ -255,6 +255,13 @@ const makeBrowseTrack = (id: string, name: string, clipId: string, clipName: str
 };
 
 describe('TransportBar', () => {
+    let restoreTracks: (() => void) | null = null;
+
+    afterEach(() => {
+        restoreTracks?.();
+        restoreTracks = null;
+    });
+
     beforeEach(() => {
         voiceStatus = { isListening: false, transcribing: false };
         voiceInputAvailable = false;
@@ -396,7 +403,9 @@ describe('TransportBar', () => {
             expect(clipSelectionStore.value?.selectedClipIds).toEqual(['fill']);
 
             setViewportWidth(VIEWPORT_COMPACT_WIDTH);
-            act(() => window.dispatchEvent(new Event('resize')));
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
             expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toBe(browse);
             expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toBe(listbox);
             expect(listbox).toHaveAttribute('aria-activedescendant', activeId);
@@ -409,7 +418,9 @@ describe('TransportBar', () => {
             fireEvent.keyDown(listbox, { key: 'Escape' });
             await waitFor(() => expect(browse).toHaveFocus());
             setViewportWidth(VIEWPORT_FULL_WIDTH);
-            act(() => window.dispatchEvent(new Event('resize')));
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
             expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toBe(browse);
             expect(browse).toHaveFocus();
             expect(screen.getAllByRole('button', { name: 'Browse timeline clips' })).toHaveLength(1);
@@ -673,17 +684,14 @@ describe('TransportBar', () => {
 
     it('derives showOverdub from armed midi tracks and surfaces the overdub control', () => {
         // An armed MIDI track must make the overdub control visible (showOverdub=true).
-        vi.mocked(useStore).mockImplementation((store, defaultValue) => {
-            if (store === voiceStatusStore) {
-                return voiceStatus;
-            }
-            if (store === trackStore) {
-                return {
-                    tracks: [{ id: 't1', armed: true, kind: 'midi' }],
-                    selectedTrackId: null,
-                };
-            }
-            return defaultValue ?? {};
+        const originalTracks = trackStore.value;
+        if (originalTracks === null) {
+            throw new Error('Arrangement trackStore must be initialized');
+        }
+        restoreTracks = () => setTrackState(originalTracks);
+        setTrackState({
+            tracks: [{ ...makeBrowseTrack('t1', 'T1', 'c1', 'C1'), armed: true, kind: 'midi' }],
+            selectedTrackId: null,
         });
 
         renderTransportBar();
@@ -692,17 +700,14 @@ describe('TransportBar', () => {
     });
 
     it('hides the overdub control when only audio tracks are armed', () => {
-        vi.mocked(useStore).mockImplementation((store, defaultValue) => {
-            if (store === voiceStatusStore) {
-                return voiceStatus;
-            }
-            if (store === trackStore) {
-                return {
-                    tracks: [{ id: 't1', armed: true, kind: 'audio' }],
-                    selectedTrackId: null,
-                };
-            }
-            return defaultValue ?? {};
+        const originalTracks = trackStore.value;
+        if (originalTracks === null) {
+            throw new Error('Arrangement trackStore must be initialized');
+        }
+        restoreTracks = () => setTrackState(originalTracks);
+        setTrackState({
+            tracks: [{ ...makeBrowseTrack('t1', 'T1', 'c1', 'C1'), armed: true, kind: 'audio' }],
+            selectedTrackId: null,
         });
 
         renderTransportBar();

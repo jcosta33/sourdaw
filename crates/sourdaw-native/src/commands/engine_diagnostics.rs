@@ -145,6 +145,17 @@ pub struct EngineRtDiagnostics {
     pub events: Vec<EngineEventPayload>,
 }
 
+/// What the engine reports about itself beside its MIDI counters.
+struct EngineReadings {
+    events: Vec<EngineEvent>,
+    input_latency_frames: usize,
+    rendering: bool,
+    output_stream_fault: Option<StreamErrorKind>,
+    sample_rate: f32,
+    output_buffer_frames: usize,
+    output_path_frames: usize,
+}
+
 /// Assemble the wire payload for a running engine.
 ///
 /// Split out of the command because the mapping is the part that can be wrong:
@@ -153,14 +164,17 @@ pub struct EngineRtDiagnostics {
 /// readings as arguments makes that mapping testable without a live device.
 fn running_engine_diagnostics(
     snapshot: ActiveMidiRtDiagnosticsSnapshot,
-    events: Vec<EngineEvent>,
-    input_latency_frames: usize,
-    rendering: bool,
-    output_stream_fault: Option<StreamErrorKind>,
-    sample_rate: f32,
-    output_buffer_frames: usize,
-    output_path_frames: usize,
+    readings: EngineReadings,
 ) -> EngineRtDiagnostics {
+    let EngineReadings {
+        events,
+        input_latency_frames,
+        rendering,
+        output_stream_fault,
+        sample_rate,
+        output_buffer_frames,
+        output_path_frames,
+    } = readings;
     EngineRtDiagnostics {
         // An engine object existing is not the same as it rendering: the
         // output stream's error callback runs the render thread down without
@@ -217,19 +231,37 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
 
     Ok(running_engine_diagnostics(
         snapshot,
-        events,
-        input_latency_frames,
-        rendering,
-        output_stream_fault,
-        sample_rate,
-        output_buffer_frames,
-        output_path_frames,
+        EngineReadings {
+            events,
+            input_latency_frames,
+            rendering,
+            output_stream_fault,
+            sample_rate,
+            output_buffer_frames,
+            output_path_frames,
+        },
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl EngineReadings {
+        /// Zeroed readings with no events and no fault, for a case that varies
+        /// only the fields it names.
+        fn idle() -> Self {
+            Self {
+                events: Vec::new(),
+                input_latency_frames: 0,
+                rendering: false,
+                output_stream_fault: None,
+                sample_rate: 0.0,
+                output_buffer_frames: 0,
+                output_path_frames: 0,
+            }
+        }
+    }
 
     /// The frontend mirror type is hand-maintained (crates/sourdaw-native/AGENTS.md), so the
     /// wire shape is a contract: pin every key and every enum spelling.
@@ -346,16 +378,18 @@ mod tests {
 
         let diagnostics = running_engine_diagnostics(
             snapshot,
-            vec![EngineEvent::StreamError {
-                side: StreamSide::Output,
-                kind: StreamErrorKind::DeviceBusy,
-            }],
-            14,
-            true,
-            None,
-            48_000.0,
-            256,
-            297,
+            EngineReadings {
+                events: vec![EngineEvent::StreamError {
+                    side: StreamSide::Output,
+                    kind: StreamErrorKind::DeviceBusy,
+                }],
+                input_latency_frames: 14,
+                rendering: true,
+                output_stream_fault: None,
+                sample_rate: 48_000.0,
+                output_buffer_frames: 256,
+                output_path_frames: 297,
+            },
         );
 
         assert!(diagnostics.running);
@@ -404,13 +438,11 @@ mod tests {
 
         let diagnostics = running_engine_diagnostics(
             snapshot,
-            Vec::new(),
-            0,
-            false,
-            Some(StreamErrorKind::DeviceChanged),
-            0.0,
-            0,
-            0,
+            EngineReadings {
+                rendering: false,
+                output_stream_fault: Some(StreamErrorKind::DeviceChanged),
+                ..EngineReadings::idle()
+            },
         );
 
         assert!(
@@ -447,13 +479,11 @@ mod tests {
 
         let diagnostics = running_engine_diagnostics(
             snapshot,
-            Vec::new(),
-            0,
-            true,
-            Some(StreamErrorKind::DeviceChanged),
-            0.0,
-            0,
-            0,
+            EngineReadings {
+                rendering: true,
+                output_stream_fault: Some(StreamErrorKind::DeviceChanged),
+                ..EngineReadings::idle()
+            },
         );
 
         assert!(
@@ -483,8 +513,13 @@ mod tests {
             late_midi_notes: 0,
         };
 
-        let diagnostics =
-            running_engine_diagnostics(snapshot, Vec::new(), 0, true, None, 0.0, 0, 0);
+        let diagnostics = running_engine_diagnostics(
+            snapshot,
+            EngineReadings {
+                rendering: true,
+                ..EngineReadings::idle()
+            },
+        );
 
         assert!(diagnostics.running);
         assert_eq!(diagnostics.output_stream_fault, None);

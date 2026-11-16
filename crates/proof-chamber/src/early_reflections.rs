@@ -44,7 +44,7 @@ fn tap_delay(index: usize, sample_rate: f32, room_size: f32, buffer_len: usize) 
 /// signs so the summed pattern decorrelates rather than combing.
 fn tap_gain(index: usize) -> f32 {
     let magnitude = 0.7 / (1.0 + (index as f32) * 0.3).sqrt();
-    if index % 2 == 0 {
+    if index.is_multiple_of(2) {
         magnitude
     } else {
         -magnitude

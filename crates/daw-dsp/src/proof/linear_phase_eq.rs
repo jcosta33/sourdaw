@@ -28,11 +28,11 @@ fn biquad_magnitude(coeffs: &BiquadCoeffs, freq_hz: f64, sr: f64) -> f64 {
     let sin_w = w.sin();
     let sin_2w = (2.0 * w).sin();
 
-    let b0 = coeffs.b0 as f64;
-    let b1 = coeffs.b1 as f64;
-    let b2 = coeffs.b2 as f64;
-    let a1 = coeffs.a1 as f64;
-    let a2 = coeffs.a2 as f64;
+    let b0 = coeffs.b0;
+    let b1 = coeffs.b1;
+    let b2 = coeffs.b2;
+    let a1 = coeffs.a1;
+    let a2 = coeffs.a2;
 
     let num_real = b0 + b1 * cos_w + b2 * cos_2w;
     let num_imag = -(b1 * sin_w + b2 * sin_2w);

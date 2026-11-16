@@ -12,6 +12,7 @@
 #![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 
 use daw_dsp::levain::LevainInstance;
+use std::ops::RangeInclusive;
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
@@ -93,7 +94,7 @@ fn stage_rate_take(
     rate: f32,
     frames: u32,
 ) {
-    stage_rate_take_keys(instance, zone_id, mic, hz, rate, frames, 0, 127);
+    stage_rate_take_keys(instance, zone_id, mic, hz, rate, frames, 0..=127);
 }
 
 fn stage_rate_take_keys(
@@ -103,8 +104,7 @@ fn stage_rate_take_keys(
     hz: f32,
     rate: f32,
     frames: u32,
-    key_lo: u8,
-    key_hi: u8,
+    keys: RangeInclusive<u8>,
 ) {
     let data = (0..frames)
         .map(|frame| (frame as f32 / rate * hz * std::f32::consts::TAU).sin() * 0.5)
@@ -113,8 +113,28 @@ fn stage_rate_take_keys(
         .add_sample(data, frames, 1, rate)
         .expect("sample adds to a uniquely-owned bank");
     instance.add_zone(
-        zone_id, sample_id, SUSTAIN, NOTE, 0.0, key_lo, key_hi, 0, 127, 0, 1, mic, false, 1, 0,
-        frames, 0, 0.0, 0.001, 0.1, 1.0, 0.2,
+        zone_id,
+        sample_id,
+        SUSTAIN,
+        NOTE,
+        0.0,
+        *keys.start(),
+        *keys.end(),
+        0,
+        127,
+        0,
+        1,
+        mic,
+        false,
+        1,
+        0,
+        frames,
+        0,
+        0.0,
+        0.001,
+        0.1,
+        1.0,
+        0.2,
     );
 }
 
@@ -189,6 +209,10 @@ fn render_block(instance: &mut LevainInstance, frames: usize, out: &mut Stereo) 
     let right_ptr = instance.get_right_ptr();
     // SAFETY: `process` guarantees `frames` valid f32s in each channel buffer.
     let left = unsafe { std::slice::from_raw_parts(left_ptr, frames) };
+    // SAFETY: `right_ptr` is the instance's right buffer, allocated at `LEVAIN_BLOCK_FRAMES`
+    // (4096) floats in `LevainInstance::new` and never resized; `process` just filled its first
+    // `frames` (at most `BLOCK` = 128, the only caller's `remaining.min(BLOCK)`), and the slice
+    // is consumed before the next `process` call.
     let right = unsafe { std::slice::from_raw_parts(right_ptr, frames) };
     out.left.extend_from_slice(left);
     out.right.extend_from_slice(right);
@@ -734,7 +758,7 @@ fn synthetic_glide_uses_the_outgoing_lead_when_the_incoming_mic_was_missing() {
         instance.set_param("mic_1_pan", 1.0);
         instance.begin_sample_bank(NEUTRAL_INSTRUMENT);
         if mic_0_had_outgoing_zone {
-            stage_rate_take_keys(&mut instance, 0, 0, 451.0, 48_000.0, 24_000, NOTE, NOTE);
+            stage_rate_take_keys(&mut instance, 0, 0, 451.0, 48_000.0, 24_000, NOTE..=NOTE);
         }
         let next_id = u32::from(mic_0_had_outgoing_zone);
         stage_rate_take_keys(
@@ -744,8 +768,7 @@ fn synthetic_glide_uses_the_outgoing_lead_when_the_incoming_mic_was_missing() {
             451.0,
             24_000.0,
             12_000,
-            NOTE,
-            NOTE,
+            NOTE..=NOTE,
         );
         stage_rate_take_keys(
             &mut instance,
@@ -754,8 +777,7 @@ fn synthetic_glide_uses_the_outgoing_lead_when_the_incoming_mic_was_missing() {
             451.0,
             48_000.0,
             24_000,
-            NOTE + 2,
-            NOTE + 2,
+            (NOTE + 2)..=(NOTE + 2),
         );
         commit(&mut instance, 2);
         instance.note_on(NOTE, VELOCITY);

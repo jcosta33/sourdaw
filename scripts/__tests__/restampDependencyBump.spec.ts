@@ -261,6 +261,59 @@ describe('restamp dependency bump', () => {
         expect(digests).not.toContain(`sha256:${digestOf(root, 'Cargo.toml')}:Cargo.toml`);
     });
 
+    it('refreshes shared public dependency notices without changing protected provenance', () => {
+        const root = createFixture();
+        const noticePath = 'public/legal/THIRD-PARTY-NOTICES.md';
+        const runtimePath = 'electron/protocol.ts';
+        write(root, noticePath, 'previous dependency notice\n');
+        write(root, runtimePath, 'previous runtime source\n');
+        const protectedPaths = [...GENERATED_ARTIFACT_SNAPSHOT_PATHS, runtimePath];
+        const protectedPins = [
+            ...protectedPaths.map((path) => `sha256:${digestOf(root, path)}:${path}`),
+            `sha256:${staleDigest}`,
+        ];
+        const oldNoticePin = `sha256:${digestOf(root, noticePath)}:${noticePath}`;
+        const sharedIds = [
+            'javascript-dependencies',
+            'ddsp-tfjs-runtime',
+            'webllm-qwen-artifacts',
+            'ddsp-models',
+            'mi-plaits-dsp-rs-adaptation',
+            'audio-export-codecs',
+        ];
+        const inventory = readInventory(root);
+        const sharedSurfaces = sharedIds.map((id) => {
+            const surface = inventory.surfaces.find((candidate) => candidate.id === id) ?? fixtureSurface(id, []);
+            return { ...surface, digests: [...surface.digests, oldNoticePin, ...protectedPins] };
+        });
+        writeInventory(root, {
+            ...inventory,
+            surfaces: [...inventory.surfaces.filter((surface) => !sharedIds.includes(surface.id)), ...sharedSurfaces],
+        });
+        const generatedSnapshots = inventory.snapshots.filter((snapshot) =>
+            GENERATED_ARTIFACT_SNAPSHOT_PATHS.some((path) => path === snapshot.path)
+        );
+        write(root, noticePath, 'updated Electron dependency notice\n');
+        for (const path of protectedPaths) {
+            write(root, path, `changed protected input ${path}\n`);
+        }
+
+        expect(restamp(root).ok).toBe(true);
+
+        const updated = readInventory(root);
+        const newNoticePin = `sha256:${digestOf(root, noticePath)}:${noticePath}`;
+        for (const before of sharedSurfaces) {
+            expect(updated.surfaces.find((surface) => surface.id === before.id)?.digests).toEqual(
+                before.digests.map((pin) => (pin === oldNoticePin ? newNoticePin : pin))
+            );
+        }
+        expect(
+            updated.snapshots.filter((snapshot) =>
+                GENERATED_ARTIFACT_SNAPSHOT_PATHS.some((path) => path === snapshot.path)
+            )
+        ).toEqual(generatedSnapshots);
+    });
+
     it('carries an assembled cargo proof forward to the resolved version', () => {
         const root = createFixture({ 'cargo:demo@1.0.0': staleAssembledProof });
         const sourceDirectory = writeCrateFixture(root, { archive: true });
@@ -420,7 +473,7 @@ describe('restamp dependency bump', () => {
 
         expect(result.ok).toBe(false);
         expect(result.output.split('\n')[0]).toBe(UNRESTAMPED_DIGEST_CLASSES);
-        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule tracked-set');
+        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule content-pinned tracked-set');
         expect(result.output).toContain('grand-boule: tracked-set digest drifted');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(recorded);
     });

@@ -8,6 +8,7 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
 import { readRecipeExpectationTolerance } from './metricHoldTolerances';
+import { type ComparedQuality, readComparedQualities } from './readComparedQualities';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
 
 type Objective = {
@@ -29,81 +30,147 @@ type RecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MetricIds = ReturnType<typeof getAgentMeasurementMetricIds>;
 type AnswerScopes = AnswerInterpretationCatalog['scopes'];
 
-function policyObjectives(scopes: AnswerScopes, allScopeIds: string[]): Objective[] {
-    const objectives: Objective[] = [
-        {
+type OrderingPolicy = {
+    quality: ComparedQuality;
+    idPrefix: string;
+    metricId: 'integratedLoudness' | 'spectralCentroid' | 'sideEnergyFraction' | 'crestFactor';
+    policyId: Extract<
+        Extract<MetricGoal['source'], { kind: 'policy' }>['policyId'],
+        | 'integrated-loudness-comparison-v1'
+        | 'spectral-centroid-comparison-v1'
+        | 'side-energy-fraction-comparison-v1'
+        | 'crest-factor-comparison-v1'
+    >;
+    description: string;
+};
+
+/**
+ * Punch is judged by crest factor beside dynamics: five of the seven authored `*-punchy` recipes move it up,
+ * while `transientDensity` is only held in them and counts transients rather than how hard they land.
+ */
+const ORDERING_POLICIES: readonly OrderingPolicy[] = [
+    {
+        quality: 'loudness',
+        idPrefix: 'loudness',
+        metricId: 'integratedLoudness',
+        policyId: 'integrated-loudness-comparison-v1',
+        description: 'actual preview integrated loudness than the reference',
+    },
+    {
+        quality: 'brightness',
+        idPrefix: 'centroid',
+        metricId: 'spectralCentroid',
+        policyId: 'spectral-centroid-comparison-v1',
+        description: 'actual preview spectral centroid; objective brightness proxy only',
+    },
+    {
+        quality: 'width',
+        idPrefix: 'side-energy',
+        metricId: 'sideEnergyFraction',
+        policyId: 'side-energy-fraction-comparison-v1',
+        description: 'actual preview side energy fraction than the reference; stereo width proxy',
+    },
+    {
+        quality: 'dynamics',
+        idPrefix: 'crest',
+        metricId: 'crestFactor',
+        policyId: 'crest-factor-comparison-v1',
+        description: 'actual preview crest factor than the reference; dynamics and punch proxy',
+    },
+];
+
+function policyObjective(input: {
+    id: string;
+    label: string;
+    allScopeIds: string[];
+    goal: Objective['goals'][number];
+}): Objective {
+    return {
+        id: input.id,
+        label: input.label,
+        eligibleScopeIds: input.allScopeIds,
+        defaultScopeIds: input.allScopeIds,
+        roles: [],
+        goals: [input.goal],
+    };
+}
+
+function orderingObjectives(policy: OrderingPolicy, allScopeIds: string[]): Objective[] {
+    return (
+        [
+            ['higher', 'Higher', 'greater-than-current'],
+            ['lower', 'Lower', 'less-than-current'],
+        ] as const
+    ).map(([direction, word, relation]) =>
+        policyObjective({
+            id: `${policy.idPrefix}-${direction}`,
+            label: `${word} ${policy.description}`,
+            allScopeIds,
+            goal: {
+                metricId: policy.metricId,
+                metricName: policy.metricId,
+                band: null,
+                relation,
+                targetValue: null,
+                tolerance: 0,
+                source: { kind: 'policy', policyId: policy.policyId },
+            },
+        })
+    );
+}
+
+/**
+ * The loudness match and the spectral-centroid pair were published for every request on main, and stay so:
+ * no reading of the request's wording, which depends on quote heuristics that misread elisions, may withdraw
+ * them. The orderings added since cost planner text (#6706), so each is published only when the request
+ * names its quality outside track names and quotations.
+ */
+function policyObjectives(
+    scopes: AnswerScopes,
+    allScopeIds: string[],
+    named: ReadonlySet<ComparedQuality>
+): Objective[] {
+    const objectives: Objective[] = [];
+    objectives.push(
+        policyObjective({
             id: 'loudness-match',
             label: 'Match actual preview integrated loudness; app policy integrated-loudness-match-v1 (0.1 LU)',
-            eligibleScopeIds: allScopeIds,
-            defaultScopeIds: allScopeIds,
-            roles: [],
-            goals: [
-                {
-                    metricId: 'integratedLoudness',
-                    metricName: 'integratedLoudness',
-                    band: null,
-                    relation: 'match-current',
-                    targetValue: null,
-                    tolerance: 0.1,
-                    source: { kind: 'policy', policyId: 'integrated-loudness-match-v1' },
-                },
-            ],
-        },
-        {
-            id: 'centroid-higher',
-            label: 'Higher actual preview spectral centroid; objective brightness proxy only',
-            eligibleScopeIds: allScopeIds,
-            defaultScopeIds: allScopeIds,
-            roles: [],
-            goals: [
-                {
-                    metricId: 'spectralCentroid',
-                    metricName: 'spectralCentroid',
-                    band: null,
-                    relation: 'greater-than-current',
-                    targetValue: null,
-                    tolerance: 0,
-                    source: { kind: 'policy', policyId: 'spectral-centroid-comparison-v1' },
-                },
-            ],
-        },
-        {
-            id: 'centroid-lower',
-            label: 'Lower actual preview spectral centroid; objective brightness proxy only',
-            eligibleScopeIds: allScopeIds,
-            defaultScopeIds: allScopeIds,
-            roles: [],
-            goals: [
-                {
-                    metricId: 'spectralCentroid',
-                    metricName: 'spectralCentroid',
-                    band: null,
-                    relation: 'less-than-current',
-                    targetValue: null,
-                    tolerance: 0,
-                    source: { kind: 'policy', policyId: 'spectral-centroid-comparison-v1' },
-                },
-            ],
-        },
-        {
-            id: 'unsupported',
-            label: 'No compatible authored objective metric; keep plan unverified',
-            eligibleScopeIds: scopes.map((scope) => scope.candidateId),
-            defaultScopeIds: scopes.map((scope) => scope.candidateId),
-            roles: [],
-            goals: [
-                {
-                    metricId: null,
-                    metricName: 'unsupported',
-                    band: null,
-                    relation: 'unsupported',
-                    targetValue: null,
-                    tolerance: 0,
-                    source: { kind: 'unsupported' },
-                },
-            ],
-        },
-    ];
+            allScopeIds,
+            goal: {
+                metricId: 'integratedLoudness',
+                metricName: 'integratedLoudness',
+                band: null,
+                relation: 'match-current',
+                targetValue: null,
+                tolerance: 0.1,
+                source: { kind: 'policy', policyId: 'integrated-loudness-match-v1' },
+            },
+        })
+    );
+    for (const policy of ORDERING_POLICIES) {
+        const published = policy.quality === 'brightness' || named.has(policy.quality);
+        if (published) {
+            objectives.push(...orderingObjectives(policy, allScopeIds));
+        }
+    }
+    objectives.push({
+        id: 'unsupported',
+        label: 'No compatible authored objective metric; keep plan unverified',
+        eligibleScopeIds: scopes.map((scope) => scope.candidateId),
+        defaultScopeIds: scopes.map((scope) => scope.candidateId),
+        roles: [],
+        goals: [
+            {
+                metricId: null,
+                metricName: 'unsupported',
+                band: null,
+                relation: 'unsupported',
+                targetValue: null,
+                tolerance: 0,
+                source: { kind: 'unsupported' },
+            },
+        ],
+    });
     return objectives;
 }
 
@@ -227,7 +294,7 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
     const scopes = input.answer.scopes;
     const allScopeIds = scopes.filter((scope) => scope.kind !== 'clips').map((scope) => scope.candidateId);
     const objectives = [
-        ...policyObjectives(scopes, allScopeIds),
+        ...policyObjectives(scopes, allScopeIds, readComparedQualities(input.prompt, input.answer.context)),
         ...recipeObjectives(input.answer, catalog, metricIds),
         ...numericObjectives(input.prompt, allScopeIds),
     ];

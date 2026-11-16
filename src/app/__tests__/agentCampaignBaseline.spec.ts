@@ -36,7 +36,7 @@ type LocalEvidenceManifest = {
  * would prove the function agrees with itself, not that the committed manifest is correct.
  */
 const EXPECTED_COLLISIONS: LocalEvidenceManifest['collisions'] = [
-    { path: 'crates/sourdaw/src', suites: ['AC-030', 'AC-049', 'AC-057'] },
+    { path: 'crates/sourdaw-native/src', suites: ['AC-030', 'AC-049', 'AC-057'] },
     { path: 'scripts/agent-campaign/run-evidence-gate.ts', suites: ['AC-054', 'AC-060'] },
     {
         path: 'src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts',

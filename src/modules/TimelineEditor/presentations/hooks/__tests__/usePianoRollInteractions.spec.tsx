@@ -4,6 +4,7 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
@@ -37,6 +38,7 @@ const mocks = vi.hoisted(() => {
         stepRecordNoteOn: vi.fn(),
         stepRecordNoteOff: vi.fn(),
         getTransportState: vi.fn(),
+        captureGestureBeat: vi.fn(() => 0),
         stepRecordState: { currentPitch: 62 },
         preferencesState: null as { defaultVelocity: number } | null,
         trackState: {
@@ -44,12 +46,12 @@ const mocks = vi.hoisted(() => {
                 {
                     id: 'track-1',
                     kind: 'midi',
-                    clips: [{ id: 'clip-1', type: 'midi' }],
+                    clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 64 }],
                 },
                 {
                     id: 'track-2',
                     kind: 'midi',
-                    clips: [{ id: 'clip-2', type: 'midi' }],
+                    clips: [{ id: 'clip-2', type: 'midi', startBeat: 0, endBeat: 64 }],
                 },
             ],
         },
@@ -152,6 +154,11 @@ const PREFERRED_DEFAULT_VELOCITY = 87;
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     getTransportState: mocks.getTransportState,
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    captureGestureBeat: mocks.captureGestureBeat,
 }));
 
 type HookArgs = Parameters<typeof usePianoRollInteractions>[0];
@@ -283,7 +290,12 @@ describe('usePianoRollInteractions', () => {
         mocks.getNotesForClip.mockReturnValue([]);
         mocks.previewEngine?.resetGraph();
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 2.5 });
+        // The store keeps the beat of the last seek and the latest-value channel
+        // a later tick's beat; the split must follow the beat the gesture clock
+        // stamps on the key press.
+        mocks.getTransportState.mockReturnValue({ playheadPosition: 40 });
+        playheadPositionRef.current = 9;
+        mocks.captureGestureBeat.mockReturnValue(2.5);
         mocks.stepRecordState = { currentPitch: 62 };
         latest.current = null;
     });
@@ -1056,7 +1068,9 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
             const exclusive = mocks.previewEngine?.beginExclusiveAudioPreviewIntent();
             expect(exclusive?.isCurrent()).toBe(true);
-            act(() => vi.advanceTimersByTime(1_000));
+            act(() => {
+                vi.advanceTimersByTime(1_000);
+            });
             expect(mocks.playAuditionNote).not.toHaveBeenCalled();
             expect(exclusive?.isCurrent()).toBe(true);
         });
@@ -1276,15 +1290,15 @@ describe('usePianoRollInteractions', () => {
             type ClipFixture = {
                 id: string;
                 type: string;
-                startBeat?: number;
-                endBeat?: number;
+                startBeat: number;
+                endBeat: number;
                 midiOffsetBeats?: number;
                 loopEnabled?: boolean;
                 loopLength?: number;
             };
 
-            /** Replaces clip-1's arrangement placement; the default is an unplaced clip. */
-            const placeClip = (placement: Omit<ClipFixture, 'id' | 'type'> = {}): void => {
+            /** Replaces clip-1's arrangement placement; the default spans beats 0 to 64. */
+            const placeClip = (placement: Omit<ClipFixture, 'id' | 'type'> = { startBeat: 0, endBeat: 64 }): void => {
                 const [primaryTrack] = mocks.trackState.tracks;
                 if (primaryTrack) {
                     primaryTrack.clips = [{ id: 'clip-1', type: 'midi', ...placement }];
@@ -1346,7 +1360,7 @@ describe('usePianoRollInteractions', () => {
             it('translates the playhead into a clip placed away from beat zero', () => {
                 placeClip({ startBeat: 8, endBeat: 12 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                mocks.captureGestureBeat.mockReturnValue(10);
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
@@ -1376,7 +1390,7 @@ describe('usePianoRollInteractions', () => {
             it('wraps the playhead through the clip loop and restores the media offset', () => {
                 placeClip({ startBeat: 4, endBeat: 16, loopEnabled: true, loopLength: 4, midiOffsetBeats: 2 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 3, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                mocks.captureGestureBeat.mockReturnValue(10);
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
@@ -1394,7 +1408,7 @@ describe('usePianoRollInteractions', () => {
             it('does not split when the playhead sits before the visible clip', () => {
                 placeClip({ startBeat: 8, endBeat: 12 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 5 });
+                mocks.captureGestureBeat.mockReturnValue(5);
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
@@ -1408,7 +1422,7 @@ describe('usePianoRollInteractions', () => {
             it('does not split when the playhead sits at the clip end', () => {
                 placeClip({ startBeat: 8, endBeat: 12 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 12 });
+                mocks.captureGestureBeat.mockReturnValue(12);
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });

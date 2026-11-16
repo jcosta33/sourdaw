@@ -48,6 +48,8 @@ vi.mock('#/modules/Command/useCases', () => ({
         throw new Error('Unexpected replay-authority reset in this lane fixture');
     },
     getExecutableAppActionEffect: vi.fn(() => null),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),

@@ -1,5 +1,6 @@
-import { type AppAction, type AppActionType, type MidiNotesSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { type MidiNotesSnapshot } from '../../events/midiAppActions';
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
 import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
@@ -371,6 +372,10 @@ const notesProjectionByActionType: {
     captureScratchPad: noNotesProjection,
     commitScratchPad: noNotesProjection,
     clearScratchPad: noNotesProjection,
+    removeScratchPadSection: noNotesProjection,
+    renameScratchPadSection: noNotesProjection,
+    reorderScratchPadSection: noNotesProjection,
+    setScratchPadSectionColor: noNotesProjection,
     createPatternInstance: noNotesProjection,
     detachPatternInstance: noNotesProjection,
     restorePatternInstanceLink: noNotesProjection,

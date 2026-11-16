@@ -1,10 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { updateClipInStore } from '#/modules/Arrangement/stores';
-import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
+import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '../../events/kneadAppActions';
 import { clearClipPitchAnalysis } from '../clearClipPitchAnalysis';
 
 import { findPitchEditClip } from './findPitchEditClip';

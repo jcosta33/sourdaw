@@ -119,14 +119,14 @@ impl MultibandSplitter {
         }
         out[crossovers.len()] = rest;
 
-        for band in 0..crossovers.len() {
-            let mut compensated = out[band];
-            for later in (band + 1)..crossovers.len() {
-                let slot = compensator_slot(band, crossovers[later]);
+        for (band, band_out) in out.iter_mut().enumerate().take(crossovers.len()) {
+            let mut compensated = *band_out;
+            for &later_crossover in crossovers.iter().skip(band + 1) {
+                let slot = compensator_slot(band, later_crossover);
                 let (low, high) = self.compensators[slot].process(compensated.0, compensated.1);
                 compensated = (low.0 + high.0, low.1 + high.1);
             }
-            out[band] = compensated;
+            *band_out = compensated;
         }
     }
 }

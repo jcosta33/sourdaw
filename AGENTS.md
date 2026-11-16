@@ -299,6 +299,8 @@ locally at other lanes' expense.
 | Restamp a tracked set                                                                    | `pnpm release:restamp:tracked-set`                                           |
 | Restamp a dependency bump                                                                | `pnpm release:restamp`                                                       |
 
+`pnpm release:restamp:tracked-set` rewrites only the content-pinned Grand Boule boundaries: the admitted DSP source and ADR 0036.
+
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
@@ -383,7 +385,8 @@ otherwise use `<type>/<slug>`. Lanes opened before types existed keep their `age
 or `agent/<slug>` branches, which every script still recognizes; no new lane is created under
 `agent/`. PRs close their issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
 your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swaps the issue onto
-`status:active` and moves its board items to In progress; `lane:open` prints the command. The
+`status:active`, posts a claim comment that decides concurrent claims so exactly one wins, and
+moves its board items to In progress; `lane:open` prints the command. The
 issue-bound and issueless procedures are in [delivery-orchestration]. Lane worktrees carry the
 author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lane:identity`), and
 `lane:publish` refuses lane-owned commits whose author or committer is not that stamped identity —
@@ -519,7 +522,7 @@ the route label. Generic Task, Audit, Research, and Inventory forms remain neutr
 Selecting Bugs or Refactors removes the Features route, and Bug or Change plan forms cannot target
 Features.
 No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
-<issue>` swaps the status labels and moves the boards, and `pnpm issue:reconcile` applies
+<issue>` swaps the status labels, posts its claim comment and moves the boards, and `pnpm issue:reconcile` applies
 digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
 backfilling a pull request's own labels, milestone, or project membership when it predates
 `lane:publish`'s metadata assertion. Read live metadata
@@ -699,8 +702,8 @@ other way. Validation order, admission, and retry semantics: [delivery-orchestra
 Keep batches small and merges prompt. Hold at most five live lanes at once. Lanes that do not
 stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
 file or pinned digest when it feeds that file's generator or digest: an app action feeds the
-command schema and the agent evidence manifest, device guidance feeds the evidence manifest, a
-tracked-set path feeds the release inventory, and a crate's dependency closure feeds the wasm
+command schema and the agent evidence manifest, device guidance feeds the evidence manifest, an
+edit to the admitted Grand Boule DSP source or ADR 0036 feeds the release inventory, and a crate's dependency closure feeds the wasm
 manifest. Work that shares any of these with a live lane waits for it to merge, or stacks on it
 only when it depends on that lane's change. A head waiting on CI or review does not block opening
 a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff

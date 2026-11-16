@@ -15,8 +15,8 @@ describe('handleSetLayerAffectedTracks', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards layer id and track ids', () => {
-        handleSetLayerAffectedTracks.execute({
+    it('forwards layer id and track ids', async () => {
+        await handleSetLayerAffectedTracks.execute({
             type: 'setLayerAffectedTracks',
             payload: { layerId: 'L', trackIds: ['t1', 't2'] },
         });

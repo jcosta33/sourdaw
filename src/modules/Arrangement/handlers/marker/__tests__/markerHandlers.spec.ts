@@ -55,10 +55,10 @@ describe('marker action handlers', () => {
             payload: { sectionId: 'section1', name: 'Chorus' },
         });
 
-        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', expect.stringMatching(/^marker-/), undefined);
+        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', expect.stringMatching(/^marker-/), undefined, {});
         expect(mocks.removeMarker).toHaveBeenCalledWith('marker1');
         expect(mocks.setMarkerColor).toHaveBeenCalledWith('marker1', '#fff');
-        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/), undefined);
+        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/), undefined, {});
         expect(mocks.removeSection).toHaveBeenCalledWith('section1');
         expect(mocks.renameSection).toHaveBeenCalledWith('section1', 'Chorus');
     });
@@ -114,7 +114,7 @@ describe('marker action handlers', () => {
             throw new Error('expected a removeMarker inverse');
         }
         expect(inverse.payload.markerId).toMatch(/^marker-/);
-        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', inverse.payload.markerId, undefined);
+        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', inverse.payload.markerId, undefined, {});
     });
 
     it('handleAddMarker honors a caller-supplied id', async () => {
@@ -126,7 +126,7 @@ describe('marker action handlers', () => {
         const desc = handleAddMarker.describe(action);
         await handleAddMarker.execute(action);
 
-        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', 'marker-fixed', undefined);
+        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', 'marker-fixed', undefined, {});
         expect(desc.inverseAction).toEqual({ type: 'removeMarker', payload: { markerId: 'marker-fixed' } });
     });
 
@@ -144,7 +144,7 @@ describe('marker action handlers', () => {
             throw new Error('expected a removeSection inverse');
         }
         expect(inverse.payload.sectionId).toMatch(/^section-/);
-        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId, undefined);
+        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId, undefined, {});
     });
 
     it('handleAddSection suppresses only an identity-bearing replay whose exact id exists', () => {
@@ -178,7 +178,7 @@ describe('marker action handlers', () => {
         expect(desc.label).toBe('Remove marker "Verse" at beat 8 (m1)');
         expect(desc.inverseAction).toEqual({
             type: 'addMarker',
-            payload: { beat: 8, name: 'Verse', markerId: 'm1', color: '#abc' },
+            payload: { beat: 8, name: 'Verse', markerId: 'm1', color: '#abc', index: 0 },
         });
         if (desc.inverseAction?.type !== 'addMarker') {
             throw new Error('expected an addMarker inverse');
@@ -186,7 +186,7 @@ describe('marker action handlers', () => {
 
         await handleAddMarker.execute(desc.inverseAction);
 
-        expect(mocks.addMarker).toHaveBeenCalledWith(8, 'Verse', 'm1', '#abc');
+        expect(mocks.addMarker).toHaveBeenCalledWith(8, 'Verse', 'm1', '#abc', { index: 0 });
     });
 
     it('handleRemoveMarker describes a null inverse when the marker is not found', () => {
@@ -214,7 +214,7 @@ describe('marker action handlers', () => {
         expect(desc.label).toBe('Remove section "Chorus" from beat 8 to beat 16 (s1)');
         expect(desc.inverseAction).toEqual({
             type: 'addSection',
-            payload: { startBeat: 8, endBeat: 16, name: 'Chorus', sectionId: 's1', color: '#def' },
+            payload: { startBeat: 8, endBeat: 16, name: 'Chorus', sectionId: 's1', color: '#def', index: 0 },
         });
         if (desc.inverseAction?.type !== 'addSection') {
             throw new Error('expected an addSection inverse');
@@ -222,7 +222,7 @@ describe('marker action handlers', () => {
 
         await handleAddSection.execute(desc.inverseAction);
 
-        expect(mocks.addSection).toHaveBeenCalledWith(8, 16, 'Chorus', 's1', '#def');
+        expect(mocks.addSection).toHaveBeenCalledWith(8, 16, 'Chorus', 's1', '#def', { index: 0 });
     });
 
     it('handleRenameSection describes an inverse restoring the previous name', () => {

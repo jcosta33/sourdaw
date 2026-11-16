@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::grinder::nam::native_admission::NativeNamPlan;

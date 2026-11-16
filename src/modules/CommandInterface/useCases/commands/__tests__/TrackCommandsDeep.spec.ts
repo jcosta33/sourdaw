@@ -3,8 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackCommands } from '../TrackCommands';
 
 const executeUserAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const { mockDuplicateTrack, mockRemoveTrack } = vi.hoisted(() => ({
-    mockDuplicateTrack: vi.fn(),
+const { mockRemoveTrack } = vi.hoisted(() => ({
     mockRemoveTrack: vi.fn(),
 }));
 const { mockTrackStore, mockGetSelectedTrackId } = vi.hoisted(() => ({
@@ -33,7 +32,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeUserAppAction,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    duplicateTrack: mockDuplicateTrack,
     removeTrack: mockRemoveTrack,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -73,15 +71,15 @@ describe('trackCommands — guarded action commands', () => {
         executeUserAppAction.mockReset().mockResolvedValue(undefined);
     });
 
-    it('duplicate-track calls duplicateTrack with the selected trackId', () => {
+    it('duplicate-track dispatches the duplicateTrack action with the selected trackId', () => {
         runAction('duplicate-track');
-        expect(mockDuplicateTrack).toHaveBeenCalledWith('t1');
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'duplicateTrack', payload: { trackId: 't1' } });
     });
 
     it('duplicate-track does nothing when no track is selected', () => {
         mockGetSelectedTrackId.mockReturnValue(null);
         runAction('duplicate-track');
-        expect(mockDuplicateTrack).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('delete-track dispatches the registered removeTrack action with the selected trackId', () => {

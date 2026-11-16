@@ -2,10 +2,11 @@ import { modulationStore } from '#/modules/Automation/stores';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
-import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type GeneratedMidiStateGuard } from '../events/arrangementClipSnapshots';
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { serializeClipSatelliteEntries, serializeProjectedClipSatelliteEntries } from '../stores/clipSatelliteState';
 import { getEnvelope } from '../stores/gainEnvelopeStore';
@@ -15,6 +16,7 @@ import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeCl
 import { serializeProjectedClipScopedAutomationLanes } from '../useCases/clip/serializeProjectedClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
+import { matchesCreatedTrackFingerprint } from './matchesCreatedTrackFingerprint';
 import { type ProjectedClipState } from './projectClipThroughPriorBatchActions';
 
 type IsGeneratedMidiStateCurrentInput = {
@@ -178,6 +180,17 @@ function resolveGuardedEntity(
     return { entity: track, clipIds: collectTrackClipIds(track) };
 }
 
+function matchesGuardedEntity(
+    entity: GuardedEntity['entity'],
+    entityType: 'clip' | 'track',
+    entityJson: string
+): boolean {
+    if (entityType === 'track') {
+        return matchesCreatedTrackFingerprint(entity, entityJson);
+    }
+    return matchesJsonFingerprint(entity, entityJson);
+}
+
 /**
  * Whether the generated entity still carries exactly the state its generation
  * left behind.
@@ -207,7 +220,7 @@ export function isGeneratedMidiStateCurrent({
     }
     const { entity, clipIds } = guarded;
 
-    if (!matchesJsonFingerprint(entity, guard.entityJson)) {
+    if (!matchesGuardedEntity(entity, entityType, guard.entityJson)) {
         return false;
     }
     if (

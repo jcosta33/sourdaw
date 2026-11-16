@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { prepareMidiClipGlueState } from '#/modules/MIDI/useCases';
-import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 
+import { type ClipGlueActionSnapshot } from '../../events/arrangementClipAppActions';
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';

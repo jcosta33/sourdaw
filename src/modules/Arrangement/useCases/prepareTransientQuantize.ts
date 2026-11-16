@@ -1,17 +1,17 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
-import {
-    type StripSilenceActionSnapshot,
-    type TransientQuantizeMoveSnapshot,
-    type TransientQuantizePlanSnapshot,
-    type TransientQuantizeSkipSnapshot,
-} from '#/utils/handlerContract';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 import { quantizeBeatToGrid } from '#/utils/Music/quantizeBeatToGrid';
 import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 import { detectTransients } from '#/utils/transientOnsetDetection';
 
+import { type TransientQuantizePlanSnapshot } from '../events/arrangementClipAppActions';
+import {
+    type StripSilenceActionSnapshot,
+    type TransientQuantizeMoveSnapshot,
+    type TransientQuantizeSkipSnapshot,
+} from '../events/arrangementClipSnapshots';
 import { type TempoTimeline } from '../models/TempoTimeline';
 import { type Clip, type Track } from '../models/Track';
 import { type WarpState } from '../models/WarpMarker';

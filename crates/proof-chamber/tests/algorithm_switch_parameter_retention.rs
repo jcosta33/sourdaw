@@ -47,7 +47,11 @@
 //!   selects before writing anything, so its replay would otherwise be live
 //!   code no test can see.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 
@@ -146,7 +150,13 @@ fn render_instance(instance: &mut ProofChamberInstance) -> Vec<f32> {
         let ptr = instance.process(&left, &right, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for i in 0..BLOCK {
-            output.push(unsafe { *ptr.add(i) });
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            output.push(unsafe { *slot });
         }
         index += BLOCK;
     }
@@ -484,44 +494,44 @@ fn the_replay_preserves_most_recent_write_order() {
 // First construction
 // ---------------------------------------------------------------------------
 
-/// What an untold constructor Plate must prove.
-///
-/// This file owns constructor/cache/algorithm-switch parity. It does not own
-/// Plate's independent historical render character, which is guarded by the
-/// Plate render-surface tests. The retained shape below is the cross-platform
-/// scalar contract for an untouched constructor Plate; the exact fine-structure
-/// contract is only same-process parity with the first explicit Plate selection
-/// while the cache is empty.
-///
-/// Moved once, by #1546, when the plate constructor's `damping` went from
-/// 0.0005 to 0.3. That is a deliberate voicing change, re-measured on this
-/// stimulus in the same commit as the constructor edit.
-/// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
-/// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
-/// midrange instead of 0.21 dB above it — measured in
-/// `tests/plate_default_damping.rs`, which pins the audible behaviour.
-///
-/// It does **not** mean existing projects sound different. `addDevice` writes
-/// the descriptor's `damping` into `Device.parameterValues` at add time and
-/// `projectTrackToLiveStrip` replays every stored value on load, so a saved
-/// project carrying 0.0005 still gets 0.0005 written over the constructor.
-/// Only a newly added Dutch Oven reaches this state.
-///
-/// Moved a second time, by #1547, and for the same reason as its sibling in
-/// `plate_parameter_surface.rs` — the two measure the same engine from two
-/// stimuli and move together. `DelayLine::read` and
-/// `EarlyReflections::process` now count back from the most recently written
-/// sample rather than from the slot after it, so a request for zero delay is
-/// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
-/// rendering 503 ms of silence, and it lengthens every delay in the engine by
-/// one sample on the way, which is why a stimulus that never writes `predelay`
-/// moves at all.
-///
-/// The retained render crosses platform `libm` implementations, so the stable
-/// contract is its readable shape plus an exact same-process comparison with
-/// the first explicit Plate selection below. Both paths use the same platform
-/// math; any constructor/empty-cache selection disagreement still moves a
-/// sample bit.
+// What an untold constructor Plate must prove.
+//
+// This file owns constructor/cache/algorithm-switch parity. It does not own
+// Plate's independent historical render character, which is guarded by the
+// Plate render-surface tests. The retained shape below is the cross-platform
+// scalar contract for an untouched constructor Plate; the exact fine-structure
+// contract is only same-process parity with the first explicit Plate selection
+// while the cache is empty.
+//
+// Moved once, by #1546, when the plate constructor's `damping` went from
+// 0.0005 to 0.3. That is a deliberate voicing change, re-measured on this
+// stimulus in the same commit as the constructor edit.
+// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
+// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
+// midrange instead of 0.21 dB above it — measured in
+// `tests/plate_default_damping.rs`, which pins the audible behaviour.
+//
+// It does **not** mean existing projects sound different. `addDevice` writes
+// the descriptor's `damping` into `Device.parameterValues` at add time and
+// `projectTrackToLiveStrip` replays every stored value on load, so a saved
+// project carrying 0.0005 still gets 0.0005 written over the constructor.
+// Only a newly added Dutch Oven reaches this state.
+//
+// Moved a second time, by #1547, and for the same reason as its sibling in
+// `plate_parameter_surface.rs` — the two measure the same engine from two
+// stimuli and move together. `DelayLine::read` and
+// `EarlyReflections::process` now count back from the most recently written
+// sample rather than from the slot after it, so a request for zero delay is
+// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
+// rendering 503 ms of silence, and it lengthens every delay in the engine by
+// one sample on the way, which is why a stimulus that never writes `predelay`
+// moves at all.
+//
+// The retained render crosses platform `libm` implementations, so the stable
+// contract is its readable shape plus an exact same-process comparison with
+// the first explicit Plate selection below. Both paths use the same platform
+// math; any constructor/empty-cache selection disagreement still moves a
+// sample bit.
 
 /// The render in three readable numbers.
 ///
@@ -539,7 +549,7 @@ fn the_replay_preserves_most_recent_write_order() {
 /// has always rendered. Measured on this stimulus, the peak moved from
 /// 9.8297787e-1 to 9.9530500e-1 and RMS from 1.7570771e-1 to 1.7399131e-1.
 const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
-    peak: 9.9530500e-1,
+    peak: 9.953_05e-1,
     rms: 1.7399131e-1,
     onset: 1,
 };

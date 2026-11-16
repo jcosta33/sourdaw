@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn publishing_a_compensation_aims_the_named_effect_at_the_declared_frame_count() {
         let (handle, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         let engine: Engine = Arc::new(Mutex::new(Some(handle)));
 
         publish_compensation(
@@ -517,6 +517,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
 
@@ -533,7 +534,7 @@ mod tests {
         let (engine_plugins, _runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let (handle, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         let engine: Engine = Arc::new(Mutex::new(Some(handle)));
 
         service_pending_restarts(&engine_plugins, &engine, &sink);

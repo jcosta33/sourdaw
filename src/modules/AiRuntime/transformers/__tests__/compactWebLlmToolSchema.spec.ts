@@ -13,7 +13,8 @@ import { getProjectContext } from '../../useCases/getProjectContext';
 import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../useCases/prepareCreativeInterpretationCatalog';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
-import { compactWebLlmToolSchema } from '../compactWebLlmToolSchema';
+import { compactWebLlmToolSchema, compactWebLlmToolSchemas } from '../compactWebLlmToolSchema';
+import { serializeWebLlmToolPlanningPrompt } from '../serializeWebLlmToolPlanningPrompt';
 
 registerDeviceEnginePorts();
 
@@ -77,12 +78,61 @@ function planningTool(name: string): ToolSchema {
     return tool;
 }
 
+function compactedParametersOf(tool: ToolSchema): { properties: Record<string, unknown> } & Record<string, unknown> {
+    const parameters = compactWebLlmToolSchema(tool).function.parameters;
+    if (parameters === undefined || !isRecord(parameters.properties)) {
+        throw new Error(`${tool.function.name} has no parameters`);
+    }
+    return { ...parameters, properties: parameters.properties };
+}
+
 function compactedParameters(name: string): Record<string, unknown> {
     const parameters = compactWebLlmToolSchema(planningTool(name)).function.parameters;
     if (parameters === undefined) {
         throw new Error(`${name} has no parameters`);
     }
     return parameters;
+}
+
+/**
+ * Every planning tool compacted together, as one prompt spells them, each read with the shared
+ * definitions merged into its own `$defs`: the schema a reader of that prompt holds for the tool.
+ */
+function sharedCompactedTools(tools: readonly ToolSchema[] = allPlanningTools()): Map<string, Record<string, unknown>> {
+    const { sharedDefinitions, tools: compacted } = compactWebLlmToolSchemas(tools);
+    return new Map(
+        compacted.map((tool) => {
+            const parameters = tool.function.parameters ?? {};
+            const ownDefinitions = isRecord(parameters.$defs) ? parameters.$defs : {};
+            return [tool.function.name, { ...parameters, $defs: { ...ownDefinitions, ...sharedDefinitions } }];
+        })
+    );
+}
+
+function sharedCompactedParameters(name: string): Record<string, unknown> {
+    const parameters = sharedCompactedTools().get(name);
+    if (parameters === undefined) {
+        throw new Error(`${name} is not a planning tool`);
+    }
+    return parameters;
+}
+
+function allPlanningTools(): ToolSchema[] {
+    return [
+        ...getPlanningProviderToolSchemas(),
+        jointInterpretationSchema(),
+        createAnswerInterpretationToolSchema(
+            prepareAnswerInterpretationCatalog({
+                prompt: 'Describe the project',
+                context: getProjectContext(),
+                projectRevision: 'revision',
+            })
+        ),
+    ];
+}
+
+function occurrences(text: string, fragment: string): number {
+    return text.split(fragment).length - 1;
 }
 
 /** A node the prompt replaced with `{ "$ref": "#/$defs/dN" }` stands for the definition it names. */
@@ -366,6 +416,27 @@ describe('compactWebLlmToolSchema', () => {
         expect(dropped).toEqual([]);
     });
 
+    // Red when the shared definitions lose or merge anything: each tool read with them merged in
+    // must keep every fact its full schema states.
+    it('keeps every description and validity keyword of every planning tool through the shared definitions', () => {
+        const tools = allPlanningTools();
+        const shared = sharedCompactedTools(tools);
+        const dropped: string[] = [];
+        let checked = 0;
+        for (const tool of tools) {
+            const compacted = shared.get(tool.function.name);
+            for (const fact of collectFacts(tool.function.parameters, [])) {
+                checked += 1;
+                if (!survives(compacted, fact)) {
+                    dropped.push(`${tool.function.name}: ${fact.keyword} at ${fact.path.join('.')}`);
+                }
+            }
+        }
+
+        expect(checked).toBeGreaterThan(450);
+        expect(dropped).toEqual([]);
+    });
+
     it('keeps the unit and range text a pan and a gain handler rely on', () => {
         const pan = JSON.stringify(compactWebLlmToolSchema(planningTool('setTrackPan')));
         const gain = JSON.stringify(compactWebLlmToolSchema(planningTool('setTrackGain')));
@@ -383,6 +454,91 @@ describe('compactWebLlmToolSchema', () => {
         expect(text).toContain('"$ref":"#/$defs/');
         // The predicate sits under both `all` and `any` in the full schema and is spelled once here.
         expect(text.split('"hasDeviceType"')).toHaveLength(2);
+    });
+
+    // Red when a sub-schema two tools repeat is spelled in each: the proposal list is the same
+    // schema under command.batch.propose and analysis.measure, and the prompt carries it once.
+    it('defines a sub-schema two tools repeat once in the shared definitions and references it from both', () => {
+        const proposal = planningTool('command.batch.propose');
+        const measure = planningTool('analysis.measure');
+        const { sharedDefinitions, tools } = compactWebLlmToolSchemas([proposal, measure]);
+        const listDescription = 'Version 1 bounded semantic command list.';
+
+        expect(JSON.stringify(proposal)).toContain(listDescription);
+        expect(JSON.stringify(measure)).toContain(listDescription);
+        expect(occurrences(JSON.stringify(sharedDefinitions), listDescription)).toBe(1);
+        for (const tool of tools) {
+            const text = JSON.stringify(tool.function.parameters);
+            expect(text, `${tool.function.name} refers to the shared list`).toMatch(/"\$ref":"#\/\$defs\/s\d+"/);
+            expect(text, `${tool.function.name} no longer spells the list`).not.toContain(listDescription);
+        }
+        // The predicate group the list repeats inside itself is spelled once there as well.
+        expect(occurrences(JSON.stringify(sharedDefinitions), '"hasDeviceType"')).toBe(1);
+    });
+
+    it('serializes the shared definitions once, before the tools, with the line saying how tools refer to them', () => {
+        const prompt = serializeWebLlmToolPlanningPrompt('system', [
+            planningTool('command.batch.propose'),
+            planningTool('analysis.measure'),
+        ]);
+        const [beforeTools, toolLines] = prompt.split('Available tools:\n');
+
+        expect(occurrences(prompt, 'Version 1 bounded semantic command list.')).toBe(1);
+        expect(beforeTools).toContain('Version 1 bounded semantic command list.');
+        expect(beforeTools).toContain('{"$ref":"#/$defs/<name>"} stands for the definition of that name');
+        expect(toolLines).toMatch(/"\$ref":"#\/\$defs\/s\d+"/);
+    });
+
+    it('serializes no shared definitions for tools that share nothing', () => {
+        const prompt = serializeWebLlmToolPlanningPrompt('system', [planningTool('command.batch.decline')]);
+
+        expect(prompt).not.toContain('Shared schema definitions');
+        expect(prompt).toContain(
+            `- command.batch.decline: ${planningTool('command.batch.decline').function.description} ${JSON.stringify(compactedParameters('command.batch.decline'))}`
+        );
+    });
+
+    // Red when sub-schemas that differ anywhere are merged: one word of one description apart, each
+    // stays in its own tool.
+    it('shares only byte-identical sub-schemas and keeps a shape that differs anywhere per tool', () => {
+        function shape(description: string) {
+            return {
+                type: 'object',
+                properties: {
+                    limit: { type: 'integer', minimum: 1, maximum: 64, description },
+                    cursor: { type: 'string' },
+                },
+                additionalProperties: false,
+            };
+        }
+        function tool(name: string, description: string): ToolSchema {
+            return {
+                type: 'function',
+                function: {
+                    name,
+                    description: name,
+                    parameters: { type: 'object', properties: { page: shape(description) }, required: [] },
+                },
+            };
+        }
+
+        const differing = compactWebLlmToolSchemas([
+            tool('a', 'How many entries one page holds.'),
+            tool('b', 'How many entries a page holds.'),
+        ]);
+        const identical = compactWebLlmToolSchemas([
+            tool('a', 'How many entries one page holds.'),
+            tool('b', 'How many entries one page holds.'),
+        ]);
+
+        expect(differing.sharedDefinitions).toEqual({});
+        expect(differing.tools.map((compacted) => compacted.function.parameters)).toEqual([
+            compactedParametersOf(tool('a', 'How many entries one page holds.')),
+            compactedParametersOf(tool('b', 'How many entries a page holds.')),
+        ]);
+        expect(Object.values(identical.sharedDefinitions)).toEqual([
+            compactedParametersOf(tool('a', 'How many entries one page holds.')).properties.page,
+        ]);
     });
 
     it('keeps the selector quantity unit that a proposal list item is refused without', () => {
@@ -466,6 +622,10 @@ describe('compactWebLlmToolSchema', () => {
             expect(matchesJsonSchema(refused, compactedSchema)).toBe(false);
             expect(matchesJsonSchema(admitted, full)).toBe(true);
             expect(matchesJsonSchema(admitted, compactedSchema)).toBe(true);
+            const shared = sharedCompactedParameters(tool);
+            const sharedSchema = inlineDefinitions(shared, shared);
+            expect(matchesJsonSchema(refused, sharedSchema)).toBe(false);
+            expect(matchesJsonSchema(admitted, sharedSchema)).toBe(true);
         });
     });
 
@@ -512,6 +672,8 @@ describe('recipe preview source in the local prompt', () => {
             const expected = recipeCallId === 'expand-1';
             expect(matchesJsonSchema(args, full)).toBe(expected);
             expect(matchesJsonSchema(args, compact)).toBe(expected);
+            const shared = sharedCompactedParameters('analysis.measure');
+            expect(matchesJsonSchema(args, inlineDefinitions(shared, shared))).toBe(expected);
         }
     );
 });

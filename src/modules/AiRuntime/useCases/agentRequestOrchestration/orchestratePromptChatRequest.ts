@@ -53,8 +53,10 @@ import { describeInitialMeasurementProgress } from './describeInitialMeasurement
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
+import { measureAdoptedRecipeProposal } from './measureAdoptedRecipeProposal';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { proposeNextScheduledBatch } from './proposeNextScheduledBatch';
+import { readAdoptedRecipeMetricState } from './readAdoptedRecipeMetricState';
 import { revertThreadCommit } from './revertThreadCommit';
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 import { refinedProposalSupersession } from './supersedeRefinedProposal';
@@ -567,6 +569,12 @@ async function completeRevertedRun(input: {
     updateChatMessage(assistantMessageId, {
         content: reverted.warning === null ? undone : `${undone}\n\nWarning: ${reverted.warning}`,
     });
+    try {
+        request.options?.onResumedPlanAccepted?.();
+    } catch (error) {
+        // The undo already landed and is recorded, so a decision that cannot be selected must not fail its run.
+        logger.error(new Error('Resumed undo landed but its decision could not be selected', { cause: error }));
+    }
 }
 
 async function dispatchPromptPlan(input: {
@@ -640,6 +648,10 @@ async function dispatchPromptPlan(input: {
             outcome: result.planningOutcome,
         });
         return undefined;
+    }
+    // Only the Prompt Bar asks the planner for a hand-off; reaching here means a planner defect, never no match.
+    if (result.planningOutcome?.kind === 'chat-hand-off') {
+        throw new Error('The chat planned its own request as a hand-off to the chat.');
     }
     if (request.options?.resume && result.actions.length === 0) {
         throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
@@ -769,6 +781,27 @@ async function dispatchPromptPlan(input: {
         // compiles a batch for approval, and preview and plan refuse a refinement before this point.
         const refinedProposal = refinement?.status === 'admitted' ? refinement.confirmation : null;
         if (compiledActionExecution.requiresConfirmation) {
+            const adoptedState = readAdoptedRecipeMetricState(compiledActionExecution);
+            const measurement =
+                adoptedState === null
+                    ? null
+                    : await measureAdoptedRecipeProposal({
+                          runId: admission.runId,
+                          assistantMessageId,
+                          prompt: request.userText,
+                          context,
+                          revision: projectRevision,
+                          compiled: compiledActionExecution,
+                          state: adoptedState,
+                      });
+            if (measurement?.status === 'stopped') {
+                updateChatMessage(assistantMessageId, {
+                    pendingActionConfirmationStatus: 'cancelled',
+                    content: 'Cancelled preparation of the proposal.',
+                });
+                return undefined;
+            }
+            const measured = measurement?.status === 'measured' ? measurement : null;
             const confirmationId = persistPromptActionConfirmation({
                 runId: admission.runId,
                 prompt: request.userText,
@@ -777,16 +810,20 @@ async function dispatchPromptPlan(input: {
                 actionLabels: confirmationDescription.actionLabels,
                 commandEnvelopes,
                 commandBatch,
-                agentApproval: compiledActionExecution.agentApproval,
+                agentApproval: measured?.agentApproval ?? compiledActionExecution.agentApproval,
                 affectedIds: confirmationDescription.affectedIds,
                 protectedUnchanged: confirmationDescription.protectedUnchanged,
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
-                metricGoalState: compiledActionExecution.metricGoalState,
+                metricGoalState: measured?.metricGoalState ?? compiledActionExecution.metricGoalState,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
                 protectionFacts,
+                briefReadings:
+                    result.briefReadings === undefined
+                        ? undefined
+                        : { ...result.briefReadings, trustCeiling: request.options?.trustCeiling ?? null },
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,

@@ -1,8 +1,8 @@
 /// MasterSynth — top-level Fermenter engine.
 /// Manages layers (each with their own voice pool), processes MIDI, renders audio blocks.
 use super::effects::{
-    Compressor, Distortion, FdnReverb, ParametricEq, PlateReverb, StereoChorus, StereoDelay,
-    StereoPhaser, StereoWidth,
+    Compressor, CompressorSettings, Distortion, FdnReverb, ParametricEq, PlateReverb, StereoChorus,
+    StereoDelay, StereoPhaser, StereoWidth,
 };
 use super::layer::Layer;
 use super::oscillator::Wavetable;
@@ -562,11 +562,13 @@ impl MasterSynth {
             self.compressor.process_block(
                 &mut left[..block_size],
                 &mut right[..block_size],
-                self.comp_threshold,
-                self.comp_ratio,
-                self.comp_attack,
-                self.comp_release,
-                comp_mix,
+                CompressorSettings {
+                    threshold: self.comp_threshold,
+                    ratio: self.comp_ratio,
+                    attack: self.comp_attack,
+                    release: self.comp_release,
+                    mix: comp_mix,
+                },
                 self.sample_rate,
             );
         }

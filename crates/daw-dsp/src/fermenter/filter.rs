@@ -78,6 +78,12 @@ impl SvfFilter {
     }
 }
 
+impl Default for SvfFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Fast tanh approximation for saturation.
 #[inline]
 pub fn fast_tanh(x: f32) -> f32 {
@@ -126,6 +132,12 @@ impl MoogLadder {
             x = y;
         }
         x
+    }
+}
+
+impl Default for MoogLadder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -186,6 +198,12 @@ impl DiodeLadder {
         } else {
             fast_tanh(x / (2.0 * vt)) * 2.0 * vt
         }
+    }
+}
+
+impl Default for DiodeLadder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -290,6 +308,12 @@ impl FormantFilter {
     }
 }
 
+impl Default for FormantFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Korg MS-20 style HP → LP filter.
 ///
 /// Both two-pole sections use topology-preserving trapezoidal integrators. This
@@ -377,6 +401,12 @@ impl Ms20Filter {
     }
 }
 
+impl Default for Ms20Filter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Oberheim SEM filter — 12dB/oct state variable with continuous LP→BP→Notch→HP morph.
 /// Gentler slope than Moog, creamy character from internal soft-clipping.
 #[derive(Clone)]
@@ -445,6 +475,12 @@ impl SemFilter {
             let t = (m - 0.5) * 2.0;
             notch * (1.0 - t) + hp * t
         }
+    }
+}
+
+impl Default for SemFilter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

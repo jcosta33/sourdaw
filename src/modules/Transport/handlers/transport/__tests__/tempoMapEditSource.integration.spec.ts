@@ -699,9 +699,13 @@ describe('tempo edits preserve the physical audio programme', () => {
             throw new Error('Expected real tempo admission');
         }
         handlers.setTempo.materializeCommandArguments(action);
+        const setTempo = handlers.setTempo;
+        if (setTempo.previewExecution !== 'isolated-project') {
+            throw new Error('Expected synchronous project tempo write');
+        }
         const transaction = runWithAutomergeStorageTransaction(undefined, () => {
-            handlers.setCountInBars.execute({ type: 'setCountInBars', payload: { bars: 2 } });
-            handlers.setTempo.execute(action);
+            expect(handlers.setCountInBars.execute({ type: 'setCountInBars', payload: { bars: 2 } })).toBeUndefined();
+            setTempo.execute(action);
         });
         transaction.commit();
         expect(transportStore.value).toMatchObject({ tempo: 240, countInBars: 2 });

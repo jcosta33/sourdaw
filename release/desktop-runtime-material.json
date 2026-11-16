@@ -4,8 +4,8 @@
     "artifact": "darwin-arm64",
     "runtimeManifest": "ELECTRON-SOURCES.json",
     "requiredMaterial": {
-        "electronSource": "electron-3025e0491e87674c112f7a7d2646292c0efa4599.tar.gz",
-        "electronCommit": "electron-3025e0491e87674c112f7a7d2646292c0efa4599.commit",
+        "electronSource": "electron-9ee9e7718172287d068cee397097c2d79a137eec.tar.gz",
+        "electronCommit": "electron-9ee9e7718172287d068cee397097c2d79a137eec.commit",
         "ffmpegSource": "ffmpeg-9db86ce5b5b454dfc96c435f9f0723012980c37f.tar.gz",
         "ffmpegCommit": "ffmpeg-9db86ce5b5b454dfc96c435f9f0723012980c37f.commit",
         "ffmpegBuild": "ffmpeg-build-material.json",
@@ -13,7 +13,7 @@
     },
     "electron": {
         "repository": "https://github.com/electron/electron",
-        "revision": "3025e0491e87674c112f7a7d2646292c0efa4599",
+        "revision": "9ee9e7718172287d068cee397097c2d79a137eec",
         "buildInputs": [
             ".github/actions/build-electron/action.yml",
             "DEPS",

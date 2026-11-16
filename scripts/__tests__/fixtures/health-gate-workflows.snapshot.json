@@ -129,7 +129,7 @@
         "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -289,7 +289,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -343,7 +343,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run shard",
@@ -687,6 +687,10 @@
             "run": "pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2"
           },
           {
+            "name": "Size baseline only shrinks",
+            "run": "node scripts/checkSizeBaselineShrinks.ts"
+          },
+          {
             "name": "App types",
             "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm typecheck"
@@ -961,7 +965,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -999,7 +1003,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run offline smoke set",
@@ -1238,6 +1242,13 @@
               "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
               "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
+          },
+          {
+            "name": "Lint the Windows audio crates",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
+            "run": "cargo clippy --package daw-engine --package daw-plugin-host --all-targets --all-features"
           },
           {
             "name": "Test the audio crates",
@@ -2003,7 +2014,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2060,7 +2071,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run shard",
@@ -2200,7 +2211,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2257,7 +2268,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run shard with coverage",

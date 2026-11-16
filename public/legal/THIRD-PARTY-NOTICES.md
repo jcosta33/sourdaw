@@ -2,9 +2,9 @@
 
 ## Desktop runtime
 
-Desktop builds bundle [Electron 45.3.1](https://github.com/electron/electron/tree/3025e0491e87674c112f7a7d2646292c0efa4599)
+Desktop builds bundle [Electron 45.3.2](https://github.com/electron/electron/tree/9ee9e7718172287d068cee397097c2d79a137eec)
 under the MIT license. That release embeds
-[Chromium 156.0.8078.96](https://chromium.googlesource.com/chromium/src/+/2ad9b7f5a86846e0b264090723a6a78964bb84c4)
+[Chromium 156.0.8078.100](https://chromium.googlesource.com/chromium/src/+/46876a0c2df3492ed67a8846950ba6d37170b58c)
 and [Node v24.22.2](https://github.com/nodejs/node/tree/f7f273a9bb6445f6f7fb6349105e7532972045fb).
 Its media runtime includes
 [FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/9db86ce5b5b454dfc96c435f9f0723012980c37f)
@@ -148,6 +148,18 @@ and build log. MLC's default TVM submodule differs from the publisher-named TVM 
 supports an explicit TVM_SOURCE_DIR, but the actual builder environment is not attested. Binary byte
 identity, publisher-named MLC-LLM/TVM sources and the nested TIRx/FFI source pins are proven; the exact
 Qwen source/license chain and complete build-input provenance are not.
+
+## WebLLM Llama model
+
+Built with Llama. Web and desktop builds can download one pinned MLC-format conversion of Meta
+Llama 3.1 70B Instruct for browser-local WebLLM inference, offered as the Large local model on
+machines with enough memory. Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright
+© Meta Platforms, Inc. All Rights Reserved. The agreement is in
+[Llama-3.1-LICENSE.txt](./Llama-3.1-LICENSE.txt), the Acceptable Use Policy it incorporates is in
+[Llama-3.1-ACCEPTABLE-USE-POLICY.txt](./Llama-3.1-ACCEPTABLE-USE-POLICY.txt), and the attribution
+record is in [Llama-NOTICE.txt](./Llama-NOTICE.txt). The conversion's card attributes it to a Llama 3.1
+70B Instruct model but does not map it to an exact checkpoint revision. It runs on the same pinned
+WebGPU library repository as the Qwen models above.
 
 ## Plugin interfaces
 

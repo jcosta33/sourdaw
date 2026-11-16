@@ -31,8 +31,18 @@ fn fixture_pcm(frames: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Copy `frames` samples out of one of a `CrumbsInstance`'s output channels.
+///
+/// # Safety
+///
+/// `ptr` must point to `frames` consecutive initialised `f32` values that stay
+/// allocated and unmodified until this function returns.
 unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
-    std::slice::from_raw_parts(ptr, frames).to_vec()
+    // SAFETY: the caller guarantees, per this function's `# Safety` section, that `ptr`
+    // addresses `frames` initialised `f32`s that outlive and are not mutated during this
+    // call; `f32` alignment holds for pointers into the instance's `Vec<f32>`. The slice
+    // is copied by `to_vec` and dropped within the statement.
+    unsafe { std::slice::from_raw_parts(ptr, frames) }.to_vec()
 }
 
 fn peak(samples: &[f32]) -> f32 {
@@ -113,7 +123,14 @@ fn a_note_at_the_root_renders_the_loaded_sample_frame_for_frame() {
     // 8-point sinc collapses to the sample at the integer frame exactly.
     instance.note_on(60, 100);
 
+    // SAFETY: `process` returns the start of the left channel of `output_buf`, which
+    // `CrumbsInstance::new` allocates and zero-initialises at `2 * MAX_BLOCK_SIZE` (4096
+    // per channel) and nothing resizes; `BLOCK` (128) <= 4096, and nothing mutates the
+    // instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+    // SAFETY: `get_right_ptr` is `output_buf` offset by `MAX_BLOCK_SIZE`, the start of the
+    // 4096-sample right channel inside the same allocation; `BLOCK` <= 4096 and nothing
+    // mutates the instance during the copy.
     let right = unsafe { read_channel(instance.get_right_ptr(), BLOCK) };
 
     assert_proportional_to(&left, &pcm[..BLOCK], "left channel at unity rate");
@@ -132,7 +149,12 @@ fn playback_continues_across_block_boundaries_instead_of_restarting() {
     let mut instance = instance_with_fixture(&pcm);
     instance.note_on(60, 100);
 
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let _first = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+    // SAFETY: as above, for the second `process` call; the buffer is the same allocation
+    // and `BLOCK` <= 4096.
     let second = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     // The second block must be the *next* 128 frames. A wrapper that rebuilt
@@ -147,6 +169,9 @@ fn an_octave_above_the_root_reads_the_sample_at_double_rate() {
 
     instance.note_on(72, 100);
 
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     // Rate 2.0 lands on even frames exactly, so the expected block is every
@@ -177,6 +202,9 @@ fn wider_ratio_kernels_keep_whole_frame_reads_accurate() {
 
         instance.note_on(note, 100);
 
+        // SAFETY: `process` returns the start of the 4096-sample left channel of
+        // `output_buf` (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128)
+        // <= 4096 and nothing mutates the instance during the copy.
         let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
         // Output frame i reads source frame i*stride exactly; from
@@ -219,6 +247,9 @@ fn tune_of_plus_twelve_semitones_reads_the_sample_at_double_rate() {
     instance.set_param("tune", 12.0);
     instance.note_on(60, 100);
 
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     // +12 st is the transposition note 72 asks for above, so the expected block
@@ -239,6 +270,9 @@ fn tune_of_minus_twelve_semitones_reads_the_sample_at_half_rate() {
     instance.set_param("tune", -12.0);
     instance.note_on(60, 100);
 
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     // Rate 0.5 puts every second output frame on an exact source frame and the
@@ -260,11 +294,17 @@ fn tune_is_bounded_at_the_twenty_four_semitones_the_knob_travels() {
     let mut at_limit = instance_with_fixture(&pcm);
     at_limit.set_param("tune", 24.0);
     at_limit.note_on(60, 100);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let bounded = unsafe { read_channel(at_limit.process(BLOCK as u32), BLOCK) };
 
     let mut beyond_limit = instance_with_fixture(&pcm);
     beyond_limit.set_param("tune", 100.0);
     beyond_limit.note_on(60, 100);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let clamped = unsafe { read_channel(beyond_limit.process(BLOCK as u32), BLOCK) };
 
     // +24 st is rate 4, which reads every fourth source frame; the fixture is
@@ -305,6 +345,9 @@ fn a_stack_keeps_its_detune_and_its_master_tune_at_the_same_time() {
     stacked.set_param("detuneSpread", 40.0);
     stacked.set_param("tune", 12.0);
     stacked.note_on(60, 100);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let stacked_out = unsafe { read_channel(stacked.process(BLOCK as u32), BLOCK) };
 
     // At a spread of 40 the two voices sit 20 cents either side of the master
@@ -315,12 +358,18 @@ fn a_stack_keeps_its_detune_and_its_master_tune_at_the_same_time() {
     let mut one_voice = instance_with_fixture(&pcm);
     one_voice.set_param("tune", 12.0);
     one_voice.note_on(60, 100);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let one_voice_out = unsafe { read_channel(one_voice.process(BLOCK as u32), BLOCK) };
 
     let mut untuned_stack = instance_with_fixture(&pcm);
     untuned_stack.set_param("stackCount", 2.0);
     untuned_stack.set_param("detuneSpread", 40.0);
     untuned_stack.note_on(60, 100);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let untuned_stack_out = unsafe { read_channel(untuned_stack.process(BLOCK as u32), BLOCK) };
 
     assert!(
@@ -382,6 +431,9 @@ fn the_master_tune_transposes_a_drum_pad_as_well_as_a_melodic_note() {
     instance.set_param("tune", 12.0);
     instance.note_on(36, 100);
 
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     // A pad carries its own AHDSR, and `PadConfig` ships a 1 ms attack that the
@@ -403,6 +455,9 @@ fn a_note_with_no_sample_selected_renders_silence_rather_than_noise() {
     let mut instance = CrumbsInstance::new(SAMPLE_RATE);
 
     instance.note_on(60, 127);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     assert_eq!(peak(&left), 0.0, "an empty pool produced output");
@@ -413,6 +468,9 @@ fn the_output_block_is_replaced_each_call_rather_than_accumulated() {
     let pcm = fixture_pcm(4 * BLOCK);
     let mut instance = instance_with_fixture(&pcm);
     instance.note_on(60, 100);
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let first_peak = peak(&unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) });
 
     instance.all_sound_off();
@@ -420,6 +478,9 @@ fn the_output_block_is_replaced_each_call_rather_than_accumulated() {
     for _ in 0..4 {
         instance.process(BLOCK as u32);
     }
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let after_silence = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     assert!(
@@ -452,7 +513,13 @@ fn master_gain_scales_the_rendered_block() {
         loud.process(BLOCK as u32);
         quiet.process(BLOCK as u32);
     }
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let loud_block = unsafe { read_channel(loud.process(BLOCK as u32), BLOCK) };
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let quiet_block = unsafe { read_channel(quiet.process(BLOCK as u32), BLOCK) };
 
     let ratio = peak(&quiet_block) / peak(&loud_block);
@@ -471,6 +538,9 @@ fn an_unknown_parameter_name_is_ignored_rather_than_silencing_the_engine() {
     instance.set_mode("noSuchMode");
     instance.note_on(60, 100);
 
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
     assert_proportional_to(&left, &pcm[..BLOCK], "left channel after an unknown param");
@@ -520,6 +590,9 @@ fn peak_at_resonance_knob(knob_position: f32) -> f32 {
     for _ in 0..SETTLE_BLOCKS {
         instance.process(BLOCK as u32);
     }
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     peak(&unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) })
 }
 
@@ -534,6 +607,9 @@ fn peak_with_filter_out_of_circuit() -> f32 {
     for _ in 0..SETTLE_BLOCKS {
         instance.process(BLOCK as u32);
     }
+    // SAFETY: `process` returns the start of the 4096-sample left channel of `output_buf`
+    // (allocated in `CrumbsInstance::new`, never resized); `BLOCK` (128) <= 4096 and
+    // nothing mutates the instance during the copy.
     peak(&unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) })
 }
 
@@ -669,7 +745,14 @@ fn a_stereo_sample_keeps_its_channels_apart() {
     instance.set_param("attack", 0.0);
     instance.note_on(60, 100);
 
+    // SAFETY: `process` returns the start of the left channel of `output_buf`, allocated
+    // and zero-initialised at `2 * MAX_BLOCK_SIZE` (4096 per channel) in
+    // `CrumbsInstance::new` and never resized; `BLOCK` (128) <= 4096 and nothing mutates
+    // the instance during the copy.
     let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+    // SAFETY: `get_right_ptr` is `output_buf` offset by `MAX_BLOCK_SIZE`, the start of the
+    // 4096-sample right channel inside the same allocation; `BLOCK` <= 4096 and nothing
+    // mutates the instance during the copy.
     let right = unsafe { read_channel(instance.get_right_ptr(), BLOCK) };
 
     assert_proportional_to(&left, &mono[..BLOCK], "left channel of a stereo sample");

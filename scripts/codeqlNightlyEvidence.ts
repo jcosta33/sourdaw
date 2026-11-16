@@ -339,32 +339,45 @@ function ghArtifact(token: string, id: number, runGh: GhRead): Buffer {
     return output;
 }
 
+/** Port reads are synchronous `gh` calls; a refused input or response still rejects, never throws. */
+function settle<Value>(read: () => Value): Promise<Value> {
+    return new Promise((resolve) => {
+        resolve(read());
+    });
+}
+
 export function githubEvidencePort(token: string, runGh: GhRead = execGh): EvidencePort {
     const prefix = `repos/${REPOSITORY}`;
     return {
-        getRun: async (id) => ghJson(token, `${prefix}/actions/runs/${integer(id, 'run ID')}`, runGh),
-        compareMain: async (headSha) => ghJson(token, `${prefix}/compare/${sha(headSha, 'head SHA')}...main`, runGh),
-        listArtifacts: async (id) =>
-            ghPages(
-                token,
-                `${prefix}/actions/runs/${integer(id, 'run ID')}/artifacts?per_page=100`,
-                runGh,
-                'artifacts'
+        getRun: (id) => settle(() => ghJson(token, `${prefix}/actions/runs/${integer(id, 'run ID')}`, runGh)),
+        compareMain: (headSha) =>
+            settle(() => ghJson(token, `${prefix}/compare/${sha(headSha, 'head SHA')}...main`, runGh)),
+        listArtifacts: (id) =>
+            settle(() =>
+                ghPages(
+                    token,
+                    `${prefix}/actions/runs/${integer(id, 'run ID')}/artifacts?per_page=100`,
+                    runGh,
+                    'artifacts'
+                )
             ),
-        downloadArtifact: async (id) => ghArtifact(token, id, runGh),
-        listJobs: async (id, attempt) =>
-            ghPages(
-                token,
-                `${prefix}/actions/runs/${integer(id, 'run ID')}/attempts/${integer(attempt, 'attempt')}/jobs?per_page=100`,
-                runGh,
-                'jobs'
+        downloadArtifact: (id) => settle(() => ghArtifact(token, id, runGh)),
+        listJobs: (id, attempt) =>
+            settle(() =>
+                ghPages(
+                    token,
+                    `${prefix}/actions/runs/${integer(id, 'run ID')}/attempts/${integer(attempt, 'attempt')}/jobs?per_page=100`,
+                    runGh,
+                    'jobs'
+                )
             ),
-        listAnalyses: async (ref) => {
-            if (ref !== 'refs/heads/main') {
-                throw new Error('Unsupported analysis ref');
-            }
-            return ghPages(token, `${prefix}/code-scanning/analyses?ref=refs%2Fheads%2Fmain&per_page=100`, runGh);
-        },
+        listAnalyses: (ref) =>
+            settle(() => {
+                if (ref !== 'refs/heads/main') {
+                    throw new Error('Unsupported analysis ref');
+                }
+                return ghPages(token, `${prefix}/code-scanning/analyses?ref=refs%2Fheads%2Fmain&per_page=100`, runGh);
+            }),
     };
 }
 

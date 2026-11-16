@@ -46,6 +46,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     summarizeFeatures: summarizeFeaturesMock,
+    getAgentMeasurementMetricIds: () => [],
 }));
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({

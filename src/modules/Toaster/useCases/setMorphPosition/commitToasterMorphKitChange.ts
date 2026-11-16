@@ -1,5 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { isAppActionConflictError } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectIdentity } from '#/modules/Project/stores';
 
@@ -7,9 +8,18 @@ import { type ToasterKit } from '../../models/ToasterKit';
 import { markToasterKitCommitted } from '../../models/ToasterKitCommitMarkers';
 import { toToasterKitState } from '../../models/ToasterKitState';
 import { captureToasterDeviceLifetime, toasterStore } from '../../stores/toasterStore';
+import { toasterRefusalEpisodes } from '../toasterRefusalEpisodes';
 
 type MorphQueue = { tail: Promise<void>; lastCommittedKit: ToasterKit | null };
 const morphQueues = new Map<string, MorphQueue>();
+
+/** The reason the commit guard refuses a morph whose kit changed under it. */
+const STALE_MORPH_AUTHORITY = 'Toaster kit changed before morph commit';
+
+/** The guard's own abort, which is the guard doing its job rather than a failure. */
+function isStaleMorphAuthority(error: unknown): boolean {
+    return isAppActionConflictError(error) && error.reason === STALE_MORPH_AUTHORITY;
+}
 
 /**
  * Morph gestures write document truth before changing the session projection.
@@ -85,12 +95,13 @@ async function commitCurrentToasterMorphKitChange(
         resolveEligibleDeviceWriteTarget(deviceId).status === 'eligible';
     let committed = false;
     try {
-        await executeAppAction(
+        const outcome = await toasterRefusalEpisodes.execute(
+            deviceId,
             { type: 'setDeviceState', payload: { deviceId, state: toToasterKitState(nextKit) } },
             {
                 skipMacroRecording: true,
                 shouldExecute: stillCurrent,
-                authorizeFirstHandler: () => (stillCurrent() ? null : 'Toaster kit changed before morph commit'),
+                authorizeFirstHandler: () => (stillCurrent() ? null : STALE_MORPH_AUTHORITY),
                 onCommitted: () => {
                     committed = true;
                     const current = toasterStore.value?.[deviceId];
@@ -103,7 +114,20 @@ async function commitCurrentToasterMorphKitChange(
                 },
             }
         );
-    } catch {
+        // The warning told the user edits are not saved until the project can be changed. The
+        // morph is kept in the session like any other kit edit, and not marked committed, so the
+        // episode's admission re-commit saves it once the project can be changed.
+        const current = toasterStore.value?.[deviceId];
+        if (outcome === 'refused' && current && stillCurrent()) {
+            toasterStore.set({ ...toasterStore.value, [deviceId]: { ...current, kit: nextKit } });
+            queue.lastCommittedKit = nextKit;
+        }
+    } catch (error) {
+        // A storage conflict (a peer write landing before the commit) drops the morph too, so only
+        // the guard's own abort stays quiet.
+        if (!isStaleMorphAuthority(error)) {
+            logger.error(new Error('Toaster morph commit failed', { cause: error }));
+        }
         return committed;
     }
     return committed;

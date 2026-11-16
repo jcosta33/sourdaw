@@ -7,6 +7,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { type TakeLane } from '../../models/TakeLane';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { decodeTrackSnapshot, type Track } from '../../stores/trackStore';
@@ -17,6 +18,7 @@ import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip'
 import { refreshToasterPadBindings } from '../../useCases/refreshToasterPadBindings';
 import { setTrackState } from '../../useCases/setTrackState';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
+import { forgetDiscardedPluginStates, overlayDiscardedPluginStates } from '../track/discardedPluginStateCarry';
 
 /**
  * Inverse-action handler for `removeTrack`. Replays snapshot data carried in the
@@ -26,8 +28,14 @@ import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPrio
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
     canReapplyAfterDivergence: () => true,
+    // The removal this undoes recorded the plugin state a save captured after the snapshot was taken.
+    materializeCommandArguments: (action, context) => {
+        if (context?.undoEntryId !== undefined) {
+            overlayDiscardedPluginStates(context.undoEntryId, [action.payload]);
+        }
+    },
     validate: (action, context) => restoreStateMatches(action, context),
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         const {
             trackKind,
             trackGain,
@@ -125,9 +133,13 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         const finalizeSidechainRestore = restoreSidechainRoutes(sidechainRouteSnapshots, {
             deferRuntimeEffect: true,
         });
+        const undoEntryId = context?.undoEntryId;
         return {
             status: 'written',
             afterCommit: () => {
+                if (undoEntryId !== undefined) {
+                    forgetDiscardedPluginStates(undoEntryId);
+                }
                 const effects: Array<() => void | Promise<void>> = [];
                 if (trackKind === 'bus') {
                     effects.push(
@@ -208,18 +220,88 @@ type RestoreTrackPayload = Extract<AppAction, { type: 'restoreTrack' }>['payload
  * store rows. Decoding them through the stores' own row laws restores exactly
  * what the store held, and refuses a payload that is not a row of this track.
  */
-function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeLanes: TakeLane[] } | null {
+function decodeRestoredRows(
+    payload: RestoreTrackPayload
+): { track: Track; takeLanes: TakeLane[]; ownClipIds: ReadonlySet<string> } | null {
     const track = decodeTrackSnapshot(payload.trackSnapshot);
     const takeLanes = decodeExactTakeLaneSnapshots(payload.takeLaneSnapshots);
+    if (track?.id !== payload.trackId) {
+        return null;
+    }
+    const ownClipIds = new Set(getHeldClips(track).map((clip) => clip.id));
     if (
-        track?.id !== payload.trackId ||
         !holdsOnlyOwnClips(track) ||
+        !describesRow(payload, track) ||
+        !keysOnlyOwnClips(payload, ownClipIds) ||
+        payload.automationLaneSnapshots.some((lane) => lane.trackId !== payload.trackId) ||
+        !modulationBelongsToTrack(payload) ||
         !takeLanes ||
         takeLanes.some((lane) => lane.trackId !== payload.trackId)
     ) {
         return null;
     }
-    return { track, takeLanes };
+    return { track, takeLanes, ownClipIds };
+}
+
+// The capture copies kind and parent from the row it snapshots; a decoded row
+// holds `parentId: null` where the payload may carry it absent.
+function describesRow(payload: RestoreTrackPayload, track: Track): boolean {
+    return payload.trackKind === track.kind && (payload.trackParentId ?? null) === track.parentId;
+}
+
+// The capture keys MIDI data and satellites by the clips the row holds: its
+// own clips and each inactive alternative's. The active alternative's stored
+// copy is stale and may name a clip since moved to another track, so a key
+// naming it, or any other clip, would overwrite another track's clip data.
+function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<string>): boolean {
+    return [
+        ...Object.keys(payload.midiNotesByClipId),
+        ...Object.keys(payload.midiCcByClipId),
+        ...Object.keys(payload.midiPitchBendByClipId),
+        ...payload.clipSatellites.map((entry) => entry.clipId),
+    ].every((clipId) => ownClipIds.has(clipId));
+}
+
+// The capture takes the modulators the track owns, whose own mappings may
+// target any track, and only the mappings other tracks' modulators aim at the
+// track. Restoring appends each mapping to the live modulator it names and
+// adds each owned modulator under the payload's track, so a mapping aimed
+// elsewhere or a modulator owned elsewhere would write into another track's
+// modulation.
+function modulationBelongsToTrack(payload: RestoreTrackPayload): boolean {
+    return (
+        payload.ownedModulatorSnapshots.every((modulator) => modulator.trackId === payload.trackId) &&
+        payload.incomingModulationMappingSnapshots.every((entry) => entry.mapping.targetTrackId === payload.trackId)
+    );
+}
+
+function collectLiveHeldClipIds(liveTracks: readonly Track[]): ReadonlySet<string> {
+    return new Set(liveTracks.flatMap((track) => getHeldClips(track).map((clip) => clip.id)));
+}
+
+// A clip id names one clip project-wide: MIDI data and satellites are keyed by
+// it. Both sides count held clips, so the active alternative's stored copy,
+// which a cross-track move leaves stale, never collides with the moved clip.
+function reusesLiveHeldClipId(row: Track, liveHeldClipIds: ReadonlySet<string>): boolean {
+    return getHeldClips(row).some((clip) => liveHeldClipIds.has(clip.id));
+}
+
+// The capture takes every automation lane of the track. A clip lane rides one
+// of the row's held clips, or a clip no track holds any more: deleting an
+// alternative drops its clips and leaves their lanes behind. A lane on a clip a
+// live track holds, including one only the row's stale active copy still
+// names, would retarget that clip's automation. The contract type names only
+// the lane's identity, so a captured `clipId` is narrowed from the snapshot.
+function lanesSpareLiveClips(
+    payload: RestoreTrackPayload,
+    ownClipIds: ReadonlySet<string>,
+    liveHeldClipIds: ReadonlySet<string>
+): boolean {
+    return payload.automationLaneSnapshots.every(
+        (lane) =>
+            !('clipId' in lane) ||
+            (typeof lane.clipId === 'string' && (ownClipIds.has(lane.clipId) || !liveHeldClipIds.has(lane.clipId)))
+    );
 }
 
 // Every clip a track holds, live or in a stored alternative copy, names that
@@ -290,10 +372,14 @@ function restoreStateMatches(
     context?: HandlerValidationContext
 ): boolean {
     const state = getTrackStoreState();
+    const restored = decodeRestoredRows(action.payload);
+    if (!state || !restored || state.tracks.some((track) => track.id === action.payload.trackId)) {
+        return false;
+    }
+    const liveHeldClipIds = collectLiveHeldClipIds(state.tracks);
     if (
-        !state ||
-        !decodeRestoredRows(action.payload) ||
-        state.tracks.some((track) => track.id === action.payload.trackId)
+        reusesLiveHeldClipId(restored.track, liveHeldClipIds) ||
+        !lanesSpareLiveClips(action.payload, restored.ownClipIds, liveHeldClipIds)
     ) {
         return false;
     }

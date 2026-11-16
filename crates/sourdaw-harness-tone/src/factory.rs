@@ -34,6 +34,11 @@ unsafe extern "C" fn plugin_descriptor(
     }
 }
 
+/// # Safety
+/// `plugin_id`, when non-null, must point to a NUL-terminated C string that
+/// stays live and unmodified for the duration of the call, as
+/// `clap/factory/plugin-factory.h` requires of the host's `create_plugin`
+/// argument.
 unsafe extern "C" fn create_plugin(
     _factory: *const clap_plugin_factory,
     _host: *const clap_host,
@@ -42,7 +47,10 @@ unsafe extern "C" fn create_plugin(
     if plugin_id.is_null() {
         return ptr::null();
     }
-    let requested = CStr::from_ptr(plugin_id);
+    // SAFETY: `plugin_id` is non-null (checked above) and, per this
+    // function's `# Safety` contract, NUL-terminated and unmodified for the
+    // call; `requested` does not outlive the call.
+    let requested = unsafe { CStr::from_ptr(plugin_id) };
     if requested.to_bytes_with_nul() != PLUGIN_ID {
         return ptr::null();
     }

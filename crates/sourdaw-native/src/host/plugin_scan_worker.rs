@@ -5,12 +5,13 @@ use daw_plugin_host::scanner::{
 use daw_plugin_host::vst3_scanner::{extract_vst3_instance_metadata, extract_vst3_metadata};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
 
@@ -37,11 +38,44 @@ pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worke
 /// bounded — this decides how long a scan waits before saying so, not whether
 /// it ever does.
 pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a leaf worker may live by its own clock, whoever spawned it.
+///
+/// Above [`WORKER_TIMEOUT`] — the longest bound any spawner gives a helper —
+/// so a live spawner's process-group kill always fires first and its
+/// [`ScanFailure::TimedOut`] is what quarantine sees. This deadline only
+/// decides anything when no spawner is left to fire: a helper whose spawner
+/// died without killing it must not spin in a plugin's constructor forever.
+const HELPER_DEADLINE: Duration = Duration::from_secs(WORKER_TIMEOUT.as_secs() + 2);
+
+/// The helper's exit code when its own [`HELPER_DEADLINE`] terminated it.
+///
+/// Distinct from 0, from the generic 2 and from
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] so that, whenever a spawner does
+/// observe it, it reads as what it is: a process failure of a helper the
+/// plugin kept from finishing, never a clean answer or the helper's own
+/// write refusal. A Unix helper that leads its process group may end by its
+/// group kill instead (see [`terminate_current_process`]), which a spawner
+/// classifies the same way.
+const HELPER_DEADLINE_EXIT_CODE: i32 = 4;
+
+/// The helper's exit code when it found the process that spawned it gone.
+/// Distinct from [`HELPER_DEADLINE_EXIT_CODE`] for the same reason that one
+/// is distinct from the rest: which tie ended the helper is a different
+/// story, and neither may be mistaken for a self-diagnosed refusal.
+const HELPER_PARENT_GONE_EXIT_CODE: i32 = 5;
+
+/// Env var a spawner sets to its own process id for the helper's parent
+/// watch. It names the helper's direct parent, so a launcher that forks
+/// rather than execs the helper would read as a parent that is already gone.
+pub const SCAN_PARENT_PID_ENV: &str = "SOURDAW_PLUGIN_SCAN_PARENT_PID";
+
+const WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// The largest response a leaf worker may write and the supervisor will read.
 ///
 /// Sized from measurement, and the measurement is enforced rather than trusted:
 /// `the_response_limit_admits_the_stated_worst_case_parameter_list` serializes
-/// a parameter list at [`MAX_RESPONSE_PARAMETERS`], every descriptor maximal (a
+/// a parameter list at `MAX_RESPONSE_PARAMETERS`, every descriptor maximal (a
 /// 128-byte name beside a 128-byte module — the scanner's own text caps — plus
 /// a full-width id, three full-width floats and four booleans), and fails the
 /// moment the compact JSON outgrows this bound or loses its headroom.
@@ -67,31 +101,109 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 /// (`the_response_limit_admits_the_stated_worst_case_parameter_list`) that
 /// list serializes to 7,542,027 bytes compact, and the byte cap is the
 /// smallest power of two that keeps at least twofold headroom above it.
+#[cfg(test)]
 const MAX_RESPONSE_PARAMETERS: usize = 16_384;
 
 /// The refusal for a response whose compact serialization measures past
-/// [`MAX_RESPONSE_BYTES`]. Both sides of the process boundary use it: the leaf
-/// refuses to write such a response, and the supervisor refuses to read one.
+/// [`MAX_RESPONSE_BYTES`], as the message the leaf writes. Both sides of the
+/// process boundary use it: the leaf refuses to write such a response, and the
+/// supervisor refuses to read one ([`ScanFailure::ResponseOverLimit`]).
 fn oversized_response_error(bytes: usize) -> String {
-    format!("{HELPER_RESPONSE_OVER_LIMIT_PREFIX}{bytes} bytes exceeded the scan helper's {MAX_RESPONSE_BYTES}-byte limit")
+    ScanFailure::ResponseOverLimit { bytes }.to_string()
 }
 
-/// The prefix of [`oversized_response_error`], so a refusal can be recognized
-/// as the helper's limit without restating the sentence.
-const HELPER_RESPONSE_OVER_LIMIT_PREFIX: &str = "Plugin scan helper response of ";
+/// Why a scan through the bounded helper failed, as the supervisor sees it.
+///
+/// The variants are the failure kinds the supervisor treats differently:
+/// [`ScanFailure::is_process_failure`] decides crash quarantine and
+/// [`ScanFailure::is_response_limit_refusal`] decides which reason a row
+/// carries. `Display` is the message the registry and the renderer receive, so
+/// its text is a contract — rewording one needs a grep of `src/` and
+/// `electron/` first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScanFailure {
+    /// The helper child exited with a non-zero status other than
+    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`].
+    ExitedUnsuccessfully { path: PathBuf },
+    /// The helper child ran past its bound and was killed.
+    TimedOut,
+    /// The helper exited cleanly but left something other than a regular file
+    /// at its response path. Fixed text and the plugin path only: it is stored
+    /// as a quarantine reason, so it never carries plugin-originated bytes or
+    /// OS error text.
+    ResponseTampered { path: PathBuf },
+    /// The response measured past [`MAX_RESPONSE_BYTES`].
+    ResponseOverLimit { bytes: usize },
+    /// The helper self-reported that it could not write its response; see
+    /// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`].
+    ResponseWriteRefused { path: PathBuf },
+    /// Any other refusal: the read failed, not the plugin's process, so it is
+    /// never quarantine evidence.
+    Refused(String),
+}
 
-/// The refusal `scan_worker` returns when the helper child exited with a
-/// non-zero status, minus the path it is formatted with. See
-/// [`is_process_failure`].
-const HELPER_EXITED_UNSUCCESSFULLY_PREFIX: &str = "Plugin scan helper exited unsuccessfully for ";
-/// The refusal `wait_bounded` returns when the helper child ran past its
-/// bound and was killed.
-const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
-/// The refusal `scan_worker` returns when the helper exited cleanly but left
-/// something other than a regular file at its response path, minus the path it
-/// is formatted with. See [`is_process_failure`].
-const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
-    "Plugin scan helper response was not a regular file for ";
+impl ScanFailure {
+    /// Whether this is the process-level failure crash quarantine exists to
+    /// catch: the helper child exited unsuccessfully, ran past its bound and
+    /// was killed, or left a response that is not a regular file.
+    ///
+    /// The helper itself only ever writes a regular file, so a FIFO, symlink,
+    /// device or reparse point at the response path is the plugin's own code
+    /// tampering with the helper's output — as much evidence against the
+    /// binary as a crash.
+    ///
+    /// Distinct from a data-level refusal — a malformed response, an
+    /// oversized payload, an unregistered format — which says the *read*
+    /// failed, not that the binary itself is dangerous to keep re-running.
+    /// Only a process failure is evidence worth quarantining a binary over
+    /// (#2911).
+    pub fn is_process_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::ExitedUnsuccessfully { .. } | Self::ResponseTampered { .. } | Self::TimedOut
+        )
+    }
+
+    /// Whether this is the helper's own response limit rather than anything
+    /// the plugin did — an oversized response, or any other failure to write
+    /// one.
+    pub fn is_response_limit_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::ResponseOverLimit { .. } | Self::ResponseWriteRefused { .. }
+        )
+    }
+}
+
+impl std::fmt::Display for ScanFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExitedUnsuccessfully { path } => write!(
+                formatter,
+                "Plugin scan helper exited unsuccessfully for {}",
+                path.display()
+            ),
+            Self::TimedOut => formatter.write_str("Plugin scan helper timed out"),
+            Self::ResponseTampered { path } => write!(
+                formatter,
+                "Plugin scan helper response was not a regular file for {}",
+                path.display()
+            ),
+            Self::ResponseOverLimit { bytes } => write!(
+                formatter,
+                "Plugin scan helper response of {bytes} bytes exceeded the scan helper's {MAX_RESPONSE_BYTES}-byte limit"
+            ),
+            Self::ResponseWriteRefused { path } => write!(
+                formatter,
+                "Plugin scan helper could not write its response for {}; the scan helper's response limit is {MAX_RESPONSE_BYTES} bytes",
+                path.display()
+            ),
+            Self::Refused(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for ScanFailure {}
 
 /// The leaf worker's exit code for a self-diagnosed refusal to write its
 /// response — a malformed payload, the response exceeding
@@ -106,8 +218,8 @@ const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
 /// a read-only temp directory) that has nothing to do with any plugin being
 /// dangerous, and folding it into the same exit code as a crash would
 /// quarantine every binary the process ever touched. See
-/// [`process_failure_message`], which is what keeps it out of
-/// [`is_process_failure`].
+/// [`process_failure`], which is what keeps it out of
+/// [`ScanFailure::is_process_failure`].
 ///
 /// The inverse residual is accepted, not closed: a plugin whose own static
 /// initializer happens to call `exit(3)` reads as a self-diagnosed write
@@ -117,26 +229,6 @@ const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
 /// instead is still caught by `wait_bounded`'s timeout, which classifies
 /// entirely on elapsed time and never looks at an exit code at all.
 const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
-
-/// Whether an error from [`scan_descriptor_metadata`] or
-/// [`scan_instance_metadata`] is the process-level failure crash quarantine
-/// exists to catch: the helper child exited unsuccessfully, ran past its bound
-/// and was killed, or left a response that is not a regular file.
-///
-/// The helper itself only ever writes a regular file, so a FIFO, symlink,
-/// device or reparse point at the response path is the plugin's own code
-/// tampering with the helper's output — as much evidence against the binary as
-/// a crash.
-///
-/// Distinct from a data-level refusal — a malformed response, an oversized
-/// payload, an unregistered format — which says the *read* failed, not that
-/// the binary itself is dangerous to keep re-running. Only a process failure
-/// is evidence worth quarantining a binary over (#2911).
-pub fn is_process_failure(error: &str) -> bool {
-    error.starts_with(HELPER_EXITED_UNSUCCESSFULLY_PREFIX)
-        || error.starts_with(HELPER_RESPONSE_TAMPERED_PREFIX)
-        || error == HELPER_TIMED_OUT
-}
 
 /// Env var a host sets to describe how a leaf worker process is launched.
 ///
@@ -409,6 +501,7 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let Some(backend) = scan_backend(format) else {
         return Some(2);
     };
+    arm_helper_watchdog(helper_deadline());
     let result = match plugin_id {
         Some(plugin_id) => write_response(
             Path::new(response_path),
@@ -431,6 +524,229 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
         RESPONSE_WRITE_REFUSAL_EXIT_CODE
     })
 }
+/// What the helper's watchdog does after one look at its clock and its parent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchdogVerdict {
+    KeepWaiting,
+    Terminate(i32),
+}
+
+fn watchdog_verdict(elapsed: Duration, deadline: Duration, parent_alive: bool) -> WatchdogVerdict {
+    if !parent_alive {
+        return WatchdogVerdict::Terminate(HELPER_PARENT_GONE_EXIT_CODE);
+    }
+    if elapsed >= deadline {
+        return WatchdogVerdict::Terminate(HELPER_DEADLINE_EXIT_CODE);
+    }
+    WatchdogVerdict::KeepWaiting
+}
+
+/// The watchdog loop, platform-neutral: only the probe and the terminator
+/// differ per OS. Returns the code it terminated with, which only a test's
+/// terminator ever lets it reach.
+fn watch_helper_lifetime(
+    deadline: Duration,
+    parent_alive: impl Fn() -> bool,
+    terminate: impl FnOnce(i32),
+) -> i32 {
+    let armed_at = Instant::now();
+    loop {
+        match watchdog_verdict(armed_at.elapsed(), deadline, parent_alive()) {
+            WatchdogVerdict::KeepWaiting => std::thread::sleep(WATCHDOG_POLL_INTERVAL),
+            WatchdogVerdict::Terminate(code) => {
+                terminate(code);
+                return code;
+            }
+        }
+    }
+}
+
+/// Tie this helper's lifetime to `deadline` and to the process that spawned
+/// it, on a thread of its own so a plugin that never returns cannot hold it.
+///
+/// Armed only once the arguments name a real extraction, and before any
+/// plugin code runs. A failure to start the thread leaves the helper bounded
+/// by its spawner alone, as every helper was before this watchdog existed,
+/// rather than turning a resource fault into a plugin failure.
+fn arm_helper_watchdog(deadline: Duration) {
+    let parent_alive = parent_probe();
+    let _ = std::thread::Builder::new()
+        .name("sourdaw-scan-helper-watchdog".to_string())
+        .spawn(move || {
+            watch_helper_lifetime(deadline, parent_alive, terminate_current_process);
+        });
+}
+
+/// Test builds only: a re-exec child may shorten the deadline the real worker
+/// entry arms, so a test reaches it in milliseconds rather than seconds.
+#[cfg(test)]
+const TEST_HELPER_DEADLINE_MS_ENV: &str = "SOURDAW_TEST_HELPER_DEADLINE_MS";
+
+fn helper_deadline() -> Duration {
+    #[cfg(test)]
+    if let Some(milliseconds) = std::env::var(TEST_HELPER_DEADLINE_MS_ENV)
+        .ok()
+        .and_then(|value| value.parse().ok())
+    {
+        return Duration::from_millis(milliseconds);
+    }
+    HELPER_DEADLINE
+}
+
+fn declared_parent_pid() -> Option<u32> {
+    std::env::var(SCAN_PARENT_PID_ENV).ok()?.parse().ok()
+}
+
+/// A parent that died before this probe was built has already handed the
+/// helper to another reaper, so comparing against the declared pid catches
+/// it where a parent id read now would not.
+#[cfg(unix)]
+fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
+    let expected = declared_parent_pid()
+        .and_then(|pid| libc::pid_t::try_from(pid).ok())
+        // SAFETY: getppid has no preconditions and cannot fail.
+        .unwrap_or_else(|| unsafe { libc::getppid() });
+    // SAFETY: as above.
+    Box::new(move || unsafe { libc::getppid() } == expected)
+}
+
+/// What the Windows parent watch saw: the open that failed, or the answer of
+/// one zero-timeout wait on the opened handle.
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParentObservation {
+    OpenFailed(ParentOpenFailure),
+    Waited(ParentWaitOutcome),
+}
+
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParentOpenFailure {
+    /// No process has the declared pid.
+    NoSuchProcess,
+    /// Any other refusal, such as a token that may not open a live spawner.
+    Other,
+}
+
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParentWaitOutcome {
+    Exited,
+    Running,
+    Failed,
+}
+
+/// Only proof the parent is gone ends the helper. A watch that cannot tell
+/// reads the parent as alive and leaves the decision to the deadline and the
+/// spawner's own bound: exiting on it would quarantine a plugin for a helper
+/// that merely could not see its spawner.
+#[cfg(any(windows, test))]
+fn parent_alive_from(observation: ParentObservation) -> bool {
+    !matches!(
+        observation,
+        ParentObservation::OpenFailed(ParentOpenFailure::NoSuchProcess)
+            | ParentObservation::Waited(ParentWaitOutcome::Exited)
+    )
+}
+
+/// Windows has no parent link to read back, so the declared pid is opened
+/// once and its handle waited on; with no declaration there is nothing to
+/// watch and the deadline alone holds. `OpenProcess` reports a pid no process
+/// has as `ERROR_INVALID_PARAMETER`.
+#[cfg(windows)]
+fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
+    use windows::core::HRESULT;
+    use windows::Win32::Foundation::{
+        ERROR_INVALID_PARAMETER, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    };
+    use windows::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+    };
+
+    struct ParentHandle(HANDLE);
+    // SAFETY: a process handle is a kernel object reference, valid from any
+    // thread; the watchdog thread is its only user.
+    unsafe impl Send for ParentHandle {}
+
+    impl ParentHandle {
+        /// A method rather than a field read in the closure: edition 2021
+        /// closures capture the fields they name, and the bare `HANDLE`
+        /// field is not `Send` the way this wrapper is.
+        fn wait_outcome(&self) -> ParentWaitOutcome {
+            // SAFETY: the handle stays open for the life of the process.
+            match unsafe { WaitForSingleObject(self.0, 0) } {
+                WAIT_OBJECT_0 => ParentWaitOutcome::Exited,
+                WAIT_TIMEOUT => ParentWaitOutcome::Running,
+                _ => ParentWaitOutcome::Failed,
+            }
+        }
+    }
+
+    let Some(pid) = declared_parent_pid() else {
+        return Box::new(|| true);
+    };
+    // SAFETY: OpenProcess takes plain values and reports failure as an error.
+    let handle = match unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) } {
+        Ok(handle) => handle,
+        Err(error) => {
+            let failure = if error.code() == HRESULT::from_win32(ERROR_INVALID_PARAMETER.0) {
+                ParentOpenFailure::NoSuchProcess
+            } else {
+                ParentOpenFailure::Other
+            };
+            let alive = parent_alive_from(ParentObservation::OpenFailed(failure));
+            return Box::new(move || alive);
+        }
+    };
+    let parent = ParentHandle(handle);
+    Box::new(move || parent_alive_from(ParentObservation::Waited(parent.wait_outcome())))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
+    Box::new(|| true)
+}
+
+/// End this process now, from any thread, without running exit handlers or
+/// static destructors a wedged plugin may hold a lock inside, and without
+/// the crash report an abort would file against the plugin's host.
+///
+/// A helper that leads its own process group — every helper a spawner
+/// starts — kills that whole group, so a child the plugin forked ends with
+/// it. The helper itself then ends by that `SIGKILL` or by the `_exit` after
+/// it, whichever the kernel completes first. A helper in
+/// someone else's group, such as a test runner's, never signals that group
+/// and ends by `_exit` alone.
+#[cfg(unix)]
+fn terminate_current_process(code: i32) {
+    // SAFETY: getpid has no preconditions and cannot fail.
+    let pid = unsafe { libc::getpid() };
+    // SAFETY: getpgrp has no preconditions and cannot fail.
+    let group = unsafe { libc::getpgrp() };
+    if group == pid {
+        // SAFETY: kill takes plain values; the target is this process's own
+        // group, which this process leads.
+        let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
+    // SAFETY: _exit is async-signal-safe and never returns.
+    unsafe { libc::_exit(code) }
+}
+
+#[cfg(windows)]
+fn terminate_current_process(code: i32) {
+    use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+    // SAFETY: the pseudo-handle for the current process is always valid.
+    let terminated = unsafe { TerminateProcess(GetCurrentProcess(), code as u32) };
+    if terminated.is_err() {
+        std::process::exit(code);
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn terminate_current_process(code: i32) {
+    std::process::exit(code);
+}
+
 fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
     let bytes = serde_json::to_vec(response)
         .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))?;
@@ -451,7 +767,7 @@ pub fn scan_descriptor_metadata(
     format: PluginFormat,
     path: &Path,
     timeout: Duration,
-) -> Result<Vec<ScannedDescriptor>, String> {
+) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
     scan_worker(format, path, None, timeout, WORKER_ARGUMENT)
 }
 
@@ -462,7 +778,7 @@ pub fn scan_instance_metadata(
     path: &Path,
     plugin_id: &str,
     timeout: Duration,
-) -> Result<ScannedInstance, String> {
+) -> Result<ScannedInstance, ScanFailure> {
     scan_worker(
         format,
         path,
@@ -475,21 +791,11 @@ pub fn scan_instance_metadata(
 /// The refusal `scan_worker` reports for a helper that exited unsuccessfully,
 /// shaped by which of two things that exit code means.
 ///
-/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] gets a message that does not match
-/// [`HELPER_EXITED_UNSUCCESSFULLY_PREFIX`] — deliberately, so
-/// [`is_process_failure`] never classifies it as evidence worth quarantining
-/// a binary over. Every other non-zero exit — a crash, `WorkerRole::Malformed`,
-/// no backend for the format — keeps the existing message, which
-/// `is_process_failure` does recognize.
-fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
-    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
-        return response_write_refusal_error(path);
-    }
-    format!("{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}", path.display())
-}
-
-/// The supervisor-side refusal for a helper that self-reported a response-write
-/// refusal, naming the helper's own limit.
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] is [`ScanFailure::ResponseWriteRefused`],
+/// which [`ScanFailure::is_process_failure`] never classifies as evidence
+/// worth quarantining a binary over. Every other non-zero exit — a crash,
+/// `WorkerRole::Malformed`, no backend for the format — is
+/// [`ScanFailure::ExitedUnsuccessfully`], which it does.
 ///
 /// The message states what happened (the helper could not write) and the one
 /// helper fact every exit-3 cause shares (its response limit). It deliberately
@@ -499,32 +805,13 @@ fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
 /// text from the same process the plugin's own code ran in toward strings the
 /// registry publishes, which the reason contract forbids. The measured size
 /// therefore appears only where it is observable, in
-/// [`oversized_response_error`]'s read-side refusal.
-///
-/// `pub` so the reason-shaping side (`commands::plugins`) and the tests can
-/// build the exact string the supervisor produces, the same way
-/// [`is_process_failure`] is `pub` for its callers.
-pub fn response_write_refusal_error(path: &Path) -> String {
-    format!(
-        "{HELPER_RESPONSE_WRITE_REFUSAL_PREFIX}{}; the scan helper's response limit is {MAX_RESPONSE_BYTES} bytes",
-        path.display()
-    )
-}
-
-/// The prefix of [`response_write_refusal_error`].
-const HELPER_RESPONSE_WRITE_REFUSAL_PREFIX: &str =
-    "Plugin scan helper could not write its response for ";
-
-/// Whether a scan refusal is the helper's own response limit rather than
-/// anything the plugin did — an oversized response, or any other failure to
-/// write one.
-///
-/// [`is_process_failure`]'s mirror: the `String` error contract is baked into
-/// [`scan_worker`]'s signature, so classification reads the message, and the
-/// prefixes it matches are the ones this file itself generates.
-pub fn is_response_limit_refusal(error: &str) -> bool {
-    error.starts_with(HELPER_RESPONSE_WRITE_REFUSAL_PREFIX)
-        || error.starts_with(HELPER_RESPONSE_OVER_LIMIT_PREFIX)
+/// [`ScanFailure::ResponseOverLimit`]'s read-side refusal.
+fn process_failure(path: &Path, status: &ExitStatus) -> ScanFailure {
+    let path = path.to_path_buf();
+    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
+        return ScanFailure::ResponseWriteRefused { path };
+    }
+    ScanFailure::ExitedUnsuccessfully { path }
 }
 
 /// The registry-facing reason for a response-write refusal.
@@ -548,14 +835,14 @@ fn scan_worker<T: DeserializeOwned>(
     plugin_id: Option<&str>,
     timeout: Duration,
     worker_argument: &str,
-) -> Result<T, String> {
+) -> Result<T, ScanFailure> {
     // Refused here as well as in the child: launching a process to be told the
     // format is unhostable spends a spawn and a deadline to reach the same
     // answer, and the child's refusal is an exit code with no reason in it.
     if scan_backend(format).is_none() {
-        return Err(no_scan_backend(format));
+        return Err(ScanFailure::Refused(no_scan_backend(format)));
     }
-    let launcher = ScanWorkerCommand::resolve()?;
+    let launcher = ScanWorkerCommand::resolve().map_err(ScanFailure::Refused)?;
     scan_worker_with(&launcher, format, path, plugin_id, timeout, worker_argument)
 }
 
@@ -566,8 +853,8 @@ fn scan_worker_with<T: DeserializeOwned>(
     plugin_id: Option<&str>,
     timeout: Duration,
     worker_argument: &str,
-) -> Result<T, String> {
-    let response_directory = ResponseDirectory::create()?;
+) -> Result<T, ScanFailure> {
+    let response_directory = ResponseDirectory::create().map_err(ScanFailure::Refused)?;
     let response_path = response_directory.0.join("metadata.json");
     let mut command = Command::new(&launcher.program);
     command
@@ -583,20 +870,26 @@ fn scan_worker_with<T: DeserializeOwned>(
     command
         .arg(&response_path)
         .envs(&launcher.env)
+        .env(SCAN_PARENT_PID_ENV, std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
-        return Err(process_failure_message(path, &status));
+        return Err(process_failure(path, &status));
     }
     let bytes = read_response_bytes(&response_path, path)?;
-    let response: WorkerResponse<T> = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("Plugin scan helper returned invalid metadata: {error}"))?;
+    let response: WorkerResponse<T> = serde_json::from_slice(&bytes).map_err(|error| {
+        ScanFailure::Refused(format!(
+            "Plugin scan helper returned invalid metadata: {error}"
+        ))
+    })?;
     if response.worker_pid == std::process::id() {
-        return Err("Plugin metadata extraction did not cross a process boundary".to_string());
+        return Err(ScanFailure::Refused(
+            "Plugin metadata extraction did not cross a process boundary".to_string(),
+        ));
     }
-    response.result
+    response.result.map_err(ScanFailure::Refused)
 }
 /// Read the helper's response, accepting only a regular file that can be read
 /// without blocking.
@@ -606,36 +899,46 @@ fn scan_worker_with<T: DeserializeOwned>(
 /// on the opened descriptor, never on the path, because the plugin — or a
 /// process it forked that outlives the helper — can swap the path between a
 /// check and the open.
-fn read_response_bytes(response_path: &Path, plugin_path: &Path) -> Result<Vec<u8>, String> {
+fn read_response_bytes(response_path: &Path, plugin_path: &Path) -> Result<Vec<u8>, ScanFailure> {
     let file = open_response(response_path, plugin_path)?;
     let metadata = file
         .metadata()
-        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+        .map_err(|error| cannot_read_response(&error))?;
     if !metadata.is_file() || is_reparse_point(&metadata) {
-        return Err(tampered_response_error(plugin_path));
+        return Err(ScanFailure::ResponseTampered {
+            path: plugin_path.to_path_buf(),
+        });
     }
     if metadata.len() > MAX_RESPONSE_BYTES {
-        return Err(oversized_response_error(
-            usize::try_from(metadata.len()).unwrap_or(usize::MAX),
-        ));
+        return Err(ScanFailure::ResponseOverLimit {
+            bytes: usize::try_from(metadata.len()).unwrap_or(usize::MAX),
+        });
     }
     // The bound stays on the read itself: a forked process can still grow the
     // file after the size was taken.
     let mut bytes = Vec::new();
     file.take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+        .map_err(|error| cannot_read_response(&error))?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(oversized_response_error(bytes.len()));
+        return Err(ScanFailure::ResponseOverLimit { bytes: bytes.len() });
     }
     Ok(bytes)
+}
+
+fn cannot_read_response(error: &std::io::Error) -> ScanFailure {
+    ScanFailure::Refused(format!("Cannot read plugin scan helper response: {error}"))
+}
+
+fn returned_no_metadata(error: &std::io::Error) -> ScanFailure {
+    ScanFailure::Refused(format!("Plugin scan helper returned no metadata: {error}"))
 }
 
 /// Open the response without following a final symlink, and on Unix without
 /// waiting for a FIFO's writer or adopting a terminal an intermediate
 /// directory swap could aim the open at.
 #[cfg(unix)]
-fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, String> {
+fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, ScanFailure> {
     use std::os::unix::fs::OpenOptionsExt;
     OpenOptions::new()
         .read(true)
@@ -643,29 +946,31 @@ fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, S
         .open(response_path)
         .map_err(|error| {
             if error.raw_os_error() == Some(libc::ELOOP) {
-                return tampered_response_error(plugin_path);
+                return ScanFailure::ResponseTampered {
+                    path: plugin_path.to_path_buf(),
+                };
             }
-            format!("Plugin scan helper returned no metadata: {error}")
+            returned_no_metadata(&error)
         })
 }
 
 #[cfg(windows)]
-fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, String> {
+fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, ScanFailure> {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(response_path)
-        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))
+        .map_err(|error| returned_no_metadata(&error))
 }
 
 #[cfg(not(any(unix, windows)))]
-fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, String> {
+fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, ScanFailure> {
     OpenOptions::new()
         .read(true)
         .open(response_path)
-        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))
+        .map_err(|error| returned_no_metadata(&error))
 }
 
 /// Whether the opened response is itself a reparse point. Opened with
@@ -683,67 +988,273 @@ fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
     false
 }
 
-/// The refusal for a response path the helper's plugin replaced. Fixed text
-/// and the plugin path only: it is stored as a quarantine reason, so it never
-/// carries plugin-originated bytes or OS error text.
-fn tampered_response_error(plugin_path: &Path) -> String {
-    format!("{HELPER_RESPONSE_TAMPERED_PREFIX}{}", plugin_path.display())
+/// Every helper this process has running, and whether it was told to stop.
+///
+/// Production uses the one process-wide [`HELPER_REGISTRY`]; every function
+/// below takes the registry it works on so a test's stop never leaks into
+/// another test's spawns.
+///
+/// Spawning and deregistering happen under the lock that a stop holds while
+/// it kills, so no helper starts after a stop and no kill can land on a pid
+/// the OS has already handed to another process: a pid leaves the set before
+/// or as its process is reaped, never after.
+///
+/// Once stopped, no entry point returns to its caller: a thread that asks to
+/// spawn, reap or forget a helper parks for the rest of the process's life
+/// (see [`park_until_process_exit`]).
+struct HelperRegistry {
+    state: Mutex<HelperRegistryState>,
 }
 
-fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, String> {
+struct HelperRegistryState {
+    stopping: bool,
+    live: BTreeSet<u32>,
+}
+
+/// Stop exists only for a process about to exit, and a stopped scan has no
+/// truthful answer: any value returned to the walk — a refusal or an exit
+/// status — would let it publish a registry that drops every candidate it
+/// did not reach. So the calling thread never returns, and the process's
+/// exit ends it. The loop absorbs `park`'s spurious wake-ups.
+fn park_until_process_exit() -> ! {
+    loop {
+        std::thread::park();
+    }
+}
+
+impl HelperRegistry {
+    const fn new() -> Self {
+        Self {
+            state: Mutex::new(HelperRegistryState {
+                stopping: false,
+                live: BTreeSet::new(),
+            }),
+        }
+    }
+
+    /// Nothing panics while holding the lock, so a poisoned one still holds
+    /// a consistent set.
+    fn lock(&self) -> MutexGuard<'_, HelperRegistryState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The lock, or never: once stopped, the guard is released and the
+    /// calling thread parks.
+    fn lock_unless_stopped(&self) -> MutexGuard<'_, HelperRegistryState> {
+        let state = self.lock();
+        if state.stopping {
+            drop(state);
+            park_until_process_exit();
+        }
+        state
+    }
+
+    fn spawn(&self, command: &mut Command) -> Result<Child, ScanFailure> {
+        let mut state = self.lock_unless_stopped();
+        let child = command.spawn().map_err(|error| {
+            ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
+        })?;
+        state.live.insert(child.id());
+        Ok(child)
+    }
+
+    /// Reap the helper if it has exited, deregistering it under the same lock.
+    fn try_reap(&self, child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
+        let mut state = self.lock_unless_stopped();
+        let Some(status) = child.try_wait()? else {
+            return Ok(None);
+        };
+        state.live.remove(&child.id());
+        Ok(Some(status))
+    }
+
+    /// Take a helper out of the set before its spawner reaps it itself.
+    fn forget(&self, child: &Child) {
+        let mut state = self.lock_unless_stopped();
+        state.live.remove(&child.id());
+    }
+
+    /// Kill every live helper's tree and park every later caller, so the
+    /// stopped scan never answers.
+    fn stop(&self) {
+        let mut state = self.lock();
+        state.stopping = true;
+        for pid in &state.live {
+            kill_helper_tree(*pid);
+        }
+    }
+}
+
+static HELPER_REGISTRY: HelperRegistry = HelperRegistry::new();
+
+/// Kill every scan helper this process has running, and park every scan
+/// thread that next asks the registry for anything, so a stopped scan never
+/// answers and never publishes. For a process that is about to exit: nothing
+/// undoes it, and the exit is what ends the parked threads.
+pub fn stop_plugin_scan_helpers() {
+    HELPER_REGISTRY.stop();
+}
+
+fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, ScanFailure> {
+    run_bounded_in(&HELPER_REGISTRY, command, timeout)
+}
+
+fn run_bounded_in(
+    registry: &HelperRegistry,
+    command: &mut Command,
+    timeout: Duration,
+) -> Result<ExitStatus, ScanFailure> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Cannot start plugin scan helper: {error}"))?;
-    wait_bounded(&mut child, timeout)
+    #[cfg(target_os = "linux")]
+    tie_to_spawner_death(command);
+    let mut child = registry.spawn(command)?;
+    #[cfg(windows)]
+    let _job = KillOnCloseJob::assign(&child);
+    wait_bounded(registry, &mut child, timeout)
 }
-fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, String> {
+
+/// Have the kernel kill the helper when its spawner dies.
+///
+/// `PR_SET_PDEATHSIG` fires when the *thread* that forked the child exits,
+/// not the process. That is safe here because every spawn and its bounded
+/// wait run on one thread, which therefore outlives the helper. The parent
+/// check after it closes the race with a spawner that died before the signal
+/// was armed. Only async-signal-safe calls run between fork and exec.
+///
+/// The signal reaches the helper alone, not its group: a child the plugin
+/// forked survives a spawner killed outright on Linux. The helper's own
+/// watchdog does not cover it either, because the kernel's kill beats the
+/// watchdog's next poll.
+#[cfg(target_os = "linux")]
+fn tie_to_spawner_death(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: getpid has no preconditions and cannot fail.
+    let spawner = unsafe { libc::getpid() };
+    let tie = move || {
+        // A refused prctl leaves the helper's own parent watch and the
+        // spawner's deadline in force, so the spawn goes ahead.
+        // SAFETY: prctl with PR_SET_PDEATHSIG takes plain values and is
+        // async-signal-safe.
+        let _ = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) };
+        // SAFETY: getppid has no preconditions and is async-signal-safe.
+        if unsafe { libc::getppid() } != spawner {
+            // SAFETY: _exit is async-signal-safe and never returns.
+            unsafe { libc::_exit(HELPER_PARENT_GONE_EXIT_CODE) }
+        }
+        Ok(())
+    };
+    // SAFETY: the hook runs between fork and exec, and calls only prctl,
+    // getppid and _exit, all async-signal-safe; it allocates nothing and
+    // touches no memory shared with the parent.
+    unsafe {
+        command.pre_exec(tie);
+    }
+}
+
+/// A job that kills the helper's whole tree when its handle closes — when the
+/// spawner reaps the helper, or when the OS closes the handle of a spawner
+/// that died. Failing to create or assign it never fails the scan: the
+/// helper's own watchdog still holds, and it is also what covers the short
+/// window between spawn and assignment.
+#[cfg(windows)]
+struct KillOnCloseJob(windows::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl KillOnCloseJob {
+    fn assign(child: &Child) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        // SAFETY: an anonymous job with default security; failure is an error.
+        let job = Self(unsafe { CreateJobObjectW(None, PCWSTR::null()) }.ok()?);
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: `limits` outlives the call and the length is its own size.
+        unsafe {
+            SetInformationJobObject(
+                job.0,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&limits).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .ok()?;
+        // SAFETY: the child's handle is open until `child` is dropped, which
+        // is after this call.
+        unsafe { AssignProcessToJobObject(job.0, HANDLE(child.as_raw_handle())) }.ok()?;
+        Some(job)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for KillOnCloseJob {
+    fn drop(&mut self) {
+        // SAFETY: this wrapper owns the handle and closes it once.
+        let _ = unsafe { windows::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
+
+fn wait_bounded(
+    registry: &HelperRegistry,
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<ExitStatus, ScanFailure> {
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait() {
+        match registry.try_reap(child) {
             Ok(Some(status)) => return Ok(status),
             Ok(None) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10));
             }
             Ok(None) => {
-                terminate_process_tree(child);
-                return Err(HELPER_TIMED_OUT.to_string());
+                terminate_process_tree(registry, child);
+                return Err(ScanFailure::TimedOut);
             }
             Err(error) => {
-                terminate_process_tree(child);
-                return Err(format!("Cannot observe plugin scan helper: {error}"));
+                terminate_process_tree(registry, child);
+                return Err(ScanFailure::Refused(format!(
+                    "Cannot observe plugin scan helper: {error}"
+                )));
             }
         }
     }
 }
-#[cfg(unix)]
-fn terminate_process_tree(child: &mut Child) {
-    unsafe extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
-    }
-    unsafe {
-        let _ = kill(-(child.id() as i32), 9);
-    }
+
+/// Kill and reap the helper's tree.
+fn terminate_process_tree(registry: &HelperRegistry, child: &mut Child) {
+    registry.forget(child);
+    kill_helper_tree(child.id());
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// Every helper leads its own process group, so its pid is the group's id.
+#[cfg(unix)]
+fn kill_helper_tree(pid: u32) {
+    let Ok(group) = libc::pid_t::try_from(pid) else {
+        return;
+    };
+    // SAFETY: kill takes plain values; the group is unreaped while registered.
+    let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
 }
 #[cfg(windows)]
-fn terminate_process_tree(child: &mut Child) {
+fn kill_helper_tree(pid: u32) {
     let _ = Command::new("taskkill")
-        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status();
-    let _ = child.kill();
-    let _ = child.wait();
 }
 #[cfg(not(any(unix, windows)))]
-fn terminate_process_tree(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
-}
+fn kill_helper_tree(_pid: u32) {}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -989,7 +1500,10 @@ mod tests {
         )
         .expect_err("a format with no scan backend must be refused");
 
-        assert_eq!(refusal, "No plugin scan backend for format vst2");
+        assert_eq!(
+            refusal.to_string(),
+            "No plugin scan backend for format vst2"
+        );
     }
 
     #[test]
@@ -1049,7 +1563,15 @@ mod tests {
             r#"use std::ffi::{c_char,c_void};
 #[repr(C)] struct Version{major:u32,minor:u32,revision:u32}
 #[repr(C)] struct Entry{version:Version,init:Option<unsafe extern "C" fn(*const c_char)->bool>,deinit:Option<unsafe extern "C" fn()>,get_factory:Option<unsafe extern "C" fn(*const c_char)->*const c_void>}
+#[cfg(unix)] unsafe extern "C" { fn fork()->i32; }
+#[cfg(unix)] fn fork_a_spinning_child_then_hang(pid_file:std::ffi::OsString)->!{
+ let child=unsafe{fork()};
+ if child==0{loop{std::hint::spin_loop();}}
+ let _=std::fs::write(pid_file,child.to_string());
+ loop{std::thread::sleep(std::time::Duration::from_secs(1));}
+}
 unsafe extern "C" fn init(_: *const c_char)->bool{
+ #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){fork_a_spinning_child_then_hang(pid_file);}
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
  std::process::abort();
 }
@@ -1200,7 +1722,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         command.env("SOURDAW_TEST_PLUGIN_HANG", "1");
         let error = run_bounded(&mut command, Duration::from_millis(500))
             .expect_err("the hung child should exceed the deadline");
-        assert_eq!(error, "Plugin scan helper timed out");
+        assert_eq!(error, ScanFailure::TimedOut);
     }
     #[cfg(unix)]
     /// A killed process stays visible to `kill(pid, 0)` until its parent
@@ -1209,6 +1731,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn process_is_gone_within(pid: i32, window: Duration) -> bool {
         let deadline = Instant::now() + window;
         loop {
+            // SAFETY: `libc::kill` takes plain integers and touches no memory
+            // of ours; signal 0 only probes whether `pid` exists.
             let probe = unsafe { libc::kill(pid, 0) };
             let gone =
                 probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
@@ -1253,16 +1777,655 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         );
     }
 
+    /// Whether `pid` has exited within `window`. An orphan is reaped by
+    /// whichever process adopted it, not by this test, so on Linux a zombie
+    /// still awaiting that reaper already counts as exited.
+    #[cfg(unix)]
+    fn process_has_exited_within(pid: i32, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            #[cfg(target_os = "linux")]
+            {
+                let zombie = fs::read_to_string(format!("/proc/{pid}/stat"))
+                    .ok()
+                    .and_then(|stat| {
+                        stat.rsplit_once(')')
+                            .map(|(_, rest)| rest.trim_start().starts_with('Z'))
+                    })
+                    .unwrap_or(false);
+                if zombie {
+                    return true;
+                }
+            }
+            if process_is_gone_within(pid, Duration::ZERO) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Wait for `child` to exit, never longer than `window`.
+    fn exit_status_within(child: &mut Child, window: Duration) -> Option<ExitStatus> {
+        let deadline = Instant::now() + window;
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Some(status);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Read a pid a child process wrote, never waiting longer than `window`.
+    #[cfg(unix)]
+    fn read_pid_within(path: &Path, window: Duration) -> Option<i32> {
+        let deadline = Instant::now() + window;
+        loop {
+            if let Some(pid) = fs::read_to_string(path)
+                .ok()
+                .and_then(|text| text.trim().parse().ok())
+            {
+                return Some(pid);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Kills whatever a lifetime test left running, so a regression fails
+    /// the test instead of leaving a spinning process behind it.
+    #[cfg(unix)]
+    struct Stragglers {
+        children: Vec<Child>,
+        pids: Vec<i32>,
+        files: Vec<PathBuf>,
+    }
+
+    #[cfg(unix)]
+    impl Stragglers {
+        fn cleaning(files: Vec<PathBuf>) -> Self {
+            Self {
+                children: Vec::new(),
+                pids: Vec::new(),
+                files,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Stragglers {
+        fn drop(&mut self) {
+            for pid in &self.pids {
+                if !process_is_gone_within(*pid, Duration::ZERO) {
+                    // SAFETY: kill takes plain values.
+                    let _ = unsafe { libc::kill(*pid, libc::SIGKILL) };
+                }
+            }
+            for child in &mut self.children {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            for file in &self.files {
+                let _ = fs::remove_file(file);
+            }
+        }
+    }
+
+    const ORPHAN_SPAWNER_PLUGIN_ENV: &str = "SOURDAW_TEST_ORPHAN_SPAWNER_PLUGIN";
+    const ORPHAN_HELPER_MARKER_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER";
+    const ORPHAN_HELPER_PID_FILE_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER_PID_FILE";
+    const DEADLINE_CHILD_MARKER_ENV: &str = "SOURDAW_TEST_DEADLINE_WATCHDOG_CHILD";
+    const PLAIN_SPAWNER_PID_FILE_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_HELPER_PID_FILE";
+
+    /// The stand-in spawner for the Linux kernel tie: runs a plain `sh`
+    /// helper, which arms no watchdog, through the real bounded spawn. The
+    /// test kills this process.
+    #[test]
+    fn plain_helper_spawner_child() {
+        let Some(pid_file) = std::env::var_os(PLAIN_SPAWNER_PID_FILE_ENV) else {
+            return;
+        };
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "echo $$ > \"$0\"; exec sleep 30"])
+            .arg(pid_file);
+        let _ = run_bounded_in(&HelperRegistry::new(), &mut command, WORKER_TIMEOUT);
+    }
+
+    /// Only `PR_SET_PDEATHSIG` can end this helper inside the window: it runs
+    /// no watchdog, and the spawner's own bound dies with the spawner.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_killed_spawner_takes_a_plain_helper_with_it_on_linux() {
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-plain-helper-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let spawner = Command::new(std::env::current_exe().expect("test executable should exist"))
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::plain_helper_spawner_child")
+            .env(PLAIN_SPAWNER_PID_FILE_ENV, &pid_file)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the stand-in spawner should start");
+        let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
+        stragglers.children.push(spawner);
+
+        let helper = read_pid_within(&pid_file, Duration::from_secs(10))
+            .expect("the plain helper should start and write its pid");
+        stragglers.pids.push(helper);
+
+        // SAFETY: kill takes plain values; the spawner is this test's child.
+        assert_eq!(unsafe { libc::kill(spawner_pid, libc::SIGKILL) }, 0);
+        for child in &mut stragglers.children {
+            let _ = child.wait();
+        }
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "plain helper {helper} outlived its killed spawner"
+        );
+    }
+
+    /// The stand-in spawner: scans the hanging fixture through the real
+    /// `scan_worker_with`, so the helper is launched exactly as production
+    /// launches it, parent pid and all. The test kills this process.
+    #[test]
+    fn orphan_spawner_child() {
+        let Some(plugin_path) = std::env::var_os(ORPHAN_SPAWNER_PLUGIN_ENV) else {
+            return;
+        };
+        let launcher = ScanWorkerCommand {
+            program: std::env::current_exe().expect("test executable should exist"),
+            // `--` hands the worker arguments to libtest as extra filters,
+            // which match no test, rather than as unknown options.
+            args: vec![
+                "--exact".to_string(),
+                "host::plugin_scan_worker::tests::orphan_helper_child".to_string(),
+                "--".to_string(),
+            ],
+            env: BTreeMap::from([
+                ("SOURDAW_TEST_PLUGIN_HANG".to_string(), "1".to_string()),
+                (ORPHAN_HELPER_MARKER_ENV.to_string(), "1".to_string()),
+            ]),
+        };
+        let _ = scan_worker_with::<Vec<ScannedDescriptor>>(
+            &launcher,
+            PluginFormat::Clap,
+            Path::new(&plugin_path),
+            None,
+            WORKER_TIMEOUT,
+            WORKER_ARGUMENT,
+        );
+    }
+
+    /// The stand-in helper: the real worker entry, whose plugin hangs in its
+    /// entry point and never returns.
+    #[test]
+    fn orphan_helper_child() {
+        if std::env::var_os(ORPHAN_HELPER_MARKER_ENV).is_none() {
+            return;
+        }
+        let pid_file = PathBuf::from(
+            std::env::var_os(ORPHAN_HELPER_PID_FILE_ENV)
+                .expect("the orphan helper needs a pid file to write"),
+        );
+        let staged = pid_file.with_extension("partial");
+        fs::write(&staged, std::process::id().to_string()).expect("the pid should be written");
+        fs::rename(&staged, &pid_file).expect("the pid file should be published");
+        let _ = run_from_process_args();
+        panic!("the hanging fixture should never return");
+    }
+
+    /// The defect itself: a spawner killed outright — no stop, no group kill —
+    /// must not leave its helper spinning. The window is far below both the
+    /// spawner's bound and the helper's own deadline, so neither of those can
+    /// end the helper inside it. What does is a parent tie: on Linux either
+    /// `PR_SET_PDEATHSIG` or the helper's parent watch, on macOS the parent
+    /// watch alone. The Linux signal is pinned on its own by
+    /// `a_killed_spawner_takes_a_plain_helper_with_it_on_linux`.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_does_not_outlive_its_killed_spawner() {
+        let fixture = build_hostile_clap("orphan");
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-orphan-helper-{}", uuid::Uuid::new_v4()));
+        let mut stragglers =
+            Stragglers::cleaning(vec![pid_file.clone(), pid_file.with_extension("partial")]);
+        let spawner = Command::new(std::env::current_exe().expect("test executable should exist"))
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::orphan_spawner_child")
+            .env(ORPHAN_SPAWNER_PLUGIN_ENV, &fixture.plugin_path)
+            .env(ORPHAN_HELPER_PID_FILE_ENV, &pid_file)
+            .env_remove(SCAN_PARENT_PID_ENV)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the stand-in spawner should start");
+        let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
+        stragglers.children.push(spawner);
+
+        let helper = read_pid_within(&pid_file, Duration::from_secs(10))
+            .expect("the stand-in helper should start and write its pid");
+        stragglers.pids.push(helper);
+        assert!(
+            !process_is_gone_within(helper, Duration::from_millis(500)),
+            "the helper {helper} must be hung in the fixture before its spawner dies"
+        );
+
+        // SAFETY: kill takes plain values; the spawner is this test's child.
+        assert_eq!(unsafe { libc::kill(spawner_pid, libc::SIGKILL) }, 0);
+        for child in &mut stragglers.children {
+            let _ = child.wait();
+        }
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "helper {helper} outlived its killed spawner"
+        );
+    }
+
+    /// The stand-in for a plugin that never yields: the real watchdog armed
+    /// with a short deadline, then a spin no check between calls could break.
+    #[test]
+    fn deadline_watchdog_child() {
+        if std::env::var_os(DEADLINE_CHILD_MARKER_ENV).is_none() {
+            return;
+        }
+        arm_helper_watchdog(Duration::from_millis(300));
+        loop {
+            std::hint::spin_loop();
+        }
+    }
+
+    #[test]
+    fn a_helper_that_never_yields_ends_at_its_own_deadline() {
+        let mut child =
+            Command::new(std::env::current_exe().expect("test executable should exist"))
+                .arg("--exact")
+                .arg("host::plugin_scan_worker::tests::deadline_watchdog_child")
+                .env(DEADLINE_CHILD_MARKER_ENV, "1")
+                .env_remove(SCAN_PARENT_PID_ENV)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("the spinning stand-in should start");
+
+        let status = exit_status_within(&mut child, Duration::from_secs(5));
+        if status.is_none() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        assert_eq!(
+            status.and_then(|status| status.code()),
+            Some(HELPER_DEADLINE_EXIT_CODE),
+            "the spinning helper must end itself at its deadline"
+        );
+    }
+
+    const GROUP_HELPER_PLUGIN_ENV: &str = "SOURDAW_TEST_GROUP_HELPER_PLUGIN";
+
+    /// The real worker entry over a plugin that forks a spinning child and
+    /// then hangs, with the deadline shortened for this child only.
+    #[test]
+    fn group_deadline_helper_child() {
+        let Some(plugin_path) = std::env::var_os(GROUP_HELPER_PLUGIN_ENV) else {
+            return;
+        };
+        let response_path =
+            std::env::temp_dir().join(format!("sourdaw-group-helper-{}", uuid::Uuid::new_v4()));
+        let _ = run_from_args([
+            OsString::from("sourdaw-group-helper-child"),
+            OsString::from(WORKER_ARGUMENT),
+            OsString::from(PluginFormat::Clap.wire_name()),
+            plugin_path,
+            response_path.into_os_string(),
+        ]);
+        panic!("the forking fixture should never return");
+    }
+
+    /// A helper's deadline ends its whole process group, so a child the
+    /// plugin forked cannot keep spinning after the helper is gone.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_deadline_also_ends_the_plugins_forked_child() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+
+        let fixture = build_hostile_clap("fork");
+        let fork_pid_file =
+            std::env::temp_dir().join(format!("sourdaw-forked-child-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![fork_pid_file.clone()]);
+        let mut helper =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        helper
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::group_deadline_helper_child")
+            .env(GROUP_HELPER_PLUGIN_ENV, &fixture.plugin_path)
+            .env("SOURDAW_TEST_PLUGIN_FORK_PID_FILE", &fork_pid_file)
+            .env(TEST_HELPER_DEADLINE_MS_ENV, "1000")
+            .env_remove(SCAN_PARENT_PID_ENV)
+            .process_group(0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        stragglers
+            .children
+            .push(helper.spawn().expect("the forking helper should start"));
+
+        let forked = read_pid_within(&fork_pid_file, Duration::from_secs(10))
+            .expect("the plugin should fork its child and record its pid");
+        stragglers.pids.push(forked);
+        let status = stragglers
+            .children
+            .first_mut()
+            .and_then(|child| exit_status_within(child, Duration::from_secs(5)));
+
+        // The group kill and the `_exit` after it race for the helper itself,
+        // so either end is the deadline's; the forked child is the proof.
+        assert!(
+            status.is_some_and(|status| status.signal() == Some(libc::SIGKILL)
+                || status.code() == Some(HELPER_DEADLINE_EXIT_CODE)),
+            "the helper must end at its deadline: {status:?}"
+        );
+        assert!(
+            process_has_exited_within(forked, Duration::from_secs(2)),
+            "the plugin's forked child {forked} outlived its helper"
+        );
+    }
+
+    /// The Windows parent watch exits only on proof the parent is gone; a
+    /// watch that cannot tell leaves the decision to the deadline.
+    #[test]
+    fn only_proof_of_a_gone_parent_reads_as_gone() {
+        let cases = [
+            (
+                ParentObservation::OpenFailed(ParentOpenFailure::NoSuchProcess),
+                false,
+            ),
+            (
+                ParentObservation::OpenFailed(ParentOpenFailure::Other),
+                true,
+            ),
+            (ParentObservation::Waited(ParentWaitOutcome::Exited), false),
+            (ParentObservation::Waited(ParentWaitOutcome::Running), true),
+            (ParentObservation::Waited(ParentWaitOutcome::Failed), true),
+        ];
+        for (observation, alive) in cases {
+            assert_eq!(parent_alive_from(observation), alive, "{observation:?}");
+        }
+    }
+
+    /// Whether this process's child `pid` has exited within `window`, reaping
+    /// it here. A child someone else already reaped (`ECHILD`) has exited too.
+    #[cfg(unix)]
+    fn child_has_exited_within(pid: i32, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            let mut status = 0;
+            // SAFETY: waitpid with WNOHANG takes plain values and a valid
+            // out-pointer, and never blocks.
+            let reaped = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            if reaped == pid {
+                return true;
+            }
+            if reaped == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD)
+            {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Stopping kills the live helper, and neither the scan that was waiting
+    /// on it nor one started afterwards ever answers: both threads park, so
+    /// the walk can never publish a stopped scan. Their parked threads are
+    /// deliberately left for this test process's exit to end.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_scan_kills_its_helpers_and_never_answers() {
+        let registry = std::sync::Arc::new(HelperRegistry::new());
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-stopped-helper-{}", uuid::Uuid::new_v4()));
+        let never_spawned =
+            std::env::temp_dir().join(format!("sourdaw-never-spawned-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone(), never_spawned.clone()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let scanning = std::sync::Arc::clone(&registry);
+        let hanging_pid_file = pid_file.clone();
+        std::thread::spawn(move || {
+            let mut command = Command::new("sh");
+            command
+                .args(["-c", "echo $$ > \"$0\"; exec sleep 30"])
+                .arg(&hanging_pid_file);
+            let _ = sender.send(run_bounded_in(&scanning, &mut command, WORKER_TIMEOUT));
+        });
+        let helper = read_pid_within(&pid_file, Duration::from_secs(5))
+            .expect("the hanging helper should start and write its pid");
+        stragglers.pids.push(helper);
+
+        registry.stop();
+
+        assert!(
+            child_has_exited_within(helper, Duration::from_secs(2)),
+            "the stopped helper {helper} is still alive"
+        );
+        assert!(
+            matches!(
+                receiver.recv_timeout(Duration::from_millis(500)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "the scan that was waiting on a stopped helper must never answer"
+        );
+
+        let (later_sender, later_receiver) = std::sync::mpsc::channel();
+        let later_registry = std::sync::Arc::clone(&registry);
+        let marker = never_spawned.clone();
+        std::thread::spawn(move || {
+            let mut later = Command::new("sh");
+            later.args(["-c", "touch \"$0\""]).arg(&marker);
+            let _ = later_sender.send(run_bounded_in(&later_registry, &mut later, WORKER_TIMEOUT));
+        });
+        assert!(
+            matches!(
+                later_receiver.recv_timeout(Duration::from_millis(500)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "a scan started after stop must never answer"
+        );
+        assert!(
+            !never_spawned.exists(),
+            "a helper asked for after stop must never start"
+        );
+    }
+
+    #[test]
+    fn the_watchdog_decides_from_its_parent_first_then_its_clock() {
+        let deadline = Duration::from_secs(1);
+        let cases = [
+            (
+                Duration::ZERO,
+                false,
+                WatchdogVerdict::Terminate(HELPER_PARENT_GONE_EXIT_CODE),
+            ),
+            (
+                deadline,
+                false,
+                WatchdogVerdict::Terminate(HELPER_PARENT_GONE_EXIT_CODE),
+            ),
+            (
+                deadline,
+                true,
+                WatchdogVerdict::Terminate(HELPER_DEADLINE_EXIT_CODE),
+            ),
+            (
+                deadline * 2,
+                true,
+                WatchdogVerdict::Terminate(HELPER_DEADLINE_EXIT_CODE),
+            ),
+            (Duration::ZERO, true, WatchdogVerdict::KeepWaiting),
+            (deadline / 2, true, WatchdogVerdict::KeepWaiting),
+        ];
+        for (elapsed, parent_alive, expected) in cases {
+            assert_eq!(
+                watchdog_verdict(elapsed, deadline, parent_alive),
+                expected,
+                "elapsed {elapsed:?}, parent alive {parent_alive}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_watchdog_terminates_once_its_parent_is_gone() {
+        let probes = std::cell::Cell::new(0);
+        let terminated = std::cell::Cell::new(None);
+
+        let code = watch_helper_lifetime(
+            Duration::from_secs(60),
+            || {
+                probes.set(probes.get() + 1);
+                probes.get() < 3
+            },
+            |code| terminated.set(Some(code)),
+        );
+
+        assert_eq!(code, HELPER_PARENT_GONE_EXIT_CODE);
+        assert_eq!(terminated.get(), Some(HELPER_PARENT_GONE_EXIT_CODE));
+        assert_eq!(
+            probes.get(),
+            3,
+            "the watchdog keeps waiting while the parent lives"
+        );
+    }
+
+    #[test]
+    fn the_watchdog_terminates_at_its_deadline_with_its_parent_alive() {
+        let terminated = std::cell::Cell::new(None);
+
+        let code = watch_helper_lifetime(
+            Duration::from_millis(120),
+            || true,
+            |code| terminated.set(Some(code)),
+        );
+
+        assert_eq!(code, HELPER_DEADLINE_EXIT_CODE);
+        assert_eq!(terminated.get(), Some(HELPER_DEADLINE_EXIT_CODE));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn watchdog_exits_sit_above_every_spawner_bound_and_read_as_process_failures() {
+        assert!(HELPER_DEADLINE > WORKER_TIMEOUT);
+        assert_ne!(HELPER_DEADLINE_EXIT_CODE, HELPER_PARENT_GONE_EXIT_CODE);
+        for code in [HELPER_DEADLINE_EXIT_CODE, HELPER_PARENT_GONE_EXIT_CODE] {
+            let failure = process_failure(
+                Path::new("/plugins/Wedged.clap"),
+                &exit_status_for_code(code),
+            );
+            assert!(failure.is_process_failure(), "exit {code}: {failure}");
+        }
+    }
+
     /// The only two shapes crash quarantine exists to catch.
     #[test]
     fn is_process_failure_recognizes_exit_and_timeout_errors() {
-        assert!(is_process_failure(
+        assert!(exited_unsuccessfully("/plugins/Broken.clap").is_process_failure());
+        assert!(ScanFailure::TimedOut.is_process_failure());
+        assert!(tampered("/plugins/Hostile.clap").is_process_failure());
+    }
+
+    fn exited_unsuccessfully(path: &str) -> ScanFailure {
+        ScanFailure::ExitedUnsuccessfully {
+            path: PathBuf::from(path),
+        }
+    }
+
+    fn tampered(path: &str) -> ScanFailure {
+        ScanFailure::ResponseTampered {
+            path: PathBuf::from(path),
+        }
+    }
+
+    fn write_refused(path: &str) -> ScanFailure {
+        ScanFailure::ResponseWriteRefused {
+            path: PathBuf::from(path),
+        }
+    }
+
+    /// The text of every variant is the message the registry and the renderer
+    /// have always received. The expectations are the pre-enum format strings,
+    /// written out in full so a rewording fails here.
+    #[test]
+    fn display_reproduces_each_historical_message_byte_for_byte() {
+        assert_eq!(
+            exited_unsuccessfully("/plugins/Broken.clap").to_string(),
             "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
-        ));
-        assert!(is_process_failure("Plugin scan helper timed out"));
-        assert!(is_process_failure(&tampered_response_error(Path::new(
-            "/plugins/Hostile.clap"
-        ))));
+        );
+        assert_eq!(
+            ScanFailure::TimedOut.to_string(),
+            "Plugin scan helper timed out"
+        );
+        assert_eq!(
+            tampered("/plugins/Hostile.clap").to_string(),
+            "Plugin scan helper response was not a regular file for /plugins/Hostile.clap"
+        );
+        assert_eq!(
+            ScanFailure::ResponseOverLimit { bytes: 700_000 }.to_string(),
+            "Plugin scan helper response of 700000 bytes exceeded the scan helper's 16777216-byte limit"
+        );
+        assert_eq!(
+            write_refused("/plugins/X.clap").to_string(),
+            "Plugin scan helper could not write its response for /plugins/X.clap; the scan helper's response limit is 16777216 bytes"
+        );
+        assert_eq!(
+            ScanFailure::Refused("No plugin scan backend for format vst2".to_string()).to_string(),
+            "No plugin scan backend for format vst2"
+        );
+        assert_eq!(
+            oversized_response_error(1),
+            ScanFailure::ResponseOverLimit { bytes: 1 }.to_string()
+        );
+    }
+
+    /// Each variant answers both classification questions exactly as the
+    /// prefix match it replaced did.
+    #[test]
+    fn classification_is_decided_per_variant() {
+        let cases = [
+            (exited_unsuccessfully("/p.clap"), true, false),
+            (ScanFailure::TimedOut, true, false),
+            (tampered("/p.clap"), true, false),
+            (ScanFailure::ResponseOverLimit { bytes: 1 }, false, true),
+            (write_refused("/p.clap"), false, true),
+            (ScanFailure::Refused("deadline".to_string()), false, false),
+        ];
+        for (failure, process, limit) in cases {
+            assert_eq!(failure.is_process_failure(), process, "{failure}");
+            assert_eq!(failure.is_response_limit_refusal(), limit, "{failure}");
+        }
+    }
+
+    /// A refusal whose text merely resembles a classified message is still
+    /// data-level: classification reads the variant, never the text.
+    #[test]
+    fn a_refusal_that_reads_like_a_process_failure_is_not_one() {
+        let failure = ScanFailure::Refused("Plugin scan helper timed out".to_string());
+
+        assert!(!failure.is_process_failure());
+        assert!(!failure.is_response_limit_refusal());
     }
 
     /// A response the stand-in helper `script` leaves behind, read through the
@@ -1270,7 +2433,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// response path is the last. The call runs on its own thread with a
     /// bound, so a read that blocks fails the test instead of hanging it.
     #[cfg(unix)]
-    fn scan_with_stand_in_helper(script: String) -> Result<Vec<ScannedDescriptor>, String> {
+    fn scan_with_stand_in_helper(script: String) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
         let launcher = ScanWorkerCommand {
             program: PathBuf::from("/bin/sh"),
             args: vec![
@@ -1300,6 +2463,30 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     const VALID_RESPONSE: &str = r#"{"worker_pid":1,"result":{"Ok":[]}}"#;
 
+    /// An `Err` the helper reports in its response is the plugin's own text.
+    /// Whatever it says, it is a data-level refusal: classification reads the
+    /// variant, so a plugin that echoes a classified message cannot get itself
+    /// quarantined or its row blamed on the helper's limit.
+    #[cfg(unix)]
+    #[test]
+    fn a_reported_error_that_reads_like_a_classified_message_stays_data_level() {
+        // No apostrophe: the payload travels inside a single-quoted shell string.
+        for text in [
+            "Plugin scan helper timed out",
+            "Plugin scan helper response of 1 bytes exceeded the limit",
+        ] {
+            let response = format!(r#"{{"worker_pid":1,"result":{{"Err":"{text}"}}}}"#);
+
+            let failure =
+                scan_with_stand_in_helper(format!("printf '%s' '{response}' > \"$out\"\nexit 0"))
+                    .expect_err("a reported error must be returned as a failure");
+
+            assert_eq!(failure, ScanFailure::Refused(text.to_string()));
+            assert!(!failure.is_process_failure(), "{failure}");
+            assert!(!failure.is_response_limit_refusal(), "{failure}");
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_healthy_response_is_read() {
@@ -1318,7 +2505,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             scan_with_stand_in_helper("rm -f \"$out\"\nmkfifo \"$out\"\nexit 0".to_string())
                 .expect_err("a FIFO response must be refused");
 
-        assert!(is_process_failure(&error), "{error}");
+        assert!(error.is_process_failure(), "{error}");
     }
 
     /// The symlink's target is a valid response, so the refusal is the link
@@ -1331,7 +2518,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         ))
         .expect_err("a symlinked response must be refused");
 
-        assert!(is_process_failure(&error), "{error}");
+        assert!(error.is_process_failure(), "{error}");
     }
 
     /// An oversized regular file is the helper's limit, not tampering.
@@ -1344,8 +2531,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         ))
         .expect_err("an oversized response must be refused");
 
-        assert!(is_response_limit_refusal(&error), "{error}");
-        assert!(!is_process_failure(&error), "{error}");
+        assert!(error.is_response_limit_refusal(), "{error}");
+        assert!(!error.is_process_failure(), "{error}");
     }
 
     /// A real `ExitStatus` for a process that exited with `code`, obtained
@@ -1370,10 +2557,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure_message(path, &status);
+        let message = process_failure(path, &status);
 
         assert!(
-            !is_process_failure(&message),
+            !message.is_process_failure(),
             "a response-write refusal must never be classified as a process failure: {message}"
         );
     }
@@ -1387,10 +2574,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Hostile.clap");
         let status = exit_status_for_code(2);
 
-        let message = process_failure_message(path, &status);
+        let message = process_failure(path, &status);
 
         assert!(
-            is_process_failure(&message),
+            message.is_process_failure(),
             "a crash's exit code must still quarantine the binary: {message}"
         );
     }
@@ -1399,18 +2586,17 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// crashed or hung — never a reason to quarantine the binary.
     #[test]
     fn is_process_failure_rejects_data_level_refusals() {
-        assert!(!is_process_failure(
-            "No plugin scan backend for format vst2"
-        ));
-        assert!(!is_process_failure(&oversized_response_error(
-            MAX_RESPONSE_BYTES as usize
-        )));
-        assert!(!is_process_failure(
-            "Plugin scan helper returned invalid metadata: EOF"
-        ));
-        assert!(!is_process_failure(
-            "Cannot start plugin scan helper: denied"
-        ));
+        for message in [
+            "No plugin scan backend for format vst2",
+            "Plugin scan helper returned invalid metadata: EOF",
+            "Cannot start plugin scan helper: denied",
+        ] {
+            assert!(!ScanFailure::Refused(message.to_string()).is_process_failure());
+        }
+        assert!(!ScanFailure::ResponseOverLimit {
+            bytes: MAX_RESPONSE_BYTES as usize
+        }
+        .is_process_failure());
     }
 
     /// One `ScannedParameterDescriptor` at the scanner's own text caps: a
@@ -1531,49 +2717,48 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure_message(path, &status);
+        let message = process_failure(path, &status);
 
         assert!(
-            message.contains(&MAX_RESPONSE_BYTES.to_string()),
+            message
+                .to_string()
+                .contains(&MAX_RESPONSE_BYTES.to_string()),
             "the refusal must name the helper's limit so the plugin is not blamed \
              for its silence: {message}"
         );
         assert!(
-            !is_process_failure(&message),
+            !message.is_process_failure(),
             "a response-write refusal must never be classified as a process failure: {message}"
         );
-        assert!(is_response_limit_refusal(&message));
+        assert!(message.is_response_limit_refusal());
     }
 
     /// The oversized-response refusal carries the one number the refusing side
     /// can actually measure, and classifies as the helper's limit.
     #[test]
     fn an_oversized_response_refusal_names_the_size_and_the_helpers_limit() {
-        let error = oversized_response_error(700_000);
+        let error = ScanFailure::ResponseOverLimit { bytes: 700_000 };
 
         assert!(
-            error.contains("700000") && error.contains(&MAX_RESPONSE_BYTES.to_string()),
+            error.to_string().contains("700000")
+                && error.to_string().contains(&MAX_RESPONSE_BYTES.to_string()),
             "the refusal must name both the measured size and the helper's limit: {error}"
         );
         assert!(
-            !is_process_failure(&error),
+            !error.is_process_failure(),
             "a limit refusal is data-level, never quarantine evidence: {error}"
         );
-        assert!(is_response_limit_refusal(&error));
+        assert!(error.is_response_limit_refusal());
     }
 
     /// Only the helper's own limit refusals classify as such — a timeout, a
     /// crash, or any other refusal must keep its own classification.
     #[test]
     fn only_the_helpers_own_limit_refusals_are_response_limit_refusals() {
-        assert!(is_response_limit_refusal(&response_write_refusal_error(
-            Path::new("/plugins/X.clap")
-        )));
-        assert!(is_response_limit_refusal(&oversized_response_error(1)));
-        assert!(!is_response_limit_refusal("Plugin scan helper timed out"));
-        assert!(!is_response_limit_refusal(
-            "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
-        ));
-        assert!(!is_response_limit_refusal("deadline"));
+        assert!(write_refused("/plugins/X.clap").is_response_limit_refusal());
+        assert!(ScanFailure::ResponseOverLimit { bytes: 1 }.is_response_limit_refusal());
+        assert!(!ScanFailure::TimedOut.is_response_limit_refusal());
+        assert!(!exited_unsuccessfully("/plugins/Broken.clap").is_response_limit_refusal());
+        assert!(!ScanFailure::Refused("deadline".to_string()).is_response_limit_refusal());
     }
 }

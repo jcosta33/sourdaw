@@ -223,6 +223,14 @@ impl HostedPluginRuntime for HostedRuntime {
     fn report_plugin_observations(&mut self) {
         delegate!(self, backend => backend.report_plugin_observations())
     }
+
+    fn has_failed_a_process_call(&self) -> bool {
+        delegate!(self, backend => backend.has_failed_a_process_call())
+    }
+
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        delegate!(self, backend => backend.has_passed_a_block_unprocessed())
+    }
 }
 
 impl HostedRuntime {
@@ -265,17 +273,20 @@ impl HostedRuntime {
     /// Fixture-only, and only the CLAP arm has one — the VST3 backend's tests
     /// drive a real COM plugin rather than a wrapper that pretends to be one, so
     /// there is nothing here for it to stand in for. Reaching this on a VST3
-    /// runtime is a test wired to the wrong backend, and saying so beats
-    /// silently doing nothing.
+    /// runtime is a test wired to the wrong backend, and an error saying so
+    /// beats silently doing nothing.
     #[cfg(feature = "engine-owned-command-fixture")]
     #[doc(hidden)]
     pub fn set_engine_owned_command_fixture_parameters(
         &mut self,
         parameters: Vec<PluginParameter>,
-    ) {
+    ) -> Result<(), String> {
         match self {
-            Self::Clap(backend) => backend.set_engine_owned_command_fixture_parameters(parameters),
-            Self::Vst3(_) => panic!("the VST3 backend has no command fixture"),
+            Self::Clap(backend) => {
+                backend.set_engine_owned_command_fixture_parameters(parameters);
+                Ok(())
+            }
+            Self::Vst3(_) => Err("the VST3 backend has no command fixture".to_string()),
         }
     }
 

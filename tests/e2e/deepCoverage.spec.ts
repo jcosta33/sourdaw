@@ -123,31 +123,31 @@ test.describe('Setlist — list mutations', () => {
     test('Add setlist item creates a list, removes the empty state, names items sequentially', async ({ page }) => {
         // Before: empty state, no list.
         await expect(page.getByText('No setlist items')).toBeVisible();
-        await expect(page.getByRole('list', { name: 'Setlist items' })).toHaveCount(0);
+        await expect(page.getByRole('grid', { name: 'Setlist items' })).toHaveCount(0);
 
         await page.getByRole('button', { name: 'Add setlist item' }).click();
 
         // After: list exists with one item named "Song 1".
-        const items = page.getByRole('list', { name: 'Setlist items' });
+        const items = page.getByRole('grid', { name: 'Setlist items' });
         await expect(items).toBeVisible();
-        expect(await items.getByRole('listitem').count()).toBe(1);
+        expect(await items.getByRole('row').count()).toBe(1);
         await expect(items.getByText('Song 1')).toBeVisible();
 
         // Second add → "Song 2".
         await page.getByRole('button', { name: 'Add setlist item' }).click();
-        expect(await items.getByRole('listitem').count()).toBe(2);
+        expect(await items.getByRole('row').count()).toBe(2);
         await expect(items.getByText('Song 2')).toBeVisible();
     });
 
     test('Remove setlist item decrements count and restores empty state when last', async ({ page }) => {
         await page.getByRole('button', { name: 'Add setlist item' }).click();
         await page.getByRole('button', { name: 'Add setlist item' }).click();
-        const items = page.getByRole('list', { name: 'Setlist items' });
-        expect(await items.getByRole('listitem').count()).toBe(2);
+        const items = page.getByRole('grid', { name: 'Setlist items' });
+        expect(await items.getByRole('row').count()).toBe(2);
 
         await page.getByLabel('Remove Song 1').click();
 
-        expect(await items.getByRole('listitem').count()).toBe(1);
+        expect(await items.getByRole('row').count()).toBe(1);
         await expect(items.getByText('Song 2')).toBeVisible();
 
         // Remove the last one → empty state returns.
@@ -159,10 +159,10 @@ test.describe('Setlist — list mutations', () => {
     test('Move down reorders items (first item swaps below second)', async ({ page }) => {
         await page.getByRole('button', { name: 'Add setlist item' }).click();
         await page.getByRole('button', { name: 'Add setlist item' }).click();
-        const items = page.getByRole('list', { name: 'Setlist items' });
+        const items = page.getByRole('grid', { name: 'Setlist items' });
 
-        // Capture the rendered name order via the listitem text (each row shows "Song N").
-        const rows = items.getByRole('listitem');
+        // Capture the rendered name order via the row text (each row shows "Song N").
+        const rows = items.getByRole('row');
         const name_of = async (i: number) => (await rows.nth(i).innerText()).match(/Song \d+/)?.[0] ?? '';
         const before_first = await name_of(0);
         const before_second = await name_of(1);

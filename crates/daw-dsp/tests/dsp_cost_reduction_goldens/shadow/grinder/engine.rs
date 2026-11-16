@@ -7,7 +7,7 @@ use super::cabinet::{CabinetConvolver, SpeakerModel};
 use super::input::{InputConditioner, NoiseGate};
 use super::neural::{CapturePlacement, EngineMode, NeuralCapture};
 use super::params::{
-    get_automatable_param_index, linear_to_db, SmoothedParam, GRINDER_AUTOMATABLE_PARAM_CONTRACT,
+    get_automatable_param_index, SmoothedParam, GRINDER_AUTOMATABLE_PARAM_CONTRACT,
     GRINDER_AUTOMATABLE_PARAM_COUNT,
 };
 use super::pedals::{CompressorPedal, DistortionPedal, FuzzPedal, OverdrivePedal};
@@ -406,16 +406,6 @@ impl GrinderEngine {
         self.process_block_inner(left, right, &[], 0);
     }
 
-    pub fn process_block_automated(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        automation: &[f32],
-        stride: usize,
-    ) {
-        self.process_block_inner(left, right, automation, stride);
-    }
-
     fn process_block_inner(
         &mut self,
         left: &mut [f32],
@@ -548,9 +538,9 @@ impl GrinderEngine {
             }
 
             // Output processing
-            let og = self.output_gain.next();
-            let mix = self.output_mix.next();
-            let clean = self.clean_blend.next();
+            let og = self.output_gain.next_value();
+            let mix = self.output_mix.next_value();
+            let clean = self.clean_blend.next_value();
 
             signal *= og;
 
@@ -577,71 +567,6 @@ impl GrinderEngine {
                 self.output_peak *= self.meter_decay_coeff;
             }
         }
-    }
-
-    /// Clear every stage's runtime state. Parameters and routing survive;
-    /// filter memories, envelopes, ring buffers and meters do not — so a
-    /// relocated playhead does not inherit the tail of the previous position.
-    pub fn reset(&mut self) {
-        self.input_cond.reset();
-        self.gate.reset();
-        self.preamp.reset();
-        self.tone_stack.reset();
-        self.power_amp.reset();
-        self.dual_power_amp.reset();
-        self.transformer.reset();
-        self.dual_transformer.reset();
-        self.cabinet.reset();
-        self.dual_cabinet.reset();
-        self.speaker.reset();
-        self.dual_speaker.reset();
-        self.neural.reset();
-
-        self.pre_od.reset();
-        self.pre_dist.reset();
-        self.pre_fuzz.reset();
-        self.pre_comp.reset();
-        self.post_od.reset();
-        self.post_dist.reset();
-        self.post_fuzz.reset();
-        self.post_comp.reset();
-
-        self.fat_low_state = 0.0;
-        self.input_peak = 0.0;
-        self.preamp_peak = 0.0;
-        self.power_amp_peak = 0.0;
-        self.output_peak = 0.0;
-    }
-
-    pub fn input_db(&self) -> f32 {
-        linear_to_db(self.input_peak)
-    }
-    pub fn preamp_db(&self) -> f32 {
-        linear_to_db(self.preamp_peak)
-    }
-    pub fn power_amp_db(&self) -> f32 {
-        linear_to_db(self.power_amp_peak)
-    }
-    pub fn output_db(&self) -> f32 {
-        linear_to_db(self.output_peak)
-    }
-    pub fn sag_voltage(&self) -> f32 {
-        self.power_amp.sag_voltage()
-    }
-    pub fn latency_samples(&self) -> u32 {
-        self.neural.latency_samples()
-    }
-    pub fn gate_open(&self) -> f32 {
-        self.gate.gain()
-    }
-    pub fn gate_envelope_db(&self) -> f32 {
-        self.gate.envelope_db()
-    }
-    pub fn neural_cpu_percent(&self) -> f32 {
-        self.neural.cpu_percent()
-    }
-    pub fn neural_warmup_progress(&self) -> f32 {
-        self.neural.warmup_progress()
     }
 
     fn set_supported_pedal_order(&mut self, name: &str, value: f32) {

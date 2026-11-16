@@ -48,7 +48,6 @@ import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { enqueueClipDuplicate } from '../clipShortcuts/enqueueClipDuplicate';
-import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 
 const ZOOM_STEP = 4;
 
@@ -332,7 +331,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 case 'duplicateTrack': {
                     const selectedId = trackStore.value?.selectedTrackId;
                     if (selectedId) {
-                        duplicateTrack(selectedId);
+                        void executeUserAppAction({ type: 'duplicateTrack', payload: { trackId: selectedId } });
                     }
                     return true;
                 }
