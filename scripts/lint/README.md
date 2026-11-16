@@ -17,10 +17,10 @@ the original TypeScript parser's `argument` representation; neither route resolv
 dynamic expressions.
 
 Oxlint reserves native plugin names. Public plugin rules therefore use
-`react-hooks-js/`, `promise-js/`, and `jsx-a11y-x-js/` in configurations and inline disable
+`react-hooks-js/`, `promise-js/`, `jsx-a11y-x-js/`, and `import-x-js/` in configurations and inline disable
 comments. The remaining plugin names stay unchanged. ESLint registers these names
 without enabling moved rules in check mode, so the split passes accept each other's suppressions.
-It also retains the historical `react-hooks/`, `promise/`, and `jsx-a11y-x/` plugin
+It also retains the historical `react-hooks/`, `promise/`, `jsx-a11y-x/`, and `import-x/` plugin
 registrations so directives naming inactive rules remain valid. Those registrations
 enable only the three bulk-owned hook rules (`exhaustive-deps`, `refs`, and
 `set-state-in-effect`) under their original `react-hooks/` names. The other moved
@@ -46,8 +46,20 @@ ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
 parser services that Oxlint's public JS-plugin API does not supply. Native tsgolint
 does not expose its type checker to JS plugins. The recommended eslint-comments
 rules also stay in ESLint: their blanket-directive diagnostics deliberately use
-column `-1`, which Oxlint rejects as an out-of-range location. `import-x/order` retains its ordered
-TypeScript and Node resolver functions. Core rules retain their ESLint implementations
+column `-1`, which Oxlint rejects as an out-of-range location.
+Import ordering uses the unchanged public plugin under its supported `import-x-js/order`
+alias. Its JSON resolver chain tries TypeScript before Node with `preserveSymlinks: false`,
+preserving the former resolver factories' symlink behavior. The canonical settings and
+six-extension scope live in `.oxlint-plugins.json` and feed ESLint's shared cofix loop.
+No resolver-next setting remains to shadow that chain. Frozen resolver-factory probes
+compare diagnostics, grouping, final bytes, and idempotence against the JSON configuration,
+including resolved/unknown aliases and a discriminating Node fallback.
+
+Import suppressions must name `import-x-js/order`; historical `import-x/order` directives
+remain valid known-rule comments but do not suppress the new canonical ID. A rule-ID
+migration must update actual directives and ledger entries together with its configuration.
+The controlled compatibility probes deliberately show both IDs' behavior rather than
+treating the alias as an upstream API failure. Core rules retain their ESLint implementations
 for the remaining gaps. Native `id-length` rejects a lowercase one-character TypeScript
 type alias that ESLint's core rule accepts. Native `typescript/consistent-return` exempts
 void-valued returns that the configured core rule treats as value returns, even with
@@ -88,6 +100,18 @@ loop fixes exposed comments and reports remaining violations on the final text.
 After that loop succeeds, the public-plugin Oxlint pass checks the final bytes without
 fixing them. This preserves its CommonJS parser and missing/unsupported-target
 admission contracts while ESLint remains the last writer.
+
+Stock `eslint-plugin-prettier` works through Oxlint's public plugin API and produces
+the same stable formatting on an independent formatting fixture. That support alone
+does not replace the shared loop. For a compact function whose next-line directive
+suppresses `no-useless-computed-key`, the stock combined native/Prettier fix invocation
+returns success after formatting moves `return { ['key']: 1 };` beyond the directive.
+A fresh check then rejects that computed key. A second fix invocation removes the
+brackets, leaving `return { 'key': 1 };`, and a fresh check rejects its Prettier quote
+formatting. The native fixer exists, but the invocation does not converge on final
+bytes. The existing ESLint loop produces `return { key: 1 };` in one invocation and
+passes the subsequent check. The maintained isolated CLI probes preserve these exact
+counterexamples without adding an adapter or another production fix loop.
 
 The React plugin consumes `settings['react-x']`, which still detects the installed
 React version. Hooks consumes `settings['react-hooks']`, and the accessibility fork

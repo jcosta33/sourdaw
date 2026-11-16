@@ -11,6 +11,7 @@ import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
 
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
+import { lintImportOrderParity } from './helpers/lintImportOrderParity.ts';
 import {
     lintBaselineMigratedRules,
     lintLegacyCoreRule,
@@ -21,6 +22,7 @@ import {
     withLintFixture,
 } from './helpers/lintMigratedRules.ts';
 import { lintOctalSyntax } from './helpers/lintOctalSyntax.ts';
+import { withStockLintAlternatives } from './helpers/lintStockAlternatives.ts';
 import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -293,6 +295,210 @@ describe('production Oxlint public-plugin migration', () => {
             { extension: 'cjs', activeRule: undefined },
         ]);
     }, 120_000);
+
+    it.each([
+        'src/app/parity.ts',
+        'src/app/Parity.tsx',
+        'src/app/Parity.jsx',
+        'src/app/parity.d.ts',
+        'scripts/parity.js',
+        'src/app/parity.mts',
+        'src/app/parity.cts',
+        'server/parity.ts',
+        'tests/e2e/parity.ts',
+    ])(
+        'preserves frozen import ranking, JSON resolver fallback and cofix bytes on %s',
+        (filename) => {
+            const result = lintImportOrderParity(filename);
+            const messages = (entries: typeof result.baselineCheck.messages, orderOnly = false) =>
+                entries
+                    .filter((entry) => !orderOnly || entry.ruleId?.endsWith('/order'))
+                    .map((entry) => ({ ...entry, ruleId: entry.ruleId?.replace('import-x-js/', 'import-x/') }))
+                    .sort((left, right) => left.message.localeCompare(right.message));
+            expect(result.baselineCheck.status, result.baselineCheck.output).toBe(1);
+            expect(
+                result.baselineCheck.messages.every((message) =>
+                    ['import-x/order', 'prettier/prettier'].includes(message.ruleId ?? '')
+                )
+            ).toBe(true);
+            expect(messages(result.jsonCheck.messages)).toEqual(messages(result.baselineCheck.messages));
+            expect(messages(result.canonicalCheck.messages)).toEqual(messages(result.baselineCheck.messages));
+            expect(messages(result.oxlintCheck.messages)).toEqual(messages(result.baselineCheck.messages, true));
+            expect(messages(result.productionCheck.messages, true)).toEqual(
+                messages(result.baselineCheck.messages, true)
+            );
+            for (const fixed of [result.baselineFix, result.jsonFix, result.canonicalFix, result.repeated]) {
+                expect(fixed.status, fixed.output).toBe(0);
+                expect(fixed.text).toBe(result.baselineFix.text);
+            }
+            for (const checked of [result.finalCheck, result.finalOxlint]) {
+                expect(checked.status, checked.output).toBe(0);
+                expect(checked.messages).toEqual([]);
+            }
+            expect(messages(result.finalProduction.messages, true)).toEqual([]);
+            const fixed = result.baselineFix.text;
+            expect(fixed.indexOf("'#/utils/base64'")).toBeLessThan(fixed.indexOf("'../parent'"));
+            expect(fixed.indexOf("'#/lint-parity-unknown'")).toBeGreaterThan(fixed.indexOf("'./index'"));
+            expect(fixed.indexOf("'./alpha'")).toBeLessThan(fixed.indexOf("'./Zoo'"));
+            expect(fixed.indexOf("'react'")).toBeLessThan(fixed.indexOf("'zod'"));
+            if (!filename.startsWith('server/')) {
+                expect(result.noNodeFix.status, result.noNodeFix.output).toBe(0);
+                expect(result.noNodeFix.text).not.toBe(fixed);
+            }
+        },
+        120_000
+    );
+
+    it('checks canonical import directives and converges the real production cofix route without changing budgets', () => {
+        const input =
+            "import { join } from 'node:path';\nimport {readFileSync} from 'node:fs';\n\nexport {join,readFileSync};\n";
+        const budget = readFileSync('eslint-suppressions.json');
+        const rejected = runProductionLint(input, 'scripts/example.js');
+        expect(rejected.status, rejected.output).toBe(1);
+        expect(rejected.output).toContain('import-x-js(order)');
+        const fixed = runProductionLint(input, 'scripts/example.js', true);
+        expect(fixed.status, fixed.output).toBe(0);
+        expect(fixed.text).toBe(
+            "import { readFileSync } from 'node:fs';\nimport { join } from 'node:path';\n\nexport { join, readFileSync };\n"
+        );
+        const repeated = runProductionLint(fixed.text, 'scripts/example.js', true);
+        expect(repeated.status, repeated.output).toBe(0);
+        expect(repeated.text).toBe(fixed.text);
+        expect(runProductionLint(fixed.text, 'scripts/example.js').status).toBe(0);
+        const directive =
+            '/* eslint-disable import-x-js/order -- Canonical directive. */\n' +
+            "import { join } from 'node:path';\nimport { readFileSync } from 'node:fs';\n\nexport { join, readFileSync };\n" +
+            '/* eslint-enable import-x-js/order */\n';
+        for (const fix of [false, true]) {
+            const accepted = runProductionLint(directive, 'scripts/example.js', fix);
+            expect(accepted.status, accepted.output).toBe(0);
+            expect(accepted.text).toBe(directive);
+            for (const prefix of ['import-x', 'import-x-js']) {
+                const inactive = runProductionLint(
+                    `// eslint-disable-next-line ${prefix}/no-unresolved -- Known inactive rule.\nexport const value = 1;\n`,
+                    'scripts/example.js',
+                    fix
+                );
+                expect(inactive.status, inactive.output).toBe(0);
+                const unknown = runProductionLint(
+                    `// eslint-disable-next-line ${prefix}/not-a-rule -- Unknown rule.\nexport const value = 1;\n`,
+                    'scripts/example.js',
+                    fix
+                );
+                expect(unknown.status, unknown.output).toBe(1);
+                expect(unknown.output).toContain(`Definition for rule '${prefix}/not-a-rule' was not found`);
+            }
+        }
+        expect(readFileSync('eslint-suppressions.json')).toEqual(budget);
+    }, 180_000);
+
+    it('runs stock Prettier through the public plugin API with identical formatting and stable second fixes', () => {
+        withStockLintAlternatives('export const value={count:1}', (probe) => {
+            const rejected = probe.oxlint({ subject: 'format', fix: false });
+            expect(rejected.status, rejected.output).toBe(1);
+            expect(rejected.messages.map((message) => message.ruleId)).toContain('prettier/prettier');
+            const baseline = probe.eslint({ subject: 'format', fix: true });
+            expect(baseline.status, baseline.output).toBe(0);
+            expect(baseline.text).toBe('export const value = { count: 1 };\n');
+            probe.reset();
+            const fixed = probe.oxlint({ subject: 'format', fix: true });
+            expect(fixed.status, fixed.output).toBe(0);
+            expect(fixed.text).toBe(baseline.text);
+            const repeated = probe.oxlint({ subject: 'format', fix: true });
+            expect(repeated.status, repeated.output).toBe(0);
+            expect(repeated.text).toBe(fixed.text);
+            const checked = probe.oxlint({ subject: 'format', fix: false });
+            expect(checked.status, checked.output).toBe(0);
+            expect(checked.messages).toEqual([]);
+        });
+    }, 60_000);
+
+    it.each([
+        '/* eslint-disable import-x/order -- Historical rule ID. */\n' +
+            "import sibling from './sibling';\n\nimport { basename } from 'node:path';\n\nexport const value = basename(sibling);\n",
+        "import { resolve } from 'node:path';\n" +
+            '// eslint-disable-next-line import-x/order -- Historical rule ID.\n' +
+            "import { readFileSync } from 'node:fs';\nexport const value = readFileSync(resolve('test'));\n",
+    ])(
+        'makes the canonical import alias migration boundary explicit for historical directive IDs: %s',
+        (input) => {
+            withStockLintAlternatives(input, (probe) => {
+                for (const fix of [false, true]) {
+                    for (const jsonResolver of [false, true]) {
+                        probe.reset();
+                        const baseline = probe.eslint({ subject: 'imports', fix, jsonResolver });
+                        expect(baseline.status, baseline.output).toBe(0);
+                        expect(baseline.messages).toEqual([]);
+                        expect(baseline.text).toBe(input);
+                    }
+                    probe.reset();
+                    const candidate = probe.oxlint({ subject: 'imports', fix });
+                    if (fix) {
+                        expect(candidate.status, candidate.output).toBe(0);
+                        expect(candidate.text).not.toBe(input);
+                    } else {
+                        expect(candidate.status, candidate.output).toBe(1);
+                        expect(candidate.messages.map((message) => message.ruleId)).toContain('import-x-js/order');
+                    }
+                    const renamed = input.replaceAll('import-x/order', 'import-x-js/order');
+                    probe.reset(renamed);
+                    const control = probe.oxlint({ subject: 'imports', fix });
+                    expect(control.status, control.output).toBe(0);
+                    expect(control.messages).toEqual([]);
+                    expect(control.text).toBe(renamed);
+                }
+            });
+        },
+        60_000
+    );
+
+    it('keeps known import directives valid and rejects unknown IDs through the original ESLint registration', () => {
+        withStockLintAlternatives('', (probe) => {
+            for (const fix of [false, true]) {
+                for (const rule of ['import-x/no-unresolved', 'import-x/not-a-rule']) {
+                    probe.reset(
+                        `// eslint-disable-next-line ${rule} -- Directive validation.\nexport const value = 1;\n`
+                    );
+                    const result = probe.eslint({ subject: 'imports', fix });
+                    expect(result.status, result.output).toBe(rule.endsWith('not-a-rule') ? 1 : 0);
+                    expect(result.messages.map((message) => message.ruleId)).toEqual(
+                        rule.endsWith('not-a-rule') ? [rule] : []
+                    );
+                }
+            }
+        });
+    }, 60_000);
+
+    it('retains the shared ESLint loop because stock native and Prettier fixes do not converge after next-line scope moves', () => {
+        const input =
+            '// eslint-disable-next-line no-useless-computed-key -- Controlled suppression scope probe.\n' +
+            "export function example() { return { ['key']: 1 }; }\n";
+        const formatted =
+            input.slice(0, input.indexOf('\n') + 1) + "export function example() {\n    return { ['key']: 1 };\n}\n";
+        withStockLintAlternatives(input, (probe) => {
+            const baseline = probe.eslint({ subject: 'computed', fix: true });
+            expect(baseline.status, baseline.output).toBe(0);
+            expect(baseline.text).toBe(formatted.replace("['key']", 'key'));
+            expect(probe.eslint({ subject: 'computed', fix: true }).text).toBe(baseline.text);
+            expect(probe.eslint({ subject: 'computed', fix: false }).status).toBe(0);
+            probe.reset();
+            const beforeFormatting = probe.eslint({ subject: 'computed', fix: true, prettier: false });
+            expect(beforeFormatting.status, beforeFormatting.output).toBe(0);
+            expect(beforeFormatting.text).toBe(input);
+            const first = probe.oxlint({ subject: 'computed', fix: true });
+            expect(first.status, first.output).toBe(0);
+            expect(first.text).toBe(formatted);
+            const firstCheck = probe.oxlint({ subject: 'computed', fix: false });
+            expect(firstCheck.status, firstCheck.output).toBe(1);
+            expect(firstCheck.messages.map((message) => message.ruleId)).toEqual(['eslint/no-useless-computed-key']);
+            const second = probe.oxlint({ subject: 'computed', fix: true });
+            expect(second.status, second.output).toBe(0);
+            expect(second.text).toBe(formatted.replace("['key']", "'key'"));
+            const secondCheck = probe.oxlint({ subject: 'computed', fix: false });
+            expect(secondCheck.status, secondCheck.output).toBe(1);
+            expect(secondCheck.messages.map((message) => message.ruleId)).toEqual(['prettier/prettier']);
+        });
+    }, 60_000);
 
     it.each(coreMigrationCases)(
         'preserves the frozen ESLint $rule contract in the production Oxlint config',
@@ -850,7 +1056,6 @@ describe('production Oxlint public-plugin migration', () => {
                 '@typescript-eslint/naming-convention',
                 'consistent-return',
                 'id-length',
-                'import-x/order',
                 'no-invalid-this',
                 'no-restricted-syntax',
                 'no-void',
@@ -893,6 +1098,9 @@ describe('production Oxlint public-plugin migration', () => {
                     rules: config.rules,
                     project: config.languageOptions.parserOptions.project,
                     react: config.settings['react-x'],
+                    resolver: config.settings['import-x/resolver'],
+                    resolverNext: config.settings['import-x/resolver-next'],
+                    imports: Object.keys(config.plugins).filter(name => name.startsWith('import-x')).sort(),
                     legacy: Object.keys(config.plugins).filter(name =>
                         ['jsx-a11y-x', 'promise', 'react-hooks'].includes(name)
                     ).sort(),
@@ -927,6 +1135,9 @@ describe('production Oxlint public-plugin migration', () => {
                     rules: config.rules,
                     project: config.project,
                     react: config.react,
+                    resolver: config.resolver,
+                    resolverNext: config.resolverNext,
+                    imports: config.imports,
                     legacy: config.legacy,
                 };
             };
@@ -960,6 +1171,9 @@ describe('production Oxlint public-plugin migration', () => {
         for (const target of targets) {
             for (const mode of [check, fix]) {
                 expect(mode[target].legacy, target).toEqual(['jsx-a11y-x', 'promise', 'react-hooks']);
+                expect(mode[target].imports, target).toEqual(['import-x', 'import-x-js']);
+                expect(mode[target].resolverNext, target).toBeUndefined();
+                expect(mode[target].rules['import-x/order'], target).toBeUndefined();
                 for (const rule of [
                     '@eslint-react/exhaustive-deps',
                     '@eslint-react/naming-convention-context-name',
@@ -990,13 +1204,25 @@ describe('production Oxlint public-plugin migration', () => {
                 ]);
             }
             expect(fix[target].react, target).toEqual(canonical.settings['react-x']);
+            expect(fix[target].resolver, target).toEqual(canonical.settings['import-x/resolver']);
+            expect(check[target].resolver, target).toBeUndefined();
+            const order = canonical.overrides.find(
+                (entry: unknown) =>
+                    isRecord(entry) && isRecord(entry.rules) && entry.rules['import-x-js/order'] !== undefined
+            );
+            if (!isRecord(order) || !isRecord(order.rules) || !Array.isArray(order.rules['import-x-js/order'])) {
+                throw new Error('Missing canonical import order policy');
+            }
+            expect(check[target].rules['import-x-js/order'], target).toBeUndefined();
+            expect(fix[target].rules['import-x-js/order'], target).toEqual(
+                target === 'tool' ? undefined : [2, ...order.rules['import-x-js/order'].slice(1)]
+            );
             expect(fix[target].project, target).toEqual(check[target].project);
             for (const rule of [
                 '@eslint-react/no-leaked-conditional-rendering',
                 '@tanstack/query/no-rest-destructuring',
                 '@tanstack/query/no-void-query-fn',
                 '@typescript-eslint/naming-convention',
-                'import-x/order',
                 'prettier/prettier',
             ]) {
                 expect(fix[target].rules[rule], `${target}: ${rule}`).toEqual(check[target].rules[rule]);
