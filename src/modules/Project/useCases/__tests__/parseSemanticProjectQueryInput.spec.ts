@@ -14,6 +14,20 @@ import { MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH, MAX_SEMANTIC_QUERY_PAGE_SIZE } f
 import { parseSemanticProjectQueryInput } from '../parseSemanticProjectQueryInput';
 
 describe('parseSemanticProjectQueryInput', () => {
+    it('admits a revision and selection-bound MIDI window and refuses an unbound window', () => {
+        const input = {
+            type: 'musical-content',
+            filters: { stableId: 'clip-1', startBeat: 8, endBeat: 12 },
+            expectedRevision: 'revision-1',
+            selectionToken: 'selection-1',
+            page: { limit: 4 },
+        };
+        expect(parseSemanticProjectQueryInput(input)).toEqual({ status: 'valid', input });
+        expect(parseSemanticProjectQueryInput({ type: 'musical-content', filters: input.filters })).toMatchObject({
+            status: 'invalid',
+        });
+    });
+
     it('refuses a key the contract does not publish rather than dropping it', () => {
         expect(parseSemanticProjectQueryInput({ type: 'project-summary', unknownKey: 1 })).toEqual({
             status: 'invalid',
