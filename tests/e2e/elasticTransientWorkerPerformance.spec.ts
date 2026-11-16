@@ -65,6 +65,7 @@ type PreparationMeasure = {
     startTime: number;
 };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
+const armedSaveOverlaps = new WeakSet<TestInfo>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
     'devtools.timeline',
@@ -370,6 +371,11 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
 }
 test.afterEach(async ({ page: _page }, info) => {
     const failures: string[] = [];
+    try {
+        await attachSaveOverlap(_page, info);
+    } catch (error) {
+        failures.push(String(error));
+    }
     for (const capture of elasticTaskTraces.get(info) ?? []) {
         try {
             failures.push(...(await capture.attach()));
@@ -386,6 +392,24 @@ test.afterEach(async ({ page: _page }, info) => {
 const RATE = 48000;
 const SECONDS = 120;
 const ATTACKS = Array.from({ length: 120 }, (_, index) => index + 0.25);
+async function attachSaveOverlap(page: Page, info: TestInfo) {
+    if (!armedSaveOverlaps.has(info)) {
+        return null;
+    }
+    const report = await page.evaluate(async () => {
+        const path = '/tests/e2e/elasticSaveOverlapFixture.ts';
+        const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
+        return fixture.stopElasticSaveOverlap();
+    });
+    if (report) {
+        await info.attach('elastic-real-save-overlap.json', {
+            body: JSON.stringify(report, null, 2),
+            contentType: 'application/json',
+        });
+    }
+    armedSaveOverlaps.delete(info);
+    return report;
+}
 function percussiveStereoWav(): Buffer {
     const frames = RATE * SECONDS;
     const bytes = frames * 4;
@@ -638,6 +662,14 @@ for (const projectScale of [false, true]) {
             await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
             const workers: string[] = [];
             page.on('worker', (worker) => workers.push(worker.url()));
+            if (projectScale) {
+                armedSaveOverlaps.add(info);
+                await page.evaluate(async (clipId) => {
+                    const path = '/tests/e2e/elasticSaveOverlapFixture.ts';
+                    const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
+                    fixture.armElasticSaveOverlap(clipId);
+                }, targetClipId);
+            }
             const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
             await page.evaluate(async () => {
                 type Metrics = {
@@ -775,6 +807,43 @@ for (const projectScale of [false, true]) {
                 return { ...measurement, inputMarkStart: inputMark.startTime };
             });
             await coldTrace.stop();
+            const overlap = await attachSaveOverlap(page, info);
+            await coldTrace.attach();
+            await info.attach('elastic-cold-raw-measurements.json', {
+                body: JSON.stringify({ ...measured, mainThreadTasks: coldTrace.tasks(), overlap }, null, 2),
+                contentType: 'application/json',
+            });
+            if (projectScale) {
+                expect(overlap, 'Dense Detect must overlap the actual public Save').not.toBeNull();
+                if (!overlap || !overlap.save.requested || !overlap.save.settled) {
+                    throw new Error('Required actual Save overlap did not complete');
+                }
+                expect(overlap.failures).toEqual([]);
+                expect(overlap.restored).toBe(true);
+                expect(overlap.targetClipId).toBe(targetClipId);
+                expect(overlap.save.result).toBe(true);
+                expect(overlap.save.error).toBeNull();
+                expect(overlap.save.requested.identity).toBe(overlap.armed.identity);
+                expect(overlap.save.settled.identity).toBe(overlap.armed.identity);
+                expect(overlap.save.settled.projectId).toBe(overlap.armed.projectId);
+                expect(overlap.save.settled.heads).not.toEqual(overlap.save.requested.heads);
+                expect(overlap.save.settled.revision).not.toBe(overlap.save.requested.revision);
+                expect(overlap.input).toBe(measured.inputMarkStart);
+                expect(overlap.attempts.length).toBeGreaterThanOrEqual(2);
+                const first = overlap.attempts[0];
+                expect(first.held).toBe(true);
+                expect(first.created).toBeGreaterThan(measured.inputMarkStart);
+                expect(overlap.save.requested.time).toBeGreaterThan(first.created);
+                expect(first.received).toBeGreaterThan(overlap.save.requested.time);
+                expect(first.forwarded).toBeGreaterThanOrEqual(overlap.save.settled.time);
+                expect(first.forwarded).toBeLessThan(measured.end);
+                expect(overlap.save.settled.time).toBeLessThan(measured.end);
+                for (const attempt of overlap.attempts) {
+                    expect(attempt.status).toBe('complete');
+                    expect(attempt.forwarded).not.toBeNull();
+                    expect(attempt.terminated).not.toBeNull();
+                }
+            }
             await assertPreserved();
             const after = await sourceState(page);
             const gaps = measured.frames.slice(1).flatMap((time, index) => {
