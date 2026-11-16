@@ -1199,6 +1199,7 @@
                 "src/modules/AudioEngine/models/AudioEngineState.ts",
                 "src/modules/AudioEngine/models/GrandBouleRingProtocol.ts",
                 "src/modules/AudioEngine/repositories/createWebAudioEngine.ts",
+                "src/modules/AudioEngine/repositories/webAudioEngine/**",
                 "src/modules/AudioEngine/workers/grandBouleEngineWorker.ts",
                 "src/modules/AudioEngine/worklets/grandBoule*.ts",
                 "src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts",
