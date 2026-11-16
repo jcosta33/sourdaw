@@ -105,6 +105,15 @@ describe('handleSetTrackHeight', () => {
             expect(mocks.setTrackHeight).not.toHaveBeenCalled();
         });
 
+        it('replays a stored guard-less inverse unguarded, as before guards existed', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', height: 120 }] });
+            const legacy = { type: 'setTrackHeight', payload: { trackId: 't1', height: 80 } } as const;
+
+            expect(handleSetTrackHeight.validate?.(legacy, { actions: [legacy], actionIndex: 0 })).toBe(true);
+            expect(handleSetTrackHeight.execute(legacy)).toEqual({ status: 'written' });
+            expect(mocks.setTrackHeight).toHaveBeenCalledWith('t1', 80);
+        });
+
         it('can be replayed after divergence only when it states what it expects', () => {
             expect(handleSetTrackHeight.canReapplyAfterDivergence?.(forward(80, 120))).toBe(true);
             expect(handleSetTrackHeight.canReapplyAfterDivergence?.(forward(80))).toBe(false);

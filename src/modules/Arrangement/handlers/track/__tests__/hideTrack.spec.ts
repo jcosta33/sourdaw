@@ -110,6 +110,15 @@ describe('handleHideTrack', () => {
             expect(mocks.hideTrack).not.toHaveBeenCalled();
         });
 
+        it('replays a stored guard-less inverse unguarded, as before guards existed', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', hidden: true }] });
+            const legacy = { type: 'hideTrack', payload: { trackId: 't1', hidden: false } } as const;
+
+            expect(handleHideTrack.validate?.(legacy, { actions: [legacy], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(legacy)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenCalledWith('t1', false);
+        });
+
         it('can be replayed after divergence only when it states what it expects', () => {
             expect(handleHideTrack.canReapplyAfterDivergence?.(forward(false))).toBe(true);
             expect(handleHideTrack.canReapplyAfterDivergence?.(forward())).toBe(false);

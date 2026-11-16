@@ -51,6 +51,10 @@ export const handleSetTrackHeight = createHandler<'setTrackHeight'>({
         // the inverse restores the height this action finds, as earlier actions of its batch leave
         // it, and a later resize conflicts with either leg.
         const prev = readPlannedDisplayTrack(alpha.payload.trackId, context);
+        // A batch describes every action before executing any, so a missing track is refused here with its reason.
+        if (!prev && context) {
+            throw new Error(describeMissingTrack(alpha.payload.trackId));
+        }
         if (!prev) {
             return { label: 'Set track height', inverseAction: null };
         }

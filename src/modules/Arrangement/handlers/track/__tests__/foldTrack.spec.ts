@@ -120,6 +120,15 @@ describe('handleFoldTrack', () => {
             expect(mocks.foldTrack).not.toHaveBeenCalled();
         });
 
+        it('replays a stored guard-less inverse unguarded, as before guards existed', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'folder', collapsed: true }] });
+            const legacy = { type: 'foldTrack', payload: { trackId: 't1', folded: false } } as const;
+
+            expect(handleFoldTrack.validate?.(legacy, { actions: [legacy], actionIndex: 0 })).toBe(true);
+            expect(handleFoldTrack.execute(legacy)).toEqual({ status: 'written' });
+            expect(mocks.foldTrack).toHaveBeenCalledWith('t1', false);
+        });
+
         it('can be replayed after divergence only when it states what it expects', () => {
             expect(handleFoldTrack.canReapplyAfterDivergence?.(forward(false))).toBe(true);
             expect(handleFoldTrack.canReapplyAfterDivergence?.(forward())).toBe(false);

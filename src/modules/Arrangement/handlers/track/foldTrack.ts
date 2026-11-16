@@ -50,6 +50,10 @@ export const handleFoldTrack = createHandler<'foldTrack'>({
         // negating the payload. Both legs name the state they expect, so a later edit conflicts.
         const { trackId, folded } = alpha.payload;
         const prev = readPlannedDisplayTrack(trackId, context);
+        // A batch describes every action before executing any, so a missing track is refused here with its reason.
+        if (!prev && context) {
+            throw new Error(describeMissingTrack(trackId));
+        }
         return {
             label: folded ? 'Fold track' : 'Unfold track',
             inverseAction: prev

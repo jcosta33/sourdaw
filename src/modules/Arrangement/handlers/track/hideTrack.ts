@@ -46,6 +46,10 @@ export const handleHideTrack = createHandler<'hideTrack'>({
         // negating the payload. Both legs name the state they expect, so a later edit conflicts.
         const { trackId, hidden } = alpha.payload;
         const prev = readPlannedDisplayTrack(trackId, context);
+        // A batch describes every action before executing any, so a missing track is refused here with its reason.
+        if (!prev && context) {
+            throw new Error(describeMissingTrack(trackId));
+        }
         return {
             label: hidden ? 'Hide track' : 'Show track',
             inverseAction: prev

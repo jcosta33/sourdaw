@@ -2463,7 +2463,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
             const result = await runAsAgent([structuredClone(action)]);
 
-            expect(result).toMatchObject({ status: 'conflicted', reason: expect.stringContaining(reason) });
+            expect(result).toMatchObject({
+                status: reason.includes('does not exist') ? 'rejected' : 'conflicted',
+                reason: expect.stringContaining(reason),
+            });
             expect(ownerProjections()).toEqual(before);
             expect(undoStore.value?.past ?? []).toEqual([]);
         });
