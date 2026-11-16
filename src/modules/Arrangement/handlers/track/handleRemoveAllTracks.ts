@@ -1,8 +1,8 @@
 import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { type RestoreTrackPayloadSnapshot } from '../../events/arrangementTrackSnapshots';
 import { type Track } from '../../models/Track';
 import { reconcileRoutingAfterRemovingTracks } from '../../services/reconcileRoutingAfterRemovingTracks';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';

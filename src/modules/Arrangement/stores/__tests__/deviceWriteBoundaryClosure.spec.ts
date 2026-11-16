@@ -1267,6 +1267,18 @@ const DEVICE_DATA_COUNTS = {
         // (outside this census) when the device action types joined their module.
         // Type-only device-data shape: an action payload declaration, not an access.
         'src/modules/Arrangement/events/arrangementDeviceAppActions.ts': 1,
+        // Count provenance: measured 1 — the `devices` field of the preset chain
+        // restore payload, moved from `src/utils/handlerContract.ts` with the
+        // preset action types. Type-only payload declaration, not an access.
+        'src/modules/Arrangement/events/arrangementPresetAppActions.ts': 1,
+        // Count provenance: measured 2 — the `devices` fields of the track and
+        // track-removal snapshot types, moved from `src/utils/handlerContract.ts`
+        // with the track action types. Type-only snapshot shapes, not accesses.
+        'src/modules/Arrangement/events/arrangementTrackSnapshots.ts': 2,
+        // Count provenance: measured 1 — the device snapshot shape moved from
+        // `src/utils/handlerContract.ts` when the legacy union retired.
+        // Type-only snapshot declaration, not an access.
+        'src/modules/Arrangement/models/DeviceSnapshot.ts': 1,
         // Count provenance: measured 1 each — only neutral footprint and
         // planned-owner type fields; neither file executes a project write.
         'src/modules/Arrangement/models/DevicePatchState.ts': 1,

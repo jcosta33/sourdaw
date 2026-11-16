@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type RestoreTrackPayloadSnapshot } from '../../events/arrangementTrackSnapshots';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { activateCreatedTrackHostedPlugins } from '../../useCases/device/activateCreatedTrackHostedPlugins';
 import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';

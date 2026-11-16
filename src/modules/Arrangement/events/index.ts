@@ -4,3 +4,10 @@
 export type { TrackRemovedPayload } from './TrackRemovedEvent';
 export type { FreezeStateChangedPayload } from './FreezeStateChangedEvent';
 export type { TrackSelectionChangedPayload } from './TrackSelectionChangedEvent';
+export type {
+    ClipAutomationLaneActionSnapshot,
+    GeneratedMidiStateGuard,
+    MidiClipGlueActionSnapshot,
+    ScratchPadSectionSnapshot,
+    StemImportTrackSnapshot,
+} from './arrangementClipSnapshots';
