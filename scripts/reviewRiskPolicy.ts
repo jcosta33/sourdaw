@@ -164,6 +164,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/laneActivity.ts',
     'scripts/laneRemovalFetch.ts',
     'scripts/laneStackForkMarkers.ts',
+    'scripts/lintLedgerCrossing.ts',
     'scripts/measurementRevisionHolders.ts',
     'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',
