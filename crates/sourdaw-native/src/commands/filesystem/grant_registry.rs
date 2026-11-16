@@ -216,14 +216,19 @@ fn comparable_name(name: &str) -> String {
         .into_owned()
 }
 
-/// Every spelling a case-insensitive volume treats as one name maps to one
-/// string. `str::to_lowercase` is not enough: it keeps letters that are
-/// already lowercase, such as final sigma or long s, apart from the letters
-/// the volume folds them into. Each character goes up and back down on its
-/// own, so `ς` and `σ` both become `σ` and `ß` becomes `ss`.
+/// Every spelling a case-insensitive volume may treat as one name maps to one
+/// string. Neither platform documents its fold table, so this folds at least
+/// as far as either could: folding too far only refuses a write into an oddly
+/// named sibling folder, while folding too little admits a write into plugin
+/// code. `str::to_lowercase` keeps already-lowercase letters such as final
+/// sigma or long s apart from the letters they fold into, and an uppercase
+/// round trip alone splits `ẞ` from `ß`. Each character therefore goes down,
+/// up and down again, so `ς` and `σ` both become `σ`, and `ß`, `ẞ` and `ss`
+/// all become `ss`.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn fold_case(name: &str) -> String {
     name.chars()
+        .flat_map(char::to_lowercase)
         .flat_map(char::to_uppercase)
         .flat_map(char::to_lowercase)
         .collect()
@@ -821,6 +826,7 @@ mod tests {
             "/Users/u/Plugins/\u{3b1}\u{3c3}/Evil.clap",
             "/Users/u/Plugins/\u{3b1}\u{3c2}/Evil.clap",
             "/Users/u/Plugins/STRASSE/Evil.clap",
+            "/Users/u/Plugins/Stra\u{1e9e}e/Evil.clap",
             "/Users/u/Plugins/LONGS/Evil.clap",
         ] {
             assert!(
