@@ -14,6 +14,7 @@ const EXPECTED_PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
+    'render_graph_offline',
     'retire_native_engine',
     'scan_plugins',
     'set_plugin_bypass',
@@ -44,6 +45,7 @@ describe('plugin command admission during quit', () => {
 
         expect(admission.acceptsCommand('load_plugin')).toBe(true);
         expect(admission.acceptsCommand('close_plugin_gui')).toBe(true);
+        expect(admission.acceptsCommand('render_graph_offline')).toBe(true);
     });
 
     it('refuses runtime commands once quit has begun', () => {
@@ -61,6 +63,9 @@ describe('plugin command admission during quit', () => {
         // The engine retire: it drains those same runtimes and closes their
         // editors, so it must not race the cascade doing the same.
         expect(admission.acceptsCommand('retire_native_engine')).toBe(false);
+        // The offline render: it borrows live runtimes to capture their state
+        // and constructs offline instances, neither of which may follow the drain.
+        expect(admission.acceptsCommand('render_graph_offline')).toBe(false);
     });
 
     it('still accepts non-runtime commands after quit has begun', () => {
