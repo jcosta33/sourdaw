@@ -397,6 +397,15 @@ export async function desktopTotalMemoryBytes(): Promise<number> {
     return sourdawBridge().system.totalMemoryBytes();
 }
 
+/**
+ * What a model's weights may occupy on the desktop machine's GPU, in bytes, or null when the OS does not
+ * report it. Not the system total. A positive safe integer when known; the bridge refuses anything else.
+ */
+export async function desktopGpuMemoryBudgetBytes(): Promise<number | null> {
+    const budget = await sourdawBridge().system.gpuMemoryBudgetBytes();
+    return budget.state === 'known' ? budget.bytes : null;
+}
+
 /** The platform the desktop shell runs on, or null off-desktop. */
 export function desktopPlatform(): string | null {
     if (!isDesktopRuntime()) {

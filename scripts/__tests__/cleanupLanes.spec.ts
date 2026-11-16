@@ -345,21 +345,27 @@ describe('automatic lane cleanup', () => {
             },
         ]);
     });
-    it('removes a clean merged author and legacy detached review lane through native no-force Git', () => {
-        const f = fixture();
-        try {
-            const review = join(f.root, '.agents/review-worktrees/review-42');
-            f.git(['worktree', 'add', '--detach', review, f.head]);
-            const outcomes = cleanupLanes(f.port);
-            expect(outcomes.filter((outcome) => outcome.status === 'removed')).toHaveLength(2);
-            expect(existsSync(f.lane)).toBe(false);
-            expect(existsSync(review)).toBe(false);
-            expect(f.git(['branch', '--list', 'fix/fixture'])).toContain('fix/fixture');
-            expect(readCleanupRecords(f.root).every((record) => record.status === 'removed')).toBe(true);
-        } finally {
-            f.dispose();
+    // Measured alone: ~0.9 s and ~130 synchronous git spawns, all inherent to the native no-force removal.
+    // 30 s keeps a ~30x margin for a loaded machine, where this case exceeded the 5 s default.
+    it(
+        'removes a clean merged author and legacy detached review lane through native no-force Git',
+        { timeout: 30_000 },
+        () => {
+            const f = fixture();
+            try {
+                const review = join(f.root, '.agents/review-worktrees/review-42');
+                f.git(['worktree', 'add', '--detach', review, f.head]);
+                const outcomes = cleanupLanes(f.port);
+                expect(outcomes.filter((outcome) => outcome.status === 'removed')).toHaveLength(2);
+                expect(existsSync(f.lane)).toBe(false);
+                expect(existsSync(review)).toBe(false);
+                expect(f.git(['branch', '--list', 'fix/fixture'])).toContain('fix/fixture');
+                expect(readCleanupRecords(f.root).every((record) => record.status === 'removed')).toBe(true);
+            } finally {
+                f.dispose();
+            }
         }
-    });
+    );
 
     it.each(
         ['author', 'review', 'replacement'].flatMap((route) =>
