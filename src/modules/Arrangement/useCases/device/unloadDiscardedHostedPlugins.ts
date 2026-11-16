@@ -8,9 +8,10 @@ function describeFailure(error: unknown): string {
 }
 
 /**
- * Releases the hosted plugin instances of a track an undone action created, once the document
- * write has committed. Each instance's live state is carried to the Redo that reactivates the
- * same instance id. Every instance is attempted so one failed teardown never strands the
+ * Releases the hosted plugin instances of a track that left the project (a removal, or an undone
+ * creation), once the document write has committed. The native unload closes each editor before
+ * releasing its instance. Each instance's live state is carried to the Undo or Redo that
+ * reactivates the same instance id. Every instance is attempted so one failed teardown never strands the
  * others; failures are reported together afterwards.
  */
 export async function unloadDiscardedHostedPlugins(instances: readonly HostedPluginInstance[]): Promise<void> {

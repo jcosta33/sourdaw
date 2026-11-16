@@ -71,7 +71,10 @@ describe('handleRemoveAllTracks', () => {
 
         it('defers every removal and notification until the transaction commits', async () => {
             mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1' }, { id: 't2' }],
+                tracks: [
+                    { id: 't1', devices: [] },
+                    { id: 't2', devices: [] },
+                ],
             });
             const finalizeFirst = vi.fn();
             const finalizeSecond = vi.fn();
@@ -104,8 +107,13 @@ describe('handleRemoveAllTracks', () => {
 
         it('reconciles only track IDs absent from committed truth after an ambiguous commit', async () => {
             mocks.getTrackStoreState
-                .mockReturnValueOnce({ tracks: [{ id: 't1' }, { id: 't2' }] })
-                .mockReturnValue({ tracks: [{ id: 't2' }] });
+                .mockReturnValueOnce({
+                    tracks: [
+                        { id: 't1', devices: [] },
+                        { id: 't2', devices: [] },
+                    ],
+                })
+                .mockReturnValue({ tracks: [{ id: 't2', devices: [] }] });
             const finalizeFirst = vi.fn();
             const finalizeSecond = vi.fn();
             mocks.removeTrack
@@ -127,7 +135,7 @@ describe('handleRemoveAllTracks', () => {
         });
 
         it('keeps runtime ownership when committed track state is unavailable', async () => {
-            mocks.getTrackStoreState.mockReturnValueOnce({ tracks: [{ id: 't1' }] }).mockReturnValue(null);
+            mocks.getTrackStoreState.mockReturnValueOnce({ tracks: [{ id: 't1', devices: [] }] }).mockReturnValue(null);
             const finalize = vi.fn();
             mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: finalize });
 
@@ -152,7 +160,11 @@ describe('handleRemoveAllTracks', () => {
 
         it('captures every live track in track order, carrying original indices', () => {
             mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1' }, { id: 't2' }, { id: 't3' }],
+                tracks: [
+                    { id: 't1', devices: [] },
+                    { id: 't2', devices: [] },
+                    { id: 't3', devices: [] },
+                ],
             });
             const snapshotT1 = createSnapshot('t1', 0);
             const snapshotT2 = createSnapshot('t2', 1);

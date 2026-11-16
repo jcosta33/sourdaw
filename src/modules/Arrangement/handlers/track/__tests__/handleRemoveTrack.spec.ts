@@ -192,7 +192,7 @@ describe('handleRemoveTrack', () => {
         it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
             'retires strip, modulation, routing and removed-event continuations after root removal, phase=%s',
             async (phase) => {
-                mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1' }] });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
                 const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
                 if (!result) {
                     throw new Error('Expected removal continuation');
