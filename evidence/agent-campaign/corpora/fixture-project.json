@@ -312,6 +312,63 @@
                     "unit": ""
                 }
             ]
+        },
+        {
+            "id": "builtin-gain",
+            "name": "Gain",
+            "parameters": [
+                {
+                    "id": "gain-level",
+                    "name": "Gain",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -60,
+                    "maxValue": 24,
+                    "unit": "dB"
+                }
+            ]
+        },
+        {
+            "id": "builtin-stereo-widener",
+            "name": "Stereo Widener",
+            "parameters": [
+                {
+                    "id": "width-amount",
+                    "name": "Width",
+                    "type": "float",
+                    "value": 1,
+                    "minValue": 0,
+                    "maxValue": 3,
+                    "unit": ""
+                },
+                {
+                    "id": "width-mid",
+                    "name": "Mid Level",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -12,
+                    "maxValue": 6,
+                    "unit": "dB"
+                },
+                {
+                    "id": "width-side",
+                    "name": "Side Level",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -12,
+                    "maxValue": 6,
+                    "unit": "dB"
+                },
+                {
+                    "id": "width-mono-bass",
+                    "name": "Mono Bass",
+                    "type": "float",
+                    "value": 200,
+                    "minValue": 20,
+                    "maxValue": 500,
+                    "unit": "Hz"
+                }
+            ]
         }
     ],
     "sections": [
