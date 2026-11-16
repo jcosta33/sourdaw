@@ -1,7 +1,7 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { captureGestureBeat, transportStore } from '#/modules/Transport/stores';
-import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { clampDeviceParameterValue, isInternalDeviceParameter } from '../../../models/DeviceParameterLaw';
 import { getTrackState } from '../../../repositories/track/getTrackState';

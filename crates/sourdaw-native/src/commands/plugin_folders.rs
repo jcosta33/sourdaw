@@ -32,7 +32,7 @@ pub async fn grant_plugin_folder(path: String) -> Result<String, String> {
         let location = store_location()?;
         plugin_folder_grants::grant_at(
             &location,
-            &ForbiddenRoots::production(),
+            &ForbiddenRoots::production()?,
             Path::new(path.trim()),
         )
         .map(|granted| granted.display().to_string())
@@ -42,14 +42,13 @@ pub async fn grant_plugin_folder(path: String) -> Result<String, String> {
 }
 
 /// Every granted folder, in grant order, each with the reason it is unavailable
-/// when it is.
+/// when it is. With no store, as under a refused runtime scope, the listing is
+/// refused rather than answered as no grants.
 pub async fn get_plugin_folder_grants() -> Result<Vec<PluginFolderGrant>, String> {
     on_blocking_pool(|| {
-        let Some(location) = plugin_folder_grants::production_store_location() else {
-            return Ok(Vec::new());
-        };
+        let location = store_location()?;
         Ok(
-            plugin_folder_grants::list_at(&location, &ForbiddenRoots::production())
+            plugin_folder_grants::list_at(&location, &ForbiddenRoots::production()?)
                 .into_iter()
                 .map(grant_dto)
                 .collect(),
@@ -82,4 +81,49 @@ async fn on_blocking_pool<T: Send + 'static>(
     tokio::task::spawn_blocking(body)
         .await
         .map_err(|error| format!("Plugin folder task failed: {error}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block_on_test;
+    use crate::host::plugin_folder_grants::test_support::TempTree;
+
+    // Tests run with no grant store, the state a refused runtime scope leaves.
+    fn is_store_refusal(result: &Result<impl std::fmt::Debug, String>) -> bool {
+        result.as_ref().is_err_and(|error| {
+            *error
+                == PluginFolderRefusal::StoreUnavailable(
+                    "no application data directory".to_string(),
+                )
+                .to_string()
+        })
+    }
+
+    #[test]
+    fn granting_without_a_grant_store_is_refused() {
+        let tree = TempTree::create("command-grant-no-store");
+        let folder = tree.dir("Plugins");
+
+        let result = block_on_test(grant_plugin_folder(folder.display().to_string()));
+
+        assert!(is_store_refusal(&result), "unexpected result {result:?}");
+    }
+
+    #[test]
+    fn revoking_without_a_grant_store_is_refused() {
+        let tree = TempTree::create("command-revoke-no-store");
+        let folder = tree.dir("Plugins");
+
+        let result = block_on_test(revoke_plugin_folder_grant(folder.display().to_string()));
+
+        assert!(is_store_refusal(&result), "unexpected result {result:?}");
+    }
+
+    #[test]
+    fn listing_without_a_grant_store_is_refused_rather_than_reporting_no_grants() {
+        let result = block_on_test(get_plugin_folder_grants());
+
+        assert!(is_store_refusal(&result), "unexpected result {result:?}");
+    }
 }

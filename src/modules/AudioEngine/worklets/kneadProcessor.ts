@@ -67,7 +67,7 @@ type KneadMsg =
     | { type: 'bypass'; bypassed: boolean };
 
 // Transport SAB layout — kept in lockstep with the writer in
-// repositories/createWebAudioEngine.ts (TRANSPORT_F64 / TRANSPORT_SEQ_I32).
+// repositories/webAudioEngine/createTransportClock.ts (TRANSPORT_F64 / TRANSPORT_SEQ_I32).
 // The eight f64 data fields are guarded by a seqlock counter in the Int32 view;
 // the reader retries while the counter is odd (write in progress) or changes
 // across the read, so it never consumes a snapshot torn across the field writes.

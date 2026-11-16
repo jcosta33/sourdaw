@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type ClipGlueActionSnapshot } from '../../../events/arrangementClipAppActions';
+import { type MidiClipGlueActionSnapshot } from '../../../events/arrangementClipSnapshots';
 
 const mocks = vi.hoisted(() => ({
     hasClipGlueDependencies: vi.fn(() => false),

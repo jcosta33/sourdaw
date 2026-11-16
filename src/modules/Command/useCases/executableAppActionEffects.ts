@@ -199,6 +199,12 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         creates: ['groove-template'],
     },
+    // Stored notes stay as they are; the clip's assigned groove moves when they play and how hard.
+    applyGroove: {
+        dimensions: ['midi-content'],
+        scope: 'target',
+        noteFields: ['startBeat', 'velocity'],
+    },
     transposeNotes: {
         dimensions: ['midi-content'],
         scope: 'target',

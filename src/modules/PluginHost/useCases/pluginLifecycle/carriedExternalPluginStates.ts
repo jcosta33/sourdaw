@@ -6,8 +6,9 @@
  * Runtime state, never project truth: the project's `externalStateChunk` only
  * changes through Save/Export capture or an explicit replacement. An entry is
  * consumed once by the next activation of the same instance id and plugin, and
- * the whole store is dropped by every whole-runtime unload, because the project
- * it belonged to is being replaced or retired.
+ * the whole store is dropped once the project it belonged to is really replaced
+ * or its session really ends; a whole-runtime unload that can still be undone
+ * (a refusable project switch, a cancellable session retirement) keeps it.
  */
 export type CarriedExternalPluginState = { pluginId: string; stateChunk: string };
 

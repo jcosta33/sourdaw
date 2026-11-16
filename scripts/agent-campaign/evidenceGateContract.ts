@@ -17,7 +17,7 @@ export const EVIDENCE_SUITE_COMMANDS: Readonly<Record<string, string>> = {
     'AC-002': 'pnpm test:run src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts',
     'AC-003': 'pnpm test:run src/modules/Project/useCases/__tests__/productionBrief.spec.ts',
     'AC-004': 'pnpm test:run src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts',
-    'AC-005': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/resolveAgentReference.spec.ts',
+    'AC-005': 'pnpm test:run src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts',
     'AC-006': 'pnpm test:run src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts',
     'AC-007': 'pnpm test:run src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts',
     'AC-008': 'pnpm test:run src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts',
@@ -47,7 +47,7 @@ export const EVIDENCE_SUITE_COMMANDS: Readonly<Record<string, string>> = {
     'AC-028': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/resolveModelRoute.spec.ts',
     'AC-029': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/modelStreamProtocol.spec.ts',
     'AC-030':
-        'cargo test -p sourdaw provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts',
+        'cargo test -p sourdaw-native provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts',
     'AC-031': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts',
     'AC-032':
         'pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentCostBudget.spec.ts src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts',
@@ -70,7 +70,7 @@ export const EVIDENCE_SUITE_COMMANDS: Readonly<Record<string, string>> = {
     'AC-047': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentGeneratedMediaBoundary.spec.ts',
     'AC-048': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts',
     'AC-049':
-        'cargo test -p sourdaw agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts',
+        'cargo test -p sourdaw-native agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts',
     'AC-050':
         'pnpm test:run src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx && pnpm test:e2e tests/e2e/agentWorkspace.spec.ts',
     'AC-051': 'pnpm test:run src/modules/AgentAdapters/useCases/__tests__/externalAgentAdapterConformance.spec.ts',
@@ -81,7 +81,7 @@ export const EVIDENCE_SUITE_COMMANDS: Readonly<Record<string, string>> = {
     'AC-055': 'pnpm test:run src/app/__tests__/agentProductionReadiness.spec.ts',
     'AC-056': 'pnpm test:run src/app/__tests__/agentSourceExamples.spec.ts',
     'AC-057':
-        'cargo test -p sourdaw provider_gateway_webview_boundary && pnpm test:run src/utils/__tests__/agentWebviewSecurity.spec.ts',
+        'cargo test -p sourdaw-native provider_gateway_webview_boundary && pnpm test:run electron/__tests__/webviewSecurity.spec.ts electron/__tests__/commands.spec.ts',
     'AC-058': 'pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentRetentionAndDeletion.spec.ts',
     'AC-059': 'pnpm test:run src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts',
     'AC-060':
@@ -101,6 +101,59 @@ export const EVIDENCE_SUITE_DATA: Readonly<Record<string, readonly string[]>> = 
         'evidence/agent-campaign/corpora/fixture-project.json',
         'evidence/agent-campaign/corpora/held-out.json',
         'src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts',
+    ],
+};
+
+/**
+ * Files or trees a suite's specs read by path rather than import, so the import closure cannot see
+ * them. They join the suite's recorded closure, never the manifest: the per-pull-request freshness
+ * check pins named fixtures only, and most of these move with ordinary product work.
+ */
+export const EVIDENCE_SUITE_CLOSURE_READS: Readonly<Record<string, readonly string[]>> = {
+    // localVoiceCommandBoundary.spec.ts reads the native speech command source.
+    'AC-001': ['crates/sourdaw-native/src/commands/speech.rs'],
+    // webLlmProviderAdapter.spec.ts reads the lockfile and the admission decision records.
+    'AC-023': [
+        'pnpm-lock.yaml',
+        '.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md',
+        '.agents/decisions/0060-admit-webllm-llama-3-1-70b-under-the-llama-3-1-community-license.md',
+    ],
+    // singleAudioContextInvariant.spec.ts scans every source file under src/.
+    'AC-041': ['src'],
+    // externalAgentAdapterConformance.spec.ts scans the AgentAdapters module.
+    'AC-051': ['src/modules/AgentAdapters'],
+    // agentSourceExamples.spec.ts reads the source-examples corpus.
+    'AC-056': ['evidence/agent-campaign/corpora/source-examples.json'],
+    // webviewSecurity.spec.ts reads index.html; both specs scan production sources in src/ and electron/.
+    'AC-057': ['index.html', 'src', 'electron'],
+    // agentCampaignBaseline.spec.ts reads the build configuration and the desktop channel list.
+    'AC-060': ['vite.config.ts', 'electron/channels.ts'],
+};
+
+/**
+ * Files a package script's runner loads by path or configuration rather than through the script's
+ * own command line, per script a verify command invokes with `pnpm <script>`. The script's own file
+ * arguments are read from `package.json`; the Vitest setup files are read from `vite.config.ts`.
+ */
+export const EVIDENCE_SCRIPT_RUNTIME_FILES: Readonly<Record<string, readonly string[]>> = {
+    // runVitestZeroTestGuard.ts spawns Vitest on vite.config.ts with this reporter by path.
+    'test:run': ['vite.config.ts', 'scripts/vitestProgressReporter.ts'],
+    // Playwright loads its config, which names its global setup by path.
+    'test:e2e': ['playwright.config.ts', 'tests/e2e/firstPaintWarmup.ts'],
+    // check-dependency-boundaries.mjs cruises src/ under these configs and baselines, named by path.
+    'deps:validate': [
+        'src',
+        '.dependency-cruiser.cjs',
+        '.dependency-cruiser.module-tiers.cjs',
+        '.dependency-cruiser.reachability.cjs',
+        '.dependency-cruiser.tests.cjs',
+        '.dependency-cruiser.types.cjs',
+        '.dependency-cruiser-known-violations.json',
+        '.dependency-cruiser-known-violations-contract-reexports.json',
+        '.dependency-cruiser-known-violations-reachability.json',
+        '.dependency-cruiser-known-violations-tests.json',
+        '.dependency-cruiser-known-violations-types.json',
+        '.dependency-cruiser-known-violations-worker-spawns.json',
     ],
 };
 

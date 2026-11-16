@@ -572,6 +572,17 @@ rules from the launcher's pinned `origin/main` workflow copy; lanes cannot selec
 GitHub structural mergeability independently gates base compatibility: delivery retries one
 transient `UNKNOWN`, refusing conflicts or a second `UNKNOWN`.
 
+Delivery refuses a pull request when `main` touched since their merge base a file the pull request
+also touched and a lint ledger (`LINT_LEDGER_FILES` in `scripts/lintLedgerCrossing.ts`) binds that
+file. The ledgers include the six dependency-boundary baselines
+(`.dependency-cruiser-known-violations*.json`), which bind the `from` file of each row. A side touches a file by editing it or by changing what a ledger records for it, so a
+ledger-only edit counts. A ledger that does not parse as JSON, or a boundary baseline that is not an array of rows with a `from` path, refuses delivery. The non-strict
+ruleset's `Gate` never measured the two edits together. The initial check
+refuses with no remote write. A crossing first seen at the final read refuses after the delivery
+receipt is posted and leaves the delivery lock held; recover it with
+`pnpm deliver --recover-lock <pr> --owner <oid>`. Merge current `main` into the lane and publish;
+the fresh `Gate` decides.
+
 For a crashed delivery, repair, confirmation, closure, or review publication, follow the
 operation-specific [lock recovery](references/repair-and-lock-recovery.md); recovery itself does not
 perform the original operation.

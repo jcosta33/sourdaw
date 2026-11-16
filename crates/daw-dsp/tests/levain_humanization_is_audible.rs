@@ -11,7 +11,11 @@
 //! on its own mutation is the pattern; a depth-only revert is covered by that
 //! shared path rather than a separate frequency-excursion measurement.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::levain::LevainInstance;
 

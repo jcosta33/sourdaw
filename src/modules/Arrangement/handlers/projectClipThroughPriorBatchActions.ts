@@ -1,11 +1,7 @@
-import {
-    type AppAction,
-    type ClipSatelliteEntrySnapshot,
-    type HandlerValidationContext,
-    type RestoreTrackPayloadSnapshot,
-    type TrackSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type ClipSatelliteEntrySnapshot } from '../events/arrangementClipStateSnapshots';
+import { type RestoreTrackPayloadSnapshot, type TrackSnapshot } from '../events/arrangementTrackSnapshots';
 import { type Clip } from '../stores/trackStore';
 import {
     readClipScopedAutomationLanes,

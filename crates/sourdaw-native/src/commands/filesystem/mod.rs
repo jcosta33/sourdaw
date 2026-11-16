@@ -402,7 +402,7 @@ fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
     }
 
     reject_relative_parent_segments(input)?;
-    Ok(ipc_temp_dir().join(input))
+    Ok(ipc_temp_dir()?.join(input))
 }
 
 pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), String> {
@@ -414,11 +414,11 @@ pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), Strin
     Ok(())
 }
 
-pub(crate) fn ipc_temp_dir() -> PathBuf {
-    if let Some(path) = RuntimeScope::path("native/ipc") {
-        return path;
+pub(crate) fn ipc_temp_dir() -> Result<PathBuf, String> {
+    if let Some(path) = RuntimeScope::path("native/ipc")? {
+        return Ok(path);
     }
-    std::env::temp_dir().join(IPC_TEMP_DIR_NAME)
+    Ok(std::env::temp_dir().join(IPC_TEMP_DIR_NAME))
 }
 
 fn reject_relative_parent_segments(path: &Path) -> Result<(), String> {
@@ -514,7 +514,7 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), File
         refuse_export_staging_path(resolved_path).map_err(FileRefusal::Message)?;
     }
 
-    for root in built_in_roots() {
+    for root in built_in_roots().map_err(FileRefusal::Message)? {
         if let Ok(resolved_root) = canonicalize_through_missing_tail(&root) {
             if resolved_path.starts_with(resolved_root) {
                 return Ok(());
@@ -538,22 +538,22 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), File
 /// A plugin folder grant may not overlap any of these: the renderer writes
 /// here without a pick, so an overlapping plugin folder would let a page plant
 /// native code that the scan and the loader execute.
-pub(crate) fn built_in_roots() -> Vec<PathBuf> {
-    let mut roots = vec![ipc_temp_dir()];
+pub(crate) fn built_in_roots() -> Result<Vec<PathBuf>, String> {
+    let mut roots = vec![ipc_temp_dir()?];
 
-    if let Some(data_dir) = application_data_directory() {
+    if let Some(data_dir) = application_data_directory()? {
         roots.push(data_dir);
     }
-    if let Some(cache_dir) = RuntimeScope::path("native/cache") {
+    if let Some(cache_dir) = RuntimeScope::path("native/cache")? {
         roots.push(cache_dir);
     } else if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(cache_dir.join(APP_DIR_NAME));
     }
-    if let Some(project_dir) = project_directory() {
+    if let Some(project_dir) = project_directory()? {
         roots.push(project_dir);
     }
 
-    roots
+    Ok(roots)
 }
 
 /// Whether `resolved_path` is inside the directory only native code may touch.
@@ -572,7 +572,14 @@ pub(crate) fn built_in_roots() -> Vec<PathBuf> {
 /// the grant document to does not exist yet either, and a check that only
 /// applied once the directory was there would leave exactly one launch during
 /// which the document could be planted.
+///
+/// A refused runtime scope answers every path as private: with no scope to
+/// say where native state lives, no path can be shown to lie outside it.
 fn is_private_state_path(resolved_path: &Path) -> bool {
+    let Ok(scope) = RuntimeScope::root() else {
+        return true;
+    };
+    let scoped = scope.is_some();
     let in_namespace = resolved_path.components().any(|component| {
         component
             .as_os_str()
@@ -584,17 +591,19 @@ fn is_private_state_path(resolved_path: &Path) -> bool {
     if in_namespace {
         // Only the selected scope's public native roots may escape the namespace
         // refusal. Chromium state, sibling scopes and private native state never do.
-        let in_public_root = RuntimeScope::root().is_some()
-            && built_in_roots().iter().any(|root| {
-                canonicalize_through_missing_tail(root)
-                    .is_ok_and(|root| resolved_path.starts_with(root))
+        let in_public_root = scoped
+            && built_in_roots().is_ok_and(|roots| {
+                roots.iter().any(|root| {
+                    canonicalize_through_missing_tail(root)
+                        .is_ok_and(|root| resolved_path.starts_with(root))
+                })
             });
         if !in_public_root {
             return true;
         }
     }
     if let Some(legacy_data) = dirs::data_dir().map(|root| root.join(APP_DIR_NAME)) {
-        if RuntimeScope::root().is_some()
+        if scoped
             && canonicalize_through_missing_tail(&legacy_data)
                 .is_ok_and(|root| path_is_below_private_root(resolved_path, &root))
         {
@@ -604,7 +613,7 @@ fn is_private_state_path(resolved_path: &Path) -> bool {
             return true;
         }
     }
-    if RuntimeScope::root().is_some() {
+    if scoped {
         let legacy_roots = [
             Some(std::env::temp_dir().join(IPC_TEMP_DIR_NAME)),
             dirs::cache_dir().map(|root| root.join(APP_DIR_NAME)),
@@ -617,10 +626,11 @@ fn is_private_state_path(resolved_path: &Path) -> bool {
             return true;
         }
     }
-    let Some(application_data) = application_data_directory() else {
-        return false;
-    };
-    private_path_below(resolved_path, &application_data)
+    match application_data_directory() {
+        Ok(Some(application_data)) => private_path_below(resolved_path, &application_data),
+        Ok(None) => false,
+        Err(_) => true,
+    }
 }
 
 fn private_path_below(resolved_path: &Path, application_data: &Path) -> bool {
@@ -690,8 +700,13 @@ fn names_private_directory(component: &str) -> bool {
 /// work is, and that is what tests drive directly.
 #[cfg(any(feature = "napi-addon", not(test)))]
 pub(crate) fn ensure_private_state_directory() {
-    let Some(directory) = private_state_directory() else {
-        return;
+    let directory = match private_state_directory() {
+        Ok(Some(directory)) => directory,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("[Filesystem] No private native state directory to create: {error}");
+            return;
+        }
     };
     if let Err(error) = create_private_state_directory(&directory) {
         eprintln!("[Filesystem] Failed to create the private native state directory: {error}");
@@ -702,11 +717,11 @@ fn create_private_state_directory(directory: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(directory)
 }
 
-fn application_data_directory() -> Option<PathBuf> {
-    if let Some(path) = RuntimeScope::path("native/data") {
-        return Some(path);
+fn application_data_directory() -> Result<Option<PathBuf>, String> {
+    if let Some(path) = RuntimeScope::path("native/data")? {
+        return Ok(Some(path));
     }
-    Some(dirs::data_dir()?.join(APP_DIR_NAME))
+    Ok(dirs::data_dir().map(|root| root.join(APP_DIR_NAME)))
 }
 
 /// The application-data subdirectory that holds native-only state.
@@ -715,16 +730,16 @@ fn application_data_directory() -> Option<PathBuf> {
 /// renderer names and whatever the user has granted, so state that decides
 /// what the renderer may reach can be stored without the renderer being able
 /// to author it.
-pub(crate) fn private_state_directory() -> Option<PathBuf> {
-    Some(application_data_directory()?.join(PRIVATE_DIR_NAME))
+pub(crate) fn private_state_directory() -> Result<Option<PathBuf>, String> {
+    Ok(application_data_directory()?.map(|root| root.join(PRIVATE_DIR_NAME)))
 }
 
 /// Where Sourdaw keeps its own projects.
-fn project_directory() -> Option<PathBuf> {
-    if let Some(path) = RuntimeScope::path("native/projects") {
-        return Some(path);
+fn project_directory() -> Result<Option<PathBuf>, String> {
+    if let Some(path) = RuntimeScope::path("native/projects")? {
+        return Ok(Some(path));
     }
-    Some(dirs::document_dir()?.join(PROJECT_DIR_NAME))
+    Ok(dirs::document_dir().map(|root| root.join(PROJECT_DIR_NAME)))
 }
 
 #[cfg(any(feature = "napi-addon", test))]
@@ -1389,6 +1404,53 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_scope_marks_every_path_private() {
+        RuntimeScope::test_in_refused_process(
+            concat!(module_path!(), "::a_refused_scope_marks_every_path_private"),
+            || {
+                // The legacy IPC root is a public built-in root when no scope was asked for.
+                let legacy_ipc = std::env::temp_dir()
+                    .join(IPC_TEMP_DIR_NAME)
+                    .join("audio.wav");
+                assert!(is_private_state_path(&legacy_ipc));
+            },
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_resolves_no_renderer_path() {
+        RuntimeScope::test_in_refused_process(
+            concat!(
+                module_path!(),
+                "::a_refused_scope_resolves_no_renderer_path"
+            ),
+            || assert!(resolve_renderer_path("audio.wav").is_err()),
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_names_no_private_state_directory() {
+        RuntimeScope::test_in_refused_process(
+            concat!(
+                module_path!(),
+                "::a_refused_scope_names_no_private_state_directory"
+            ),
+            || assert!(private_state_directory().is_err()),
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_names_no_project_directory() {
+        RuntimeScope::test_in_refused_process(
+            concat!(
+                module_path!(),
+                "::a_refused_scope_names_no_project_directory"
+            ),
+            || assert!(project_directory().is_err()),
+        );
+    }
+
+    #[test]
     fn scoped_native_private_paths_outrank_recursive_grants() {
         RuntimeScope::test_in_process(
             concat!(
@@ -1517,7 +1579,7 @@ mod tests {
     fn native_application_data_paths_share_one_directory_identity() {
         assert_eq!(APP_DIR_NAME, "com.sourdaw.app");
 
-        let roots = built_in_roots();
+        let roots = built_in_roots().unwrap();
         if let Some(data_dir) = dirs::data_dir() {
             assert!(roots.contains(&data_dir.join(APP_DIR_NAME)));
         }
@@ -1544,7 +1606,7 @@ mod tests {
     fn should_resolve_relative_renderer_paths_inside_ipc_temp_root() {
         let resolved = resolve_renderer_path("__sourdaw_stems_input_1.wav").unwrap();
 
-        assert!(resolved.starts_with(ipc_temp_dir()));
+        assert!(resolved.starts_with(ipc_temp_dir().unwrap()));
         assert!(resolved.ends_with("__sourdaw_stems_input_1.wav"));
     }
 
@@ -1693,7 +1755,7 @@ mod tests {
         let scratch = TempAuthorityDir::create_owned_scratch();
         let scratch_relative = scratch
             .root
-            .strip_prefix(ipc_temp_dir())
+            .strip_prefix(ipc_temp_dir().unwrap())
             .expect("owned scratch should be below the IPC temp directory");
         let scratch_file = scratch_relative.join("scratch.txt");
 
@@ -1900,7 +1962,7 @@ mod tests {
 
     impl TempAuthorityDir {
         fn create_owned_scratch() -> Self {
-            Self::create_below(&ipc_temp_dir(), "owned")
+            Self::create_below(&ipc_temp_dir().unwrap(), "owned")
         }
 
         fn create_external_sibling() -> Self {
@@ -1936,6 +1998,7 @@ mod tests {
     /// writes rather than repeated here, so the two cannot drift apart.
     fn grant_document_name() -> String {
         grant_registry::grant_file_location()
+            .unwrap()
             .and_then(|location| {
                 location
                     .file_name()
@@ -1965,6 +2028,7 @@ mod tests {
     fn the_grant_document_is_refused_for_reading_and_for_writing() {
         let location = canonicalize_through_missing_tail(
             &grant_registry::grant_file_location()
+                .unwrap()
                 .expect("an account should have an application data directory"),
         )
         .expect("the application data directory should resolve");
@@ -2071,6 +2135,7 @@ mod tests {
         let resolved = resolve_writable_file_path(&destination.to_string_lossy()).unwrap();
 
         let canonical_temp = ipc_temp_dir()
+            .unwrap()
             .canonicalize()
             .expect("the IPC temp directory should resolve");
         assert!(
@@ -2153,7 +2218,7 @@ mod tests {
 
     impl TempExportDir {
         fn create(test_name: &str) -> Self {
-            let root = ipc_temp_dir().join(format!(
+            let root = ipc_temp_dir().unwrap().join(format!(
                 "sourdaw-atomic-export-{test_name}-{}-{}",
                 std::process::id(),
                 uuid::Uuid::new_v4()

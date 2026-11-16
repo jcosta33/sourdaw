@@ -6,8 +6,9 @@ import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type MidiClipNoteSnapshot } from '../../../events/midiClipDataSnapshots';
 import { midiStore } from '../../../stores/midiStore';
 import { getMidiNoteTransformHandlers } from '../../../useCases/getMidiNoteTransformHandlers';
 import { handleRemoveShortMidiOverlaps } from '../handleRemoveShortMidiOverlaps';

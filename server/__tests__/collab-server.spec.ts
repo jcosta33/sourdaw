@@ -30,13 +30,13 @@ async function getFreePort(): Promise<number> {
 }
 
 function spawnServer(env: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
-    const clockImport =
-        env.COLLAB_TEST_FORWARD_CLOCK === '1'
-            ? [
-                  '--import',
-                  'data:text/javascript,const original=Date.now;const started=performance.now();Date.now=()=>original()+(performance.now()-started>=100?60000:0)',
-              ]
-            : [];
+    const clockImport: string[] = [];
+    if (env.COLLAB_TEST_FORWARD_CLOCK === '1') {
+        clockImport.push(
+            '--import',
+            'data:text/javascript,const original=Date.now;const started=performance.now();Date.now=()=>original()+(performance.now()-started>=100?60000:0)'
+        );
+    }
     const process = spawn(globalThis.process.execPath, [...clockImport, '--import', 'tsx', 'collab-server.ts'], {
         cwd: globalThis.process.cwd(),
         env: {

@@ -1,11 +1,7 @@
+import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot } from '#/modules/MIDI/events';
 import { midiStore } from '#/modules/MIDI/stores';
-import {
-    type MidiCcSnapshot,
-    type MidiNotesSnapshot,
-    type MidiPitchBendSnapshot,
-    type TrackClipStateSnapshot,
-} from '#/utils/handlerContract';
 
+import { type TrackClipStateSnapshot } from '../events/arrangementTrackSnapshots';
 import { getHeldClips } from '../models/TrackAlternativeClips';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 

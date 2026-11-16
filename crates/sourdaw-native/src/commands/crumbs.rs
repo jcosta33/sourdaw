@@ -1106,7 +1106,7 @@ pub async fn load_sample(
     let file_path = file_path.to_string_lossy().to_string();
 
     // Decode the audio file.
-    let decoded = daw_io::decode_audio_file(&file_path)?;
+    let decoded = daw_io::decode_audio_file(&file_path).map_err(|error| error.to_string())?;
 
     let sample_rate = decoded.sample_rate;
     let channels = decoded.channels;

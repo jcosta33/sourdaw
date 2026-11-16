@@ -1,18 +1,20 @@
 import { midiStore } from '#/modules/MIDI/stores';
 import { removeMidiClipData, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
+
 import {
-    type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
-    type DeviceSnapshot,
-    type DeviceStateChunkSnapshot,
     type RetiredTakeLaneSnapshot,
+} from '../../events/arrangementClipStateSnapshots';
+import { type DeviceStateChunkSnapshot } from '../../events/arrangementDeviceStateSnapshots';
+import {
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
-} from '#/utils/handlerContract';
-
+} from '../../events/arrangementTrackSnapshots';
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { getHeldClips } from '../../models/TrackAlternativeClips';
 import {
     normalizeClipSatelliteEntry,

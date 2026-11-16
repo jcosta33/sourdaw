@@ -104,6 +104,7 @@ export const AutomationModeControl = ({
                             menuPositionClassName
                         )}
                         role="menu"
+                        tabIndex={-1}
                         onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                     >
                         {AUTOMATION_MODE_OPTIONS.map((option) => {
@@ -186,6 +187,7 @@ export const AutomationAddLaneControl = ({
                     <div
                         className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-[300px] min-w-[200px] overflow-y-auto rounded-md py-1"
                         role="menu"
+                        tabIndex={-1}
                         onKeyDown={(event) => closeMenuOnEscape(event, open, setOpen)}
                     >
                         <DawEyebrowLabel className="block px-2 py-1 text-[8px]">Add parameter</DawEyebrowLabel>

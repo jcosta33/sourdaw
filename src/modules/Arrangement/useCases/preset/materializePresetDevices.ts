@@ -1,6 +1,6 @@
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { type DeviceSnapshot } from '#/utils/handlerContract';
 
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { type SoundPreset } from '../../models/SoundPreset';
 
 import { canonicalPresetDeviceParameters } from './canonicalPresetDeviceParameters';

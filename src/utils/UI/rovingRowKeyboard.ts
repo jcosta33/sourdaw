@@ -1,4 +1,11 @@
-import { type KeyboardEvent } from 'react';
+/** The slice of a keyboard event the helper reads, so React's synthetic event fits without importing React. */
+type RovingRowKeyEvent = {
+    key: string;
+    target: EventTarget;
+    currentTarget: HTMLElement;
+    preventDefault: () => void;
+    stopPropagation: () => void;
+};
 
 type RovingRowAxis = 'vertical' | 'horizontal';
 
@@ -16,11 +23,7 @@ const NEIGHBOUR_KEYS: Record<RovingRowAxis, { previous: string; next: string }> 
  * A handled key is claimed, so Space does not also toggle transport play and
  * Enter does not also stop it in the window shortcut layer.
  */
-export const handleRovingRowKeyDown = (
-    event: KeyboardEvent<HTMLElement>,
-    axis: RovingRowAxis,
-    onActivate: () => void
-): void => {
+export const handleRovingRowKeyDown = (event: RovingRowKeyEvent, axis: RovingRowAxis, onActivate: () => void): void => {
     if (event.target !== event.currentTarget) {
         return;
     }

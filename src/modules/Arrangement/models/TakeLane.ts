@@ -1,9 +1,15 @@
 import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
-import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type TempoTimeline } from './TempoTimeline';
 
-export type MidiTakeSource = MidiTakeSourceSnapshot;
+/** MIDI's take-source wire value, read off a take-lane action because a model may not import `events/`. */
+export type MidiTakeSource = NonNullable<
+    Extract<
+        AppAction,
+        { type: 'restoreAudioClipSlip' }
+    >['payload']['before']['lanes'][number]['takes'][number]['midiSource']
+>;
 
 export type Take = {
     id: string;

@@ -1,12 +1,9 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
-import {
-    type AutomationRecordingPolicy,
-    type HandlerSessionActionEntry,
-    type HandlerValidationContext,
-} from '#/utils/handlerContract';
+import { type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';

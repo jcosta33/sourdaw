@@ -5,10 +5,10 @@ import {
     tempoMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';
 

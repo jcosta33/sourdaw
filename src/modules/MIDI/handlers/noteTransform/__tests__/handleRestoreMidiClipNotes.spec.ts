@@ -23,8 +23,9 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type MidiClipNoteSnapshot } from '../../../events/midiClipDataSnapshots';
 import { handleAddNotes } from '../../noteCrud/handleAddNotes';
 import { handleCopyMidiArticulations } from '../handleCopyMidiArticulations';
 import { handleRestoreMidiClipNotes } from '../handleRestoreMidiClipNotes';

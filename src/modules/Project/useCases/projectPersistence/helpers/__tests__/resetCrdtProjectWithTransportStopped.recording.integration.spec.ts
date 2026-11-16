@@ -140,7 +140,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
-    unloadPlugin: mocks.unloadPlugin,
+    unloadPluginsBeforeProjectSwitch: mocks.unloadPlugin,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),

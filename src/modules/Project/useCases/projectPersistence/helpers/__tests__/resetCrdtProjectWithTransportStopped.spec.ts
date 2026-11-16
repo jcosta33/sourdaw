@@ -10,12 +10,18 @@ const mocks = vi.hoisted(() => ({
     /** How many take commits have settled, as the Transport counts them. */
     settledTakes: { value: 0 },
     stopPlayback: vi.fn(),
+    settleProjectSwitchPluginTeardown: vi.fn<(outcome: 'switched' | 'refused') => void>(),
     unloadPlugin: vi.fn(),
+    unloadPluginsBeforeProjectSwitch: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({ resetAudioGraph: mocks.resetAudioGraph }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ resetCrdtProject: mocks.resetCrdtProject }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mocks.unloadPlugin }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    settleProjectSwitchPluginTeardown: mocks.settleProjectSwitchPluginTeardown,
+    unloadPlugin: mocks.unloadPlugin,
+    unloadPluginsBeforeProjectSwitch: mocks.unloadPluginsBeforeProjectSwitch,
+}));
 vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => mocks.settledTakes.value,
     isTransportIdle: mocks.isTransportIdle,
@@ -59,7 +65,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         mocks.resetAudioGraph.mockImplementation(() => {
             mocks.events.push('reset-graph');
         });
-        mocks.unloadPlugin.mockImplementation(() => {
+        mocks.unloadPluginsBeforeProjectSwitch.mockImplementation(() => {
             mocks.events.push('unload-plugins');
             return Promise.resolve();
         });
@@ -80,7 +86,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         expect(mocks.stopPlayback).not.toHaveBeenCalled();
         expect(mocks.saveProject).not.toHaveBeenCalled();
         expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.unloadPluginsBeforeProjectSwitch).not.toHaveBeenCalled();
     });
 
     it('tells the caller once the authority is replaced and records the committed project', async () => {
@@ -99,6 +105,41 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         // The real switch is what moves the committed generation a delayed
         // readiness report compares against.
         expect(committedProject.generation).toBe(generationBefore + 1);
+    });
+
+    it("drops the outgoing project's plugin carries in the switch's own turn", async () => {
+        let settledAtSwitch: unknown[][] = [];
+        mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced: () => void) => {
+            expect(mocks.settleProjectSwitchPluginTeardown).not.toHaveBeenCalled();
+            onAuthorityReplaced();
+            settledAtSwitch = [...mocks.settleProjectSwitchPluginTeardown.mock.calls];
+            return Promise.resolve(replaced);
+        });
+
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
+
+        expect(settledAtSwitch).toEqual([['switched']]);
+        expect(mocks.settleProjectSwitchPluginTeardown).toHaveBeenCalledOnce();
+    });
+
+    it("keeps the outgoing project's plugin carries when a lap's teardown ends in a refusal", async () => {
+        let wanted = true;
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mocks.unloadPluginsBeforeProjectSwitch.mockImplementationOnce(() => {
+            wanted = false;
+            return Promise.resolve();
+        });
+
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted)).resolves.toEqual({
+            status: 'refused',
+            reason: 'superseded',
+        });
+
+        // The lap tore the plugins down carrying their live state, and nothing
+        // dropped it: the caller's rebuild of the outgoing graph consumes it.
+        expect(mocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledOnce();
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.settleProjectSwitchPluginTeardown).not.toHaveBeenCalled();
     });
 
     it('hands every attempt a check that is quiet only when the transport is idle and no take closed unsaved', async () => {
@@ -219,7 +260,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
     it('refuses as superseded, without asking again, when the caller gave up during the teardown', async () => {
         let wanted = true;
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
-        mocks.unloadPlugin.mockImplementationOnce(() => {
+        mocks.unloadPluginsBeforeProjectSwitch.mockImplementationOnce(() => {
             wanted = false;
             return Promise.resolve();
         });

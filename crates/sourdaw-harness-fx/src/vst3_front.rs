@@ -1,9 +1,14 @@
 //! The VST3 front end: one combined class (component, audio processor and edit
 //! controller in one object) over the same DSP, its factory, and the module
 //! entry points each platform's host resolves.
+//!
+//! The factory lists the class three times: the second differs only in
+//! answering one `process` call ([`crate::FAILING_PROCESS_CALL`]) with
+//! `kResultFalse`, and the third only in refusing `setProcessing(true)`: both
+//! are what a host must not let pass as processed audio.
 
 use crate::clap_front::GAIN_PARAM_ID;
-use crate::echo::{Echo, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
+use crate::echo::{Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
 use crate::state::CHUNK_BYTES;
 use std::ffi::{c_char, c_void};
 use std::ptr;
@@ -23,9 +28,24 @@ use vst3::Steinberg::{
 };
 use vst3::{uid, Class, ComRef, ComWrapper};
 
-/// The class id of the one class the factory lists.
+/// The class id of the class that processes every block.
 pub const VST3_CLASS_ID: TUID = uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A2);
+/// The class id of the class that fails one `process` call.
+pub const VST3_PROCESS_ERROR_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A3);
 const CLASS_NAME: &str = "Sourdaw Harness Fx";
+const PROCESS_ERROR_CLASS_NAME: &str = "Sourdaw Harness Fx Process Error";
+/// The class id of the class that refuses to start processing.
+pub const VST3_START_REFUSED_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A4);
+const START_REFUSED_CLASS_NAME: &str = "Sourdaw Harness Fx Start Refused";
+
+/// How one class departs from the plain effect.
+#[derive(Clone, Copy, Default)]
+struct Departures {
+    fails_a_process_call: bool,
+    refuses_to_start_processing: bool,
+}
 
 struct Vst3Echo {
     echo: Echo,
@@ -33,6 +53,8 @@ struct Vst3Echo {
     /// controller calls and by `setComponentState`; the processor's gain moves
     /// only through `ProcessData` and `setState`, as VST3 separates the two.
     controller_gain: AtomicU64,
+    process_calls: ProcessCalls,
+    refuses_to_start_processing: bool,
 }
 
 impl Class for Vst3Echo {
@@ -40,10 +62,12 @@ impl Class for Vst3Echo {
 }
 
 impl Vst3Echo {
-    fn new() -> Self {
+    fn new(departures: Departures) -> Self {
         Self {
             echo: Echo::new(),
             controller_gain: AtomicU64::new(GAIN_DEFAULT.to_bits()),
+            process_calls: ProcessCalls::new(departures.fails_a_process_call),
+            refuses_to_start_processing: departures.refuses_to_start_processing,
         }
     }
 }
@@ -159,9 +183,11 @@ impl IAudioProcessorTrait for Vst3Echo {
         if num_ins != 1 || num_outs != 1 || inputs.is_null() || outputs.is_null() {
             return kResultFalse;
         }
-        // SAFETY: each array holds the one arrangement its count declares.
-        let stereo = unsafe { *inputs == SpeakerArr::kStereo && *outputs == SpeakerArr::kStereo };
-        if stereo {
+        // SAFETY: the input array holds the one arrangement its count declares.
+        let input = unsafe { *inputs };
+        // SAFETY: the output array holds the one arrangement its count declares.
+        let output = unsafe { *outputs };
+        if input == SpeakerArr::kStereo && output == SpeakerArr::kStereo {
             kResultOk
         } else {
             kResultFalse
@@ -207,7 +233,10 @@ impl IAudioProcessorTrait for Vst3Echo {
         kResultOk
     }
 
-    unsafe fn setProcessing(&self, _state: TBool) -> tresult {
+    unsafe fn setProcessing(&self, state: TBool) -> tresult {
+        if state != 0 && self.refuses_to_start_processing {
+            return kResultFalse;
+        }
         kResultOk
     }
 
@@ -219,12 +248,14 @@ impl IAudioProcessorTrait for Vst3Echo {
         }
         // SAFETY: the host passes a live `ProcessData` for this call.
         let data = unsafe { &*data };
+        if self.process_calls.this_call_fails() {
+            return kResultFalse;
+        }
         self.echo.record_block_mode(data.processMode);
         // SAFETY: every pointer inside `data` is valid for this call.
-        unsafe {
-            apply_parameter_changes(&self.echo, data);
-            render_block(&self.echo, data);
-        }
+        unsafe { apply_parameter_changes(&self.echo, data) };
+        // SAFETY: as above.
+        unsafe { render_block(&self.echo, data) };
         kResultOk
     }
 
@@ -240,24 +271,30 @@ unsafe fn apply_parameter_changes(echo: &Echo, data: &ProcessData) {
     let Some(changes) = (unsafe { ComRef::from_raw(data.inputParameterChanges) }) else {
         return;
     };
-    // SAFETY: the list and every queue it hands out are live for this call.
-    unsafe {
-        for index in 0..changes.getParameterCount() {
-            let Some(queue) = ComRef::from_raw(changes.getParameterData(index)) else {
-                continue;
-            };
-            if queue.getParameterId() != GAIN_PARAM_ID {
-                continue;
-            }
-            let points = queue.getPointCount();
-            if points <= 0 {
-                continue;
-            }
-            let mut offset = 0;
-            let mut value = 0.0;
-            if queue.getPoint(points - 1, &mut offset, &mut value) == kResultOk {
-                echo.set_gain(value);
-            }
+    // SAFETY: the list is live for this call.
+    let parameter_count = unsafe { changes.getParameterCount() };
+    for index in 0..parameter_count {
+        // SAFETY: the list is live for this call.
+        let queue_pointer = unsafe { changes.getParameterData(index) };
+        // SAFETY: a queue the live list hands out is live for this call.
+        let Some(queue) = (unsafe { ComRef::from_raw(queue_pointer) }) else {
+            continue;
+        };
+        // SAFETY: the queue is live for this call.
+        if unsafe { queue.getParameterId() } != GAIN_PARAM_ID {
+            continue;
+        }
+        // SAFETY: the queue is live for this call.
+        let points = unsafe { queue.getPointCount() };
+        if points <= 0 {
+            continue;
+        }
+        let mut offset = 0;
+        let mut value = 0.0;
+        // SAFETY: the queue is live and the out-pointers are local.
+        let read = unsafe { queue.getPoint(points - 1, &mut offset, &mut value) };
+        if read == kResultOk {
+            echo.set_gain(value);
         }
     }
 }
@@ -293,15 +330,27 @@ unsafe fn render_block(echo: &Echo, data: &ProcessData) {
         let mut sample_in = [0.0; CHANNELS];
         if !in_channels.is_null() {
             for (channel, sample) in sample_in.iter_mut().enumerate() {
-                // SAFETY: `channel < CHANNELS <= numChannels` and
-                // `frame < numSamples`.
-                *sample = unsafe { *(*in_channels.add(channel)).add(frame) };
+                // SAFETY: `channel < CHANNELS <= numChannels`, so the entry is
+                // inside the channel table.
+                let entry = unsafe { in_channels.add(channel) };
+                // SAFETY: `entry` is a table slot, as above.
+                let channel_buffer = unsafe { *entry };
+                // SAFETY: `frame < numSamples`.
+                let source = unsafe { channel_buffer.add(frame) };
+                // SAFETY: `source` is inside the channel buffer, as above.
+                *sample = unsafe { *source };
             }
         }
         let sample_out = echo.next_frame(sample_in);
         for (channel, sample) in sample_out.iter().enumerate() {
             // SAFETY: as above, for the output bus.
-            unsafe { *(*out_channels.add(channel)).add(frame) = *sample };
+            let entry = unsafe { out_channels.add(channel) };
+            // SAFETY: `entry` is a table slot, as above.
+            let channel_buffer = unsafe { *entry };
+            // SAFETY: `frame < numSamples`, as above.
+            let target = unsafe { channel_buffer.add(frame) };
+            // SAFETY: `target` is inside the output channel buffer.
+            unsafe { *target = *sample };
         }
     }
 }
@@ -504,19 +553,25 @@ impl IPluginFactoryTrait for Factory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        1
+        3
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
-        if index != 0 || info.is_null() {
+        let (cid, name) = match index {
+            0 => (VST3_CLASS_ID, CLASS_NAME),
+            1 => (VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME),
+            2 => (VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME),
+            _ => return kInvalidArgument,
+        };
+        if info.is_null() {
             return kInvalidArgument;
         }
         // SAFETY: `info` is a valid out parameter.
         let info = unsafe { &mut *info };
-        info.cid = VST3_CLASS_ID;
+        info.cid = cid;
         info.cardinality = ClassCardinality_::kManyInstances as int32;
         write_char8(&mut info.category, "Audio Module Class");
-        write_char8(&mut info.name, CLASS_NAME);
+        write_char8(&mut info.name, name);
         kResultOk
     }
 
@@ -530,16 +585,34 @@ impl IPluginFactoryTrait for Factory {
             return kInvalidArgument;
         }
         // SAFETY: a class id is sixteen bytes.
-        if unsafe { *(cid as *const TUID) } != VST3_CLASS_ID {
+        let requested = unsafe { *(cid as *const TUID) };
+        let departures = if requested == VST3_CLASS_ID {
+            Departures::default()
+        } else if requested == VST3_PROCESS_ERROR_CLASS_ID {
+            Departures {
+                fails_a_process_call: true,
+                ..Departures::default()
+            }
+        } else if requested == VST3_START_REFUSED_CLASS_ID {
+            Departures {
+                refuses_to_start_processing: true,
+                ..Departures::default()
+            }
+        } else {
             return kInvalidArgument;
-        }
-        let Some(instance) = ComWrapper::new(Vst3Echo::new()).to_com_ptr::<FUnknown>() else {
+        };
+        let Some(instance) = ComWrapper::new(Vst3Echo::new(departures)).to_com_ptr::<FUnknown>()
+        else {
             return kResultFalse;
         };
         let pointer = instance.as_ptr();
-        // SAFETY: `pointer` is a live `FUnknown`; `queryInterface` takes its own
-        // reference for the caller, and `instance` releases this one on drop.
-        unsafe { ((*(*pointer).vtbl).queryInterface)(pointer, iid as *const TUID, obj) }
+        // SAFETY: `pointer` is a live `FUnknown`, so its vtable pointer is readable.
+        let vtbl = unsafe { (*pointer).vtbl };
+        // SAFETY: a live `FUnknown`'s vtable is valid.
+        let query_interface = unsafe { (*vtbl).queryInterface };
+        // SAFETY: `queryInterface` takes its own reference for the caller, and
+        // `instance` releases this one on drop.
+        unsafe { query_interface(pointer, iid as *const TUID, obj) }
     }
 }
 

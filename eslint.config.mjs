@@ -195,7 +195,10 @@ export default tseslint.config(
         files: ['server/**/*.ts'],
         languageOptions: {
             globals: globals.node,
-            parserOptions: { project: './server/tsconfig.json', tsconfigRootDir: import.meta.dirname },
+            parserOptions: {
+                project: ['./server/tsconfig.json', './server/__tests__/tsconfig.json'],
+                tsconfigRootDir: import.meta.dirname,
+            },
         },
     },
     {
@@ -205,7 +208,6 @@ export default tseslint.config(
     },
     {
         rules: {
-            '@tanstack/query/no-rest-destructuring': 'warn',
             '@tanstack/query/no-void-query-fn': 'error',
         },
     },
@@ -348,6 +350,8 @@ export default tseslint.config(
         files: ['**/*.{ts,mts,cts}'],
         ignores: [
             '**/*.spec.ts',
+            // Browser end-to-end helpers seed and read page storage the way a spec does.
+            'tests/e2e/**/*.ts',
             'src/infra/store/storage/createLocalStorage.ts',
             'src/infra/store/storage/createPlainJsonLocalStorage.ts',
             'src/modules/Command/stores/undoSessionMirror.ts',

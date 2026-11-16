@@ -1,8 +1,9 @@
 import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
-import { type HandlerSessionActionEntry, type StripSilenceActionSnapshot } from '#/utils/handlerContract';
+import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 import { isRecord } from '#/utils/structuralEquality';
 
+import { type StripSilenceActionSnapshot } from '../../events/arrangementClipSnapshots';
 import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 

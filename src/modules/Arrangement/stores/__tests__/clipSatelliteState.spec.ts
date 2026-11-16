@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { type ClipSatelliteEntrySnapshot } from '#/utils/handlerContract';
-
+import { type ClipSatelliteEntrySnapshot } from '../../events/arrangementClipStateSnapshots';
 import { createWarpMarker, defaultWarpState } from '../../models/WarpMarker';
 import {
     clipSatelliteEntriesMatchSnapshot,
