@@ -58,8 +58,10 @@ import {
 import {
     loadNativeAddon,
     NATIVE_ADDON_PATH_ENV,
+    readGpuMemoryBudget,
     resolveNativeAddonPath,
     resolveScanHelperPath,
+    type NativeAddon,
     type NativeHost,
 } from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
@@ -620,6 +622,7 @@ const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
     mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined;
 
 let nativeHost: NativeHost | undefined;
+let nativeAddon: NativeAddon | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
 const pluginCommandAdmission = createPluginCommandAdmission();
 
@@ -740,6 +743,7 @@ const startNativeSurface = (): void => {
     const addonPath = nativeAddonPath();
     try {
         const addon = loadNativeAddon({ path: addonPath, load: createRequire(import.meta.url) });
+        nativeAddon = addon;
         nativeHost = createScopedNativeAddon({
             addon,
             scope: runtimeScope,
@@ -856,6 +860,7 @@ if (isPrimaryApplicationInstance) {
             ipcMain,
             isTrustedFrameUrl: isAllowedFrameUrl,
             totalMemoryBytes: totalmem,
+            gpuMemoryBudget: () => readGpuMemoryBudget(nativeAddon),
         });
         registerWindowControlChannels({
             ipcMain,
