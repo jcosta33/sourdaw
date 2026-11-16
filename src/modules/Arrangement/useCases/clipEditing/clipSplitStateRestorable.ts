@@ -1,7 +1,7 @@
-import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
+import { type ClipSplitActionSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { getTrackState } from '../../repositories/track/getTrackState';
 
 import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';

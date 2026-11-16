@@ -1,5 +1,4 @@
-import { type AutomationMode } from '#/modules/Automation/events';
-import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
+import { type AutomationMode, type AutomationRecordingPolicy } from '#/modules/Automation/events';
 
 import {
     type ClipSnapshot,

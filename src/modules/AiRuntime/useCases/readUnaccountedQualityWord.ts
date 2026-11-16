@@ -11,6 +11,8 @@ import { compilePerceptualConstraints } from './perceptualConstraints/compilePer
 import { readComparedQualityWords } from './readComparedQualityWords';
 import { readFirstPerceptualTerm } from './readFirstPerceptualTerm';
 
+type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
+
 // A slash joins clauses only with space around it, so a registered phrase such as "punch in/out" stays whole.
 const CLAUSE_SEPARATOR = /[.;,!?\n&:()—–]|\s\/\s|\b(?:and|then|but|so|while|with|or|plus)\b/u;
 // A clause with no letter holds no word, so a sample list or a run of figures is never rescanned clause by clause.
@@ -29,9 +31,12 @@ const DETERMINER = String.raw`(?:(?:the|a|an|this|that|my)\s+)?`;
 /** A figure qualifies a quality only in its own phrase: "3 dB louder", "louder by 3 dB", "gain-level to -6". */
 const FIGURE_QUALIFIERS = [
     new RegExp(String.raw`${FIGURE}\s*${UNIT}\b\s+\p{L}+`, 'giu'),
-    new RegExp(String.raw`\p{L}+\s+by\s+${FIGURE}${NOT_FREQUENCY}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
-    new RegExp(String.raw`\S+\s+(?:to|at)\s+${FIGURE}${NOT_FREQUENCY}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
+    new RegExp(String.raw`(?<!\p{L})\p{L}+\s+by\s+${FIGURE}${NOT_FREQUENCY}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
+    new RegExp(String.raw`(?<!\S)\S+\s+(?:to|at)\s+${FIGURE}${NOT_FREQUENCY}(?:\s*${UNIT}\b)?(?![\d.]*\w)`, 'giu'),
 ];
+// Verb forms of the quality words the catalog states as adjectives and nouns ("brighter", "tighter", "width").
+const QUALITY_VERB =
+    /(?<![\p{L}\p{N}])(?:brighten|darken|widen|narrow|soften|sharpen|thicken|loosen)(?:s|ed|ing)?(?![\p{L}\p{N}])/iu;
 const COMMAND_CARRIER = String.raw`^\s*(?:please\s+)?(?:(?:can|could|would)\s+you\s+(?:please\s+)?)?(?:please\s+)?(?:(?:don['’]?t|do\s+not|never)\s+)?`;
 
 function blank(text: string, start: number, end: number): string {
@@ -106,20 +111,46 @@ function blankPunchTransportTerms(clause: string): string {
     );
 }
 
-// A published recipe id ("drums-tight-transient") and the word naming a recipe ("the controlled recipe") pick a
-// catalog entry, so a descriptor inside either is the recipe's name, not a quality the request claims.
-const RECIPE_NAMING_WORD = /\p{L}+(?=\s+recipes?(?![\p{L}\p{N}]))/giu;
+function joinWords(words: readonly string[]): string {
+    return words.map(escapeRegExp).join(String.raw`[\s-]+`);
+}
 
-function blankRecipeReferences(text: string, recipeIds: readonly string[]): string {
-    const withoutIds = recipeIds.reduce(
-        (masked, id) =>
-            masked.replaceAll(
-                new RegExp(String.raw`(?<![\p{L}\p{N}-])${escapeRegExp(id)}(?![\p{L}\p{N}-])`, 'giu'),
-                (span) => ' '.repeat(span.length)
-            ),
-        text
-    );
-    return withoutIds.replaceAll(RECIPE_NAMING_WORD, (span) => ' '.repeat(span.length));
+// A comparative or "more/less" term asks for a change, so "a brighter recipe" stays the request's own claim; the
+// remaining terms only name the character a recipe has.
+function readNamingTerms(terms: readonly string[]): string[][] {
+    return terms
+        .filter((term) => !/^(?:more|less)\s/iu.test(term) && !/^\p{L}+er$/iu.test(term))
+        .map((term) => term.split(/[\s-]+/u));
+}
+
+// A published recipe id ("drums-tight-transient") and the descriptor words of one with its role removed ("the tight
+// transient recipe") pick a catalog entry, so a descriptor inside either is the recipe's name, not a quality the
+// request claims. Any other word before "recipe" ("a brighter recipe") is the request's own.
+function buildRecipeNamePattern(
+    recipes: MixRecipeCatalog['recipes'],
+    descriptorTerms: MixRecipeCatalog['descriptorTerms']
+): RegExp | null {
+    const recipeSuffix = String.raw`(?=\s+recipes?(?![\p{L}\p{N}]))`;
+    const alternatives = recipes.flatMap((recipe) => {
+        const fullId = String.raw`${escapeRegExp(recipe.id)}(?![\p{L}\p{N}-])`;
+        const aliases =
+            recipe.descriptor === null ? [] : readNamingTerms(descriptorTerms[recipe.descriptor]).map(joinWords);
+        const role = recipe.roles.find((candidate) => recipe.id.startsWith(`${candidate}-`));
+        if (role === undefined) {
+            return [fullId, ...aliases.map((alias) => alias + recipeSuffix)];
+        }
+        const idWords = joinWords(recipe.id.slice(role.length + 1).split('-'));
+        return [fullId, ...[idWords, ...aliases].map((words) => words + recipeSuffix)];
+    });
+    if (alternatives.length === 0) {
+        return null;
+    }
+    const longestFirst = [...new Set(alternatives)].toSorted((left, right) => right.length - left.length);
+    return new RegExp(String.raw`(?<![\p{L}\p{N}-])(?:${longestFirst.join('|')})`, 'giu');
+}
+
+function blankRecipeReferences(text: string, pattern: RegExp | null): string {
+    return pattern === null ? text : text.replaceAll(pattern, (span) => ' '.repeat(span.length));
 }
 
 const SUPPLIED_NAME = new RegExp(String.raw`(?:\b(?:named|called)|${COMMAND_CARRIER}rename\b.*?\bto)\s+(.+)$`, 'iu');
@@ -153,7 +184,7 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
     const named = maskProjectObjectNames(tracked, context, CLAUSE_SEPARATOR);
     const masked = blankRecipeReferences(
         blankConstraintClauses(named, prompt, context),
-        catalog.recipes.map((recipe) => recipe.id)
+        buildRecipeNamePattern(catalog.recipes, catalog.descriptorTerms)
     );
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
         if (!HAS_LETTER.test(clause)) {
@@ -170,6 +201,10 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
         const [word] = readComparedQualityWords(stated, context).values();
         if (word !== undefined) {
             return word;
+        }
+        const verb = QUALITY_VERB.exec(stated);
+        if (verb !== null) {
+            return verb[0];
         }
     }
     return null;

@@ -172,8 +172,6 @@ function collectExplicitTargets(prompt: string, context: ProjectContext): Creati
 type RoleFamilyReading = {
     /** Families the request asks to change ("tighten up the drums"). */
     named: SemanticCommandListRoleFamily[];
-    /** Families only a protection clause names ("leave the drums alone"), which no agent-decided target may reach. */
-    kept: SemanticCommandListRoleFamily[];
     /**
      * The request points at its object without naming a family to edit: the selection ("this bass
      * track"), an object it creates ("add a delay bus") or a noun a family word only modifies ("add a
@@ -191,14 +189,15 @@ const CREATED_OBJECT_NOUN = new RegExp(
 
 /**
  * The role families the request's own words name, with quotations and track names blanked so a
- * quoted "bass" or the track "Drum Bus" names no family. A family inside a protection clause is kept
- * out rather than targeted, and one inside an object the request creates ("add a new bass track")
- * names that new object rather than the family's tracks. A request pointing at the selection ("this
- * bass track") names none.
+ * quoted "bass" or the track "Drum Bus" names no family. Protection clauses are blanked too, so a
+ * family one keeps ("leave the drums alone") names no target; the shared protection reader protects
+ * that family's tracks. A family inside an object the request creates ("add a new bass track") names
+ * that new object rather than the family's tracks. A request pointing at the selection ("this bass
+ * track") names none.
  */
-function readRoleFamilies(positivePrompt: string, context: ProjectContext): RoleFamilyReading {
+function readNamedRoleFamilies(positivePrompt: string, context: ProjectContext): RoleFamilyReading {
     if (hasExplicitTrackSelection(positivePrompt)) {
-        return { named: [], kept: [], pointsAtObject: true };
+        return { named: [], pointsAtObject: true };
     }
     const slotRanges = protectionSlots
         .read(scanPromptQuotedText(positivePrompt).maskedText)
@@ -207,11 +206,9 @@ function readRoleFamilies(positivePrompt: string, context: ProjectContext): Role
     const createdObjects = findIntroducedObjectRanges(unnamed, CREATED_OBJECT_NOUN);
     const uncreated = maskRanges(unnamed, createdObjects);
     const outsideProtections = maskRanges(uncreated, slotRanges);
-    const insideProtections = slotRanges.map(({ start, end }) => uncreated.slice(start, end)).join(' ');
     const outside = findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES);
     return {
         named: outside.named,
-        kept: findNamedRoleFamilies(insideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).named,
         pointsAtObject: createdObjects.length > 0 || outside.modifying.length > 0,
     };
 }
@@ -261,18 +258,14 @@ function collectRoleTargets(
  * Every track a whole-project vibe run could plan, offered when the request names no object, no role
  * family and nothing is selected ("polish the low end"). The catalog cannot tell a perceptual request
  * from any other, so it offers them for every such request, and admission keeps one only beside a
- * perceptual or comparative metric intent.
+ * perceptual or comparative metric intent. The request's protections, a role family's tracks among
+ * them, and the brief's are never offered.
  */
 function collectAgentDecidedTargets(
     context: ProjectContext,
-    protectedIds: ReadonlySet<string>,
-    keptFamilies: readonly SemanticCommandListRoleFamily[]
+    protectedIds: ReadonlySet<string>
 ): CreativeTargetCandidate[] {
-    const excluded = new Set([
-        ...protectedIds,
-        ...readBriefProtectedTrackIds(context),
-        ...keptFamilies.flatMap((family) => resolveRoleFamilyTrackIds(context, family)),
-    ]);
+    const excluded = new Set([...protectedIds, ...readBriefProtectedTrackIds(context)]);
     return context.tracks
         .filter((track) => findPlannableTrackExclusion(track, excluded) === null)
         .map((track, index) => ({
@@ -288,7 +281,7 @@ function collectAgentDecidedTargets(
 /**
  * The targets a request reaches, strongest reference first: named objects alone, else the tracks of
  * the role families it names, else the selection, else, when it names no family and points at no
- * object of its own, every plannable source outside the families it keeps.
+ * object of its own, every plannable source the request and the brief do not protect.
  */
 function collectRequestTargets(
     positivePrompt: string,
@@ -299,7 +292,7 @@ function collectRequestTargets(
     if (explicitTargets.length > 0) {
         return explicitTargets;
     }
-    const families = readRoleFamilies(positivePrompt, context);
+    const families = readNamedRoleFamilies(positivePrompt, context);
     const roleTargets = collectRoleTargets(families.named, context);
     if (roleTargets.length > 0) {
         return roleTargets;
@@ -313,7 +306,7 @@ function collectRequestTargets(
     ) {
         return contextualTargets;
     }
-    return collectAgentDecidedTargets(context, protectedIds, families.kept);
+    return collectAgentDecidedTargets(context, protectedIds);
 }
 
 /**

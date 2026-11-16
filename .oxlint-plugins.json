@@ -809,8 +809,7 @@
                 "src/modules/Yeast/workers/processors/ChordGenerator.ts",
                 "src/modules/Yeast/workers/processors/GrooveModule.ts",
                 "src/modules/Yeast/workers/yeastWorker.ts",
-                "src/utils/automationCurve.ts",
-                "src/utils/handlerContract.ts"
+                "src/utils/automationCurve.ts"
             ],
             "rules": {
                 "max-lines": [

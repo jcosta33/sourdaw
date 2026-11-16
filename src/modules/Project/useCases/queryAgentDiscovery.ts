@@ -21,6 +21,7 @@ import { createBoundedRevisionToken } from '../services/createBoundedRevisionTok
 import { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 import { collectAssetDiscoveryEntries } from './agentDiscovery/collectAssetDiscoveryEntries';
 import { collectDeviceDiscoveryEntries } from './agentDiscovery/collectDeviceDiscoveryEntries';
+import { collectGrooveDiscoveryEntries } from './agentDiscovery/collectGrooveDiscoveryEntries';
 import { collectPresetDiscoveryEntries } from './agentDiscovery/collectPresetDiscoveryEntries';
 import { collectSampleDiscoveryEntries } from './agentDiscovery/collectSampleDiscoveryEntries';
 import { semanticProjectIndex } from './semanticProjectIndex';
@@ -93,6 +94,14 @@ function collectAssets(): Collection {
     };
 }
 
+function collectGrooves(): Collection {
+    const candidates = collectGrooveDiscoveryEntries();
+    if (candidates === null) {
+        return { status: 'unavailable', reason: 'groove-pool-unavailable' };
+    }
+    return { status: 'candidates', candidates, warnings: [], revision: null };
+}
+
 function collect(domain: AgentDiscoveryDomain, filters: AgentDiscoveryFilters | undefined): Collection {
     if (domain === 'device') {
         return collectDevices();
@@ -105,6 +114,9 @@ function collect(domain: AgentDiscoveryDomain, filters: AgentDiscoveryFilters | 
     }
     if (domain === 'asset') {
         return collectAssets();
+    }
+    if (domain === 'groove') {
+        return collectGrooves();
     }
     return collectCapabilities();
 }

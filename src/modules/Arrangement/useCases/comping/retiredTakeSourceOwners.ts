@@ -1,4 +1,4 @@
-import { type RetiredTakeLaneSnapshot, type TakeSnapshot } from '#/utils/handlerContract';
+import { type RetiredTakeLaneSnapshot, type TakeSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 export type SourceKind = 'removeClip' | 'splitClipUndo';
 

@@ -1,5 +1,6 @@
 import { getAutomationLanes, removeAutomationLane, restoreAutomationLanes } from '#/modules/Automation/useCases';
-import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
+
+import { type ClipAutomationLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 import { clipAutomationLaneTransitionMatchesStore } from './clipAutomationLaneTransitionMatchesStore';
 

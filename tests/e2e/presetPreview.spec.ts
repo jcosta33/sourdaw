@@ -6,9 +6,7 @@ import type { ProjectInspectionModule } from './directProjectSetupContract';
 type PreviewPcm = { sampleRate: number; channels: Float32Array[] };
 
 declare global {
-    interface Window {
-        presetPreviewStarts: PreviewPcm[];
-    }
+    var presetPreviewStarts: PreviewPcm[];
 }
 
 test.describe('Preset sound audition', () => {

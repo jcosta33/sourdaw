@@ -185,6 +185,7 @@
 
 #![allow(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     reason = "benchmarks assert by unwrapping and fail by panicking"
 )]

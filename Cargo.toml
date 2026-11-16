@@ -54,13 +54,14 @@ unused_assignments = "warn"
 [workspace.lints.clippy]
 all ={ level = "deny", priority = -1 }
 dbg_macro = "deny"
+expect_used = "deny"
 get_unwrap = "deny"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 unreachable = "deny"
 unwrap_used = "deny"
-too_many_arguments = "warn"
+too_many_arguments = "deny"
 # Rejected: timeline tracks, buses and clips cross the scheduler command ring
 # as boxes, so the audio thread neither reallocates nor copies large structs
 # when one is added or removed.

@@ -4,7 +4,9 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`.
+
+- **Kernel-Owned Snapshot Copies**: The kernel imports no domain module, so a snapshot its own actions carry lives in `events/` as its own structural copy. `DrumPreviewNoteSnapshot` is MIDI's `MidiClipNoteSnapshot` written out in full, because the command argument schemas are generated from these types and close every object; MIDI's `events/__tests__/midiClipDataSnapshots.spec.ts` pins the two as equal, so edit both together.
 
 ## Key Subsystems
 

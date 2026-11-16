@@ -14,7 +14,11 @@
 //! These tests assert on rendered signal and voice count, so restoring the
 //! straight-to-fallback path fails here rather than silently muting notes.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::levain::LevainInstance;
 

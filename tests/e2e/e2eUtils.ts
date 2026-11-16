@@ -169,7 +169,7 @@ const DIRECT_SETUP_ENTRY_PATH = '/e2e/direct-project-setup.js';
  */
 export async function launch_new_project(page: Page): Promise<void> {
     const result = await page.evaluate(async (entryPath: string) => {
-        const { newProject }: DirectProjectSetupModule = await import(entryPath);
+        const { newProject } = (await import(entryPath)) as DirectProjectSetupModule;
         return newProject();
     }, DIRECT_SETUP_ENTRY_PATH);
     if (!result) {

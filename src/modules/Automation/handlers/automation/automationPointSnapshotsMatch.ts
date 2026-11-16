@@ -1,4 +1,4 @@
-import { type AutomationPointSnapshot } from '#/utils/handlerContract';
+import { type AutomationPointSnapshot } from '../../events/automationSnapshots';
 
 function controlPointsMatch(
     current: { x: number; y: number } | undefined,

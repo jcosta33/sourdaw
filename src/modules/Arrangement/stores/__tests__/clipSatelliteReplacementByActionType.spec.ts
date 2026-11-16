@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ClipSatelliteEntrySnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
-
+import {
+    type ClipSatelliteEntrySnapshot,
+    type ClipSplitActionSnapshot,
+} from '../../events/arrangementClipStateSnapshots';
 import {
     clipSatelliteReplacementByActionType,
     getClipSatelliteReplacements,

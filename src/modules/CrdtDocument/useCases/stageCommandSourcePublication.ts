@@ -2,8 +2,8 @@ import {
     appendAutomergeStoragePublicationMetadata,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type CommandSourceProof } from '#/utils/handlerContract';
 
+import { type CommandSourceProof } from '../events/crdtDocumentSnapshots';
 import { automergeRepository } from '../repositories/automergeRepository';
 
 import { captureProjectIdentity } from './captureProjectIdentity';
