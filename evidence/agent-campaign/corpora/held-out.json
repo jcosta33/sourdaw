@@ -4255,10 +4255,8 @@
                         "track-bass-di",
                         "track-drum-bus",
                         "track-guitar",
-                        "track-hi-hat",
                         "track-kick",
                         "track-lead-vocal",
-                        "track-overheads",
                         "track-snare"
                     ],
                     "protectedIds": [
@@ -4361,100 +4359,6 @@
                                     "type": "setDeviceParameter",
                                     "payload": {
                                         "expectedTrackId": "track-snare",
-                                        "paramId": "eq-mid-q",
-                                        "value": 1.15
-                                    }
-                                },
-                                {
-                                    "type": "addDevice",
-                                    "payload": {
-                                        "trackId": "track-hi-hat",
-                                        "deviceType": "builtin-eq"
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-low-freq",
-                                        "value": 80
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-low-gain",
-                                        "value": 3
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-mid-freq",
-                                        "value": 240
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-mid-gain",
-                                        "value": 1.75
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-mid-q",
-                                        "value": 1.15
-                                    }
-                                },
-                                {
-                                    "type": "addDevice",
-                                    "payload": {
-                                        "trackId": "track-overheads",
-                                        "deviceType": "builtin-eq"
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
-                                        "paramId": "eq-low-freq",
-                                        "value": 80
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
-                                        "paramId": "eq-low-gain",
-                                        "value": 3
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
-                                        "paramId": "eq-mid-freq",
-                                        "value": 240
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
-                                        "paramId": "eq-mid-gain",
-                                        "value": 1.75
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
                                         "paramId": "eq-mid-q",
                                         "value": 1.15
                                     }
@@ -4820,10 +4724,8 @@
                         "track-bass-di",
                         "track-drum-bus",
                         "track-guitar",
-                        "track-hi-hat",
                         "track-keys",
                         "track-kick",
-                        "track-overheads",
                         "track-snare"
                     ],
                     "protectedIds": [
@@ -4894,68 +4796,6 @@
                                     "type": "setDeviceParameter",
                                     "payload": {
                                         "expectedTrackId": "track-snare",
-                                        "paramId": "eq-high-gain",
-                                        "value": -2
-                                    }
-                                },
-                                {
-                                    "type": "addDevice",
-                                    "payload": {
-                                        "trackId": "track-hi-hat",
-                                        "deviceType": "builtin-eq"
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-low-gain",
-                                        "value": 3
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-high-freq",
-                                        "value": 10000
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-high-gain",
-                                        "value": -2
-                                    }
-                                },
-                                {
-                                    "type": "addDevice",
-                                    "payload": {
-                                        "trackId": "track-overheads",
-                                        "deviceType": "builtin-eq"
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
-                                        "paramId": "eq-low-gain",
-                                        "value": 3
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
-                                        "paramId": "eq-high-freq",
-                                        "value": 10000
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-overheads",
                                         "paramId": "eq-high-gain",
                                         "value": -2
                                     }
@@ -5270,7 +5110,6 @@
                         "track-backing-vocal-right",
                         "track-bass-di",
                         "track-guitar",
-                        "track-hi-hat",
                         "track-keys",
                         "track-kick",
                         "track-lead-vocal",
@@ -5345,37 +5184,6 @@
                                     "type": "setDeviceParameter",
                                     "payload": {
                                         "expectedTrackId": "track-snare",
-                                        "paramId": "eq-mid-q",
-                                        "value": 1.85
-                                    }
-                                },
-                                {
-                                    "type": "addDevice",
-                                    "payload": {
-                                        "trackId": "track-hi-hat",
-                                        "deviceType": "builtin-eq"
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-mid-freq",
-                                        "value": 375
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
-                                        "paramId": "eq-mid-gain",
-                                        "value": -3.5
-                                    }
-                                },
-                                {
-                                    "type": "setDeviceParameter",
-                                    "payload": {
-                                        "expectedTrackId": "track-hi-hat",
                                         "paramId": "eq-mid-q",
                                         "value": 1.85
                                     }
