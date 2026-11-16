@@ -163,10 +163,10 @@ const CARGO_WORKSPACE_FILES: readonly string[] = [
  * a target at the crate root stands for its file alone, never the whole crate directory.
  */
 function optionalTestedTrees(cargoPackage: CargoPackage): readonly string[] {
-    const directories = cargoPackage.targets.map((target) => dirname(target.source));
-    return Array.from(new Set(directories))
-        .filter((directory) => directory !== cargoPackage.directory)
-        .sort();
+    const sources = cargoPackage.targets.map((target) =>
+        dirname(target.source) === cargoPackage.directory ? target.source : dirname(target.source)
+    );
+    return Array.from(new Set(sources)).sort();
 }
 
 type CargoClosurePaths = { readonly required: readonly string[]; readonly optionalTrees: readonly string[] };

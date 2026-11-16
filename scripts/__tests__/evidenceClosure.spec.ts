@@ -108,6 +108,7 @@ function cargoMetadataFor(root: string, packages: readonly string[]): string {
                 { kind: ['example'], src_path: join(root, 'crates/root-crate/examples/demo.rs') },
                 { kind: ['bench'], src_path: join(root, 'crates/root-crate/benches/speed.rs') },
                 { kind: ['example'], src_path: join(root, 'crates/root-crate/demos/demo.rs') },
+                { kind: ['bin'], src_path: join(root, 'crates/root-crate/main.rs') },
             ],
         },
         'dep-crate': {
@@ -189,6 +190,7 @@ function workspace(): { root: string; io: ClosureIo } {
         write(root, `crates/${crate}/Cargo.toml`, `[package]\nname = "${crate}"\n`);
         write(root, `crates/${crate}/src/lib.rs`, 'pub fn value() -> u8 { 1 }\n');
     }
+    write(root, 'crates/root-crate/main.rs', 'fn main() {}\n');
     write(root, 'crates/root-crate/tests/it.rs', '#[test]\nfn filter() {}\n');
     write(root, 'crates/dep-crate/build.rs', 'fn main() {}\n');
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
@@ -366,6 +368,15 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
         expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${demo}`]);
     });
 
+    it('refuses a record once a crate-root target source file changes, naming it', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        const main = 'crates/root-crate/main.rs';
+        write(root, main, 'fn main() { let _ = 1; }\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${main}`]);
+    });
+
     it('refuses a record once a tracked file in its closure is deleted', async () => {
         const { root, io } = workspace();
         const record = await recordedRun(root, io);
@@ -397,6 +408,7 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
             'crates/dep-crate/build.rs',
             DEPENDENCY_SOURCE,
             'crates/root-crate/Cargo.toml',
+            'crates/root-crate/main.rs',
             'crates/root-crate/src/lib.rs',
             'crates/root-crate/tests/it.rs',
             'rust-toolchain.toml',
