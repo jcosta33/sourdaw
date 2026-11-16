@@ -376,6 +376,19 @@ function validateDigestedPaths(manifest: EvidenceManifest): readonly string[] {
     return problems;
 }
 
+/**
+ * Fixtures a manifest pins as absent. Not part of `validateEvidenceManifest`: the runner
+ * legitimately generates and blocks on absent fixtures in scratch trees. The committed manifest
+ * must name none, since a moved spec or crate would leave its suite proving nothing.
+ */
+export function absentFixtureProblems(manifest: EvidenceManifest): readonly string[] {
+    return manifest.suites.flatMap((suite) =>
+        suite.fixtures
+            .filter((fixture) => fixture.digest === null)
+            .map((fixture) => `suite ${suite.id} pins ${fixture.path}, which is not in the tree`)
+    );
+}
+
 function validateCollisions(manifest: EvidenceManifest): readonly string[] {
     const expected = JSON.stringify(sharedFixturePaths(manifest.suites));
     const recorded = JSON.stringify(sortCollisions(manifest.collisions));
