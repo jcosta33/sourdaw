@@ -115,17 +115,20 @@ const OBJECTS_MOVING_INPUT: Record<Exclude<RangeInput, 'meter'>, readonly Effect
 /**
  * Whether an earlier member can move an input the range is read against. An arrangement edit that
  * creates or removes nothing — a move, a trim, a rename — is read as able to move any of them, and
- * a member Command declares no effect for is read as able to move everything.
+ * a member Command declares no effect for is read as able to move everything. A conditional
+ * dimension counts as possible: its condition (a clip's stretch mode, say) may itself be set by an
+ * earlier member, so it cannot be read from the project the batch starts from.
  */
 function movesRangeInput(candidate: AppAction, input: RangeInput): boolean {
     const effect = getExecutableAppActionEffect(candidate.type);
     if (effect === null) {
         return true;
     }
+    const possible = [...effect.dimensions, ...(effect.conditional ?? []).map((entry) => entry.dimension)];
     if (input === 'meter') {
-        return effect.dimensions.includes('project-timing');
+        return possible.includes('project-timing');
     }
-    if (!effect.dimensions.includes('arrangement')) {
+    if (!possible.includes('arrangement')) {
         return false;
     }
     const created: readonly EffectObject[] = effect.creates ?? [];
