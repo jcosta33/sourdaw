@@ -19,6 +19,8 @@ export type RefusalEpisodeBook = {
     beginDispatch: (key: string) => DispatchStart;
     openRefused: (key: string, episode: OpenEpisode) => void;
     settleUncommitted: (key: string) => void;
+    /** Called the moment a dispatch commits, before it resolves, so a refusal handled in between sees it. */
+    recordCommitted: (key: string, order: number) => void;
     closeCommitted: (key: string, order: number) => void;
     end: (key: string) => void;
     endAll: () => void;
@@ -222,8 +224,8 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
                 onAdmitted?.(key);
             }
         },
+        recordCommitted: committedOrders.record,
         closeCommitted(key, order) {
-            committedOrders.record(key, order);
             // A refusal that started after this commit refused a newer edit, which is still unsaved.
             const episode = open.get(key) ?? delivering.get(key);
             if (episode && episode.order > order) {

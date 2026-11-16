@@ -584,6 +584,33 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).not.toHaveBeenCalled();
         });
 
+        it('opens no episode for an older refusal that lands after a newer commit, before that dispatch resolves', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const older = Promise.withResolvers<void>();
+            const newerSettled = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction)
+                .mockReturnValueOnce(older.promise)
+                .mockImplementationOnce(async (_action, options) => {
+                    options?.onCommitted?.();
+                    await newerSettled.promise;
+                });
+            const olderRefused = episodes.execute('A', action);
+            const newerCommitted = episodes.execute('A', action);
+
+            // The newer edit is in the project; its dispatch has not resolved yet.
+            lock();
+            older.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(olderRefused).resolves.toBe('refused');
+            newerSettled.resolve();
+            await expect(newerCommitted).resolves.toBe('committed');
+            unlock();
+            await afterMicrotasks();
+
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
         it('opens no episode for a refusal older than the newest commit when an oldest commit lands last', async () => {
             const onAdmitted = vi.fn();
             const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });

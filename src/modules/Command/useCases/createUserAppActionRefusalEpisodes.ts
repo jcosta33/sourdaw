@@ -65,6 +65,7 @@ export function createUserAppActionRefusalEpisodes(
                     ...executeOptions,
                     onCommitted: () => {
                         dispatch.committed = true;
+                        episodes.recordCommitted(key, start.order);
                         executeOptions?.onCommitted?.();
                     },
                 });
