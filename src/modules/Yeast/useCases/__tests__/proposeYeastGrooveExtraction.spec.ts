@@ -6,7 +6,10 @@ const { mockTrackStore, mockPrepareExtraction } = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
-vi.mock('#/modules/MIDI/useCases', () => ({ prepareGrooveExtraction: mockPrepareExtraction }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    prepareGrooveExtraction: mockPrepareExtraction,
+    createGrooveExtractionTemplateId: (clipId: string) => `groove-${clipId}-minted`,
+}));
 
 import { proposeYeastGrooveExtraction } from '../proposeYeastGrooveExtraction';
 

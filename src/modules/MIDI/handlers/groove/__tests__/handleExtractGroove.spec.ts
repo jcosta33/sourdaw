@@ -5,6 +5,7 @@ import { defaultGrooveTemplateState, grooveTemplateStore } from '../../../stores
 import { createGrooveTemplate } from '../../../useCases/grooveTemplates/createGrooveTemplate';
 import { markGrooveTemplateProjectWrite } from '../../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../../useCases/grooveTemplates/prepareGrooveExtraction';
+import { handleDeleteGrooveTemplate } from '../handleDeleteGrooveTemplate';
 import { handleExtractGroove } from '../handleExtractGroove';
 
 const mocks = vi.hoisted(() => ({
@@ -81,6 +82,12 @@ function reorderExtractedTemplate(template: GrooveTemplate): GrooveTemplate {
         name: template.name,
         id: template.id,
     };
+}
+
+function extractedIds(): string[] {
+    return (grooveTemplateStore.value?.templates ?? [])
+        .map((template) => template.id)
+        .filter((id) => id.startsWith('groove-clip-source-'));
 }
 
 describe('handleExtractGroove', () => {
@@ -272,5 +279,32 @@ describe('handleExtractGroove', () => {
 
         expect(handleExtractGroove.isNoop?.(action)).toBe(true);
         expect(handleExtractGroove.execute(action)).toEqual({ status: 'no-write' });
+    });
+    it('adds a template per extraction with distinct ids, undoing and redoing exactly the pinned one', () => {
+        mocks.notes = [
+            { id: 'a', startBeat: 0.02, velocity: 96 },
+            { id: 'b', startBeat: 0.63, velocity: 80 },
+        ];
+        const sixteenth = createAction('groove-clip-source-first');
+        const eighth = {
+            ...createAction('groove-clip-source-second'),
+            payload: { ...createAction('groove-clip-source-second').payload, subdivision: '1/8' as const },
+        };
+
+        const firstInverse = handleExtractGroove.describe(sixteenth).inverseAction;
+        void handleExtractGroove.execute(sixteenth);
+        const secondInverse = handleExtractGroove.describe(eighth).inverseAction;
+        expect(handleExtractGroove.execute(eighth)).toMatchObject({ status: 'written' });
+        expect(extractedIds()).toEqual(['groove-clip-source-first', 'groove-clip-source-second']);
+        expect(firstInverse).not.toBeNull();
+
+        if (secondInverse?.type !== 'deleteGrooveTemplate') {
+            throw new Error('Expected a deleteGrooveTemplate inverse');
+        }
+        void handleDeleteGrooveTemplate.execute(secondInverse);
+        expect(extractedIds()).toEqual(['groove-clip-source-first']);
+
+        expect(handleExtractGroove.execute(eighth)).toMatchObject({ status: 'written' });
+        expect(extractedIds()).toEqual(['groove-clip-source-first', 'groove-clip-source-second']);
     });
 });

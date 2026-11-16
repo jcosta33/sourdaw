@@ -85,6 +85,7 @@ export { getGrooveExtractionActionErrorCode } from './grooveTemplates/getGrooveE
 export { getScopedGrooveAssignment } from './grooveTemplates/getScopedGrooveAssignment';
 export { getScopedGrooveConsumerId } from './grooveTemplates/getScopedGrooveConsumerId';
 export { getCanonicalGrooveTemplateKey } from './grooveTemplates/getCanonicalGrooveTemplateKey';
+export { createGrooveExtractionTemplateId } from './grooveTemplates/createGrooveExtractionTemplateId';
 export { getGrooveTemplate } from './grooveTemplates/getGrooveTemplate';
 export { getSupportedGrooveSubdivisions } from './grooveTemplates/getSupportedGrooveSubdivisions';
 export { getStraightGrooveTemplateId } from './grooveTemplates/getStraightGrooveTemplateId';

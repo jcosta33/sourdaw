@@ -124,11 +124,30 @@ describe('Yeast groove extraction', () => {
         }
         expect(extracted.template).toEqual(
             expect.objectContaining({
-                id: 'groove-clip-source-v1',
+                id: expect.stringMatching(/^groove-clip-source-[0-9a-f-]{36}$/),
                 name: 'Source clip groove',
                 provenance: { type: 'midi-clip', sourceId: 'clip-source', analyzerVersion: 1 },
             })
         );
+    });
+
+    it('proposes a fresh template id for every extraction of the same clip', () => {
+        trackStore.set(createTrackState());
+        setMidiStoreState({
+            notesByClipId: {
+                'clip-source': [{ id: 'late', pitch: 60, startBeat: 0.02, duration: 0.25, velocity: 96 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        const first = proposeYeastGrooveExtraction({ clipId: 'clip-source', subdivision: '1/16' });
+        const second = proposeYeastGrooveExtraction({ clipId: 'clip-source', subdivision: '1/16' });
+
+        if (first.status !== 'extracted' || second.status !== 'extracted') {
+            throw new Error('Expected extracted proposals');
+        }
+        expect(first.template.id).not.toBe(second.template.id);
     });
 
     it('rejects missing and non-MIDI Arrangement clips before reading MIDI notes', () => {

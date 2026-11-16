@@ -607,7 +607,7 @@ describe('PianoRollContextMenu', () => {
         await waitFor(() =>
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'extractGroove',
-                payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v1' },
+                payload: { clipId: 'clip-9', templateId: expect.stringMatching(/^groove-clip-9-[0-9a-f-]{36}$/) },
             })
         );
         await waitFor(() => expect(applyButton).not.toBeDisabled());
