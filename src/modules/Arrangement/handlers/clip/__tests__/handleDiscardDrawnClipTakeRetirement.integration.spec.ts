@@ -37,7 +37,7 @@ describe('discardDrawnClip take retirement (direct removeClip route)', () => {
         removeCrdtDoc('root');
     });
 
-    it('retires the discarded clip take through removeClip', () => {
+    it('retires the discarded clip take through removeClip', async () => {
         const lane: TakeLane = {
             ...createTakeLane('track-1'),
             takes: [createTake('clip-1', 'Take 1', 0, 4)],
@@ -45,7 +45,7 @@ describe('discardDrawnClip take retirement (direct removeClip route)', () => {
         takeLaneStore.set({ lanes: [lane] });
         flushAutomergeStorageWrites();
 
-        handleDiscardDrawnClip.execute({
+        await handleDiscardDrawnClip.execute({
             type: 'discardDrawnClip',
             payload: { clipId: 'clip-1', trackId: 'track-1', ripplePlan: null },
         });

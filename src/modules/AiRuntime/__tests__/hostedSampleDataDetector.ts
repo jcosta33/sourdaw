@@ -5,6 +5,13 @@ export const MAX_BAND_VALUES = 7;
 const AUDIO_KEY = /^(samples?|pcm|audio|buffer|channeldata)$/iu;
 const BASE64_BLOB = /^[A-Za-z0-9+/]{256,}={0,2}$/u;
 const INDEX_KEY = /^\d+$/u;
+/** A series or blob inside running text, which a message composed around a figure list leaves unparsed. */
+const NUMBER = String.raw`-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?`;
+const EMBEDDED_NUMBER_SERIES = new RegExp(
+    String.raw`\[(?:\s*${NUMBER}\s*,){${String(MAX_BAND_VALUES)},}\s*${NUMBER}\s*\]`,
+    'u'
+);
+const EMBEDDED_BASE64_BLOB = /[A-Za-z0-9+/]{256,}={0,2}/u;
 
 /** A JSON-encoded string's value, or the string itself when it does not encode JSON. */
 export function parseEncodedJson(value: string): unknown {
@@ -20,7 +27,7 @@ export function parseEncodedJson(value: string): unknown {
 
 /**
  * Whether a hosted request body carries sample data anywhere, JSON-encoded strings included: a typed
- * array, a base64 blob, a number series longer than a band map, an object keyed by index (how a
+ * array, a base64 blob, a number series longer than a band map (also inside running text), an object keyed by index (how a
  * typed array serializes) or an audio-named key.
  */
 export function containsSampleData(value: unknown): boolean {
@@ -29,7 +36,10 @@ export function containsSampleData(value: unknown): boolean {
     }
     if (typeof value === 'string') {
         const decoded = parseEncodedJson(value);
-        return decoded === value ? BASE64_BLOB.test(value) : containsSampleData(decoded);
+        if (decoded !== value) {
+            return containsSampleData(decoded);
+        }
+        return BASE64_BLOB.test(value) || EMBEDDED_NUMBER_SERIES.test(value) || EMBEDDED_BASE64_BLOB.test(value);
     }
     if (Array.isArray(value)) {
         const isNumberSeries = value.length > MAX_BAND_VALUES && value.every((entry) => typeof entry === 'number');

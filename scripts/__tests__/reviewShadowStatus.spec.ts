@@ -1,11 +1,16 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { REVIEWER_BOT_NODE_ID, SHADOW_REVIEWER_MINT_PERMISSIONS, type GitHubJsonClient } from '../githubAppIdentity.ts';
+import {
+    REVIEWER_BOT_NODE_ID,
+    SHADOW_REVIEWER_MINT_PERMISSIONS,
+    type GhSession,
+    type GitHubJsonClient,
+} from '../githubAppIdentity.ts';
 import {
     SHADOW_STATUS_CONTEXT,
     SHADOW_STATUS_FORMAT,
@@ -24,6 +29,7 @@ import {
     runReviewShadowStatusCli,
     selectReviewOnHead,
     shadowStatusState,
+    shellPort,
     shortHead,
     type ReviewerReview,
     type ReviewShadowStatusCoordinatorDependencies,
@@ -652,6 +658,26 @@ describe('coordinateReviewShadowStatus', () => {
         expect(sessions.map((session) => session.disposed)).toEqual([true]);
     });
 
+    it('should hand the port the one repository name it asserted', async () => {
+        const reads: string[] = [];
+        const handed: string[] = [];
+        const { dependencies } = coordinator(() => 'receipt');
+        const counted: ReviewShadowStatusCoordinatorDependencies = {
+            ...dependencies,
+            repositoryName: () => {
+                reads.push('read');
+                return 'jcosta33/sourdaw';
+            },
+            port: (_session, _primaryRoot, repository) => {
+                handed.push(repository);
+                return fakePort().port;
+            },
+        };
+        await coordinateReviewShadowStatus(PR, HEAD, counted);
+        expect(reads).toEqual(['read']);
+        expect(handed).toEqual(['jcosta33/sourdaw']);
+    });
+
     it('should refuse a foreign repository before emitting anything', async () => {
         const emitted: string[] = [];
         const { dependencies, sessions } = coordinator((number, head) => {
@@ -693,5 +719,46 @@ describe('runReviewShadowStatusCli', () => {
         };
         await expect(runReviewShadowStatusCli([String(PR), '--head', HEAD], dependencies)).resolves.toBe(0);
         expect(emitted).toEqual([`${String(PR)}:${HEAD}`]);
+    });
+});
+
+describe('shellPort', () => {
+    it('should address the asserted repository without reading the checkout query again', () => {
+        const parent = mkdtempSync(join(tmpdir(), 'shadow-shell-'));
+        mkdirSync(join(parent, 'primary', '.git'), { recursive: true });
+        const root = realpathSync(join(parent, 'primary'));
+        const ghCalls: string[][] = [];
+        const session: GhSession = { configDir: '/config', env: { GH_TOKEN: 'token' }, dispose: () => undefined };
+        try {
+            const port = shellPort(
+                session,
+                root,
+                (command, args) => {
+                    if (command === 'git' && args[0] === 'rev-parse') {
+                        return `${join(root, '.git')}\n`;
+                    }
+                    if (command !== 'gh') {
+                        return '';
+                    }
+                    ghCalls.push(args);
+                    if (args[0] === 'repo') {
+                        // A lane rewrote `remote.origin.gh-resolved` after the coordinator's assertion.
+                        return 'cli/cli';
+                    }
+                    if (args[1] === 'graphql') {
+                        return JSON.stringify({ data: { repository: { pullRequest: { headRefOid: HEAD } } } });
+                    }
+                    return '[]';
+                },
+                'jcosta33/sourdaw'
+            );
+            expect(port.pullRequestHead(PR)).toBe(HEAD);
+            expect(() => port.shadowContextRequired()).toThrow('branch ruleset for jcosta33/sourdaw');
+            expect(ghCalls.filter((args) => args[0] === 'repo')).toEqual([]);
+            expect(ghCalls[0]?.join(' ')).toContain('-f owner=jcosta33 -f name=sourdaw');
+            expect(ghCalls[1]).toEqual(['api', 'repos/jcosta33/sourdaw/rules/branches/main']);
+        } finally {
+            rmSync(parent, { recursive: true, force: true });
+        }
     });
 });

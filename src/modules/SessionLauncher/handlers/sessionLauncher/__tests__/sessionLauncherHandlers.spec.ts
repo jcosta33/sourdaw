@@ -14,16 +14,16 @@ vi.mock('../../../useCases/loopStation/triggerScene', () => ({ triggerScene: moc
 describe('Session Launcher Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('handleToggleLoopRecord delegates to use case with slot id', () => {
-        handleToggleLoopRecord.execute({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } });
+    it('handleToggleLoopRecord delegates to use case with slot id', async () => {
+        await handleToggleLoopRecord.execute({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } });
         expect(mocks.toggleRecord).toHaveBeenCalledWith('slot-1');
         expect(handleToggleLoopRecord.describe({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } })).toEqual({
             label: 'Toggle Loop Record',
         });
     });
 
-    it('handleTriggerScene delegates to use case with column', () => {
-        handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
+    it('handleTriggerScene delegates to use case with column', async () => {
+        await handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
         expect(mocks.triggerScene).toHaveBeenCalledWith(2);
         expect(handleTriggerScene.describe({ type: 'triggerScene', payload: { column: 2 } })).toEqual({
             label: 'Trigger Scene',

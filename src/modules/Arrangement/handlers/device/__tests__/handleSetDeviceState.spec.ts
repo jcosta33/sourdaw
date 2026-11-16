@@ -46,10 +46,10 @@ beforeEach(() => {
 });
 
 describe('handleSetDeviceState', () => {
-    it('execute calls setDeviceState with deviceId and state', () => {
+    it('execute calls setDeviceState with deviceId and state', async () => {
         mocks.setDeviceState.mockReturnValue(true);
 
-        handleSetDeviceState.execute(action);
+        await handleSetDeviceState.execute(action);
 
         expect(mocks.setDeviceState).toHaveBeenCalledExactlyOnceWith({
             deviceId: 'device-1',

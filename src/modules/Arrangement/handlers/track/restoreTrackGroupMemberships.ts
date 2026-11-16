@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TrackGroupMembershipSnapshot } from '#/utils/handlerContract';
 
+import { type TrackGroupMembershipSnapshot } from '../../events/arrangementTrackAppActions';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 

@@ -96,7 +96,7 @@ describe('handleDuplicateClip', () => {
         expect(desc.label).toBe('Duplicate clip');
     });
 
-    it('stamps the inverse guard with the duplicated clip and its MIDI state after execution', () => {
+    it('stamps the inverse guard with the duplicated clip and its MIDI state after execution', async () => {
         const duplicatedClip = {
             id: 'clip-copy',
             trackId: 't1',
@@ -123,7 +123,7 @@ describe('handleDuplicateClip', () => {
         };
 
         const desc = handleDuplicateClip.describe(action);
-        handleDuplicateClip.execute(action);
+        await handleDuplicateClip.execute(action);
 
         expect(desc.inverseAction).toEqual({
             type: 'discardDuplicatedClip',

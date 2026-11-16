@@ -98,7 +98,7 @@ describe('seekPlayhead', () => {
         expect(schedulerSession.discontinuityEpoch).toBeGreaterThan(beforeSeekEpoch);
     });
 
-    it('should restart scheduler when seeking while playing', () => {
+    it('should restart scheduler when seeking while playing', async () => {
         const update = vi.fn();
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -107,7 +107,7 @@ describe('seekPlayhead', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        seekPlayhead(3);
+        await seekPlayhead(3);
 
         expect(stopPlayheadScheduler).toHaveBeenCalled();
         expect(yeastPanic).toHaveBeenCalledWith(48000);
@@ -139,7 +139,7 @@ describe('seekPlayhead', () => {
             order.push('stopPlayheadScheduler');
         });
 
-        seekPlayhead(3);
+        const seeking = seekPlayhead(3);
 
         // The recording must be committed while the engine is still live, i.e.
         // before the scheduler (and its automation/audio teardown) is stopped.
@@ -155,6 +155,7 @@ describe('seekPlayhead', () => {
         expect(order).toEqual(['stopActiveRecording', 'stopPlayheadScheduler']);
         expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
         expect(startPlayheadScheduler).toHaveBeenCalled();
+        await seeking;
     });
 
     it('should commit an in-progress recording even when seeking while stopped', async () => {
@@ -167,7 +168,7 @@ describe('seekPlayhead', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        seekPlayhead(5);
+        const seeking = seekPlayhead(5);
 
         expect(stopActiveRecording).toHaveBeenCalledTimes(1);
         // Not playing, so the scheduler is neither stopped nor restarted.
@@ -175,6 +176,7 @@ describe('seekPlayhead', () => {
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
         await vi.waitFor(() => expect(update).toHaveBeenCalledWith({ playheadPosition: 5 }));
         expect(update).toHaveBeenCalledWith({ playheadPosition: 5 });
+        await seeking;
     });
 
     it('should report a recording teardown rejection and still complete the seek', async () => {
@@ -213,7 +215,7 @@ describe('seekPlayhead', () => {
             })
         );
 
-        seekPlayhead(3);
+        const seeking = seekPlayhead(3);
 
         // A stop lands during the recording flush window.
         liveState.isPlaying = false;
@@ -228,15 +230,16 @@ describe('seekPlayhead', () => {
         // Position is still committed, but the scheduler is not restarted.
         expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        await seeking;
     });
 
-    it('should panic Yeast even when seeking while already stopped', () => {
+    it('should panic Yeast even when seeking while already stopped', async () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
         });
 
-        seekPlayhead(5);
+        await seekPlayhead(5);
 
         expect(yeastPanic).toHaveBeenCalledWith(48000);
     });

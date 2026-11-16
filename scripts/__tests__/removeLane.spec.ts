@@ -1876,6 +1876,87 @@ describe('worktree parser', () => {
     });
 });
 
+describe('lane-removal fetch race', () => {
+    const a = 'a'.repeat(40);
+    const b = 'b'.repeat(40);
+    const c = 'c'.repeat(40);
+    const failure = new Error('git failed with exit 1');
+
+    function fetchPort(input: { fetchFails: boolean; remote?: string; local?: string }) {
+        const captured: string[][] = [];
+        const port = shellPort({
+            capture: (_command, args) => {
+                captured.push(args);
+                if (args[0] === 'ls-remote') {
+                    return input.remote ?? '';
+                }
+                if (args[0] === 'for-each-ref') {
+                    return input.local ?? '';
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: (_command, args) => {
+                if (args.join(' ') !== 'fetch --prune origin') {
+                    throw new Error(`unexpected run: ${args.join(' ')}`);
+                }
+                if (input.fetchFails) {
+                    throw failure;
+                }
+            },
+        });
+        return { port, captured };
+    }
+
+    const remote = `${a}\trefs/heads/main\n${b}\trefs/heads/feature`;
+
+    it('accepts a failed fetch whose tracking refs already mirror the remote heads', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${a} refs/remotes/origin/main\n${b} refs/remotes/origin/feature`,
+        });
+        expect(() => port.fetch()).not.toThrow();
+    });
+
+    it('ignores the origin/HEAD symref when comparing', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${a} refs/remotes/origin/HEAD\n${a} refs/remotes/origin/main\n${b} refs/remotes/origin/feature`,
+        });
+        expect(() => port.fetch()).not.toThrow();
+    });
+
+    it('rethrows when a remote head is newer than its tracking ref', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${c} refs/remotes/origin/main\n${b} refs/remotes/origin/feature`,
+        });
+        expect(() => port.fetch()).toThrow(failure);
+    });
+
+    it('rethrows when a tracking ref outlives its remote branch', () => {
+        const { port } = fetchPort({
+            fetchFails: true,
+            remote,
+            local: `${a} refs/remotes/origin/main\n${b} refs/remotes/origin/feature\n${c} refs/remotes/origin/gone`,
+        });
+        expect(() => port.fetch()).toThrow(failure);
+    });
+
+    it('rethrows when a remote head has no tracking ref', () => {
+        const { port } = fetchPort({ fetchFails: true, remote, local: `${a} refs/remotes/origin/main` });
+        expect(() => port.fetch()).toThrow(failure);
+    });
+
+    it('reads no refs when the fetch succeeds', () => {
+        const { port, captured } = fetchPort({ fetchFails: false });
+        port.fetch();
+        expect(captured).toEqual([]);
+    });
+});
+
 describe('lane-removal shell boundary', () => {
     it.skipIf(process.platform !== 'darwin')(
         'admits an unmatched lsof process selection only when the caller allows it',
@@ -1936,6 +2017,34 @@ describe('lane-removal shell boundary', () => {
         expect(() => port.readRef('refs/sourdaw/strands/feature')).toThrow(
             'strand ref refs/sourdaw/strands/feature does not name one ref'
         );
+    });
+
+    /**
+     * gh answers the checkout query from git config any lane can write, where
+     * `remote.<name>.gh-resolved` overrides the remote URL; ownership proven in another repository
+     * would let removal delete a lane whose work never reached main.
+     */
+    it('refuses ownership reads when the checkout query names another repository', () => {
+        const ghCalls: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                if (command === 'gh') {
+                    ghCalls.push(args);
+                }
+                if (args.includes('nameWithOwner')) {
+                    return 'cli/cli';
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort(shell);
+
+        expect(() => port.pullRequests('feat/work')).toThrow(
+            'refusing to operate on cli/cli; expected jcosta33/sourdaw'
+        );
+        expect(() => port.repository()).toThrow('refusing to operate on cli/cli; expected jcosta33/sourdaw');
+        expect(ghCalls.every((args) => args.includes('nameWithOwner'))).toBe(true);
     });
 
     it('paginates exact-repository ownership and uses native lock and removal commands', () => {

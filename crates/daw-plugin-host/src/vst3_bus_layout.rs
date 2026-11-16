@@ -134,14 +134,24 @@ pub unsafe fn negotiate_bus_layout(
     processor: &ComPtr<IAudioProcessor>,
     name: &str,
 ) -> Result<BusLayout, String> {
-    let inputs = declared_buses(component, BusDirections_::kInput as int32);
-    let outputs = declared_buses(component, BusDirections_::kOutput as int32);
+    // SAFETY: this fn's own contract makes `component` initialised, which is
+    // all `declared_buses` requires.
+    let inputs = unsafe { declared_buses(component, BusDirections_::kInput as int32) };
+    // SAFETY: as above; `component` is initialised by this fn's contract.
+    let outputs = unsafe { declared_buses(component, BusDirections_::kOutput as int32) };
 
-    negotiate_main_pair(processor, &inputs, &outputs);
+    // SAFETY: this fn's contract makes `processor` the audio processor of an
+    // initialised, inactive component, the state `setBusArrangements` needs.
+    unsafe { negotiate_main_pair(processor, &inputs, &outputs) };
 
     let layout = BusLayout {
-        inputs: accepted_geometry(processor, &inputs, BusDirections_::kInput as int32),
-        outputs: accepted_geometry(processor, &outputs, BusDirections_::kOutput as int32),
+        // SAFETY: `processor` belongs to an initialised component by this fn's
+        // contract, which is all `getBusArrangement` needs.
+        inputs: unsafe { accepted_geometry(processor, &inputs, BusDirections_::kInput as int32) },
+        // SAFETY: as for the inputs above.
+        outputs: unsafe {
+            accepted_geometry(processor, &outputs, BusDirections_::kOutput as int32)
+        },
     };
 
     refuse_unfeedable_main_bus(&layout, name)?;
@@ -155,24 +165,38 @@ pub unsafe fn negotiate_bus_layout(
 /// # Safety
 /// `component` must be initialised and inactive.
 pub unsafe fn activate_main_audio_bus(component: &ComPtr<IComponent>, direction: int32) {
-    let buses = declared_buses(component, direction);
+    // SAFETY: `component` is initialised by this fn's contract.
+    let buses = unsafe { declared_buses(component, direction) };
     let Some(index) = buses.iter().position(|bus| bus.is_main) else {
         return;
     };
-    component.activateBus(MediaTypes_::kAudio as int32, direction, index as int32, 1);
+    // SAFETY: `component` is a live COM pointer held by the `ComPtr`, and is
+    // initialised and inactive by this fn's contract, as `activateBus` requires;
+    // `index` is a bus the component itself just declared.
+    unsafe { component.activateBus(MediaTypes_::kAudio as int32, direction, index as int32, 1) };
 }
 
+/// Read every audio bus the component declares in one direction.
+///
+/// # Safety
+/// `component` must be initialised.
 unsafe fn declared_buses(component: &ComPtr<IComponent>, direction: int32) -> Vec<DeclaredBus> {
-    let count = component
-        .getBusCount(MediaTypes_::kAudio as int32, direction)
+    // SAFETY: the `ComPtr` holds a reference on a live component, initialised
+    // by this fn's contract.
+    let count = unsafe { component.getBusCount(MediaTypes_::kAudio as int32, direction) }
         .clamp(0, MAX_AUDIO_BUSES);
 
     let mut buses: Vec<DeclaredBus> = (0..count)
         .map(|index| {
-            let mut info: BusInfo = std::mem::zeroed();
-            let described =
+            // SAFETY: `BusInfo` is a plain C struct of integers and a UTF-16
+            // array, for which all-zero bytes are a valid value.
+            let mut info: BusInfo = unsafe { std::mem::zeroed() };
+            // SAFETY: live, initialised component (this fn's contract); `info`
+            // is a local the plugin writes through for the call's duration only,
+            // and `index` is below the count the component reported.
+            let described = unsafe {
                 component.getBusInfo(MediaTypes_::kAudio as int32, direction, index, &mut info)
-                    == kResultOk;
+            } == kResultOk;
             let channels = if described {
                 usize::try_from(info.channelCount).unwrap_or(0)
             } else {
@@ -182,7 +206,8 @@ unsafe fn declared_buses(component: &ComPtr<IComponent>, direction: int32) -> Ve
                 channels,
                 is_main: described && info.busType == BusTypes_::kMain as int32,
                 arrangement: declared_arrangement(
-                    processor_arrangement_of(component, direction, index),
+                    // SAFETY: `component` is initialised by this fn's contract.
+                    unsafe { processor_arrangement_of(component, direction, index) },
                     channels,
                 ),
             }
@@ -201,6 +226,9 @@ unsafe fn declared_buses(component: &ComPtr<IComponent>, direction: int32) -> Ve
 }
 
 /// The arrangement the plugin already has on a bus, when it will say.
+///
+/// # Safety
+/// `component` must be initialised.
 unsafe fn processor_arrangement_of(
     component: &ComPtr<IComponent>,
     direction: int32,
@@ -208,7 +236,10 @@ unsafe fn processor_arrangement_of(
 ) -> Option<SpeakerArrangement> {
     let processor = component.cast::<IAudioProcessor>()?;
     let mut arrangement: SpeakerArrangement = SpeakerArr::kEmpty;
-    (processor.getBusArrangement(direction, index, &mut arrangement) == kResultOk)
+    // SAFETY: `processor` is a live reference from `queryInterface` on an
+    // initialised component (this fn's contract); `arrangement` is a local the
+    // plugin writes for the call's duration only.
+    (unsafe { processor.getBusArrangement(direction, index, &mut arrangement) } == kResultOk)
         .then_some(arrangement)
 }
 
@@ -235,6 +266,10 @@ fn declared_arrangement(
 /// this host feeds them nothing, and asking a plugin to drop a sidechain it
 /// declared is a change it has every right to refuse — which would lose the
 /// main pair along with it.
+///
+/// # Safety
+/// `processor` must be the audio processor of an initialised, inactive
+/// component, the only state in which `setBusArrangements` is defined.
 unsafe fn negotiate_main_pair(
     processor: &ComPtr<IAudioProcessor>,
     inputs: &[DeclaredBus],
@@ -250,12 +285,17 @@ unsafe fn negotiate_main_pair(
         let mut requested_outputs =
             requested_arrangements(outputs, output_widths.get(attempt).copied());
 
-        let accepted = processor.setBusArrangements(
-            requested_inputs.as_mut_ptr(),
-            requested_inputs.len() as int32,
-            requested_outputs.as_mut_ptr(),
-            requested_outputs.len() as int32,
-        );
+        // SAFETY: the processor is initialised and inactive by this fn's
+        // contract; both pointers come from live local `Vec`s whose lengths are
+        // passed beside them, and the plugin only reads them during the call.
+        let accepted = unsafe {
+            processor.setBusArrangements(
+                requested_inputs.as_mut_ptr(),
+                requested_inputs.len() as int32,
+                requested_outputs.as_mut_ptr(),
+                requested_outputs.len() as int32,
+            )
+        };
         if accepted == kResultOk {
             return;
         }
@@ -285,6 +325,9 @@ fn requested_arrangements(
 /// Read back what the plugin actually runs with, which is the only answer a
 /// block may be built from — a `setBusArrangements` that returned success is
 /// still allowed to have agreed to something narrower.
+///
+/// # Safety
+/// `processor` must be the audio processor of an initialised component.
 unsafe fn accepted_geometry(
     processor: &ComPtr<IAudioProcessor>,
     declared: &[DeclaredBus],
@@ -295,8 +338,11 @@ unsafe fn accepted_geometry(
         .enumerate()
         .map(|(index, bus)| {
             let mut arrangement: SpeakerArrangement = SpeakerArr::kEmpty;
-            let answered = processor.getBusArrangement(direction, index as int32, &mut arrangement)
-                == kResultOk;
+            // SAFETY: initialised processor by this fn's contract; `arrangement`
+            // is a local the plugin writes for the call's duration only.
+            let answered =
+                unsafe { processor.getBusArrangement(direction, index as int32, &mut arrangement) }
+                    == kResultOk;
             BusGeometry {
                 channels: if answered {
                     arrangement_channels(arrangement)

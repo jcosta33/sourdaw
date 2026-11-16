@@ -79,8 +79,8 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.pitchBendByClipId[CLIP]).toEqual([bend('earlier-bend', 0), bend('new-bend', 2)]);
         });
 
-        it('writes every clip of the pass in the one action', () => {
-            handleAppendOverdubControllers.execute(
+        it('writes every clip of the pass in the one action', async () => {
+            await handleAppendOverdubControllers.execute(
                 append(
                     { clipId: CLIP, cc: [cc('a-cc', 2)], pitchBend: [] },
                     { clipId: OTHER_CLIP, cc: [], pitchBend: [bend('b-bend', 3)] }
@@ -102,9 +102,9 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.ccByClipId[OTHER_CLIP]).toBeUndefined();
         });
 
-        it('never doubles a row the clip already holds under the same id', () => {
+        it('never doubles a row the clip already holds under the same id', async () => {
             const action = append({ clipId: CLIP, cc: [cc('new-cc', 2)], pitchBend: [] });
-            handleAppendOverdubControllers.execute(action);
+            await handleAppendOverdubControllers.execute(action);
 
             const replay = handleAppendOverdubControllers.execute(action);
 
@@ -229,14 +229,14 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.pitchBendByClipId[CLIP]).toEqual([bend('earlier-bend', 0)]);
         });
 
-        it('drops a list the pass created once the pass empties it, the state the clip had before', () => {
+        it('drops a list the pass created once the pass empties it, the state the clip had before', async () => {
             mocks.midi.value = {
                 notesByClipId: {},
                 ccByClipId: { [OTHER_CLIP]: [cc('only', 1)] },
                 pitchBendByClipId: { [OTHER_CLIP]: [bend('only-bend', 1)] },
             };
 
-            handleRemoveOverdubControllers.execute(
+            await handleRemoveOverdubControllers.execute(
                 remove({
                     clipId: OTHER_CLIP,
                     ccIds: ['only'],
@@ -250,14 +250,14 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.pitchBendByClipId[OTHER_CLIP]).toBeUndefined();
         });
 
-        it('leaves an empty list where the list existed empty before the pass', () => {
+        it('leaves an empty list where the list existed empty before the pass', async () => {
             mocks.midi.value = {
                 notesByClipId: {},
                 ccByClipId: { [OTHER_CLIP]: [cc('only', 1)] },
                 pitchBendByClipId: { [OTHER_CLIP]: [bend('only-bend', 1)] },
             };
 
-            handleRemoveOverdubControllers.execute(
+            await handleRemoveOverdubControllers.execute(
                 remove({
                     clipId: OTHER_CLIP,
                     ccIds: ['only'],
@@ -271,14 +271,14 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.pitchBendByClipId[OTHER_CLIP]).toEqual([]);
         });
 
-        it('keeps each list by its own history: a list that existed stays while one the pass created goes', () => {
+        it('keeps each list by its own history: a list that existed stays while one the pass created goes', async () => {
             mocks.midi.value = {
                 notesByClipId: {},
                 ccByClipId: { [OTHER_CLIP]: [cc('only', 1)] },
                 pitchBendByClipId: { [OTHER_CLIP]: [bend('only-bend', 1)] },
             };
 
-            handleRemoveOverdubControllers.execute(
+            await handleRemoveOverdubControllers.execute(
                 remove({
                     clipId: OTHER_CLIP,
                     ccIds: ['only'],
@@ -301,14 +301,14 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.ccByClipId[CLIP]).toHaveLength(3);
         });
 
-        it('does not take a row of another clip that happens to share an id', () => {
+        it('does not take a row of another clip that happens to share an id', async () => {
             mocks.midi.value = {
                 notesByClipId: {},
                 ccByClipId: { [CLIP]: [cc('shared', 1)], [OTHER_CLIP]: [cc('shared', 1)] },
                 pitchBendByClipId: {},
             };
 
-            handleRemoveOverdubControllers.execute(
+            await handleRemoveOverdubControllers.execute(
                 remove({ clipId: CLIP, ccIds: ['shared'], pitchBendIds: [], ccListExisted: false })
             );
 

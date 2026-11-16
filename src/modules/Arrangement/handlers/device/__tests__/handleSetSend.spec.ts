@@ -27,7 +27,7 @@ describe('handleSetSend', () => {
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
-    it('executes setSend with the provided payload', () => {
+    it('executes setSend with the provided payload', async () => {
         const finalizeRuntimeEffect = vi.fn();
         const reconcileRuntimeEffect = vi.fn();
         mocks.setSend.mockReturnValue({
@@ -47,9 +47,9 @@ describe('handleSetSend', () => {
         if (!result || result instanceof Promise) {
             throw new Error('expected a synchronous handler result');
         }
-        result.afterCommit?.();
+        await result.afterCommit?.();
         expect(finalizeRuntimeEffect).toHaveBeenCalledOnce();
-        result.afterAmbiguousCommit?.();
+        await result.afterAmbiguousCommit?.();
         expect(reconcileRuntimeEffect).toHaveBeenCalledOnce();
     });
 
@@ -169,7 +169,7 @@ describe('handleSetSend', () => {
         expect(isNoop).toBe(false);
     });
 
-    it('executes a conditional level restore when the expected send still matches', () => {
+    it('executes a conditional level restore when the expected send still matches', async () => {
         const finalizeRuntimeEffect = vi.fn();
         mocks.setSend.mockReturnValue({
             afterCommit: finalizeRuntimeEffect,
@@ -194,7 +194,7 @@ describe('handleSetSend', () => {
         if (!result || result instanceof Promise) {
             throw new Error('expected a synchronous handler result');
         }
-        result.afterCommit?.();
+        await result.afterCommit?.();
         expect(finalizeRuntimeEffect).toHaveBeenCalledOnce();
     });
 
@@ -280,7 +280,7 @@ describe('handleSetSend', () => {
             ],
         });
 
-        it('writes a payload that changes only the tap point and is not a no-op', () => {
+        it('writes a payload that changes only the tap point and is not a no-op', async () => {
             mocks.getTrackStoreState.mockReturnValue(sendState(false));
             mocks.setSend.mockReturnValue({ afterCommit: vi.fn(), afterAmbiguousCommit: vi.fn() });
             const action = {
@@ -289,7 +289,7 @@ describe('handleSetSend', () => {
             };
 
             expect(handleSetSend.isNoop?.(action)).toBe(false);
-            handleSetSend.execute(action);
+            await handleSetSend.execute(action);
 
             expect(mocks.setSend).toHaveBeenCalledWith('t1', 'bus-1', 0.5, true, { deferRuntimeEffect: true });
         });
