@@ -79,7 +79,13 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('removeSendAutomationRange'),
         createInternalReplayContract('removeSendAutomationRanges'),
         createInternalReplayContract('removeAutomationLane'),
-        createInternalReplayContract('restoreAutomationLanePoints'),
+        {
+            ...createInternalReplayContract('restoreAutomationLanePoints'),
+            // A recorded automation pass begins its entry with this inverse; the owner keeps only the
+            // pass whose undo restores exactly what it replaced.
+            validateEntry: (entry) =>
+                getHandlerByType('restoreAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
+        },
         createInternalReplayContract('restoreTimeOperationState'),
         createInternalReplayContract('restoreCompRegionInterval'),
         createInternalReplayContract('restoreTempoEdit'),
