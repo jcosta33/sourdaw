@@ -19,6 +19,7 @@ import { materializeCreatedBus } from './actionStateGuards/materializeCreatedBus
 import { materializeDeviceParameter } from './actionStateGuards/materializeDeviceParameter';
 import { materializeDrumPreviewBranches } from './actionStateGuards/materializeDrumPreviewBranches';
 import { materializeParameterRange } from './actionStateGuards/materializeParameterRange';
+import { materializeRemovedDevice } from './actionStateGuards/materializeRemovedDevice';
 import { materializeSectionRenders } from './actionStateGuards/materializeSectionRenders';
 import { materializeSendRange } from './actionStateGuards/materializeSendRange';
 import { materializeSendRanges } from './actionStateGuards/materializeSendRanges';
@@ -108,7 +109,7 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     moveClips: passThrough,
     addDevice: materializeAddedDevice,
     bypassDevice: passThrough,
-    removeDevice: passThrough,
+    removeDevice: materializeRemovedDevice,
     setDeviceParameter: materializeDeviceParameter,
     createBus: materializeCreatedBus,
     createFolder: passThrough,

@@ -17,10 +17,33 @@ function recordRemovedPluginState(deviceId: string, undoEntryId: string | undefi
     );
 }
 
+function ownerFreezeMatches(
+    deviceId: string,
+    expectedFrozen: boolean | undefined,
+    frozenOf: (trackId: string) => boolean | undefined
+): boolean {
+    if (expectedFrozen === undefined) {
+        return true;
+    }
+    const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
+        track.devices.some((device) => device.id === deviceId)
+    );
+    const owner = owners.length === 1 ? owners[0] : undefined;
+    return owner !== undefined && (frozenOf(owner.id) ?? false) === expectedFrozen;
+}
+
 export const handleRemoveDevice = createHandler<'removeDevice'>({
     canReapplyAfterDivergence: (action) =>
         action.payload.expectedTrackId !== undefined && action.payload.expectedDeviceIds !== undefined,
     validate: (action, context) => {
+        const frozenMatches = ownerFreezeMatches(
+            action.payload.deviceId,
+            action.payload.expectedFrozen,
+            (trackId) => getPlannedTrackState(context, trackId)?.frozen
+        );
+        if (!frozenMatches) {
+            return false;
+        }
         if (!action.payload.expectedTrackId && !action.payload.expectedDeviceIds) {
             return true;
         }
@@ -43,6 +66,14 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
         );
     },
     execute: (alpha, context) => {
+        const frozenMatches = ownerFreezeMatches(
+            alpha.payload.deviceId,
+            alpha.payload.expectedFrozen,
+            (trackId) => getTrackStoreState()?.tracks.find((track) => track.id === trackId)?.frozen
+        );
+        if (!frozenMatches) {
+            return { status: 'conflict' };
+        }
         if (alpha.payload.expectedTrackId || alpha.payload.expectedDeviceIds) {
             const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
                 track.devices.some((device) => device.id === alpha.payload.deviceId)

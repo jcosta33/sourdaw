@@ -3704,6 +3704,7 @@ const schemaDefinitions = [
         properties: {
             deviceId: 1,
             expectedDeviceIds: 2,
+            expectedFrozen: 44,
             expectedTrackId: 1,
         },
         required: ['deviceId'],

@@ -452,10 +452,11 @@ const validators = {
         isOptional(param.afterDeviceId, isNonEmptyString),
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['deviceId', 'expectedTrackId', 'expectedDeviceIds']) &&
+        hasOnlyKeys(param, ['deviceId', 'expectedTrackId', 'expectedDeviceIds', 'expectedFrozen']) &&
         isNonEmptyString(param.deviceId) &&
         isOptional(param.expectedTrackId, isNonEmptyString) &&
-        isOptional(param.expectedDeviceIds, isNonEmptyStringArray),
+        isOptional(param.expectedDeviceIds, isNonEmptyStringArray) &&
+        isOptional(param.expectedFrozen, (value): value is boolean => typeof value === 'boolean'),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
         isObj(param) &&
         hasOnlyKeys(param, [

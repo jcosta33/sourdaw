@@ -87,4 +87,56 @@ describe('handleRemoveDevice', () => {
         expect(handleRemoveDevice.undoable).toBe(true);
         expect(handleRemoveDevice.requiresAbortCompensation).toBe(false);
     });
+
+    describe('freeze guard', () => {
+        function chainWith(frozen: boolean) {
+            return { tracks: [{ id: 't1', frozen, devices: [{ id: 'd1' }] }] };
+        }
+        const planned = {
+            type: 'removeDevice',
+            payload: { deviceId: 'd1', expectedFrozen: false },
+        } as const;
+
+        it('conflicts without touching the chain when the track froze after planning', () => {
+            mocks.getTrackStoreState.mockReturnValue(chainWith(true));
+
+            expect(handleRemoveDevice.execute(planned, { actionIndex: 0, actions: [planned] })).toEqual({
+                status: 'conflict',
+            });
+            expect(mocks.prepareRemoveDevice).not.toHaveBeenCalled();
+        });
+
+        it('conflicts a redo that replays the removal after the track froze', () => {
+            mocks.getTrackStoreState.mockReturnValue(chainWith(false));
+            mocks.prepareRemoveDevice.mockReturnValue('written');
+            expect(handleRemoveDevice.execute(planned)).toEqual({ status: 'written' });
+            mocks.getTrackStoreState.mockReturnValue(chainWith(true));
+            mocks.prepareRemoveDevice.mockClear();
+
+            expect(handleRemoveDevice.execute(planned)).toEqual({ status: 'conflict' });
+            expect(mocks.prepareRemoveDevice).not.toHaveBeenCalled();
+        });
+
+        it('conflicts when the recorded frozen state differs from the live one in either direction', () => {
+            mocks.getTrackStoreState.mockReturnValue(chainWith(false));
+            const expectsFrozen = { type: 'removeDevice', payload: { deviceId: 'd1', expectedFrozen: true } } as const;
+
+            expect(handleRemoveDevice.execute(expectsFrozen)).toEqual({ status: 'conflict' });
+            expect(mocks.prepareRemoveDevice).not.toHaveBeenCalled();
+        });
+
+        it('rejects validation when the live freeze state differs from the planned one', () => {
+            mocks.getTrackStoreState.mockReturnValue(chainWith(true));
+
+            expect(handleRemoveDevice.validate?.(planned, { actionIndex: 0, actions: [planned] })).toBe(false);
+        });
+
+        it('removes from a track whose freeze state matches', () => {
+            mocks.getTrackStoreState.mockReturnValue(chainWith(false));
+            mocks.prepareRemoveDevice.mockReturnValue('written');
+
+            expect(handleRemoveDevice.execute(planned)).toEqual({ status: 'written' });
+            expect(handleRemoveDevice.validate?.(planned, { actionIndex: 0, actions: [planned] })).toBe(true);
+        });
+    });
 });
