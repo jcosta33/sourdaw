@@ -1,5 +1,7 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { LocalModelRefusalError } from '../../../errors/LocalModelRefusalError';
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
 import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
 import { retireWebLlmEngine } from '../retireWebLlmEngine';
@@ -89,6 +91,7 @@ describe('WebLLM engineLifecycle injectables', () => {
         engineState.initWaiterCount = 0;
         engineState.worker = null;
         engineState.activeArtifactSetDigest = null;
+        engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
         artifactAdmissionMock.mockImplementation(
             async (modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
                 const admission = {
@@ -351,5 +354,83 @@ describe('WebLLM engineLifecycle injectables', () => {
         const secondEngine = await second;
         expect(secondEngine).toBe(engineState.engine);
         expect(createWebWorkerEngineMock).toHaveBeenCalledTimes(1);
+    });
+
+    describe('a load that cannot proceed leaves the loaded model in place', () => {
+        const LOADED_MODEL = 'model-x';
+
+        async function loadModelX() {
+            const engine = await initWebLlmEngine(LOADED_MODEL);
+            expect(workerInstances).toHaveLength(1);
+            terminateWorkerMock.mockClear();
+            return engine;
+        }
+
+        it('keeps the engine, its worker and its model id when the storage check refuses another model', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const loaded = await loadModelX();
+            const worker = engineState.worker;
+            artifactAdmissionMock.mockRejectedValueOnce(
+                new LocalModelRefusalError({
+                    reason: 'insufficient-storage',
+                    modelId: 'model-y',
+                    requiredBytes: 2_000_000_000,
+                    availableBytes: 1_000,
+                })
+            );
+
+            await expect(initWebLlmEngine('model-y', { downloadConsent: true })).rejects.toMatchObject({
+                name: 'LocalModelRefusalError',
+            });
+
+            await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
+            expect(engineState.engine).toBe(loaded);
+            expect(engineState.worker).toBe(worker);
+            expect(engineState.activeModelId).toBe(LOADED_MODEL);
+            expect(engineState.activeArtifactSetDigest).toBe(`digest:${LOADED_MODEL}`);
+            expect(terminateWorkerMock).not.toHaveBeenCalled();
+        });
+
+        it('keeps the engine, its worker and its model id when the adapter lacks shader-f16 for another model', async () => {
+            Object.defineProperty(globalThis, 'navigator', {
+                value: { gpu: { requestAdapter: async () => ({ features: new Set<string>() }) } },
+                configurable: true,
+                writable: true,
+            });
+            const loaded = await loadModelX();
+            const worker = engineState.worker;
+
+            await expect(initWebLlmEngine('model-y-q4f16_1-MLC', { downloadConsent: true })).rejects.toMatchObject({
+                refusal: { reason: 'shader-f16-unavailable' },
+            });
+
+            await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
+            expect(engineState.engine).toBe(loaded);
+            expect(engineState.worker).toBe(worker);
+            expect(engineState.activeModelId).toBe(LOADED_MODEL);
+            expect(terminateWorkerMock).not.toHaveBeenCalled();
+        });
+
+        it('leaves no engine but still names the last loaded model when creating the next engine fails', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            await loadModelX();
+            createWebWorkerEngineMock.mockRejectedValueOnce('DeviceLostError: gone');
+
+            await expect(initWebLlmEngine('model-y')).rejects.toMatchObject({ name: 'LocalModelRefusalError' });
+
+            await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
+            expect(engineState.engine).toBeNull();
+            expect(engineState.worker).toBeNull();
+            expect(engineState.activeModelId).toBe(LOADED_MODEL);
+
+            await initWebLlmEngine(undefined);
+
+            expect(createWebWorkerEngineMock).toHaveBeenLastCalledWith(
+                expect.anything(),
+                LOADED_MODEL,
+                expect.anything(),
+                expect.anything()
+            );
+        });
     });
 });
