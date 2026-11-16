@@ -8,8 +8,8 @@ import {
     resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 
+import { type TempoAudioSourcePromotionSnapshot } from '../../events/tempoAudioSourceSnapshots';
 import { setTempo } from '../../useCases/setTempo';
 import { tempoMapStore, type TempoMapStoreState } from '../tempoMapStore';
 import {
