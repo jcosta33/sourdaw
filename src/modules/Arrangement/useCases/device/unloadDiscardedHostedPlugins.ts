@@ -1,5 +1,5 @@
 import { clearReportedLatency } from '#/modules/AudioEngine/useCases';
-import { unloadPlugin } from '#/modules/PluginHost/useCases';
+import { unloadPluginCarryingLiveState } from '#/modules/PluginHost/useCases';
 
 import { type HostedPluginInstance } from './collectHostedPluginInstances';
 
@@ -9,14 +9,15 @@ function describeFailure(error: unknown): string {
 
 /**
  * Releases the hosted plugin instances of a track an undone action created, once the document
- * write has committed. Every instance is attempted so one failed teardown never strands the
+ * write has committed. Each instance's live state is carried to the Redo that reactivates the
+ * same instance id. Every instance is attempted so one failed teardown never strands the
  * others; failures are reported together afterwards.
  */
 export async function unloadDiscardedHostedPlugins(instances: readonly HostedPluginInstance[]): Promise<void> {
     const failures: Error[] = [];
     for (const { deviceId, instanceId } of instances) {
         try {
-            await unloadPlugin(instanceId);
+            await unloadPluginCarryingLiveState(instanceId);
         } catch (error) {
             failures.push(
                 new Error(`Plugin host teardown failed for instance ${instanceId}: ${describeFailure(error)}`)

@@ -3,6 +3,19 @@ import { createHandler } from '#/utils/createHandler';
 import { prepareRemoveDevice } from '../../useCases/device/prepareRemoveDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+import { recordDiscardedDevicePluginStates } from '../track/discardedPluginStateCarry';
+
+/** A redo replays this removal with the first run's device snapshot. */
+function recordRemovedPluginState(deviceId: string, undoEntryId: string | undefined): void {
+    if (undoEntryId === undefined) {
+        return;
+    }
+    const devices = (getTrackStoreState()?.tracks ?? []).flatMap((track) => track.devices);
+    recordDiscardedDevicePluginStates(
+        undoEntryId,
+        devices.filter((device) => device.id === deviceId)
+    );
+}
 
 export const handleRemoveDevice = createHandler<'removeDevice'>({
     canReapplyAfterDivergence: (action) =>
@@ -46,6 +59,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
                 return { status: 'conflict' };
             }
         }
+        recordRemovedPluginState(alpha.payload.deviceId, context?.undoEntryId);
         const result = prepareRemoveDevice(alpha.payload.deviceId, context);
         if (result === 'conflict') {
             return { status: 'conflict' };
