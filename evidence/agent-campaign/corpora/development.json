@@ -4187,18 +4187,18 @@
             "id": "AC067-DEV-COMPARE-5",
             "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "give the Snare more punch than the Kick in the verse",
+            "prompt": "make the Overheads punchier than the Keys in the verse",
             "providerTurns": [
                 {
                     "kind": "intake",
                     "intent": "comparative",
-                    "targets": ["Snare"],
+                    "targets": ["Overheads"],
                     "objectives": [
                         {
                             "policyId": "crest-factor-comparison-v1",
                             "relation": "greater-than-current",
-                            "targetName": "Snare",
-                            "referenceName": "Kick",
+                            "targetName": "Overheads",
+                            "referenceName": "Keys",
                             "rangeName": "Verse"
                         }
                     ]
@@ -4206,7 +4206,7 @@
                 {
                     "kind": "measure-preview",
                     "id": "preview",
-                    "targets": ["Snare", "Kick"],
+                    "targets": ["Overheads", "Keys"],
                     "rangeName": "Verse",
                     "metrics": ["crestFactor"],
                     "items": [
@@ -4221,7 +4221,7 @@
                                 "targetArgument": "trackId",
                                 "entity": "track",
                                 "where": {
-                                    "name": "Snare"
+                                    "name": "Overheads"
                                 },
                                 "quantity": {
                                     "unit": "targets",
@@ -4274,7 +4274,7 @@
                 {
                     "kind": "propose-compiled",
                     "compiledCallIds": ["preview"],
-                    "targets": ["Snare"]
+                    "targets": ["Overheads"]
                 }
             ],
             "oracle": {
@@ -4283,7 +4283,7 @@
                     {
                         "type": "addDevice",
                         "payload": {
-                            "trackId": "track-snare",
+                            "trackId": "track-overheads",
                             "deviceType": "builtin-compressor"
                         }
                     },
@@ -4320,8 +4320,8 @@
                     {
                         "metric": "crestFactor",
                         "relation": "greater-than-current",
-                        "target": "Snare",
-                        "reference": "Kick"
+                        "target": "Overheads",
+                        "reference": "Keys"
                     }
                 ]
             }
