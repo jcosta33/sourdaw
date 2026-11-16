@@ -172,7 +172,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:e6c6b461d05a82a80876a97da635a287340b4a0900acd478121c52509e528b88:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:a07c20254e6cf46bb90c9b61f09af9f1a8247597adc27c595b350e1dbff31b38:release/dependency-license-proofs.json"
+                "sha256:f0d80cb9e568f1baa5fff86d3c40cc01e3df198f2213cb856be49204670ca9c2:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1398,13 +1398,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:98bf444ba662e2ec155b4c623844adf04425d36f3647ced6b42eddd3d0fbdaba",
-                "daw-wasm-decoder sha256:79f8fddfa46d63b9143d54b0c7e6d74a3f0274d4f3acb3e267b5e2c72dae6479",
-                "proof-chamber sha256:ace5bea07e7b4aa03fbbc1ad71765bdb4e32270ef114c8f2c99e48f1bf3b04b9",
-                "scoring sha256:c5ab364d143ac65396c34872a9b85d575cc3bde7d8464349448a8d3fa1658735"
+                "daw-dsp sha256:8bfc182f6b55483b169f0ce703bcb89e2df30b561f14948c93bf10b8c8f6d5be",
+                "daw-wasm-decoder sha256:bf124a7d7fe022259f398fff9ac0b31b8173fea259d28278119665f219c739a9",
+                "proof-chamber sha256:117a4259878c1a4e1c303c0ad32eb1f40b1ec9628da1ec97842534721e26a774",
+                "scoring sha256:5bbc3b74edd0be399a4ac681b5b474ce1a81cba65635dc629a61fabe3e25f867"
             ],
             "digests": [
-                "sha256:3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109:public/wasm/manifest.json"
+                "sha256:33ff1c3ec00d4427e6ca6279a3cf1e48f04f2630c9091851f7eeed6cae8fa326:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1926,7 +1926,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "e0d41dbefe296c435d78563b6c1578f4ceeedf7d83d02a6ea689449992986c37"
+            "sha256": "acec56def2686b5e9925b1afecb5de895597b99d35597dad172cfaa6d135c14e"
         },
         {
             "path": "Cargo.lock",
@@ -1938,7 +1938,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109"
+            "sha256": "33ff1c3ec00d4427e6ca6279a3cf1e48f04f2630c9091851f7eeed6cae8fa326"
         }
     ],
     "externalReferences": [
