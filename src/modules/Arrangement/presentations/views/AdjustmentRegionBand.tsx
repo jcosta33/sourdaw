@@ -7,9 +7,9 @@ import type {
 
 import { Button } from '#/components/ui/button';
 
-import type { AdjustmentRegion } from '../../stores/adjustmentLayer';
-
 import { MIN_REGION_BEATS, type RegionEdge } from './adjustmentLayerKeyboard';
+
+import type { AdjustmentRegion } from '../../stores/adjustmentLayer';
 
 export type FadePreview = { regionId: string; fadeInBeats: number; fadeOutBeats: number };
 
