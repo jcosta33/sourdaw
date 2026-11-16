@@ -6,11 +6,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
     EVIDENCE_MANIFEST_PATH,
+    absentTestFileFixtures,
     computeFixtureDigest,
     parseEvidenceManifest,
     sharedFixturePaths,
     validateEvidenceManifest,
     type EvidenceCollision,
+    type EvidenceManifest,
+    type EvidenceSuite,
 } from '../agent-campaign/evidenceManifest';
 import { isSourdawE2eServeMode } from '../e2eServerIdentity';
 
@@ -24,7 +27,7 @@ const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..'
  * share an import because `src/` may not import `scripts/`.
  */
 const EXPECTED_COLLISIONS: readonly EvidenceCollision[] = [
-    { path: 'crates/sourdaw/src', suites: ['AC-030', 'AC-049', 'AC-057'] },
+    { path: 'crates/sourdaw/src', suites: ['AC-030', 'AC-049'] },
     { path: 'scripts/agent-campaign/run-evidence-gate.ts', suites: ['AC-054', 'AC-060'] },
     {
         path: 'src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts',
@@ -133,6 +136,26 @@ describe('agent campaign evidence fixtures', () => {
 
     it('validates the committed manifest with no problems', () => {
         expect(validateEvidenceManifest(manifest)).toEqual([]);
+    });
+
+    it('pins no test file as absent in the committed manifest', () => {
+        expect(absentTestFileFixtures(manifest)).toEqual([]);
+    });
+
+    it('refuses a pinned test file that is absent from the tree, and admits an absent crate source', () => {
+        const [first] = manifest.suites;
+        const withFixtures = (fixtures: EvidenceSuite['fixtures']): EvidenceManifest => ({
+            ...manifest,
+            suites: [{ ...first, fixtures }],
+        });
+        const movedSpec = 'src/modules/Gone/__tests__/moved.spec.ts';
+
+        expect(absentTestFileFixtures(withFixtures([{ path: movedSpec, digest: null, status: 'absent' }]))).toEqual([
+            `suite ${first.id} pins the test file ${movedSpec}, which is not in the tree`,
+        ]);
+        expect(
+            absentTestFileFixtures(withFixtures([{ path: 'crates/gone/src', digest: null, status: 'absent' }]))
+        ).toEqual([]);
     });
 
     it('shares the fixture-path collisions the baseline spec pins', () => {
