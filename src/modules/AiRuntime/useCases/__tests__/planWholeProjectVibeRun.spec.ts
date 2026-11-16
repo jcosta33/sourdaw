@@ -113,7 +113,7 @@ function catalogRecipe(id: string): MixRecipe {
 /** A recipe that expands to as many commands as it has parameters plus its one inserted device. */
 function synthetic(
     id: string,
-    descriptor: MixRecipe['descriptor'],
+    descriptor: NonNullable<MixRecipe['descriptor']>,
     roles: MixRecipe['roles'],
     metrics: MixRecipe['metrics'],
     parameterCount = 0
