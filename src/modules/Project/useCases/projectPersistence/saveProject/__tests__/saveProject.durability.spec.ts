@@ -311,6 +311,54 @@ describe('saveProject durability', () => {
         );
     });
 
+    it('keeps the project dirty and tells the user when the whole plugin capture throws', async () => {
+        installFakeIndexedDb();
+        mocks.captureExternalPluginStates.mockRejectedValue(new Error('plugin host gone'));
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: true, identityPersistencePending: false })
+        );
+        expect(mocks.notifyUser).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('unsaved changes'), 'warning');
+    });
+
+    // #5989: the project already reads dirty while it saves, so markDirty cannot
+    // carry a plugin edit made after its state was read; the edit count does.
+    it('keeps the project dirty when a plugin reports an edit while the save writes', async () => {
+        installFakeIndexedDb();
+        const saveProject = await importSaveProject();
+        const { pluginStateEditCount } = await import('../pluginStateEditCount');
+        const persisting = Promise.withResolvers<void>();
+        mocks.persistCrdtProject.mockReturnValue(persisting.promise);
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(mocks.persistCrdtProject).toHaveBeenCalledOnce());
+        pluginStateEditCount.record();
+        persisting.resolve();
+
+        await expect(saving).resolves.toBe(true);
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: true, identityPersistencePending: false })
+        );
+    });
+
+    it('clears dirty when every plugin edit was reported before the save began', async () => {
+        installFakeIndexedDb();
+        const saveProject = await importSaveProject();
+        const { pluginStateEditCount } = await import('../pluginStateEditCount');
+        pluginStateEditCount.record();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: false, identityPersistencePending: false })
+        );
+    });
+
     it('releases the receipt and refuses completion when audio changes during document persistence', async () => {
         installFakeIndexedDb();
         let receiptCurrent = true;
