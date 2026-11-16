@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 
 import { cruiseFileGraph } from '../e2eFileGraph.ts';
 
@@ -48,6 +48,7 @@ export type ClosureGraphNode = {
 export type ClosureInputs = {
     graph: ReadonlyMap<string, ClosureGraphNode>;
     cargo: readonly CargoPackage[];
+    /** Tracked files plus untracked files git does not ignore; gitignored build output stays out. */
     tracked: readonly string[];
     root: string;
 };
@@ -149,13 +150,32 @@ function packagePaths(cargoPackage: CargoPackage, tested: boolean): readonly str
 }
 
 /** Workspace files every `cargo test` resolves its profiles, toolchain, and build flags from. */
-const CARGO_WORKSPACE_FILES: readonly string[] = ['Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml'];
+const CARGO_WORKSPACE_FILES: readonly string[] = [
+    'Cargo.toml',
+    'Cargo.lock',
+    'rust-toolchain.toml',
+    '.cargo/config.toml',
+];
+
+/**
+ * The source directory of every target the tested crate declares, so a target `Cargo.toml` points
+ * outside the default layout still counts. A directory with no listed file contributes nothing, and
+ * a target at the crate root stands for its file alone, never the whole crate directory.
+ */
+function optionalTestedTrees(cargoPackage: CargoPackage): readonly string[] {
+    const sources = cargoPackage.targets.map((target) =>
+        dirname(target.source) === cargoPackage.directory ? target.source : dirname(target.source)
+    );
+    return Array.from(new Set(sources)).sort();
+}
+
+type CargoClosurePaths = { readonly required: readonly string[]; readonly optionalTrees: readonly string[] };
 
 /**
  * The path-dependency closure of one tested package. Its own dev-dependencies compile under
  * `cargo test`; a dependency's dev-dependencies never do.
  */
-function cargoClosurePaths(packages: readonly CargoPackage[], crate: string): readonly string[] {
+function cargoClosurePaths(packages: readonly CargoPackage[], crate: string): CargoClosurePaths {
     const tested = packages.find((entry) => entry.name === crate);
     if (tested === undefined) {
         throw new Error(`cargo metadata names no workspace package ${crate}`);
@@ -184,7 +204,7 @@ function cargoClosurePaths(packages: readonly CargoPackage[], crate: string): re
             queue.push(target);
         }
     }
-    return paths;
+    return { required: paths, optionalTrees: optionalTestedTrees(tested) };
 }
 
 /** Every tracked file one static-import walk from `roots` reaches; an unresolved import refuses. */
@@ -244,22 +264,28 @@ function isInstalledPackage(root: string, importer: string, specifier: string): 
     }
 }
 
-/** A file stands for itself; a tree for every tracked file beneath it. Neither may be empty. */
+/** A file stands for itself; a tree for every listed file beneath it. Neither may be empty. */
 function expandTracked(tracked: readonly string[], path: string): readonly string[] {
-    const prefix = `${path.replace(/\/$/u, '')}/`;
-    const files = tracked.filter((file) => file === path || file.startsWith(prefix));
+    const files = filesUnder(tracked, path);
     if (files.length === 0) {
         throw new Error(`${path}: an evidence closure path that names no tracked file`);
     }
     return files;
 }
 
-/** The sorted, tracked file paths of one suite's closure. */
+function filesUnder(listed: readonly string[], path: string): readonly string[] {
+    const prefix = `${path.replace(/\/$/u, '')}/`;
+    return listed.filter((file) => file === path || file.startsWith(prefix));
+}
+
+/** The sorted file paths of one suite's closure: tracked files and untracked, non-ignored ones. */
 export function closurePaths(seed: ClosureSeed, inputs: ClosureInputs): readonly string[] {
-    const trees = [...seed.reads, ...seed.crates.flatMap((crate) => cargoClosurePaths(inputs.cargo, crate))];
+    const cargo = seed.crates.map((crate) => cargoClosurePaths(inputs.cargo, crate));
+    const trees = [...seed.reads, ...cargo.flatMap(({ required }) => required)];
     const files = new Set([
         ...importClosurePaths(inputs, seed.codeRoots),
         ...trees.flatMap((path) => expandTracked(inputs.tracked, path)),
+        ...cargo.flatMap(({ optionalTrees }) => optionalTrees.flatMap((path) => filesUnder(inputs.tracked, path))),
     ]);
     return [...files].sort();
 }
@@ -299,7 +325,11 @@ export function closureDrift(recorded: EvidenceClosure, live: EvidenceClosure): 
 }
 
 function trackedFiles(root: string): readonly string[] {
-    return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    return execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+        cwd: root,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+    })
         .split('\0')
         .filter((path) => path.length > 0);
 }
