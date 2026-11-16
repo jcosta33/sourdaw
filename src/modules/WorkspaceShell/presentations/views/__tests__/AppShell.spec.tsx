@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
 import {
@@ -14,6 +13,7 @@ import {
     type Track,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
+import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
@@ -33,8 +33,8 @@ import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { type ActiveDevicePanel } from '../../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../../hooks/useAppEventHandlers';
 import { useProjectState } from '../../hooks/useProjectState';
-import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { useShellTrackFacts } from '../../hooks/useShellTrackFacts';
+import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
 const activeDevicePanelStateMock = vi.hoisted(() => ({
