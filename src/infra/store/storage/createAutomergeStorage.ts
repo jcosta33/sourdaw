@@ -303,15 +303,15 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     preserveLocalRuntimeStateOnRecompute?: true;
 };
 
+export type AutomergeStoragePreparationOptions = {
+    readonly preparationPolicy?: 'bounded-native-sequence-v1';
+};
+
 /**
  * An Automerge-backed adapter can force only its own rAF-deferred, unscoped
  * write to settle. The method is bound to the adapter's private commit owner;
  * callers cannot broaden it to another adapter or an open action transaction.
  */
-export type AutomergeStoragePreparationOptions = {
-    readonly preparationPolicy?: 'bounded-native-sequence-v1';
-};
-
 export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
     flushPendingUnscopedWrite(): void;
     prepareSet?(

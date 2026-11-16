@@ -13,7 +13,7 @@ import { admitBoundedNativeSequence } from '../admitBoundedNativeSequence';
 
 vi.mock('@automerge/automerge', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@automerge/automerge')>();
-    return { ...actual, free: vi.fn(actual.free) };
+    return { ...actual, free: vi.fn(actual.free), applyChanges: vi.fn(actual.applyChanges) };
 });
 
 const ACTOR = 'aaaaaaaaaaaaaaaa';
@@ -210,7 +210,12 @@ describe('bounded native sequence authority', () => {
         }
         if (kind === 'checksum' || kind === 'type2') {
             const first = Uint8Array.from(result.changes[0]!);
-            first[kind === 'checksum' ? 4 : 8] ^= 1;
+            if (kind === 'type2') {
+                first[8] = 2;
+                expect(first[8]).toBe(2);
+            } else {
+                first[4] ^= 1;
+            }
             invalid = { ...result, changes: [first, ...result.changes.slice(1)] };
         }
         if (kind === 'truncated') {
@@ -234,8 +239,27 @@ describe('bounded native sequence authority', () => {
         if (kind === 'final-heads') {
             invalid = { ...result, heads };
         }
+        const nativeApplicationsBeforeAdmission = vi.mocked(A.applyChanges).mock.calls.length;
         try {
-            await expect(admit(source, invalid)).rejects.toThrow();
+            if (kind === 'type2') {
+                await expect(admit(source, invalid)).rejects.toThrow('Invalid bounded native sequence change');
+            } else {
+                await expect(admit(source, invalid)).rejects.toThrow();
+            }
+            if (
+                [
+                    'actor',
+                    'author',
+                    'skipped-sequence',
+                    'start-op',
+                    'dependencies',
+                    'checksum',
+                    'type2',
+                    'oversized',
+                ].includes(kind)
+            ) {
+                expect(vi.mocked(A.applyChanges).mock.calls).toHaveLength(nativeApplicationsBeforeAdmission);
+            }
             expect(A.toJS(source)).toEqual(truth);
             expect(A.getHeads(source)).toEqual(heads);
         } finally {

@@ -296,6 +296,56 @@ describe('arrangementStore real bounded native preparation', () => {
                     timings.push({ name: entry.name, duration: entry.duration, detail: entry.detail });
                 }
             }
+            const additions = A.getChangesMetaSince(updated, heads);
+            expect(additions.length).toBeGreaterThan(1);
+            const supplemental = requireValue(additions.at(-1));
+            const primaryLast = requireValue(additions.at(-2));
+            expect(supplemental.deps).toEqual([primaryLast.hash]);
+            const supplementalBytes = A.getChangesSince(updated, supplemental.deps);
+            expect(supplementalBytes).toHaveLength(1);
+            const decodedSupplemental = A.decodeChange(requireValue(supplementalBytes[0]));
+            expect(decodedSupplemental.hash).toBe(supplemental.hash);
+            expect(decodedSupplemental.actor).toBe(actor);
+            expect(decodedSupplemental.ops).toEqual([
+                expect.objectContaining({
+                    action: 'set',
+                    obj: requireValue(A.getObjectId(updated.projectMeta)),
+                    key: 'updatedAt',
+                    value: requireValue(projectStore.value).updatedAt,
+                }),
+            ]);
+            const nativeChunkCount = additions.length - 1;
+            const expectedIndices = Array.from({ length: nativeChunkCount }, (_, index) => index);
+            for (const phase of [
+                'automerge-prospective-sequence-slice-task',
+                'automerge-prospective-response-task',
+                'automerge-prospective-apply-task',
+                'automerge-prospective-authority-task',
+            ]) {
+                const records = timings.filter((entry) => entry.name === phase);
+                expect(records, phase).toHaveLength(nativeChunkCount);
+                const indices = records.map(({ detail }) => {
+                    if (typeof detail !== 'object' || detail === null || !('sequenceIndex' in detail)) {
+                        throw new Error(`Missing actual native sequence index for ${phase}`);
+                    }
+                    return detail.sequenceIndex;
+                });
+                expect(indices, phase).toEqual(expectedIndices);
+            }
+            expect(
+                timings.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task')
+            ).toHaveLength(1);
+            for (const phase of [
+                'automerge-storage-materialization-handoff-task',
+                'automerge-storage-prepared-publication',
+            ]) {
+                const records = timings.filter((entry) => entry.name === phase);
+                expect(records, phase).toHaveLength(1);
+                expect(records[0]?.detail).toEqual({
+                    preparationPolicy: 'bounded-native-sequence-v1',
+                    primaryKey: 'arrangements',
+                });
+            }
             const critical = timings.filter(
                 (entry) =>
                     entry.name.startsWith('owner-') ||
