@@ -27,6 +27,8 @@ import {
 } from '../webLlm/webLlmArtifactManifest';
 import { WEBLLM_MODEL_ADMISSIONS, type WebLlmModelAdmission } from '../webLlm/webLlmModelAdmissions';
 
+const LARGE_MODEL_ID = 'Llama-3.1-70B-Instruct-q3f16_1-MLC';
+
 const { createWebWorkerEngineMock, terminateWorkerMock, workerSpawns } = vi.hoisted(() => ({
     createWebWorkerEngineMock: vi.fn(),
     terminateWorkerMock: vi.fn(),
@@ -348,6 +350,12 @@ describe('WebLLM provider artifact admission', () => {
         expect(getWebLlmArtifactManifestModel(modelId).artifactSetDigest).toBe(digest);
     });
 
+    it('pins the Large model artifact set', () => {
+        expect(getWebLlmArtifactManifestModel(LARGE_MODEL_ID).artifactSetDigest).toBe(
+            'c5b181b8df7e33660d14aba38131081bab344cfd09f6f6616df93b69b0023ff0'
+        );
+    });
+
     it.each([
         ['Qwen3-1.7B-q4f16_1-MLC', 'b22fead109509ac456ebe1ff6d632b73b257e6285cd236a2e77d0164a20aba6f'],
         ['Qwen3-4B-q4f16_1-MLC', '02a08d958dc140b21eb849741c5aad788653ce9787419861dbafd16c3e488ec0'],
@@ -368,6 +376,7 @@ describe('WebLLM provider artifact admission', () => {
         expect(getWebLlmContextWindowSize('Qwen3-8B-q4f16_1-MLC')).toBe(32_768);
         expect(getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC')).toBe(8_192);
         expect(getWebLlmContextWindowSize('Qwen3-1.7B-q4f16_1-MLC')).toBe(8_192);
+        expect(getWebLlmContextWindowSize(LARGE_MODEL_ID)).toBe(32_768);
         for (const selectableModel of WEBLLM_MODELS) {
             expect(getWebLlmContextWindowSize(selectableModel.id)).toBe(
                 WEBLLM_CONTEXT_WINDOW_TOKENS[selectableModel.id]
@@ -385,6 +394,7 @@ describe('WebLLM provider artifact admission', () => {
         { modelId: 'Qwen3-1.7B-q4f16_1-MLC', layers: 28, vramMib: 2_484.66, shown: '~2.7 GB' },
         { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMib: 4_007.59, shown: '~4.3 GB' },
         { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMib: 9_727.78, shown: '~10.3 GB' },
+        { modelId: LARGE_MODEL_ID, layers: 80, vramMib: 40_113.13, shown: '~42.1 GB' },
     ])('publishes the memory need of $modelId for the window it loads with', ({ modelId, layers, vramMib, shown }) => {
         const bytesPerMib = 1024 * 1024;
         const kvCacheMibPerToken = (2 * 8 * 128 * 2 * layers) / bytesPerMib;
@@ -897,8 +907,9 @@ describe('WebLLM provider artifact admission', () => {
                 .reduce((total, [, entries]) => total + entries.size, 0);
         }
 
-        it('names shader-f16 for q4f16 models only, from the id', () => {
+        it('names shader-f16 for the float16-activation quantizations only, from the id', () => {
             expect(getWebLlmRequiredFeatures(LIGHT)).toEqual(['shader-f16']);
+            expect(getWebLlmRequiredFeatures(LARGE_MODEL_ID)).toEqual(['shader-f16']);
             expect(getWebLlmRequiredFeatures('Qwen3-8B-q4f32_1-MLC')).toEqual([]);
             expect(getWebLlmRequiredFeatures('test-model')).toEqual([]);
         });
@@ -1268,112 +1279,115 @@ describe('WebLLM catalogue admission record', () => {
         }
     });
 
-    describe('names each gap on a catalogue model with one thing taken away', () => {
-        const modelId = DEFAULT_WEBLLM_MODEL_ID;
-        const acceptedText = (): string => readDecisionText(WEBLLM_MODEL_ADMISSIONS[modelId]) ?? '';
+    describe.each([DEFAULT_WEBLLM_MODEL_ID, LARGE_MODEL_ID])(
+        'names each gap on %s with one thing taken away',
+        (modelId) => {
+            const acceptedText = (): string => readDecisionText(WEBLLM_MODEL_ADMISSIONS[modelId]) ?? '';
 
-        it.each<{ label: string; gap: AdmissionGap; alter: (input: AdmissionCheckInput) => AdmissionCheckInput }>([
-            {
-                label: 'the model is not in the prebuilt list',
-                gap: 'not-in-prebuilt-list',
-                alter: (input) => ({
-                    ...input,
-                    prebuiltList: input.prebuiltList.filter((entry) => entry.model_id !== modelId),
-                }),
-            },
-            {
-                label: 'the prebuilt entry names another repository',
-                gap: 'prebuilt-repository-differs',
-                alter: (input) => ({
-                    ...input,
-                    prebuiltList: input.prebuiltList.map((entry) => {
-                        if (entry.model_id !== modelId) {
-                            return entry;
-                        }
-                        return { ...entry, model: 'https://huggingface.co/other/Repo-MLC' };
+            it.each<{ label: string; gap: AdmissionGap; alter: (input: AdmissionCheckInput) => AdmissionCheckInput }>([
+                {
+                    label: 'the model is not in the prebuilt list',
+                    gap: 'not-in-prebuilt-list',
+                    alter: (input) => ({
+                        ...input,
+                        prebuiltList: input.prebuiltList.filter((entry) => entry.model_id !== modelId),
                     }),
-                }),
-            },
-            {
-                label: 'there is no admission record',
-                gap: 'no-admission-record',
-                alter: (input) => ({ ...input, admission: undefined, decisionText: null }),
-            },
-            {
-                label: 'the decision record file does not exist',
-                gap: 'decision-record-missing',
-                alter: (input) => ({ ...input, decisionText: null }),
-            },
-            {
-                label: 'the decision record is not accepted',
-                gap: 'decision-record-not-accepted',
-                alter: (input) => ({
-                    ...input,
-                    decisionText: acceptedText().replace(/^status:\s*accepted/mu, 'status: proposed'),
-                }),
-            },
-            {
-                label: 'the decision record lacks the manifest revision',
-                gap: 'decision-record-lacks-revision-or-digest',
-                alter: (input) => ({
-                    ...input,
-                    decisionText: acceptedText().replaceAll(input.manifest.modelSource.revision, 'x'.repeat(40)),
-                }),
-            },
-            {
-                label: 'the decision record lacks the manifest digest',
-                gap: 'decision-record-lacks-revision-or-digest',
-                alter: (input) => ({
-                    ...input,
-                    decisionText: acceptedText().replaceAll(input.manifest.artifactSetDigest, '0'.repeat(64)),
-                }),
-            },
-            {
-                label: 'the decision record lacks the model libraries revision',
-                gap: 'decision-record-lacks-libraries-revision',
-                alter: (input) => ({
-                    ...input,
-                    decisionText: acceptedText().replaceAll(input.manifest.wasmSource.revision, 'x'.repeat(40)),
-                }),
-            },
-            {
-                label: 'the decision record lacks the model library hash',
-                gap: 'decision-record-lacks-library-hash',
-                alter: (input) => ({
-                    ...input,
-                    decisionText: acceptedText().replaceAll(
-                        input.manifest.artifacts.find((artifact) => artifact.kind === 'model-library')?.sha256 ?? '',
-                        '0'.repeat(64)
-                    ),
-                }),
-            },
-            {
-                label: 'the record digest differs from the manifest',
-                gap: 'digest-differs-from-manifest',
-                alter: (input) => ({
-                    ...input,
-                    admission: input.admission && { ...input.admission, artifactSetDigest: '0'.repeat(64) },
-                }),
-            },
-            {
-                label: 'the record has no licence',
-                gap: 'no-licence',
-                alter: (input) => ({ ...input, admission: input.admission && { ...input.admission, licence: '' } }),
-            },
-            {
-                label: 'the decision record does not name the licence',
-                gap: 'licence-not-named-by-decision-record',
-                alter: (input) => ({
-                    ...input,
-                    admission: input.admission && { ...input.admission, licence: 'GPL-3.0-only' },
-                }),
-            },
-        ])('$label', async ({ gap, alter }) => {
-            const base = realInput(modelId, await readPrebuiltList());
-            // The row is only meaningful when the real model passes before the one thing is taken away.
-            const alteredInput = alter({ ...base, decisionText: base.decisionText ?? acceptedText() });
+                },
+                {
+                    label: 'the prebuilt entry names another repository',
+                    gap: 'prebuilt-repository-differs',
+                    alter: (input) => ({
+                        ...input,
+                        prebuiltList: input.prebuiltList.map((entry) => {
+                            if (entry.model_id !== modelId) {
+                                return entry;
+                            }
+                            return { ...entry, model: 'https://huggingface.co/other/Repo-MLC' };
+                        }),
+                    }),
+                },
+                {
+                    label: 'there is no admission record',
+                    gap: 'no-admission-record',
+                    alter: (input) => ({ ...input, admission: undefined, decisionText: null }),
+                },
+                {
+                    label: 'the decision record file does not exist',
+                    gap: 'decision-record-missing',
+                    alter: (input) => ({ ...input, decisionText: null }),
+                },
+                {
+                    label: 'the decision record is not accepted',
+                    gap: 'decision-record-not-accepted',
+                    alter: (input) => ({
+                        ...input,
+                        decisionText: acceptedText().replace(/^status:\s*accepted/mu, 'status: proposed'),
+                    }),
+                },
+                {
+                    label: 'the decision record lacks the manifest revision',
+                    gap: 'decision-record-lacks-revision-or-digest',
+                    alter: (input) => ({
+                        ...input,
+                        decisionText: acceptedText().replaceAll(input.manifest.modelSource.revision, 'x'.repeat(40)),
+                    }),
+                },
+                {
+                    label: 'the decision record lacks the manifest digest',
+                    gap: 'decision-record-lacks-revision-or-digest',
+                    alter: (input) => ({
+                        ...input,
+                        decisionText: acceptedText().replaceAll(input.manifest.artifactSetDigest, '0'.repeat(64)),
+                    }),
+                },
+                {
+                    label: 'the decision record lacks the model libraries revision',
+                    gap: 'decision-record-lacks-libraries-revision',
+                    alter: (input) => ({
+                        ...input,
+                        decisionText: acceptedText().replaceAll(input.manifest.wasmSource.revision, 'x'.repeat(40)),
+                    }),
+                },
+                {
+                    label: 'the decision record lacks the model library hash',
+                    gap: 'decision-record-lacks-library-hash',
+                    alter: (input) => ({
+                        ...input,
+                        decisionText: acceptedText().replaceAll(
+                            input.manifest.artifacts.find((artifact) => artifact.kind === 'model-library')?.sha256 ??
+                                '',
+                            '0'.repeat(64)
+                        ),
+                    }),
+                },
+                {
+                    label: 'the record digest differs from the manifest',
+                    gap: 'digest-differs-from-manifest',
+                    alter: (input) => ({
+                        ...input,
+                        admission: input.admission && { ...input.admission, artifactSetDigest: '0'.repeat(64) },
+                    }),
+                },
+                {
+                    label: 'the record has no licence',
+                    gap: 'no-licence',
+                    alter: (input) => ({ ...input, admission: input.admission && { ...input.admission, licence: '' } }),
+                },
+                {
+                    label: 'the decision record does not name the licence',
+                    gap: 'licence-not-named-by-decision-record',
+                    alter: (input) => ({
+                        ...input,
+                        admission: input.admission && { ...input.admission, licence: 'GPL-3.0-only' },
+                    }),
+                },
+            ])('$label', async ({ gap, alter }) => {
+                const base = realInput(modelId, await readPrebuiltList());
+                // The row is only meaningful when the real model passes before the one thing is taken away.
+                const alteredInput = alter({ ...base, decisionText: base.decisionText ?? acceptedText() });
 
-            expect(findAdmissionGaps(alteredInput)).toEqual([gap]);
-        });
-    });
+                expect(findAdmissionGaps(alteredInput)).toEqual([gap]);
+            });
+        }
+    );
 });

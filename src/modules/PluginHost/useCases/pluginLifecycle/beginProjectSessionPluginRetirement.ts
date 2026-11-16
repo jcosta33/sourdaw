@@ -18,6 +18,7 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
         retire: async (): Promise<void> => {
             await Promise.allSettled(admittedActivations);
             await rebuild.waitForExistingOperations();
+            // The unkeyed unload drops the outgoing project's carried live state.
             await unloadPlugin();
             clearLoadedExternalPlugins();
         },
