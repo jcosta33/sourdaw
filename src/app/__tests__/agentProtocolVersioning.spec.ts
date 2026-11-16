@@ -9,7 +9,7 @@ import { getDeviceManifestProtocolContract } from '#/modules/Arrangement/useCase
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 /** The domains the Project owner publishes discovery over, in its published order. */
-const DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', 'capability'];
+const DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', 'capability', 'groove'];
 
 describe('agent protocol versioning', () => {
     it('publishes every independently versioned owner contract without command replay', () => {

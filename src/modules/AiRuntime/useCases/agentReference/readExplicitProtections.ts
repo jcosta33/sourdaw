@@ -1,7 +1,9 @@
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 
 import { blankRanges } from './blankRanges';
+import { protectionCandidates } from './protectionCandidates';
 import {
     CONNECTIVE_WORDS,
     KIND_NOUNS,
@@ -15,7 +17,9 @@ import {
     type Token,
 } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
-import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
+import { readRoleFamilyProtection } from './readRoleFamilyProtection';
+import { refinementRequestReading } from './refinementRequestReading';
+import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
 /**
  * An explicit protection is a preservation clause ("leave Keys alone", "with Bass unchanged", "Keys
@@ -32,6 +36,10 @@ import { refinementRequestReading, type ReferenceCandidate } from './refinementR
  * Audio tracks"), title case, quoted text and any capitalization are no target. Project names are read
  * whole before the text is cut at punctuation or a stop word, so "Dr. Beat" and "Home Alone" bind as
  * the names they are.
+ *
+ * A member that is a role family word alone ("leave the drums alone", "the drum tracks", "the
+ * drums' faders"), outside every project name and quotation, keeps every track the shared selector
+ * resolver places in that family, as naming each of them would.
  */
 
 export type ProtectionReading = {
@@ -85,7 +93,10 @@ type MemberReading =
     | { kind: 'controls'; controls: string[] }
     | { kind: 'bound'; controls: string[]; onlyNames: boolean }
     | { kind: 'variant'; trackIds: string[] }
+    | { kind: 'family'; trackIds: string[]; controls: string[] }
     | { kind: 'selection'; phrase: string; scope: 'any' | 'track'; controls: string[]; pronoun: boolean };
+
+type FamilyTrackIds = (family: SemanticCommandListRoleFamily) => string[];
 
 function countLeadingVerbs(tokens: readonly Token[]): number {
     const firstOther = tokens.findIndex((token) => !PROTECTION_VERB_WORD.test(token.lower));
@@ -163,7 +174,8 @@ type SelectionMember = {
     pronoun: boolean;
     anaphoric: boolean;
 };
-type BoundMember = { trackIds: string[]; controls: string[] };
+/** `byName` is false for a role family, which names its tracks by role rather than by track name. */
+type BoundMember = { trackIds: string[]; controls: string[]; byName: boolean };
 type SlotReading = {
     complete: boolean;
     uniqueTrackOwners: boolean;
@@ -227,7 +239,7 @@ function readBoundTrackMember(
         return null;
     }
     return {
-        member: { trackIds: owners, controls: [...member.controls] },
+        member: { trackIds: owners, controls: [...member.controls], byName: true },
         complete: owners.length === only.denotes.size,
         uniqueOwner: only.denotes.size === 1,
     };
@@ -266,8 +278,9 @@ function parseSlotMember(input: {
     slot: Slot;
     range: MemberRange;
     objects: readonly ProtectableObjectName[];
+    familyTrackIds: FamilyTrackIds;
 }): { member: MemberReading; tokens: Token[]; complete: boolean } {
-    const { prompt, blanked, masked, slot, range, objects } = input;
+    const { prompt, blanked, masked, slot, range, objects, familyTrackIds } = input;
     const raw = readTokens(blanked, masked, range);
     const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
     const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
@@ -277,8 +290,22 @@ function parseSlotMember(input: {
     const original = readTokens(prompt, masked, range).filter((token, index) => !isPossessiveS(token, index));
     const unboundOwner =
         slot.strict && incompleteQuotedOwner ? readObjectForm(original, raw.some(isPossessiveS), objects) : null;
+    // A quoted member never names a family, so a quoted owner is read by the object forms alone.
+    const family = slot.strict ? readFamilyMember(tokens, familyTrackIds) : null;
+    if (family !== null) {
+        return { member: family, tokens, complete: true };
+    }
     const member = unboundOwner ?? readMember({ tokens, phrase, slot, possessive: raw.some(isPossessiveS), objects });
     return { member, tokens, complete: fullyStatesTrackMember(tokens) };
+}
+
+/** A member naming a role family, read after its protection verbs. */
+function readFamilyMember(tokens: readonly Token[], familyTrackIds: FamilyTrackIds): MemberReading | null {
+    const family = readRoleFamilyProtection(tokens.slice(countLeadingVerbs(tokens)), familyTrackIds);
+    if (family === null) {
+        return null;
+    }
+    return { kind: 'family', ...family };
 }
 
 /** Attach one member to its owner, keeping unresolved continuation spans out of track-only evidence. */
@@ -291,7 +318,7 @@ function applySlotMember(
 ): void {
     const { member, tokens, complete } = parsed;
     state.reading.complete &&= complete;
-    if (range.afterThen && !complete && member.kind !== 'variant') {
+    if (range.afterThen && !complete && member.kind !== 'variant' && member.kind !== 'family') {
         state.reading.unreadContinuations.push({ start: range.start, end: range.end });
         if (member.kind === 'unbound' || member.kind === 'position') {
             state.reading.unresolved.push(member.text);
@@ -313,24 +340,37 @@ function applySlotMember(
         state.lastOwner = adoptControls(selection, state.pendingControls);
         state.pendingControls = [];
     } else {
-        const pending = state.pendingControls;
-        state.pendingControls = [];
-        state.lastOwner = null;
-        if (member.kind === 'unbound' || member.kind === 'position') {
-            state.reading.unresolved.push(member.text);
-        } else if (member.kind === 'variant') {
-            state.reading.bound.push({ trackIds: member.trackIds, controls: [] });
-        } else {
-            const owner = readBoundTrackMember(member, references, range, trackIds);
-            state.reading.complete &&= owner !== null && owner.complete;
-            if (owner !== null) {
-                state.reading.uniqueTrackOwners &&= owner.uniqueOwner;
-                state.reading.bound.push(owner.member);
-                state.lastOwner = adoptControls(owner.member, pending);
-            }
-        }
+        applyOwnerMember(state, member, (bound) => readBoundTrackMember(bound, references, range, trackIds));
     }
     state.namedBefore ||= tokens.some(isBoundToken);
+}
+
+/** Attach a member naming an owner, or one it cannot bind, giving it the controls listed before it. */
+function applyOwnerMember(
+    state: SlotMemberState,
+    member: MemberReading,
+    readBound: (member: MemberReading) => ReturnType<typeof readBoundTrackMember>
+): void {
+    const pending = state.pendingControls;
+    state.pendingControls = [];
+    state.lastOwner = null;
+    if (member.kind === 'unbound' || member.kind === 'position') {
+        state.reading.unresolved.push(member.text);
+    } else if (member.kind === 'variant') {
+        state.reading.bound.push({ trackIds: member.trackIds, controls: [], byName: true });
+    } else if (member.kind === 'family') {
+        const family = { trackIds: member.trackIds, controls: [...member.controls], byName: false };
+        state.reading.bound.push(family);
+        state.lastOwner = adoptControls(family, pending);
+    } else {
+        const owner = readBound(member);
+        state.reading.complete &&= owner !== null && owner.complete;
+        if (owner !== null) {
+            state.reading.uniqueTrackOwners &&= owner.uniqueOwner;
+            state.reading.bound.push(owner.member);
+            state.lastOwner = adoptControls(owner.member, pending);
+        }
+    }
 }
 
 function readSlotMembers(input: {
@@ -341,8 +381,9 @@ function readSlotMembers(input: {
     references: readonly NamedRange[];
     context: ProjectContext;
     objects: readonly ProtectableObjectName[];
+    familyTrackIds: FamilyTrackIds;
 }): SlotReading {
-    const { prompt, blanked, masked, slot, references, context, objects } = input;
+    const { prompt, blanked, masked, slot, references, context, objects, familyTrackIds } = input;
     const reading: SlotReading = {
         complete: true,
         uniqueTrackOwners: true,
@@ -363,7 +404,7 @@ function readSlotMembers(input: {
             state.pendingControls = [];
             state.lastOwner = null;
         }
-        const parsed = parseSlotMember({ prompt, blanked, masked, slot, range, objects });
+        const parsed = parseSlotMember({ prompt, blanked, masked, slot, range, objects, familyTrackIds });
         applySlotMember(state, range, parsed, references, trackIds);
     }
     if (slot.memberSeparators.length > 0 && state.pendingControls.length > 0) {
@@ -380,46 +421,6 @@ function adoptControls<Owner extends { controls: string[] }>(owner: Owner, pendi
     }
     owner.controls.unshift(...pending);
     return owner;
-}
-
-/** The extra names a project holds that the refinement reader's candidates leave out. */
-function getExtraCandidates(context: ProjectContext): ReferenceCandidate[] {
-    const groups: Array<ReadonlyArray<{ id: string; name: string }> | undefined> = [
-        context.markers,
-        context.sections,
-        context.automationLanes,
-        context.adjustmentLayers,
-    ];
-    const named = groups.flatMap((objects) => objects ?? []);
-    return named.map((object) => ({
-        name: object.name
-            .toLocaleLowerCase()
-            .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-            .trim(),
-        denotes: new Set([object.id]),
-    }));
-}
-
-function normalizeName(name: string): string {
-    return name
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
-
-/** The tracks, buses and VCA groups a kind form can bind a variant of a name to, by normalized name. */
-function readProtectableObjects(context: ProjectContext): ProtectableObjectName[] {
-    const tracks = context.tracks.map((track) => ({
-        name: normalizeName(track.name),
-        kind: track.kind === 'bus' ? ('bus' as const) : ('track' as const),
-        trackIds: [track.id],
-    }));
-    const groups = (context.vcaGroups ?? []).map((group) => ({
-        name: normalizeName(group.name),
-        kind: 'group' as const,
-        trackIds: group.trackIds,
-    }));
-    return [...tracks, ...groups];
 }
 
 function hasSelectedClip(context: ProjectContext): boolean {
@@ -551,16 +552,22 @@ function readTargetTrackIds(
     return targets;
 }
 
-/** What a bound track name protects: the whole track, or only the operations its controls name. */
+/**
+ * What a bound track name protects: the whole track, or only the operations its controls name. A role
+ * family beside a track the request names as its target means the rest of that family ("brighten the
+ * Overheads but leave the drums alone"), and an `otherwise` clause exempts every member's targets.
+ */
 function protectBoundMembers(
     bound: readonly BoundMember[],
     found: Accumulator,
-    exemptTrackIds: ReadonlySet<string>
+    targetTrackIds: ReadonlySet<string>,
+    otherwise: boolean
 ): void {
     for (const member of bound) {
-        for (const trackId of member.trackIds.filter((id) => !exemptTrackIds.has(id))) {
+        const exemptsTargets = otherwise || !member.byName;
+        for (const trackId of member.trackIds.filter((id) => !exemptsTargets || !targetTrackIds.has(id))) {
             protectControls(found, trackId, member.controls);
-            if (member.controls.length === 0) {
+            if (member.controls.length === 0 && member.byName) {
                 found.namedTrackIds.add(trackId);
             }
         }
@@ -597,7 +604,10 @@ export function readExplicitProtections(
     context: ProjectContext,
     options: { requireUniqueTrackOwners?: boolean } = {}
 ): ProtectionReading {
-    const candidates = [...refinementRequestReading.candidates(context), ...getExtraCandidates(context)];
+    const candidates = [
+        ...refinementRequestReading.candidates(context),
+        ...protectionCandidates.extraCandidates(context),
+    ];
     const scanned = scanPromptQuotedText(prompt).maskedText;
     const reservedSelections = Array.from(scanned.matchAll(RESERVED_SELECTION), (match) => ({
         start: match.index,
@@ -623,7 +633,9 @@ export function readExplicitProtections(
     const resolvedTrackClauses: Range[] = [];
     let found = createAccumulator();
     const slots = protectionSlots.read(masked);
-    const objects = readProtectableObjects(context);
+    const objects = protectionCandidates.protectableObjects(context);
+    const familyTrackIds: FamilyTrackIds = (family) =>
+        resolveWorkflowTrackIds(context, `protection-role-${family}`, { all: [{ roleFamily: family }] });
     const targetTrackIds = readTargetTrackIds(references, slots, context);
     let wholeBeforeCarveOut: string[] = [];
     for (const slot of slots) {
@@ -631,7 +643,16 @@ export function readExplicitProtections(
             found = createAccumulator();
             readings.push(found);
         }
-        const reading = readSlotMembers({ prompt, blanked, masked, slot, references, context, objects });
+        const reading = readSlotMembers({
+            prompt,
+            blanked,
+            masked,
+            slot,
+            references,
+            context,
+            objects,
+            familyTrackIds,
+        });
         for (const reference of reading.unresolved) {
             found.unresolved.add(reference);
         }
@@ -644,8 +665,7 @@ export function readExplicitProtections(
         if (!slot.exempts) {
             if (slot.strict) {
                 // "Leave the Drums alone otherwise" keeps everything but the request's own targets.
-                const exempt = slot.otherwise ? targetTrackIds : new Set<string>();
-                protectBoundMembers(reading.bound, found, exempt);
+                protectBoundMembers(reading.bound, found, targetTrackIds, slot.otherwise);
                 for (const trackId of readVcaMemberTracks(references, slot, vcaGroups, reading.unreadContinuations)) {
                     found.wholeTrackIds.add(trackId);
                 }

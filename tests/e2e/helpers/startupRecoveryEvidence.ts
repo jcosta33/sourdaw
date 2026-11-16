@@ -41,17 +41,15 @@ export async function readStartupSnapshot(page: Frame): Promise<Snapshot> {
         const crdtPath = '/src/modules/CrdtDocument/useCases/index.ts';
         const inspectionPath = '/src/modules/CrdtDocument/useCases/agentProjectInspectionPort.ts';
         const audioPath = '/src/modules/AudioEngine/useCases/index.ts';
-        const arrangement: typeof import('../../../src/modules/Arrangement/stores') = await import(arrangementPath);
-        const midi: typeof import('../../../src/modules/MIDI/stores') = await import(midiPath);
-        const automation: typeof import('../../../src/modules/Automation/stores') = await import(automationPath);
-        const project: typeof import('../../../src/modules/Project/stores') = await import(projectPath);
-        const crdt: typeof import('../../../src/modules/CrdtDocument/useCases') = await import(crdtPath);
-        const {
-            agentProjectInspectionPort,
-        }: typeof import('../../../src/modules/CrdtDocument/useCases/agentProjectInspectionPort') = await import(
+        const arrangement = (await import(arrangementPath)) as typeof import('../../../src/modules/Arrangement/stores');
+        const midi = (await import(midiPath)) as typeof import('../../../src/modules/MIDI/stores');
+        const automation = (await import(automationPath)) as typeof import('../../../src/modules/Automation/stores');
+        const project = (await import(projectPath)) as typeof import('../../../src/modules/Project/stores');
+        const crdt = (await import(crdtPath)) as typeof import('../../../src/modules/CrdtDocument/useCases');
+        const { agentProjectInspectionPort } = (await import(
             inspectionPath
-        );
-        const audio: typeof import('../../../src/modules/AudioEngine/useCases') = await import(audioPath);
+        )) as typeof import('../../../src/modules/CrdtDocument/useCases/agentProjectInspectionPort');
+        const audio = (await import(audioPath)) as typeof import('../../../src/modules/AudioEngine/useCases');
         const document = crdt.getCrdtDoc('root');
         const projectState = project.projectStore.value;
         const tracks = arrangement.trackStore.value?.tracks;
@@ -121,7 +119,7 @@ export async function readStartupSnapshot(page: Frame): Promise<Snapshot> {
             projectId: projectState.projectId,
             witness,
             tracks,
-            mirror: JSON.parse(serialized),
+            mirror: JSON.parse(serialized) as unknown,
             exact: { ...exact, pcm },
             inspection,
             counts: {
@@ -134,7 +132,7 @@ export async function readStartupSnapshot(page: Frame): Promise<Snapshot> {
             },
         });
     });
-    return JSON.parse(serializedSnapshot);
+    return JSON.parse(serializedSnapshot) as Snapshot;
 }
 
 export async function expectStartupExact(page: Frame, expected: Snapshot): Promise<Snapshot> {
@@ -143,7 +141,9 @@ export async function expectStartupExact(page: Frame, expected: Snapshot): Promi
             () =>
                 page.evaluate(async (projectId: string) => {
                     const path = '/src/modules/Project/stores/index.ts';
-                    const { projectStore }: typeof import('../../../src/modules/Project/stores') = await import(path);
+                    const { projectStore } = (await import(
+                        path
+                    )) as typeof import('../../../src/modules/Project/stores');
                     const state = projectStore.value;
                     return state?.initialized === true && state.loading === false && state.projectId === projectId;
                 }, expected.projectId),

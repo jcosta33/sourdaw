@@ -8,7 +8,7 @@ use crate::host::plugin_registry_store::{
     RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
-use crate::host::plugin_scan_worker::{self, ScanFailure};
+use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
@@ -270,6 +270,21 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 /// can produce was not written by one. The two bounds have to move together, or
 /// the cap quietly stops meaning what it says.
 pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
+
+/// The most bytes of one candidate's helper failure text a scan reports.
+///
+/// That text can be the helper's own `Err`, which is the plugin's bytes and
+/// bounded only by the response limit (16 MiB). A few hundred bytes carry any
+/// real diagnostic; the rest is cut on a character boundary and marked with
+/// [`TRUNCATED_SCAN_ERROR_MARKER`].
+const MAX_SCAN_ERROR_TEXT_BYTES: usize = 512;
+
+const TRUNCATED_SCAN_ERROR_MARKER: &str = "… (truncated)";
+
+/// The most candidate failures one scan reports by name. The rest are
+/// counted in one closing entry, so a folder of broken bundles answers with a
+/// short list rather than one row per candidate the walk reached.
+const MAX_REPORTED_CANDIDATE_ERRORS: usize = 32;
 
 /// The whole enumeration's clock.
 ///
@@ -539,6 +554,72 @@ fn quarantine_if_process_failure(
     }
 }
 
+/// `text` cut to [`MAX_SCAN_ERROR_TEXT_BYTES`] on a character boundary, with
+/// the marker appended when anything was cut.
+fn bounded_scan_error_text(text: &str) -> String {
+    if text.len() <= MAX_SCAN_ERROR_TEXT_BYTES {
+        return text.to_string();
+    }
+    let kept = &text[..text.floor_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES)];
+    format!("{kept}{TRUNCATED_SCAN_ERROR_MARKER}")
+}
+
+/// The folder-walk and candidate failures one scan reports: each candidate's
+/// text bounded, the first [`MAX_REPORTED_CANDIDATE_ERRORS`] by name and the rest counted.
+#[derive(Default)]
+struct CandidateErrors {
+    reported: Vec<String>,
+    omitted: usize,
+}
+
+impl CandidateErrors {
+    /// A candidate whose helper failed, its failure text bounded.
+    fn record(&mut self, path: &Path, error: &ScanFailure) {
+        self.push(|| {
+            format!(
+                "{}: {}",
+                path.display(),
+                bounded_scan_error_text(&error.to_string())
+            )
+        });
+    }
+
+    /// A candidate that changed while the helper read it.
+    fn record_changed_file(&mut self, path: &Path) {
+        self.push(|| {
+            format!(
+                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
+                path.display()
+            )
+        });
+    }
+
+    /// A row the folder walk produced, already worded. It shares the candidate
+    /// cap so the user's one list has one limit and one closing summary.
+    fn record_walk_row(&mut self, row: String) {
+        self.push(|| row);
+    }
+
+    /// The row is built only when it will be reported.
+    fn push(&mut self, row: impl FnOnce() -> String) {
+        if self.reported.len() >= MAX_REPORTED_CANDIDATE_ERRORS {
+            self.omitted += 1;
+            return;
+        }
+        self.reported.push(row());
+    }
+
+    /// The entries in report order, the omitted count last.
+    fn into_entries(self) -> impl Iterator<Item = String> {
+        let summary = match self.omitted {
+            0 => None,
+            1 => Some("1 more plugin scan error was not listed".to_string()),
+            omitted => Some(format!("{omitted} more plugin scan errors were not listed")),
+        };
+        self.reported.into_iter().chain(summary)
+    }
+}
+
 /// Apply one instance-pass outcome to its descriptor row.
 ///
 /// Success fills in parameters and capabilities. Failure always leaves the
@@ -614,16 +695,61 @@ async fn scan_plugins_with_policy(
     scan_policy: PluginScanPolicy,
     state: &AppState,
 ) -> Result<ScanResult, String> {
+    let descriptor_store = Arc::clone(&state.plugin_registry_store);
+    let instance_store = Arc::clone(&state.plugin_registry_store);
     scan_plugins_with_backend(
         paths,
         retry_quarantined,
         scan_policy,
         PRODUCTION_SCAN_BUDGET,
         state,
-        plugin_scan_worker::scan_descriptor_metadata,
-        plugin_scan_worker::scan_instance_metadata,
+        move |format, path, timeout| {
+            remembering_scan_consumption(&descriptor_store, path, |recorded_consumption| {
+                plugin_scan_worker::scan_descriptor_metadata(
+                    format,
+                    path,
+                    timeout,
+                    recorded_consumption,
+                )
+            })
+        },
+        move |format, path, plugin_id, timeout| {
+            remembering_scan_consumption(&instance_store, path, |recorded_consumption| {
+                plugin_scan_worker::scan_instance_metadata(
+                    format,
+                    path,
+                    plugin_id,
+                    timeout,
+                    recorded_consumption,
+                )
+            })
+        },
     )
     .await
+}
+
+/// Run one scan helper for the binary at `path` with the most free space a
+/// recent earlier run of it consumed, and remember what this run consumed
+/// against it.
+///
+/// The helper attributes a full disk after an exit 3 to the plugin when a
+/// recent run of the binary itself consumed a gibibyte (#6943), so a plugin
+/// cannot fill most of the volume on one scan that exits 0 and the rest on the
+/// next. The consumption is recorded before the next helper of the same scan
+/// runs, so the descriptor pass's run covers the instance passes after it. A
+/// process-lifetime cache would lose it on restart and let the plugin escape
+/// on the first scan after every launch, so it lives in the registry file.
+fn remembering_scan_consumption<T>(
+    registry_store: &PluginRegistryStore,
+    path: &Path,
+    scan: impl FnOnce(Option<u64>) -> ScanAttempt<T>,
+) -> Result<T, ScanFailure> {
+    let now_ms = quarantine_timestamp_ms();
+    let attempt = scan(registry_store.recent_scan_consumption(path, now_ms));
+    if let Some(consumed) = attempt.consumed_bytes {
+        registry_store.record_scan_consumption(path, consumed, now_ms);
+    }
+    attempt.result
 }
 
 /// `budget` and `scan_descriptor`/`scan_instance` are parameters so a test can
@@ -679,15 +805,20 @@ async fn scan_plugins_with_backend(
             let mut candidates = Vec::new();
             let mut notices = Vec::new();
             let mut scan_complete = true;
+            let mut reported_errors = CandidateErrors::default();
             for path in scan_roots {
                 let root_begins_at = candidates.len();
+                let mut walk_errors = Vec::new();
                 let root_completed = scanner::scan_directory_bounded(
                     &path,
                     &mut candidates,
-                    &mut scan_errors,
+                    &mut walk_errors,
                     &mut notices,
                     (MAX_SCAN_CANDIDATES, deadline),
                 );
+                for row in walk_errors {
+                    reported_errors.record_walk_row(row);
+                }
                 // Sorted within the root and never across roots. Directory order
                 // is whatever the filesystem hands back, so a root has to be
                 // sorted to scan the same way twice; the roots themselves are
@@ -809,18 +940,16 @@ async fn scan_plugins_with_backend(
                             }
                             // Not quarantined: nothing about the helper
                             // failed, and the next scan reads the file afresh.
-                            None => scan_errors.push(format!(
-                                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
-                                candidate.path.display()
-                            )),
+                            None => reported_errors.record_changed_file(&candidate.path),
                         }
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
-                        scan_errors.push(format!("{}: {error}", candidate.path.display()))
+                        reported_errors.record(&candidate.path, &error);
                     }
                 }
             }
+            scan_errors.extend(reported_errors.into_entries());
             retain_first_plugin_per_identity(&mut plugins);
             // Deliberately not `publish_scan_results_in_registry`'s predicate:
             // that one drops every registry entry under a scanned root and
@@ -1537,6 +1666,7 @@ fn lock_registry(
 /// user was actually using, and that row is returned; guessing the bundle's
 /// first plugin would load a different plugin and hand it the sibling's state.
 fn rescan_plugin_file(
+    registry_store: &PluginRegistryStore,
     format: &str,
     path: &Path,
     plugin_id: &str,
@@ -1547,8 +1677,17 @@ fn rescan_plugin_file(
     // would let a rename decide which extractor loads the file.
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| RescanFailure::Verdict(format!("Unknown plugin format: {format}")))?;
-    let bundle =
-        plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
+    // A targeted rescan never quarantines, but its helper runs the plugin like
+    // any other, so its consumption joins the binary's history: a fill begun here
+    // is still attributed on the next full scan.
+    let bundle = remembering_scan_consumption(registry_store, path, |recorded_consumption| {
+        plugin_scan_worker::scan_descriptor_metadata(
+            format,
+            path,
+            TARGETED_RESCAN_TIMEOUT,
+            recorded_consumption,
+        )
+    })?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -1910,13 +2049,16 @@ pub async fn load_plugin(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
+    let registry_store = Arc::clone(&state.plugin_registry_store);
     load_plugin_with_backend(
         plugin_id,
         instance_id,
         windows_host,
         state,
         PluginScanPolicy::production(),
-        rescan_plugin_file,
+        move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            rescan_plugin_file(&registry_store, format, path, plugin_id, descriptor_id)
+        },
         create_hosted_runtime,
     )
     .await
@@ -8551,6 +8693,322 @@ mod tests {
         .expect("a scan over an authorized fixture root should succeed")
     }
 
+    /// A scan over `count` fixture candidates whose descriptor helper reports
+    /// `error_text` as its `Err` — the plugin's own bytes.
+    fn scan_with_failing_candidates(
+        test_name: &str,
+        count: usize,
+        error_text: String,
+    ) -> ScanResult {
+        scan_fixture_candidates(test_name, count, move |_path| {
+            Err(ScanFailure::Refused(error_text.clone()))
+        })
+    }
+
+    /// A scan over `count` fixture candidates whose descriptor pass answers
+    /// with `outcome` for each path.
+    fn scan_fixture_candidates(
+        test_name: &str,
+        count: usize,
+        outcome: impl Fn(&Path) -> Result<Vec<ScannedDescriptor>, ScanFailure> + Send + 'static,
+    ) -> ScanResult {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        for index in 0..count {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, _timeout| outcome(path),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan whose candidates fail still answers");
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// A descriptor answer for a file that is then changed in place, as a
+    /// write landing while the helper read it would.
+    fn changed_while_scanned(path: &Path) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+        std::fs::write(path, b"a different, longer plugin file").expect("fixture rewritten");
+        Ok(vec![descriptor_for(path)])
+    }
+
+    const CHANGED_FILE_ROW_SUFFIX: &str = ": the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.";
+
+    /// The file-changed row is a candidate error like any other: it counts
+    /// under the same cap and the same closing summary. Mutation this
+    /// catches: pushing it straight into `scan_errors`.
+    #[test]
+    fn file_changed_rows_count_under_the_candidate_error_cap() {
+        let scan = scan_fixture_candidates(
+            "scan-many-changed",
+            MAX_REPORTED_CANDIDATE_ERRORS + 5,
+            changed_while_scanned,
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(CHANGED_FILE_ROW_SUFFIX)));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("5 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Process failures and file-changed rows share one cap, not one each.
+    #[test]
+    fn helper_failures_and_file_changed_rows_share_one_cap() {
+        let scan = scan_fixture_candidates(
+            "scan-mixed-errors",
+            MAX_REPORTED_CANDIDATE_ERRORS + 8,
+            |path| {
+                let index: usize = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .and_then(|stem| stem.strip_prefix("Broken"))
+                    .and_then(|index| index.parse().ok())
+                    .expect("fixture names carry their index");
+                if index.is_multiple_of(2) {
+                    Err(ScanFailure::ExitedUnsuccessfully {
+                        path: path.to_path_buf(),
+                    })
+                } else {
+                    changed_while_scanned(path)
+                }
+            },
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        let listed = &scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS];
+        assert!(listed
+            .iter()
+            .any(|entry| entry.ends_with(CHANGED_FILE_ROW_SUFFIX)));
+        assert!(listed
+            .iter()
+            .any(|entry| entry.contains("Plugin scan helper exited unsuccessfully")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("8 more plugin scan errors were not listed")
+        );
+    }
+
+    /// A scan over a root holding `unreadable` subdirectories the walk cannot
+    /// open and `failing` candidates whose descriptor pass fails.
+    #[cfg(unix)]
+    fn scan_root_with_unreadable_directories(
+        test_name: &str,
+        unreadable: usize,
+        failing: usize,
+    ) -> ScanResult {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        let locked: Vec<PathBuf> = (0..unreadable)
+            .map(|index| root.join(format!("Locked{index:03}")))
+            .collect();
+        for dir in &locked {
+            std::fs::create_dir(dir).expect("fixture directory created");
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o000))
+                .expect("fixture directory locked");
+        }
+        for index in 0..failing {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            |_format, _path, _timeout| Err(ScanFailure::Refused("bad".to_string())),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan over unreadable folders still answers");
+        for dir in &locked {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755))
+                .expect("fixture directory unlocked");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// #6937: the folder walk's rows count under the one cap, with one
+    /// closing summary. Mutation this catches: pushing the walk's rows
+    /// straight into `scan_errors`.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_directory_rows_are_capped_with_one_summary() {
+        let scan = scan_root_with_unreadable_directories(
+            "scan-many-unreadable",
+            MAX_REPORTED_CANDIDATE_ERRORS + 5,
+            0,
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.starts_with("Cannot read ")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("5 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Walk rows and candidate failures draw on the same cap and close with
+    /// one summary counting both.
+    #[cfg(unix)]
+    #[test]
+    fn walk_rows_and_candidate_failures_share_one_cap() {
+        let scan = scan_root_with_unreadable_directories("scan-mixed-walk-and-candidates", 20, 20);
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        let listed = &scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS];
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.starts_with("Cannot read "))
+                .count(),
+            20
+        );
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.ends_with(": bad"))
+                .count(),
+            MAX_REPORTED_CANDIDATE_ERRORS - 20
+        );
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("8 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Exactly the cap lists every failure with no summary; one past it
+    /// lists the cap and counts the one.
+    #[test]
+    fn the_candidate_error_cap_is_exact_at_its_boundary() {
+        let at_cap = scan_with_failing_candidates(
+            "scan-errors-at-cap",
+            MAX_REPORTED_CANDIDATE_ERRORS,
+            "bad".to_string(),
+        );
+        assert_eq!(at_cap.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS);
+        assert!(at_cap.errors.iter().all(|entry| entry.ends_with(": bad")));
+
+        let past_cap = scan_with_failing_candidates(
+            "scan-errors-past-cap",
+            MAX_REPORTED_CANDIDATE_ERRORS + 1,
+            "bad".to_string(),
+        );
+        assert_eq!(past_cap.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert_eq!(
+            past_cap.errors.last().map(String::as_str),
+            Some("1 more plugin scan error was not listed")
+        );
+    }
+
+    /// Text of exactly the bound is kept whole and unmarked; one byte more
+    /// is cut, on a character boundary, and marked. The 513-byte text ends in
+    /// a two-byte character spanning the bound, so a byte cut would split it.
+    #[test]
+    fn the_error_text_bound_is_exact_at_its_boundary() {
+        let at_bound = "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES);
+        assert_eq!(bounded_scan_error_text(&at_bound), at_bound);
+
+        let past_bound = format!("{}é", "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES - 1));
+        assert_eq!(past_bound.len(), MAX_SCAN_ERROR_TEXT_BYTES + 1);
+        assert_eq!(
+            bounded_scan_error_text(&past_bound),
+            format!(
+                "{}{TRUNCATED_SCAN_ERROR_MARKER}",
+                "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES - 1)
+            )
+        );
+    }
+
+    /// #6661: a helper's `Err` text is bounded before it is reported. The cut
+    /// falls inside a two-byte character, so a byte cut would split it; the
+    /// entry keeps the whole characters before it and is marked. Mutation
+    /// this catches: pushing the text whole, or cutting at the byte bound.
+    #[test]
+    fn a_huge_helper_error_is_reported_bounded_on_a_character_boundary() {
+        let text = format!("a{}", "é".repeat(512 * 1024));
+        assert!(
+            !text.is_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES),
+            "the fixture's cut point must fall inside a character"
+        );
+
+        let scan = scan_with_failing_candidates("scan-huge-error", 1, text.clone());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!(
+                "one failing candidate reports one entry: {:?}",
+                scan.errors.len()
+            );
+        };
+        let (_path, reported) = entry
+            .split_once(": ")
+            .expect("an entry names its candidate first");
+        assert!(
+            reported.ends_with(TRUNCATED_SCAN_ERROR_MARKER),
+            "{reported}"
+        );
+        let kept = reported
+            .strip_suffix(TRUNCATED_SCAN_ERROR_MARKER)
+            .expect("the marker was just found");
+        assert!(
+            kept.len() <= MAX_SCAN_ERROR_TEXT_BYTES,
+            "{} bytes kept",
+            kept.len()
+        );
+        assert_eq!(kept, &text[..MAX_SCAN_ERROR_TEXT_BYTES - 1]);
+    }
+
+    /// Text within the bound is reported as the helper wrote it, unmarked.
+    #[test]
+    fn a_short_helper_error_is_reported_whole() {
+        let scan = scan_with_failing_candidates("scan-short-error", 1, "bad entry".to_string());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!("one failing candidate reports one entry: {:?}", scan.errors);
+        };
+        assert!(entry.ends_with(": bad entry"), "{entry}");
+    }
+
+    /// #6661: a folder of broken bundles reports the first failures by name
+    /// and counts the rest in one closing entry. Mutation this catches:
+    /// dropping the cap, or the summary's count.
+    #[test]
+    fn many_failing_candidates_report_a_capped_list_and_the_omitted_count() {
+        let failing = MAX_REPORTED_CANDIDATE_ERRORS + 9;
+
+        let scan = scan_with_failing_candidates("scan-many-errors", failing, "bad".to_string());
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(": bad")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("9 more plugin scan errors were not listed")
+        );
+    }
+
     /// A candidate replaced after its helper read it, while the walk was still
     /// running, must not be recorded at all. The fingerprint used to be taken
     /// after the walk, from whatever sat at the path by then, so the
@@ -11668,5 +12126,46 @@ mod tests {
             parameter_metadata_reason: None,
             capabilities: None,
         }
+    }
+
+    /// #6943: what one helper run consumed reaches the next run for the same
+    /// binary, and only that binary. Mutation this catches: not recording the
+    /// consumption, or not handing it to the next helper.
+    #[test]
+    fn a_runs_consumption_reaches_the_next_helper_run_for_the_same_binary() {
+        let store = PluginRegistryStore::in_memory_only();
+        let filler = Path::new("/plugins/Filler.clap");
+        let filled = 64_u64 << 30;
+        let ran = |consumed_bytes| ScanAttempt {
+            result: Ok(()),
+            consumed_bytes,
+        };
+
+        let mut first_recorded = Some(0);
+        remembering_scan_consumption(&store, filler, |recorded_consumption| {
+            first_recorded = recorded_consumption;
+            ran(Some(filled))
+        })
+        .expect("the stand-in run succeeds");
+        let mut next_recorded = None;
+        remembering_scan_consumption(&store, filler, |recorded_consumption| {
+            next_recorded = recorded_consumption;
+            ran(Some(0))
+        })
+        .expect("the stand-in run succeeds");
+        let mut other_recorded = Some(0);
+        remembering_scan_consumption(
+            &store,
+            Path::new("/plugins/Other.clap"),
+            |recorded_consumption| {
+                other_recorded = recorded_consumption;
+                ran(None)
+            },
+        )
+        .expect("the stand-in run succeeds");
+
+        assert_eq!(first_recorded, None);
+        assert_eq!(next_recorded, Some(filled));
+        assert_eq!(other_recorded, None);
     }
 }

@@ -14,6 +14,7 @@ import {
     ESLINT_SUPPRESSIONS_FILE,
     eslintEnvironment,
     expectedPluginFiles,
+    FULL_ESLINT_PASSES,
     FULL_ESLINT_TARGETS,
     FULL_OXLINT_TARGETS,
     isIgnoredByPattern,
@@ -43,15 +44,17 @@ describe('runLint arguments', () => {
 });
 
 describe('full-run lint targets', () => {
-    it('includes electron alongside src and scripts', () => {
-        expect(FULL_OXLINT_TARGETS).toContain('src');
-        expect(FULL_OXLINT_TARGETS).toContain('scripts');
-        expect(FULL_OXLINT_TARGETS).toContain('electron');
-
-        expect(FULL_ESLINT_TARGETS).toContain('src/**/*.{ts,tsx}');
-        expect(FULL_ESLINT_TARGETS).toContain('scripts/**/*.ts');
-        expect(FULL_ESLINT_TARGETS).toContain('electron/**/*.ts');
-        expect(FULL_ESLINT_TARGETS).toContain('scripts/lint/sourdaw.mjs');
+    it('names every linted tree, so dropping one fails', () => {
+        expect([...FULL_OXLINT_TARGETS]).toEqual(['src', 'scripts', 'electron', 'tests/e2e', 'server']);
+        expect(FULL_ESLINT_PASSES.map((pass) => [pass.label, pass.cacheGroup, [...pass.targets]])).toEqual([
+            [
+                'eslint',
+                undefined,
+                ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'electron/**/*.ts', 'scripts/lint/sourdaw.mjs'],
+            ],
+            ['eslint e2e-server', 'e2e-server', ['tests/e2e/**/*.ts', 'server/**/*.ts']],
+        ]);
+        expect([...FULL_ESLINT_TARGETS]).toEqual(FULL_ESLINT_PASSES.flatMap((pass) => [...pass.targets]));
     });
 });
 
@@ -60,7 +63,7 @@ describe('public plugin pass coverage', () => {
         const targets = publicPluginTargets({ files: [], full: true });
 
         expect(targets.filter((target) => /[*?{}[\]]/.test(target))).toEqual([]);
-        expect(targets).toEqual(['src', 'scripts', 'electron']);
+        expect(targets).toEqual(['src', 'scripts', 'electron', 'tests/e2e', 'server']);
         expect(buildPublicPluginsArgv(targets).filter((argument) => argument.includes('*'))).toEqual([]);
     });
 
@@ -159,8 +162,11 @@ describe('full run through the entrypoint', () => {
             const argsFile = join(directory, 'git-args');
             writeFileSync(
                 join(directory, 'pnpm'),
-                `#!/bin/sh\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then echo "plugins-args=$*"; echo "Finished in 1s on ${options.lintedFiles} files with 1 rules using 1 threads."; else echo "$2 output"; fi\n`
+                `#!/bin/sh\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then echo "plugins-args=$*"; echo "Finished in 1s on ${options.lintedFiles} files with 1 rules using 1 threads."; else echo "$2 output"; if [ "$2" = "eslint" ]; then echo "eslint-args=$*"; fi; fi\n`
             );
+            // The full run lints server/, whose dependencies the real run installs with npm when absent.
+            writeFileSync(join(directory, 'npm'), '#!/bin/sh\nexit 0\n');
+            chmodSync(join(directory, 'npm'), 0o755);
             const tracked = options.trackedFiles.map((file) => `${file}\\0`).join('');
             writeFileSync(join(directory, 'git'), `#!/bin/sh\necho "$*" > "${argsFile}"\nprintf '${tracked}'\n`);
             chmodSync(join(directory, 'pnpm'), 0o755);
@@ -176,23 +182,51 @@ describe('full run through the entrypoint', () => {
         }
     }
 
-    const trackedFiles = ['src/a.ts', 'scripts/b.ts', 'electron/c.ts'];
+    const trackedFiles = ['src/a.ts', 'scripts/b.ts', 'electron/c.ts', 'tests/e2e/d.spec.ts', 'server/e.ts'];
 
     it('fails a plugin pass that lints fewer files than the targets track, before ESLint runs', () => {
         const { result } = runFull({ lintedFiles: 1, trackedFiles });
 
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain('oxlint-plugins linted 1 files but 3 tracked source files');
+        expect(result.stderr).toContain('oxlint-plugins linted 1 files but 5 tracked source files');
         expect(result.stdout).not.toContain('lint: eslint started');
     });
 
-    it('lists the tracked files of the same directories it hands the plugin pass', () => {
-        const { result, gitArgs } = runFull({ lintedFiles: 3, trackedFiles });
+    it.each(['tests/e2e', 'server'])('fails a plugin pass in which %s contributes no tracked source file', (target) => {
+        const { result } = runFull({
+            lintedFiles: 9,
+            trackedFiles: trackedFiles.filter((file) => !file.startsWith(`${target}/`)),
+        });
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(`oxlint-plugins target ${target} contributes no tracked source file`);
+        expect(result.stdout).not.toContain('lint: eslint started');
+    });
+
+    it('runs ESLint as two sequential passes with separate caches, so no worker holds every program', () => {
+        const { result } = runFull({ lintedFiles: 5, trackedFiles });
 
         expect(result.status, result.stderr).toBe(0);
-        expect(gitArgs).toBe('ls-files -z -- src scripts electron');
+        expect(result.stdout).toMatch(
+            /lint: eslint started\n[^]*lint: eslint passed[^]*lint: eslint e2e-server started\n[^]*lint: eslint e2e-server passed/
+        );
+        const args = result.stdout.split('\n').filter((line) => line.startsWith('eslint-args='));
+        expect(args).toHaveLength(2);
+        expect(args[0]).toContain('node_modules/.cache/eslint/check/ ');
+        expect(args[0]).toContain('src/**/*.{ts,tsx} scripts/**/*.ts electron/**/*.ts scripts/lint/sourdaw.mjs');
+        expect(args[0]).not.toContain('tests/e2e');
+        expect(args[1]).toContain('node_modules/.cache/eslint/check/e2e-server/ ');
+        expect(args[1]).toMatch(/tests\/e2e\/\*\*\/\*\.ts server\/\*\*\/\*\.ts$/);
+        expect(args[1]).not.toContain('src/');
+    });
+
+    it('lists the tracked files of the same directories it hands the plugin pass', () => {
+        const { result, gitArgs } = runFull({ lintedFiles: 5, trackedFiles });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(gitArgs).toBe('ls-files -z -- src scripts electron tests/e2e server');
         expect(result.stdout).toContain('plugins-args=exec oxlint --config=.oxlint-plugins.json --quiet');
-        expect(result.stdout).toMatch(/plugins-args=.* src scripts electron\n/);
+        expect(result.stdout).toMatch(/plugins-args=.* src scripts electron tests\/e2e server\n/);
         expect(result.stdout).toContain('lint: eslint passed');
     });
 });

@@ -297,6 +297,16 @@
             "rules": { "import/no-default-export": "off" }
         },
         {
+            "files": ["tests/e2e/**/*.ts"],
+            "rules": {
+                // Playwright's Locator.innerText() returns rendered text; it is not the DOM
+                // Node.innerText property this rule targets, and textContent() reads different text.
+                "unicorn/prefer-dom-node-text-content": "off",
+                // A Playwright fixture with no dependencies must destructure `{}` as its first parameter.
+                "no-empty-pattern": ["error", { "allowObjectPatternsAsParameters": true }]
+            }
+        },
+        {
             // Non-JSX files: the jsx-a11y-x recommended preset enforces these at
             // error on .ts files (the .tsx-only warn/off relaxations in
             // eslint.config.mjs never matched them).
