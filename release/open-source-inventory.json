@@ -301,7 +301,7 @@
                 "sha256:4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102",
                 "sha256:a94654faf2322892cd82b403a21b97fe3d8c88df091e1724c685bc6217eb6550",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
-                "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "per-package declared terms, retained legal files, or assembled license records"
@@ -377,7 +377,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -524,6 +524,9 @@
                 "public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt",
                 "public/legal/MLC-LLM-NOTICE.txt",
                 "public/legal/Qwen-NOTICE.txt",
+                "public/legal/Llama-NOTICE.txt",
+                "public/legal/Llama-3.1-LICENSE.txt",
+                "public/legal/Llama-3.1-ACCEPTABLE-USE-POLICY.txt",
                 "public/legal/THIRD-PARTY-NOTICES.md",
                 "public/legal/Apache-TVM/3rdparty/tvm-tirx/LICENSE",
                 "public/legal/Apache-TVM/3rdparty/tvm-tirx/NOTICE",
@@ -557,7 +560,12 @@
                 "https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/LICENSE",
                 "https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/NOTICE",
                 "https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/licenses/LICENSE.builtin_fp16.txt",
-                "https://github.com/apache/tvm-tirx/tree/198a04573ea44e060c1087c8223cf082c64a6c03"
+                "https://github.com/apache/tvm-tirx/tree/198a04573ea44e060c1087c8223cf082c64a6c03",
+                "https://huggingface.co/mlc-ai/Llama-3.1-70B-Instruct-q3f16_1-MLC/tree/9d30b348cad6c840c8568ae585e1690f19f4338c",
+                "https://github.com/meta-llama/llama-models/blob/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/LICENSE",
+                "https://github.com/meta-llama/llama-models/blob/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/USE_POLICY.md",
+                "https://www.llama.com/llama3_1/license/",
+                "https://www.llama.com/llama3_1/use-policy/"
             ],
             "revisions": [
                 "MLC conversion Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
@@ -571,7 +579,9 @@
                 "Apache TVM source e345029cedf0be76a087fcad9c89a97bed4f7204",
                 "Apache TVM TIRx FFI submodule 6628c464e3b824d09c9cf65ac0c6c24f973f6d56",
                 "@mlc-ai/web-llm 0.2.84 gitHead 9e572d6ed95e248f29634996cd32cc8f3023d89d",
-                "Apache TVM TIRx submodule 198a04573ea44e060c1087c8223cf082c64a6c03"
+                "Apache TVM TIRx submodule 198a04573ea44e060c1087c8223cf082c64a6c03",
+                "MLC conversion Llama-3.1-70B-Instruct 9d30b348cad6c840c8568ae585e1690f19f4338c",
+                "meta-llama/llama-models licence 1f0feb795a4130697ced243fb53051670d591653"
             ],
             "digests": [
                 "npm-integrity:sha512-hrOWzK4/nGNmgoRKT8pgVmZZ2oEPpbblIWQOwpqNyvK2dysHw3KVB1gNJOuRcQfKOPhucEhX1NJzXzgMDnwSCQ==:@mlc-ai/web-llm@0.2.84",
@@ -579,7 +589,8 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:ddc80f2bc383f7e8a5eeef4dc39a1545f4154cb8a82fcb71af761bdac1d661c0:public/legal/Llama-NOTICE.txt",
+                "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991",
                 "sha256:363f4dbb789f0518e52295d1f4685d2d61feae4ac4e2a6a95621e4af29450bd7:6589747:web-llm-models/v0_2_87/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm",
                 "sha256:2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756",
@@ -602,9 +613,14 @@
                 "sha256:3e8f6bc39276a586d60c8c5aaece2ff989262181cf2b3d2a128db58f97a9300c:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt",
                 "sha256:769d83cbbb817ba4e25d1f166238426aa45519981eca116011e4113087c7b7b3:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt",
                 "sha256:a8a2c6b67cf8a597ffaa5c82380a6bd1b82629c0417e00673d8013d662eb500a:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt",
-                "sha256:c2cc7bf0caec7652c2b460a8a470bea1677f241e4ab8e431df34cf17f5a9fec0:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt"
+                "sha256:c2cc7bf0caec7652c2b460a8a470bea1677f241e4ab8e431df34cf17f5a9fec0:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt",
+                "sha256:c5b181b8df7e33660d14aba38131081bab344cfd09f6f6616df93b69b0023ff0",
+                "sha256:db78950bc873f57c08f03298091069e2b0aa0c9c1eb89d1d625c57fe9bea9c31:9541090:web-llm-models/v0_2_87/base/Llama-3_1-70B-Instruct-q3f16_1_cs1k-webgpu.wasm",
+                "sha256:bf2eac60b81e5c5f779fc3b4849d3bfacfd63f97f3eb68b44e9c6868c5801712:public/legal/Llama-3.1-LICENSE.txt",
+                "sha256:f456a3f5b15ab588c84d06cf095a245bfee0bbc1620b48ed00af2cca4a711735:public/legal/Llama-3.1-ACCEPTABLE-USE-POLICY.txt"
             ],
             "licenses": [
+                "LicenseRef-Llama-3.1-Community-License:Llama-3.1-70B-Instruct-conversion",
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
                 "Apache-2.0:MLC-LLM-WebLLM-runtime",
                 "mixed-license-materials:Apache-TVM-root-and-full-referenced-license-notice-trees",
@@ -619,13 +635,15 @@
                 "The binary-mlc-llm-libs merge contains the admitted WASM bytes; merged PR168 names exact MLC-LLM and TVM sources. TVM pins TIRx198a04573ea44e060c1087c8223cf082c64a6c03, which pins FFI6628c464e3b824d09c9cf65ac0c6c24f973f6d56. Their exact notices, root licenses and referenced legal files are shipped byte-for-byte; the public FFI attribution namespace does not mirror the nested upstream gitlink.",
                 "Each MLC conversion card attributes its conversion to a Qwen model family; immutable Qwen3 1.7B, 4B, and 8B candidates publish byte-identical Apache-2.0 licenses and support the accepted admission decision.",
                 "The exact conversion cards do not map to base-checkpoint revisions, and PR168 does not record exact emsdk, resolved configuration, or build-log inputs. MLC supports a TVM_SOURCE_DIR override; its default TVM gitlink is not the publisher-named checkout. Binary byte identity, named MLC-LLM/TVM sources and nested TIRx/FFI source pins are proven; exact Qwen source/license chain, hermetic reproduction, and complete build-input provenance are not.",
-                "The retained @mlc-ai/web-llm0.2.84 source, npm integrity and LICENSE digest are solely an immutable Apache-2.0 grant reference for this admitted legal text, not the current SDK executable or its source identity. Current SDK0.2.88 dependency identity and license disclosure belong to the javascript-dependencies surface and dependency report."
+                "The retained @mlc-ai/web-llm0.2.84 source, npm integrity and LICENSE digest are solely an immutable Apache-2.0 grant reference for this admitted legal text, not the current SDK executable or its source identity. Current SDK0.2.88 dependency identity and license disclosure belong to the javascript-dependencies surface and dependency report.",
+                "The Llama 3.1 70B Instruct conversion card attributes it to meta-llama/Meta-Llama-3.1-70B-Instruct without mapping an exact checkpoint revision; the agreement and Acceptable Use Policy shipped are byte-identical to meta-llama/llama-models 1f0feb795a4130697ced243fb53051670d591653 models/llama3_1, whose clauses match Meta's published licence page. Admission is recorded in ADR 0060."
             ],
             "obligations": [
                 "Carry the Apache-2.0 text, Qwen attribution, exact MLC-LLM notice, and exact TVM, TIRx and FFI root licenses/notices and referenced legal files on the public web and desktop legal surfaces.",
                 "Preserve the pinned revisions, artifact digests, byte verification, and fail-closed behavior when WebGPU is unavailable.",
                 "Do not represent the licensed Qwen candidates or incomplete upstream build record as an exact Qwen source/license chain, exact conversion inputs, or a hermetic reproduction recipe.",
-                "Reassess admission if conflicting licensing or provenance evidence appears for an exact conversion artifact."
+                "Reassess admission if conflicting licensing or provenance evidence appears for an exact conversion artifact.",
+                "Carry the Llama 3.1 Community License agreement and Acceptable Use Policy and the Llama-NOTICE attribution (Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.) on the public web and desktop legal surfaces, display Built with Llama with the Llama 3.1 Community License name on the Large model card and its download consent, and follow the Acceptable Use Policy."
             ]
         },
         {
@@ -813,7 +831,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1140,7 +1158,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1226,13 +1244,13 @@
             ],
             "digests": [
                 "tracked-set-sha256:e5d22ea017ba20b5e6a2d0e7a75218e65b8535080500fd0ab34fed07b05c6d90:grand-boule-native-rust",
-                "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
-                "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
-                "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:fc441668cdd2cf37733d111133ff3fac53956f361eaaddcad23ca10ab718aefc:grand-boule-project-state",
-                "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:2394514f6ddbfd99ca98667683e5d0a23a65a370c241293f81dc4021b2c350a8:grand-boule-release-proof"
+                "tracked-set-sha256:782dcc9a77a2453d9f440c9c39e3f14823caebb1c10b652afca92b6fb586698e:grand-boule-admission-decision",
+                "tracked-set:grand-boule-discovery-catalog",
+                "tracked-set:grand-boule-factory-admission",
+                "tracked-set:grand-boule-live-runtime",
+                "tracked-set:grand-boule-project-state",
+                "tracked-set:grand-boule-offline-composition",
+                "tracked-set:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1857,7 +1875,7 @@
                 "sha256:4e3ab01320777977abfccaedaf0166a2b1ea49e8adf12831996c570b7461bbe2:release/upstream-proofs/audio-export-codecs/BUILD.md",
                 "sha256:95c070480aa027041f59caa2b7b4b989f8c0fbf85195cfd681716de5c2ce7a96:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
                 "sha256:dff24941db687b3a453063d7647cf4ea67c78a4c651eaceba481615ccb0c1133:release/upstream-proofs/audio-export-codecs/provenance.json",
-                "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c:release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
                 "sha256:49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789:release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
             ],
@@ -1916,7 +1934,7 @@
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
-            "sha256": "cd92659b7956f600bd9eb90f51e59766e0d5b122869f5181e5115cf608dc3e21"
+            "sha256": "6e9f40faa42cc122d35d1131906b7388a1d468e42095a83a44daf682facac10c"
         },
         {
             "path": "public/wasm/manifest.json",

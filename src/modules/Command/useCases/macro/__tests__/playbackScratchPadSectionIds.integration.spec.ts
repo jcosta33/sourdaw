@@ -210,6 +210,30 @@ describe('playMacro over scratch pad section edits', () => {
         ]);
     });
 
+    it('records every pad id a capture given fewer ids than markers wrote, so a later edit of an uncovered section replays', async () => {
+        setMarkerSections(['A', 'B']);
+        startMacroRecording();
+        await executeAppAction({ type: 'captureScratchPad', payload: { sectionIds: ['pad-a'] } });
+        const recordedIds = padSectionIds();
+        const second = recordedIds[1];
+        if (!second) {
+            throw new Error('expected the capture to produce two pad sections');
+        }
+        expect(recordedIds[0]).toBe('pad-a');
+        await executeAppAction({ type: 'renameScratchPadSection', payload: { sectionId: second, name: 'Renamed' } });
+        stopMacroRecording('Short list capture');
+        const macro = macroStore.value?.macros.at(-1);
+        expect(macro?.actions[0]).toEqual({ type: 'captureScratchPad', payload: { sectionIds: recordedIds } });
+        await clearPad();
+
+        await playMacro(macro?.id ?? '');
+
+        expect(padView()).toEqual([
+            { name: 'A', color: '#101010' },
+            { name: 'Renamed', color: '#101010' },
+        ]);
+    });
+
     it('replays a stored capture whose recorded ids are malformed to completion, with fresh ids', async () => {
         await executeAppAction({ type: 'captureScratchPad' });
         const [first] = padSectionIds();

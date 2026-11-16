@@ -184,8 +184,8 @@ const measuredScriptBudgets = new Map<string, number>([
     ['cargo:test', 5632 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
     ['typecheck', 3072 * 1024 ** 2],
-    // A guarded pnpm typecheck:test (tsc -p tsconfig.test.json) peaked at 6498 MiB.
-    ['typecheck:test', 7168 * 1024 ** 2],
+    // A guarded pnpm typecheck:test (tsc -p tsconfig.test.json) peaked at 7966 MiB.
+    ['typecheck:test', 9216 * 1024 ** 2],
     // A single-worker targeted browser diagnostic peaked at 7034 MiB under the guard.
     ['test:e2e', 8 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],

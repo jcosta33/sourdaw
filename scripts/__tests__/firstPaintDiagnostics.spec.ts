@@ -4,7 +4,7 @@ import {
     CAPABILITIES_MARKER,
     first_paint_boot_progress,
     format_first_paint_timeout_diagnosis,
-    REACT_FIRST_RENDER_MARKER,
+    REACT_DOM_EVALUATED_MARKER,
     VITE_CONNECTED_MARKER,
     wait_for_console_marker,
     wait_for_console_marker_after,
@@ -30,8 +30,8 @@ describe('first paint boot progress', () => {
     it('reports no progress from an empty console', () => {
         expect(first_paint_boot_progress(timelineWith([]))).toEqual({
             viteConnectedAtMs: null,
-            reactFirstRenderAtMs: null,
-            wasmBootedAtMs: null,
+            reactDomEvaluatedAtMs: null,
+            initSyncWarningAtMs: null,
             capabilitiesLoggedAtMs: null,
         });
     });
@@ -52,8 +52,8 @@ describe('first paint boot progress', () => {
 
         expect(progress).toEqual({
             viteConnectedAtMs: 340,
-            reactFirstRenderAtMs: 1_200,
-            wasmBootedAtMs: 11_500,
+            reactDomEvaluatedAtMs: 1_200,
+            initSyncWarningAtMs: 11_500,
             capabilitiesLoggedAtMs: 11_560,
         });
     });
@@ -71,7 +71,7 @@ describe('first paint boot progress', () => {
 });
 
 describe('first paint timeout diagnosis', () => {
-    it('reproduces the run 36202813096 shape: vite connected, a late React render, boot never finished', () => {
+    it('reports a late React DOM banner and missing capability log', () => {
         // The failing leg: [vite] connected at once, the React devtools banner
         // 58s later, then silence until the 90s allowance expired — no
         // initSync, no [capabilities].
@@ -79,7 +79,7 @@ describe('first paint timeout diagnosis', () => {
             timeline: timelineWith([
                 [300, '[vite] connecting...'],
                 [340, VITE_CONNECTED_MARKER],
-                [58_400, `%c${REACT_FIRST_RENDER_MARKER} font-weight:bold`],
+                [58_400, `%c${REACT_DOM_EVALUATED_MARKER} font-weight:bold`],
             ]),
             timeoutMs: 90_000,
             waitedMs: 90_012,
@@ -88,16 +88,15 @@ describe('first paint timeout diagnosis', () => {
 
         expect(message).toContain('did not mount within 90000ms');
         expect(message).toContain('Vite client connected +0.3s');
-        expect(message).toContain('React first render +58.4s');
-        expect(message).toContain('WASM booted never');
-        expect(message).toContain('[capabilities] (bootstrap complete) never');
-        expect(message).toContain('the WASM bootstrap');
+        expect(message).toContain('React DOM module evaluated +58.4s');
+        expect(message).toContain('initSync warning never');
+        expect(message).toContain('[capabilities] logged never');
         expect(message).toContain('Console tail:');
         expect(message).toContain('[vite] connected.');
         expect(message).toContain('element(s) not found');
     });
 
-    it('names the dev-server handshake when the page logged nothing at all', () => {
+    it('reports an empty console without inferring a stalled phase', () => {
         const message = format_first_paint_timeout_diagnosis({
             timeline: timelineWith([]),
             timeoutMs: 45_000,
@@ -106,15 +105,14 @@ describe('first paint timeout diagnosis', () => {
         });
 
         expect(message).toContain('Vite client connected never');
-        expect(message).toContain('the dev-server handshake');
         expect(message).toContain('The page logged no console messages.');
     });
 
-    it('distinguishes a completed boot from a stalled one', () => {
+    it('reports observed markers without claiming completed or stalled phases', () => {
         const booted = format_first_paint_timeout_diagnosis({
             timeline: timelineWith([
                 [200, VITE_CONNECTED_MARKER],
-                [900, `%c${REACT_FIRST_RENDER_MARKER} font-weight:bold`],
+                [900, `%c${REACT_DOM_EVALUATED_MARKER} font-weight:bold`],
                 [10_000, 'using deprecated parameters for `initSync()`; pass a single object instead'],
                 [10_050, '[DEV][INFO] [capabilities] {}'],
             ]),
@@ -125,7 +123,7 @@ describe('first paint timeout diagnosis', () => {
         const stalledAtWasm = format_first_paint_timeout_diagnosis({
             timeline: timelineWith([
                 [200, VITE_CONNECTED_MARKER],
-                [900, `%c${REACT_FIRST_RENDER_MARKER} font-weight:bold`],
+                [900, `%c${REACT_DOM_EVALUATED_MARKER} font-weight:bold`],
                 [10_000, 'using deprecated parameters for `initSync()`; pass a single object instead'],
             ]),
             timeoutMs: 45_000,
@@ -133,9 +131,12 @@ describe('first paint timeout diagnosis', () => {
             underlyingMessage: 'expect(locator).toBeVisible() failed',
         });
 
-        expect(booted).toContain('the launch overlay mount');
-        expect(stalledAtWasm).toContain('the [capabilities] log');
-        expect(stalledAtWasm).not.toContain('the launch overlay mount');
+        expect(booted).toContain('initSync warning +10.0s');
+        expect(booted).not.toContain('WASM booted');
+        expect(booted).toContain('React DOM module evaluated +0.9s');
+        expect(booted).toContain('[capabilities] logged +10.1s');
+        expect(booted).not.toMatch(/first render|bootstrap complete|most likely measured/);
+        expect(stalledAtWasm).not.toMatch(/most likely measured|stalled/);
     });
 
     it('bounds the console tail so the error stays readable', () => {
