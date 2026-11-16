@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+    DEPENDENCY_BOUNDARY_BASELINE_FILES,
     lintLedgerCrossingPaths,
     lintLedgerCrossingRefusal,
     readLintLedgerCrossing,
@@ -418,6 +419,82 @@ describe('lint ledger crossing decision', () => {
     });
 });
 
+describe('dependency-boundary baseline crossing', () => {
+    const repositoryFile = (name: string): string => join(import.meta.dirname, '..', '..', name);
+
+    function boundaryRow(from: string, to: string): Record<string, unknown> {
+        return {
+            type: 'contract-reexport',
+            from,
+            to,
+            rule: { severity: 'error', name: 'no-models-repos-transformers-in-contract-folders' },
+        };
+    }
+
+    // Spelled out, not read from the module, so removing one from the module fails its cases.
+    const BASELINES = [
+        '.dependency-cruiser-known-violations.json',
+        '.dependency-cruiser-known-violations-contract-reexports.json',
+        '.dependency-cruiser-known-violations-worker-spawns.json',
+        '.dependency-cruiser-known-violations-reachability.json',
+        '.dependency-cruiser-known-violations-types.json',
+        '.dependency-cruiser-known-violations-tests.json',
+    ];
+    const FROM = 'src/modules/Example/useCases/run/algorithm.ts';
+    const WITH_ROW = JSON.stringify([boundaryRow(FROM, 'src/modules/Example/models/Style.ts')]);
+    const WITHOUT_ROW = '[]';
+
+    it('binds the baselines the dependency-boundary gates table names', () => {
+        const source = readFileSync(repositoryFile('scripts/check-dependency-boundaries.mjs'), 'utf8');
+        const gateBaselines = Array.from(source.matchAll(/^\s+baseline: '([^']+)',$/gmu), (match) => match[1]);
+        expect(gateBaselines).toHaveLength(6);
+        expect([...DEPENDENCY_BOUNDARY_BASELINE_FILES].sort()).toEqual(gateBaselines.sort());
+    });
+
+    it('reads the rows of the real contract-reexports baseline as `from` files', () => {
+        const rows: unknown = JSON.parse(
+            readFileSync(repositoryFile('.dependency-cruiser-known-violations-contract-reexports.json'), 'utf8')
+        );
+        expect(Array.isArray(rows)).toBe(true);
+        const [first] = rows as Array<{ from?: unknown }>;
+        expect(typeof first?.from).toBe('string');
+    });
+
+    it.each(BASELINES)(
+        '%s: main deleting a row crosses a pull request editing the row file, and the mirror',
+        (name) => {
+            const base = { [name]: WITH_ROW };
+            const deleted = { [name]: WITHOUT_ROW };
+            expect(lintLedgerCrossingPaths([name], [FROM], { base, main: deleted, head: base })).toEqual([FROM]);
+            expect(lintLedgerCrossingPaths([FROM], [name], { base, main: base, head: deleted })).toEqual([FROM]);
+        }
+    );
+
+    it.each(BASELINES)('%s: main changing a row does not cross a pull request editing a file no row names', (name) => {
+        const base = { [name]: WITH_ROW };
+        const deleted = { [name]: WITHOUT_ROW };
+        expect(
+            lintLedgerCrossingPaths([name], ['src/modules/Example/free.ts'], { base, main: deleted, head: base })
+        ).toEqual([]);
+    });
+
+    it('does not bind the `to` file of a row', () => {
+        const base = { [DEPENDENCY_BOUNDARY_BASELINE_FILES[0]]: WITH_ROW };
+        const target = 'src/modules/Example/models/Style.ts';
+        expect(lintLedgerCrossingPaths([target], [target], { base, main: base, head: base })).toEqual([]);
+    });
+
+    it('refuses a baseline that is not an array of rows with a `from` path', () => {
+        const name = DEPENDENCY_BOUNDARY_BASELINE_FILES[0];
+        const good = { [name]: WITH_ROW };
+        for (const bad of ['{}', '[{"to":"a.ts"}]']) {
+            expect(() => lintLedgerCrossingPaths([], [], { base: good, main: { [name]: bad }, head: good })).toThrow(
+                name
+            );
+        }
+    });
+});
+
 describe('lint ledger crossing over a real repository', () => {
     let directory: string | undefined;
 
@@ -510,6 +587,26 @@ describe('lint ledger crossing over a real repository', () => {
 
         expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
     });
+
+    it.each(DEPENDENCY_BOUNDARY_BASELINE_FILES)(
+        'reads %s from the repository and refuses main deleting a row for a file the pull request edits',
+        (baseline) => {
+            const { git, write } = scratchRepository();
+            const row = { type: 'contract-reexport', from: 'x.ts', to: 'y.ts', rule: { severity: 'error', name: 'r' } };
+            write(baseline, JSON.stringify([row]));
+            write('x.ts', 'one;\n');
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            git(['switch', '--quiet', '-c', 'b']);
+            write('x.ts', 'two;\n');
+            git(['commit', '--quiet', '-am', 'b edits the row file']);
+            git(['switch', '--quiet', 'main']);
+            write(baseline, '[]');
+            git(['commit', '--quiet', '-am', 'main deletes the row']);
+
+            expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+        }
+    );
 
     it('crosses when main renames a bound file the pull request edits', () => {
         const { git, write } = scratchRepository();

@@ -3,7 +3,7 @@
 
 use crate::state::{self, RecordedState, MODE_NEVER_SET};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 
 /// `L`: the delay every output sample carries, reported as the plugin latency.
 pub const LATENCY_FRAMES: usize = 64;
@@ -18,6 +18,34 @@ const ECHO_LEVEL: f32 = 0.5;
 /// One frame more than the oldest one read, so the frame written this sample
 /// never overwrites `x[n - L - E]` before it is read.
 const HISTORY_FRAMES: usize = LATENCY_FRAMES + ECHO_FRAMES + 1;
+
+/// The process call, counted from zero, that a failing class answers with a
+/// failure. Not the first, so a host's handling of a failure partway through a
+/// run is what gets exercised; every other call renders normally.
+pub const FAILING_PROCESS_CALL: u32 = 2;
+
+/// Counts an instance's process calls, and says which one it fails. Only a
+/// failing class ever fails one.
+pub(crate) struct ProcessCalls {
+    fails: bool,
+    made: AtomicU32,
+}
+
+impl ProcessCalls {
+    pub(crate) fn new(fails: bool) -> Self {
+        Self {
+            fails,
+            made: AtomicU32::new(0),
+        }
+    }
+
+    /// Count this call, and answer whether it is the one to fail.
+    /// Allocation- and lock-free.
+    pub(crate) fn this_call_fails(&self) -> bool {
+        let index = self.made.fetch_add(1, Ordering::Relaxed);
+        self.fails && index == FAILING_PROCESS_CALL
+    }
+}
 
 /// Per-instance state, shared by `&Echo` alone.
 ///
