@@ -87,7 +87,6 @@
         "format:full": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs,json,md,css}\" && cargo fmt --all",
         "lint": "node scripts/runLint.ts",
         "lint:full": "node scripts/runLint.ts --full",
-        "lint:size-baseline-shrinks": "node scripts/checkSizeBaselineShrinks.ts",
         "lint:fix": "node scripts/runLint.ts --fix",
         "deps:validate": "node scripts/check-dependency-boundaries.mjs",
         "deps:unused": "pnpm exec knip",

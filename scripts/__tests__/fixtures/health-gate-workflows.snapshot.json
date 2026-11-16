@@ -688,7 +688,7 @@
           },
           {
             "name": "Size baseline only shrinks",
-            "run": "pnpm lint:size-baseline-shrinks"
+            "run": "node scripts/checkSizeBaselineShrinks.ts"
           },
           {
             "name": "App types",

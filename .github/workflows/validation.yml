@@ -344,7 +344,7 @@ jobs:
         run: pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2
 
       - name: Size baseline only shrinks
-        run: pnpm lint:size-baseline-shrinks
+        run: node scripts/checkSizeBaselineShrinks.ts
 
       - name: App types
         if: needs.decide.outputs.tooling != 'true'
