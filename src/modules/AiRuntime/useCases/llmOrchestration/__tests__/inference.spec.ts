@@ -7,8 +7,8 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { clipSelectionStore, defaultTrackState } from '#/modules/Arrangement/stores';
 import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
-import { chordTrackStore, defaultMidiStoreState } from '#/modules/MIDI/stores';
+import { captureProjectRevision, createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore, defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { projectPianoRollTakeNotes, setMidiStoreState, setPianoRollSelection } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { captureMusicalContentBinding } from '#/modules/Project/useCases';
@@ -423,6 +423,180 @@ describe('generateToolPlanningOutcome', () => {
             expect(second).toContain('"pitch":70');
             expect(first).toContain('"quality":"minor"');
             expect(first).not.toEqual(second);
+        } finally {
+            mocks.generateCloudToolCalls.mockReset();
+            clipSelectionStore.set({ selectedClipId: null, selectedClipIds: [], marqueeSelection: null });
+            await database.dispose();
+        }
+    });
+
+    it('offers hosted clarification while musical evidence is pending and leaves notes unchanged', async () => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        const database = installTransactionalIndexedDb();
+        try {
+            await createCrdtProject('Hosted musical clarification');
+            const track = createTrack({ id: 'clarify-track', name: 'Phrase', kind: 'midi' });
+            const clip = {
+                id: 'clarify-clip',
+                trackId: track.id,
+                name: 'Phrase',
+                type: 'midi' as const,
+                startBeat: 0,
+                endBeat: 4,
+                muted: false,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            };
+            track.clips = [clip];
+            setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+            clipSelectionStore.set({ selectedClipId: clip.id, selectedClipIds: [clip.id], marqueeSelection: null });
+            const note = { id: 'note', pitch: 67, startBeat: 0, duration: 1, velocity: 90 };
+            setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [note] } });
+            const projection = projectPianoRollTakeNotes(clip, track.id, null, [note]);
+            setPianoRollSelection(clip.id, [note.id], [clip.id], [{ clipId: clip.id, projection }]);
+            const binding = captureMusicalContentBinding();
+            const beforeRevision = captureProjectRevision();
+            const beforeMidi = structuredClone(midiStore.value);
+            const schemas = [...getPlanningProviderToolSchemas(), jointInterpretationSchema()];
+            const context = buildAgentContext({
+                fixedPolicy: 'system',
+                prompt: 'Read the phrase.',
+                context: getProjectContext(),
+                projectRevision: 'revision',
+            }).message;
+            const intake = nonAcousticMetricIntakeTurn({
+                modeId: 'edit',
+                targetObjectIds: [clip.id],
+                dimensions: ['midi-content'],
+            })(context, schemas);
+            const authority = {
+                schemaVersion: 1 as const,
+                authorityId: 'a',
+                catalogId: 'catalog',
+                requestDigest: 'request',
+                revision: 'revision',
+                selection: { trackId: track.id, clipId: clip.id, clipIds: [clip.id], activeView: 'clip' as const },
+                mode: 'edit' as const,
+                targets: [
+                    {
+                        provenance: 'contextual-selection' as const,
+                        objectType: 'clip' as const,
+                        objectIds: [clip.id],
+                        parentTrackId: track.id,
+                    },
+                ],
+                editDimensions: ['midi-content' as const],
+                prohibitions: [],
+                creationSlots: [],
+                uncertainty: 'none' as const,
+            };
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockReset();
+            mocks.generateCloudToolCalls.mockResolvedValueOnce({
+                providerRequestId: null,
+                calls: [{ ...intake[0], id: 'interpret' }],
+                strictToolSchemas: false,
+                usage: null,
+            });
+            const fetchRequest = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+                const body = JSON.parse(String(init?.body));
+                expect(body.tools.map((tool: ToolSchema) => tool.function.name)).toEqual([
+                    'project_query',
+                    'command_batch_decline',
+                ]);
+                expect(body.tool_choice).toBe('required');
+                return new Response(
+                    JSON.stringify({
+                        id: 'hosted-decline',
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        {
+                                            id: 'decline',
+                                            type: 'function',
+                                            function: {
+                                                name: 'command_batch_decline',
+                                                arguments: JSON.stringify({
+                                                    kind: 'clarify',
+                                                    reason: 'Which phrase?',
+                                                    questions: ['Which phrase?'],
+                                                }),
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            });
+            vi.stubGlobal('fetch', fetchRequest);
+            mocks.generateCloudToolCalls.mockImplementationOnce(
+                (
+                    systemPrompt: string,
+                    userMessage: string,
+                    advertised: ToolSchema[],
+                    maxOutputTokens: number,
+                    directive: HostedToolChoiceDirective,
+                    signal?: AbortSignal
+                ) => {
+                    expect(directive).toEqual({
+                        mode: 'required',
+                        toolNames: ['project.query', 'command.batch.decline'],
+                        parallelToolCalls: false,
+                    });
+                    return generateOpenAiCompatibleToolCalls({
+                        runtime: compatibleRuntime,
+                        systemPrompt,
+                        userMessage,
+                        toolSchemas: advertised,
+                        maxOutputTokens,
+                        directive,
+                        signal,
+                    });
+                }
+            );
+            let admitted = false;
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'hosted-clarify',
+                musicalContentBinding: binding,
+                readCreativeAuthority: () => (admitted ? authority : undefined),
+                interpretation: {
+                    toolName: 'selectCreativeInterpretation',
+                    admit: () => {
+                        admitted = true;
+                        return { status: 'admitted', receipt: { data: {}, summary: 'admitted' } };
+                    },
+                },
+                terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+                requestTurn: ({ receiptContext, directive, history, budgetNote }) =>
+                    generateToolPlanningOutcome(
+                        'system',
+                        receiptContext ?? context,
+                        schemas,
+                        undefined,
+                        'Read the phrase.',
+                        undefined,
+                        undefined,
+                        undefined,
+                        directive,
+                        { firstUserMessage: context, history, budgetNote }
+                    ),
+            }).catch((error: unknown) => {
+                if (error instanceof ApplicationOwnedToolLoopRequestError) throw error.originalError;
+                throw error;
+            });
+            expect(result).toMatchObject({ status: 'complete', decline: { kind: 'clarify', reason: 'Which phrase?' } });
+            expect(result.receipts.some((receipt) => receipt.toolName === 'project.query')).toBe(false);
+            expect(fetchRequest).toHaveBeenCalledOnce();
+            expect(midiStore.value).toEqual(beforeMidi);
+            expect(captureProjectRevision()).toBe(beforeRevision);
         } finally {
             mocks.generateCloudToolCalls.mockReset();
             clipSelectionStore.set({ selectedClipId: null, selectedClipIds: [], marqueeSelection: null });

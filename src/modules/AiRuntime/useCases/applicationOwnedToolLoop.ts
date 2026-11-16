@@ -2600,7 +2600,13 @@ export async function runApplicationOwnedToolLoop(
         // one missing primary receipt; a held complete proposal needs no later proposal turn.
         let directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE;
         if (musicalHint !== null) {
-            directive = { mode: 'required', toolNames: [PROJECT_QUERY_TOOL_NAME], parallelToolCalls: false };
+            directive = {
+                mode: 'required',
+                toolNames: input.terminalToolNames.has(COMMAND_BATCH_DECLINE_TOOL_NAME)
+                    ? [PROJECT_QUERY_TOOL_NAME, COMMAND_BATCH_DECLINE_TOOL_NAME]
+                    : [PROJECT_QUERY_TOOL_NAME],
+                parallelToolCalls: false,
+            };
         } else if (needsMeasurementStep && input.measurement !== undefined) {
             directive = { mode: 'required', toolNames: [input.measurement.toolName], parallelToolCalls: false };
         } else if (isFinalTurn) {

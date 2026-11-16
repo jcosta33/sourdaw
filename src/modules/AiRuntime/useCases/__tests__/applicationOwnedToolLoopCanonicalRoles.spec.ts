@@ -148,7 +148,11 @@ describe('canonical roles at the provider continuation boundary', () => {
                             toolCalls: [{ id: 'interpret', name: 'interpret', arguments: {} }],
                         };
                     if (turn === 2) {
-                        expect(directive.mode).toBe('required');
+                        expect(directive).toEqual({
+                            mode: 'required',
+                            toolNames: ['project.query'],
+                            parallelToolCalls: false,
+                        });
                         expect(budgetNote).toContain(`"endBeat":${selected ? '4' : '12'}`);
                         return {
                             status: 'complete' as const,
