@@ -67,7 +67,11 @@ async function readRoot(page: Page): Promise<Record<string, unknown> | null> {
     return page.evaluate(async () => {
         const { automergeRepository } = await import('/src/modules/CrdtDocument/repositories/automergeRepository.ts');
         const root = automergeRepository.getDoc('root');
-        return root ? (JSON.parse(JSON.stringify(root)) as Record<string, unknown>) : null;
+        if (!root) {
+            return null;
+        }
+        const rootJson = JSON.stringify(root);
+        return JSON.parse(rootJson) as Record<string, unknown>;
     });
 }
 

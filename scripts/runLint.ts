@@ -175,11 +175,13 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
     }
 }
 
-export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
+export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron', 'tests/e2e', 'server'] as const;
 export const FULL_ESLINT_TARGETS = [
     'src/**/*.{ts,tsx}',
     'scripts/**/*.ts',
     'electron/**/*.ts',
+    'tests/e2e/**/*.ts',
+    'server/**/*.ts',
     'scripts/lint/sourdaw.mjs',
 ] as const;
 
