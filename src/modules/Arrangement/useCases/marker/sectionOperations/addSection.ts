@@ -1,3 +1,4 @@
+import { type ListRestoreSlot, insertAtListRestoreSlot } from '../../../models/ListRestoreSlot';
 import { createSection } from '../../../models/Marker';
 import { markerStore } from '../../../stores/markerStore';
 
@@ -7,7 +8,7 @@ export function addSection(
     name: string,
     sectionId?: string,
     color?: string,
-    index?: number
+    slot: ListRestoreSlot = {}
 ): boolean {
     const state = markerStore.value;
     if (!state) {
@@ -18,8 +19,7 @@ export function addSection(
     // section (removeSection's inverse) instead of a lookalike with a fresh id.
     const section = { ...base, id: sectionId ?? base.id, color: color ?? base.color };
     // Section array order is project truth, so removeSection's inverse restores
-    // the original slot; an index past the end (earlier siblings gone) appends.
-    const slot = Math.min(index ?? state.sections.length, state.sections.length);
-    markerStore.set({ ...state, sections: [...state.sections.slice(0, slot), section, ...state.sections.slice(slot)] });
+    // the original neighbours (see ListRestoreSlot).
+    markerStore.set({ ...state, sections: insertAtListRestoreSlot(state.sections, section, slot) });
     return true;
 }

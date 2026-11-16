@@ -9,7 +9,6 @@ const ALLOWED_WARN_RULES: ReadonlyArray<readonly [entry: string, reason: string]
     ['root:jsx-a11y/click-events-have-key-events', TRACKED_IN_6486],
     ['root:jsx-a11y/label-has-associated-control', TRACKED_IN_6486],
     ['root:jsx-a11y/no-static-element-interactions', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-floating-promises', TRACKED_IN_6486],
 ];
 
 const TEST_FILES_GLOB = '**/*.spec.{ts,tsx}';

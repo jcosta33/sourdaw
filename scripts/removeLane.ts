@@ -16,6 +16,7 @@ import {
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { laneIsActive } from './laneActivity.ts';
+import { fetchOrAcceptCompletedFetch } from './laneRemovalFetch.ts';
 import { PR_STATE, supersessionReplacement } from './prContract.ts';
 import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
@@ -1038,7 +1039,7 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
     };
     const primaryRoot = root ?? resolvePrimaryRoot();
     return {
-        fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
+        fetch: () => fetchOrAcceptCompletedFetch(shell),
         repository,
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),

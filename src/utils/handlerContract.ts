@@ -931,13 +931,28 @@ type LegacyAppAction =
               retiredTakeSourceProof?: CommandSourceProof;
           };
       }
-    | { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string; color?: string } }
+    | {
+          type: 'addMarker';
+          /** `index`, `beforeId` and `afterId` place the marker among its neighbours: before `beforeId`,
+           *  else after `afterId`, else at `index` (clamped to the list length); absent appends.
+           *  `removeMarker`'s inverse sets them so undo restores the order. */
+          payload: {
+              beat: number;
+              name: string;
+              markerId?: string;
+              color?: string;
+              index?: number;
+              beforeId?: string;
+              afterId?: string;
+          };
+      }
     | { type: 'removeMarker'; payload: { markerId: string } }
     | { type: 'setMarkerColor'; payload: { markerId: string; color: string; expectedColor?: string } }
     | {
           type: 'addSection';
-          /** `index` is the slot in the section list to insert at (clamped to its length);
-           *  absent appends. `removeSection`'s inverse sets it so undo restores the order. */
+          /** `index`, `beforeId` and `afterId` place the section among its neighbours: before `beforeId`,
+           *  else after `afterId`, else at `index` (clamped to the list length); absent appends.
+           *  `removeSection`'s inverse sets them so undo restores the order. */
           payload: {
               startBeat: number;
               endBeat: number;
@@ -945,6 +960,8 @@ type LegacyAppAction =
               sectionId?: string;
               color?: string;
               index?: number;
+              beforeId?: string;
+              afterId?: string;
           };
       }
     | { type: 'removeSection'; payload: { sectionId: string } }
