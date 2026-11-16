@@ -83,7 +83,9 @@ the config it reads defines any `hook.*` key. Transports are an allowlist of `ht
 defence in depth beside the isolated directory. The GitHub CLI holds the token and starts Git
 itself, so every token-bearing `gh` child starts in a fresh empty directory that Git cannot climb
 out of, with inherited repository routing removed: any Git it runs finds no repository and reads no
-repository config. Each such call therefore names its repository with `--repo` or an explicit API
+repository config. A child is gh when the command its caller names is `gh`, with any `.exe` suffix
+and in any case, or is exactly the launcher's trusted gh path, whatever that path's file name. Each
+such call therefore names its repository with `--repo` or an explicit API
 path. The one exception is the exact checkout repository query (`gh repo view --json nameWithOwner
 --jq .nameWithOwner`), which reads remote names in the caller's repository with `git remote -v` and
 `git config --get-regexp`; those read config but start no config-selected program. That query
