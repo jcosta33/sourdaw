@@ -171,8 +171,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:7f9dd20648c3a30a2c146084238fe452e75184d9285bc66bafbdc6753a5aa798:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:1e05f53916549c8caa96bf3d07037bedbb111b29ac0a94e45e1f2f2cb21abe87:release/dependency-license-proofs.json"
+                "sha256:9618b166c517b8d835473cc23298f0897d88babb932bc4f89e6c5828896c0cdc:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:7ff0851fcf10cc371cc0df9dd416354a4d7682392110397a5641e58ee8eb6b07:@curated-packages:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -298,7 +298,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102",
+                "sha256:db528de47f26d5dd5392af22a354e25e9a40e57396813e3bca39b488267067ee",
                 "sha256:a94654faf2322892cd82b403a21b97fe3d8c88df091e1724c685bc6217eb6550",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md"
@@ -1399,13 +1399,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:8bfc182f6b55483b169f0ce703bcb89e2df30b561f14948c93bf10b8c8f6d5be",
-                "daw-wasm-decoder sha256:bf124a7d7fe022259f398fff9ac0b31b8173fea259d28278119665f219c739a9",
-                "proof-chamber sha256:117a4259878c1a4e1c303c0ad32eb1f40b1ec9628da1ec97842534721e26a774",
-                "scoring sha256:5bbc3b74edd0be399a4ac681b5b474ce1a81cba65635dc629a61fabe3e25f867"
+                "daw-dsp sha256:98bf444ba662e2ec155b4c623844adf04425d36f3647ced6b42eddd3d0fbdaba",
+                "daw-wasm-decoder sha256:79f8fddfa46d63b9143d54b0c7e6d74a3f0274d4f3acb3e267b5e2c72dae6479",
+                "proof-chamber sha256:ace5bea07e7b4aa03fbbc1ad71765bdb4e32270ef114c8f2c99e48f1bf3b04b9",
+                "scoring sha256:c5ab364d143ac65396c34872a9b85d575cc3bde7d8464349448a8d3fa1658735"
             ],
             "digests": [
-                "sha256:33ff1c3ec00d4427e6ca6279a3cf1e48f04f2630c9091851f7eeed6cae8fa326:public/wasm/manifest.json"
+                "sha256:3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1911,7 +1911,8 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
+            "sha256": "59e41a0f87ad36a861f17c897091a7e895407ad15dca7f2454cf8e540048f711",
+            "projection": "package-json-packaging"
         },
         {
             "path": "server/package.json",
@@ -1923,11 +1924,12 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102"
+            "sha256": "db528de47f26d5dd5392af22a354e25e9a40e57396813e3bca39b488267067ee"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "acec56def2686b5e9925b1afecb5de895597b99d35597dad172cfaa6d135c14e"
+            "sha256": "4fe1542d8a6ecc23132c556f222fe0ac0843c602e9bd151cb7e218f4a795cd7c",
+            "projection": "cargo-manifest-licence-graph"
         },
         {
             "path": "Cargo.lock",
@@ -1939,7 +1941,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "33ff1c3ec00d4427e6ca6279a3cf1e48f04f2630c9091851f7eeed6cae8fa326"
+            "sha256": "3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109"
         }
     ],
     "externalReferences": [

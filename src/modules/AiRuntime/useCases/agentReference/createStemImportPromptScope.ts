@@ -1,6 +1,5 @@
-import { type StemImportRole } from '#/utils/handlerContract';
-
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
+import { type StemImportRole } from '../../models/StemImportRole';
 
 import { getStemImportMix } from './getStemImportMix';
 
