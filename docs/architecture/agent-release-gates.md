@@ -250,11 +250,15 @@ verification runs against. Schema version 1 carries:
 - `collisions` — every fixture path that more than one suite reads, with the suites that read it.
   Two suites sharing a fixture cannot record independent evidence about that file.
 
-A fixture is a path the command names under `src/`, `scripts/`, `tests/`, `evidence/`, or `electron/`, plus the
-source tree of every crate the command tests with `cargo test -p`. A fixture path that does not
-exist carries `"digest": null` and `"status": "absent"`; the committed manifest may not
-carry that state for any fixture, because a moved spec or removed crate must be repointed, never
-pinned as absent (`agentCampaignHarness.spec.ts` enforces it). The manifest's own path is never a fixture:
+A fixture is a named file: a path the command names under `src/`, `scripts/`, `tests/`,
+`evidence/`, or `electron/`, or a data file the contract declares for the suite. The manifest pins
+files only, and the generator refuses a fixture that is a directory: a tree's digest moves with
+every unrelated edit inside it, which would fail the per-pull-request freshness check on changes
+that have nothing to do with the suite. Directory and crate trees, a tested crate's source among
+them, are covered by the record closure below. A fixture path that does not exist carries
+`"digest": null` and `"status": "absent"`; the committed manifest may not carry that state for any
+fixture, because a moved spec must be repointed, never pinned as absent
+(`agentCampaignHarness.spec.ts` enforces it). The manifest's own path is never a fixture:
 a document cannot carry the digest of its own bytes.
 
 Named fixtures are not everything a suite's evidence depends on. A suite's closure is the full set:

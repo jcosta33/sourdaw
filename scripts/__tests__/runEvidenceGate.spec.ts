@@ -128,6 +128,27 @@ afterEach(() => {
 });
 
 describe('evidence manifest generation', () => {
+    it('refuses to pin a directory as a manifest fixture', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-evidence-gate-'));
+        roots.push(root);
+        write(root, 'docs/architecture/agent-release-gates.md', '# EVIDENCE-sourdaw-agent-release-gates\n');
+        write(root, `${PRESENT_FIXTURE}/nested.ts`, 'export {};\n');
+
+        expect(() => buildEvidenceManifest(root, APP_DIGESTS)).toThrow(
+            `${PRESENT_FIXTURE}: a manifest fixture must be a file; a tree belongs to the record closure`
+        );
+    });
+
+    it('pins no crate tree for a suite that runs cargo test', () => {
+        const { manifest } = fixture();
+        const rustSuites = manifest.suites.filter((suite) => suite.command.includes('cargo test -p'));
+
+        expect(rustSuites.map(({ id }) => id)).toEqual(['AC-030', 'AC-041', 'AC-049', 'AC-057']);
+        expect(rustSuites.flatMap(({ fixtures }) => fixtures).filter(({ path }) => path.startsWith('crates/'))).toEqual(
+            []
+        );
+    });
+
     it('builds every requirement suite under exactly one task', () => {
         const { manifest } = fixture();
 

@@ -25,6 +25,8 @@ const TYPE_ONLY_SUBJECT = 'src/shape.ts';
 const UNRELATED = 'src/unrelated.ts';
 const SETUP_HELPER = 'src/setupHelper.ts';
 const DEPENDENCY_SOURCE = 'crates/dep-crate/src/lib.rs';
+const ENGINE_SOURCE = 'crates/daw-engine/src/lib.rs';
+const CRATES = ['root-crate', 'dep-crate', 'dev-only', 'daw-engine'];
 const HEAD = 'd'.repeat(40);
 
 const SUITE: EvidenceSuite = {
@@ -54,6 +56,16 @@ const CONTRACT_GATE = {
     task: 'TASK-SA-00-protocol-governance',
     gate: 'AC-017',
     spec: 'src/app/__tests__/agentProtocolVersioning.spec.ts',
+};
+
+/** The contract gate that runs `cargo test -p daw-engine`; the manifest no longer pins that crate's tree. */
+const ENGINE_GATE = {
+    task: 'TASK-SA-06-devices-assets-audio',
+    gate: 'AC-041',
+    specs: [
+        'src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts',
+        'src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts',
+    ],
 };
 
 const APP_DIGESTS = { capabilityInventory: 'a'.repeat(64), census: 'b'.repeat(64) };
@@ -103,6 +115,12 @@ function cargoMetadataFor(root: string, packages: readonly string[]): string {
                 { kind: ['lib'], src_path: join(root, DEPENDENCY_SOURCE) },
                 { kind: ['custom-build'], src_path: join(root, 'crates/dep-crate/build.rs') },
             ],
+        },
+        'daw-engine': {
+            name: 'daw-engine',
+            manifest_path: join(root, 'crates/daw-engine/Cargo.toml'),
+            dependencies: [],
+            targets: [{ kind: ['lib'], src_path: join(root, ENGINE_SOURCE) }],
         },
         'dev-only': {
             name: 'dev-only',
@@ -162,7 +180,7 @@ function workspace(): { root: string; io: ClosureIo } {
     write(root, 'Cargo.toml', '[workspace]\nmembers = ["crates/*"]\n');
     write(root, 'rust-toolchain.toml', '[toolchain]\nchannel = "1.90.0"\n');
     write(root, '.cargo/config.toml', '[build]\n');
-    for (const crate of ['root-crate', 'dep-crate', 'dev-only']) {
+    for (const crate of CRATES) {
         write(root, `crates/${crate}/Cargo.toml`, `[package]\nname = "${crate}"\n`);
         write(root, `crates/${crate}/src/lib.rs`, 'pub fn value() -> u8 { 1 }\n');
     }
@@ -171,7 +189,7 @@ function workspace(): { root: string; io: ClosureIo } {
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync('git', [...GIT_IDENTITY, 'commit', '-q', '-m', 'init'], { cwd: root });
-    return { root, io: { cargoMetadata: () => cargoMetadataFor(root, ['root-crate', 'dep-crate', 'dev-only']) } };
+    return { root, io: { cargoMetadata: () => cargoMetadataFor(root, CRATES) } };
 }
 
 async function recordedRun(root: string, io: ClosureIo, suite: EvidenceSuite = SUITE): Promise<EvidenceRecord> {
@@ -214,6 +232,9 @@ function gateWorkspace(): { root: string; io: ClosureIo; manifestPath: string } 
         CONTRACT_GATE.spec,
         "import { ALLOWED_PERMISSIONS } from '../../subject';\n\nexport const seen = ALLOWED_PERMISSIONS;\n"
     );
+    for (const spec of ENGINE_GATE.specs) {
+        write(root, spec, 'export const audioGraph = 1;\n');
+    }
     write(root, EVIDENCE_MANIFEST_PATH, `${JSON.stringify(buildEvidenceManifest(root, APP_DIGESTS), null, 4)}\n`);
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync('git', [...GIT_IDENTITY, 'commit', '-q', '-m', 'gate'], { cwd: root });
@@ -360,6 +381,28 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
         const record = { ...(await recordedRun(root, io)), closure: null };
 
         expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: record carries no closure`]);
+    });
+});
+
+describe('crate trees outside the manifest', { timeout: 60_000 }, () => {
+    it('fails --release by file name once a daw-engine source file changes after a recorded run', async () => {
+        const { root, io, manifestPath } = gateWorkspace();
+        const gateIo: GateRunIo = { ...io, runCommand: () => ({ exitCode: 0, durationMs: 1 }) };
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const engineGate = ['--task', ENGINE_GATE.task, '--gate', ENGINE_GATE.gate, '--manifest', manifestPath];
+        await expect(main(engineGate, gateIo)).resolves.toBe(0);
+        const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+        expect(
+            parseEvidenceRecord(readFileSync(join(root, EVIDENCE_RECORDS_DIRECTORY, 'AC-041.json'), 'utf8'), 'AC-041')
+        ).toMatchObject({ integratedCommit: head, outcome: 'passed' });
+
+        write(root, ENGINE_SOURCE, 'pub fn value() -> u8 { 9 }\n');
+        errorSpy.mockClear();
+
+        await expect(main(['--release', '--manifest', manifestPath], gateIo)).resolves.toBe(1);
+        const engineBlockers = errorSpy.mock.calls.flat().filter((line) => String(line).startsWith('AC-041:'));
+        expect(engineBlockers).toEqual([`AC-041: closure file drifted: ${ENGINE_SOURCE}`]);
+        errorSpy.mockRestore();
     });
 });
 

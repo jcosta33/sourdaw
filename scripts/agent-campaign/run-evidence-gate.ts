@@ -8,7 +8,7 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -20,7 +20,6 @@ import {
     closureBlockers,
     readLiveClosures,
     runAgainstStableClosure,
-    testedCrates,
     type ClosureIo,
     type GateRunIo,
 } from './evidenceClosure.ts';
@@ -79,15 +78,15 @@ const ACTIVE_GATES_ENV = 'SOURDAW_EVIDENCE_ACTIVE_GATES';
 const BLOCKED_EXIT_CODE = 2;
 
 /**
- * Paths a verify command reads: the repository-relative file arguments it names, and the source tree
- * of every crate it tests. The manifest's own path is excluded — it cannot carry its own digest.
+ * The repository-relative file arguments a verify command names. A tested crate's tree is not one:
+ * its files reach the record closure through the cargo path-dependency closure instead. The
+ * manifest's own path is excluded — it cannot carry its own digest.
  */
 function commandFixturePaths(command: string): readonly string[] {
     const tokens = command.split(/\s+/u).filter((token) => token.length > 0);
     const paths = tokens.filter(
         (token) => FIXTURE_PREFIXES.some((prefix) => token.startsWith(prefix)) && token !== EVIDENCE_MANIFEST_PATH
     );
-    paths.push(...testedCrates(command).map((crate) => `crates/${crate}/src`));
     return [...new Set(paths)].sort();
 }
 
@@ -134,7 +133,15 @@ function suiteKindOf(command: string): EvidenceSuiteKind {
     return 'unit+rust';
 }
 
+/**
+ * A manifest fixture is one named file. A tree moves with every unrelated edit inside it, which
+ * would fail the per-pull-request freshness check; trees belong to the record closure.
+ */
 function buildFixture(root: string, path: string): EvidenceFixture {
+    const absolute = resolve(root, path);
+    if (existsSync(absolute) && statSync(absolute).isDirectory()) {
+        throw new Error(`${path}: a manifest fixture must be a file; a tree belongs to the record closure`);
+    }
     const digest = computeFixtureDigest(root, path);
     if (digest === null) {
         return { path, digest: null, status: 'absent' };
