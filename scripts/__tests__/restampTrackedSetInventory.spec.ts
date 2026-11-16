@@ -293,19 +293,25 @@ describe('tracked-set restamp write and refusals', () => {
         expect(written).toContain('\n    "surfaces"');
     });
 
-    it('restamps a drifted fixture to exactly what the checker computes, and the checker accepts it', () => {
-        const root = createFixture();
-        const staleLabel = STALE_LABEL;
-        writeDriftedInventory(root, staleLabel);
+    // Measured alone: ~1.1 s (fixture repo init/commit plus a spawned node running the real restamp command and
+    // ~115 git spawns), all inherent to the case. 30 s keeps a ~25x margin; it took 6.6 s against the 5 s default under load.
+    it(
+        'restamps a drifted fixture to exactly what the checker computes, and the checker accepts it',
+        { timeout: 30_000 },
+        () => {
+            const root = createFixture();
+            const staleLabel = STALE_LABEL;
+            writeDriftedInventory(root, staleLabel);
 
-        const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
+            const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
 
-        const expected = grandBouleReleaseInventoryContract(root).digests;
-        expect(grandBouleSurface(root).digests).toEqual(expected);
-        expect(() => assertGrandBouleReleaseInventory(root, grandBouleSurface(root))).not.toThrow();
-        expect(output).toContain(`grand-boule ${staleLabel}:`);
-        expect(output).toContain('restamped release/open-source-inventory.json');
-    });
+            const expected = grandBouleReleaseInventoryContract(root).digests;
+            expect(grandBouleSurface(root).digests).toEqual(expected);
+            expect(() => assertGrandBouleReleaseInventory(root, grandBouleSurface(root))).not.toThrow();
+            expect(output).toContain(`grand-boule ${staleLabel}:`);
+            expect(output).toContain('restamped release/open-source-inventory.json');
+        }
+    );
 
     it('refuses an uncommitted tracked-set change before writing, naming the file', () => {
         const root = createFixture();

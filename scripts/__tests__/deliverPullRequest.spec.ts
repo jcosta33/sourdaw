@@ -63,6 +63,8 @@ import { composeDeliveryReceipt } from '../prContract.ts';
 import { reviewBundlePath } from '../reviewBundleLocator.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
+import type { LintLedgerCrossing } from '../lintLedgerCrossing.ts';
+
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 
 // Cases that spawn git or node, or create and remove real fixture directories, pass an explicit 30 s ceiling
@@ -459,6 +461,24 @@ function writeLegacyReviewBundleManifest(primaryRoot: string, number: number, he
     );
 }
 
+/** Answers the shell port's lint-ledger crossing reads as a tree with no ledger and no shared change. */
+function lintLedgerGitRead(command: string, args: string[]): string | undefined {
+    if (command !== 'git') {
+        return undefined;
+    }
+    const [subcommand, ...rest] = args;
+    if (subcommand === 'rev-parse' && rest[0] === '--verify') {
+        return rest.at(-1)?.replace(/\^\{commit\}$/u, '');
+    }
+    if (subcommand === 'merge-base') {
+        return 'merge-base';
+    }
+    if (subcommand === 'ls-tree' || subcommand === 'cat-file' || (subcommand === 'diff' && rest.includes('-z'))) {
+        return '';
+    }
+    return undefined;
+}
+
 function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) {
     const captures: Array<{ command: string; args: string[] }> = [];
     const mergeCaptures: Array<{ command: string; args: string[] }> = [];
@@ -477,6 +497,10 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
             }
             if (command === 'git' && joined === 'rev-parse refs/remotes/origin/main') {
                 return 'base';
+            }
+            const lintLedgerRead = lintLedgerGitRead(command, args);
+            if (lintLedgerRead !== undefined) {
+                return lintLedgerRead;
             }
             if (joined.includes('pr view')) {
                 return JSON.stringify(
@@ -1032,6 +1056,8 @@ type FakeInput = {
     mergeCommitMessages?: Record<string, string>;
     gateProvenance?: GateProvenanceFacts | Error;
     gateProvenanceReads?: Array<GateProvenanceFacts | Error>;
+    /** Successive crossing reads; once exhausted, every read finds none. */
+    lintLedgerCrossings?: LintLedgerCrossing[];
 };
 
 type DeliveryReceiptComment = {
@@ -1192,11 +1218,17 @@ function fakePort(input: FakeInput = {}) {
     let mergedPrimary: PullRequestSnapshot | undefined;
     let persistedReceiptAuthority = input.persistedReceiptAuthority;
     const receipts = [...(input.receipts ?? [])];
+    const lintLedgerCrossings = [...(input.lintLedgerCrossings ?? [])];
+    const lintLedgerReads: string[] = [];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
         addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
     } = {
         fetch: () => calls.push('fetch'),
+        lintLedgerCrossing: (headRefOid) => {
+            lintLedgerReads.push(headRefOid);
+            return lintLedgerCrossings.shift() ?? { mergeBase: 'merge-base', paths: [] };
+        },
         pullRequest: (number) => {
             if (number === 42) {
                 const next = primary.shift() ?? mergedPrimary;
@@ -1425,6 +1457,7 @@ function fakePort(input: FakeInput = {}) {
         receipts,
         persistedReceiptAuthority: () => persistedReceiptAuthority,
         pullRequests,
+        lintLedgerReads,
     };
 }
 
@@ -1631,6 +1664,45 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('merge:42:head'));
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+    });
+
+    it('judges lint-ledger crossings on the initial and final heads and merges a clean pull request', () => {
+        const { port, calls, tracker, lintLedgerReads } = fakePort();
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(lintLedgerReads).toEqual(['head', 'head']);
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('refuses a lint-ledger crossing on the initial head before any receipt or merge', () => {
+        const { port, calls, tracker } = fakePort({
+            lintLedgerCrossings: [{ mergeBase: 'merge-base', paths: ['src/a.ts'] }],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            'PR #42 and main both changed lint-ledger-bound file since merge base merge-base: src/a.ts; ' +
+                'merge current main into the lane and publish so a fresh Gate measures the combination'
+        );
+        expect(calls.some((call) => call.startsWith('add-receipt:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
+    });
+
+    it('refuses a lint-ledger crossing main introduced before the final read without merging', () => {
+        const { port, calls, tracker } = fakePort({
+            lintLedgerCrossings: [
+                { mergeBase: 'merge-base', paths: [] },
+                { mergeBase: 'merge-base', paths: ['src/a.ts'] },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            'PR #42 and main both changed lint-ledger-bound file since merge base merge-base: src/a.ts; ' +
+                'merge current main into the lane and publish so a fresh Gate measures the combination'
+        );
+        // The final read runs after the delivery receipt is posted, so the refusal leaves that receipt.
+        expect(calls.some((call) => call.startsWith('add-receipt:'))).toBe(true);
+        expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
     });
 
     it('completes merged delivery without invoking an authorship extension', () => {
@@ -10160,6 +10232,9 @@ describe('delivery author authentication', () => {
             fetch: () => {
                 events.push('fetch');
             },
+            lintLedgerCrossing: () => {
+                throw new Error('classification never reads lint ledgers');
+            },
             pullRequest: (number) => {
                 events.push('snapshot');
                 expect(number).toBe(PR_NUMBER);
@@ -10580,6 +10655,55 @@ describe('delivery author authentication', () => {
 describe('delivery shell boundary', () => {
     afterEach(() => {
         vi.unstubAllEnvs();
+    });
+
+    it('judges lint-ledger crossings against the fetched origin/main through git object reads only', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                const read = lintLedgerGitRead(command, args);
+                if (read === undefined) {
+                    throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                }
+                return read;
+            },
+            run: () => {
+                throw new Error('lint-ledger crossing reads never run a command');
+            },
+        });
+
+        expect(port.lintLedgerCrossing('head-oid')).toEqual({ mergeBase: 'merge-base', paths: [] });
+        expect(captures.every(({ command }) => command === 'git')).toBe(true);
+        expect(captures.slice(0, 3).map(({ args }) => args)).toEqual([
+            ['rev-parse', '--verify', '--end-of-options', 'refs/remotes/origin/main^{commit}'],
+            ['rev-parse', '--verify', '--end-of-options', 'head-oid^{commit}'],
+            ['merge-base', 'refs/remotes/origin/main', 'head-oid'],
+        ]);
+    });
+
+    it('reads lint-ledger git output untrimmed so a leading-space path survives NUL splitting', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args, options) => {
+                const read = lintLedgerGitRead(command, args);
+                if (read === undefined) {
+                    throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                }
+                if (args[0] === 'ls-tree') {
+                    return '100644 blob 0123abc\teslint-suppressions.json\0';
+                }
+                if (args[0] === 'cat-file') {
+                    return JSON.stringify({ ' x.ts': {} });
+                }
+                if (args[0] === 'diff') {
+                    return options?.trim === false ? ' x.ts\0' : 'x.ts';
+                }
+                return read;
+            },
+            run: () => undefined,
+        });
+
+        expect(port.lintLedgerCrossing('head-oid').paths).toEqual([' x.ts']);
     });
 
     function rollupPort(pages: Array<RollupPageFixture | string>) {
@@ -11876,7 +12000,7 @@ describe('delivery shell boundary', () => {
             const port = shellPort(
                 'jcosta33/sourdaw',
                 {
-                    capture: (_command, args) => {
+                    capture: (command, args) => {
                         const joined = args.join(' ');
                         captures.push(joined);
                         if (joined.includes('pr view 42')) {
@@ -11970,6 +12094,10 @@ describe('delivery shell boundary', () => {
                         const gateProvenance = shellGateProvenanceResponse(args);
                         if (gateProvenance !== undefined) {
                             return gateProvenance;
+                        }
+                        const lintLedgerRead = lintLedgerGitRead(command, args);
+                        if (lintLedgerRead !== undefined) {
+                            return lintLedgerRead;
                         }
                         throw new Error(`unexpected capture: ${joined}`);
                     },

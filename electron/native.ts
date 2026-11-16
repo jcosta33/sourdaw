@@ -13,6 +13,8 @@
  */
 import { join } from 'node:path';
 
+import type { GpuMemoryBudget } from './channels.js';
+
 /**
  * A command method on the addon.
  *
@@ -75,6 +77,11 @@ export type NativeHost = {
 } & Record<string, NativeCommand>;
 
 export type NativeAddon = {
+    /**
+     * The GPU memory budget in bytes, null when the OS does not report one. Absent on an addon built
+     * before it existed, which the shell reads as unknown rather than refusing to load.
+     */
+    readonly gpuMemoryBudget?: () => unknown;
     // Runtime scope support is inspected before construction by the main-only factory.
     // Keeping this legacy constructor contract also admits unscoped older addons.
     readonly SourdawNative: new (onEvent: NativeEventCallback) => NativeHost;
@@ -201,3 +208,23 @@ export type LoadNativeAddonInput = {
 };
 
 export const loadNativeAddon = ({ path, load }: LoadNativeAddonInput): NativeAddon => asNativeAddon(load(path), path);
+
+/**
+ * The GPU memory budget the addon reports. Anything but a positive safe integer is unknown: an older
+ * addon without the export, a throw, or a malformed answer must never narrow or widen what is offered.
+ */
+export const readGpuMemoryBudget = (addon: NativeAddon | undefined): GpuMemoryBudget => {
+    const read = addon?.gpuMemoryBudget;
+    if (read === undefined) {
+        return { state: 'unknown' };
+    }
+    try {
+        const bytes: unknown = read();
+        if (typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes > 0) {
+            return { state: 'known', bytes };
+        }
+    } catch (error) {
+        console.error(`[shell] the native addon could not read the GPU memory budget: ${String(error)}`);
+    }
+    return { state: 'unknown' };
+};
