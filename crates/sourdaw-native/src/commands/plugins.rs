@@ -7061,6 +7061,7 @@ mod tests {
             plugins.scan_policy(),
             VettedRegistryEntry { entry, fingerprint },
             48_000.0,
+            ProcessMode::Realtime,
             recording_construction(&log),
         )
         .err()
