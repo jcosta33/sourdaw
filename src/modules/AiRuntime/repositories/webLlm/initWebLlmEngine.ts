@@ -50,6 +50,10 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                         new DOMException('WebLLM initialization superseded', 'AbortError')
                     );
                 }
+                // A refused load of another model leaves its error showing while this one answers.
+                if (llmStatusStore.value?.state === 'error') {
+                    llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
+                }
                 return Promise.resolve(engineState.engine);
             }
 

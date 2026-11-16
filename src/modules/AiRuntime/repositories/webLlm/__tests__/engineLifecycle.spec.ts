@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { LocalModelRefusalError } from '../../../errors/LocalModelRefusalError';
 import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
+import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
 import { retireWebLlmEngine } from '../retireWebLlmEngine';
@@ -431,6 +432,35 @@ describe('WebLLM engineLifecycle injectables', () => {
                 expect.anything(),
                 expect.anything()
             );
+        });
+        it('republishes ready for the kept model on the next default load after a refusal', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            const loaded = await loadModelX();
+            artifactAdmissionMock.mockRejectedValueOnce(
+                new LocalModelRefusalError({
+                    reason: 'insufficient-storage',
+                    modelId: 'model-y',
+                    requiredBytes: 2_000_000_000,
+                    availableBytes: 1_000,
+                })
+            );
+            await expect(initWebLlmEngine('model-y', { downloadConsent: true })).rejects.toBeDefined();
+            await vi.waitFor(() => expect(llmStatusStore.value?.state).toBe('error'));
+
+            await expect(initWebLlmEngine(undefined)).resolves.toBe(loaded);
+
+            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: LOADED_MODEL });
+        });
+
+        it('leaves a status another turn owns alone when the loaded model is requested again', async () => {
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+            await loadModelX();
+            const generating = { state: 'generating', backend: 'webllm', modelId: LOADED_MODEL } as const;
+            llmStatusStore.set(generating);
+
+            await initWebLlmEngine(undefined);
+
+            expect(llmStatusStore.value).toEqual(generating);
         });
     });
 });
