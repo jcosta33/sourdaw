@@ -197,6 +197,18 @@ describe('handleDiscardCreatedTracks', () => {
             expect(liveTrackIds()).toEqual(['sibling', 'created-1', 'created-2']);
         });
 
+        it('refuses a repeated track id that leaves another guarded track unremoved', () => {
+            const complete = guardedDiscard(['created-1', 'created-2']);
+            const action = {
+                ...complete,
+                payload: { ...complete.payload, trackIds: ['created-1', 'created-1'] },
+            };
+
+            expect(handleDiscardCreatedTracks.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+            expect(handleDiscardCreatedTracks.execute(action)).toEqual({ status: 'conflict' });
+            expect(liveTrackIds()).toEqual(['sibling', 'created-1', 'created-2']);
+        });
+
         it('keeps discarding by id alone for an entry recorded without guards', () => {
             editTrack('created-1', (track) => ({ ...track, name: 'Edited' }));
             const action = { type: 'discardCreatedTracks' as const, payload: { trackIds: ['created-1'] } };

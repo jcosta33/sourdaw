@@ -22,7 +22,8 @@ function toGuardedDiscards(action: DiscardCreatedTracksAction): DiscardCreatedTr
     if (generatedMidiStateGuards === undefined) {
         return trackIds.map((trackId) => ({ type: 'discardCreatedTrack', payload: { trackId } }));
     }
-    if (generatedMidiStateGuards.length !== trackIds.length) {
+    // Distinct ids, one guard per id and equal lengths make the guards name the tracks one-to-one.
+    if (generatedMidiStateGuards.length !== trackIds.length || new Set(trackIds).size !== trackIds.length) {
         return null;
     }
     const discards: DiscardCreatedTrackAction[] = [];
