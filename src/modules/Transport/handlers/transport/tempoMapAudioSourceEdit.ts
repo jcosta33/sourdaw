@@ -11,7 +11,6 @@ import {
     type HandlerValidationContext,
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { isTempoAudioSourcePromotion } from '#/utils/tempoAudioSourcePromotion';
 import {
     decodeTempoMapRowPlan,
     isTempoMapEdit,
@@ -29,6 +28,7 @@ import {
     samplesToBeat,
     secondsBetweenBeats,
 } from '../../models/TempoMap';
+import { isTempoAudioSourcePromotion } from '../../stores/tempoAudioSourcePromotion';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { runWithTempoMapRowWriteIntent, runWithTempoSourcePreservation } from '../../stores/tempoWriteIntent';
 import { transportStore } from '../../stores/transportStore';

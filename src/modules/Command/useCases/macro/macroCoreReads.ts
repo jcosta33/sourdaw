@@ -1,5 +1,5 @@
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { type TempoMapEdit, type TempoMapRow } from '#/utils/tempoMapRowPlan';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
 /** The part of an automation lane a replayed lane creation resolves its folded target by. */
 type MacroAutomationLane = {

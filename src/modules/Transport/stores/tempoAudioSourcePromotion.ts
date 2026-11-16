@@ -1,9 +1,10 @@
-import { isAudioSourceSnapshot, type AudioSourceSnapshot } from './audioSourceTime';
-import { type TempoAudioSourcePromotionSnapshot } from './handlerContract';
-import { isRecord, valuesEqual } from './structuralEquality';
-import { type TempoSourceClock } from './tempoSourceClock';
+import { isAudioSourceSnapshot, type AudioSourceSnapshot } from '#/utils/audioSourceTime';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
-export type { TempoSourceClock } from './tempoSourceClock';
+import { type TempoAudioSourcePromotionSnapshot } from '../events/tempoAudioSourceSnapshots';
+
+export type { TempoSourceClock } from '#/utils/tempoSourceClock';
 
 export type TempoScalarTransition = {
     readonly tempoChangeId: string | null;

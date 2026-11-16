@@ -1,7 +1,7 @@
 import { from } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
-import { type TempoAudioSourcePromotionSnapshot } from '../handlerContract';
+import { type TempoAudioSourcePromotionSnapshot } from '../../events/tempoAudioSourceSnapshots';
 import { captureTempoSourceOwnerValue, isTempoAudioSourcePromotion } from '../tempoAudioSourcePromotion';
 
 function plan(): TempoAudioSourcePromotionSnapshot {
