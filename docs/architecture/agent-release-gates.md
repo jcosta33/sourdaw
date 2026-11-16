@@ -190,10 +190,10 @@ relation, target, reference?}`: the agent metric (and band for a band metric), t
   abstaining or declining is a failure, never a safe outcome. A request that is truly underspecified
   belongs in `boundary`.
 - No provider and no writes — every corpus case runs under a network guard refusing fetch,
-  XMLHttpRequest and WebSocket to every provider host (AC-074). The guard reads the hosts from the
-  production sources that hold the hosted providers' base URLs and the model artifact origins, so a
-  provider added there is refused without a second list, and a source naming none fails the run. Any
-  attempt fails its case. Every case that measures the project, before or after a previewed change,
+  XMLHttpRequest and WebSocket to every non-local http(s) or ws(s) origin (AC-074). The guard denies
+  by default: only localhost, 127.0.0.1, [::1] and non-network schemes pass, so a provider, artifact
+  origin or user-configured base URL is refused without a list to maintain. Any attempt fails its
+  case. Every case that measures the project, before or after a previewed change,
   must make no project write across planning, measuring and previewing (AC-078), counted from the
   command barrel, the materialized project before and after, and every observed transition between.
   Each gate carries a self-check showing it fails when it stops observing.

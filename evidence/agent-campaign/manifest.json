@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "6592e22709073995fdbc6796b494b76db21d4d714a5d959b53855f57a98bb15e"
+        "digest": "34c745957e690824f4383fbee954eaa2483d3503f13d46a3faf9d21361edaa18"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -805,7 +805,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "6eabacbf3ff3fda4f447e9470748bec1b3ba69465b0c8918938bb9484ada871b"
+                    "digest": "b0d777e1bda2e0cb55c2270bffce4915186a1aad790b4fdb614976f6000c0e49"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -817,7 +817,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "30f5e976dd872fc053c97cc50f12cb96dbde67caffb1f8675ad1c3432a8ab67a"
+                    "digest": "5ca5fd53b70cd183725ceb5eeeb1286883d71653e8f56ba593335826c959d975"
                 }
             ]
         },

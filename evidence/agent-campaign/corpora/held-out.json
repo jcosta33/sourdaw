@@ -3657,7 +3657,7 @@
             "id": "AC067-HO-COMPARE-2",
             "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "make the Overheads more dynamic than the Lead Vocal in the verse",
+            "prompt": "make the Overheads less dynamic than the Lead Vocal in the verse",
             "providerTurns": [
                 {
                     "kind": "intake",
@@ -3666,7 +3666,7 @@
                     "objectives": [
                         {
                             "policyId": "crest-factor-comparison-v1",
-                            "relation": "greater-than-current",
+                            "relation": "less-than-current",
                             "targetName": "Overheads",
                             "referenceName": "Lead Vocal",
                             "rangeName": "Verse"
@@ -3725,7 +3725,7 @@
                             "arguments": {
                                 "deviceId": "$insert",
                                 "paramId": "comp-attack",
-                                "value": 30
+                                "value": 2
                             },
                             "dependsOn": ["insert"]
                         },
@@ -3775,7 +3775,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "comp-attack",
-                            "value": 30
+                            "value": 2
                         }
                     },
                     {
@@ -3789,7 +3789,7 @@
                 "measuredGoals": [
                     {
                         "metric": "crestFactor",
-                        "relation": "greater-than-current",
+                        "relation": "less-than-current",
                         "target": "Overheads",
                         "reference": "Lead Vocal"
                     }

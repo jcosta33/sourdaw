@@ -120,7 +120,7 @@ import { sendChatMessage } from '../useCases/sendChatMessage';
 import { skipPendingVibeBatch } from '../useCases/skipPendingVibeBatch';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
-import { installProviderHostGuard, readProviderHosts } from './acceptanceProviderHostGuard';
+import { installProviderHostGuard } from './acceptanceProviderHostGuard';
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
 registerDeviceEnginePorts();
@@ -1237,9 +1237,6 @@ function measuresProject(testCase: CorpusCase): boolean {
     }
     return testCase.providerTurns.some((turn) => turn.kind === 'measure' || turn.kind === 'measure-preview');
 }
-
-/** Every provider host the production sources name, refused for the whole acceptance run (AC-074). */
-const PROVIDER_HOSTS = readProviderHosts(REPOSITORY_ROOT);
 
 type ProjectTruth = Record<string, Record<string, unknown>>;
 type ProjectObservation = { kind: 'full' | 'root'; truth: ProjectTruth };
@@ -3087,7 +3084,7 @@ describe('agent acceptance corpora', () => {
                             completed.set(testCase.id, run);
                         }
                     });
-                    const guard = installProviderHostGuard(PROVIDER_HOSTS);
+                    const guard = installProviderHostGuard();
                     try {
                         await fixtureLifetime.track(async () => {
                             const barrel = spyOnBarrelWrites();
@@ -3100,7 +3097,7 @@ describe('agent acceptance corpora', () => {
                     } finally {
                         guard.restore();
                     }
-                    expect(guard.attempts(), `Case ${testCase.id} reached a provider host`).toEqual([]);
+                    expect(guard.attempts(), `Case ${testCase.id} reached a remote host`).toEqual([]);
                     if (measuresProject(testCase)) {
                         expect(
                             run?.unintendedMutations,
@@ -3256,19 +3253,46 @@ describe('agent acceptance corpora', () => {
             ]);
         });
 
-        it('reads every hosted provider and model artifact host from the production sources', () => {
-            expect([...PROVIDER_HOSTS]).toEqual(
-                expect.arrayContaining(['api.anthropic.com', 'api.openai.com', 'huggingface.co'])
-            );
+        it.each([
+            'https://storage.googleapis.com/probe',
+            'https://models.example.test/v1',
+            'https://api.anthropic.com/v1/messages',
+        ])('refuses and records a fetch to the unlisted remote host %s', async (remoteUrl) => {
+            const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+            vi.stubGlobal('fetch', transport);
+            const guard = installProviderHostGuard();
+            try {
+                await expect(fetch(remoteUrl)).rejects.toThrow(/remote host/u);
+                expect(guard.attempts()).toEqual([remoteUrl]);
+                expect(transport).not.toHaveBeenCalled();
+            } finally {
+                guard.restore();
+                vi.unstubAllGlobals();
+            }
+        });
+
+        it('passes a local host through to the installed transport', async () => {
+            const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+            vi.stubGlobal('fetch', transport);
+            const guard = installProviderHostGuard();
+            try {
+                await fetch('http://localhost:5173/asset');
+                await fetch('http://127.0.0.1:8080/asset');
+                expect(transport).toHaveBeenCalledTimes(2);
+                expect(guard.attempts()).toEqual([]);
+            } finally {
+                guard.restore();
+                vi.unstubAllGlobals();
+            }
         });
 
         it('refuses and records a planning run that reaches a provider host', async () => {
             const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
             vi.stubGlobal('fetch', transport);
-            const guard = installProviderHostGuard(PROVIDER_HOSTS);
+            const guard = installProviderHostGuard();
             const providerUrl = 'https://api.anthropic.com/v1/messages';
             try {
-                await fetch('https://fixture.test/elsewhere');
+                await fetch('http://localhost:5173/elsewhere');
                 expect(transport).toHaveBeenCalledTimes(1);
                 runtimeMocks.generateWebLlmCompletion.mockReset();
                 runtimeMocks.generateWebLlmCompletion.mockImplementation(async () => {

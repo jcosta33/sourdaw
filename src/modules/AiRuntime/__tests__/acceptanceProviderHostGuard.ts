@@ -1,38 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-/**
- * The production modules that hold every hosted model provider's base URL and every origin a model
- * artifact downloads from. The guard reads their single-quoted https literals, so a provider added
- * there is refused here without anyone remembering to list it.
- */
-const PROVIDER_ORIGIN_SOURCES = [
-    'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts',
-    'src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts',
-    'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts',
-    'src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts',
-] as const;
-
-const HTTPS_LITERAL = /'(https:\/\/[^'\s]+)'/gu;
-
-/** The hosts the production provider base URLs name; a source naming none is a moved constant, never silence. */
-export function readProviderHosts(repositoryRoot: string): ReadonlySet<string> {
-    const hosts = new Set<string>();
-    for (const path of PROVIDER_ORIGIN_SOURCES) {
-        const text = readFileSync(resolve(repositoryRoot, path), 'utf8');
-        const found = Array.from(text.matchAll(HTTPS_LITERAL), (match) => new URL(match[1] ?? '').host);
-        if (found.length === 0) {
-            throw new Error(`${path} no longer names a provider base URL the guard can read.`);
-        }
-        for (const host of found) {
-            hosts.add(host);
-        }
-    }
-    return hosts;
-}
+const LOCAL_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
+const NETWORK_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'ws:', 'wss:']);
+const LOCAL_BASE = 'http://localhost/';
 
 export type ProviderHostGuard = {
-    /** Every URL a guarded transport was asked to reach on a provider host, in order. */
+    /** Every URL a guarded transport was asked to reach on a non-local host, in order. */
     attempts: () => readonly string[];
     restore: () => void;
 };
@@ -45,24 +16,25 @@ function requestUrl(input: RequestInfo | URL): string {
 }
 
 /**
- * Refuses fetch, XMLHttpRequest and WebSocket to any provider host, recording each attempt: no
- * acceptance run may reach a real model, whatever route asked for it. Other hosts pass through to
- * the transport that was installed before the guard.
+ * Refuses fetch, XMLHttpRequest and WebSocket to every non-local network origin, recording each
+ * attempt: no acceptance run may reach a real model, whatever host a provider, artifact manifest or
+ * user configuration names. Local hosts, non-network schemes and relative URLs pass through to the
+ * transport that was installed before the guard.
  */
-export function installProviderHostGuard(hosts: ReadonlySet<string>): ProviderHostGuard {
+export function installProviderHostGuard(): ProviderHostGuard {
     const attempts: string[] = [];
     const refusal = (url: string): Error | null => {
-        let host: string;
+        let parsed: URL;
         try {
-            host = new URL(url).host;
+            parsed = new URL(url, LOCAL_BASE);
         } catch {
             return null;
         }
-        if (!hosts.has(host)) {
+        if (!NETWORK_PROTOCOLS.has(parsed.protocol) || LOCAL_HOSTNAMES.has(parsed.hostname)) {
             return null;
         }
         attempts.push(url);
-        return new TypeError(`An acceptance run reached the provider host ${host}.`);
+        return new TypeError(`An acceptance run reached the remote host ${parsed.host}.`);
     };
 
     const originalFetch = globalThis.fetch;
