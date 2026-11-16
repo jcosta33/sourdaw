@@ -478,7 +478,7 @@
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
-                    "digest": "6508da3372ccf0db662d6206b48d48885fb480cd037186dc5c3133bdf2fa225c"
+                    "digest": "8b9f6ea43f4ec1dc3bc65416aff4b346361842892dc559c98e77b1387c73b731"
                 },
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
@@ -618,7 +618,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "8c1b2c97790cd03d4004895a1d42f322c2273899bb7fbf15a210859c05f6b63e"
+                    "digest": "84d07d504df5dd36dc32da43a9f0ea59043d4d5d9258a371196450b641bd9d35"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
@@ -726,7 +726,7 @@
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
-                    "digest": "6508da3372ccf0db662d6206b48d48885fb480cd037186dc5c3133bdf2fa225c"
+                    "digest": "8b9f6ea43f4ec1dc3bc65416aff4b346361842892dc559c98e77b1387c73b731"
                 },
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
@@ -850,7 +850,7 @@
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
-                    "digest": "6508da3372ccf0db662d6206b48d48885fb480cd037186dc5c3133bdf2fa225c"
+                    "digest": "8b9f6ea43f4ec1dc3bc65416aff4b346361842892dc559c98e77b1387c73b731"
                 },
                 {
                     "path": "electron/__tests__/commands.spec.ts",
