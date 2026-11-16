@@ -101,4 +101,4 @@ jobs:
         run: cargo clippy --package sourdaw-native --all-targets --features napi-addon
 
       - name: Test the native crate
-        run: cargo test --package sourdaw-native
+        run: cargo test --package sourdaw-native --features napi-addon

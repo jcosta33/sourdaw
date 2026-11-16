@@ -1610,7 +1610,9 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
             'cargo clippy --package sourdaw-native --all-targets --features napi-addon'
         );
     }
-    expect(stepNamed(nativeSeed, 'Test the native crate').run).toBe('cargo test --package sourdaw-native');
+    expect(stepNamed(nativeSeed, 'Test the native crate').run).toBe(
+        'cargo test --package sourdaw-native --features napi-addon'
+    );
 
     for (const job of [linuxSeed, linuxConsumer]) {
         const cache = stepNamed(job, 'Cache Cargo dependencies');
