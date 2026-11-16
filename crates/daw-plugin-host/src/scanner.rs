@@ -77,12 +77,29 @@ fn parameter_metadata_cost(name: &str, module: Option<&str>) -> usize {
 /// rather than cleared: values the instance pass's caps never saw would
 /// otherwise be published when that pass fails, or on a load-time rescan that
 /// runs no instance pass.
-pub fn validate_scanned_bundle(bundle: &[ScannedDescriptor]) -> Result<(), String> {
+///
+/// Every descriptor's `format` must be the candidate's own wire name. The
+/// field is copied into the published row and decides which instance caps and
+/// which loader apply, so a helper that answered for another format would
+/// escape the caps of the format the file was scanned as.
+pub fn validate_scanned_bundle(
+    format: PluginFormat,
+    bundle: &[ScannedDescriptor],
+) -> Result<(), String> {
     if bundle.len() > MAX_SCANNED_BUNDLE_PLUGINS as usize {
         return Err(format!(
             "The scan helper reported {} plugins in one file, more than the {} the scan accepts",
             bundle.len(),
             MAX_SCANNED_BUNDLE_PLUGINS
+        ));
+    }
+    if bundle
+        .iter()
+        .any(|descriptor| descriptor.format != format.wire_name())
+    {
+        return Err(format!(
+            "The scan helper's descriptor answer named a format other than {}",
+            format.wire_name()
         ));
     }
     let carries_instance_fields = |descriptor: &ScannedDescriptor| {
@@ -1197,8 +1214,60 @@ mod tests {
     #[test]
     fn a_bundle_is_valid_up_to_the_plugin_cap_and_refused_one_past_it() {
         let cap = MAX_SCANNED_BUNDLE_PLUGINS as usize;
-        assert!(validate_scanned_bundle(&vec![bundle_descriptor(); cap]).is_ok());
-        assert!(validate_scanned_bundle(&vec![bundle_descriptor(); cap + 1]).is_err());
+        assert!(
+            validate_scanned_bundle(PluginFormat::Clap, &vec![bundle_descriptor(); cap]).is_ok()
+        );
+        assert!(
+            validate_scanned_bundle(PluginFormat::Clap, &vec![bundle_descriptor(); cap + 1])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_descriptor_naming_another_format_is_refused_in_both_directions() {
+        let clap = bundle_descriptor();
+        let mut vst3 = bundle_descriptor();
+        vst3.format = PluginFormat::Vst3.wire_name().to_string();
+        assert!(validate_scanned_bundle(PluginFormat::Clap, std::slice::from_ref(&clap)).is_ok());
+        assert!(validate_scanned_bundle(PluginFormat::Vst3, std::slice::from_ref(&vst3)).is_ok());
+        assert!(validate_scanned_bundle(PluginFormat::Vst3, std::slice::from_ref(&clap)).is_err());
+        assert!(validate_scanned_bundle(PluginFormat::Clap, std::slice::from_ref(&vst3)).is_err());
+        let mut vst3_sibling = clap.clone();
+        vst3_sibling.format = PluginFormat::Vst3.wire_name().to_string();
+        assert!(
+            validate_scanned_bundle(PluginFormat::Clap, &[clap, vst3_sibling]).is_err(),
+            "one mismatching sibling refuses the bundle"
+        );
+    }
+
+    /// 256 parameters of 92-byte names cost 256 * (92 + 4 + 32) = 32 KiB
+    /// exactly. Mutation this catches: dropping the `u32` term or the `+ 32`
+    /// from `parameter_metadata_cost` leaves the one-byte-over case under the
+    /// cap and accepted.
+    #[test]
+    fn parameter_metadata_is_accepted_at_the_byte_limit_and_refused_one_byte_over() {
+        let at_limit = |last_name_len: usize| ScannedInstance {
+            parameters: (0..256)
+                .map(|id| {
+                    parameter_named(id, &"m".repeat(if id == 255 { last_name_len } else { 92 }))
+                })
+                .collect(),
+            ..ScannedInstance::default()
+        };
+        assert_eq!(MAX_SCANNED_PARAMETER_METADATA_BYTES, 256 * (92 + 4 + 32));
+        assert!(validate_scanned_instance(PluginFormat::Clap, &at_limit(92)).is_ok());
+        assert!(validate_scanned_instance(PluginFormat::Clap, &at_limit(93)).is_err());
+    }
+
+    #[test]
+    fn a_module_of_exactly_the_name_cap_is_accepted() {
+        let mut parameter = parameter_named(1, "p");
+        parameter.module = Some("m".repeat(128));
+        let instance = ScannedInstance {
+            parameters: vec![parameter],
+            ..ScannedInstance::default()
+        };
+        assert!(validate_scanned_instance(PluginFormat::Clap, &instance).is_ok());
     }
 
     #[test]
@@ -1215,11 +1284,12 @@ mod tests {
             ("capabilities", with_capabilities),
         ] {
             assert!(
-                validate_scanned_bundle(&[bundle_descriptor(), descriptor]).is_err(),
+                validate_scanned_bundle(PluginFormat::Clap, &[bundle_descriptor(), descriptor])
+                    .is_err(),
                 "{field}"
             );
         }
-        assert!(validate_scanned_bundle(&[bundle_descriptor()]).is_ok());
+        assert!(validate_scanned_bundle(PluginFormat::Clap, &[bundle_descriptor()]).is_ok());
     }
 
     #[test]

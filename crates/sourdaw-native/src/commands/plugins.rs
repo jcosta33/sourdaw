@@ -660,17 +660,18 @@ fn apply_instance_scan_result(
 
 /// Why a bundle's remaining plugins were not inspected once one of them took
 /// the scan helper down.
-const SIBLING_INSPECTION_STOPPED_REASON: &str = "Inspection stopped because another plugin in the same file crashed or timed out the scan helper, so the file is quarantined.";
+const SIBLING_INSPECTION_STOPPED_REASON: &str = "Inspection stopped because another plugin in the same file crashed, timed out or broke the scan helper, so the file is quarantined.";
 
 /// The descriptor helper's answer, held to the caps the helper itself
 /// enforces. The helper runs the untrusted binary, so its own checks are not
 /// evidence about what it sent. A violation is a data refusal, never a
 /// quarantine.
 fn validated_bundle(
+    format: PluginFormat,
     answer: Result<Vec<ScannedDescriptor>, ScanFailure>,
 ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
     let bundle = answer?;
-    scanner::validate_scanned_bundle(&bundle).map_err(ScanFailure::Refused)?;
+    scanner::validate_scanned_bundle(format, &bundle).map_err(ScanFailure::Refused)?;
     Ok(bundle)
 }
 
@@ -922,11 +923,10 @@ async fn scan_plugins_with_backend(
                 // then vet as the scanned file.
                 let wire_name = candidate.format.wire_name();
                 let before = plugin_file_fingerprint(&candidate.path, wire_name);
-                match validated_bundle(scan_descriptor(
+                match validated_bundle(
                     candidate.format,
-                    &candidate.path,
-                    budget.candidate,
-                )) {
+                    scan_descriptor(candidate.format, &candidate.path, budget.candidate),
+                ) {
                     // One bundle may declare several plugins — CLAP's factory is
                     // count/index shaped — and each gets its own inspection and
                     // its own row. A file that declares one keeps producing
@@ -934,7 +934,8 @@ async fn scan_plugins_with_backend(
                     Ok(mut bundle) => {
                         let mut inspection_stopped = false;
                         for descriptor in &mut bundle {
-                            // A crash or timeout quarantines the file, and every
+                            // A process failure (a crash, a timeout or a tampered
+                            // response) quarantines the file, and every
                             // further inspection of it would spend a whole
                             // candidate budget on a binary already known bad.
                             // The row stays, with the reason, so its missing
@@ -1736,7 +1737,7 @@ fn rescan_plugin_file(
             recorded_consumption,
         )
     })?;
-    rescanned_row(path, bundle, plugin_id, last_known_descriptor_id)
+    rescanned_row(path, format, bundle, plugin_id, last_known_descriptor_id)
 }
 
 /// The row a targeted rescan resolves to, from the descriptor helper's
@@ -1744,11 +1745,12 @@ fn rescan_plugin_file(
 /// instance pass and publishes the row as it stands.
 fn rescanned_row(
     path: &Path,
+    format: PluginFormat,
     bundle: Vec<ScannedDescriptor>,
     plugin_id: &str,
     last_known_descriptor_id: &str,
 ) -> Result<ScannedPlugin, RescanFailure> {
-    scanner::validate_scanned_bundle(&bundle).map_err(RescanFailure::Verdict)?;
+    scanner::validate_scanned_bundle(format, &bundle).map_err(RescanFailure::Verdict)?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -12487,7 +12489,7 @@ mod tests {
         let path = Path::new("/plugins/Big.clap");
         let wanted = "com.vendor.sibling-000";
 
-        let refused = rescanned_row(path, bundle_of(cap + 1), wanted, "")
+        let refused = rescanned_row(path, PluginFormat::Clap, bundle_of(cap + 1), wanted, "")
             .expect_err("an over-cap bundle must be refused");
         match refused {
             RescanFailure::Verdict(reason) => {
@@ -12499,9 +12501,74 @@ mod tests {
             RescanFailure::Inconclusive(reason) => panic!("a refusal is a verdict: {reason}"),
         }
 
-        let accepted =
-            rescanned_row(path, bundle_of(cap), wanted, "").expect("exactly the cap is accepted");
+        let accepted = rescanned_row(path, PluginFormat::Clap, bundle_of(cap), wanted, "")
+            .expect("exactly the cap is accepted");
         assert_eq!(accepted.descriptor_id, wanted);
+    }
+
+    /// Mutation this catches: dropping the format comparison from
+    /// `validate_scanned_bundle` resolves a clap-named row for a vst3 file.
+    #[test]
+    fn a_rescan_answer_naming_another_format_is_a_verdict() {
+        let refused = rescanned_row(
+            Path::new("/plugins/Big.vst3"),
+            PluginFormat::Vst3,
+            bundle_of(1),
+            "com.vendor.sibling-000",
+            "",
+        )
+        .expect_err("a clap-named answer for a vst3 file must be refused");
+        match refused {
+            RescanFailure::Verdict(reason) => {
+                assert!(
+                    reason.contains("named a format other than vst3"),
+                    "{reason}"
+                );
+            }
+            RescanFailure::Inconclusive(reason) => panic!("a refusal is a verdict: {reason}"),
+        }
+    }
+
+    /// A `.vst3` bundle whose helper answers `"clap"` would skip every CLAP
+    /// instance cap and publish a CLAP row.
+    #[test]
+    fn a_vst3_candidate_answered_as_clap_is_refused_without_a_row_or_quarantine() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("vst3-answered-as-clap");
+        let bundle = root.join("Aaa.vst3");
+        std::fs::create_dir_all(&bundle).expect("bundle directory should be created");
+        let state = state_with_registry_file(&root);
+        let instance_calls = scan_call_log();
+        let instance_log = Arc::clone(&instance_calls);
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, _path, _timeout| Ok(vec![descriptor("com.vendor.liar")]),
+            move |_format, path, _plugin_id, timeout| {
+                record_scan_call(&instance_log, path, timeout);
+                Ok(ScannedInstance::default())
+            },
+        ))
+        .expect("a scan over an authorized fixture root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(result.plugins.is_empty(), "{:?}", result.plugins);
+        assert!(
+            result.errors.iter().any(|error| error.contains("Aaa.vst3")
+                && error.contains("named a format other than vst3")),
+            "{:?}",
+            result.errors
+        );
+        assert_eq!(scan_calls_for(&instance_calls, &bundle), 0);
+        assert!(state
+            .plugin_registry_store
+            .is_quarantined(&bundle)
+            .is_none());
     }
 
     /// A descriptor answer carrying the instance pass's capabilities is a
