@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactElement, type Ref } from 'react';
+import { type KeyboardEvent, type MouseEvent, type ReactElement, type Ref } from 'react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
@@ -91,6 +91,16 @@ export const AgentRunList = ({ runs, selectedRunId, onSelect, onActivate, ref }:
         onSelect(runs[nextIndex]!.runId);
     };
 
+    // The listbox owns activation for both inputs: the keyboard through
+    // aria-activedescendant above, the pointer through the option it hits.
+    const handleClick = (event: MouseEvent<HTMLDivElement>): void => {
+        const option = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+        const runId = option?.getAttribute('data-run-id');
+        if (runId) {
+            onActivate(runId);
+        }
+    };
+
     return (
         <div
             ref={ref}
@@ -99,6 +109,7 @@ export const AgentRunList = ({ runs, selectedRunId, onSelect, onActivate, ref }:
             aria-activedescendant={optionId(activeRun.runId)}
             tabIndex={0}
             onKeyDown={handleKeyDown}
+            onClick={handleClick}
             className={LISTBOX_CLASS_NAME}
         >
             {runs.map((run) => {
@@ -112,7 +123,7 @@ export const AgentRunList = ({ runs, selectedRunId, onSelect, onActivate, ref }:
                         aria-selected={selected}
                         tabIndex={-1}
                         data-state={selected ? 'selected' : 'idle'}
-                        onClick={() => onActivate(run.runId)}
+                        data-run-id={run.runId}
                         className={cn(
                             'cursor-pointer rounded px-2 py-1.5 transition-colors motion-reduce:transition-none',
                             selected

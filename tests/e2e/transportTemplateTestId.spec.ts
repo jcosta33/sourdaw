@@ -1,5 +1,5 @@
 import { test, expect } from './e2eTest';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 test.describe('Transport with Pop Song template — deep integration', () => {
     test.beforeEach(async ({ page }) => {
@@ -31,8 +31,7 @@ test.describe('Transport with Pop Song template — deep integration', () => {
         const loop = page.getByTestId('transport-loop');
         await expect(loop).toBeVisible({ timeout: 15_000 });
 
-        // Click should not crash — capture state before/after.
-        const before = await loop.getAttribute('aria-pressed');
+        // Click should not crash.
         await loop.click({ force: true });
         await page.waitForTimeout(300);
 

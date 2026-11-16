@@ -417,10 +417,15 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
         }
     }
 
-    const admission =
-        typeof traceEvents === 'string'
-            ? ({ status: 'refused', reason: traceEvents } satisfies TraceAdmission)
-            : admitOfflineAudioWorkletTrace({ events: traceEvents, dataLossOccurred: completion.dataLossOccurred });
+    let admission: TraceAdmission;
+    if (typeof traceEvents === 'string') {
+        admission = { status: 'refused', reason: traceEvents };
+    } else {
+        admission = admitOfflineAudioWorkletTrace({
+            events: traceEvents,
+            dataLossOccurred: completion.dataLossOccurred,
+        });
+    }
     const receipt = producerResult?.receipt;
     const summary = {
         claim: 'synthetic native OfflineAudioWorklet trace instrument admission only',

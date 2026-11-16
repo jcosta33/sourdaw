@@ -38,7 +38,8 @@ async function readTruth(page: Page) {
         }
         const tracks = trackStore.value?.tracks ?? [];
         const snapshot = (value: unknown): unknown => {
-            const serialized = JSON.stringify(value);
+            // JSON.stringify returns undefined for undefined and functions, which its declared type omits.
+            const serialized = JSON.stringify(value) as string | undefined;
             if (serialized === undefined) {
                 return undefined;
             }
@@ -66,7 +67,7 @@ test('native transcript stays a draft until explicit submission and confirmation
     test.setTimeout(180_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
-        throw new Error('Voice boundary acceptance requires the app origin');
+        throw new TypeError('Voice boundary acceptance requires the app origin');
     }
     const appOrigin = new URL(configuredBaseUrl).origin;
     const externalRequests: string[] = [];
@@ -91,7 +92,7 @@ test('native transcript stays a draft until explicit submission and confirmation
             queueTerminal: (sessionId, payload) => {
                 // Native events already queued retain their original callback
                 // even when the application unsubscribes before later delivery.
-                const callbacks = [...(terminals.get(sessionId) ?? [])];
+                const callbacks = Array.from(terminals.get(sessionId) ?? []);
                 if (callbacks.length === 0) {
                     throw new Error('No native terminal subscription to capture');
                 }
@@ -124,11 +125,15 @@ test('native transcript stays a draft until explicit submission and confirmation
                 if (command === 'load_cached_whisper_model' || command === 'disarm_retrospective_capture') {
                     return Promise.resolve();
                 }
-                if (command === 'list_midi_inputs') return Promise.resolve([]);
+                if (command === 'list_midi_inputs') {
+                    return Promise.resolve([]);
+                }
                 if (command === 'unload_plugin') {
                     return Promise.resolve({ unloadedInstanceIds: [], errors: [], reports: [] });
                 }
-                if (command === 'engine_rt_diagnostics') return Promise.resolve({ running: false, events: [] });
+                if (command === 'engine_rt_diagnostics') {
+                    return Promise.resolve({ running: false, events: [] });
+                }
                 return refuse(command);
             },
             invokeBinary: (command) => refuse(command),

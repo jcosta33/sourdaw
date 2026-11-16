@@ -14,7 +14,7 @@ import {
     type RetiredTakeLaneSnapshot,
 } from '#/utils/handlerContract';
 
-import { changesTempoByActionType } from '../../models/ChangesTempoByActionType';
+import { projectsClipsByTempo } from '../../models/ProjectsClipsByTempoActionType';
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
@@ -97,7 +97,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         })) ?? [];
     let takePriorActions = priorActions;
     let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
-    if (priorActions.some((action) => changesTempoByActionType[action.type])) {
+    if (priorActions.some((action) => projectsClipsByTempo(action.type))) {
         if (!projected.tracks) {
             return false;
         }

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
+
 import {
     appliedAutomationBases,
+    recordAppliedAutomationWrite,
     appliedAutomationWriteSequences,
     clearAppliedAutomationBases,
 } from '../appliedAutomationBases';
@@ -39,5 +42,17 @@ describe('readAppliedAutomationValue', () => {
         expect(readAppliedAutomationValue('device-a', '7')).toBeUndefined();
         appliedAutomationBases.get('device-a')!.set('7', 0.625);
         expect(readAppliedAutomationValue('device-a', '7')).toEqual({ value: 0.625, writeSequence: 4 });
+    });
+
+    it('reports a latest write sequence below every later write and equal to the last one', () => {
+        recordAppliedAutomationWrite('device-a', '7');
+        const issuedAt = readLastObservationSequence();
+        expect(readLastObservationSequence()).toBe(issuedAt);
+
+        recordAppliedAutomationWrite('device-b', '9');
+        appliedAutomationBases.set('device-b', new Map([['9', 0.5]]));
+
+        expect(readAppliedAutomationValue('device-b', '9')?.writeSequence).toBeGreaterThan(issuedAt);
+        expect(readLastObservationSequence()).toBe(readAppliedAutomationValue('device-b', '9')?.writeSequence);
     });
 });

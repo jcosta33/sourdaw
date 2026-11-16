@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { type ReactElement, useState, useEffect, useId, useLayoutEffect, useRef } from 'react';
 
 import { Sparkles, Loader2, Music, Mic, AudioLines, Download, Cpu } from 'lucide-react';
 
@@ -162,6 +162,7 @@ function projectDdspNotes({
 }
 
 export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElement => {
+    const fieldId = useId();
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
     const [isRenderingTts, setIsRenderingTts] = useState(false);
@@ -670,8 +671,14 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         return (
             <Stack gap={2}>
                 <Stack gap={1}>
-                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Text</label>
+                    <label
+                        htmlFor={`${fieldId}-tts-text`}
+                        className="text-[9px] text-muted-foreground/70 uppercase tracking-wider"
+                    >
+                        Text
+                    </label>
                     <DawCompactTextarea
+                        id={`${fieldId}-tts-text`}
                         value={ttsText}
                         onChange={(event) => setTtsText(event.target.value)}
                         placeholder="Type lyrics or text…"
@@ -680,12 +687,28 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     />
                 </Stack>
                 <Stack gap={1}>
-                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Voice</label>
-                    <KokoroVoiceSelector value={ttsVoiceId} onChange={setTtsVoiceId} disabled={isRenderingTts} />
+                    <label
+                        htmlFor={`${fieldId}-tts-voice`}
+                        className="text-[9px] text-muted-foreground/70 uppercase tracking-wider"
+                    >
+                        Voice
+                    </label>
+                    <KokoroVoiceSelector
+                        id={`${fieldId}-tts-voice`}
+                        value={ttsVoiceId}
+                        onChange={setTtsVoiceId}
+                        disabled={isRenderingTts}
+                    />
                 </Stack>
                 <Stack gap={1}>
-                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Speed</label>
+                    <label
+                        htmlFor={`${fieldId}-tts-speed`}
+                        className="text-[9px] text-muted-foreground/70 uppercase tracking-wider"
+                    >
+                        Speed
+                    </label>
                     <DawCompactSelect
+                        id={`${fieldId}-tts-speed`}
                         value={ttsSpeed}
                         onChange={(event) => setTtsSpeed(event.target.value)}
                         aria-label="Speed"
@@ -842,8 +865,14 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         return (
             <Stack gap={2}>
                 <Stack gap={1}>
-                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Voice</label>
+                    <label
+                        htmlFor={`${fieldId}-voicebank`}
+                        className="text-[9px] text-muted-foreground/70 uppercase tracking-wider"
+                    >
+                        Voice
+                    </label>
                     <DawCompactSelect
+                        id={`${fieldId}-voicebank`}
                         value={selectedVoicebankId}
                         onChange={(event) => setSelectedVoicebankId(event.target.value)}
                         aria-label="Voicebank"
@@ -857,8 +886,14 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     </DawCompactSelect>
                 </Stack>
                 <Stack gap={1}>
-                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Lyrics</label>
+                    <label
+                        htmlFor={`${fieldId}-lyrics`}
+                        className="text-[9px] text-muted-foreground/70 uppercase tracking-wider"
+                    >
+                        Lyrics
+                    </label>
                     <DawCompactTextarea
+                        id={`${fieldId}-lyrics`}
                         value={diffSingerLyrics}
                         onChange={(event) => setDiffSingerLyrics(event.target.value)}
                         placeholder="Type lyrics… (leave blank for la la la)"
@@ -867,8 +902,14 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     />
                 </Stack>
                 <Stack gap={1}>
-                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Quality</label>
+                    <label
+                        htmlFor={`${fieldId}-quality`}
+                        className="text-[9px] text-muted-foreground/70 uppercase tracking-wider"
+                    >
+                        Quality
+                    </label>
                     <DawCompactSelect
+                        id={`${fieldId}-quality`}
                         value={svsRenderQuality}
                         onChange={(event) => {
                             const opt = QUALITY_OPTIONS.find((output) => output.value === event.target.value);

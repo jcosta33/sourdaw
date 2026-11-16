@@ -72,6 +72,9 @@ whisper-rs = { version = "0.16", features = ["metal"] }
 # creation function are enabled; 0.3 shares the one objc2 0.6 and
 # objc2-foundation 0.3 the lockfile already resolves for cpal.
 objc2-metal = { version = "0.3", default-features = false, features = ["std", "MTLDevice"] }
+# Already in the dependency tree transitively; declared here so plugin folder
+# containment can compare names the way APFS does (commands/filesystem/grant_registry.rs).
+icu_normalizer = { version = "2.4", default-features = false, features = ["compiled_data"] }
 
 [target.'cfg(unix)'.dependencies]
 # Already in the dependency tree transitively; declared here for the

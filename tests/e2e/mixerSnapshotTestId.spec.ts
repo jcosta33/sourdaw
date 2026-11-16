@@ -49,12 +49,6 @@ test.describe('Mixer snapshots & AI health — test-id targeted', () => {
         await recall.click();
         await page.waitForTimeout(300);
 
-        // A snapshot list should appear.
-        const list = page.getByText(/snapshot/i);
-        const hasList = await list
-            .first()
-            .isVisible()
-            .catch(() => false);
         // At minimum, the save didn't crash.
         await expect(save).toBeVisible();
     });

@@ -32,9 +32,13 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeVersionedCommandBatchEnvelope: vi.fn(),
     generateGroupId: vi.fn((groupLabel: string) => ({ groupId: 'group-1', groupLabel })),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => {
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    getAgentMeasurementMetricIds: () => [],
+}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const captureProjectRevision = vi.fn();
     return {
+        ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
         captureProjectRevision,
         // Revisions here are labels with no document behind them, so the save-insensitive question is
         // answered as equality with the live label; confirmAfterSave.spec.ts asks it over a real save.
