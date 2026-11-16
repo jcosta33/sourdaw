@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -13,7 +13,6 @@ import {
 
 const BASE_REF = 'refs/remotes/origin/main';
 const BASELINE_PATH = 'eslint.size-baseline.mjs';
-
 function git(root: string, args: string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
@@ -82,8 +81,15 @@ export async function checkSizeBaselineShrinks(root: string, load: ModuleLoader 
     return describeSizeBaselineGrowth(growth);
 }
 
-const entry = process.argv[1];
-if (entry !== undefined && import.meta.url === new URL(`file://${resolve(entry)}`).href) {
+/**
+ * Whether `moduleUrl` is the script node was started with. The URL is built from the real path, never by
+ * interpolating into `file://`, so a `#` or `%` in the checkout path or a symlinked entry still matches.
+ */
+export function isEntryModule(moduleUrl: string, entry: string | undefined): boolean {
+    return entry !== undefined && moduleUrl === pathToFileURL(realpathSync(entry)).href;
+}
+
+if (isEntryModule(import.meta.url, process.argv[1])) {
     const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
     try {
         const findings = await checkSizeBaselineShrinks(root);
