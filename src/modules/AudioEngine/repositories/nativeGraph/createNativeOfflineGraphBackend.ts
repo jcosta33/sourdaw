@@ -202,6 +202,15 @@ function readMappedResult(value: unknown): MappedOutcome {
  * not reach finishes or fails on its own, and the caller's checkpoint after it
  * still ends a cancelled export.
  */
+/** Asks the native side to stop `renderId`; a cancel that cannot reach it is logged, never thrown. */
+function cancelListener(cancel: (renderId: string) => Promise<void>, renderId: string): () => void {
+    return () => {
+        void cancel(renderId).catch((error: unknown) => {
+            logger.warn(`cancel_graph_offline did not reach render ${renderId}: ${reasonOf(error)}`);
+        });
+    };
+}
+
 function cancelOnAbort(input: {
     transport: NativeGraphTransport;
     renderId: string;
@@ -212,11 +221,7 @@ function cancelOnAbort(input: {
     if (abortSignal === undefined || cancel === undefined) {
         return { release: () => {} };
     }
-    function onAbort(): void {
-        void cancel(renderId).catch((error: unknown) => {
-            logger.warn(`cancel_graph_offline did not reach render ${renderId}: ${reasonOf(error)}`);
-        });
-    }
+    const onAbort = cancelListener(cancel, renderId);
     if (abortSignal.aborted) {
         onAbort();
         return { release: () => {} };
