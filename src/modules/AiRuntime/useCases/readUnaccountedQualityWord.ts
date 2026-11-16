@@ -106,6 +106,22 @@ function blankPunchTransportTerms(clause: string): string {
     );
 }
 
+// A published recipe id ("drums-tight-transient") and the word naming a recipe ("the controlled recipe") pick a
+// catalog entry, so a descriptor inside either is the recipe's name, not a quality the request claims.
+const RECIPE_NAMING_WORD = /\p{L}+(?=\s+recipes?(?![\p{L}\p{N}]))/giu;
+
+function blankRecipeReferences(text: string, recipeIds: readonly string[]): string {
+    const withoutIds = recipeIds.reduce(
+        (masked, id) =>
+            masked.replaceAll(
+                new RegExp(String.raw`(?<![\p{L}\p{N}-])${escapeRegExp(id)}(?![\p{L}\p{N}-])`, 'giu'),
+                (span) => ' '.repeat(span.length)
+            ),
+        text
+    );
+    return withoutIds.replaceAll(RECIPE_NAMING_WORD, (span) => ' '.repeat(span.length));
+}
+
 const SUPPLIED_NAME = new RegExp(String.raw`(?:\b(?:named|called)|${COMMAND_CARRIER}rename\b.*?\bto)\s+(.+)$`, 'iu');
 
 // A name the request gives for a new or renamed item ("named Dark Room", "rename Drums to Bright Keys") is a label,
@@ -135,7 +151,10 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
     // An unclosed apostrophe leaves the quoting unknown, so then every word is the request's own.
     const tracked = scanPromptQuotedText(prompt).complete ? maskTrackReferences(prompt, context, ' ') : prompt;
     const named = maskProjectObjectNames(tracked, context, CLAUSE_SEPARATOR);
-    const masked = blankConstraintClauses(named, prompt, context);
+    const masked = blankRecipeReferences(
+        blankConstraintClauses(named, prompt, context),
+        catalog.recipes.map((recipe) => recipe.id)
+    );
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
         if (!HAS_LETTER.test(clause)) {
             continue;

@@ -177,6 +177,8 @@ describe('positive whole-request metric intent', () => {
         ['make the snare punch out', 'punch'],
         ['Increase the width of the vocal', 'width'],
         ['Make the vocal wider', 'wider'],
+        ['Make the drums tight with the catalog drums-tight-transient recipe', 'tight'],
+        ['Use a recipe to make the drums punchy', 'punchy'],
     ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
@@ -224,6 +226,9 @@ describe('positive whole-request metric intent', () => {
         'On the Stereo Widener set width to 2',
         'Load the Bright Strings preset on Pad',
         'Set the Bass Reverb size to 0.5',
+        'Add Transient Shaper to Close Drums and set its sustainGain to 0.625 using the catalog drums-tight-transient recipe. Prepare it for my confirmation.',
+        'Add Transient Shaper to Close Drums and set its attackGain to 1.375 using the catalog drums-punchy-transient recipe. Prepare it for my confirmation.',
+        'Add Noise Gate to Close Drums using the controlled recipe. Set its threshold to -42.5 dB. Prepare it for confirmation.',
     ])('still admits the literal label on a request with no unaccounted quality: %s', (prompt) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
