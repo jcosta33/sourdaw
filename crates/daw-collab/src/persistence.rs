@@ -31,6 +31,258 @@ const SDAW_DECODE_LIMITS: SdawDecodeLimits = SdawDecodeLimits {
     total_document_bytes: 512 * 1024 * 1024,
 };
 
+/// Why `decode_sdaw` refused a byte buffer.
+///
+/// `Display` is the message the renderer receives through the collaboration
+/// bundle commands, so rewording a variant changes what TypeScript sees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SdawDecodeError {
+    /// The container is larger than the container byte budget.
+    ContainerTooLarge { bytes: u64, budget: usize },
+    /// The input ends before the four magic bytes.
+    MissingMagic,
+    /// The magic bytes are not `SDAW`.
+    BadMagic,
+    /// The input ends before the format version.
+    MissingVersion,
+    /// The format version is not the one this build reads.
+    UnsupportedVersion { version: u16 },
+    /// The input ends before the document count.
+    MissingDocumentCount,
+    /// The declared document count cannot fit in the remaining bytes.
+    DocumentCountExceedsInput {
+        count: usize,
+        max_records: usize,
+        remaining: usize,
+    },
+    /// The declared document count exceeds the record budget.
+    DocumentCountExceedsBudget { count: usize, budget: usize },
+    /// The input ends inside a record's DocId length field.
+    TruncatedDocIdLength { index: usize },
+    /// Too few bytes remain for the framing this record and later ones need.
+    TruncatedFraming {
+        index: usize,
+        remaining: usize,
+        required_framing: usize,
+    },
+    /// A DocId length is larger than the bytes left after reserving framing.
+    DocIdLengthExceedsInput {
+        index: usize,
+        declared: usize,
+        available: usize,
+        reserved: usize,
+    },
+    /// A DocId length exceeds the DocId byte budget.
+    DocIdLengthExceedsBudget {
+        index: usize,
+        declared: usize,
+        budget: usize,
+    },
+    /// The input ends inside a record's DocId.
+    TruncatedDocId { index: usize },
+    /// A record's DocId is not UTF-8.
+    InvalidDocIdUtf8 { index: usize },
+    /// The input ends inside a record's data length field.
+    TruncatedDataLength { index: usize },
+    /// Too few bytes remain for the framing of later records.
+    TruncatedLaterRecordFraming {
+        index: usize,
+        remaining: usize,
+        required_framing: usize,
+    },
+    /// A data length is larger than the bytes left after reserving framing.
+    DataLengthExceedsInput {
+        index: usize,
+        declared: usize,
+        available: usize,
+        reserved: usize,
+    },
+    /// A data length exceeds the per-document byte budget.
+    DataLengthExceedsBudget {
+        index: usize,
+        declared: usize,
+        budget: usize,
+    },
+    /// Summing the document lengths overflowed `usize`.
+    AggregateOverflow,
+    /// The summed document lengths exceed the aggregate byte budget.
+    AggregateExceedsBudget { total: usize, budget: usize },
+    /// The input ends inside a record's data.
+    TruncatedData { index: usize },
+}
+
+impl std::fmt::Display for SdawDecodeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ContainerTooLarge { bytes, budget } => write!(
+                formatter,
+                "Invalid .sdaw container: {bytes} bytes exceeds the {budget} byte container byte budget"
+            ),
+            Self::MissingMagic => formatter.write_str("File too short: missing magic bytes"),
+            Self::BadMagic => formatter.write_str("Invalid .sdaw file: bad magic bytes"),
+            Self::MissingVersion => formatter.write_str("File too short: missing version"),
+            Self::UnsupportedVersion { version } => write!(
+                formatter,
+                "Unsupported .sdaw version: {version} (expected {FORMAT_VERSION})"
+            ),
+            Self::MissingDocumentCount => {
+                formatter.write_str("File too short: missing document count")
+            }
+            Self::DocumentCountExceedsInput {
+                count,
+                max_records,
+                remaining,
+            } => write!(
+                formatter,
+                "Invalid document count: declared {count}, but at most {max_records} records fit in {remaining} remaining bytes"
+            ),
+            Self::DocumentCountExceedsBudget { count, budget } => write!(
+                formatter,
+                "Invalid document count: declared {count}, exceeding the {budget} record budget"
+            ),
+            Self::TruncatedDocIdLength { index } => {
+                write!(formatter, "Truncated at document {index} DocId length")
+            }
+            Self::TruncatedFraming {
+                index,
+                remaining,
+                required_framing,
+            } => write!(
+                formatter,
+                "Truncated at document {index}: {remaining} bytes remain, but {required_framing} framing bytes are required"
+            ),
+            Self::DocIdLengthExceedsInput {
+                index,
+                declared,
+                available,
+                reserved,
+            } => write!(
+                formatter,
+                "Invalid document {index} DocId length: declared {declared} bytes, only {available} available after reserving {reserved} framing bytes"
+            ),
+            Self::DocIdLengthExceedsBudget {
+                index,
+                declared,
+                budget,
+            } => write!(
+                formatter,
+                "Invalid document {index} DocId length: declared {declared} bytes, exceeding the {budget} byte DocId byte budget"
+            ),
+            Self::TruncatedDocId { index } => {
+                write!(formatter, "Truncated at document {index} DocId")
+            }
+            Self::InvalidDocIdUtf8 { index } => {
+                write!(formatter, "Invalid UTF-8 in document {index} DocId")
+            }
+            Self::TruncatedDataLength { index } => {
+                write!(formatter, "Truncated at document {index} data length")
+            }
+            Self::TruncatedLaterRecordFraming {
+                index,
+                remaining,
+                required_framing,
+            } => write!(
+                formatter,
+                "Truncated at document {index}: {remaining} bytes remain, but {required_framing} later-record framing bytes are required"
+            ),
+            Self::DataLengthExceedsInput {
+                index,
+                declared,
+                available,
+                reserved,
+            } => write!(
+                formatter,
+                "Invalid document {index} data length: declared {declared} bytes, only {available} available after reserving {reserved} framing bytes"
+            ),
+            Self::DataLengthExceedsBudget {
+                index,
+                declared,
+                budget,
+            } => write!(
+                formatter,
+                "Invalid document {index} data length: declared {declared} bytes, exceeding the {budget} byte document byte budget"
+            ),
+            Self::AggregateOverflow => {
+                formatter.write_str("Aggregate document byte count overflowed")
+            }
+            Self::AggregateExceedsBudget { total, budget } => write!(
+                formatter,
+                "Invalid .sdaw data: {total} aggregate document bytes exceeds the {budget} byte aggregate document byte budget"
+            ),
+            Self::TruncatedData { index } => {
+                write!(formatter, "Truncated at document {index} data")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SdawDecodeError {}
+
+/// Why saving or loading an .sdaw file failed.
+///
+/// `Display` is the message the renderer receives through the collaboration
+/// bundle commands, so rewording a variant changes what TypeScript sees.
+#[derive(Debug)]
+pub enum SdawFileError {
+    /// The destination path has no UTF-8 file name to derive a temp name from.
+    PathHasNoFileName,
+    /// The sibling temp file could not be created.
+    CreateTempFile(std::io::Error),
+    /// The encoded bundle could not be written to the temp file.
+    Write(std::io::Error),
+    /// The temp file could not be synced to disk.
+    SyncTempFile(std::io::Error),
+    /// The finished temp file could not be renamed onto the destination.
+    MoveIntoPlace(std::io::Error),
+    /// The file could not be opened.
+    Open(std::io::Error),
+    /// The file's metadata could not be read.
+    Inspect(std::io::Error),
+    /// The file's bytes could not be read.
+    Read(std::io::Error),
+    /// The file grew past the container byte budget while it was read.
+    ContainerGrewBeyondBudget { budget: usize },
+    /// The file's bytes are not a valid .sdaw container.
+    Decode(SdawDecodeError),
+}
+
+impl std::fmt::Display for SdawFileError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PathHasNoFileName => {
+                formatter.write_str("Atomic write error: path has no file name")
+            }
+            Self::CreateTempFile(error) => {
+                write!(formatter, "Failed to create temporary .sdaw file: {error}")
+            }
+            Self::Write(error) => write!(formatter, "Failed to write .sdaw file: {error}"),
+            Self::SyncTempFile(error) => {
+                write!(formatter, "Failed to sync temporary .sdaw file: {error}")
+            }
+            Self::MoveIntoPlace(error) => write!(
+                formatter,
+                "Failed to move finished .sdaw file into place: {error}"
+            ),
+            Self::Open(error) => write!(formatter, "Failed to open .sdaw file: {error}"),
+            Self::Inspect(error) => write!(formatter, "Failed to inspect .sdaw file: {error}"),
+            Self::Read(error) => write!(formatter, "Failed to read .sdaw file: {error}"),
+            Self::ContainerGrewBeyondBudget { budget } => write!(
+                formatter,
+                "Invalid .sdaw container: file grew beyond the {budget} byte container byte budget while reading"
+            ),
+            Self::Decode(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for SdawFileError {}
+
+impl From<SdawDecodeError> for SdawFileError {
+    fn from(error: SdawDecodeError) -> Self {
+        Self::Decode(error)
+    }
+}
+
 fn remaining_bytes(cursor: &Cursor<&[u8]>) -> usize {
     cursor
         .get_ref()
@@ -68,20 +320,19 @@ pub fn encode_sdaw(bundle: &HashMap<DocId, Vec<u8>>) -> Vec<u8> {
 }
 
 /// Decode an .sdaw binary into a document bundle.
-pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
+pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, SdawDecodeError> {
     decode_sdaw_with_limits(bytes, SDAW_DECODE_LIMITS)
 }
 
 fn decode_sdaw_with_limits(
     bytes: &[u8],
     limits: SdawDecodeLimits,
-) -> Result<HashMap<DocId, Vec<u8>>, String> {
+) -> Result<HashMap<DocId, Vec<u8>>, SdawDecodeError> {
     if bytes.len() > limits.container_bytes {
-        return Err(format!(
-            "Invalid .sdaw container: {} bytes exceeds the {} byte container byte budget",
-            bytes.len(),
-            limits.container_bytes
-        ));
+        return Err(SdawDecodeError::ContainerTooLarge {
+            bytes: bytes.len() as u64,
+            budget: limits.container_bytes,
+        });
     }
 
     let mut cursor = Cursor::new(bytes);
@@ -90,42 +341,41 @@ fn decode_sdaw_with_limits(
     let mut magic = [0u8; 4];
     cursor
         .read_exact(&mut magic)
-        .map_err(|_| "File too short: missing magic bytes".to_string())?;
+        .map_err(|_| SdawDecodeError::MissingMagic)?;
     if &magic != SDAW_MAGIC {
-        return Err("Invalid .sdaw file: bad magic bytes".to_string());
+        return Err(SdawDecodeError::BadMagic);
     }
 
     // Read version
     let mut version_bytes = [0u8; 2];
     cursor
         .read_exact(&mut version_bytes)
-        .map_err(|_| "File too short: missing version".to_string())?;
+        .map_err(|_| SdawDecodeError::MissingVersion)?;
     let version = u16::from_le_bytes(version_bytes);
     if version != FORMAT_VERSION {
-        return Err(format!(
-            "Unsupported .sdaw version: {} (expected {})",
-            version, FORMAT_VERSION
-        ));
+        return Err(SdawDecodeError::UnsupportedVersion { version });
     }
 
     // Read document count
     let mut count_bytes = [0u8; 2];
     cursor
         .read_exact(&mut count_bytes)
-        .map_err(|_| "File too short: missing document count".to_string())?;
+        .map_err(|_| SdawDecodeError::MissingDocumentCount)?;
     let count = u16::from_le_bytes(count_bytes) as usize;
     let remaining = remaining_bytes(&cursor);
     let max_records = remaining / RECORD_FRAMING_BYTES;
     if count > max_records {
-        return Err(format!(
-            "Invalid document count: declared {count}, but at most {max_records} records fit in {remaining} remaining bytes"
-        ));
+        return Err(SdawDecodeError::DocumentCountExceedsInput {
+            count,
+            max_records,
+            remaining,
+        });
     }
     if count > limits.records {
-        return Err(format!(
-            "Invalid document count: declared {count}, exceeding the {} record budget",
-            limits.records
-        ));
+        return Err(SdawDecodeError::DocumentCountExceedsBudget {
+            count,
+            budget: limits.records,
+        });
     }
 
     let mut bundle = HashMap::with_capacity(count);
@@ -139,71 +389,84 @@ fn decode_sdaw_with_limits(
         let mut id_len_bytes = [0u8; 4];
         cursor
             .read_exact(&mut id_len_bytes)
-            .map_err(|_| format!("Truncated at document {} DocId length", i))?;
+            .map_err(|_| SdawDecodeError::TruncatedDocIdLength { index: i })?;
         let id_len = u32::from_le_bytes(id_len_bytes) as usize;
         let remaining = remaining_bytes(&cursor);
         let required_framing = DATA_LENGTH_BYTES + later_record_framing;
-        let available = remaining.checked_sub(required_framing).ok_or_else(|| {
-            format!(
-                "Truncated at document {i}: {remaining} bytes remain, but {required_framing} framing bytes are required"
-            )
-        })?;
+        let available =
+            remaining
+                .checked_sub(required_framing)
+                .ok_or(SdawDecodeError::TruncatedFraming {
+                    index: i,
+                    remaining,
+                    required_framing,
+                })?;
         if id_len > available {
-            return Err(format!(
-                "Invalid document {i} DocId length: declared {id_len} bytes, only {available} available after reserving {required_framing} framing bytes"
-            ));
+            return Err(SdawDecodeError::DocIdLengthExceedsInput {
+                index: i,
+                declared: id_len,
+                available,
+                reserved: required_framing,
+            });
         }
         if id_len > limits.doc_id_bytes {
-            return Err(format!(
-                "Invalid document {i} DocId length: declared {id_len} bytes, exceeding the {} byte DocId byte budget",
-                limits.doc_id_bytes
-            ));
+            return Err(SdawDecodeError::DocIdLengthExceedsBudget {
+                index: i,
+                declared: id_len,
+                budget: limits.doc_id_bytes,
+            });
         }
 
         let mut id_bytes = vec![0u8; id_len];
         cursor
             .read_exact(&mut id_bytes)
-            .map_err(|_| format!("Truncated at document {} DocId", i))?;
+            .map_err(|_| SdawDecodeError::TruncatedDocId { index: i })?;
         let doc_id = String::from_utf8(id_bytes)
-            .map_err(|_| format!("Invalid UTF-8 in document {} DocId", i))?;
+            .map_err(|_| SdawDecodeError::InvalidDocIdUtf8 { index: i })?;
 
         // Read Automerge data
         let mut data_len_bytes = [0u8; 4];
         cursor
             .read_exact(&mut data_len_bytes)
-            .map_err(|_| format!("Truncated at document {} data length", i))?;
+            .map_err(|_| SdawDecodeError::TruncatedDataLength { index: i })?;
         let data_len = u32::from_le_bytes(data_len_bytes) as usize;
         let remaining = remaining_bytes(&cursor);
-        let available = remaining.checked_sub(later_record_framing).ok_or_else(|| {
-            format!(
-                "Truncated at document {i}: {remaining} bytes remain, but {later_record_framing} later-record framing bytes are required"
-            )
-        })?;
+        let available = remaining.checked_sub(later_record_framing).ok_or(
+            SdawDecodeError::TruncatedLaterRecordFraming {
+                index: i,
+                remaining,
+                required_framing: later_record_framing,
+            },
+        )?;
         if data_len > available {
-            return Err(format!(
-                "Invalid document {i} data length: declared {data_len} bytes, only {available} available after reserving {later_record_framing} framing bytes"
-            ));
+            return Err(SdawDecodeError::DataLengthExceedsInput {
+                index: i,
+                declared: data_len,
+                available,
+                reserved: later_record_framing,
+            });
         }
         if data_len > limits.document_bytes {
-            return Err(format!(
-                "Invalid document {i} data length: declared {data_len} bytes, exceeding the {} byte document byte budget",
-                limits.document_bytes
-            ));
+            return Err(SdawDecodeError::DataLengthExceedsBudget {
+                index: i,
+                declared: data_len,
+                budget: limits.document_bytes,
+            });
         }
         total_document_bytes = total_document_bytes
             .checked_add(data_len)
-            .ok_or_else(|| "Aggregate document byte count overflowed".to_string())?;
+            .ok_or(SdawDecodeError::AggregateOverflow)?;
         if total_document_bytes > limits.total_document_bytes {
-            return Err(format!(
-                "Invalid .sdaw data: {total_document_bytes} aggregate document bytes exceeds the {} byte aggregate document byte budget",
-                limits.total_document_bytes
-            ));
+            return Err(SdawDecodeError::AggregateExceedsBudget {
+                total: total_document_bytes,
+                budget: limits.total_document_bytes,
+            });
         }
 
         let mut data = vec![0u8; data_len];
         cursor
             .read_exact(&mut data)
-            .map_err(|_| format!("Truncated at document {} data", i))?;
+            .map_err(|_| SdawDecodeError::TruncatedData { index: i })?;
 
         bundle.insert(doc_id, data);
     }
@@ -217,11 +480,13 @@ fn decode_sdaw_with_limits(
 /// with no reconstructible source — so a truncated or partial file is data
 /// loss, not a retryable error. See `replace_file_atomically` for how that is
 /// guaranteed.
-pub fn save_sdaw_bundle(bundle: &HashMap<DocId, Vec<u8>>, path: &Path) -> Result<(), String> {
+pub fn save_sdaw_bundle(
+    bundle: &HashMap<DocId, Vec<u8>>,
+    path: &Path,
+) -> Result<(), SdawFileError> {
     let encoded = encode_sdaw(bundle);
     replace_file_atomically(path, |file| {
-        file.write_all(&encoded)
-            .map_err(|e| format!("Failed to write .sdaw file: {e}"))
+        file.write_all(&encoded).map_err(SdawFileError::Write)
     })
 }
 
@@ -257,12 +522,12 @@ pub fn save_sdaw_bundle(bundle: &HashMap<DocId, Vec<u8>>, path: &Path) -> Result
 /// * Any failure removes the temp file and leaves `path` exactly as it was.
 fn replace_file_atomically(
     path: &Path,
-    write: impl FnOnce(&mut std::fs::File) -> Result<(), String>,
-) -> Result<(), String> {
+    write: impl FnOnce(&mut std::fs::File) -> Result<(), SdawFileError>,
+) -> Result<(), SdawFileError> {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| "Atomic write error: path has no file name".to_string())?;
+        .ok_or(SdawFileError::PathHasNoFileName)?;
     let temp_path = path.with_file_name(format!("{file_name}.{}.tmp", uuid::Uuid::new_v4()));
 
     // The temp file is closed (by the end of this closure) before the rename
@@ -272,18 +537,16 @@ fn replace_file_atomically(
             .write(true)
             .create_new(true)
             .open(&temp_path)
-            .map_err(|e| format!("Failed to create temporary .sdaw file: {e}"))?;
+            .map_err(SdawFileError::CreateTempFile)?;
         write(&mut temp_file)?;
-        temp_file
-            .sync_all()
-            .map_err(|e| format!("Failed to sync temporary .sdaw file: {e}"))
+        temp_file.sync_all().map_err(SdawFileError::SyncTempFile)
     })();
 
     match write_result {
         Ok(()) => {
             std::fs::rename(&temp_path, path).map_err(|e| {
                 let _ = std::fs::remove_file(&temp_path);
-                format!("Failed to move finished .sdaw file into place: {e}")
+                SdawFileError::MoveIntoPlace(e)
             })?;
             sync_parent_directory_best_effort(path);
             Ok(())
@@ -317,38 +580,34 @@ fn sync_parent_directory_best_effort(path: &Path) {
 fn sync_parent_directory_best_effort(_path: &Path) {}
 
 /// Load a document bundle from an .sdaw file on disk.
-pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open .sdaw file: {e}"))?;
-    let file_len = file
-        .metadata()
-        .map_err(|e| format!("Failed to inspect .sdaw file: {e}"))?
-        .len();
+pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, SdawFileError> {
+    let file = std::fs::File::open(path).map_err(SdawFileError::Open)?;
+    let file_len = file.metadata().map_err(SdawFileError::Inspect)?.len();
     let bytes = read_sdaw_bytes_with_limits(file, file_len, SDAW_DECODE_LIMITS)?;
-    decode_sdaw(&bytes)
+    Ok(decode_sdaw(&bytes)?)
 }
 
 fn read_sdaw_bytes_with_limits<R: Read>(
     reader: R,
     file_len: u64,
     limits: SdawDecodeLimits,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, SdawFileError> {
     if file_len > limits.container_bytes as u64 {
-        return Err(format!(
-            "Invalid .sdaw container: {file_len} bytes exceeds the {} byte container byte budget",
-            limits.container_bytes
-        ));
+        return Err(SdawFileError::Decode(SdawDecodeError::ContainerTooLarge {
+            bytes: file_len,
+            budget: limits.container_bytes,
+        }));
     }
 
     let mut bytes = Vec::with_capacity(file_len as usize);
     reader
         .take((limits.container_bytes + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|e| format!("Failed to read .sdaw file: {e}"))?;
+        .map_err(SdawFileError::Read)?;
     if bytes.len() > limits.container_bytes {
-        return Err(format!(
-            "Invalid .sdaw container: file grew beyond the {} byte container byte budget while reading",
-            limits.container_bytes
-        ));
+        return Err(SdawFileError::ContainerGrewBeyondBudget {
+            budget: limits.container_bytes,
+        });
     }
     Ok(bytes)
 }
@@ -380,7 +639,7 @@ mod tests {
         let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
             .expect_err("container budget must be checked before parsing");
 
-        assert!(error.contains("container byte budget"));
+        assert!(error.to_string().contains("container byte budget"));
     }
 
     #[test]
@@ -389,7 +648,7 @@ mod tests {
         let error = read_sdaw_bytes_with_limits(Cursor::new(bytes), 0, TEST_LIMITS)
             .expect_err("a file that grows after metadata inspection must remain bounded");
 
-        assert!(error.contains("container byte budget"));
+        assert!(error.to_string().contains("container byte budget"));
     }
 
     #[test]
@@ -398,7 +657,7 @@ mod tests {
         let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
             .expect_err("record budget must be checked before preallocation");
 
-        assert!(error.contains("record budget"));
+        assert!(error.to_string().contains("record budget"));
     }
 
     #[test]
@@ -407,7 +666,7 @@ mod tests {
         let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
             .expect_err("DocId budget must be checked before allocation");
 
-        assert!(error.contains("DocId byte budget"));
+        assert!(error.to_string().contains("DocId byte budget"));
     }
 
     #[test]
@@ -416,7 +675,7 @@ mod tests {
         let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
             .expect_err("document budget must be checked before allocation");
 
-        assert!(error.contains("document byte budget"));
+        assert!(error.to_string().contains("document byte budget"));
     }
 
     #[test]
@@ -429,7 +688,7 @@ mod tests {
         let error = decode_sdaw_with_limits(&bytes, limits)
             .expect_err("aggregate document budget must be checked before allocation");
 
-        assert!(error.contains("aggregate document byte budget"));
+        assert!(error.to_string().contains("aggregate document byte budget"));
     }
 
     #[test]
@@ -451,7 +710,7 @@ mod tests {
         let bad = b"BADx\x01\x00\x00\x00";
         let result = decode_sdaw(bad);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("bad magic"));
+        assert!(result.unwrap_err().to_string().contains("bad magic"));
     }
 
     #[test]
@@ -463,7 +722,7 @@ mod tests {
 
         let result = decode_sdaw(&buf);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported"));
+        assert!(result.unwrap_err().to_string().contains("Unsupported"));
     }
 
     #[test]
@@ -487,7 +746,7 @@ mod tests {
         let error = decode_sdaw(&buf).expect_err("impossible document count must be rejected");
 
         assert_eq!(
-            error,
+            error.to_string(),
             "Invalid document count: declared 65535, but at most 0 records fit in 0 remaining bytes"
         );
     }
@@ -504,7 +763,7 @@ mod tests {
         let error = decode_sdaw(&buf).expect_err("oversized DocId length must be rejected");
 
         assert_eq!(
-            error,
+            error.to_string(),
             "Invalid document 0 DocId length: declared 4294967295 bytes, only 0 available after reserving 4 framing bytes"
         );
     }
@@ -522,7 +781,7 @@ mod tests {
         let error = decode_sdaw(&buf).expect_err("oversized data length must be rejected");
 
         assert_eq!(
-            error,
+            error.to_string(),
             "Invalid document 0 data length: declared 4294967295 bytes, only 0 available after reserving 0 framing bytes"
         );
     }
@@ -539,7 +798,7 @@ mod tests {
         let error = decode_sdaw(&buf).expect_err("DocId must leave all record framing intact");
 
         assert_eq!(
-            error,
+            error.to_string(),
             "Invalid document 0 DocId length: declared 5 bytes, only 0 available after reserving 12 framing bytes"
         );
     }
@@ -557,7 +816,7 @@ mod tests {
         let error = decode_sdaw(&buf).expect_err("data must leave later record framing intact");
 
         assert_eq!(
-            error,
+            error.to_string(),
             "Invalid document 0 data length: declared 5 bytes, only 0 available after reserving 8 framing bytes"
         );
     }
@@ -632,12 +891,17 @@ mod tests {
             // Real bytes reach the temp file before the injected failure,
             // mirroring an I/O fault partway through a save.
             file.write_all(b"partial bytes")
-                .map_err(|e| format!("Failed to write .sdaw file: {e}"))?;
-            Err("injected write failure".to_string())
+                .map_err(SdawFileError::Write)?;
+            Err(SdawFileError::Write(std::io::Error::other(
+                "injected write failure",
+            )))
         })
         .unwrap_err();
 
-        assert_eq!(error, "injected write failure");
+        assert_eq!(
+            error.to_string(),
+            "Failed to write .sdaw file: injected write failure"
+        );
         assert_eq!(
             std::fs::read(&destination).unwrap(),
             previous,
@@ -658,13 +922,17 @@ mod tests {
         let destination = dir.path("project.sdaw");
 
         let error = replace_file_atomically(&destination, |file| {
-            file.write_all(b"partial")
-                .map_err(|e| format!("Failed to write .sdaw file: {e}"))?;
-            Err("injected write failure".to_string())
+            file.write_all(b"partial").map_err(SdawFileError::Write)?;
+            Err(SdawFileError::Write(std::io::Error::other(
+                "injected write failure",
+            )))
         })
         .unwrap_err();
 
-        assert_eq!(error, "injected write failure");
+        assert_eq!(
+            error.to_string(),
+            "Failed to write .sdaw file: injected write failure"
+        );
         assert!(
             !destination.exists(),
             "a failed save must not leave a file at the destination"
@@ -748,7 +1016,7 @@ mod tests {
         std::fs::set_permissions(&dir.root, std::fs::Permissions::from_mode(0o755))
             .expect("directory should become writable again");
         assert!(
-            error.contains("temporary .sdaw file"),
+            error.to_string().contains("temporary .sdaw file"),
             "the failure must come from the temp-file phase: {error}"
         );
         assert_eq!(
@@ -760,6 +1028,193 @@ mod tests {
             temp_file_residue(&dir.root).is_empty(),
             "a refused save must leave no temp file behind"
         );
+    }
+
+    /// The renderer receives these messages verbatim through the collaboration
+    /// bundle commands, so each variant's text is pinned byte for byte.
+    #[test]
+    fn decode_errors_print_the_messages_the_renderer_receives() {
+        let cases = [
+            (
+                SdawDecodeError::ContainerTooLarge {
+                    bytes: 65,
+                    budget: 64,
+                },
+                "Invalid .sdaw container: 65 bytes exceeds the 64 byte container byte budget",
+            ),
+            (
+                SdawDecodeError::MissingMagic,
+                "File too short: missing magic bytes",
+            ),
+            (
+                SdawDecodeError::BadMagic,
+                "Invalid .sdaw file: bad magic bytes",
+            ),
+            (
+                SdawDecodeError::MissingVersion,
+                "File too short: missing version",
+            ),
+            (
+                SdawDecodeError::UnsupportedVersion { version: 99 },
+                "Unsupported .sdaw version: 99 (expected 1)",
+            ),
+            (
+                SdawDecodeError::MissingDocumentCount,
+                "File too short: missing document count",
+            ),
+            (
+                SdawDecodeError::DocumentCountExceedsInput {
+                    count: 3,
+                    max_records: 2,
+                    remaining: 17,
+                },
+                "Invalid document count: declared 3, but at most 2 records fit in 17 remaining bytes",
+            ),
+            (
+                SdawDecodeError::DocumentCountExceedsBudget {
+                    count: 3,
+                    budget: 2,
+                },
+                "Invalid document count: declared 3, exceeding the 2 record budget",
+            ),
+            (
+                SdawDecodeError::TruncatedDocIdLength { index: 4 },
+                "Truncated at document 4 DocId length",
+            ),
+            (
+                SdawDecodeError::TruncatedFraming {
+                    index: 4,
+                    remaining: 5,
+                    required_framing: 12,
+                },
+                "Truncated at document 4: 5 bytes remain, but 12 framing bytes are required",
+            ),
+            (
+                SdawDecodeError::DocIdLengthExceedsInput {
+                    index: 4,
+                    declared: 9,
+                    available: 6,
+                    reserved: 12,
+                },
+                "Invalid document 4 DocId length: declared 9 bytes, only 6 available after reserving 12 framing bytes",
+            ),
+            (
+                SdawDecodeError::DocIdLengthExceedsBudget {
+                    index: 4,
+                    declared: 9,
+                    budget: 8,
+                },
+                "Invalid document 4 DocId length: declared 9 bytes, exceeding the 8 byte DocId byte budget",
+            ),
+            (
+                SdawDecodeError::TruncatedDocId { index: 4 },
+                "Truncated at document 4 DocId",
+            ),
+            (
+                SdawDecodeError::InvalidDocIdUtf8 { index: 4 },
+                "Invalid UTF-8 in document 4 DocId",
+            ),
+            (
+                SdawDecodeError::TruncatedDataLength { index: 4 },
+                "Truncated at document 4 data length",
+            ),
+            (
+                SdawDecodeError::TruncatedLaterRecordFraming {
+                    index: 4,
+                    remaining: 5,
+                    required_framing: 8,
+                },
+                "Truncated at document 4: 5 bytes remain, but 8 later-record framing bytes are required",
+            ),
+            (
+                SdawDecodeError::DataLengthExceedsInput {
+                    index: 4,
+                    declared: 9,
+                    available: 6,
+                    reserved: 8,
+                },
+                "Invalid document 4 data length: declared 9 bytes, only 6 available after reserving 8 framing bytes",
+            ),
+            (
+                SdawDecodeError::DataLengthExceedsBudget {
+                    index: 4,
+                    declared: 9,
+                    budget: 8,
+                },
+                "Invalid document 4 data length: declared 9 bytes, exceeding the 8 byte document byte budget",
+            ),
+            (
+                SdawDecodeError::AggregateOverflow,
+                "Aggregate document byte count overflowed",
+            ),
+            (
+                SdawDecodeError::AggregateExceedsBudget {
+                    total: 9,
+                    budget: 8,
+                },
+                "Invalid .sdaw data: 9 aggregate document bytes exceeds the 8 byte aggregate document byte budget",
+            ),
+            (
+                SdawDecodeError::TruncatedData { index: 4 },
+                "Truncated at document 4 data",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+    }
+
+    #[test]
+    fn file_errors_print_the_messages_the_renderer_receives() {
+        let io = || std::io::Error::other("disk full");
+        let cases = [
+            (
+                SdawFileError::PathHasNoFileName,
+                "Atomic write error: path has no file name".to_string(),
+            ),
+            (
+                SdawFileError::CreateTempFile(io()),
+                "Failed to create temporary .sdaw file: disk full".to_string(),
+            ),
+            (
+                SdawFileError::Write(io()),
+                "Failed to write .sdaw file: disk full".to_string(),
+            ),
+            (
+                SdawFileError::SyncTempFile(io()),
+                "Failed to sync temporary .sdaw file: disk full".to_string(),
+            ),
+            (
+                SdawFileError::MoveIntoPlace(io()),
+                "Failed to move finished .sdaw file into place: disk full".to_string(),
+            ),
+            (
+                SdawFileError::Open(io()),
+                "Failed to open .sdaw file: disk full".to_string(),
+            ),
+            (
+                SdawFileError::Inspect(io()),
+                "Failed to inspect .sdaw file: disk full".to_string(),
+            ),
+            (
+                SdawFileError::Read(io()),
+                "Failed to read .sdaw file: disk full".to_string(),
+            ),
+            (
+                SdawFileError::ContainerGrewBeyondBudget { budget: 64 },
+                "Invalid .sdaw container: file grew beyond the 64 byte container byte budget while reading"
+                    .to_string(),
+            ),
+            (
+                SdawFileError::Decode(SdawDecodeError::BadMagic),
+                "Invalid .sdaw file: bad magic bytes".to_string(),
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
     }
 }
 
@@ -1011,7 +1466,7 @@ mod conformance_tests {
     fn rejects_a_docid_that_is_not_valid_utf8() {
         let error = decode_sdaw(&read_fixture("corrupt-invalid-utf8-docid.sdaw"))
             .expect_err("a DocId that is not valid UTF-8 must be rejected");
-        assert_eq!(error, "Invalid UTF-8 in document 0 DocId");
+        assert_eq!(error, SdawDecodeError::InvalidDocIdUtf8 { index: 0 });
     }
 
     /// Regenerates the Rust-authored fixtures, plus the shared corrupt fixture.
