@@ -3,6 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
+import { clipSelectionStore, defaultTrackState } from '#/modules/Arrangement/stores';
+import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore, defaultMidiStoreState } from '#/modules/MIDI/stores';
+import { projectPianoRollTakeNotes, setMidiStoreState, setPianoRollSelection } from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { captureMusicalContentBinding } from '#/modules/Project/useCases';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
@@ -42,7 +51,8 @@ import {
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
-import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { nonAcousticMetricIntakeTurn } from '../../__tests__/metricGoalWorkflowFixture';
+import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
@@ -258,6 +268,166 @@ describe('generateToolPlanningOutcome', () => {
         agentRunLifecycle.clear();
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         vi.unstubAllGlobals();
+    });
+
+    it('replays actual contrasting musical query receipts to a hosted provider with MIDI disclosure', async () => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        const database = installTransactionalIndexedDb();
+        try {
+            await createCrdtProject('Hosted musical evidence');
+            const track = createTrack({ id: 'hosted-track', name: 'Phrase', kind: 'midi' });
+            const clip = {
+                id: 'hosted-clip',
+                trackId: track.id,
+                name: 'Phrase',
+                type: 'midi' as const,
+                startBeat: 0,
+                endBeat: 4,
+                muted: false,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            };
+            track.clips = [clip];
+            setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+            clipSelectionStore.set({ selectedClipId: clip.id, selectedClipIds: [clip.id], marqueeSelection: null });
+            projectStore.set({
+                ...structuredClone(defaultProjectStoreState),
+                projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+                keyRoot: 7,
+                scaleName: 'minor',
+            });
+            chordTrackStore.set({
+                enabled: true,
+                events: [{ id: 'g-minor', beat: 0, root: 7, quality: 'minor', duration: 4 }],
+            });
+            mocks.backendChain.value = ['cloud'];
+            async function readPhrase(pitch: number) {
+                const note = { id: 'hosted-note', pitch, startBeat: 0, duration: 1, velocity: 90 };
+                setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [note] } });
+                const projection = projectPianoRollTakeNotes(clip, track.id, null, [note]);
+                setPianoRollSelection(clip.id, [note.id], [clip.id], [{ clipId: clip.id, projection }]);
+                const binding = captureMusicalContentBinding();
+                mocks.generateCloudToolCalls.mockReset();
+                const schemas = [...getPlanningProviderToolSchemas(), jointInterpretationSchema()];
+                const providerContext = buildAgentContext({
+                    fixedPolicy: 'system',
+                    prompt: 'Read the phrase.',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                }).message;
+                const intake = nonAcousticMetricIntakeTurn({
+                    modeId: 'edit',
+                    targetObjectIds: [clip.id],
+                    dimensions: ['midi-content'],
+                })(providerContext, schemas);
+                mocks.generateCloudToolCalls
+                    .mockResolvedValueOnce({
+                        providerRequestId: null,
+                        calls: [{ ...intake[0], id: 'interpret' }],
+                        strictToolSchemas: false,
+                        usage: null,
+                    })
+                    .mockResolvedValueOnce({
+                        providerRequestId: null,
+                        calls: [
+                            {
+                                id: 'phrase',
+                                name: 'project.query',
+                                arguments: {
+                                    type: 'musical-content',
+                                    filters: { stableId: clip.id, startBeat: 0, endBeat: 4 },
+                                    page: { limit: 10 },
+                                },
+                            },
+                        ],
+                        strictToolSchemas: false,
+                        usage: null,
+                    })
+                    .mockResolvedValueOnce({
+                        providerRequestId: null,
+                        calls: [],
+                        strictToolSchemas: false,
+                        usage: null,
+                    });
+                const attempts: ProviderAttemptAdmission[] = [];
+                const authority = {
+                    schemaVersion: 1 as const,
+                    authorityId: 'a',
+                    catalogId: 'catalog',
+                    requestDigest: 'request',
+                    revision: 'revision',
+                    selection: { trackId: track.id, clipId: clip.id, clipIds: [clip.id], activeView: 'clip' as const },
+                    mode: 'edit' as const,
+                    targets: [
+                        {
+                            provenance: 'contextual-selection' as const,
+                            objectType: 'clip' as const,
+                            objectIds: [clip.id],
+                            parentTrackId: track.id,
+                        },
+                    ],
+                    editDimensions: ['midi-content' as const],
+                    prohibitions: [],
+                    creationSlots: [],
+                    uncertainty: 'none' as const,
+                };
+                let admitted = false;
+                const result = await runApplicationOwnedToolLoop({
+                    loopId: `hosted-${String(pitch)}`,
+                    musicalContentBinding: binding,
+                    readCreativeAuthority: () => (admitted ? authority : undefined),
+                    interpretation: {
+                        toolName: 'selectCreativeInterpretation',
+                        admit: () => {
+                            admitted = true;
+                            return { status: 'admitted', receipt: { data: {}, summary: 'admitted' } };
+                        },
+                    },
+                    terminalToolNames: new Set(['command.batch.propose']),
+                    requestTurn: ({ receiptContext, directive, history, budgetNote }) =>
+                        generateToolPlanningOutcome(
+                            'system',
+                            receiptContext ?? 'Read the phrase.',
+                            schemas,
+                            undefined,
+                            'Read the phrase.',
+                            undefined,
+                            undefined,
+                            (attempt) => {
+                                attempts.push(attempt);
+                                return { status: 'admitted' };
+                            },
+                            directive,
+                            { firstUserMessage: 'Read the phrase.', history, budgetNote }
+                        ),
+                }).catch((error: unknown) => {
+                    if (error instanceof ApplicationOwnedToolLoopRequestError) throw error.originalError;
+                    throw error;
+                });
+                expect(result.receipts).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ toolName: 'project.query', status: 'success' })])
+                );
+                expect(attempts).toHaveLength(3);
+                expect(attempts[2]!.request.dataCategories).toContain('midi');
+                return attempts[2]!.request.messages
+                    .filter((message) => message.role === 'tool')
+                    .map((message) => message.content)
+                    .join('\n');
+            }
+            const first = await readPhrase(67);
+            const second = await readPhrase(70);
+            expect(first).toContain('"pitch":67');
+            expect(second).toContain('"pitch":70');
+            expect(first).toContain('"quality":"minor"');
+            expect(first).not.toEqual(second);
+        } finally {
+            mocks.generateCloudToolCalls.mockReset();
+            clipSelectionStore.set({ selectedClipId: null, selectedClipIds: [], marqueeSelection: null });
+            await database.dispose();
+        }
     });
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 
-import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
+import { projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 
 const first = { id: 'first-row', pitch: 60, startBeat: 5.5, duration: 1, velocity: 90, recordingPassIndex: 0 };
 const second = { id: 'second-row', pitch: 64, startBeat: 9.5, duration: 1, velocity: 85, recordingPassIndex: 1 };
@@ -81,6 +81,124 @@ describe('piano roll frozen take occurrence ownership', () => {
         expect(firstOwner?.occurrenceIndex).toBe(0);
         expect(repeatOwner?.occurrenceIndex).toBe(1);
         expect(result.ownersByViewId.get(result.notes[2]!.id)?.takeId).toBe('second');
+    });
+
+    it('retains original occurrence IDs when a bounded query reads only the later repeat', () => {
+        const full = projectPianoRollTakeNotes(loopingClip, 'track', laneState());
+        const bounded = projectPianoRollTakeNotes(loopingClip, 'track', laneState(), [], {
+            fromBeat: 4,
+            toBeat: 8,
+            maxWork: 100,
+            maxOutput: 10,
+        });
+        expect(bounded.notes).toEqual(full.notes.filter((note) => note.startBeat >= 4 && note.startBeat < 8));
+        expect(bounded.ownersByViewId.get(bounded.notes[0]!.id)).toEqual(full.ownersByViewId.get(full.notes[1]!.id));
+    });
+
+    it('retains frozen controller and bend ownership and carry provenance inside a bounded query', () => {
+        const state = laneState();
+        const take = state.lanes[0]!.takes[0]!;
+        take.midiSource = {
+            ...take.midiSource!,
+            rows: {
+                ...take.midiSource!.rows,
+                controlChanges: {
+                    present: true,
+                    value: [{ id: 'pedal', controller: 64, value: 127, channel: 0, beat: 4.8 }],
+                },
+                pitchBends: { present: true, value: [{ id: 'bend', value: 2048, channel: 0, beat: 4.9 }] },
+            },
+        };
+        const projected = projectPianoRollTakeNotes(loopingClip, 'track', state, [], {
+            fromBeat: 0,
+            toBeat: 4,
+            maxWork: 1_000,
+            maxOutput: 100,
+        });
+        expect(projected.frozenControllers).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    ownerClipId: 'original',
+                    takeId: 'first',
+                    occurrenceIndex: 0,
+                    origin: 'carried',
+                    sourceBeat: 4.8,
+                    row: expect.objectContaining({ id: 'pedal', beat: 0 }),
+                }),
+            ])
+        );
+        expect(projected.frozenPitchBends).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    ownerClipId: 'original',
+                    takeId: 'first',
+                    occurrenceIndex: 0,
+                    origin: 'carried',
+                    sourceBeat: 4.9,
+                    row: expect.objectContaining({ id: 'bend', beat: 0 }),
+                }),
+            ])
+        );
+    });
+
+    it('refuses before enumerating a query with too many repeats', () => {
+        expect(() =>
+            projectPianoRollTakeNotes(loopingClip, 'track', laneState(), [], {
+                fromBeat: 0,
+                toBeat: 12,
+                maxWork: 1,
+                maxOutput: 10,
+            })
+        ).toThrow('MIDI projection work budget exceeded');
+    });
+
+    it('refuses a nonprogressing loop coordinate and a deep folded source before projection', () => {
+        const distant = laneState();
+        distant.lanes[0]!.activeCompRegions = [{ startBeat: 1e16, endBeat: 1e16 + 100, takeId: 'first' }];
+        expect(() =>
+            projectPianoRollTakeNotes(
+                { ...loopingClip, startBeat: 1e16, endBeat: 1e16 + 100, loopLength: 1 },
+                'track',
+                distant,
+                [],
+                { fromBeat: 1e16, toBeat: 1e16 + 10, maxWork: 10_000, maxOutput: 100 }
+            )
+        ).toThrow('MIDI projection work budget exceeded');
+
+        const deep = laneState();
+        const take = deep.lanes[0]!.takes[0]!;
+        take.midiSource = { ...take.midiSource!, sourceEntryBeat: 1e9, sourceEndBeat: 1e9 + 4 };
+        expect(() =>
+            projectPianoRollTakeNotes(loopingClip, 'track', deep, [], {
+                fromBeat: 0,
+                toBeat: 4,
+                maxWork: 10_000,
+                maxOutput: 100,
+            })
+        ).toThrow('MIDI projection work budget exceeded');
+    });
+
+    it('projects a trimmed anchored base clip on the original loop seams in a late window', () => {
+        const clip = {
+            id: 'clip',
+            startBeat: 1,
+            endBeat: 12,
+            midiOffsetBeats: 1,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        };
+        const source = { id: 'head', pitch: 67, startBeat: 0, duration: 0.25, velocity: 80 };
+        const result = projectPianoRollTakeNotes(clip, 'track', null, [source], {
+            fromBeat: 4,
+            toBeat: 9,
+            maxWork: 100,
+            maxOutput: 10,
+        });
+        expect(result.baseOccurrences.map((entry) => [entry.row.id, entry.startBeat])).toEqual([
+            ['head', 4],
+            ['head', 8],
+        ]);
     });
 
     afterEach(() => {

@@ -49,7 +49,7 @@ import {
     transformPianoRollTakeNotes,
 } from '../applyPianoRollTakeMenuAction';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
-import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
+import { projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 
 const original = {
     id: 'original-row',

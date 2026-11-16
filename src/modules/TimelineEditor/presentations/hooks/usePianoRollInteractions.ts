@@ -43,6 +43,7 @@ import {
     stepRecordStepDown,
     stepRecordNoteOn,
     stepRecordNoteOff,
+    type projectPianoRollTakeNotes,
 } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
@@ -63,7 +64,7 @@ import {
     getPianoRollRowAtY,
     getPianoRollRowTop,
 } from '../helpers/pianoRollConstants';
-import { type PianoRollTakeNotes } from '../helpers/projectPianoRollTakeNotes';
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 /**
  * Build ownership maps from primary + secondary clip notes.

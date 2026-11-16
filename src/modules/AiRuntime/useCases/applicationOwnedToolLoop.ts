@@ -12,6 +12,8 @@ import {
 } from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import {
+    bindMusicalContentQuery,
+    type captureMusicalContentBinding,
     parseAgentDiscoveryInput,
     parseSemanticProjectQueryInput,
     queryAgentDiscovery,
@@ -21,6 +23,7 @@ import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
+import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import {
     ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
@@ -109,6 +112,7 @@ import { discoverMixRecipes } from './discoverMixRecipes';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { formatReceiptContext } from './formatReceiptContext';
+import { createMusicalReadPrerequisite } from './createMusicalReadPrerequisite';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import { projectAnswerProviderReceipt } from './projectAnswerProviderReceipt';
@@ -243,6 +247,8 @@ type MeasurementAttempt = {
 
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
+    musicalContentBinding?: ReturnType<typeof captureMusicalContentBinding>;
+    readCreativeAuthority?: () => CreativeRequestAuthority | undefined;
     requireWholeRequestIntake?: true;
     /** Current app-owned intake identity and availability; never a metric-proof assertion. */
     readMeasurementOpportunity?: () => MeasurementOpportunity | null;
@@ -380,8 +386,16 @@ const STRICT_CONTRACT_PART: Readonly<Record<'arguments' | 'filters' | 'page' | '
  * the bounds. Only the wording of a refusal is the loop's own, because a
  * receipt names the tool the provider called.
  */
-function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): ParsedQuery {
-    const parsed = parseSemanticProjectQueryInput(argumentsValue);
+function parseProjectQueryArguments(
+    argumentsValue: Record<string, unknown>,
+    binding?: ReturnType<typeof captureMusicalContentBinding>
+): ParsedQuery {
+    if (argumentsValue.type === 'musical-content' && binding === undefined)
+        return { status: 'invalid', reason: 'Musical evidence binding is unavailable.' };
+    const parsed =
+        argumentsValue.type === 'musical-content' && binding !== undefined
+            ? bindMusicalContentQuery(argumentsValue, binding)
+            : parseSemanticProjectQueryInput(argumentsValue);
     if (parsed.status === 'invalid') {
         return {
             status: 'invalid',
@@ -445,7 +459,32 @@ function executeSemanticProjectQuery(
             warnings: [...receipt.warnings],
             error: null,
         };
-    } catch {
+    } catch (error) {
+        if (input.type === 'musical-content' && error instanceof Error) {
+            const messages: Readonly<Record<string, string>> = {
+                'Stale musical content revision': 'Musical evidence is stale; start a fresh request.',
+                'Stale musical selection': 'MIDI selection changed; start a fresh request.',
+                'Ambiguous piano roll selection': 'Selected note identity is ambiguous; narrow the selection.',
+                'Piano roll selection unavailable': 'Selected note ownership is unavailable; reselect the notes.',
+                'MIDI projection work budget exceeded': 'Musical read exceeds its work budget; narrow the window.',
+                'MIDI projection output budget exceeded': 'Musical read exceeds its output budget; narrow the window.',
+                'Musical content row budget exceeded': 'Musical read has too many rows; narrow the window.',
+                'Musical content chord budget exceeded': 'Musical read exceeds its chord-source budget.',
+                'Musical content text exceeds receipt limit': 'Musical read contains text too large for a receipt.',
+                'Invalid or stale semantic query cursor':
+                    'Musical page cursor is stale or invalid; start a fresh request.',
+            };
+            const safeMessage = messages[error.message];
+            if (safeMessage !== undefined)
+                return failureReceipt({
+                    callId,
+                    turn,
+                    toolName,
+                    code: 'musical-content-refused',
+                    safeMessage,
+                    retryable: true,
+                });
+        }
         return failureReceipt({
             callId,
             turn,
@@ -461,9 +500,10 @@ function executeProjectQuery(
     callId: string,
     turn: number,
     answerSources?: Map<string, AnswerReadSource>,
-    frozenAnswerRevision?: string
+    frozenAnswerRevision?: string,
+    binding?: ReturnType<typeof captureMusicalContentBinding>
 ): ApplicationToolReceipt {
-    const parsed = parseProjectQueryArguments(call.arguments);
+    const parsed = parseProjectQueryArguments(call.arguments, binding);
     if (parsed.status === 'invalid') {
         return failureReceipt({
             callId,
@@ -1361,11 +1401,12 @@ function executeSafeRead(
     callId: string,
     turn: number,
     answerSources?: Map<string, AnswerReadSource>,
-    frozenAnswerRevision?: string
+    frozenAnswerRevision?: string,
+    binding?: ReturnType<typeof captureMusicalContentBinding>
 ): ApplicationToolReceipt {
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
-            return executeProjectQuery(call, callId, turn, answerSources, frozenAnswerRevision);
+            return executeProjectQuery(call, callId, turn, answerSources, frozenAnswerRevision, binding);
         case PROJECT_DISCOVERY_TOOL_NAME:
             return executeProjectDiscovery(call, callId, turn);
         case PROJECT_RESOLVE_TOOL_NAME:
@@ -1493,6 +1534,7 @@ function executeTurnReads(input: {
     nextRecipeOrdinal: () => number;
     retainedCompilations: readonly RetainedCompilation[];
     frozenAnswerRevision?: string;
+    musicalContentBinding?: ReturnType<typeof captureMusicalContentBinding>;
     signal?: AbortSignal;
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
@@ -1577,7 +1619,14 @@ function executeTurnReads(input: {
             }
         }
         if (measurement === undefined || !measurementToolNames.includes(call.name)) {
-            const receipt = executeSafeRead(call, callId, turn, producedSources, input.frozenAnswerRevision);
+            const receipt = executeSafeRead(
+                call,
+                callId,
+                turn,
+                producedSources,
+                input.frozenAnswerRevision,
+                input.musicalContentBinding
+            );
             return { receipt, commands: null, answerSource: producedSources.get(callId) };
         }
         if (index !== firstMeasurementIndex) {
@@ -2106,6 +2155,7 @@ export async function runApplicationOwnedToolLoop(
     let measurementIntake: MeasurementIntake | null = null;
     let measurementWitness: { opportunity: MeasurementOpportunity; receipt: ApplicationToolReceipt } | null = null;
     let heldTerminal: HeldTerminal | null = null;
+    let musicalRead: ReturnType<typeof createMusicalReadPrerequisite> | undefined;
     // Read through a function: the loop's measurement step decides which turns reach the hold,
     // and inline narrowing of `heldTerminal` at the loop head would depend on that decision.
     const heldOpportunity = (): MeasurementOpportunity | null => heldTerminal?.opportunity ?? null;
@@ -2505,18 +2555,53 @@ export async function runApplicationOwnedToolLoop(
             };
         }
         const isFinalTurn = turn === maxTurns();
+        const creativeAuthority = input.readCreativeAuthority?.();
+        if (interpretation === 'admitted' && creativeAuthority !== undefined && musicalRead === undefined) {
+            if (creativeAuthority.mode !== 'edit' || !creativeAuthority.editDimensions.includes('midi-content')) {
+                musicalRead = null;
+            } else {
+                if (input.musicalContentBinding === undefined)
+                    return {
+                        status: 'rejected',
+                        reason: 'Musical evidence binding is unavailable.',
+                        receipts,
+                        turns: turn - 1,
+                    };
+                try {
+                    musicalRead = createMusicalReadPrerequisite(creativeAuthority, input.musicalContentBinding);
+                } catch {
+                    return {
+                        status: 'rejected',
+                        reason: 'Musical evidence scope is unavailable or stale.',
+                        receipts,
+                        turns: turn - 1,
+                    };
+                }
+            }
+        }
+        if (musicalRead && !musicalRead.current())
+            return {
+                status: 'rejected',
+                reason: 'Musical evidence is stale; start a fresh request.',
+                receipts,
+                turns: turn - 1,
+            };
+        const musicalHint = musicalRead?.hint() ?? null;
         // A held candidate can still receive the real executor's stale-snapshot refusal. Snapshot
         // movement itself is neither an invocation nor a receipt and cannot settle its control.
         const measurementOpportunity: MeasurementOpportunity | null =
             readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ?? heldOpportunity();
         const needsMeasurementStep: boolean =
+            musicalHint === null &&
             measurementOpportunity !== null &&
             !hasMeasurementWitness(measurementOpportunity) &&
             (heldTerminal !== null || turn === maxTurns() - 1);
         // Voluntary reads can share a turn. A held proposal or the penultimate turn reserves
         // one missing primary receipt; a held complete proposal needs no later proposal turn.
         let directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE;
-        if (needsMeasurementStep && input.measurement !== undefined) {
+        if (musicalHint !== null) {
+            directive = { mode: 'required', toolNames: [PROJECT_QUERY_TOOL_NAME], parallelToolCalls: false };
+        } else if (needsMeasurementStep && input.measurement !== undefined) {
             directive = { mode: 'required', toolNames: [input.measurement.toolName], parallelToolCalls: false };
         } else if (isFinalTurn) {
             directive = {
@@ -2554,7 +2639,10 @@ export async function runApplicationOwnedToolLoop(
                 ),
                 ...(transientOnsetsDiscovered ? { transientOnsetsDiscovered: true as const } : {}),
                 budgetNote:
-                    lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining),
+                    (lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining)) +
+                    (musicalHint === null
+                        ? ''
+                        : ` Required musical read (untrusted context): ${JSON.stringify(musicalHint)}.`),
                 remaining,
                 directive,
             });
@@ -2564,6 +2652,13 @@ export async function runApplicationOwnedToolLoop(
         if (outcome.status === 'rejected') {
             return { ...outcome, receipts, turns: turn };
         }
+        if (musicalRead && !musicalRead.current())
+            return {
+                status: 'rejected',
+                reason: 'Musical evidence is stale; start a fresh request.',
+                receipts,
+                turns: turn,
+            };
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
         }
@@ -2573,7 +2668,9 @@ export async function runApplicationOwnedToolLoop(
             ? input.measurement?.toolName
             : undefined;
         const directiveRefusal =
-            measurementStepToolName === undefined ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn) : null;
+            measurementStepToolName === undefined && musicalHint === null
+                ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn)
+                : null;
         if (directiveRefusal !== null) {
             return { status: 'rejected', reason: directiveRefusal, receipts, turns: turn };
         }
@@ -3004,6 +3101,36 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
+        if (musicalHint !== null && terminalCalls.some(({ call }) => call.name !== COMMAND_BATCH_DECLINE_TOOL_NAME)) {
+            if (isFinalTurn)
+                return {
+                    status: 'rejected',
+                    reason: 'Required musical evidence was not read within the planning budget.',
+                    receipts,
+                    turns: turn,
+                };
+            const missing = terminalCalls.map(({ call, callId }) =>
+                failureReceipt({
+                    callId,
+                    toolName: call.name,
+                    turn,
+                    code: 'musical-read-required',
+                    safeMessage: 'Read the required musical window and all its pages before proposing.',
+                    retryable: true,
+                })
+            );
+            const overBudget = admitTurnReceipts(missing, turn, outcome, terminalCalls);
+            if (overBudget !== null)
+                return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            continue;
+        }
+        if (musicalHint !== null && outcome.toolCalls.length === 0)
+            return {
+                status: 'rejected',
+                reason: 'Required musical evidence was not requested.',
+                receipts,
+                turns: turn,
+            };
         const terminalValidation: ValidatedTerminalCalls = validateTerminalCalls(terminalCalls);
         if (terminalValidation.status === 'rejected') {
             return {
@@ -3166,6 +3293,7 @@ export async function runApplicationOwnedToolLoop(
                 nextRecipeOrdinal,
                 retainedCompilations: [...retainedCompilations.values()],
                 frozenAnswerRevision: answerIntake?.authority.revision,
+                musicalContentBinding: input.musicalContentBinding,
                 signal: input.signal,
             })
         );
@@ -3202,6 +3330,9 @@ export async function runApplicationOwnedToolLoop(
         const currentOpportunity = measurementOpportunity;
         for (const [index, executed] of executedReads.entries()) {
             const admitted = turnReceipts[index];
+            const raw = rawTurnReceipts[index];
+            const call = safeReadCalls[index]?.call;
+            if (musicalRead && admitted && raw && call) musicalRead.admit(call, raw, admitted);
             if (
                 currentOpportunity !== null &&
                 admitted !== undefined &&

@@ -2,18 +2,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
+    configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
 } from '#/infra/testing/installTransactionalIndexedDb';
-import { clipSelectionStore, defaultTrackState, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    defaultTrackState,
+    markerStore,
+    takeLaneStore,
+    trackStore,
+} from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
-import { defaultMidiStoreState } from '#/modules/MIDI/stores';
-import { setMidiStoreState, setNotesForClip } from '#/modules/MIDI/useCases';
+import {
+    captureProjectRevision,
+    createCrdtDoc,
+    createCrdtProject,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore, defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import {
+    clearPianoRollSelection,
+    setMidiStoreState,
+    setNotesForClip,
+    setPianoRollSelection,
+    readPianoRollSelection,
+    projectPianoRollTakeNotes,
+} from '#/modules/MIDI/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import {
     defaultTransportState,
@@ -27,7 +51,10 @@ import { CURRENT_PROJECT_VERSION } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
 import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
 import { semanticProjectIndex } from '../semanticProjectIndex';
+import { parseSemanticProjectQueryInput } from '../parseSemanticProjectQueryInput';
 import { querySemanticProject } from '../semanticProjectQueries';
+import { bindMusicalContentQuery } from '../bindMusicalContentQuery';
+import { captureMusicalContentBinding } from '../captureMusicalContentBinding';
 
 const SEMANTIC_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
 const SECOND_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368d';
@@ -204,9 +231,495 @@ describe('semantic project queries', () => {
     });
 
     afterEach(async () => {
+        configureAutomergeStoragePort(null);
         await indexedDb?.dispose();
         indexedDb = null;
         vi.unstubAllGlobals();
+    });
+
+    it('retires note selection across a real root replacement and restoration', () => {
+        const originalRoot = getCrdtDoc('root');
+        if (!originalRoot) throw new Error('Expected a project root');
+        setPianoRollSelection('phrase-a', ['note-a']);
+        const original = readPianoRollSelection();
+        createCrdtDoc('root');
+        createCrdtDoc('root', originalRoot);
+        const restored = readPianoRollSelection();
+        expect(restored).toMatchObject({ clipId: null, clipIds: [], viewIds: [] });
+        expect(restored.token).not.toBe(original.token);
+    });
+
+    it('pages a dense expression curve as flat rows without truncating or duplicating point identity', () => {
+        const track = createTrack({ id: 'dense-track', name: 'Dense', kind: 'midi' });
+        const clip = {
+            id: 'dense-clip',
+            trackId: track.id,
+            name: 'Dense',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 4,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        track.clips = [clip];
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        const pressure = Array.from({ length: 120 }, (_, index) => ({ offsetBeats: (index + 1) / 121, value: index }));
+        setMidiStoreState({
+            ...structuredClone(defaultMidiStoreState),
+            notesByClipId: {
+                'dense-clip': [
+                    { id: 'dense-note', pitch: 67, startBeat: 0, duration: 1, velocity: 80, expression: { pressure } },
+                ],
+            },
+            ccByClipId: { 'dense-clip': [{ id: 'cc', controller: 1, value: 90, beat: 1, channel: 0 }] },
+            pitchBendByClipId: { 'dense-clip': [{ id: 'bend', value: 1200, beat: 2, channel: 0 }] },
+        });
+        const projection = projectPianoRollTakeNotes(
+            clip,
+            track.id,
+            null,
+            midiStore.value?.notesByClipId[clip.id] ?? []
+        );
+        setPianoRollSelection(clip.id, ['dense-note'], [clip.id], [{ clipId: clip.id, projection }]);
+        const binding = captureMusicalContentBinding();
+        const items: ReturnType<typeof querySemanticProject>['items'] = [];
+        let cursor: string | undefined;
+        do {
+            const parsed = bindMusicalContentQuery(
+                {
+                    type: 'musical-content',
+                    filters: { stableId: clip.id, startBeat: 0, endBeat: 4 },
+                    page: { limit: 50, ...(cursor ? { cursor } : {}) },
+                },
+                binding
+            );
+            if (parsed.status !== 'valid') throw new Error('Dense query was refused');
+            const receipt = querySemanticProject(parsed.input);
+            items.push(...receipt.items);
+            cursor = receipt.nextCursor ?? undefined;
+        } while (cursor);
+        const points = items.filter((item) => item.kind === 'expression');
+        expect(points.map((point) => [point.offsetBeats, point.value])).toEqual(
+            pressure.map((point) => [point.offsetBeats, point.value])
+        );
+        expect(new Set(points.map((point) => point.id)).size).toBe(120);
+        expect(items.find((item) => item.kind === 'note')).not.toHaveProperty('expression');
+        expect(items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'controller',
+                    sourceId: 'cc',
+                    controller: 1,
+                    value: 90,
+                    sourceBeat: 1,
+                    timelineBeat: 1,
+                    origin: 'source',
+                }),
+                expect.objectContaining({
+                    kind: 'pitch-bend',
+                    sourceId: 'bend',
+                    value: 1200,
+                    sourceBeat: 2,
+                    timelineBeat: 2,
+                    origin: 'source',
+                }),
+            ])
+        );
+    });
+
+    it('keeps one stored note identity while assigning unique evidence identities to its loop occurrences', () => {
+        const track = createTrack({ id: 'loop-track', name: 'Loop', kind: 'midi' });
+        const clip = {
+            id: 'loop-clip',
+            trackId: track.id,
+            name: 'Loop',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 8,
+            loopEnabled: true,
+            loopLength: 4,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        track.clips = [clip];
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        const note = { id: 'shared-note', pitch: 67, startBeat: 0, duration: 1, velocity: 80 };
+        setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [note] } });
+        const projection = projectPianoRollTakeNotes(clip, track.id, null, [note]);
+        setPianoRollSelection(clip.id, [note.id], [clip.id], [{ clipId: clip.id, projection }]);
+        const parsed = bindMusicalContentQuery(
+            { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 8 } },
+            captureMusicalContentBinding()
+        );
+        if (parsed.status !== 'valid') throw new Error('Loop query was refused');
+        const rows = querySemanticProject(parsed.input).items.filter((item) => item.kind === 'note');
+        expect(rows.map((row) => [row.noteId, row.timelineStartBeat, row.selected])).toEqual([
+            ['shared-note', 0, true],
+            ['shared-note', 4, true],
+        ]);
+        expect(new Set(rows.map((row) => row.id)).size).toBe(2);
+
+        clearPianoRollSelection();
+        const closed = bindMusicalContentQuery(
+            { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 4 } },
+            captureMusicalContentBinding()
+        );
+        if (closed.status !== 'valid') throw new Error('Closed editor query was refused');
+        const closedRows = querySemanticProject(closed.input).items;
+        expect(closedRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'musical-window', noteSelection: 'unavailable' }),
+                expect.objectContaining({ kind: 'note', noteId: note.id, selected: false }),
+            ])
+        );
+    });
+
+    it('returns frozen note ownership with controller and bend carry from the same projected take window', () => {
+        const track = createTrack({ id: 'take-track', name: 'Take', kind: 'midi' });
+        const clip = {
+            id: 'take-clip',
+            trackId: track.id,
+            name: 'Take',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 8,
+            loopEnabled: true,
+            loopLength: 4,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        track.clips = [clip];
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        const source = {
+            sourceClipId: 'original',
+            sourceEntryBeat: 5,
+            sourceEndBeat: 9,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: {
+                    present: true,
+                    value: [{ id: 'take-note', pitch: 67, startBeat: 5.5, duration: 1, velocity: 80 }],
+                },
+                controlChanges: {
+                    present: true,
+                    value: [{ id: 'pedal', controller: 64, value: 127, channel: 0, beat: 4.8 }],
+                },
+                pitchBends: { present: true, value: [{ id: 'bend', value: 2048, channel: 0, beat: 4.9 }] },
+            },
+        };
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: track.id,
+                    takes: [
+                        {
+                            id: 'take',
+                            clipId: clip.id,
+                            name: 'Take',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: true,
+                            midiSource: source,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take' }],
+                },
+            ],
+        });
+        setMidiStoreState(structuredClone(defaultMidiStoreState));
+        const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value);
+        const view = projection.notes[0];
+        expect(view).toBeDefined();
+        setPianoRollSelection(clip.id, [view!.id], [clip.id], [{ clipId: clip.id, projection }]);
+        const parsed = bindMusicalContentQuery(
+            { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 4 } },
+            captureMusicalContentBinding()
+        );
+        if (parsed.status !== 'valid') throw new Error('Frozen query was refused');
+        expect(querySemanticProject(parsed.input).items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'note',
+                    noteId: 'take-note',
+                    ownerClipId: 'original',
+                    takeId: 'take',
+                    occurrenceIndex: 0,
+                    selected: true,
+                }),
+                expect.objectContaining({
+                    kind: 'controller',
+                    sourceId: 'pedal',
+                    ownerClipId: 'original',
+                    origin: 'carried',
+                    sourceBeat: 4.8,
+                    timelineBeat: 0,
+                }),
+                expect.objectContaining({
+                    kind: 'pitch-bend',
+                    sourceId: 'bend',
+                    ownerClipId: 'original',
+                    origin: 'carried',
+                    sourceBeat: 4.9,
+                    timelineBeat: 0,
+                }),
+            ])
+        );
+    });
+
+    it('reads contrasting equal-count MIDI phrases and authored harmony through bound paged queries', () => {
+        registerCrdtStorageRuntime();
+        seedProject();
+        midiStore.hydrate();
+        const track = createTrack({ id: 'phrase-track', name: 'Phrase', kind: 'midi' });
+        track.clips = ['phrase-a', 'phrase-b'].map((id) => ({
+            id,
+            trackId: track.id,
+            name: 'Phrase',
+            type: 'midi' as const,
+            startBeat: 8,
+            endBeat: 12,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        }));
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        setMidiStoreState({
+            ...structuredClone(defaultMidiStoreState),
+            notesByClipId: {
+                'phrase-a': [
+                    {
+                        id: 'a1',
+                        pitch: 67,
+                        startBeat: 0,
+                        duration: 1,
+                        velocity: 78,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 40 }] },
+                    },
+                    { id: 'a2', pitch: 70, startBeat: 2, duration: 1, velocity: 91 },
+                ],
+                'phrase-b': [
+                    { id: 'b1', pitch: 69, startBeat: 0, duration: 1, velocity: 100 },
+                    { id: 'b2', pitch: 73, startBeat: 2, duration: 1, velocity: 64 },
+                ],
+            },
+        });
+        chordTrackStore.set({
+            enabled: true,
+            events: [{ id: 'g-minor', beat: 8, root: 7, quality: 'minor', duration: 4 }],
+        });
+        projectStore.set({ ...projectStore.value!, keyRoot: 7, scaleName: 'minor' });
+
+        function select(clipId: string, selectedId: string, opened: string[] = [clipId]): void {
+            const projections = opened.map((id) => {
+                const clip = track.clips.find((entry) => entry.id === id);
+                if (!clip) throw new Error('Expected MIDI clip');
+                return {
+                    clipId: id,
+                    projection: projectPianoRollTakeNotes(
+                        clip,
+                        track.id,
+                        null,
+                        midiStore.value?.notesByClipId[id] ?? []
+                    ),
+                };
+            });
+            setPianoRollSelection(clipId, [selectedId], opened, projections);
+        }
+
+        function pages(clipId: string, selectedId: string) {
+            select(clipId, selectedId);
+            const { selectionToken, expectedRevision } = captureMusicalContentBinding();
+            const items: ReturnType<typeof querySemanticProject>['items'] = [];
+            let cursor: string | undefined;
+            do {
+                const parsed = parseSemanticProjectQueryInput({
+                    type: 'musical-content',
+                    filters: { stableId: clipId, startBeat: 8, endBeat: 12 },
+                    expectedRevision,
+                    selectionToken,
+                    page: { limit: 2, ...(cursor ? { cursor } : {}) },
+                });
+                if (parsed.status !== 'valid') throw new Error('Musical query was refused');
+                const receipt = querySemanticProject(parsed.input);
+                expect(receipt.revisionToken).toBe(querySemanticProject({ type: 'project-summary' }).revisionToken);
+                expect(receipt.page.limit).toBe(2);
+                items.push(...receipt.items);
+                cursor = receipt.nextCursor ?? undefined;
+            } while (cursor);
+            return items;
+        }
+        const first = pages('phrase-a', 'a1');
+        const second = pages('phrase-b', 'b1');
+        expect(first).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'note',
+                    noteId: 'a1',
+                    ownerClipId: 'phrase-a',
+                    pitch: 67,
+                    startBeat: 0,
+                    duration: 1,
+                    velocity: 78,
+                    timelineStartBeat: 8,
+                    timelineDuration: 1,
+                    projectedVelocity: 78,
+                    sourceBasis: 'stored-score',
+                    projectionBasis: 'clip-projection',
+                    selected: true,
+                }),
+                expect.objectContaining({
+                    kind: 'expression',
+                    noteId: 'a1',
+                    dimension: 'pressure',
+                    offsetBeats: 0.5,
+                    value: 40,
+                }),
+                expect.objectContaining({ kind: 'harmony', id: 'g-minor', root: 7, quality: 'minor' }),
+                expect.objectContaining({
+                    kind: 'musical-window',
+                    keyRoot: 7,
+                    scaleName: 'minor',
+                    keyProvenance: 'project-settings',
+                }),
+            ])
+        );
+        expect(first.find((item) => item.kind === 'note' && item.noteId === 'a1')).not.toHaveProperty('expression');
+        expect(second).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'note',
+                    noteId: 'b1',
+                    ownerClipId: 'phrase-b',
+                    pitch: 69,
+                    velocity: 100,
+                    selected: true,
+                }),
+            ])
+        );
+        expect(first).not.toEqual(second);
+
+        select('phrase-a', 'b1', ['phrase-a', 'phrase-b']);
+        const secondary = bindMusicalContentQuery(
+            {
+                type: 'musical-content',
+                filters: { stableId: 'phrase-b', startBeat: 8, endBeat: 12 },
+            },
+            captureMusicalContentBinding()
+        );
+        if (secondary.status !== 'valid') throw new Error('Bound secondary query was refused');
+        expect(querySemanticProject(secondary.input).items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'note', noteId: 'b1', ownerClipId: 'phrase-b', selected: true }),
+            ])
+        );
+
+        const parsed = parseSemanticProjectQueryInput({
+            type: 'musical-content',
+            filters: { stableId: 'phrase-b', startBeat: 8, endBeat: 12 },
+            expectedRevision: captureMusicalContentBinding().expectedRevision,
+            selectionToken: readPianoRollSelection().token,
+            page: { limit: 1 },
+        });
+        if (parsed.status !== 'valid') throw new Error('Musical query was refused');
+        const firstPage = querySemanticProject(parsed.input);
+        expect(firstPage.nextCursor).not.toBeNull();
+        select('phrase-b', 'b2');
+        expect(() =>
+            querySemanticProject({ ...parsed.input, page: { limit: 1, cursor: firstPage.nextCursor! } })
+        ).toThrow('Stale musical selection');
+
+        select('phrase-b', 'b1');
+        const beforeChange = {
+            ...parsed.input,
+            selectionToken: readPianoRollSelection().token,
+        };
+        setNotesForClip('phrase-b', [{ id: 'b1', pitch: 72, startBeat: 0, duration: 1, velocity: 100 }]);
+        expect(() => querySemanticProject(beforeChange)).toThrow('Stale musical content revision');
+
+        const binding = captureMusicalContentBinding();
+        const modelQuery = { type: 'musical-content', filters: { stableId: 'phrase-b', startBeat: 8, endBeat: 12 } };
+        const bound = bindMusicalContentQuery(modelQuery, binding);
+        expect(bound).toMatchObject({ status: 'valid' });
+        expect(bindMusicalContentQuery({ ...modelQuery, selectionToken: 'provider-forged' }, binding)).toMatchObject({
+            status: 'invalid',
+        });
+        select('phrase-b', 'b1');
+        if (bound.status !== 'valid') throw new Error('Bound query was refused');
+        expect(() => querySemanticProject(bound.input)).toThrow('Stale musical selection');
+
+        setNotesForClip('phrase-a', [{ id: 'b1', pitch: 67, startBeat: 0, duration: 1, velocity: 78 }]);
+        select('phrase-a', 'b1', ['phrase-a', 'phrase-b']);
+        const ambiguous = bindMusicalContentQuery(modelQuery, captureMusicalContentBinding());
+        if (ambiguous.status !== 'valid') throw new Error('Bound query was refused');
+        expect(() => querySemanticProject(ambiguous.input)).toThrow('Ambiguous piano roll selection');
+
+        midiStore.hydrate();
+        setNotesForClip('phrase-b', [{ id: 'b1', pitch: 72, startBeat: 0, duration: 1, velocity: 100 }]);
+        settlePendingProjectWritesAndCaptureRevision();
+        select('phrase-b', 'b1');
+        const beforePending = captureProjectRevision();
+        const pendingCount = countPendingAutomergeStorageWrites();
+        setNotesForClip('phrase-b', [
+            {
+                id: 'b1',
+                pitch: 72,
+                startBeat: 0,
+                duration: 1,
+                velocity: 100,
+                expression: { pressure: [{ offsetBeats: 0.5, value: 33 }] },
+            },
+        ]);
+        expect(countPendingAutomergeStorageWrites()).toBeGreaterThan(pendingCount);
+        expect(captureProjectRevision()).toBe(beforePending);
+        const settledBinding = captureMusicalContentBinding();
+        expect(captureProjectRevision()).not.toBe(beforePending);
+        expect(getCrdtDoc('root')).toMatchObject({
+            midi: {
+                notesByClipId: {
+                    'phrase-b': [{ id: 'b1', expression: { pressure: [{ offsetBeats: 0.5, value: 33 }] } }],
+                },
+            },
+        });
+        const pendingQuery = bindMusicalContentQuery(modelQuery, settledBinding);
+        if (pendingQuery.status !== 'valid') throw new Error('Bound query was refused');
+        const settledRevision = captureProjectRevision();
+        const history = structuredClone(actionHistoryStore.value);
+        expect(querySemanticProject(pendingQuery.input).items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'expression', noteId: 'b1', dimension: 'pressure', value: 33 }),
+            ])
+        );
+        expect(captureProjectRevision()).toBe(settledRevision);
+        expect(actionHistoryStore.value).toEqual(history);
+        setNotesForClip('phrase-b', [
+            {
+                id: 'b1',
+                pitch: 72,
+                startBeat: 0,
+                duration: 1,
+                velocity: 100,
+                expression: { pressure: [{ offsetBeats: 0.5, value: 44 }] },
+            },
+        ]);
+        expect(captureProjectRevision()).toBe(settledRevision);
+        expect(() => querySemanticProject(pendingQuery.input)).toThrow('Stale musical content revision');
     });
 
     it('indexes each clip a track holds once, leaving out the active alternative stored copy of a deleted clip', () => {

@@ -36,6 +36,8 @@ import {
     setNotePitchBend,
     setStepRecordBeat,
     toggleStepRecordingForClip,
+    projectPianoRollTakeNotes,
+    type setPianoRollSelection,
 } from '#/modules/MIDI/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
@@ -56,7 +58,6 @@ import {
     getPianoRollContentHeight,
     getPianoRollRowTop,
 } from '../../helpers/pianoRollConstants';
-import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
@@ -64,6 +65,8 @@ import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
 import { PianoRollContextMenu } from './PianoRollContextMenu';
 import { PianoRollToolbar } from './PianoRollToolbar';
+
+type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 /**
  * Structural equality for the `clipId -> length in beats` map used to derive
@@ -102,7 +105,10 @@ type PianoRollProps = {
     /** A9: additional clip IDs to show simultaneously (multi-clip editing) */
     openedClipIds?: string[];
     selectedNoteIds: Set<string>;
-    onSelectedNoteIdsChange: Dispatch<SetStateAction<Set<string>>>;
+    onSelectedNoteIdsChange: (
+        change: SetStateAction<Set<string>>,
+        projections: Parameters<typeof setPianoRollSelection>[3]
+    ) => void;
     onScrollChange?: (scrollLeft: number) => void;
     onBeatWidthChange?: (beatWidth: number) => void;
     onContentWidthChange?: (contentWidth: number) => void;
@@ -155,7 +161,13 @@ export const PianoRoll = ({
     // since both scroll containers live in this component.
     const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
-    const setSelectedNoteIds = onSelectedNoteIdsChange;
+    const setSelectedNoteIds: Dispatch<SetStateAction<Set<string>>> = (change) =>
+        onSelectedNoteIdsChange(
+            change,
+            takeProjections.size > 256
+                ? []
+                : [...takeProjections].map(([id, projection]) => ({ clipId: id, projection }))
+        );
     const [gridSnap, setGridSnap] = useState(0.25);
 
     const { keyRoot, scaleName } = useStore(projectStore);
@@ -429,7 +441,7 @@ export const PianoRoll = ({
             const request =
                 event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
             if (request?.action === 'edit:deselect-all') {
-                onSelectedNoteIdsChange(new Set());
+                setSelectedNoteIds(new Set());
                 request.handled = true;
                 return;
             }
@@ -442,7 +454,7 @@ export const PianoRoll = ({
                     allIds.add(note.id);
                 }
             }
-            onSelectedNoteIdsChange(allIds);
+            setSelectedNoteIds(allIds);
             request.handled = true;
         };
         canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);

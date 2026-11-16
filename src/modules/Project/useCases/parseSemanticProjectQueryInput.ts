@@ -33,7 +33,7 @@ type ParsedSemanticProjectQueryInput =
 
 type QueryPage = NonNullable<SemanticProjectQueryInput['page']>;
 
-const ALLOWED_INPUT_KEYS = ['type', 'filters', 'page', 'sinceRevision'];
+const ALLOWED_INPUT_KEYS = ['type', 'filters', 'page', 'sinceRevision', 'expectedRevision', 'selectionToken'];
 
 export const STRING_FILTER_KEYS = [
     'stableId',
@@ -209,6 +209,30 @@ export function parseSemanticProjectQueryInput(value: unknown): ParsedSemanticPr
             return { status: 'invalid', reason: 'revision' };
         }
         input.sinceRevision = value.sinceRevision;
+    }
+    if (value.type === 'musical-content') {
+        const filters = input.filters;
+        if (
+            !filters ||
+            Object.keys(filters).some((key) => !['stableId', 'startBeat', 'endBeat'].includes(key)) ||
+            filters.stableId === undefined ||
+            filters.startBeat === undefined ||
+            filters.endBeat === undefined ||
+            filters.endBeat <= filters.startBeat
+        ) {
+            return { status: 'invalid', reason: 'filters' };
+        }
+        if (
+            !isBoundedString(value.expectedRevision, MAX_SEMANTIC_QUERY_REVISION_TOKEN_LENGTH) ||
+            !isBoundedString(value.selectionToken, MAX_SEMANTIC_QUERY_CURSOR_LENGTH) ||
+            value.sinceRevision !== undefined
+        ) {
+            return { status: 'invalid', reason: 'revision' };
+        }
+        input.expectedRevision = value.expectedRevision;
+        input.selectionToken = value.selectionToken;
+    } else if (value.expectedRevision !== undefined || value.selectionToken !== undefined) {
+        return { status: 'invalid', reason: 'arguments' };
     }
     return { status: 'valid', input };
 }

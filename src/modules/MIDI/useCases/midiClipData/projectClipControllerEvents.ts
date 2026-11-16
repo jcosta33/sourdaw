@@ -1,7 +1,12 @@
 import { type MidiCC } from '../../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { projectMidiClipWindow } from '../../services/projectMidiClipWindow';
 
-import { listClipControllerPasses, type ControllerProjectionClip } from './listClipControllerPasses';
+import {
+    listClipControllerPasses,
+    type ClipControllerPass,
+    type ControllerProjectionClip,
+} from './listClipControllerPasses';
 
 type ProjectClipControllerEventsInput = {
     controlChanges: readonly MidiCC[];
@@ -81,12 +86,10 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * or past it: the clip plays in that window and in no later one, so a window that
  * opens on the clip end, where the clip is not scheduled, owes it nothing.
  */
-export function projectClipControllerEvents({
-    controlChanges,
-    clip,
-    fromBeat,
-    toBeat,
-}: ProjectClipControllerEventsInput): ProjectedClipControllerMove[] {
+function projectControllers(
+    { controlChanges, clip, fromBeat, toBeat }: ProjectClipControllerEventsInput,
+    collect?: (move: ProjectedClipControllerMove, window: ClipControllerPass) => void
+): ProjectedClipControllerMove[] {
     if (controlChanges.length === 0) {
         return [];
     }
@@ -101,9 +104,37 @@ export function projectClipControllerEvents({
         for (const move of moves) {
             if (ownsMove(move, fromBeat, toBeat)) {
                 events.push(move);
+                collect?.(move, window);
             }
         }
     }
 
     return events.sort((left, right) => left.beat - right.beat);
+}
+
+export function projectClipControllerEvents(input: ProjectClipControllerEventsInput): ProjectedClipControllerMove[] {
+    return projectControllers(input);
+}
+
+export function projectClipControllerEventsWithProvenance(input: ProjectClipControllerEventsInput) {
+    const source = new Map<string, MidiCC>();
+    for (const row of input.controlChanges) {
+        if (source.has(row.id)) throw new Error('Ambiguous MIDI controller identity');
+        source.set(row.id, row);
+    }
+    const evidence: Array<
+        ProjectedClipControllerMove & { sourceBeat: number; origin: 'source' | 'carried' | 'closing' }
+    > = [];
+    projectControllers(input, (move, window) => {
+        const original = source.get(move.id);
+        if (!original) throw new Error('MIDI controller source unavailable');
+        const sourceBeat = original.beat;
+        const origin = move.closesClip
+            ? 'closing'
+            : Math.abs(move.beat - window.beatOffset - sourceBeat) > SAME_BEAT_TOLERANCE
+              ? 'carried'
+              : 'source';
+        evidence.push({ ...move, sourceBeat, origin });
+    });
+    return evidence.sort((left, right) => left.beat - right.beat);
 }
