@@ -3,64 +3,11 @@ import { Profiler } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { hydrateTracksForProject, setTrackState } from '#/modules/Arrangement/useCases';
 
+import { makeTrackDummy } from '../../../__tests__/TrackDummy';
 import { useShellTrackFacts } from '../useShellTrackFacts';
-
-type TrackOptions = { clipType?: Clip['type']; clipEndBeat?: number; showVariationLanes?: boolean };
-
-const makeTrack = ({ clipType = 'midi', clipEndBeat = 4, showVariationLanes = false }: TrackOptions = {}): Track => {
-    const clip: Clip = {
-        id: 'clip-1',
-        trackId: 'track-1',
-        name: 'Clip',
-        type: clipType,
-        startBeat: 0,
-        endBeat: clipEndBeat,
-        fadeInBeats: 0,
-        fadeOutBeats: 0,
-        gain: 1,
-        color: '#ffffff',
-        locked: false,
-        muted: false,
-    };
-    return {
-        id: 'track-1',
-        name: 'Track',
-        kind: 'midi',
-        muted: false,
-        soloed: false,
-        armed: false,
-        gain: 1,
-        pan: 0,
-        color: '#ffffff',
-        clips: [clip],
-        devices: [],
-        sends: [],
-        midiFx: [],
-        frozen: false,
-        freezeState: { status: 'unfrozen' },
-        parentId: null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 64,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: false,
-        notes: '',
-        inputId: null,
-        activeAlternativeId: 'track-1-alternative',
-        alternatives: [{ id: 'track-1-alternative', name: 'Main', clips: [clip] }],
-        vcaGroupId: null,
-        midiOutputTrackId: null,
-        followChordTrack: false,
-        showVariationLanes,
-    };
-};
 
 const hydrateTracks = (tracks: Track[]): void => {
     act(() => {
@@ -92,7 +39,7 @@ describe('useShellTrackFacts', () => {
 
     beforeEach(() => {
         renders = 0;
-        hydrateTracksForProject({ tracks: [makeTrack()] });
+        hydrateTracksForProject({ tracks: [makeTrackDummy()] });
     });
 
     afterEach(() => {
@@ -104,7 +51,7 @@ describe('useShellTrackFacts', () => {
         mount('clip-1');
         renders = 0;
 
-        setTracks([makeTrack({ clipEndBeat: 8 })]);
+        setTracks([makeTrackDummy({ clipEndBeat: 8 })]);
 
         expect(renders).toBe(0);
     });
@@ -114,7 +61,7 @@ describe('useShellTrackFacts', () => {
         expect(result.current.isAudioClipSelected).toBe(false);
         renders = 0;
 
-        setTracks([makeTrack({ clipType: 'audio' })]);
+        setTracks([makeTrackDummy({ clipType: 'audio' })]);
 
         expect(result.current.isAudioClipSelected).toBe(true);
         expect(renders).toBeGreaterThan(0);
@@ -125,7 +72,7 @@ describe('useShellTrackFacts', () => {
         expect(result.current.takesTabAvailable).toBe(false);
         renders = 0;
 
-        setTracks([makeTrack({ showVariationLanes: true })]);
+        setTracks([makeTrackDummy({ showVariationLanes: true })]);
 
         expect(result.current.takesTabAvailable).toBe(true);
         expect(result.current.variationLanesShown.get('track-1')).toBe(true);
@@ -136,7 +83,7 @@ describe('useShellTrackFacts', () => {
         const { result } = mount(null);
         renders = 0;
 
-        setTracks([makeTrack(), { ...makeTrack({ showVariationLanes: true }), id: 'track-2' }]);
+        setTracks([makeTrackDummy(), makeTrackDummy({ id: 'track-2', showVariationLanes: true })]);
 
         expect(result.current.variationLanesShown.get('track-2')).toBe(true);
         expect(renders).toBeGreaterThan(0);
@@ -145,24 +92,15 @@ describe('useShellTrackFacts', () => {
     it('does not offer the Takes tab for a folder, whose lanes are never shown', () => {
         const { result } = mount(null);
 
-        setTracks([{ ...makeTrack({ showVariationLanes: true }), kind: 'folder' }]);
+        setTracks([makeTrackDummy({ kind: 'folder', showVariationLanes: true })]);
 
         expect(result.current.takesTabAvailable).toBe(false);
         expect(result.current.variationLanesShown.get('track-1')).toBe(false);
     });
 
     it('reports an audio clip selected only when the selected clip id is an audio clip', () => {
-        const midiTrack = makeTrack();
-        const audioTrack = (id: string): Track => {
-            const track = makeTrack({ clipType: 'audio' });
-            const clip = { ...track.clips[0]!, id: `${id}-clip`, trackId: id };
-            return {
-                ...track,
-                id,
-                clips: [clip],
-                alternatives: [{ id: `${id}-alternative`, name: 'Main', clips: [clip] }],
-            };
-        };
+        const midiTrack = makeTrackDummy();
+        const audioTrack = (id: string): Track => makeTrackDummy({ id, clipId: `${id}-clip`, clipType: 'audio' });
         hydrateTracks([midiTrack, audioTrack('audio-1'), audioTrack('audio-2')]);
 
         expect(mount('clip-1').result.current.isAudioClipSelected).toBe(false);
@@ -171,11 +109,11 @@ describe('useShellTrackFacts', () => {
     });
 
     it('renders with the new value when lanes switch back off', () => {
-        hydrateTracksForProject({ tracks: [makeTrack({ showVariationLanes: true })] });
+        hydrateTracksForProject({ tracks: [makeTrackDummy({ showVariationLanes: true })] });
         const { result } = mount(null);
         renders = 0;
 
-        setTracks([makeTrack()]);
+        setTracks([makeTrackDummy()]);
 
         expect(result.current.takesTabAvailable).toBe(false);
         expect(renders).toBeGreaterThan(0);

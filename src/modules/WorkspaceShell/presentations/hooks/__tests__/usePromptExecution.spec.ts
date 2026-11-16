@@ -296,6 +296,23 @@ describe('usePromptExecution', () => {
         expect(executionUseCaseMocks.planPromptActions).not.toHaveBeenCalled();
     });
 
+    it('shows the newly selected track tag when two tracks share a name and kind and the first tag was dismissed', () => {
+        const first = { id: 't1', name: 'Drums', clips: [] };
+        const second = { id: 't2', name: 'Drums', clips: [] };
+        trackState = { tracks: [first, second], selectedTrackId: 't1' };
+        const { result, rerender } = renderHook(() => usePromptExecution());
+        act(() => result.current.dismissTag('track:t1'));
+        rerender();
+        expect(result.current.selectionTags).toEqual([]);
+
+        trackState = { tracks: [first, second], selectedTrackId: 't2' };
+        rerender();
+
+        expect(result.current.selectionTags).toEqual([
+            { id: 'track:t2', label: 'Drums', kind: 'track', icon: 'track' },
+        ]);
+    });
+
     it('derives selection tags for the current track/clip selection, drops dismissed ones, and restores them when the selection changes', () => {
         const track = { id: 't1', name: 'Drums', clips: [{ id: 'c1', name: 'Clip A', type: 'audio' }] };
         trackState = { tracks: [track], selectedTrackId: 't1' };

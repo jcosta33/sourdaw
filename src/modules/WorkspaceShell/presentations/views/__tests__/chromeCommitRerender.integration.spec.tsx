@@ -6,12 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views';
 import { aiActionHistoryStore } from '#/modules/AiRuntime/stores';
-import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { hydrateTracksForProject, setTrackState } from '#/modules/Arrangement/useCases';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { clearUndoHistory, pushUndoEntry } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
+import { makeTrackDummy } from '../../../__tests__/TrackDummy';
 import { defaultWorkspaceState } from '../../../models/WorkspaceState';
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { StatusBar } from '../StatusBar';
@@ -38,56 +39,7 @@ const count = (id: keyof RenderCounts, element: ReactElement): ReactElement => (
     </Profiler>
 );
 
-const makeTrack = (armed: boolean, clipEndBeat: number): Track => {
-    const clip: Clip = {
-        id: 'clip-1',
-        trackId: 'track-1',
-        name: 'Clip',
-        type: 'midi',
-        startBeat: 0,
-        endBeat: clipEndBeat,
-        fadeInBeats: 0,
-        fadeOutBeats: 0,
-        gain: 1,
-        color: '#ffffff',
-        locked: false,
-        muted: false,
-    };
-    return {
-        id: 'track-1',
-        name: 'Track',
-        kind: 'midi',
-        muted: false,
-        soloed: false,
-        armed,
-        gain: 1,
-        pan: 0,
-        color: '#ffffff',
-        clips: [clip],
-        devices: [],
-        sends: [],
-        midiFx: [],
-        frozen: false,
-        freezeState: { status: 'unfrozen' },
-        parentId: null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 64,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: false,
-        notes: '',
-        inputId: null,
-        activeAlternativeId: 'track-1-alternative',
-        alternatives: [{ id: 'track-1-alternative', name: 'Main', clips: [clip] }],
-        vcaGroupId: null,
-        midiOutputTrackId: null,
-        followChordTrack: false,
-    };
-};
+const makeTrack = (armed: boolean, clipEndBeat: number): Track => makeTrackDummy({ armed, clipEndBeat });
 
 const pushUndo = (label: string): void => {
     pushUndoEntry(

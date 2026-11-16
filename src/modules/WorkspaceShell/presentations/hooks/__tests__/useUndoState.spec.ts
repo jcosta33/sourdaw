@@ -99,6 +99,18 @@ describe('useUndoAvailability', () => {
         expect(result.current).toEqual({ canUndo: false, canRedo: true });
     });
 
+    it('keeps undo available while redo turns on after undoing one of two steps', async () => {
+        pushEntry('Add note');
+        pushEntry('Move clip');
+        const { result } = renderHook(() => useUndoAvailability());
+
+        await act(async () => {
+            await undo();
+        });
+
+        expect(result.current).toEqual({ canUndo: true, canRedo: true });
+    });
+
     it('does not render again when a further step leaves both flags unchanged', () => {
         pushEntry('Add note');
         let renders = 0;
