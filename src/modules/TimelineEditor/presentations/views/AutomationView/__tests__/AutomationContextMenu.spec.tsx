@@ -86,6 +86,17 @@ describe('AutomationContextMenu', () => {
         expect(defaultProps.onClose).toHaveBeenCalled();
     });
 
+    it('takes focus when it opens, so the keyboard reaches its items', () => {
+        renderWithTooltip(<AutomationContextMenu {...defaultProps} />);
+        expect(screen.getByRole('menu')).toHaveFocus();
+    });
+
+    it('closes on Escape', () => {
+        renderWithTooltip(<AutomationContextMenu {...defaultProps} />);
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+        expect(defaultProps.onClose).toHaveBeenCalled();
+    });
+
     // The global shortcut layer gates Delete / Backspace on
     // closest('[role="menu"]') (#3618). The menu items are real buttons, so a
     // keydown can originate inside this portal — without a menu-role ancestor

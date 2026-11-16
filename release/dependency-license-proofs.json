@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "7d3fdded694c14036d3f658381ca01170ec3ecb7481772a6b9ca6a91bd4903e5",
+        "cargoLockSha256": "be08ac39ef8ae919fa54435623e366a2c6151c66e325d1ecfc48114d5b92b0e0",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -57,7 +57,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "d298ec5d418a73df38d33d01ec46098497bd91f21e57548109a566213d32721e"
+                "sha256": "b20e7c0383be2e9fcd8bbccadc972b16de199b1dc0117b5cef9b099600451828"
             },
             {
                 "path": "electron-builder.yml",

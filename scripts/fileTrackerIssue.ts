@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { REQUIRED_REPOSITORY } from './githubAppIdentity.ts';
+import { withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 export type IssueFormField = {
     type: string;
@@ -456,8 +457,10 @@ export function ghIssueCreateFailure(stderr: string, metadata: IssueMetadata): s
  */
 export type GhRunner = (args: string[]) => { status: number; stdout: string; stderr: string };
 
-const spawnGh: GhRunner = (args) => {
-    const result = spawnSync('gh', args, { encoding: 'utf8' });
+export const spawnGh: GhRunner = (args) => {
+    const result = withGhChildLocation('gh', args, process.cwd(), process.env, (location) =>
+        spawnSync('gh', args, { cwd: location.cwd, env: location.env, encoding: 'utf8' })
+    );
     return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 };
 

@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useState } from 'react';
 
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { readExternalPluginParameterReadIssue } from '#/modules/PluginHost/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { readAppliedAutomationValue } from '#/modules/Transport/useCases';
 
@@ -15,7 +16,7 @@ type UseFollowedAutomationValueInput = {
      * The parameter's own store object. Its identity changes when an edit or a re-read of the host
      * patches this parameter, which ends the hold on the last followed value.
      */
-    settledToken: unknown;
+    settledToken: object | undefined;
 };
 
 type FollowedValue = {
@@ -42,6 +43,7 @@ type FollowedAutomationValue = {
  * sequence), even if the number is unchanged, because the plugin then holds that value whatever the
  * store says (Play start, seek, loop wrap). With no new write, any newer fact about the parameter (its
  * `settledToken` changing) wins over the held value, so a flat lane segment cannot overwrite a user edit.
+ * The exception is a re-read of the host issued before that write (`readExternalPluginParameterReadIssue`): the write supersedes it.
  */
 export const useFollowedAutomationValue = ({
     deviceId,
@@ -87,6 +89,11 @@ export const useFollowedAutomationValue = ({
                     // No new scheduler write since the last adoption: a newer store object is a fact the
                     // lane has not contradicted, so it keeps winning over the held value.
                     if (previous.settledAtRead !== settledToken) {
+                        const issuedAt =
+                            settledToken === undefined ? undefined : readExternalPluginParameterReadIssue(settledToken);
+                        if (issuedAt !== undefined && issuedAt < writeSequence) {
+                            return { ...previous, settledAtRead: settledToken };
+                        }
                         return previous;
                     }
                     if (previous.value === value) {

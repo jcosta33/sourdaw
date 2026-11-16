@@ -10,9 +10,15 @@ import {
     restoreMidiCCPoints,
     revisitHandEditedCCReturns,
 } from '#/modules/MIDI/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type MidiCC } from '../../../../models/MidiNoteViewTypes';
+import { readClipPlayheadBeat } from '../../../helpers/clipPlayheadBeat';
 import { CCLane } from '../CCLane';
+
+vi.mock('../../../helpers/clipPlayheadBeat', () => ({
+    readClipPlayheadBeat: vi.fn(() => undefined),
+}));
 
 vi.mock('#/components/daw/DawBlockedState', () => ({
     DawBlockedState: ({ title, description }: { title: string; description: string }) => (
@@ -41,10 +47,31 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
+type PlacedClipFixture = { id: string; startBeat: number; endBeat: number };
+
 const laneMocks = vi.hoisted(() => {
     const ccByClipId: Record<string, MidiCC[]> = {};
-    return { midiState: { ccByClipId }, useActualStore: false };
+    return {
+        midiState: { ccByClipId },
+        useActualStore: false,
+        trackState: { tracks: [] as Array<{ id: string; clips: PlacedClipFixture[] }> },
+        captureGestureBeat: vi.fn(() => 0),
+    };
 });
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return laneMocks.trackState;
+        },
+    },
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    captureGestureBeat: laneMocks.captureGestureBeat,
+}));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/MIDI/stores')>();
@@ -141,11 +168,14 @@ describe('CCLane', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         laneMocks.midiState = { ccByClipId: {} };
+        laneMocks.trackState.tracks = [];
+        laneMocks.captureGestureBeat.mockReturnValue(0);
+        playheadPositionRef.current = 0;
     });
 
     it('should render without crashing with clipId', () => {
         render(<CCLane {...defaultProps} />);
-        expect(screen.getByRole('group')).toBeInTheDocument();
+        expect(screen.getByRole('toolbar')).toBeInTheDocument();
     });
 
     it('should render blocked state when clipId is null', () => {
@@ -214,7 +244,7 @@ describe('CCLane', () => {
             const beat = beatFromX(48, defaultProps.beatWidth);
             const value = valueFromY(76, 80);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 76 });
 
             expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, value, beat, 0);
             expect(pushUndoEntry).toHaveBeenCalledWith('Add CC point', expect.any(Function), expect.any(Function));
@@ -222,7 +252,7 @@ describe('CCLane', () => {
 
         it('should wire undo/redo for an added point to remove/re-add it', () => {
             render(<CCLane {...defaultProps} />);
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 76 });
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
@@ -260,7 +290,7 @@ describe('CCLane', () => {
             render(<CCLane {...defaultProps} />);
             const value = valueFromY(40, 80);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 40 });
 
             // The click replaced the musician's point rather than stacking a second one.
             const afterAdd = laneMocks.midiState.ccByClipId['clip-1'] ?? [];
@@ -303,7 +333,7 @@ describe('CCLane', () => {
             laneMocks.midiState.ccByClipId['clip-1'] = [...preClick];
             render(<CCLane {...defaultProps} />);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 40 });
 
             // The click replaced the whole key rather than stacking a third point.
             const afterAdd = laneMocks.midiState.ccByClipId['clip-1'] ?? [];
@@ -353,7 +383,7 @@ describe('CCLane', () => {
             });
             render(<CCLane {...defaultProps} controller={6} />);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: 40 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 8, clientY: 40 });
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             expect(undoFn).toBeDefined();
@@ -386,7 +416,7 @@ describe('CCLane', () => {
             });
             render(<CCLane {...defaultProps} controller={6} />);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: 40 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 8, clientY: 40 });
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             undoFn!();
 
@@ -407,7 +437,7 @@ describe('CCLane', () => {
             render(<CCLane {...defaultProps} />);
 
             // The click lands on an empty key (beat 1, controller 1).
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 76 });
 
             // A merged peer delete removes the unrelated row from the store.
             removeMidiCC('clip-1', 'cc-peer');
@@ -505,6 +535,77 @@ describe('CCLane', () => {
 
             fireEvent.click(point!, { clientX: 48, clientY: 76 });
 
+            expect(addMidiCC).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('adding a point from the keyboard', () => {
+        it('is a tab stop that names Enter as its shortcut', () => {
+            render(<CCLane {...defaultProps} />);
+            const lane = screen.getByRole('toolbar', { name: 'CC 1 automation lane' });
+
+            expect(lane).toHaveAttribute('tabindex', '0');
+            expect(lane).toHaveAttribute('aria-keyshortcuts', 'Enter');
+        });
+
+        it('adds an undoable point on the line at the playhead on Enter and claims the key', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(1);
+            laneMocks.midiState.ccByClipId['clip-1'] = [
+                { id: 'cc-late', controller: 1, value: 100, beat: 3, channel: 0 },
+                { id: 'cc-other', controller: 7, value: 127, beat: 2, channel: 0 },
+                { id: 'cc-early', controller: 1, value: 20, beat: 0, channel: 0 },
+            ];
+            render(<CCLane {...defaultProps} />);
+
+            expect(fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' })).toBe(false);
+
+            expect(readClipPlayheadBeat).toHaveBeenCalledWith('clip-1');
+            // 20 + (100 - 20) / 3 = 46.67 on the line; a controller value is a whole step.
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 47, 1, 0);
+            expect(pushUndoEntry).toHaveBeenCalledWith('Add CC point', expect.any(Function), expect.any(Function));
+        });
+
+        it('inserts at the gesture clock’s beat, not the latest-value channel or the parked store', async () => {
+            const actual = await vi.importActual<typeof import('../../../helpers/clipPlayheadBeat')>(
+                '../../../helpers/clipPlayheadBeat'
+            );
+            vi.mocked(readClipPlayheadBeat).mockImplementation(actual.readClipPlayheadBeat);
+            laneMocks.trackState.tracks = [{ id: 'track-1', clips: [{ id: 'clip-1', startBeat: 4, endBeat: 12 }] }];
+            // The transport store stays at its default beat 0, outside the clip.
+            playheadPositionRef.current = 9;
+            laneMocks.captureGestureBeat.mockReturnValue(7);
+            render(<CCLane {...defaultProps} />);
+
+            fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' });
+
+            // The clip starts at beat 4, so the gesture's arrangement beat 7 is clip beat 3.
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 64, 3, 0);
+        });
+
+        it('starts an empty lane at the controller midpoint', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(2.5);
+            render(<CCLane {...defaultProps} />);
+
+            fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' });
+
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 64, 2.5, 0);
+        });
+
+        it('adds nothing while the playhead is outside the clip, yet still claims Enter', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(undefined);
+            render(<CCLane {...defaultProps} />);
+
+            expect(fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' })).toBe(false);
+            expect(addMidiCC).not.toHaveBeenCalled();
+        });
+
+        it('leaves Enter from a point and modified Enter alone', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(1);
+            laneMocks.midiState.ccByClipId['clip-1'] = [{ id: 'cc-a', controller: 1, value: 10, beat: 0, channel: 0 }];
+            const { container } = render(<CCLane {...defaultProps} />);
+
+            expect(fireEvent.keyDown(container.querySelector('[data-cc-point="true"]')!, { key: 'Enter' })).toBe(true);
+            expect(fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter', metaKey: true })).toBe(true);
             expect(addMidiCC).not.toHaveBeenCalled();
         });
     });
@@ -656,7 +757,7 @@ describe('CCLane', () => {
 
                 // Without touch-action: none the browser claims the stroke for panning and
                 // cancels it mid-gesture, so a touch drag never completes.
-                expect(screen.getByRole('group').style.touchAction).toBe('none');
+                expect(screen.getByRole('toolbar').style.touchAction).toBe('none');
                 expect(getPoint(container).style.touchAction).toBe('none');
             });
 
@@ -826,7 +927,7 @@ describe('CCLane', () => {
                 expect(view.container.querySelector('[data-cc-point="true"]')).toBeNull();
 
                 // The release now lands on the lane itself; it must still commit the gesture.
-                fireEvent.pointerUp(screen.getByRole('group'), { pointerId: 2, clientX: 88, clientY: 20 });
+                fireEvent.pointerUp(screen.getByRole('toolbar'), { pointerId: 2, clientX: 88, clientY: 20 });
 
                 expect(pushUndoEntry).toHaveBeenCalledWith('Move CC point', expect.any(Function), expect.any(Function));
             });
@@ -878,7 +979,7 @@ describe('CCLane', () => {
                 seedPoint();
                 render(<CCLane {...defaultProps} />);
 
-                fireEvent.pointerMove(screen.getByRole('group'), { pointerId: 1, clientX: 88, clientY: 20 });
+                fireEvent.pointerMove(screen.getByRole('toolbar'), { pointerId: 1, clientX: 88, clientY: 20 });
 
                 expect(moveMidiCC).not.toHaveBeenCalled();
             });
@@ -901,7 +1002,7 @@ describe('CCLane', () => {
                 seedPoint();
                 const { container } = render(<CCLane {...defaultProps} />);
                 const point = getPoint(container);
-                const lane = screen.getByRole('group');
+                const lane = screen.getByRole('toolbar');
 
                 fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
                 fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
@@ -1219,7 +1320,7 @@ describe('CCLane return-family history with real MIDI edits', () => {
         ]);
         const before = [...rows()];
         render(<CCLane {...props} />);
-        fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
+        fireEvent.click(screen.getByRole('toolbar'), { clientX: 8, clientY: valueToY(7, 80) });
         const committed = [...rows()];
         expect(committed).not.toEqual(before);
         expect(rangeAt(3)).toBe(7);
@@ -1282,7 +1383,7 @@ describe('CCLane return-family history with real MIDI edits', () => {
         ]);
         const before = [...rows()];
         render(<CCLane {...props} />);
-        fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
+        fireEvent.click(screen.getByRole('toolbar'), { clientX: 8, clientY: valueToY(7, 80) });
         const committed = [...rows()];
         expect(actualMidiUseCases.getHandEditedReturnFamily(committed, { channel: 0, beat: 0 })).toHaveLength(6);
         const { undo, redo } = replay();
@@ -1298,7 +1399,7 @@ describe('CCLane return-family history with real MIDI edits', () => {
         seed([...family.slice(0, 4), peer, ...family.slice(4)]);
         const before = [...rows()];
         render(<CCLane {...props} />);
-        fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
+        fireEvent.click(screen.getByRole('toolbar'), { clientX: 8, clientY: valueToY(7, 80) });
         const committed = [...rows()];
         expect(committed.indexOf(peer)).not.toBe(before.indexOf(peer));
         const { undo, redo } = replay();
@@ -1322,7 +1423,7 @@ describe('CCLane return-family history with real MIDI edits', () => {
             seed([...headRows(0, 'cc-split:right'), expression]);
             const view = render(<CCLane {...props} controller={11} />);
             if (gesture === 'add') {
-                fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(8, 80) });
+                fireEvent.click(screen.getByRole('toolbar'), { clientX: 8, clientY: valueToY(8, 80) });
             } else {
                 const point = view.container.querySelector('[title="Beat 0.00: 7"]');
                 expect(point).not.toBeNull();

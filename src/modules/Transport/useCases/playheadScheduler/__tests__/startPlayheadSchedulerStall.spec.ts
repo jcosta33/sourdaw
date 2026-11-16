@@ -358,7 +358,7 @@ async function advanceAudioClock(seconds: number): Promise<void> {
             generation: schedulerSession.generation,
             sequence: schedulerTickSequence,
             scheduledAtMs: receivedAtMs - 2,
-            sentAtMs: receivedAtMs - 1,
+            sentAtMs: receivedAtMs,
         },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
