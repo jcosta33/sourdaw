@@ -66,8 +66,10 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
     restoreTakesForClip: vi.fn(),
 }));
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../../useCases/clipEditing/clipSplitStateRestorable';
@@ -161,6 +163,7 @@ function makeTakeLaneAction(
 beforeEach(() => {
     vi.clearAllMocks();
     takeLaneStore.set({ lanes: [] });
+    trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     flushAutomergeStorageWrites();
     mockedRestorable.mockReturnValue(true);
     mockedReplaceTrackState.mockReturnValue(true);
@@ -378,15 +381,69 @@ describe('handleRestoreClipSplitState — satellites', () => {
     });
 
     it('validate admits a split restore after an editTempoMap prefix through the projected take lanes', () => {
-        const prefix: AppAction = {
+        const mintedTake = {
+            id: 'minted-take',
+            clipId: 'c2',
+            name: 'Minted',
+            startBeat: 2,
+            endBeat: 4,
+            selected: false,
+        };
+        const colliding = { ...mintedTake, clipId: 'cr', name: 'Restored owner' };
+        // The restore prefix puts `minted-take` under another clip in a replayed take lane. The tempo projection
+        // does not carry that lane, so only the projected take lanes admit the id the re-key mints.
+        const restorePrefix: AppAction = {
+            type: 'restoreClip',
+            payload: {
+                clipId: 'cr',
+                trackId: 't9',
+                clipSnapshot: { ...makeClipSnapshot('cr'), trackId: 't9' },
+                ripplePlan: null,
+                midiNotesSnapshot: null,
+                midiCcSnapshot: null,
+                midiPitchBendSnapshot: null,
+                retiredTakeLanes: [
+                    {
+                        laneIndex: 0,
+                        lane: { id: 'lane-r', trackId: 't9', takes: [colliding], activeCompRegions: [] },
+                        retiredTakeIds: [colliding.id],
+                    },
+                ],
+            },
+        };
+        const tempoPrefix: AppAction = {
             type: 'editTempoMap',
             payload: { edit: { type: 'add', beat: 0, tempo: 90 } },
         };
-        const action = makeAction(makeSnapshot(), makeSnapshot());
+        trackStore.set({ tracks: [TrackDummy.create({ id: 't9' })], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const base = makeAction(makeSnapshot(), makeSnapshot());
+        const action = {
+            ...base,
+            payload: {
+                ...base.payload,
+                reKeyedTakeLanes: [
+                    {
+                        laneId: 'lane-x',
+                        trackId: 't1',
+                        takesBefore: [],
+                        takesAfter: [mintedTake],
+                        regionsBefore: [],
+                        regionsAfter: [],
+                    },
+                ],
+            },
+        };
 
-        expect(handleRestoreClipSplitState.validate?.(action, { actions: [prefix, action], actionIndex: 1 })).toBe(
-            true
-        );
+        expect(
+            handleRestoreClipSplitState.validate?.(action, {
+                actions: [restorePrefix, tempoPrefix, action],
+                actionIndex: 2,
+            })
+        ).toBe(true);
+        expect(
+            handleRestoreClipSplitState.validate?.(action, { actions: [restorePrefix, action], actionIndex: 1 })
+        ).toBe(false);
     });
 
     it('validate skips the satellite check for a legacy payload', () => {
