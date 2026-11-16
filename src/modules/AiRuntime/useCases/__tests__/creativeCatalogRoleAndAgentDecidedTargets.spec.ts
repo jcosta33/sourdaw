@@ -23,8 +23,7 @@ const REVISION = 'revision-creative-targets';
 
 /**
  * The campaign fixture as production plans against it: `getProjectContext` derives every track's
- * canonical role through `getCanonicalTrackRole`, so the raw file's missing roles (Bass DI, Guitar,
- * Keys, the buses) are filled the same way here.
+ * canonical role through `getCanonicalTrackRole`, so every track's role is derived the same way here.
  */
 function fixtureContext(): ProjectContext {
     const fixture = JSON.parse(
