@@ -17,6 +17,7 @@ type SchedulerTimingSnapshot = {
     outOfOrderMessages: number;
     ticksSettled: number;
     ticksSkippedInFlight: number;
+    ticksSkippedBehindOverrun: number;
     deliveryDeadlineMisses: number;
     workerWakeLatenessMs: TimingSnapshot;
     mainDeliveryLatenessMs: TimingSnapshot;
@@ -55,6 +56,7 @@ let sequenceGaps = 0;
 let outOfOrderMessages = 0;
 let ticksSettled = 0;
 let ticksSkippedInFlight = 0;
+let ticksSkippedBehindOverrun = 0;
 let deliveryDeadlineMisses = 0;
 let workerWakeLatenessMs = createAccumulator();
 let mainDeliveryLatenessMs = createAccumulator();
@@ -70,6 +72,7 @@ export const schedulerTimingDiagnostics = {
         outOfOrderMessages = 0;
         ticksSettled = 0;
         ticksSkippedInFlight = 0;
+        ticksSkippedBehindOverrun = 0;
         deliveryDeadlineMisses = 0;
         workerWakeLatenessMs = createAccumulator();
         mainDeliveryLatenessMs = createAccumulator();
@@ -103,6 +106,10 @@ export const schedulerTimingDiagnostics = {
         ticksSkippedInFlight++;
     },
 
+    recordTickSkippedBehindOverrun(): void {
+        ticksSkippedBehindOverrun++;
+    },
+
     recordTickSettled(durationMs: number): void {
         ticksSettled++;
         recordTiming(tickExecutionMs, durationMs);
@@ -117,6 +124,7 @@ export const schedulerTimingDiagnostics = {
             outOfOrderMessages,
             ticksSettled,
             ticksSkippedInFlight,
+            ticksSkippedBehindOverrun,
             deliveryDeadlineMisses,
             workerWakeLatenessMs: snapshotTiming(workerWakeLatenessMs),
             mainDeliveryLatenessMs: snapshotTiming(mainDeliveryLatenessMs),

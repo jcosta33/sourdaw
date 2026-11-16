@@ -58,6 +58,8 @@ import {
     settleAgentRunWorkLease as settleWorkLease,
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
 import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
+import { derivePredictedAudibleImpact } from './derivePredictedAudibleImpact';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
 
 /** Batches a cancellation leaves as they settled: what committed, changed nothing, or was skipped stays so. */
@@ -523,31 +525,30 @@ function recordAgentRunPlan(input: {
                     },
                     run.plan
                 ),
-                input.audibleClaim
+                input.audibleClaim,
+                input.metricGoalState ?? input.plan?.metricGoalState
             ),
         };
     });
 }
 
 /**
- * A claim describes one measurement of one batch, so a plan keeps it only when the write that
- * records the plan supplies it; every other write leaves nothing claimed.
+ * A measured claim describes one measurement of one batch, so a plan keeps it only when the write
+ * that records the plan supplies it. Every other write states what the frozen goal state predicts
+ * with nothing verified, or claims nothing when the request states no perceptual or comparative goal.
  */
 function withAudibleClaim(
     plan: AgentRunPlan,
-    claim: AgentRunPlan['expectedImpact']['audible'] | undefined
+    claim: AgentRunPlan['expectedImpact']['audible'] | undefined,
+    suppliedMetricGoalState: string | undefined
 ): AgentRunPlan {
-    const audible = plan.expectedImpact.audible;
-    if (claim === undefined && audible.status === 'not-claimed' && audible.reason === NO_AUDIBLE_CLAIM_REASON) {
-        return plan;
-    }
-    return {
-        ...plan,
-        expectedImpact: {
-            ...plan.expectedImpact,
-            audible: claim ?? { status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON },
-        },
-    };
+    // Only the state the write itself supplies is predicted from; a state carried over from an earlier batch is not.
+    const audible = claim ??
+        derivePredictedAudibleImpact({ state: metricGoalStateCodec(suppliedMetricGoalState) }) ?? {
+            status: 'not-claimed',
+            reason: NO_AUDIBLE_CLAIM_REASON,
+        };
+    return { ...plan, expectedImpact: { ...plan.expectedImpact, audible } };
 }
 
 /** Keep the run's approval snapshot aligned when a pending card is rebound after unrelated project edits. */
@@ -572,7 +573,8 @@ function rebindAgentRunMetricGoalState(input: {
                 ? null
                 : withAudibleClaim(
                       { ...current.plan, metricGoalState: input.metricGoalState, revision: input.revision },
-                      undefined
+                      undefined,
+                      input.metricGoalState
                   ),
     }));
     return true;
@@ -619,7 +621,8 @@ function recordAgentRunApplicationToolEvidence(input: {
                   })
                 : withAudibleClaim(
                       { ...run.plan, applicationToolReceipts: structuredClone(input.applicationToolReceipts) },
-                      undefined
+                      undefined,
+                      run.plan.metricGoalState
                   );
         if (run.plan !== null) {
             return { ...run, plan };

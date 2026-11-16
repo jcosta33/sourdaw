@@ -33,8 +33,6 @@ test.describe('Transport & Engine', () => {
         // Since playhead updates via requestAnimationFrame, we wait for the text to change
         await expect(playheadReadout).not.toHaveText(initialPlayheadText, { timeout: 2000 });
 
-        const movingPlayheadText = await playheadReadout.innerText();
-
         // 2. Click Pause
         await pauseButton.click();
 

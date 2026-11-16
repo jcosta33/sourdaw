@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, type TestContext } from 'vitest';
 
 import {
     SOURDAW_E2E_PORT_ENV,
@@ -38,6 +38,9 @@ import {
     pnpmScriptName,
     psSamplingArgs,
     readGuardFailureReceipt,
+    reservationRssBytes,
+    reservationIsLive,
+    reservationProcessTree,
     resolveDefaultMaxRssBytes,
     writeGuardFailureReceipt,
     RESOURCE_ROOT_ENV,
@@ -48,6 +51,14 @@ import {
     type ResourceProfile,
     type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
+import {
+    createProcessTreeState,
+    isSameProcess,
+    processTreeAlive,
+    sampleProcessTree,
+    terminateProcessTree,
+    type ProcessTreeHost,
+} from '../resourceGuardProcessTree';
 import { parseArgs as parseLintArgs } from '../runLint';
 
 import { readSignalAcknowledgement, startSignalFixture } from './fixtures/resourceGuardSignalHarness';
@@ -136,6 +147,24 @@ async function killAndWait(pid: number | undefined): Promise<void> {
 // Each real guarded command ends in a storage file proof that can spend its whole
 // five-second deadline retaking catalogs on a busy host.
 const GUARDED_CASE_TIMEOUT_MS = 20_000;
+
+function captureGuardedFailure(onTestFailed: TestContext['onTestFailed'], name: string) {
+    const fixtureFinished = Promise.withResolvers<void>();
+    let result: GuardedCommandResult | undefined;
+    onTestFailed(async () => {
+        if (result === undefined) {
+            console.error(`guard fixture failure (${name}): awaiting terminal cleanup`);
+        }
+        await fixtureFinished.promise;
+        console.error(`guard fixture failure (${name}): ${JSON.stringify(result)}`);
+    }, GUARDED_CASE_TIMEOUT_MS);
+    return {
+        recordResult: (completed: GuardedCommandResult) => {
+            result = completed;
+        },
+        finish: () => fixtureFinished.resolve(),
+    };
+}
 
 describe('resource admission', () => {
     it('serializes admission updates', () => {
@@ -229,17 +258,23 @@ describe('resource admission', () => {
                 })
             );
             let admitted = false;
+            const waiting = Promise.withResolvers<void>();
             const secondPromise = enterResourceSession({
                 root,
                 requiredRssBytes: 1024 ** 3,
                 availableMemoryBytes: 3 * 1024 ** 3,
                 waitIntervalMs: 10,
+                onWait: () => waiting.resolve(),
             }).then((session) => {
                 admitted = true;
                 return session;
             });
 
-            await new Promise((resolve) => setTimeout(resolve, 30));
+            const observed = await Promise.race([
+                waiting.promise.then(() => 'waiting'),
+                secondPromise.then(() => 'admitted'),
+            ]);
+            expect(observed).toBe('waiting');
             expect(admitted).toBe(false);
             first.release();
 
@@ -419,6 +454,763 @@ describe('process table sampling', () => {
     });
 });
 
+describe('process identity ownership', () => {
+    type ProcessRows = NonNullable<ReturnType<ProcessTreeHost['processTable']>>;
+
+    function fixture(rows: ProcessRows, starts: Array<[number, string]>, probeErrors = new Map<number, string>()) {
+        const identities = new Map(starts);
+        const signals: Array<[number, Parameters<typeof process.kill>[1]]> = [];
+        const windowsTrees: number[] = [];
+        const identityQueries: number[] = [];
+        const host: ProcessTreeHost = {
+            platform: () => 'linux',
+            processTable: () => rows,
+            processStartedAt: (pid) => {
+                identityQueries.push(pid);
+                return identities.get(pid);
+            },
+            terminateWindowsTree: (pid) => {
+                windowsTrees.push(pid);
+            },
+            kill: (pid, signal) => {
+                if (signal !== 0) {
+                    signals.push([pid, signal]);
+                    return true;
+                }
+                const code = probeErrors.get(pid);
+                if (code !== undefined) {
+                    throw Object.assign(new Error(code), { code });
+                }
+                const present = rows.some((row) => (pid < 0 ? row.processGroupId === -pid : row.pid === pid));
+                if (!present) {
+                    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+                }
+                return true;
+            },
+        };
+        return { host, signals, windowsTrees, identityQueries };
+    }
+
+    function row(pid: number, parentPid: number, processGroupId: number, rssBytes: number, sessionOwned = false) {
+        return { pid, parentPid, processGroupId, rssBytes, sessionOwned, command: 'fixture' };
+    }
+
+    const originalStart = 'Mon Nov  9 10:00:00 2026';
+    const replacementStart = 'Tue Nov 10 10:00:00 2026';
+
+    function reusedDescendant() {
+        const rows = [
+            row(100, 1, 100, 1),
+            row(101, 100, 100, 2),
+            row(200, 1, 200, 16),
+            row(201, 200, 200, 32),
+            row(202, 201, 200, 64),
+            row(300, 1, 300, 4, true),
+            row(301, 300, 300, 8),
+            row(400, 1, 400, 128),
+        ];
+        const starts: Array<[number, string]> = rows.map((entry) => [entry.pid, replacementStart]);
+        starts.push([100, originalStart]);
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+        return {
+            ...fixture(rows, starts),
+            tracked,
+            tree: createProcessTreeState(tracked),
+        };
+    }
+
+    it('does not enlist foreign descendants through a positively reused historical PID', () => {
+        const { host, tracked, tree } = reusedDescendant();
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(15);
+        expect([...tracked.keys()].sort((left, right) => left - right)).toEqual([100, 101, 200, 300, 301]);
+        expect(tracked.get(200)).toBe(originalStart);
+    });
+
+    it('does not authorize foreign descendant signals through a positively reused historical PID', () => {
+        const { host, tree, signals } = reusedDescendant();
+
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+
+        expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([-100, 100, 101, 300, 301]);
+    });
+
+    it('rejects descendants of an omitted historical parent with a positively replaced identity', () => {
+        const { host, signals } = fixture(
+            [row(100, 1, 100, 1), row(201, 200, 200, 32), row(202, 201, 200, 64)],
+            [
+                [100, originalStart],
+                [200, replacementStart],
+                [201, replacementStart],
+                [202, replacementStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(1);
+        expect([...tracked.keys()]).toEqual([100, 200]);
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+        expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([-100, 100]);
+    });
+
+    it('rejects descendants of an omitted root with a positively replaced identity', () => {
+        const { host, signals } = fixture(
+            [row(101, 100, 100, 2), row(102, 101, 100, 4)],
+            [
+                [100, replacementStart],
+                [101, replacementStart],
+                [102, replacementStart],
+            ]
+        );
+        const tracked = new Map([[100, originalStart]]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(0);
+        expect([...tracked.keys()]).toEqual([100]);
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+        expect(signals).toEqual([]);
+        expect(processTreeAlive(100, tree, 'session', host)).toBe(false);
+    });
+
+    it('retains descendants of an omitted parent whose identity remains unreadable', () => {
+        const { host } = fixture(
+            [row(100, 1, 100, 1), row(201, 200, 200, 32)],
+            [
+                [100, originalStart],
+                [201, replacementStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(33);
+        expect(tracked.get(200)).toBe(originalStart);
+        expect(tracked.get(201)).toBe(replacementStart);
+        expect(processTreeAlive(100, tree, 'session', host)).toBe(true);
+    });
+
+    it('does not query historical identities absent from current rows and parent edges', () => {
+        const { host, identityQueries } = fixture([row(100, 1, 100, 1)], [[100, originalStart]]);
+        const tracked = new Map<number, string>([
+            [100, originalStart],
+            ...Array.from({ length: 500 }, (_, index): [number, string] => [1_000 + index, originalStart]),
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(1);
+        expect(identityQueries).toEqual([100]);
+    });
+
+    it.each(['RSS sampling', 'termination', 'liveness'] as const)(
+        'rejects replacement readmission from a parent edge observed before its identity change: %s',
+        (route) => {
+            let rows = [row(100, 1, 100, 1), row(200, 100, 200, 2)];
+            const { host, signals } = fixture(rows, []);
+            let replacementObserved = false;
+            host.processTable = () => rows;
+            host.processStartedAt = (pid) => {
+                if (pid === 100) {
+                    return originalStart;
+                }
+                if (pid === 200) {
+                    if (!replacementObserved) {
+                        replacementObserved = true;
+                        rows = [row(100, 1, 100, 1), row(200, 1, 200, 2)];
+                    }
+                    return replacementStart;
+                }
+                return undefined;
+            };
+            const tracked = new Map([
+                [100, originalStart],
+                [200, originalStart],
+            ]);
+            const tree = createProcessTreeState(tracked);
+
+            if (route === 'RSS sampling') {
+                expect(sampleProcessTree(100, tree, 'session', host)).toBe(1);
+            } else if (route === 'termination') {
+                terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+                expect(signals.some(([pid]) => pid === 200)).toBe(false);
+            } else {
+                expect(processTreeAlive(100, tree, 'session', host)).toBe(true);
+            }
+            expect(rows.find((entry) => entry.pid === 200)?.parentPid).toBe(1);
+            expect(tracked.get(200)).toBe(originalStart);
+        }
+    );
+
+    it.each(['census', 'identity'] as const)(
+        'retains replacement uncertainty across unreadable probes after failed %s revalidation',
+        (failure) => {
+            let phase: 'failed refresh' | 'unreadable' | 'owned' = 'failed refresh';
+            let censusCalls = 0;
+            const originalRows = [row(100, 1, 100, 1), row(200, 100, 200, 2)];
+            const { host, signals } = fixture(originalRows, []);
+            host.processTable = () => {
+                censusCalls += 1;
+                if (phase === 'failed refresh' && censusCalls === 2 && failure === 'census') {
+                    return undefined;
+                }
+                return phase === 'unreadable'
+                    ? [row(100, 1, 100, 1), row(200, 1, 200, 2), row(201, 200, 200, 4)]
+                    : originalRows;
+            };
+            host.processStartedAt = (pid) => {
+                if (pid === 100) {
+                    return originalStart;
+                }
+                if (pid === 200) {
+                    return phase === 'unreadable' ||
+                        (phase === 'failed refresh' && failure === 'identity' && censusCalls >= 2)
+                        ? undefined
+                        : replacementStart;
+                }
+                return pid === 201 ? replacementStart : undefined;
+            };
+            const tracked = new Map([
+                [100, originalStart],
+                [200, originalStart],
+            ]);
+            const tree = createProcessTreeState(tracked);
+
+            expect(sampleProcessTree(100, tree, 'session', host)).toBeUndefined();
+            expect(tree.invalidated.get(200)?.has(originalStart)).toBe(true);
+            expect(tree.pending.get(200)).toEqual({ startedAt: originalStart, replacementStartedAt: replacementStart });
+
+            phase = 'unreadable';
+            expect(sampleProcessTree(100, tree, 'session', host)).toBeUndefined();
+            terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+            expect(signals.some(([pid]) => pid === 200 || pid === 201)).toBe(false);
+            expect(tracked.has(201)).toBe(false);
+            expect(processTreeAlive(100, tree, 'session', host)).toBe(true);
+
+            phase = 'owned';
+            expect(sampleProcessTree(100, tree, 'session', host)).toBe(3);
+            expect(tracked.get(200)).toBe(replacementStart);
+            expect(tree.pending.size).toBe(0);
+            terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+            expect(signals).toContainEqual([200, 'SIGTERM']);
+        }
+    );
+
+    it('rejects readmission when its known parent changes identity during revalidation', () => {
+        let rows = [row(100, 1, 100, 1), row(200, 100, 200, 2)];
+        const { host, signals } = fixture(rows, []);
+        let parentChanged = false;
+        let childReads = 0;
+        let censusCalls = 0;
+        host.processTable = () => {
+            censusCalls += 1;
+            return rows;
+        };
+        host.processStartedAt = (pid) => {
+            if (pid === 100) {
+                return parentChanged ? replacementStart : originalStart;
+            }
+            if (pid === 200) {
+                childReads += 1;
+                if (childReads === 3) {
+                    parentChanged = true;
+                    rows = [row(100, 1, 100, 1), row(200, 1, 200, 2)];
+                }
+                return replacementStart;
+            }
+            return undefined;
+        };
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+
+        expect(parentChanged).toBe(true);
+        expect(censusCalls).toBe(2);
+        expect(signals).toEqual([]);
+        expect(tracked.get(200)).toBe(originalStart);
+        expect(tree.invalidated.get(100)?.has(originalStart)).toBe(true);
+        expect(processTreeAlive(100, tree, 'session', host)).toBe(false);
+    });
+
+    it('revalidates multiple replacement candidates with one fresh census', () => {
+        const rows = [row(100, 1, 100, 1), row(200, 100, 200, 2), row(300, 100, 300, 4)];
+        const { host } = fixture(rows, [
+            [100, originalStart],
+            [200, replacementStart],
+            [300, replacementStart],
+        ]);
+        let censusCalls = 0;
+        host.processTable = () => {
+            censusCalls += 1;
+            return rows;
+        };
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+            [300, originalStart],
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(7);
+        expect(censusCalls).toBe(2);
+        expect(tracked.get(200)).toBe(replacementStart);
+        expect(tracked.get(300)).toBe(replacementStart);
+    });
+
+    it('restores only identity-matching owner facts and isolates command lifecycles', () => {
+        const facts = {
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+            pendingProcesses: [{ pid: 200, startedAt: originalStart, replacementStartedAt: replacementStart }],
+        };
+        const restored = createProcessTreeState(new Map([[200, originalStart]]), facts);
+        expect(restored.invalidated.get(200)?.has(originalStart)).toBe(true);
+        expect(restored.pending.has(200)).toBe(true);
+
+        const anotherIdentity = createProcessTreeState(new Map([[200, replacementStart]]), facts);
+        expect(anotherIdentity.invalidated.size).toBe(0);
+        expect(anotherIdentity.pending.size).toBe(0);
+
+        const legacy = createProcessTreeState(new Map([[200, originalStart]]));
+        expect(legacy.invalidated.size).toBe(0);
+        expect(legacy.pending.size).toBe(0);
+    });
+
+    it('rejects retirement facts without a start identity in a partial snapshot', () => {
+        const tree = createProcessTreeState(new Map([[200, originalStart]]), {
+            childPid: 200,
+            invalidatedProcesses: [{ pid: 200 }],
+        });
+
+        expect(tree.identities.get(200)).toBe(originalStart);
+        expect(tree.invalidated.size).toBe(0);
+        expect(tree.pending.size).toBe(0);
+    });
+
+    it('preserves identity-scoped retirement and fresh bindings across reservation RSS reconstruction', () => {
+        const { host } = fixture([row(200, 1, 200, 2), row(201, 200, 200, 4)], [[201, replacementStart]]);
+        const owner = {
+            token: 'fixture',
+            pid: 900,
+            cwd: 'fixture',
+            command: 'fixture',
+            startedAt: originalStart,
+            processStartedAt: originalStart,
+            reservedRssBytes: 1024,
+            processToken: 'session',
+            childPid: 200,
+            childStartedAt: originalStart,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+            pendingProcesses: [{ pid: 200, startedAt: originalStart, replacementStartedAt: replacementStart }],
+        };
+        expect(reservationRssBytes(owner, host)).toBeUndefined();
+        expect(reservationRssBytes(owner, host)).toBeUndefined();
+
+        const reboundOwner = {
+            ...owner,
+            trackedProcesses: [{ pid: 200, startedAt: replacementStart }],
+            pendingProcesses: [],
+        };
+        expect(reservationRssBytes(reboundOwner, host)).toBe(6);
+        const legacyOwner = { ...owner, invalidatedProcesses: undefined, pendingProcesses: undefined };
+        expect(reservationRssBytes(legacyOwner, host)).toBe(6);
+    });
+
+    function partialLeaseOwner() {
+        return {
+            token: 'fixture',
+            pid: 900,
+            cwd: 'fixture',
+            command: 'fixture',
+            startedAt: originalStart,
+            processStartedAt: originalStart,
+            reservedRssBytes: 1024,
+            processToken: 'session',
+            childPid: 200,
+            childStartedAt: originalStart,
+            orphanUntil: 0,
+        };
+    }
+
+    it.each([
+        { name: 'missing', trackedProcesses: undefined },
+        { name: 'empty', trackedProcesses: [] },
+        { name: 'unrelated', trackedProcesses: [{ pid: 300, startedAt: originalStart }] },
+    ])('rejects a reused recorded child from a $name lease identity list', ({ trackedProcesses }) => {
+        const { host } = fixture([row(200, 1, 200, 30)], [[200, replacementStart]]);
+        const owner = { ...partialLeaseOwner(), trackedProcesses };
+        const observed = { rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) };
+
+        expect(observed).toEqual({ rss: 0, live: false });
+    });
+
+    it.each([
+        { name: 'matching', startedAt: originalStart },
+        { name: 'unreadable', startedAt: undefined },
+    ])('retains a recorded child that remains $name in a partial lease', ({ startedAt }) => {
+        const { host } = fixture([row(200, 1, 200, 30)], startedAt === undefined ? [] : [[200, startedAt]]);
+        const owner = { ...partialLeaseOwner(), trackedProcesses: [] };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 30,
+            live: true,
+        });
+    });
+
+    it('uses the known tracked child identity when the legacy child start is missing', () => {
+        const { host } = fixture([row(200, 1, 200, 30)], [[200, replacementStart]]);
+        const owner = {
+            ...partialLeaseOwner(),
+            childStartedAt: undefined,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+        };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 0,
+            live: false,
+        });
+    });
+
+    it('does not revive a retired tracked child identity through a missing legacy start', () => {
+        const { host } = fixture([row(200, 1, 200, 30)], []);
+        const owner = {
+            ...partialLeaseOwner(),
+            childStartedAt: undefined,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+        };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 0,
+            live: false,
+        });
+    });
+
+    it('keeps a fresh tracked child binding ahead of the immutable legacy tuple', () => {
+        const { host } = fixture([row(200, 1, 200, 30)], [[200, replacementStart]]);
+        const owner = {
+            ...partialLeaseOwner(),
+            trackedProcesses: [{ pid: 200, startedAt: replacementStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+        };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 30,
+            live: true,
+        });
+        expect(reservationProcessTree(owner).identities.get(200)).toBe(replacementStart);
+    });
+
+    it('retains an owner-dead reservation with unreadable pending ownership and releases a proved empty one', () => {
+        const { host } = fixture([row(200, 1, 200, 2)], []);
+        const owner = {
+            token: 'fixture',
+            pid: 900,
+            cwd: 'fixture',
+            command: 'fixture',
+            startedAt: originalStart,
+            processStartedAt: originalStart,
+            reservedRssBytes: 1024,
+            processToken: 'session',
+            childPid: 100,
+            childStartedAt: originalStart,
+            orphanUntil: 0,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+            pendingProcesses: [{ pid: 200, startedAt: originalStart, replacementStartedAt: replacementStart }],
+        };
+        expect(reservationIsLive(owner, host)).toBe(true);
+        const exited = fixture([], []).host;
+        expect(reservationIsLive(owner, exited)).toBe(false);
+    });
+
+    it('does not revive a retired legacy child identity when its later start read is unavailable', () => {
+        const { host } = fixture([row(200, 1, 200, 2)], []);
+        const owner = {
+            token: 'fixture',
+            pid: 900,
+            cwd: 'fixture',
+            command: 'fixture',
+            startedAt: originalStart,
+            processStartedAt: originalStart,
+            reservedRssBytes: 1024,
+            processToken: 'session',
+            childPid: 200,
+            childStartedAt: originalStart,
+            orphanUntil: 0,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+            pendingProcesses: [],
+        };
+        expect(reservationIsLive(owner, host)).toBe(false);
+        expect(reservationIsLive({ ...owner, invalidatedProcesses: [] }, host)).toBe(true);
+        expect(
+            reservationIsLive({ ...owner, invalidatedProcesses: [{ pid: 200, startedAt: replacementStart }] }, host)
+        ).toBe(true);
+    });
+
+    it.each(['linux', 'win32'] as const)(
+        'samples a legacy child without a recorded start without fabricating retirement on %s',
+        (hostPlatform) => {
+            const { host } = fixture(
+                [row(200, 1, 200, 2), row(201, 200, 200, 4)],
+                [
+                    [200, replacementStart],
+                    [201, replacementStart],
+                ]
+            );
+            host.platform = () => hostPlatform;
+            const owner = {
+                token: 'fixture',
+                pid: 900,
+                cwd: 'fixture',
+                command: 'fixture',
+                startedAt: originalStart,
+                processStartedAt: originalStart,
+                reservedRssBytes: 1024,
+                processToken: 'session',
+                childPid: 200,
+                trackedProcesses: [],
+                orphanUntil: 0,
+            };
+            const tree = reservationProcessTree(owner);
+            expect(tree.identities.has(200)).toBe(false);
+            expect(sampleProcessTree(200, tree, 'session', host)).toBe(6);
+            expect(tree.invalidated.size).toBe(0);
+            expect(tree.pending.size).toBe(0);
+            expect(reservationRssBytes(owner, host)).toBe(6);
+            expect(reservationIsLive(owner, host)).toBe(true);
+        }
+    );
+
+    it.each([
+        { authority: 'session token', parentPid: 1, sessionOwned: true },
+        { authority: 'owned parent', parentPid: 100, sessionOwned: false },
+    ])('refreshes a reused PID only after current $authority admission', ({ parentPid, sessionOwned }) => {
+        const { host, signals } = fixture(
+            [row(100, 1, 100, 1), row(200, parentPid, 200, 2, sessionOwned)],
+            [
+                [100, originalStart],
+                [200, replacementStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(sampleProcessTree(100, tree, 'session', host)).toBe(3);
+        expect(tracked.get(200)).toBe(replacementStart);
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+        expect(signals).toContainEqual([200, 'SIGTERM']);
+    });
+
+    it('retains token-owned processes whose start identity is unreadable without signaling them individually', () => {
+        const { host, signals } = fixture([row(200, 1, 200, 1, true)], []);
+        const tracked = new Map([[100, originalStart]]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(processTreeAlive(100, tree, 'session', host)).toBe(true);
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+        expect(signals.some(([pid]) => pid === 200)).toBe(false);
+    });
+
+    it('retains an owned descendant whose start identity is unreadable without a Unix group probe', () => {
+        const { host } = fixture([row(200, 100, 200, 1)], []);
+        host.platform = () => 'win32';
+
+        expect(processTreeAlive(100, createProcessTreeState(new Map([[100, originalStart]])), 'session', host)).toBe(
+            true
+        );
+    });
+
+    it('does not signal a replacement root group while retaining token and exact-identity descendants', () => {
+        const { host, signals } = fixture(
+            [row(100, 1, 100, 1), row(101, 100, 100, 2), row(300, 1, 300, 4, true), row(400, 1, 400, 8)],
+            [
+                [100, replacementStart],
+                [101, replacementStart],
+                [300, replacementStart],
+                [400, originalStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [400, originalStart],
+        ]);
+        const tree = createProcessTreeState(tracked);
+
+        terminateProcessTree(100, 'SIGKILL', tree, 'session', host);
+
+        expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([300, 400]);
+    });
+
+    it('does not keep a replacement root group alive as the original owned group', () => {
+        const { host } = fixture(
+            [row(100, 1, 100, 1), row(101, 100, 100, 2)],
+            [
+                [100, replacementStart],
+                [101, replacementStart],
+            ]
+        );
+
+        expect(processTreeAlive(100, createProcessTreeState(new Map([[100, originalStart]])), 'session', host)).toBe(
+            false
+        );
+    });
+
+    it('does not authorize Windows tree termination from a positively reused root', () => {
+        const { host, signals, windowsTrees } = fixture(
+            [row(100, 1, 100, 1), row(400, 1, 400, 8)],
+            [
+                [100, replacementStart],
+                [400, originalStart],
+            ]
+        );
+        host.platform = () => 'win32';
+
+        terminateProcessTree(
+            100,
+            'SIGKILL',
+            createProcessTreeState(
+                new Map([
+                    [100, originalStart],
+                    [400, originalStart],
+                ])
+            ),
+            'session',
+            host
+        );
+
+        expect(windowsTrees).toEqual([]);
+        expect(signals).toEqual([[400, 'SIGKILL']]);
+    });
+
+    it('keeps Windows tree termination for a matching root', () => {
+        const { host, signals, windowsTrees } = fixture([row(100, 1, 100, 1)], [[100, originalStart]]);
+        host.platform = () => 'win32';
+
+        terminateProcessTree(100, 'SIGTERM', createProcessTreeState(new Map([[100, originalStart]])), 'session', host);
+
+        expect(windowsTrees).toEqual([100]);
+        expect(signals).toEqual([]);
+    });
+
+    it('keeps the original group authoritative after its leader exits', () => {
+        const { host, signals } = fixture([row(101, 1, 100, 2)], [[101, originalStart]]);
+        const tracked = new Map([[100, originalStart]]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(processTreeAlive(100, tree, 'session', host)).toBe(true);
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+        expect(signals).toEqual([[-100, 'SIGTERM']]);
+    });
+
+    it.each(['EPERM', 'EACCES'])('rejects a positively different start even when the PID probe returns %s', (code) => {
+        const { host } = fixture([row(200, 1, 200, 1)], [[200, replacementStart]], new Map([[200, code]]));
+
+        expect(isSameProcess(200, originalStart, host)).toBe(false);
+    });
+
+    it.each(
+        ['EPERM', 'EACCES'].flatMap((code) => [
+            { label: 'matching', startedAt: originalStart, code },
+            { label: 'unreadable', startedAt: undefined, code },
+        ])
+    )('keeps a $code $label identity live without authorizing an unknown signal', ({ startedAt, code }) => {
+        const { host, signals } = fixture(
+            [row(200, 1, 200, 1)],
+            startedAt === undefined ? [] : [[200, startedAt]],
+            new Map([
+                [200, code],
+                [-100, 'ESRCH'],
+            ])
+        );
+        const tracked = new Map([[200, originalStart]]);
+        const tree = createProcessTreeState(tracked);
+
+        expect(isSameProcess(200, originalStart, host)).toBe(true);
+        expect(processTreeAlive(100, tree, 'session', host)).toBe(true);
+        terminateProcessTree(100, 'SIGTERM', tree, 'session', host);
+        expect(signals.some(([pid]) => pid === 200)).toBe(startedAt !== undefined);
+    });
+
+    it('keeps an unavailable census fail-closed', () => {
+        const { host } = fixture([], []);
+        host.processTable = () => undefined;
+        const observations: unknown[] = [];
+
+        expect(
+            processTreeAlive(100, createProcessTreeState(), 'session', host, (observation) =>
+                observations.push(observation)
+            )
+        ).toBe(true);
+        expect(observations).toEqual([
+            { census: 'unavailable', processGroupProbe: { state: 'unobserved' }, blockedBy: 'census' },
+        ]);
+    });
+
+    it('records the group permission error that blocks exit proof', () => {
+        const { host } = fixture([], [], new Map([[-100, 'EPERM']]));
+        const observations: unknown[] = [];
+
+        expect(
+            processTreeAlive(100, createProcessTreeState(), 'session', host, (observation) =>
+                observations.push(observation)
+            )
+        ).toBe(true);
+        expect(observations).toEqual([
+            {
+                census: 'available',
+                processGroupProbe: { state: 'unknown', errno: 'EPERM' },
+                blockedBy: 'process-group',
+            },
+        ]);
+    });
+
+    it('records the stored and current identity and errno of the tracked process blocking exit proof', () => {
+        const { host } = fixture([row(200, 1, 200, 1)], [[200, originalStart]], new Map([[200, 'EPERM']]));
+        const observations: unknown[] = [];
+
+        expect(
+            processTreeAlive(
+                100,
+                createProcessTreeState(new Map([[200, originalStart]])),
+                'session',
+                host,
+                (observation) => observations.push(observation)
+            )
+        ).toBe(true);
+        expect(observations).toEqual([
+            {
+                census: 'available',
+                processGroupProbe: { state: 'absent', errno: 'ESRCH' },
+                blockedBy: 'tracked-process',
+                blockingTracked: {
+                    pid: 200,
+                    storedStartedAt: originalStart,
+                    currentStartedAt: originalStart,
+                    state: 'matching',
+                    signalZero: { state: 'unknown', errno: 'EPERM' },
+                },
+            },
+        ]);
+    });
+});
+
 describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('rechecks capacity before spawning', async () => {
         let samples = 0;
@@ -479,58 +1271,80 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(result.output).toContain('"processGroup":{"status":"unavailable"}');
     });
 
-    it('kills detached descendants after a deadline', async () => {
-        const root = fixtureRoot('descendant');
-        const pidPath = join(root, 'pid');
-        let descendantPid: number | undefined;
-        try {
-            const result = await runIsolatedGuardedCommand({
-                command: process.execPath,
-                args: [
-                    '-e',
-                    `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: true, stdio: 'ignore' }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); setInterval(() => {}, 1000);`,
-                ],
-                profile: 'focused',
-                timeoutMs: 100,
-                maxRssBytes: 2 * 1024 ** 3,
-                availableMemoryBytes: abundantMemoryBytes,
-                sampleIntervalMs: 20,
-            });
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
-            descendantPid = recordedPid;
+    it(
+        'kills detached descendants after a deadline',
+        async ({ onTestFailed }) => {
+            const root = fixtureRoot('descendant');
+            const pidPath = join(root, 'pid');
+            let descendantPid: number | undefined;
+            const diagnostics = captureGuardedFailure(onTestFailed, 'detached deadline');
+            try {
+                const result = await runIsolatedGuardedCommand({
+                    command: process.execPath,
+                    args: [
+                        '-e',
+                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: true, stdio: 'ignore' }); writeFileSync(process.argv[1], String(child.pid)); setInterval(() => {}, 1000);`,
+                        pidPath,
+                    ],
+                    profile: 'focused',
+                    timeoutMs: 100,
+                    maxRssBytes: 2 * 1024 ** 3,
+                    availableMemoryBytes: abundantMemoryBytes,
+                    sampleIntervalMs: 20,
+                });
+                diagnostics.recordResult(result);
+                const recordedPid = Number(readFileSync(pidPath, 'utf8'));
+                descendantPid = recordedPid;
 
-            expect(result.reason).toBe('timeout');
-            expect(() => process.kill(recordedPid, 0)).toThrow();
-        } finally {
-            await killAndWait(descendantPid);
-            rmSync(root, { recursive: true, force: true });
-        }
-    }, 10_000);
+                expect(result.reason, result.output).toBe('timeout');
+                expect(() => process.kill(recordedPid, 0)).toThrow();
+            } finally {
+                try {
+                    await killAndWait(descendantPid);
+                    rmSync(root, { recursive: true, force: true });
+                } finally {
+                    diagnostics.finish();
+                }
+            }
+        },
+        GUARDED_CASE_TIMEOUT_MS
+    );
 
-    it('cleans a detached child that outlives its launcher', async () => {
-        const root = fixtureRoot('leak');
-        const pidPath = join(root, 'pid');
-        let childPid: number | undefined;
-        try {
-            const result = await runIsolatedGuardedCommand({
-                command: process.execPath,
-                args: [
-                    '-e',
-                    `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); child.unref(); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid));`,
-                ],
-                profile: 'focused',
-                availableMemoryBytes: abundantMemoryBytes,
-            });
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
-            childPid = recordedPid;
+    it(
+        'cleans a detached child that outlives its launcher',
+        async ({ onTestFailed }) => {
+            const root = fixtureRoot('leak');
+            const pidPath = join(root, 'pid');
+            let childPid: number | undefined;
+            const diagnostics = captureGuardedFailure(onTestFailed, 'detached launcher');
+            try {
+                const result = await runIsolatedGuardedCommand({
+                    command: process.execPath,
+                    args: [
+                        '-e',
+                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); child.unref(); writeFileSync(process.argv[1], String(child.pid));`,
+                        pidPath,
+                    ],
+                    profile: 'focused',
+                    availableMemoryBytes: abundantMemoryBytes,
+                });
+                diagnostics.recordResult(result);
+                const recordedPid = Number(readFileSync(pidPath, 'utf8'));
+                childPid = recordedPid;
 
-            expect(result.reason).toBeUndefined();
-            expect(isAlive(childPid)).toBe(false);
-        } finally {
-            await killAndWait(childPid);
-            rmSync(root, { recursive: true, force: true });
-        }
-    }, 10_000);
+                expect(result.reason, result.output).toBeUndefined();
+                expect(isAlive(childPid)).toBe(false);
+            } finally {
+                try {
+                    await killAndWait(childPid);
+                    rmSync(root, { recursive: true, force: true });
+                } finally {
+                    diagnostics.finish();
+                }
+            }
+        },
+        GUARDED_CASE_TIMEOUT_MS
+    );
 
     for (const acknowledgement of ['ready', 'first-term'] as const) {
         it(`does not admit a partial ${acknowledgement} acknowledgement`, async () => {
@@ -1058,14 +1872,14 @@ describe('resource CLI', () => {
 
 describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
-        { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 7168 * 1024 ** 2 },
+        { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 9216 * 1024 ** 2 },
         {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['run', 'typecheck:test'],
-            expected: 7168 * 1024 ** 2,
+            expected: 9216 * 1024 ** 2,
         },
-        { profile: 'focused' as const, command: 'pnpm', args: ['typecheck:test'], expected: 7168 * 1024 ** 2 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['typecheck:test'], expected: 9216 * 1024 ** 2 },
         {
             profile: 'focused' as const,
             command: 'pnpm',
@@ -1120,13 +1934,13 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
-            expected: 7168 * 1024 ** 2,
+            expected: 9216 * 1024 ** 2,
         },
         {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['--config.verify-deps-before-run=false', 'run', 'typecheck:test'],
-            expected: 7168 * 1024 ** 2,
+            expected: 9216 * 1024 ** 2,
         },
         {
             profile: 'focused' as const,
@@ -1156,7 +1970,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['--silent', 'run', 'typecheck:test'],
-            expected: 7168 * 1024 ** 2,
+            expected: 9216 * 1024 ** 2,
         },
         {
             profile: 'focused' as const,
@@ -1186,7 +2000,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(typecheckResult.code).toBe(0);
-            expect(typecheckResult.maxRssBytes).toBe(7168 * 1024 ** 2);
+            expect(typecheckResult.maxRssBytes).toBe(9216 * 1024 ** 2);
 
             const prefixedResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
@@ -1197,7 +2011,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(prefixedResult.code).toBe(0);
-            expect(prefixedResult.maxRssBytes).toBe(7168 * 1024 ** 2);
+            expect(prefixedResult.maxRssBytes).toBe(9216 * 1024 ** 2);
 
             const e2eResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',

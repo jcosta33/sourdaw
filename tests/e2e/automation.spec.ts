@@ -37,7 +37,7 @@ test.describe('Automation Lanes', () => {
         await laneSelector.selectOption('cc11');
         await expect(laneSelector).toHaveValue('cc11');
 
-        const ccLane = page.getByRole('group', { name: 'CC 11 automation lane' });
+        const ccLane = page.getByRole('toolbar', { name: 'CC 11 automation lane' });
         await expect(ccLane).toBeVisible();
         await expect(ccLane.getByText('Click to add CC points')).toBeVisible();
 

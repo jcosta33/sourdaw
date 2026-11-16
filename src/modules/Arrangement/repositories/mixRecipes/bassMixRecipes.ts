@@ -283,10 +283,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when the bass already sounds hollow; the buildup then belongs to guitars or keys.',
             'Skip when the same region is already cut on a parent bus.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'rms', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
         source: 'Bass mud collects just above the fundamental, between 200 Hz and 350 Hz, where cabinet resonance and room modes pile up and where vocals and guitars also sit. A narrow bell there clears space for those sources while leaving the fundamental octave and the definition region untouched.',
     },
     {

@@ -47,11 +47,15 @@ test.describe('Prompt bar and AI action history', () => {
         await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(0);
         await expect(input).toHaveValue('');
 
+        await expect(close).toHaveCount(0);
+
+        const toggle = page.getByRole('button', { name: 'Toggle AI action history', exact: true });
+        await toggle.click();
         await expect(close).toBeVisible();
         await expect(page.getByText('No actions yet', { exact: true })).toHaveCount(0);
         await expect(page.getByText(lastAction, { exact: true })).toBeVisible();
 
-        await page.getByRole('button', { name: 'Toggle AI action history', exact: true }).click();
+        await toggle.click();
         await expect(close).toHaveCount(0);
     });
 });

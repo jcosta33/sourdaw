@@ -27,7 +27,8 @@ const mocks = vi.hoisted(() => ({
     getVersionedCommandBatchIdempotentReplay: vi.fn<typeof getVersionedCommandBatchIdempotentReplay>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     openCachedAudioBufferHold: vi.fn(() => {
         throw new Error('Unexpected audio buffer residency hold in this fixture');
     }),

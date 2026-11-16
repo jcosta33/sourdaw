@@ -1,4 +1,4 @@
-import { getChangesMetaSince, getHeads, getMissingDeps } from '@automerge/automerge';
+import { getChangesMetaSince, getHeads, getMissingDeps, toJS } from '@automerge/automerge';
 
 import { getWarpState, trackStore } from '../../src/modules/Arrangement/stores';
 import { executeAppAction, executeAppActionBatch } from '../../src/modules/Command/useCases';
@@ -23,34 +23,37 @@ export function captureElasticProjectScalePreservedState(targetClipId: string): 
         midi?: unknown;
         warpStates?: { states: Record<string, unknown> };
     }>('root');
-    if (!document) throw new Error('Project-scale preservation requires the actual root document');
-    const companionIds = (trackStore.value?.tracks ?? [])
-        .flatMap((track) => track.clips)
-        .filter((clip) => clip.id !== targetClipId && getWarpState(clip.id).markers.length > 0)
-        .map((clip) => clip.id);
-    const snapshot: unknown = JSON.parse(
-        JSON.stringify({
-            raw: {
-                tracks: document.tracks,
-                midi: document.midi,
-                warpStates: Object.fromEntries(
-                    Object.entries(document.warpStates?.states ?? {}).filter(([clipId]) => clipId !== targetClipId)
-                ),
-            },
-            projected: {
-                tracks: trackStore.value?.tracks,
-                midi: midiStore.value,
-                warpStates: Object.fromEntries(companionIds.map((clipId) => [clipId, getWarpState(clipId)])),
-            },
-        })
-    );
-    return snapshot;
+    if (!document) {
+        throw new Error('Project-scale preservation requires the actual root document');
+    }
+    const clips = (trackStore.value?.tracks ?? []).flatMap((track) => track.clips);
+    const companionClips = clips.filter((clip) => clip.id !== targetClipId && getWarpState(clip.id).markers.length > 0);
+    const companionIds = companionClips.map((clip) => clip.id);
+    const raw = toJS(document);
+    // Store decoding materializes plain values; the native document uses its own conversion above.
+    const projected = structuredClone({
+        tracks: trackStore.value?.tracks,
+        midi: midiStore.value,
+        warpStates: Object.fromEntries(companionIds.map((clipId) => [clipId, getWarpState(clipId)])),
+    });
+    return {
+        raw: {
+            tracks: raw.tracks,
+            midi: raw.midi,
+            warpStates: Object.fromEntries(
+                Object.entries(raw.warpStates?.states ?? {}).filter(([clipId]) => clipId !== targetClipId)
+            ),
+        },
+        projected,
+    };
 }
 
 export async function inspectElasticProjectScale() {
     const { rootBytes, projectRevision } = await captureCheckpointRoot();
     const document = getCrdtDoc<Record<string, unknown>>('root');
-    if (!document) throw new Error('Project-scale fixture requires the actual root document');
+    if (!document) {
+        throw new Error('Project-scale fixture requires the actual root document');
+    }
     const tracks = trackStore.value?.tracks.filter((track) => track.kind === 'audio' || track.kind === 'midi') ?? [];
     const changes = getChangesMetaSince(document, []);
     return {
@@ -106,14 +109,18 @@ export async function seedElasticProjectScale() {
     }
     const sourceLength = sourceClip.endBeat - sourceClip.startBeat;
     const documentBeforeEdits = getCrdtDoc('root');
-    if (!documentBeforeEdits) throw new Error('Project-scale fixture lost its root before editing');
+    if (!documentBeforeEdits) {
+        throw new Error('Project-scale fixture lost its root before editing');
+    }
     const headsBeforeEdits = getHeads(documentBeforeEdits);
     progress('history', 0);
     // The final arrangement retains these actual edits; constructing them while the
     // project is small avoids repeatedly reconciling its later clips and notes.
     for (let edit = 0; edit < elasticProjectScale.historyEdits; edit++) {
         const track = trackStore.value?.tracks.find((candidate) => candidate.id === sourceTrack.id);
-        if (!track) throw new Error('Project-scale edit lost its actual track');
+        if (!track) {
+            throw new Error('Project-scale edit lost its actual track');
+        }
         if (edit % 3 === 0) {
             await execute({ type: 'renameTrack', payload: { trackId: track.id, name: `Scale edit ${edit}` } });
         } else if (edit % 3 === 1) {
@@ -127,10 +134,14 @@ export async function seedElasticProjectScale() {
                 payload: { trackId: track.id, pan: track.pan === -0.25 ? 0.25 : -0.25, expectedPan: track.pan },
             });
         }
-        if ((edit + 1) % 128 === 0) progress('history', edit + 1);
+        if ((edit + 1) % 128 === 0) {
+            progress('history', edit + 1);
+        }
     }
     const documentAfterEdits = getCrdtDoc('root');
-    if (!documentAfterEdits) throw new Error('Project-scale fixture lost its edited root');
+    if (!documentAfterEdits) {
+        throw new Error('Project-scale fixture lost its edited root');
+    }
     const historyEditChanges = getChangesMetaSince(documentAfterEdits, headsBeforeEdits).length;
     const historyHeads = getHeads(documentAfterEdits);
     progress('tracks', 0);
@@ -152,21 +163,24 @@ export async function seedElasticProjectScale() {
         const clipActions: Parameters<typeof executeAppAction>[0][] = [];
         const noteActions: Parameters<typeof executeAppAction>[0][] = [];
         for (let clipIndex = 0; clipIndex < elasticProjectScale.clipsPerTrack; clipIndex++) {
-            if (trackIndex === 0 && clipIndex === 0) continue;
+            if (trackIndex === 0 && clipIndex === 0) {
+                continue;
+            }
             const clipId = `scale-clip-${trackIndex}-${clipIndex}`;
             const length = audio ? sourceLength : 32;
-            clipActions.push({
-                type: 'addClip',
-                payload: {
-                    id: clipId,
-                    trackId,
-                    name: `Scale phrase ${clipIndex + 1}`,
-                    type: audio ? 'audio' : 'midi',
-                    startBeat: clipIndex * length,
-                    endBeat: (clipIndex + 1) * length,
-                    ...(audio ? { audioBufferId: sourceClip.audioBufferId, assetHash: sourceClip.assetHash } : {}),
-                },
-            });
+            const clipPayload: Extract<Parameters<typeof executeAppAction>[0], { type: 'addClip' }>['payload'] = {
+                id: clipId,
+                trackId,
+                name: `Scale phrase ${clipIndex + 1}`,
+                type: audio ? 'audio' : 'midi',
+                startBeat: clipIndex * length,
+                endBeat: (clipIndex + 1) * length,
+            };
+            if (audio) {
+                clipPayload.audioBufferId = sourceClip.audioBufferId;
+                clipPayload.assetHash = sourceClip.assetHash;
+            }
+            clipActions.push({ type: 'addClip', payload: clipPayload });
             if (audio && clipIndex === 0 && trackIndex <= elasticProjectScale.detectedClips) {
                 elasticClipIds.push(clipId);
             }
@@ -191,7 +205,9 @@ export async function seedElasticProjectScale() {
         if (noteActions.length > 0) {
             await executeBatch(noteActions);
         }
-        if ((trackIndex + 1) % 4 === 0) progress('clips-and-notes', trackIndex + 1);
+        if ((trackIndex + 1) % 4 === 0) {
+            progress('clips-and-notes', trackIndex + 1);
+        }
     }
     progress('companion-detect', 0);
     for (const [index, clipId] of elasticClipIds.entries()) {
@@ -204,7 +220,9 @@ export async function seedElasticProjectScale() {
     progress('checkpoint', 0);
     const snapshot = await inspectElasticProjectScale();
     const finalDocument = getCrdtDoc('root');
-    if (!finalDocument) throw new Error('Project-scale fixture lost its final root');
+    if (!finalDocument) {
+        throw new Error('Project-scale fixture lost its final root');
+    }
     progress('complete', 1);
     return {
         targetClipId: sourceClip.id,

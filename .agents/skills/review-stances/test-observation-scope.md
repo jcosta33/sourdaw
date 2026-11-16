@@ -137,6 +137,15 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    run as its only evidence.
    (#5595, #3170)
 
+9. **The visible outcome is asserted while the value the caller reads is wrong.**
+   A case drives a path to its run phase, committed work or chat text, while the function the caller
+   awaits returns a status or leaves state that disagrees (a resumed undo that landed, reported
+   `rejected` with the decision unselected and its claim released). The reply and the phase prove the
+   path ran, not what the caller was told.
+   Probe: call the function the caller calls, assert its returned value and the state it settles
+   (selection, claim, receipts), then revert the line that produces that value; the case must fail.
+   (#6548, #5611)
+
 ## Relocated
 
 - A test awaiting away the disputed input interval of overlapping duplicate presses (#6218) →

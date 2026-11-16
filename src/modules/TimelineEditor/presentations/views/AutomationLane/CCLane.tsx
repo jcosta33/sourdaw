@@ -15,6 +15,8 @@ import {
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
+import { handleClipLaneInsertKeyDown, readLaneValueAtBeat } from '../../helpers/clipLaneKeyboardInsert';
+import { readClipPlayheadBeat } from '../../helpers/clipPlayheadBeat';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type CCLaneProps = {
@@ -80,6 +82,24 @@ function restoreChangedCCRows(clipId: string, before: readonly MidiCC[], after: 
     }
 }
 
+/** An empty lane has no line to follow, so a keyboard-inserted point starts at the controller's midpoint. */
+const CC_INSERT_DEFAULT_VALUE = 64;
+
+function addCCPointWithUndo(clipId: string, controller: number, beat: number, value: number): void {
+    const channel = 0;
+    // Capture the actual row transition: returned families can reuse ids or shrink,
+    // while a gesture on another controller may not touch them at all.
+    let beforeChange = readCCRows(clipId);
+    const cc = addMidiCC(clipId, controller, value, beat, channel);
+    let afterChange = readCCRows(clipId);
+    const redo = (): void => {
+        beforeChange = readCCRows(clipId);
+        addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
+        afterChange = readCCRows(clipId);
+    };
+    pushUndoEntry('Add CC point', () => restoreChangedCCRows(clipId, beforeChange, afterChange), redo);
+}
+
 export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const { hasActiveDrag, beginDrag, dragHandlers } = useLaneDragSession();
@@ -117,19 +137,19 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
 
         const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
+        addCCPointWithUndo(clipId, controller, beat, value);
+    };
 
-        const channel = 0;
-        // Capture the actual row transition: returned families can reuse ids or shrink,
-        // while a gesture on another controller may not touch them at all.
-        let beforeChange = readCCRows(clipId);
-        const cc = addMidiCC(clipId, controller, value, beat, channel);
-        let afterChange = readCCRows(clipId);
-        const redo = (): void => {
-            beforeChange = readCCRows(clipId);
-            addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
-            afterChange = readCCRows(clipId);
-        };
-        pushUndoEntry('Add CC point', () => restoreChangedCCRows(clipId, beforeChange, afterChange), redo);
+    const insertPointAtPlayhead = (): void => {
+        if (!clipId) {
+            return;
+        }
+        const beat = readClipPlayheadBeat(clipId);
+        if (beat === undefined) {
+            return;
+        }
+        const value = Math.round(readLaneValueAtBeat(points, beat) ?? CC_INSERT_DEFAULT_VALUE);
+        addCCPointWithUndo(clipId, controller, beat, value);
     };
 
     const handlePointPointerDown = (ccId: string, event: PointerEvent<HTMLDivElement>) => {
@@ -265,11 +285,14 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     return (
         <div
             ref={containerRef}
-            className="relative h-full w-full cursor-crosshair overflow-hidden"
+            className="relative h-full w-full cursor-crosshair overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
             style={{ touchAction: 'none' }}
             onClick={handleContainerClick}
-            role="group"
+            onKeyDown={(event) => handleClipLaneInsertKeyDown(event, insertPointAtPlayhead)}
+            role="toolbar"
+            tabIndex={0}
             aria-label={`CC ${controller} automation lane`}
+            aria-keyshortcuts="Enter"
             {...dragHandlers}
         >
             {points.length > 1 ? (

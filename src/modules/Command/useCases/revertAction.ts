@@ -10,9 +10,11 @@ import {
     restoreActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../stores/actionReplayCapabilities';
+import { discardRedoFuture } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { executeAppAction } from './executeAppAction';
+import { runUndoRedoExclusive } from './undoRedo';
 import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 
 type ActionReplayClaim = NonNullable<ReturnType<typeof claimActionReplayCapability>>;
@@ -67,7 +69,15 @@ type RevertActionOutput = Promise<
     | { status: 'conflict' }
 >;
 
-export async function revertAction(entryId: string): RevertActionOutput {
+/**
+ * Reverts one history entry out of order through its retained inverse. Runs in the same queue
+ * as undo and redo, so neither can read the stacks while the inverse is in flight.
+ */
+export function revertAction(entryId: string): RevertActionOutput {
+    return runUndoRedoExclusive(() => revertActionImpl(entryId));
+}
+
+async function revertActionImpl(entryId: string): RevertActionOutput {
     const entry = actionHistoryStore.value?.entries.find((history_entry) => history_entry.id === entryId);
     if (!entry) {
         return { status: 'unavailable' };
@@ -90,12 +100,16 @@ export async function revertAction(entryId: string): RevertActionOutput {
         return { status: 'unavailable' };
     }
 
+    // A landed inverse is a new edit: a redo would replay its forward over a state the revert
+    // changed, so a write discards the redo future, as any new edit does. An inverse that finds
+    // nothing to change writes nothing and leaves the redo future valid.
     try {
         await runPreparedUndoReplay({ actions: [claim.inverseAction] }, () =>
             executeAppAction(claim.inverseAction, {
                 undoEntryId: entryId,
                 source: entry.source,
                 groupLabel: `Reverted: ${entry.label}`,
+                onCommitted: discardRedoFuture,
             })
         );
     } catch (error) {
@@ -104,6 +118,8 @@ export async function revertAction(entryId: string): RevertActionOutput {
             return { status: 'conflict' };
         }
         if (error instanceof AppActionCommittedError) {
+            // Raised only once the write reached the document, sometimes before `onCommitted` ran.
+            discardRedoFuture();
             let mark_outcome: 'marked' | 'unavailable';
             try {
                 mark_outcome = markCommittedReplay({ entryId, claim });
