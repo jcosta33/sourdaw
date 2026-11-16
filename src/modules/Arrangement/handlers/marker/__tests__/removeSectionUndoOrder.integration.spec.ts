@@ -188,6 +188,93 @@ describe('removeSection undo restores section order', () => {
         expect(sectionIds()).toEqual([A.id, B.id, C.id]);
     });
 
+    describe('after a collaborator edits the list before the undo', () => {
+        const removePeerSection = (sectionId: string) => {
+            const current = markerStore.value;
+            if (!current) {
+                throw new Error('expected marker store to be initialized');
+            }
+            markerStore.set({ ...current, sections: current.sections.filter((section) => section.id !== sectionId) });
+        };
+
+        it('restores the section before its old successor when a peer removed an earlier section', async () => {
+            await addSections([A, B, C]);
+            await executeAppAction({ type: 'removeSection', payload: { sectionId: B.id } });
+            removePeerSection(A.id);
+            expect(sectionIds()).toEqual([C.id]);
+
+            await undo({ stepOverConflicts: false });
+
+            expect(sectionIds()).toEqual([B.id, C.id]);
+        });
+
+        it('restores the section before its old successor when a peer reordered the others', async () => {
+            await addSections([A, B, C]);
+            await executeAppAction({ type: 'removeSection', payload: { sectionId: B.id } });
+            const current = markerStore.value;
+            if (!current) {
+                throw new Error('expected marker store to be initialized');
+            }
+            markerStore.set({ ...current, sections: [C, A] });
+
+            await undo({ stepOverConflicts: false });
+
+            expect(sectionIds()).toEqual([B.id, C.id, A.id]);
+        });
+
+        it('restores a removed last section after its old predecessor when a peer removed an earlier one', async () => {
+            await addSections([A, B, C]);
+            await executeAppAction({ type: 'removeSection', payload: { sectionId: C.id } });
+            removePeerSection(A.id);
+
+            await undo({ stepOverConflicts: false });
+
+            expect(sectionIds()).toEqual([B.id, C.id]);
+        });
+
+        it('falls back to the recorded slot when both neighbours are gone', async () => {
+            await addSections([A, B, C, D]);
+            await executeAppAction({ type: 'removeSection', payload: { sectionId: C.id } });
+            removePeerSection(B.id);
+            removePeerSection(D.id);
+            expect(sectionIds()).toEqual([A.id]);
+
+            await undo({ stepOverConflicts: false });
+
+            expect(sectionIds()).toEqual([A.id, C.id]);
+        });
+
+        it('falls back to the recorded slot ahead of the list when the only neighbour is gone', async () => {
+            await addSections([A, B, C, D]);
+            await executeAppAction({ type: 'removeSection', payload: { sectionId: A.id } });
+            removePeerSection(B.id);
+            expect(sectionIds()).toEqual([C.id, D.id]);
+
+            await undo({ stepOverConflicts: false });
+
+            expect(sectionIds()).toEqual([A.id, C.id, D.id]);
+        });
+    });
+
+    it.each([
+        { label: 'non-string beforeId', anchors: '{"beforeId":7}' },
+        { label: 'non-string afterId', anchors: '{"afterId":{}}' },
+    ])('refuses addSection with a $label without writing', async ({ anchors }) => {
+        await addSections([A, B, C]);
+
+        await expect(
+            executeAppAction({
+                type: 'addSection',
+                // The wire shape is untrusted: parsed JSON is the malformed payload under test.
+                payload: JSON.parse(
+                    `{"startBeat":24,"endBeat":32,"name":"D","sectionId":"${D.id}",${anchors.slice(1, -1)}}`
+                ),
+            })
+        ).rejects.toThrow(/conflicts with current project state/);
+
+        expect(sectionIds()).toEqual([A.id, B.id, C.id]);
+    });
+
     it.each([{ index: -1 }, { index: 1.5 }, { index: Number.NaN }, { index: Number.POSITIVE_INFINITY }])(
         'refuses addSection with malformed index $index without writing',
         async ({ index }) => {

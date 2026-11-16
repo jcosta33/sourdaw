@@ -50,6 +50,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    coherent PCM geometry and the real analysis before setting a case-specific deadline for required work; retain
    programme and gating windows and every functional assertion (#6311, #6350). Do not use global timeouts or
    retries.
+   #6407 missed launch admission before the layout budget; require the existing launch-ready signal
+   before starting that assertion budget. Trace each diagnostic marker to its producer: a React DOM
+   evaluation banner is not a render, an initSync warning can precede failed WASM initialization, a
+   capability log is not completed bootstrap, and an unwritten heartbeat attribute cannot establish a phase.
    Static scanners need a deterministic work bound as well as semantic verdicts. #1572 introduced
    per-spec barrel-mock graph walks without a unique-resolution bound; #5231's investigation after
    #6419's hook timeout found repeated resolution work, without proving the Linux timeout's cause.

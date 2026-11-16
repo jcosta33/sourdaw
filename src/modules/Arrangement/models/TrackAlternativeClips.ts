@@ -21,8 +21,8 @@ export function getAlternativeClips<TClip>(
  */
 export function getHeldClips<TClip>(track: {
     activeAlternativeId: string;
-    clips: TClip[];
-    alternatives: { id: string; clips: TClip[] }[];
+    clips: readonly TClip[];
+    alternatives: readonly { id: string; clips: readonly TClip[] }[];
 }): TClip[] {
     return [
         ...track.clips,

@@ -13,11 +13,12 @@
  *   and applies its result only while it is still the latest-started one.
  *
  * - The paired-reconcile hold keeps the persistence mirror quiet while a
- *   reconcile-initiated mode+sample pair is unsettled. The mode lands
- *   synchronously beside the store's still-stale `activeSample`; committing
- *   that state would mirror the stale sample over the peer's document
- *   reference, and a failed or slow decode then erases the reference
- *   cross-session (#4764).
+ *   reconcile-initiated sample load, with or without a mode change beside it,
+ *   is unsettled. Until the decode lands the store still holds the stale
+ *   `activeSample`; committing that state — a mid-pair edit's, or a refused
+ *   edit's delivered when the project unlocks — would mirror the stale sample
+ *   over the peer's document reference, and a failed or slow decode then
+ *   erases the reference cross-session (#4764, #6778).
  *
  * Concurrent paired reconciles for one device nest: the hold is a per-device
  * count and releases only when the LAST of them settles, so the first settle
@@ -46,7 +47,7 @@ export function isLatestCrumbsSampleLoad(instanceId: string, sequence: number): 
 }
 
 /**
- * Hold the persistence mirror for a reconcile's paired mode+sample apply.
+ * Hold the persistence mirror for a reconcile's sample apply and any mode beside it.
  * Concurrent holds for one device nest.
  */
 export function beginCrumbsPairedReconcile(instanceId: string): void {
@@ -67,7 +68,7 @@ export function endCrumbsPairedReconcile(instanceId: string): void {
     unsettledPairedReconciles.delete(instanceId);
 }
 
-/** Whether a reconcile's paired mode+sample apply is still unsettled. */
+/** Whether a reconcile's sample apply is still unsettled. */
 export function hasUnsettledCrumbsPairedReconcile(instanceId: string): boolean {
     return unsettledPairedReconciles.has(instanceId);
 }

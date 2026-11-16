@@ -1,7 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
-import { collectTrackClipIds } from '../../services/collectTrackClipIds';
+import { type Track } from '../../models/Track';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
@@ -41,6 +42,15 @@ function isFlattenNoop(trackId: string): boolean {
     return !track || track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId;
 }
 
+/**
+ * The clips the flatten replaces: those the track holds now. The active
+ * alternative's stored copy is stale between switches and can still name a
+ * clip since moved to another track, whose takes must survive this flatten.
+ */
+function heldClipIds(track: Track): string[] {
+    return [...new Set(getHeldClips(track).map((clip) => clip.id))];
+}
+
 export const handleFlattenTrack = createHandler<'flattenTrack'>({
     execute: (action) => {
         const trackId = action.payload.trackId;
@@ -49,7 +59,7 @@ export const handleFlattenTrack = createHandler<'flattenTrack'>({
         // and each replaced id retires its takes through the shared rule so no
         // orphan take keeps naming a clip no track holds (#4518).
         const preFlattenTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
-        const retiringClipIds = preFlattenTrack ? collectTrackClipIds(preFlattenTrack) : [];
+        const retiringClipIds = preFlattenTrack ? heldClipIds(preFlattenTrack) : [];
         const didWrite = flattenTrack(trackId);
         if (didWrite) {
             removeTakesForClips(retiringClipIds);
@@ -68,7 +78,7 @@ export const handleFlattenTrack = createHandler<'flattenTrack'>({
         }
 
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
-        const retiringClipIds = track ? collectTrackClipIds(track) : [];
+        const retiringClipIds = track ? heldClipIds(track) : [];
         // Naming the replaced ids makes the capture carry the take lanes the
         // forward retires, so undo puts them back with the pre-flatten clips.
         const preFlattenState = captureTrackClipStates([trackId], retiringClipIds);

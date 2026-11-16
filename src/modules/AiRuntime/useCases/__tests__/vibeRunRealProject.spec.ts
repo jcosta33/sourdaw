@@ -88,7 +88,13 @@ vi.mock('../evaluateMetricGoalAdmission', async (importOriginal) => {
         evaluateMetricGoalAdmission: (input: Parameters<typeof original.evaluateMetricGoalAdmission>[0]) => {
             const evaluation = original.evaluateMetricGoalAdmission(input);
             if (admission.admitsOutOfTolerance && evaluation.failure === 'out-of-tolerance') {
-                return { ...evaluation, status: 'verified' as const, failure: null };
+                // An admitted verdict holds every criterion verified, the reading a stored plan's claim requires.
+                return {
+                    ...evaluation,
+                    status: 'verified' as const,
+                    failure: null,
+                    criteria: evaluation.criteria.map((criterion) => ({ ...criterion, status: 'verified' as const })),
+                };
             }
             return evaluation;
         },

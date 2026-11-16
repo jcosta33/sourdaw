@@ -282,6 +282,11 @@ pub async fn grant_path(path: String, mode: String, recursive: bool) -> Result<(
     let mode = parse_grant_mode(&mode)?;
     let requested = normalize_absolute_path(Path::new(path.trim()))?;
     let canonical = grant_registry::resolve_grant_target(&requested)?;
+    grant_registry::refuse_write_grant_in_plugin_folder(
+        &canonical,
+        mode,
+        &crate::host::plugin_folder_grants::plugin_code_roots(),
+    )?;
     grant_registry::grant(FileGrant {
         canonical,
         mode,
@@ -529,7 +534,11 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), File
 /// keeps projects in. The user's documents, downloads, desktop and music
 /// folders were roots here once (#3313); they are the user's, not the app's,
 /// and reach them now only through a grant the user made in a dialog.
-fn built_in_roots() -> Vec<PathBuf> {
+///
+/// A plugin folder grant may not overlap any of these: the renderer writes
+/// here without a pick, so an overlapping plugin folder would let a page plant
+/// native code that the scan and the loader execute.
+pub(crate) fn built_in_roots() -> Vec<PathBuf> {
     let mut roots = vec![ipc_temp_dir()];
 
     if let Some(data_dir) = application_data_directory() {
@@ -1776,6 +1785,30 @@ mod tests {
             std::fs::read(&granted_destination).unwrap(),
             b"granted temporary data"
         );
+    }
+
+    #[test]
+    fn a_read_write_pick_inside_a_plugin_folder_is_refused_and_not_granted() {
+        let plugin_folder = crate::host::plugin_folder_grants::plugin_code_roots()
+            .into_iter()
+            .next()
+            .expect("every supported platform defines a plugin folder");
+        let pick = plugin_folder.join("Vendor");
+
+        grant_registry::with_grants_for_test(Vec::new(), || {
+            let refused = crate::block_on_test(grant_path(
+                pick.to_string_lossy().into_owned(),
+                "readwrite".to_string(),
+                true,
+            ));
+            assert!(
+                refused
+                    .as_ref()
+                    .is_err_and(|message| message.contains("plugin folder")),
+                "unexpected result {refused:?}"
+            );
+            assert!(!grant_registry::admits(&pick, GrantMode::Read));
+        });
     }
 
     #[tokio::test]

@@ -102,7 +102,7 @@ const TRACKED_SET_FILES: ReadonlyArray<readonly [string, string]> = [
     ['crates/daw-dsp/benches/wasm/measurementCensus.d.mts', 'fixture census declarations'],
     ['crates/daw-dsp/benches/wasm/renderTable.mjs', 'fixture render table'],
     ['crates/daw-dsp/benches/wasm/renderTable.d.mts', 'fixture render table declarations'],
-    ['crates/daw-dsp/benches/quantum-cost-table.json', '{}'],
+    ['.agents/decisions/0036-readmit-grand-boule.md', '{}'],
     ['crates/daw-dsp/benches/quantum-cost-table.md', 'fixture cost table'],
     ['crates/daw-dsp/tests/quantum_bench_census.rs', 'fixture census test'],
     ['scripts/checkReleaseInventory.ts', 'fixture checker'],
@@ -312,25 +312,57 @@ describe('tracked-set restamp write and refusals', () => {
         const staleLabel = STALE_LABEL;
         writeDriftedInventory(root, staleLabel);
         const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
-        writeFileSync(join(root, 'crates/daw-dsp/benches/wasm/renderTable.mjs'), 'uncommitted drift\n');
+        writeFileSync(join(root, 'crates/daw-dsp/benches/wasm/renderTable.mjs'), 'label-only edit\n');
+        writeFileSync(join(root, 'crates/daw-dsp/src/grand_boule/mod.rs'), 'uncommitted drift\n');
 
         const message = thrownMessage(() => restampTrackedSetInventory(root));
 
         expect(message).toContain('uncommitted changes');
-        expect(message).toContain('crates/daw-dsp/benches/wasm/renderTable.mjs');
+        expect(message).toContain('crates/daw-dsp/src/grand_boule/mod.rs');
+        expect(message).not.toContain('renderTable.mjs');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
+    });
+
+    it('never rewrites a label-only entry and ignores uncommitted edits in a label-only boundary', () => {
+        const root = createFixture();
+        const labelOnly = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+            ({ pinsAdmittedBytes }) => pinsAdmittedBytes !== true
+        )!;
+        writeInventory(root, (digests) =>
+            digests.map((entry) =>
+                trackedSetLabel(entry) === labelOnly.digestLabel
+                    ? `tracked-set-sha256:${STALE_SHA256}:${labelOnly.digestLabel}`
+                    : entry
+            )
+        );
+        writeFileSync(join(root, 'crates/daw-dsp/benches/wasm/renderTable.mjs'), 'uncommitted label-only edit\n');
+        const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+
+        const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
+
+        expect(output).toContain('already current');
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
+    });
+
+    it('restamps a content-pinned entry that drifted', () => {
+        const root = createFixture();
+        writeDriftedInventory(root, 'grand-boule-admission-decision');
+
+        execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
+
+        expect(grandBouleSurface(root).digests).toEqual(grandBouleReleaseInventoryContract(root).digests);
     });
 
     it('refuses a staged deletion of a tracked-set member before writing, naming the file', () => {
         const root = createFixture();
         writeDriftedInventory(root, STALE_LABEL);
         const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
-        execFileSync('git', ['rm', '-q', 'crates/daw-dsp/benches/quantum-cost-table.json'], { cwd: root });
+        execFileSync('git', ['rm', '-q', '.agents/decisions/0036-readmit-grand-boule.md'], { cwd: root });
 
         const message = thrownMessage(() => restampTrackedSetInventory(root));
 
         expect(message).toContain('uncommitted changes');
-        expect(message).toContain('crates/daw-dsp/benches/quantum-cost-table.json');
+        expect(message).toContain('.agents/decisions/0036-readmit-grand-boule.md');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
     });
 
