@@ -1058,11 +1058,42 @@ fn scan_worker<T: DeserializeOwned>(
         return Err(ScanFailure::Refused(no_scan_backend(format)));
     }
     let launcher = ScanWorkerCommand::resolve().map_err(ScanFailure::Refused)?;
-    scan_worker_with(&launcher, format, path, plugin_id, timeout, worker_argument)
+    scan_worker_with(
+        &launcher,
+        &PinnedResponseStorage,
+        format,
+        path,
+        plugin_id,
+        timeout,
+        worker_argument,
+    )
+}
+
+/// What the supervisor learns about the storage under a response directory:
+/// the volume's free space before the helper starts, and whether its own
+/// write succeeds after the helper exits — the two readings
+/// [`process_failure`] decides an exit 3 from.
+trait ResponseStorage {
+    fn available_bytes(&self, directory: &ResponseDirectory) -> Option<u64>;
+    fn probe_write(&self, directory: &ResponseDirectory) -> std::io::Result<()>;
+}
+
+/// The readings production takes, through the directory's pinned handle.
+struct PinnedResponseStorage;
+
+impl ResponseStorage for PinnedResponseStorage {
+    fn available_bytes(&self, directory: &ResponseDirectory) -> Option<u64> {
+        directory.available_bytes()
+    }
+
+    fn probe_write(&self, directory: &ResponseDirectory) -> std::io::Result<()> {
+        directory.probe_write()
+    }
 }
 
 fn scan_worker_with<T: DeserializeOwned>(
     launcher: &ScanWorkerCommand,
+    storage: &impl ResponseStorage,
     format: PluginFormat,
     path: &Path,
     plugin_id: Option<&str>,
@@ -1089,11 +1120,11 @@ fn scan_worker_with<T: DeserializeOwned>(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let room_before_spawn = response_directory.available_bytes();
+    let room_before_spawn = storage.available_bytes(&response_directory);
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
         return Err(process_failure(path, &status, room_before_spawn, || {
-            response_directory.probe_write()
+            storage.probe_write(&response_directory)
         }));
     }
     let bytes = read_response_bytes(&response_path, path)?;
@@ -2178,6 +2209,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         };
         let _ = scan_worker_with::<Vec<ScannedDescriptor>>(
             &launcher,
+            &PinnedResponseStorage,
             PluginFormat::Clap,
             Path::new(&plugin_path),
             None,
@@ -2677,11 +2709,23 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         launcher: ScanWorkerCommand,
         plugin_path: &Path,
     ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+        scan_descriptor_observing(launcher, PinnedResponseStorage, plugin_path)
+    }
+
+    /// [`scan_descriptor_through`] with the supervisor's storage readings
+    /// taken by `storage`.
+    #[cfg(unix)]
+    fn scan_descriptor_observing(
+        launcher: ScanWorkerCommand,
+        storage: impl ResponseStorage + Send + 'static,
+        plugin_path: &Path,
+    ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
         let plugin_path = plugin_path.to_path_buf();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = sender.send(scan_worker_with::<Vec<ScannedDescriptor>>(
                 &launcher,
+                &storage,
                 PluginFormat::Clap,
                 &plugin_path,
                 None,
@@ -3096,8 +3140,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         }
     }
 
-    /// The supervisor reads real free space through its pinned handle: a
-    /// fresh response directory on a live volume reports a reading.
+    /// The supervisor reads real free space through its pinned handle: the
+    /// reading is nonzero and agrees, within concurrent disk activity, with an
+    /// independent path-based `statvfs` of the same directory. Mutations this
+    /// catches: a constant reading, or dropping the block-size factor.
     #[cfg(unix)]
     #[test]
     fn a_pinned_response_directory_reads_its_volumes_free_space() {
@@ -3109,9 +3155,116 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             |_root| {
                 let directory = ResponseDirectory::create().unwrap();
 
-                assert!(directory.available_bytes().is_some());
+                let pinned = directory.available_bytes().expect("a pinned reading");
+                let by_path = available_bytes_by_path(&directory.path);
+
+                assert!(pinned > 0, "a live volume has free space");
+                assert!(
+                    pinned.abs_diff(by_path) <= 64 * 1024 * 1024,
+                    "pinned {pinned} bytes against {by_path} by path"
+                );
             },
         );
+    }
+
+    /// `f_bavail * f_frsize` for `path`, read by path rather than through a
+    /// pinned descriptor.
+    #[cfg(unix)]
+    fn available_bytes_by_path(path: &Path) -> u64 {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        // SAFETY: `path` is NUL-terminated and outlives the call, and `stats`
+        // is writable storage for one `statvfs`.
+        assert_eq!(
+            unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) },
+            0
+        );
+        // SAFETY: `statvfs` returned 0, so it filled `stats`.
+        let stats = unsafe { stats.assume_init() };
+        widened(stats.f_bavail) * widened(stats.f_frsize)
+    }
+
+    /// The marker the stand-in helper leaves in its response directory, so a
+    /// storage reading can tell whether the helper has run yet.
+    #[cfg(unix)]
+    const HELPER_RAN_MARKER: &str = "helper-ran";
+
+    /// A volume whose free space before the spawn is `room` and whose disk is
+    /// full by the time the supervisor probes. Each reading records whether
+    /// the helper had already run when it was taken.
+    #[cfg(unix)]
+    struct FullDiskAfterSpawn {
+        room: Option<u64>,
+        readings: std::sync::Arc<std::sync::Mutex<Vec<(&'static str, bool)>>>,
+    }
+
+    #[cfg(unix)]
+    impl FullDiskAfterSpawn {
+        fn record(&self, reading: &'static str, directory: &ResponseDirectory) {
+            let helper_ran = directory.path.join(HELPER_RAN_MARKER).exists();
+            self.readings.lock().unwrap().push((reading, helper_ran));
+        }
+    }
+
+    #[cfg(unix)]
+    impl ResponseStorage for FullDiskAfterSpawn {
+        fn available_bytes(&self, directory: &ResponseDirectory) -> Option<u64> {
+            self.record("free space", directory);
+            self.room
+        }
+
+        fn probe_write(&self, directory: &ResponseDirectory) -> std::io::Result<()> {
+            self.record("probe", directory);
+            storage_full_probe()
+        }
+    }
+
+    /// One scan through the real spawn path of a helper that marks its
+    /// response directory and exits 3 onto a disk that is full afterwards,
+    /// with `room` free before the spawn. Returns the failure and the order
+    /// the supervisor took its readings in.
+    #[cfg(unix)]
+    fn scan_exit_3_onto_full_disk(room: Option<u64>) -> (ScanFailure, Vec<(&'static str, bool)>) {
+        let readings = std::sync::Arc::default();
+        let storage = FullDiskAfterSpawn {
+            room,
+            readings: std::sync::Arc::clone(&readings),
+        };
+        let script = format!(": > \"$(dirname \"$out\")/{HELPER_RAN_MARKER}\"\nexit 3");
+        let error = scan_descriptor_observing(
+            stand_in_launcher(script, BTreeMap::new()),
+            storage,
+            Path::new("/plugins/Stand-in.clap"),
+        )
+        .expect_err("an exit 3 must fail the scan");
+        let readings = readings.lock().unwrap().clone();
+        (error, readings)
+    }
+
+    /// #6936 through the spawn path: the free space is read before the helper
+    /// runs, the probe after it, and a roomy volume the helper filled
+    /// quarantines. Mutations this catches: dropping the spawn-site reading,
+    /// or taking it after the helper has run.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_exits_3_onto_a_disk_it_filled_quarantines_through_the_spawn_path() {
+        let (error, readings) = scan_exit_3_onto_full_disk(ROOMY_VOLUME);
+
+        assert_eq!(readings, [("free space", false), ("probe", true)]);
+        assert_eq!(error, exited_unsuccessfully("/plugins/Stand-in.clap"));
+    }
+
+    /// The sibling: the same exit onto a volume already short before the
+    /// spawn keeps the non-quarantining refusal.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_exits_3_onto_an_already_short_volume_keeps_the_refusal_through_the_spawn_path()
+    {
+        let (error, readings) = scan_exit_3_onto_full_disk(SHORT_VOLUME);
+
+        assert_eq!(readings, [("free space", false), ("probe", true)]);
+        assert_eq!(error, write_refused("/plugins/Stand-in.clap"));
     }
 
     /// Which probe errors keep the non-quarantining refusal. Systemic storage
