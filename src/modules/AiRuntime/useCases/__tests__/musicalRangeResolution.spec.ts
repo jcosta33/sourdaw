@@ -642,7 +642,7 @@ describe('musical range resolution', () => {
                 ['names the section', { section: 'Bar 9' }],
                 ['states bar 9', { startBar: 9, endBar: 9 }],
             ])(
-                'asks which Bar 9 is meant when the provider %s, never bar 9 at beats 32 to 36',
+                'refuses with the ambiguity when the provider %s, never bar 9 at beats 32 to 36',
                 async (_label, range) => {
                     scriptDipRange(range);
                     const result = await parsePromptToActions({
@@ -652,8 +652,7 @@ describe('musical range resolution', () => {
                     });
 
                     expect(result.actions).toEqual([]);
-                    expect(JSON.stringify(result)).toContain('Bar 9');
-                    expect(JSON.stringify(result)).toMatch(/from beat 40 to 56|matches 2 sections equally/u);
+                    expect(JSON.stringify(result)).toContain('matches 2 sections equally');
                 }
             );
 
@@ -685,6 +684,7 @@ describe('musical range resolution', () => {
                     projectRevision: 'revision-unknown-bridge',
                 });
                 expect(bridge.actions).toEqual([]);
+                expect(bridge.planningOutcome).not.toMatchObject({ kind: 'clarify' });
             });
         });
 
