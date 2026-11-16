@@ -1,11 +1,9 @@
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type HandlerValidationContext,
-    type TransientQuantizePlanSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type TransientQuantizePlanSnapshot } from '../../events/arrangementClipAppActions';
+import { changesTempo } from '../../models/ChangesTempoByActionType';
 import { prepareTransientQuantize } from '../../useCases/prepareTransientQuantize';
 import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
 
@@ -22,19 +20,6 @@ type PlanResolution =
 const LABEL = 'Quantize transients';
 const STALE_PLAN_REASON = 'The transient quantize this command recorded no longer matches the project';
 const PREFIX_REASON = 'Quantize transients must not follow an edit of its clip or the tempo map in the same batch';
-
-/** Every action that rewrites the tempo map, which places every slice the plan computed. */
-const TEMPO_MAP_WRITERS: ReadonlySet<AppAction['type']> = new Set([
-    'setTempo',
-    'restoreTempoEdit',
-    'editTempoMap',
-    'restoreTempoMapEdit',
-    'detectTempo',
-    'insertTime',
-    'deleteTime',
-    'duplicateTimeRange',
-    'restoreTimeOperationState',
-]);
 
 function plannerInput(payload: QuantizeTransientsAction['payload']) {
     const { clipId, gridSize, strength, swing, sensitivity, minConfidence, startBeat, endBeat } = payload;
@@ -85,7 +70,7 @@ function priorActionInvalidatesPlan(action: QuantizeTransientsAction, context: H
         .slice(0, context.actionIndex)
         .some(
             (prior) =>
-                TEMPO_MAP_WRITERS.has(prior.type) ||
+                changesTempo(prior.type) ||
                 (prior.payload !== undefined && JSON.stringify(prior.payload).includes(clipReference))
         );
 }

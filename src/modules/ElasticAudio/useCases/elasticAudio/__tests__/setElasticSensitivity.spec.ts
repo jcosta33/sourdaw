@@ -4,23 +4,27 @@ import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
     execute:
         vi.fn<(action: AppAction, options?: { signal?: AbortSignal; onCommitted?: () => void }) => Promise<void>>(),
     cancel: vi.fn(),
     notify: vi.fn(),
+    kernel: { execute: undefined as undefined | typeof import('#/modules/Command/useCases').executeAppAction },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notify }));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: mocks.execute,
-    executeUserAppAction: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    mocks.kernel.execute = actual.executeAppAction;
+    return { ...actual, executeAppAction: mocks.execute, executeUserAppAction: vi.fn() };
+});
 vi.mock('../cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
@@ -33,6 +37,24 @@ let buffer: AudioBuffer;
 
 function select(clipId: string | null): void {
     clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: clipId });
+}
+
+/** Routes one detect dispatch through the real kernel, whose registered detector answers `outcome`. */
+function dispatchThroughKernel(outcome: HandlerExecutionResult, before?: () => Promise<void>): void {
+    clearHandlerRegistry();
+    registerHandlerMap({
+        detectTransients: createHandler<'detectTransients'>({
+            undoable: false,
+            describe: () => ({ label: 'Detect transients' }),
+            previewExecution: 'unsupported-external',
+            requiresAbortCompensation: false,
+            execute: () => outcome,
+        }),
+    });
+    mocks.execute.mockImplementationOnce(async (action, options) => {
+        await before?.();
+        await mocks.kernel.execute?.(action, options);
+    });
 }
 
 function makeBuffer(): AudioBuffer {
@@ -98,14 +120,18 @@ describe('setElasticSensitivity', () => {
     afterEach(async () => {
         await vi.runOnlyPendingTimersAsync();
         preferencesStore.trySet(defaultPreferences);
+        agentProjectRepairStateStore.set(null);
+        clearHandlerRegistry();
         vi.restoreAllMocks();
         vi.useRealTimers();
     });
 
     it('persists the last sensitivity for a fresh preferences store', async () => {
-        setElasticSensitivity(0.82);
+        const setting = setElasticSensitivity(0.82);
 
         expect(preferencesStore.value).toHaveProperty('elasticTransientSensitivity', 0.82);
+        vi.advanceTimersByTime(150);
+        await setting;
 
         vi.resetModules();
         const reloaded = (await import('#/modules/Preferences/stores')).preferencesStore;
@@ -127,23 +153,29 @@ describe('setElasticSensitivity', () => {
         );
     });
 
-    it('updates the canonical preference immediately', () => {
-        setElasticSensitivity(0.75);
+    it('updates the canonical preference immediately', async () => {
+        const setting = setElasticSensitivity(0.75);
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.75);
+        vi.advanceTimersByTime(150);
+        await setting;
     });
 
-    it('clamps sensitivity into [0,1]', () => {
-        setElasticSensitivity(-0.3);
+    it('clamps sensitivity into [0,1]', async () => {
+        const below = setElasticSensitivity(-0.3);
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0);
-        setElasticSensitivity(1.7);
+        const above = setElasticSensitivity(1.7);
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(1);
+        vi.advanceTimersByTime(150);
+        await Promise.all([below, above]);
     });
 
     it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
         'uses the default for nonfinite sensitivity %s',
-        (value) => {
-            setElasticSensitivity(value);
+        async (value) => {
+            const setting = setElasticSensitivity(value);
             expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.5);
+            vi.advanceTimersByTime(150);
+            await setting;
         }
     );
 
@@ -402,6 +434,68 @@ describe('setElasticSensitivity', () => {
             { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.4 } },
             expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
         );
+    });
+
+    it('warns with the refusal reason, without an error notice or log, when the project refuses detection', async () => {
+        select('clip-1');
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'revision-1',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+        dispatchThroughKernel({ status: 'no-write' });
+        const pending = setElasticSensitivity(0.8);
+        await vi.advanceTimersByTimeAsync(150);
+        await expect(pending).resolves.toBeUndefined();
+
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+            'Project repair is required before project actions can execute',
+            'warning'
+        );
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(elasticAudioStore.value?.detected).toBe(false);
+    });
+
+    it('reports a detector failure conflict as a failed detection, not as a refusal', async () => {
+        select('clip-1');
+        dispatchThroughKernel({ status: 'conflict', reason: 'Transient detection failed: analysis-timed-out' });
+        const pending = setElasticSensitivity(0.8);
+        await vi.advanceTimersByTimeAsync(150);
+        await expect(pending).resolves.toBeUndefined();
+
+        expect(logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ message: expect.stringContaining('analysis-timed-out') })
+        );
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
+    });
+
+    it('stays silent when a newer gesture aborts the in-flight run and the detector reports it cancelled', async () => {
+        select('clip-1');
+        const entered = Promise.withResolvers<void>();
+        const firstRun = Promise.withResolvers<void>();
+        dispatchThroughKernel(
+            { status: 'conflict', reason: 'Transient detection was cancelled or its source changed' },
+            async () => {
+                entered.resolve();
+                await firstRun.promise;
+            }
+        );
+        const first = setElasticSensitivity(0.8);
+        await vi.advanceTimersByTimeAsync(150);
+        await entered.promise;
+
+        const second = setElasticSensitivity(0.4);
+        firstRun.resolve();
+        await first;
+        await vi.advanceTimersByTimeAsync(150);
+        await second;
+
+        expect(mocks.notify).not.toHaveBeenCalled();
+        expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('reports unexpected detection failure and settles without a rejected fire-and-forget promise', async () => {

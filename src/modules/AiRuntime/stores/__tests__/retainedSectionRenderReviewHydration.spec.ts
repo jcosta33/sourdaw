@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type RenderProjectSectionJobSnapshot } from '#/modules/AudioRendering/events';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -11,7 +12,6 @@ import {
     parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { createAgentSagaStep } from '../../useCases/createAgentSagaStep';

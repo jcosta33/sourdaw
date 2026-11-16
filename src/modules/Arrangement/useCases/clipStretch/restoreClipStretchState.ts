@@ -1,5 +1,4 @@
-import { type ClipStretchStateSnapshot } from '#/utils/handlerContract';
-
+import { type ClipStretchStateSnapshot } from '../../events/arrangementClipAppActions';
 import { updateClip } from '../../repositories/track/updateClip';
 
 type RestoreClipStretchStateInput = {

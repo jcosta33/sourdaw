@@ -71,7 +71,7 @@ describe('setAiBackendPreference', () => {
     it('aborts in-flight generation before switching backend', () => {
         const controller = new AbortController();
         setActiveAborter(controller);
-        llmStatusStore.set({ state: 'generating' });
+        llmStatusStore.set({ state: 'generating', backend: 'webllm', modelId: 'local-model' });
 
         setAiBackendPreference('retired-local-provider');
 

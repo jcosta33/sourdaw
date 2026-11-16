@@ -4,6 +4,10 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { restoreDevice } from '../../useCases/device/restoreDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+import {
+    forgettingDiscardedPluginStates,
+    overlayDiscardedDevicePluginStates,
+} from '../track/discardedPluginStateCarry';
 
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 
@@ -32,6 +36,18 @@ function restoreDeviceGuardMatches(action: RestoreDeviceAction, context?: Handle
 
 export const handleRestoreDevice = createHandler<'restoreDevice'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedDeviceIds !== undefined,
+    // The removal this undoes recorded the plugin state a save captured after the snapshot was taken.
+    materializeCommandArguments: (action, context) => {
+        if (context?.undoEntryId === undefined) {
+            return;
+        }
+        const [deviceSnapshot] = overlayDiscardedDevicePluginStates(context.undoEntryId, [
+            action.payload.deviceSnapshot,
+        ]);
+        if (deviceSnapshot) {
+            action.payload.deviceSnapshot = deviceSnapshot;
+        }
+    },
     validate: restoreDeviceGuardMatches,
     execute: (action, context) => {
         const currentTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
@@ -65,7 +81,7 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
         }
         return {
             status: outcome.outcome,
-            afterCommit: outcome.afterCommit,
+            afterCommit: forgettingDiscardedPluginStates(context?.undoEntryId, outcome.afterCommit),
             afterAmbiguousCommit: outcome.afterAmbiguousCommit,
         };
     },

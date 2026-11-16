@@ -1,9 +1,7 @@
 import { commandSourcePublicationMatches } from '#/modules/CrdtDocument/useCases';
-import {
-    type ClipSplitActionSnapshot,
-    type ClipStateSnapshot,
-    type TakeReKeyLaneTransitionSnapshot,
-} from '#/utils/handlerContract';
+import { type ClipSplitActionSnapshot, type ClipStateSnapshot } from '#/utils/handlerContract';
+
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 
 const CLIP_SPLIT_SOURCE_KIND = 'clipSplitSource';
 

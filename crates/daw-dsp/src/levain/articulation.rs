@@ -92,8 +92,8 @@ impl ArticulationMap {
         };
 
         let mut artid_map = [0u16; 128];
-        for i in 0..128 {
-            artid_map[i] = i as u16;
+        for (i, slot) in artid_map.iter_mut().enumerate() {
+            *slot = i as u16;
         }
 
         Self {
@@ -203,6 +203,12 @@ impl ArticulationMap {
     }
 }
 
+impl Default for ArticulationMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Articulation state machine
 // ---------------------------------------------------------------------------
@@ -289,5 +295,11 @@ impl ArticulationState {
     pub fn set_articulation_id(&mut self, artid: u8) {
         self.current = self.map.map_artid(artid);
         self.explicit = true;
+    }
+}
+
+impl Default for ArticulationState {
+    fn default() -> Self {
+        Self::new()
     }
 }

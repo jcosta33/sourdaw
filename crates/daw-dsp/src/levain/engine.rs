@@ -24,7 +24,7 @@ use super::realism::RealismEngine;
 use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::tone::ToneTilt;
 use super::types::*;
-use super::voice::{NoteZones, VoicePool};
+use super::voice::{NoteOnEvent, NoteZones, VoicePool};
 use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError, ZoneTableStaging};
 use super::LEVAIN_SAMPLE_CHUNK_FLOATS;
 use crate::params::{ATTACK, MASTER_GAIN, RELEASE, TONE};
@@ -179,7 +179,7 @@ impl RetiredBank {
         match self.draining.as_mut() {
             // release_entries normalizes zero to one, so an exhausted budget
             // only observes the pool; it must not ask it to release anything.
-            Some(pool) if remaining == 0 => pool.len() == 0,
+            Some(pool) if remaining == 0 => pool.is_empty(),
             Some(pool) => pool.release_entries(remaining) == 0,
             None => true,
         }
@@ -497,7 +497,7 @@ impl LevainEngine {
         let Some(pending) = self.pending_sample_bank.as_mut() else {
             return false;
         };
-        if pending.sample_pool.len() > 0 || pending.open_sample.is_some() {
+        if !pending.sample_pool.is_empty() || pending.open_sample.is_some() {
             return false;
         }
         pending.sample_pool = shared;
@@ -511,7 +511,7 @@ impl LevainEngine {
             .pending_sample_bank
             .as_ref()
             .map_or(&self.sample_pool, |pending| &pending.sample_pool);
-        if bank_key.is_empty() || sample_pool.len() == 0 {
+        if bank_key.is_empty() || sample_pool.is_empty() {
             return false;
         }
         SHARED_SAMPLE_BANKS.with(|banks| {
@@ -537,7 +537,7 @@ impl LevainEngine {
         let Some(mut pending) = self.pending_sample_bank.take() else {
             return false;
         };
-        if !pending.built || pending.sample_pool.len() == 0 || pending.open_sample.is_some() {
+        if !pending.built || pending.sample_pool.is_empty() || pending.open_sample.is_some() {
             self.pending_sample_bank = Some(pending);
             return false;
         }
@@ -579,7 +579,7 @@ impl LevainEngine {
     /// here, or when the sounding pool holds no PCM, so there is nothing to
     /// retire.
     pub fn retire_sample_bank(&mut self) -> bool {
-        if self.retired_bank.is_some() || self.sample_pool.len() == 0 {
+        if self.retired_bank.is_some() || self.sample_pool.is_empty() {
             return false;
         }
         for voice in &mut self.voice_pool.voices {
@@ -587,10 +587,9 @@ impl LevainEngine {
             voice.cancel_pending_attack();
         }
         self.auto_divisi.clear();
-        let zone_map = std::mem::replace(&mut self.zone_map, ZoneMap::new());
+        let zone_map = std::mem::take(&mut self.zone_map);
         let sample_pool = std::mem::replace(&mut self.sample_pool, Arc::new(SamplePool::new()));
-        let legato_transitions =
-            std::mem::replace(&mut self.legato.transitions, LegatoTransitionStore::new());
+        let legato_transitions = std::mem::take(&mut self.legato.transitions);
         self.retired_bank = Some(RetiredBank::from_live(
             zone_map,
             sample_pool,
@@ -837,7 +836,7 @@ impl LevainEngine {
                 .voices
                 .iter()
                 .any(|voice| voice.active && voice.held);
-            if let Some(suggested) = self.auto_articulation.suggest(0.0, has_overlap) {
+            if let Some(suggested) = self.auto_articulation.suggest(has_overlap) {
                 articulation = suggested as ArticulationId;
             }
         }
@@ -945,9 +944,7 @@ impl LevainEngine {
             LegatoResult::Normal => {
                 let voice = &mut self.voice_pool.voices[voice_idx];
                 voice.trigger(
-                    note,
-                    channel,
-                    velocity,
+                    NoteOnEvent::new(note, channel, velocity),
                     &zones,
                     art,
                     gain,
@@ -978,9 +975,7 @@ impl LevainEngine {
                 self.voice_pool.voices[from_voice].release();
                 let voice = &mut self.voice_pool.voices[voice_idx];
                 voice.trigger(
-                    note,
-                    channel,
-                    velocity,
+                    NoteOnEvent::new(note, channel, velocity),
                     &zones,
                     art,
                     gain,
@@ -1547,9 +1542,7 @@ impl LevainEngine {
         let voice_idx = self.voice_pool.allocate();
         let voice = &mut self.voice_pool.voices[voice_idx];
         voice.trigger(
-            note,
-            0,
-            velocity,
+            NoteOnEvent::new(note, 0, velocity),
             &zones,
             articulation,
             release_vol,
@@ -1858,7 +1851,9 @@ mod tests {
 
     fn window_peaks(samples: &[f32]) -> Vec<f32> {
         samples
-            .chunks_exact(ENVELOPE_WINDOW)
+            .as_chunks::<ENVELOPE_WINDOW>()
+            .0
+            .iter()
             .map(|window| {
                 window
                     .iter()

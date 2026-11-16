@@ -548,18 +548,22 @@ async function coordinateReviewPublication(
             await dependencies.serializeMutation(
                 primaryRoot,
                 number,
-                async (boundary) =>
-                    dependencies.publish(
-                        number,
-                        prepared,
-                        dependencies.reviewPort(
-                            auth.session,
-                            primaryRoot,
-                            boundary.markRemoteMutationAttempt,
-                            boundary.markDefinitiveNoMutationHttpStatus
-                        ),
-                        boundary
-                    ),
+                (boundary) =>
+                    new Promise((resolve) => {
+                        resolve(
+                            dependencies.publish(
+                                number,
+                                prepared,
+                                dependencies.reviewPort(
+                                    auth.session,
+                                    primaryRoot,
+                                    boundary.markRemoteMutationAttempt,
+                                    boundary.markDefinitiveNoMutationHttpStatus
+                                ),
+                                boundary
+                            )
+                        );
+                    }),
                 {
                     reviewPublication: {
                         expectedHead: prepared.head,

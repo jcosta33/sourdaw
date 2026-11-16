@@ -430,7 +430,10 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     registerFaustDSP: vi.fn(),
     restorePluginState: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
+    settleProjectSwitchPluginTeardown: vi.fn(),
     unloadPlugin: vi.fn(),
+    unloadPluginCarryingLiveState: vi.fn(),
+    unloadPluginsBeforeProjectSwitch: vi.fn(() => Promise.resolve()),
     watchPluginStateDirty: vi.fn(),
 }));
 /**
@@ -629,7 +632,7 @@ function undoLabels(): string[] {
 }
 
 function strip(): HTMLElement {
-    return screen.getByRole('group', { name: 'Lead Vocal channel' });
+    return screen.getByRole('row', { name: 'Lead Vocal channel' });
 }
 
 function openStripMenu(): void {
@@ -778,7 +781,7 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         await vi.waitFor(() => {
             expect(trackIds()).toEqual([OTHER_TRACK_ID]);
         });
-        expect(screen.queryByRole('group', { name: 'Lead Vocal channel' })).toBeNull();
+        expect(screen.queryByRole('row', { name: 'Lead Vocal channel' })).toBeNull();
 
         await undo();
 
@@ -793,7 +796,7 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         // #1550: the strip has to *draw* the restored track, not merely have it
         // in the store. The device button is rendered from `track.devices`.
         await vi.waitFor(() => {
-            expect(screen.getByRole('group', { name: 'Lead Vocal channel' })).toBeTruthy();
+            expect(screen.getByRole('row', { name: 'Lead Vocal channel' })).toBeTruthy();
         });
         expect(screen.getByLabelText(`Remove ${DEVICE_NAME}`)).toBeTruthy();
     });

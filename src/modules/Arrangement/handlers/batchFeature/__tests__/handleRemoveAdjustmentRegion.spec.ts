@@ -147,8 +147,8 @@ describe('handleRemoveAdjustmentRegion', () => {
         trackState = { tracks: [{ id: 'track-bass', frozen: false }] };
     });
 
-    it('forwards both ids', () => {
-        handleRemoveAdjustmentRegion.execute({
+    it('forwards both ids', async () => {
+        await handleRemoveAdjustmentRegion.execute({
             type: 'removeAdjustmentRegion',
             payload: { layerId: 'L', regionId: 'R' },
         });

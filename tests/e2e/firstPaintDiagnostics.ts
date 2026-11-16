@@ -1,28 +1,12 @@
 import type { Page } from '@playwright/test';
 
-/**
- * Boot-progress evidence for the launch screen's first-paint wait (#4781). The
- * offline smoke leg failed on a head where the page logged `[vite] connected.`
- * and then nothing for the whole first-paint allowance, and the job kept no
- * trace, so the page state at timeout was unrecoverable. The console stream is
- * the one artifact every run already keeps in its log, so this module records
- * it per page from navigation start and turns it into a boot-phase diagnosis
- * when the wait times out: which boot milestones the page reached, when, and
- * which one it stalled at.
- *
- * The milestones are the app's own boot order, observed in every healthy run:
- * the Vite client connects, React mounts (the devtools banner), the bootstrap
- * WASM instantiates (`initSync`), and bootstrap logs `[capabilities]`
- * (src/app/bootstrap.ts) before the workspace shell mounts the launch overlay.
- */
-
-/** Vite client finished handshaking with the dev server. */
+/** Console observations associated with launch-screen first-paint waits. */
 export const VITE_CONNECTED_MARKER = '[vite] connected.';
-/** react-dom's development banner: the first React render happened. */
-export const REACT_FIRST_RENDER_MARKER = 'Download the React DevTools';
-/** A WASM glue module instantiated: bootstrap's module graph is executing. */
-export const WASM_BOOTED_MARKER = 'initSync(';
-/** bootstrap's boot-time probe: the launch path's boot work is done. */
+/** React DOM's development banner is emitted when its module is evaluated. */
+export const REACT_DOM_EVALUATED_MARKER = 'Download the React DevTools';
+/** A WASM glue module emitted its initSync warning. */
+export const INIT_SYNC_WARNING_MARKER = 'initSync(';
+/** The capability probe logged during bootstrap. */
 export const CAPABILITIES_MARKER = '[capabilities]';
 
 export type FirstPaintConsoleEvent = {
@@ -60,8 +44,8 @@ export function attach_first_paint_console(page: Page): FirstPaintTimeline {
 
 export type FirstPaintBootProgress = {
     viteConnectedAtMs: number | null;
-    reactFirstRenderAtMs: number | null;
-    wasmBootedAtMs: number | null;
+    reactDomEvaluatedAtMs: number | null;
+    initSyncWarningAtMs: number | null;
     capabilitiesLoggedAtMs: number | null;
 };
 
@@ -74,34 +58,10 @@ function firstMarkerAtMs(timeline: FirstPaintTimeline, marker: string): number |
 export function first_paint_boot_progress(timeline: FirstPaintTimeline): FirstPaintBootProgress {
     return {
         viteConnectedAtMs: firstMarkerAtMs(timeline, VITE_CONNECTED_MARKER),
-        reactFirstRenderAtMs: firstMarkerAtMs(timeline, REACT_FIRST_RENDER_MARKER),
-        wasmBootedAtMs: firstMarkerAtMs(timeline, WASM_BOOTED_MARKER),
+        reactDomEvaluatedAtMs: firstMarkerAtMs(timeline, REACT_DOM_EVALUATED_MARKER),
+        initSyncWarningAtMs: firstMarkerAtMs(timeline, INIT_SYNC_WARNING_MARKER),
         capabilitiesLoggedAtMs: firstMarkerAtMs(timeline, CAPABILITIES_MARKER),
     };
-}
-
-/** The boot stage each milestone hands over to, indexed after the milestone. */
-const NEXT_STAGES = [
-    'the dev-server handshake',
-    'the app module graph',
-    'the WASM bootstrap',
-    'the [capabilities] log',
-];
-const OVERLAY_MOUNT_STAGE = 'the launch overlay mount';
-
-function stalledStageLabel(progress: FirstPaintBootProgress): string {
-    const reached = [
-        progress.viteConnectedAtMs,
-        progress.reactFirstRenderAtMs,
-        progress.wasmBootedAtMs,
-        progress.capabilitiesLoggedAtMs,
-    ];
-    for (let index = reached.length - 1; index >= 0; index -= 1) {
-        if (reached[index] !== null) {
-            return NEXT_STAGES[index + 1] ?? OVERLAY_MOUNT_STAGE;
-        }
-    }
-    return NEXT_STAGES[0] ?? OVERLAY_MOUNT_STAGE;
 }
 
 const CONSOLE_TAIL_LENGTH = 8;
@@ -114,9 +74,9 @@ function formatBootStages(timeline: FirstPaintTimeline): string {
     const progress = first_paint_boot_progress(timeline);
     return [
         `Vite client connected ${formatSeconds(progress.viteConnectedAtMs)}`,
-        `React first render ${formatSeconds(progress.reactFirstRenderAtMs)}`,
-        `WASM booted ${formatSeconds(progress.wasmBootedAtMs)}`,
-        `[capabilities] (bootstrap complete) ${formatSeconds(progress.capabilitiesLoggedAtMs)}`,
+        `React DOM module evaluated ${formatSeconds(progress.reactDomEvaluatedAtMs)}`,
+        `initSync warning ${formatSeconds(progress.initSyncWarningAtMs)}`,
+        `[capabilities] logged ${formatSeconds(progress.capabilitiesLoggedAtMs)}`,
     ].join('; ');
 }
 
@@ -155,10 +115,8 @@ export type FirstPaintTimeoutDiagnosisInput = {
 };
 
 /**
- * The message a timed-out first-paint wait fails with. It carries the boot
- * phases the page reached and the console tail, so the CI log alone answers
- * "what was the page doing" — the evidence run 36202813096 could not provide
- * because the job uploads no trace artifact.
+ * The message a timed-out first-paint wait fails with. It carries the
+ * observed console markers and the console tail without inferring a stalled phase.
  */
 export function format_first_paint_timeout_diagnosis({
     timeline,
@@ -166,12 +124,9 @@ export function format_first_paint_timeout_diagnosis({
     waitedMs,
     underlyingMessage,
 }: FirstPaintTimeoutDiagnosisInput): string {
-    const progress = first_paint_boot_progress(timeline);
-
     return [
         `The launch screen did not mount within ${timeoutMs}ms (the wait consumed ${Math.round(waitedMs)}ms).`,
         `Boot progress from the page console since navigation: ${formatBootStages(timeline)}.`,
-        `The wait most likely measured ${stalledStageLabel(progress)} rather than a warm launch-screen mount.`,
         formatConsoleTail(timeline),
         `Underlying Playwright error: ${underlyingMessage}`,
     ].join('\n');
@@ -206,7 +161,7 @@ async function wait_for_console_marker_from(
         const remainingMs = deadline - performance.now();
         if (remainingMs <= 0) {
             throw new Error(
-                `The page never logged "${marker}" within ${timeoutMs}ms — the launch path's boot did not complete, so the run refuses to hand a cold server to the timed first-paint waits.`
+                `The page never logged "${marker}" within ${timeoutMs}ms — the expected marker was absent, so the run refuses to hand a cold server to the timed first-paint waits.`
             );
         }
         await new Promise((resolve) => setTimeout(resolve, Math.min(remainingMs, 100)));

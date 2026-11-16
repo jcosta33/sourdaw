@@ -19,7 +19,6 @@ import {
     authenticateOrchestratorSession,
     authenticatePublishingAuthor,
     isAuthorBotNodeId,
-    gitAuthenticatedArgs,
     githubAuthorizationGitEnv,
     originMainBlob,
     parseJson,
@@ -27,9 +26,11 @@ import {
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
+    tokenFreeGitEnv,
     type GhSession,
     type PublishingAuthorAuthorization,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import {
     assertConventionalSubject,
     assertIssueNumber,
@@ -86,6 +87,7 @@ import {
     writeLaneStack,
 } from './stackedLanes.ts';
 import { assertObservableTestInstructions } from './testInstructions.ts';
+import { withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 export { canonicalPath, containsPath };
 
@@ -241,6 +243,8 @@ export function ensureModelLabelArgs(model: string): string[] {
         'label',
         'create',
         modelLabelName(model),
+        '--repo',
+        REQUIRED_REPOSITORY,
         '--color',
         MODEL_LABEL_COLOR,
         '--description',
@@ -493,7 +497,7 @@ export function derivedProjectFromSubject(subject: string): string | undefined {
  * rides along because it is what the authorship fence reads.
  */
 export function labelListArgs(): string[] {
-    return ['label', 'list', '--limit', '200', '--json', 'name,description'];
+    return ['label', 'list', '--repo', REQUIRED_REPOSITORY, '--limit', '200', '--json', 'name,description'];
 }
 
 export function labelRowsFromListing(rows: unknown): LabelRow[] {
@@ -2199,11 +2203,11 @@ export function shellPort(
     if (repositoryOwner === undefined) {
         fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
     }
-    const git = (args: string[], directory: string) =>
-        spawnCapture(executables.git, gitAuthenticatedArgs(token, session.configDir, args), {
-            cwd: directory,
-            env: session.env,
-        });
+    const repositoryGit = (directory: string): GitRunner => ({
+        capture: (args) => spawnCapture(executables.git, args, { cwd: directory, env: session.env }),
+        run: (args) => spawnRun(executables.git, args, { cwd: directory, env: session.env }),
+    });
+    const credential = { token, helperDir: session.configDir };
     const gh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
     const ghRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
     const operatorEnv = () => {
@@ -2216,15 +2220,9 @@ export function shellPort(
     const operatorGhRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
     return {
         baseSha: () => {
-            spawnRun(
-                executables.git,
-                gitAuthenticatedArgs(token, session.configDir, [
-                    'fetch',
-                    GITHUB_HTTPS_REMOTE,
-                    '+refs/heads/main:refs/remotes/origin/main',
-                ]),
-                { cwd: primaryRoot, env: session.env }
-            );
+            withIsolatedGitTransport(repositoryGit(primaryRoot), credential, (transport) => {
+                transport.run(['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main']);
+            });
             return spawnCapture(executables.git, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
                 cwd: primaryRoot,
                 env: session.env,
@@ -2238,18 +2236,7 @@ export function shellPort(
                 })
             ),
         cwd: () => cwd,
-        issueExists: (issue) => {
-            const result = spawnSync(executables.gh, issueLookupArgs(issue), {
-                cwd: primaryRoot,
-                env: session.env,
-                encoding: 'utf8',
-                shell: false,
-            });
-            if (result.error !== undefined) {
-                throw result.error;
-            }
-            return issueExistsFromLookup(issue, result);
-        },
+        issueExists: (issue) => lookupIssueExists(executables.gh, issue, primaryRoot, session.env),
         aheadBehind: (lane, baseSha, headSha) => {
             const output = spawnCapture(
                 executables.git,
@@ -2289,7 +2276,9 @@ export function shellPort(
             ),
         headSha: (lane) => spawnCapture(executables.git, ['rev-parse', 'HEAD'], { cwd: lane, env: session.env }),
         remoteBranchSha: (branch) => {
-            const output = git(['ls-remote', '--heads', GITHUB_HTTPS_REMOTE], primaryRoot);
+            const output = withIsolatedGitTransport(repositoryGit(primaryRoot), credential, (transport) =>
+                transport.capture(['ls-remote', '--heads', GITHUB_HTTPS_REMOTE])
+            );
             if (output === '') {
                 return { kind: 'unreadable' };
             }
@@ -2302,11 +2291,9 @@ export function shellPort(
             const disabledHooksPath = join(session.configDir, 'disabled-hooks');
             mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
             const pushArgs = ['-c', `core.hooksPath=${disabledHooksPath}`, 'push', '--no-verify', GITHUB_HTTPS_REMOTE];
-            spawnRun(
-                executables.git,
-                gitAuthenticatedArgs(token, session.configDir, [...pushArgs, `${headSha}:refs/heads/${branch}`]),
-                { cwd: lane, env: session.env }
-            );
+            withIsolatedGitTransport(repositoryGit(lane), credential, (transport) => {
+                transport.run([...pushArgs, `${headSha}:refs/heads/${branch}`]);
+            });
         },
         existingOpenPullRequest: (branch) => {
             const rows = parseJson<OpenPullRequestRow[]>(
@@ -2356,7 +2343,7 @@ export function shellPort(
         reportDiff: (lane, base, head) => {
             const result = spawnSync(executables.git, ['diff', '--numstat', '-z', `${base}...${head}`], {
                 cwd: lane,
-                env: session.env,
+                env: tokenFreeGitEnv(session.env),
             });
             if (result.error !== undefined) {
                 throw result.error;
@@ -2398,7 +2385,7 @@ export function shellPort(
         conflictingPaths: (lane, base, head) => {
             const result = spawnSync(executables.git, ['merge-tree', '--write-tree', '--name-only', base, head], {
                 cwd: lane,
-                env: session.env,
+                env: tokenFreeGitEnv(session.env),
                 encoding: 'utf8',
             });
             // Exit 1 is `merge-tree` reporting conflicts, and only that status writes the path
@@ -2501,7 +2488,7 @@ export function isAncestorCommit(
 ): boolean {
     const result = spawnSync(gitCommand, ['merge-base', '--is-ancestor', ancestorSha, descendantSha], {
         cwd: lane,
-        env,
+        env: tokenFreeGitEnv(env ?? process.env),
         encoding: 'utf8',
         shell: false,
     });
@@ -2527,6 +2514,18 @@ type IssueLookup = { number?: number; isPullRequest?: boolean };
 
 export function issueLookupArgs(issue: number): string[] {
     return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', ISSUE_LOOKUP_JQ];
+}
+
+/** Asks GitHub whether the issue exists; a missing issue is an answer, any other failure throws. */
+function lookupIssueExists(gh: string, issue: number, cwd: string, env: NodeJS.ProcessEnv): boolean {
+    const args = issueLookupArgs(issue);
+    const result = withGhChildLocation(gh, args, cwd, env, (location) =>
+        spawnSync(gh, args, { cwd: location.cwd, env: location.env, encoding: 'utf8', shell: false })
+    );
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return issueExistsFromLookup(issue, result);
 }
 
 export function issueExistsFromLookup(

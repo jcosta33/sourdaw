@@ -71,7 +71,7 @@ export type ReviewShadowStatusCoordinatorDependencies = {
     primaryRoot: () => string;
     authenticateReviewer: (primaryRoot: string) => Promise<ReviewShadowStatusAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
-    port: (session: GhSession, primaryRoot: string) => ReviewShadowStatusPort;
+    port: (session: GhSession, primaryRoot: string, repository: string) => ReviewShadowStatusPort;
     emit: (number: number, head: string, port: ReviewShadowStatusPort) => string;
 };
 
@@ -362,9 +362,12 @@ function readPullRequestNode(data: Record<string, unknown>, label: string): Reco
 
 type RepositoryFields = { repository: string; arguments: string[] };
 
-/** The repository is fixed for the run, so its owner and name are resolved once per port. */
-function repositoryFields(gh: Gh): RepositoryFields {
-    const nameWithOwner = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+/**
+ * The owner and name come from the one repository name the coordinator read and asserted. Reading
+ * the checkout query again would let a lane rewrite `remote.<name>.gh-resolved` between the two
+ * reads and move every later call to a repository it chose.
+ */
+function repositoryFields(nameWithOwner: string): RepositoryFields {
     const [owner, name] = nameWithOwner.split('/');
     if (owner === undefined || name === undefined || owner === '' || name === '') {
         fail(`repository name ${nameWithOwner} is not owner/name`);
@@ -593,15 +596,16 @@ export async function authenticateShadowReviewer(
 
 export function shellPort(
     session: GhSession,
-    cwd: string = process.cwd(),
-    capture: typeof spawnCapture = spawnCapture
+    cwd: string,
+    capture: typeof spawnCapture,
+    nameWithOwner: string
 ): ReviewShadowStatusPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
     const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
-    const { repository, arguments: fields } = repositoryFields(gh);
+    const { repository, arguments: fields } = repositoryFields(nameWithOwner);
     return {
         pullRequestHead: (pr) => readPullRequestHead(pr, gh, fields),
         reviewerReviews: (pr) => readReviewerReviews(pr, gh, fields),
@@ -622,7 +626,7 @@ export function defaultReviewShadowStatusCoordinatorDependencies(): ReviewShadow
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        port: (session, primaryRoot) => shellPort(session, primaryRoot, spawnCapture),
+        port: (session, primaryRoot, repository) => shellPort(session, primaryRoot, spawnCapture, repository),
         emit: emitReviewShadowStatus,
     };
 }
@@ -638,8 +642,9 @@ export async function coordinateReviewShadowStatus(
         if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
         }
-        assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-        return dependencies.emit(number, head, dependencies.port(auth.session, primaryRoot));
+        const repository = dependencies.repositoryName(auth.session, primaryRoot);
+        assertRequiredRepository(repository);
+        return dependencies.emit(number, head, dependencies.port(auth.session, primaryRoot, repository));
     } finally {
         auth.session.dispose();
     }

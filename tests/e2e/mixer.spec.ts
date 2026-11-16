@@ -26,7 +26,7 @@ test.describe('Mixer & Routing', () => {
 
     test('Can toggle mute and solo on a channel strip', async ({ page }) => {
         // Find the channel strip for the audio track
-        const channelStrip = page.getByRole('group', { name: /Audio 1 channel/i });
+        const channelStrip = page.getByRole('row', { name: /Audio 1 channel/i });
         await expect(channelStrip).toBeVisible();
 
         // Find and click the Mute button
@@ -49,7 +49,7 @@ test.describe('Mixer & Routing', () => {
     });
 
     test('Can open the output routing menu', async ({ page }) => {
-        const channelStrip = page.getByRole('group', { name: /Audio 1 channel/i });
+        const channelStrip = page.getByRole('row', { name: /Audio 1 channel/i });
         await expect(channelStrip).toBeVisible();
 
         // The IO section has a button for Output routing. It displays 'Master' by default.

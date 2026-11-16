@@ -99,7 +99,9 @@ const FALLBACK_CONTENT_SCALE: f64 = 1.0;
 /// # Safety
 /// `pointer` is null, or a live interface of the named type.
 pub(crate) unsafe fn com_identity<I: vst3::Interface>(pointer: *mut I) -> Option<*mut FUnknown> {
-    ComRef::from_raw(pointer)?
+    // SAFETY: by this fn's contract `pointer` is null, which `from_raw` maps to
+    // `None`, or a live `I` for the duration of the borrow.
+    unsafe { ComRef::from_raw(pointer) }?
         .cast::<FUnknown>()
         .map(|identity| identity.as_ptr())
 }
@@ -508,7 +510,10 @@ impl IPlugFrameTrait for HostEditorFrame {
         if new_size.is_null() {
             return kInvalidArgument;
         }
-        let Some(requested) = EditorSize::from_rect(&*new_size) else {
+        // SAFETY: `new_size` is non-null (checked above) and, per the
+        // `IPlugFrame::resizeView` contract, points at the plugin's live rect
+        // for the duration of this call.
+        let Some(requested) = EditorSize::from_rect(unsafe { &*new_size }) else {
             return kInvalidArgument;
         };
 
@@ -531,7 +536,10 @@ impl IPlugFrameTrait for HostEditorFrame {
         // that gives up waiting for the guard releases its own reference while
         // `onSize` may still be running through this one, so the wait is a bound
         // on how long a close takes rather than on whether the view is alive.
-        let Some(view) = ComRef::from_raw(view).map(|borrowed| borrowed.to_com_ptr()) else {
+        // SAFETY: `owns` just confirmed `view` is non-null and the view this
+        // frame adopted, which the plugin keeps alive across its own call.
+        let Some(view) = unsafe { ComRef::from_raw(view) }.map(|borrowed| borrowed.to_com_ptr())
+        else {
             self.state.end_resize();
             return kInvalidArgument;
         };
@@ -543,7 +551,9 @@ impl IPlugFrameTrait for HostEditorFrame {
 
         // The plugin's own rect, origin included: `onSize` is told the rectangle
         // the view asked for, not a copy of its extent moved to the origin.
-        let accepted = view.onSize(new_size) == kResultOk;
+        // SAFETY: `view` is retained by the `ComPtr` above for this handshake,
+        // and `new_size` is the plugin's non-null rect, live for this call.
+        let accepted = unsafe { view.onSize(new_size) } == kResultOk;
         if !accepted {
             self.state.restore_granted(previous);
         }
@@ -564,11 +574,15 @@ impl IRunLoopTrait for HostEditorFrame {
         handler: *mut IEventHandler,
         fd: FileDescriptor,
     ) -> tresult {
-        self.state.run_loop.register_event_handler(handler, fd)
+        // SAFETY: `handler` is this `registerEventHandler` call's own argument,
+        // which is exactly the contract the run loop method states.
+        unsafe { self.state.run_loop.register_event_handler(handler, fd) }
     }
 
     unsafe fn unregisterEventHandler(&self, handler: *mut IEventHandler) -> tresult {
-        self.state.run_loop.unregister_event_handler(handler)
+        // SAFETY: `handler` is this `unregisterEventHandler` call's own argument,
+        // which is exactly the contract the run loop method states.
+        unsafe { self.state.run_loop.unregister_event_handler(handler) }
     }
 
     unsafe fn registerTimer(
@@ -576,11 +590,15 @@ impl IRunLoopTrait for HostEditorFrame {
         handler: *mut ITimerHandler,
         milliseconds: TimerInterval,
     ) -> tresult {
-        self.state.run_loop.register_timer(handler, milliseconds)
+        // SAFETY: `handler` is this `registerTimer` call's own argument, which
+        // is exactly the contract the run loop method states.
+        unsafe { self.state.run_loop.register_timer(handler, milliseconds) }
     }
 
     unsafe fn unregisterTimer(&self, handler: *mut ITimerHandler) -> tresult {
-        self.state.run_loop.unregister_timer(handler)
+        // SAFETY: `handler` is this `unregisterTimer` call's own argument, which
+        // is exactly the contract the run loop method states.
+        unsafe { self.state.run_loop.unregister_timer(handler) }
     }
 }
 
@@ -665,9 +683,6 @@ impl Vst3Editor {
             .map(|borrowed| borrowed.as_ptr())
             .ok_or_else(|| format!("[VST3] '{plugin_name}': the host frame is unavailable"))?;
 
-        // SAFETY: the frame outlives the view — it is released after it in this
-        // type's field order — and `parent` is live for the editor's whole life.
-        //
         // Before `attached`, always: a view laying itself out against its new
         // parent may resize immediately, and with no frame that request has
         // nowhere to go.
@@ -675,6 +690,9 @@ impl Vst3Editor {
         // drop does: a plugin that holds the frame past the failure would
         // otherwise pass the ownership test against a view this function is
         // about to release.
+        //
+        // SAFETY: the frame outlives the view — it is released after it in this
+        // type's field order — and `parent` is live for the editor's whole life.
         if unsafe { view.setFrame(frame_pointer) } != kResultOk {
             state.disown();
             return Err(format!(
@@ -685,6 +703,9 @@ impl Vst3Editor {
         // Every failure past this point has to take the frame back off the view
         // before releasing it: a view left holding a pointer to a host object
         // whose last reference is about to drop can call into freed memory.
+        // SAFETY: `view` is live, has just accepted its frame and is not yet
+        // attached; `parent` is the caller's live native handle (this fn's
+        // contract), which is everything `attach` requires.
         if let Err(error) = unsafe { attach(&view, &state, parent, view_type, plugin_name) } {
             state.disown();
             // SAFETY: the view is live and, on every path here, not attached.
@@ -745,16 +766,16 @@ impl Vst3Editor {
         self.state
             .set_view_units_per_logical(view_units_per_logical_unit(scale_factor));
 
-        // SAFETY: control path only; the view is live. Unlike the open path's
-        // application this one runs against an attached view, which is the case
-        // the interface exists for — a host tells an editor its scale changed.
-        let stated = unsafe {
-            if platform_states_content_scale() {
-                apply_content_scale(&self.view, self.state.view_units_per_logical() as f32);
-            }
-            read_view_size(&self.view)
+        if platform_states_content_scale() {
+            // SAFETY: control path only; `self.view` is retained for this
+            // editor's life. Unlike the open path's application this one runs
+            // against an attached view, which is the case the interface exists for.
+            unsafe { apply_content_scale(&self.view, self.state.view_units_per_logical() as f32) };
         }
-        .ok_or_else(|| "[VST3] this editor states no size to re-scale".to_string())?;
+        // SAFETY: control path only; `self.view` is retained for this editor's
+        // life, which is all `read_view_size` requires.
+        let stated = unsafe { read_view_size(&self.view) }
+            .ok_or_else(|| "[VST3] this editor states no size to re-scale".to_string())?;
 
         let logical = self.state.to_logical(stated);
         if !self.can_resize() {
@@ -774,19 +795,20 @@ impl Vst3Editor {
     /// forcing a size past either one is how an editor ends up drawing outside
     /// its window.
     pub fn request_size(&self, requested: EditorSize) -> Result<EditorSize, String> {
-        // SAFETY: control path only; the view is attached and live.
-        unsafe {
-            if self.view.canResize() != kResultTrue {
-                return Err("[VST3] this editor is a fixed size".to_string());
-            }
-
-            if !self.state.begin_resize() {
-                return Err("[VST3] a resize handshake is already running".to_string());
-            }
-            let granted = self.negotiate_size(requested);
-            self.state.end_resize();
-            granted
+        // SAFETY: control path only; `self.view` is retained for this editor's
+        // life and attached from `open` until `Drop`.
+        if unsafe { self.view.canResize() } != kResultTrue {
+            return Err("[VST3] this editor is a fixed size".to_string());
         }
+
+        if !self.state.begin_resize() {
+            return Err("[VST3] a resize handshake is already running".to_string());
+        }
+        // SAFETY: the resize guard was just taken, this is the control path, and
+        // the view is attached from `open` until `Drop` — `negotiate_size`'s contract.
+        let granted = unsafe { self.negotiate_size(requested) };
+        self.state.end_resize();
+        granted
     }
 
     /// Ask the view for a size, resize the window to what it allowed, and only
@@ -799,7 +821,9 @@ impl Vst3Editor {
     /// attached.
     unsafe fn negotiate_size(&self, requested: EditorSize) -> Result<EditorSize, String> {
         let mut rect = self.state.to_view_units(requested).to_rect();
-        if self.view.checkSizeConstraint(&mut rect) != kResultTrue {
+        // SAFETY: the view is attached and live (this fn's contract), and
+        // `rect` is a local the plugin may rewrite for the call's duration.
+        if unsafe { self.view.checkSizeConstraint(&mut rect) } != kResultTrue {
             return Err("[VST3] this editor refused the requested size".to_string());
         }
         let constrained = EditorSize::from_rect(&rect)
@@ -808,7 +832,9 @@ impl Vst3Editor {
 
         let previous = self.state.granted();
         self.state.resize_host_window(granted);
-        if self.view.onSize(&mut rect) != kResultOk {
+        // SAFETY: the view is attached and live with the resize guard held (this
+        // fn's contract); `rect` is a live local.
+        if unsafe { self.view.onSize(&mut rect) } != kResultOk {
             self.state.restore_granted(previous);
             return Err("[VST3] this editor refused to move to the constrained size".to_string());
         }
@@ -848,11 +874,12 @@ impl Drop for Vst3Editor {
         self.state.disown();
         let guarded = self.state.acquire_resize_guard_for_teardown();
 
-        // SAFETY: the view is attached and live until these two calls.
-        unsafe {
-            self.view.removed();
-            self.view.setFrame(ptr::null_mut());
-        }
+        // SAFETY: `self.view` is retained until this value's fields drop, and
+        // was attached by `open`; this is its one detach.
+        unsafe { self.view.removed() };
+        // SAFETY: the view is still retained; null is the VST3 way to clear the
+        // frame, so the plugin cannot call back into it after this.
+        unsafe { self.view.setFrame(ptr::null_mut()) };
 
         if guarded {
             self.state.end_resize();
@@ -890,19 +917,23 @@ unsafe fn attach(
     plugin_name: &str,
 ) -> Result<(), String> {
     if platform_states_content_scale() {
-        apply_content_scale(view, state.view_units_per_logical() as f32);
+        // SAFETY: the view is live by this fn's contract.
+        unsafe { apply_content_scale(view, state.view_units_per_logical() as f32) };
     }
 
     // A view that states no size yet is not a refusal: plugins exist that only
     // know their size once they can see a parent, so the pre-attach window
     // resize is skipped and the question asked again below.
-    let preferred = read_view_size(view).map(|size| state.to_logical(size));
+    // SAFETY: the view is live by this fn's contract.
+    let preferred = unsafe { read_view_size(view) }.map(|size| state.to_logical(size));
     if let Some(preferred) = preferred {
         state.record_granted(preferred);
         state.resize_host_window(preferred);
     }
 
-    if view.attached(parent, view_type) != kResultOk {
+    // SAFETY: the view is live, framed and not yet attached, and `parent` is a
+    // live native handle of `view_type`'s kind — this fn's contract.
+    if unsafe { view.attached(parent, view_type) } != kResultOk {
         return Err(format!(
             "[VST3] '{plugin_name}' refused to attach its editor to the host window"
         ));
@@ -910,11 +941,14 @@ unsafe fn attach(
 
     // A plugin may settle on a different size once it can see its parent, and the
     // window the host is about to show has to match.
-    let settled = read_view_size(view).map(|size| state.to_logical(size));
+    // SAFETY: the view is live by this fn's contract.
+    let settled = unsafe { read_view_size(view) }.map(|size| state.to_logical(size));
     let Some(size) = settled.or(preferred) else {
         // The view is attached now, so the caller's `setFrame(null)` is no
         // longer enough on its own: the detach it owes has to run first.
-        view.removed();
+        // SAFETY: the view is live and was attached just above; this is its
+        // one detach.
+        unsafe { view.removed() };
         return Err(format!(
             "[VST3] '{plugin_name}' would not state a size for its editor"
         ));
@@ -925,8 +959,10 @@ unsafe fn attach(
 
 fn create_editor_view(controller: &ComPtr<IEditController>) -> Option<ComPtr<IPlugView>> {
     // SAFETY: control path only; the controller is live and initialised.
-    // `createView` returns an owned reference, which `ComPtr::from_raw` adopts.
-    unsafe { ComPtr::from_raw(controller.createView(ViewType::kEditor)) }
+    let view = unsafe { controller.createView(ViewType::kEditor) };
+    // SAFETY: `createView` returns null or an owned reference, which
+    // `ComPtr::from_raw` adopts without an extra AddRef.
+    unsafe { ComPtr::from_raw(view) }
 }
 
 /// # Safety
@@ -938,7 +974,9 @@ unsafe fn read_view_size(view: &ComPtr<IPlugView>) -> Option<EditorSize> {
         right: 0,
         bottom: 0,
     };
-    if view.getSize(&mut rect) != kResultOk {
+    // SAFETY: the view is live by this fn's contract; `rect` is a live local
+    // the plugin writes for the call's duration.
+    if unsafe { view.getSize(&mut rect) } != kResultOk {
         return None;
     }
     EditorSize::from_rect(&rect)
@@ -951,7 +989,9 @@ unsafe fn apply_content_scale(view: &ComPtr<IPlugView>, scale: f32) {
     // A plugin that does not implement the interface has nothing to be told, and
     // that is not a failure: the scale is advice, and the editor still attaches.
     if let Some(scaling) = view.cast::<IPlugViewContentScaleSupport>() {
-        scaling.setContentScaleFactor(scale);
+        // SAFETY: `scaling` is a live reference `queryInterface` just returned
+        // on a view that is live by this fn's contract.
+        unsafe { scaling.setContentScaleFactor(scale) };
     }
 }
 
@@ -1168,9 +1208,10 @@ mod tests {
             !ptr::eq(frame.cast::<u8>(), scaling.cast::<u8>()),
             "the two interfaces must sit at different addresses, or this proves nothing"
         );
-        // SAFETY: both pointers borrow the live object this test owns.
-        let (frame_identity, scaling_identity) =
-            unsafe { (com_identity(frame), com_identity(scaling)) };
+        // SAFETY: `frame` borrows the live object this test owns.
+        let frame_identity = unsafe { com_identity(frame) };
+        // SAFETY: `scaling` borrows the same live object this test owns.
+        let scaling_identity = unsafe { com_identity(scaling) };
         assert!(frame_identity.is_some());
         assert_eq!(frame_identity, scaling_identity);
     }

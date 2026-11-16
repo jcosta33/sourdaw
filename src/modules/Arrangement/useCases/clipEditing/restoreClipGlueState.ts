@@ -1,6 +1,6 @@
 import { restoreMidiClipGlueState } from '#/modules/MIDI/useCases';
-import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 
+import { type ClipGlueActionSnapshot } from '../../events/arrangementClipAppActions';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { applyClipAutomationLaneTransition } from '../clip/applyClipAutomationLaneTransition';

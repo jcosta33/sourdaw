@@ -137,15 +137,58 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
     });
 
+    it('spares the data of a clip the active alternative stale copy names after it moved to another track (#6613)', () => {
+        const trackA = {
+            id: 'a',
+            name: 'A',
+            kind: 'midi' as const,
+            clips: [{ id: 'kept', trackId: 'a' }],
+            outputId: 'master',
+            sends: [],
+            activeAlternativeId: 'alt-1',
+            alternatives: [
+                {
+                    id: 'alt-1',
+                    name: 'Active',
+                    clips: [
+                        { id: 'kept', trackId: 'a' },
+                        { id: 'x', trackId: 'a' },
+                    ],
+                },
+                { id: 'alt-2', name: 'Inactive', clips: [{ id: 'inactive', trackId: 'a' }] },
+            ],
+        };
+        const trackB = {
+            id: 'b',
+            name: 'B',
+            kind: 'midi' as const,
+            clips: [{ id: 'x', trackId: 'b' }],
+            outputId: 'master',
+            sends: [],
+            activeAlternativeId: '',
+            alternatives: [],
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [trackA as never, trackB as never],
+            selectedTrackId: null,
+        });
+        vi.mocked(getTrackById).mockReturnValue(trackA as never);
+
+        removeTrack('a');
+
+        expect(ownerUseCases.removeMidiClipData).toHaveBeenCalledWith(['kept', 'inactive']);
+        expect(ownerUseCases.removeClipSatelliteData).toHaveBeenCalledWith(['kept', 'inactive']);
+    });
+
     it('can defer live-engine teardown until after the owning transaction commits', () => {
         const track = {
             id: 't1',
             name: 'One',
             kind: 'audio' as const,
             clips: [],
+            alternatives: [],
             outputId: 'master',
             sends: [],
-            alternatives: [],
             parentId: null,
         };
         vi.mocked(getTrackState).mockReturnValue({
@@ -180,6 +223,7 @@ describe('removeTrack', () => {
             name: 'Bus A',
             kind: 'bus' as const,
             clips: [],
+            alternatives: [],
             outputId: 'master',
             sends: [],
             parentId: null,
@@ -221,6 +265,7 @@ describe('removeTrack', () => {
             id: 'stem-1',
             kind: 'audio',
             clips: [],
+            alternatives: [],
             parentId: 'parent',
             devices: [],
             outputId: 'parent',
@@ -261,6 +306,7 @@ describe('removeTrack', () => {
             name: 'Reverb Bus',
             kind: 'bus' as const,
             clips: [],
+            alternatives: [],
             outputId: 'master',
             sends: [],
         };
@@ -316,6 +362,7 @@ describe('removeTrack', () => {
             name: 'Drums',
             kind: 'folder' as const,
             clips: [],
+            alternatives: [],
             devices: [],
             outputId: 'master',
             sends: [],
@@ -339,6 +386,7 @@ describe('removeTrack', () => {
             name: 'Toaster',
             kind: 'folder' as const,
             clips: [],
+            alternatives: [],
             devices: [{ id: 'toaster-device', type: 'toaster' }],
             outputId: 'master',
             sends: [],
@@ -355,12 +403,13 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
     });
 
-    it('should clean active clip MIDI for a legacy track without alternatives', () => {
+    it('should clean active clip MIDI for a track without alternatives', () => {
         const track = {
             id: 'legacy-track',
             name: 'Legacy',
             kind: 'midi' as const,
             clips: [{ id: 'legacy-clip' }],
+            alternatives: [],
             outputId: 'master',
             sends: [],
         };
@@ -382,6 +431,7 @@ describe('removeTrack', () => {
             name: 'One',
             kind: 'audio' as const,
             clips: [],
+            alternatives: [],
             outputId: 'master',
             sends: [],
         };
@@ -410,8 +460,24 @@ describe('removeTrack', () => {
     // id through `getDefaultDestination`'s fallback and silently reseated the
     // track on master at full level.
     describe('bus-removal reconciliation (FX-6)', () => {
-        const busB = { id: 'busB', name: 'B', kind: 'bus' as const, clips: [], outputId: 'master', sends: [] };
-        const busA = { id: 'busA', name: 'A', kind: 'bus' as const, clips: [], outputId: 'busB', sends: [] };
+        const busB = {
+            id: 'busB',
+            name: 'B',
+            kind: 'bus' as const,
+            clips: [],
+            alternatives: [],
+            outputId: 'master',
+            sends: [],
+        };
+        const busA = {
+            id: 'busA',
+            name: 'A',
+            kind: 'bus' as const,
+            clips: [],
+            alternatives: [],
+            outputId: 'busB',
+            sends: [],
+        };
 
         function readReconciledTracks(): { id: string; outputId: string; sends: { busId: string }[] }[] {
             const call = vi.mocked(setTrackState).mock.calls[0];
@@ -479,6 +545,7 @@ describe('removeTrack', () => {
                 name: 'A',
                 kind: 'bus' as const,
                 clips: [],
+                alternatives: [],
                 outputId: 'deleted-earlier',
                 sends: [],
             };
@@ -550,6 +617,7 @@ describe('removeTrack', () => {
                     name: 'A',
                     kind: 'bus' as const,
                     clips: [],
+                    alternatives: [],
                     outputId: 'kick',
                     sends: [],
                 };
@@ -571,9 +639,33 @@ describe('removeTrack', () => {
             it('does not relocate a pre-existing cycle onto the survivors', () => {
                 // busA → busB → busC → busA. Removing busB must not leave
                 // busA → busC while busC still routes back to busA.
-                const busA = { id: 'busA', name: 'A', kind: 'bus' as const, clips: [], outputId: 'busB', sends: [] };
-                const busB = { id: 'busB', name: 'B', kind: 'bus' as const, clips: [], outputId: 'busC', sends: [] };
-                const busC = { id: 'busC', name: 'C', kind: 'bus' as const, clips: [], outputId: 'busA', sends: [] };
+                const busA = {
+                    id: 'busA',
+                    name: 'A',
+                    kind: 'bus' as const,
+                    clips: [],
+                    alternatives: [],
+                    outputId: 'busB',
+                    sends: [],
+                };
+                const busB = {
+                    id: 'busB',
+                    name: 'B',
+                    kind: 'bus' as const,
+                    clips: [],
+                    alternatives: [],
+                    outputId: 'busC',
+                    sends: [],
+                };
+                const busC = {
+                    id: 'busC',
+                    name: 'C',
+                    kind: 'bus' as const,
+                    clips: [],
+                    alternatives: [],
+                    outputId: 'busA',
+                    sends: [],
+                };
                 vi.mocked(getTrackState).mockReturnValue({
                     tracks: [busA, busB, busC] as never,
                     selectedTrackId: null,
@@ -600,7 +692,15 @@ describe('removeTrack', () => {
                     outputId: 'master',
                     sends: [],
                 };
-                const busA = { id: 'busA', name: 'A', kind: 'bus' as const, clips: [], outputId: 'busB', sends: [] };
+                const busA = {
+                    id: 'busA',
+                    name: 'A',
+                    kind: 'bus' as const,
+                    clips: [],
+                    alternatives: [],
+                    outputId: 'busB',
+                    sends: [],
+                };
                 const dependent = {
                     id: 'audio-1',
                     name: 'Kick',

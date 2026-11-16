@@ -1,5 +1,6 @@
 import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 
+import { COMMAND_APPLICATION_ID_RULES } from '../models/CommandApplicationIdRule';
 import {
     DECLARATIVE_TRANSFORM_BINDING_PREFIX,
     DECLARATIVE_TRANSFORM_BINDING_PRODUCERS,
@@ -29,7 +30,6 @@ import {
 import { selectTransformItems } from '../services/declarativeTransform/selectTransformItems';
 
 import { getExecutableAppActionEffect } from './executableAppActionEffects';
-import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 
 /**
  * A binding resolves only because the producing command mints an application-owned identity the
@@ -39,7 +39,7 @@ import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds
 const BINDING_PRODUCER_ARGUMENTS: ReadonlyMap<string, string> = new Map(
     DECLARATIVE_TRANSFORM_BINDING_PRODUCERS.flatMap((operation) => {
         const rule = COMMAND_APPLICATION_ID_RULES[operation];
-        return rule === undefined ? [] : [[operation, rule.argument] as const];
+        return rule === null ? [] : [[operation, rule.argument] as const];
     })
 );
 

@@ -33,8 +33,8 @@ beforeEach(() => {
 });
 
 describe('handleSetSoloSafe — execute', () => {
-    it('calls setSoloSafe with trackId, soloSafe, deferRuntimeEffect=true', () => {
-        handleSetSoloSafe.execute({ type: 'setSoloSafe', payload: { trackId: 't1', soloSafe: true } });
+    it('calls setSoloSafe with trackId, soloSafe, deferRuntimeEffect=true', async () => {
+        await handleSetSoloSafe.execute({ type: 'setSoloSafe', payload: { trackId: 't1', soloSafe: true } });
         expect(mockedSetSoloSafe).toHaveBeenCalledWith({ trackId: 't1', soloSafe: true, deferRuntimeEffect: true });
     });
 });

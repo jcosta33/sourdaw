@@ -33,39 +33,39 @@ describe('handleDetectKey', () => {
         mocks.trackStore.value = { tracks: [] };
     });
 
-    it('should bail out if the clip cannot be found', () => {
+    it('should bail out if the clip cannot be found', async () => {
         mocks.trackStore.value = { tracks: [] };
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        await handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
-    it('should bail out if the clip has no audioBufferId', () => {
+    it('should bail out if the clip has no audioBufferId', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1' }] }],
         };
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        await handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
-    it('should detect key and notify the user', () => {
+    it('should detect key and notify the user', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
         mocks.detectKey.mockReturnValue({ detected: true, key: 'C', mode: 'major', confidence: 0.856 });
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        await handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).toHaveBeenCalledWith('buf1');
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected key: C major (86% confidence)');
     });
 
-    it('should surface the runner-up when the detector reports a close call', () => {
+    it('should surface the runner-up when the detector reports a close call', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
@@ -77,31 +77,31 @@ describe('handleDetectKey', () => {
             alternative: { key: 'C', mode: 'major' },
         });
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        await handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Detected key: A minor (79% confidence), close call with C major'
         );
     });
 
-    it('should state that there is no key rather than name one when the material is atonal', () => {
+    it('should state that there is no key rather than name one when the material is atonal', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
         mocks.detectKey.mockReturnValue({ detected: false });
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        await handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('No key detected: the audio is atonal or broadband');
     });
 
-    it('should notify the user if key cannot be detected', () => {
+    it('should notify the user if key cannot be detected', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
         mocks.detectKey.mockReturnValue(null);
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        await handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect key: no audio to analyse');
     });

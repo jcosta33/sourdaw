@@ -57,7 +57,7 @@ fn a_bare_sidechain_chain_uses_the_declared_hpf_default() {
 /// that do implement them.
 fn stimulus(index: usize) -> (f32, f32) {
     let t = index as f32 / SAMPLE_RATE;
-    let loud = (index / (SAMPLE_RATE as usize / 1000 * 60)) % 2 == 0;
+    let loud = (index / (SAMPLE_RATE as usize / 1000 * 60)).is_multiple_of(2);
     let amp = if loud { 0.9 } else { 0.05 };
     (
         amp * (std::f32::consts::TAU * 220.0 * t).sin(),
@@ -76,17 +76,35 @@ fn render(configure: impl Fn(&mut GlutenInstance)) -> Vec<f32> {
         let right_ptr = instance.get_input_right_ptr();
         for n in 0..BLOCK {
             let (left, right) = stimulus(base + n);
-            unsafe {
-                *left_ptr.add(n) = left;
-                *right_ptr.add(n) = right;
-            }
+            // SAFETY: `left_ptr` is the start of `input_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = left };
+            // SAFETY: `right_ptr` is the start of `input_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+            // reference to it is live.
+            unsafe { *right_slot = right };
         }
 
         let out_left = instance.process(BLOCK as u32);
         let out_right = instance.get_right_ptr();
         for n in 0..BLOCK {
-            captured.push(unsafe { *out_left.add(n) });
-            captured.push(unsafe { *out_right.add(n) });
+            // SAFETY: `out_left` is the start of `output_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { out_left.add(n) };
+            // SAFETY: `left_slot` is inside `output_left`, whose first 512 samples `process`
+            // just wrote (it clamps to 4096), and nothing has written the instance since.
+            captured.push(unsafe { *left_slot });
+            // SAFETY: `out_right` is the start of `output_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { out_right.add(n) };
+            // SAFETY: `right_slot` is inside `output_right`, whose first 512 samples
+            // `process` just wrote, and nothing has written the instance since.
+            captured.push(unsafe { *right_slot });
         }
     }
     captured
@@ -210,15 +228,28 @@ fn render_right_with_left_level(left_level: f32) -> Vec<f32> {
         let right_ptr = instance.get_input_right_ptr();
         for n in 0..BLOCK {
             let t = (base + n) as f32 / SAMPLE_RATE;
-            unsafe {
-                *left_ptr.add(n) = left_level * (std::f32::consts::TAU * 180.0 * t).sin();
-                *right_ptr.add(n) = 0.35 * (std::f32::consts::TAU * 630.0 * t).sin();
-            }
+            // SAFETY: `left_ptr` is the start of `input_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = left_level * (std::f32::consts::TAU * 180.0 * t).sin() };
+            // SAFETY: `right_ptr` is the start of `input_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+            // reference to it is live.
+            unsafe { *right_slot = 0.35 * (std::f32::consts::TAU * 630.0 * t).sin() };
         }
         instance.process(BLOCK as u32);
         let out_right = instance.get_right_ptr();
         for n in 0..BLOCK {
-            captured.push(unsafe { *out_right.add(n) });
+            // SAFETY: `out_right` is the start of `output_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { out_right.add(n) };
+            // SAFETY: `right_slot` is inside `output_right`, whose first 512 samples the
+            // `process` call above wrote, and nothing has written the instance since.
+            captured.push(unsafe { *right_slot });
         }
     }
     captured
@@ -251,16 +282,39 @@ fn render_side_mode_with_external_sidechain(sc_left_level: f32, sc_right_level: 
             let t = (base + n) as f32 / SAMPLE_RATE;
             let main = 0.35 * (std::f32::consts::TAU * 220.0 * t).sin();
             let detector = (std::f32::consts::TAU * 110.0 * t).sin();
-            unsafe {
-                *left_ptr.add(n) = main;
-                *right_ptr.add(n) = -main;
-                *sc_left_ptr.add(n) = sc_left_level * detector;
-                *sc_right_ptr.add(n) = sc_right_level * detector;
-            }
+            // SAFETY: `left_ptr` is the start of `input_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = main };
+            // SAFETY: `right_ptr` is the start of `input_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+            // reference to it is live.
+            unsafe { *right_slot = -main };
+            // SAFETY: `sc_left_ptr` is the start of `sc_left`, a 4096-sample vector allocated
+            // in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let sc_left_slot = unsafe { sc_left_ptr.add(n) };
+            // SAFETY: `sc_left_slot` is inside the initialised `sc_left` buffer and no
+            // reference to it is live.
+            unsafe { *sc_left_slot = sc_left_level * detector };
+            // SAFETY: `sc_right_ptr` is the start of `sc_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let sc_right_slot = unsafe { sc_right_ptr.add(n) };
+            // SAFETY: `sc_right_slot` is inside the initialised `sc_right` buffer and no
+            // reference to it is live.
+            unsafe { *sc_right_slot = sc_right_level * detector };
         }
         let out_left = instance.process(BLOCK as u32);
         for n in 0..BLOCK {
-            captured.push(unsafe { *out_left.add(n) });
+            // SAFETY: `out_left` is the start of `output_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { out_left.add(n) };
+            // SAFETY: `left_slot` is inside `output_left`, whose first 512 samples `process`
+            // just wrote, and nothing has written the instance since.
+            captured.push(unsafe { *left_slot });
         }
     }
     captured
@@ -348,18 +402,46 @@ fn render_with_external_key(
             // the program stays unducked until a loud key arrives.
             let program = 0.35 * (std::f32::consts::TAU * 220.0 * t).sin();
             let key = key_level * (std::f32::consts::TAU * 110.0 * t).sin();
-            unsafe {
-                *left_ptr.add(n) = program;
-                *right_ptr.add(n) = program;
-                *sc_left_ptr.add(n) = key;
-                *sc_right_ptr.add(n) = key;
-            }
+            // SAFETY: `left_ptr` is the start of `input_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = program };
+            // SAFETY: `right_ptr` is the start of `input_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+            // reference to it is live.
+            unsafe { *right_slot = program };
+            // SAFETY: `sc_left_ptr` is the start of `sc_left`, a 4096-sample vector allocated
+            // in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let sc_left_slot = unsafe { sc_left_ptr.add(n) };
+            // SAFETY: `sc_left_slot` is inside the initialised `sc_left` buffer and no
+            // reference to it is live.
+            unsafe { *sc_left_slot = key };
+            // SAFETY: `sc_right_ptr` is the start of `sc_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let sc_right_slot = unsafe { sc_right_ptr.add(n) };
+            // SAFETY: `sc_right_slot` is inside the initialised `sc_right` buffer and no
+            // reference to it is live.
+            unsafe { *sc_right_slot = key };
         }
         let out_left = instance.process(BLOCK as u32);
         let out_right = instance.get_right_ptr();
         for n in 0..BLOCK {
-            captured.push(unsafe { *out_left.add(n) });
-            captured.push(unsafe { *out_right.add(n) });
+            // SAFETY: `out_left` is the start of `output_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < BLOCK` (512).
+            let left_slot = unsafe { out_left.add(n) };
+            // SAFETY: `left_slot` is inside `output_left`, whose first 512 samples `process`
+            // just wrote, and nothing has written the instance since.
+            captured.push(unsafe { *left_slot });
+            // SAFETY: `out_right` is the start of `output_right`, a 4096-sample vector
+            // allocated in `GlutenInstance::new` and never resized, and `n < BLOCK` (512).
+            let right_slot = unsafe { out_right.add(n) };
+            // SAFETY: `right_slot` is inside `output_right`, whose first 512 samples
+            // `process` just wrote, and nothing has written the instance since.
+            captured.push(unsafe { *right_slot });
         }
     }
     let gr_db = instance.get_gr_db();
@@ -467,13 +549,30 @@ fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
     let left_ptr = instance.get_input_left_ptr();
     let right_ptr = instance.get_input_right_ptr();
     for n in 0..FRAMES {
-        unsafe {
-            *left_ptr.add(n) = 0.9;
-            *right_ptr.add(n) = 0.9;
-        }
+        // SAFETY: `left_ptr` is the start of `input_left`, a 4096-sample vector that
+        // `GlutenInstance::new` allocates and nothing resizes, and `n < FRAMES` (1024).
+        let left_slot = unsafe { left_ptr.add(n) };
+        // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+        // reference to it is live.
+        unsafe { *left_slot = 0.9 };
+        // SAFETY: `right_ptr` is the start of `input_right`, a 4096-sample vector allocated
+        // in `GlutenInstance::new` and never resized, and `n < FRAMES` (1024).
+        let right_slot = unsafe { right_ptr.add(n) };
+        // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+        // reference to it is live.
+        unsafe { *right_slot = 0.9 };
     }
     let out_left = instance.process(FRAMES as u32);
-    (0..FRAMES).map(|n| unsafe { *out_left.add(n) }).collect()
+    (0..FRAMES)
+        .map(|n| {
+            // SAFETY: `out_left` is the start of `output_left`, a 4096-sample vector that
+            // `GlutenInstance::new` allocates and nothing resizes, and `n < FRAMES` (1024).
+            let slot = unsafe { out_left.add(n) };
+            // SAFETY: `slot` is inside `output_left`, whose first 1024 samples `process`
+            // just wrote (it clamps to 4096), and nothing has written the instance since.
+            unsafe { *slot }
+        })
+        .collect()
 }
 
 #[test]

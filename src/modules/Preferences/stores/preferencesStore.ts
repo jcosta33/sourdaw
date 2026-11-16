@@ -9,6 +9,7 @@ import {
     PREFERENCES_SCHEMA_VERSION,
     defaultPreferences,
     isAutoSaveIntervalMs,
+    isHostedBackendQuestionIdentityList,
     normalizeElasticTransientSensitivity,
     normalizeUiScale,
     type Preferences,
@@ -71,6 +72,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     soloMode: isOneOf('sip', 'afl', 'pfl'),
     preRollEnabled: (value) => typeof value === 'boolean',
     preRollBars: isOneOf(1, 2, 4),
+    hostedBackendQuestionAsked: isHostedBackendQuestionIdentityList,
 };
 
 const PREFERENCE_KEYS = Object.keys(PREFERENCES_SCHEMA) as (keyof Preferences)[];

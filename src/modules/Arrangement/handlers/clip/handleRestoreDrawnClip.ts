@@ -1,10 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type ClipRippleInsertPlanSnapshot,
-    type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { type ClipRippleInsertPlanSnapshot } from '../../events/arrangementClipAppActions';
 import { addClip } from '../../useCases/clip/addClip';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';

@@ -245,6 +245,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     setCommandEventBus: mocks.setCommandEventBus,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     clearUndoHistory: vi.fn(),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
     executeUserAppAction: vi.fn(),

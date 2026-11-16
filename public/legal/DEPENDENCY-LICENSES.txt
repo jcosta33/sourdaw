@@ -6,11 +6,11 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:87cdca75040bd33b6807332dd8bb82dbf525e5396ed4aed895015b1703f0ef60
-- pnpm-lock.yaml sha256:97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395
-- server/package-lock.json sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968
+- Cargo.lock sha256:267aeca90ab2ac0c6e7fb61918f46e1e366d301a71624613623efa954e66cdb4
+- pnpm-lock.yaml sha256:4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102
+- server/package-lock.json sha256:a94654faf2322892cd82b403a21b97fe3d8c88df091e1724c685bc6217eb6550
 
-Package inventory: 357 npm, 320 Cargo
+Package inventory: 357 npm, 322 Cargo
 
 cargo:alsa@0.11.0 | Apache-2.0/MIT | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:3cc33f8e76680b9cba2e2a5bc94de5a92420045863ab2fadbef290a55b4d8530 | Cargo.lock
 cargo:alsa-sys@0.4.0 | MIT | sha256:219766b3420f49f6204143c5f3ef750888fb6de29ce5f63e909f146e90b375a2 | Cargo.lock
@@ -27,7 +27,7 @@ cargo:bitflags@2.13.2 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f4764
 cargo:block-buffer@0.12.1 | MIT OR Apache-2.0 | sha256:98181e7249d0c01737645ec982499ce99a0f07eb8f7d625b8840d799d10dbc01,sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5 | Cargo.lock
 cargo:block2@0.6.2 | MIT | sha256:3dca2be1c69c40445e125e920392d498a96785e50d6850e9cda846afc6f397d3 | Cargo.lock
 cargo:borsh@1.8.1 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:7b724c8fa4a82af733caccabdaa21e2bf8bcb0822fe62d5cf03f99d458438705 | Cargo.lock
-cargo:bumpalo@3.20.3 | MIT OR Apache-2.0 | sha256:65f94e99ddaf4f5d1782a6dae23f35d4293a9a01444a13135a6887017d353cee,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:bumpalo@3.20.4 | MIT OR Apache-2.0 | sha256:65f94e99ddaf4f5d1782a6dae23f35d4293a9a01444a13135a6887017d353cee,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:bytemuck@1.25.2 | Zlib OR Apache-2.0 OR MIT | sha256:84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151,sha256:9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2,sha256:e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb | Cargo.lock
 cargo:bytes@1.12.1 | MIT | sha256:45f522cacecb1023856e46df79ca625dfc550c94910078bd8aec6e02880b3d42 | Cargo.lock
 cargo:cesu8@1.1.0 | Apache-2.0/MIT | sha256:5ca77347e58205d3b543c04a9c5bdd11d20a9f3108a7b246640edffa999b5f35 | Cargo.lock
@@ -50,7 +50,7 @@ cargo:cpal@0.18.2 | Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec658206272
 cargo:cpufeatures@0.3.1 | MIT OR Apache-2.0 | sha256:73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa,sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5 | Cargo.lock
 cargo:crossbeam-utils@0.8.23 | MIT OR Apache-2.0 | sha256:5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:crypto-common@0.2.2 | MIT OR Apache-2.0 | sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5,sha256:d2e7ec5355c96eeade56b09187ceb48a6a30299da3ce7531a66d3d11405ab963 | Cargo.lock
-cargo:ctor@1.0.13 | Apache-2.0 OR MIT | sha256:a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae,sha256:bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3 | Cargo.lock
+cargo:ctor@1.0.14 | Apache-2.0 OR MIT | sha256:a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae,sha256:bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3 | Cargo.lock
 cargo:dasp_sample@0.11.0 | MIT OR Apache-2.0 | sha256:35b24c698223002da80ea76e75fb8a2b867e644a1658fc6aa27f656e1b441e3d | Cargo.lock
 cargo:digest@0.11.3 | MIT OR Apache-2.0 | sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5,sha256:af59cea35d7f5e2777a713b8d155d65efa2c339eb43f3c14e868c6ac8506edad | Cargo.lock
 cargo:dirs@7.0.0 | MIT OR Apache-2.0 | sha256:6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9,sha256:d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9 | Cargo.lock
@@ -120,9 +120,10 @@ cargo:lazy_static@1.5.1 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a7617
 cargo:leb128@0.2.7 | MIT OR Apache-2.0 | sha256:7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:libc@0.2.191 | MIT OR Apache-2.0 | sha256:123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
 cargo:libloading@0.7.4 | ISC | sha256:b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f | Cargo.lock
-cargo:libloading@0.9.0 | ISC | sha256:b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f | Cargo.lock
+cargo:libloading@0.9.1 | ISC | sha256:b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f | Cargo.lock
 cargo:libredox@0.1.25 | MIT | sha256:8d073a6a80d1ef2d2fc2bc6c809aa221161bf1906c76d4aeef55fd2b999d9413 | Cargo.lock
 cargo:libusb1-sys@0.7.0 | MIT | sha256:5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a,sha256:d6b63b280f7998e4a5e9e21c7b0d2dbe79426e1b28a75e39e41bb8feae0f8b03 | Cargo.lock
+cargo:link-section@0.19.4 | Apache-2.0 OR MIT | sha256:a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae,sha256:bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3 | Cargo.lock
 cargo:litemap@0.8.3 | Unicode-3.0 | sha256:f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2 | Cargo.lock
 cargo:lock_api@0.4.14 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:c9a75f18b9ab2927829a208fc6aa2cf4e63b8420887ba29cdb265d6619ae82d5 | Cargo.lock
 cargo:log@0.4.35 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -132,7 +133,7 @@ cargo:mdns-sd@0.21.7 | Apache-2.0 OR MIT | sha256:1118360170ac75117538c65db992cf
 cargo:memchr@2.8.3 | Unlicense OR MIT | sha256:01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f,sha256:0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f | Cargo.lock
 cargo:midir@0.11.1 | MIT | sha256:f2cf650a4c639ea1e7d472b17d90309bd038bc8f40523365bcbb5f94ee6aa60b | Cargo.lock
 cargo:mime@0.3.18 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:df9cfd06d8a44d9a671eadd39ffd97f166481da015a30f45dfd27886209c5922 | Cargo.lock
-cargo:mio@1.2.4 | MIT | sha256:07919255c7e04793d8ea760d6c2ce32d19f9ff02bdbdde3ce90b1e1880929a9b | Cargo.lock
+cargo:mio@1.2.5 | MIT | sha256:07919255c7e04793d8ea760d6c2ce32d19f9ff02bdbdde3ce90b1e1880929a9b | Cargo.lock
 cargo:multiversion_no_op@1.0.0 | Apache-2.0 OR MIT | sha256:3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c,sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30,sha256:d2a809eafabba137f508bea16a1b93d8ff24df7da6f38129d830db9bc118bdfe | Cargo.lock
 cargo:napi@3.16.2 | MIT | sha256:70cd467c1ca01889c11d2fbab2787e0393041127fedabba395980e0ad50c9d6e | Cargo.lock
 cargo:napi-derive@3.7.1 | MIT | sha256:4eea4d16eb48c5df35182679b20bb0c4c86a98f14e3e913a4be2be7ddc12ad9c | Cargo.lock
@@ -156,6 +157,7 @@ cargo:objc2-core-audio-types@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:71481d65
 cargo:objc2-core-foundation@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:33c634a9760b9ac1a52f4c7d10a77dbace482caa9dd317fcdbd7b9f76f76f15b | Cargo.lock
 cargo:objc2-encode@4.1.0 | MIT | sha256:166b142d5e9c230b992d1bf4382270b7fbc0d41c2eb8e4ecaf066788b51009e4 | Cargo.lock
 cargo:objc2-foundation@0.3.2 | MIT | sha256:fbe7cce7f8c879800a3c4f2751f1281665e4211a3cfb6e51490150fa131b234c | Cargo.lock
+cargo:objc2-metal@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:581271cbd7297ef32a4ed1fcd1962a0ad19d3797e37c2852ce2a4072e4b026a6 | Cargo.lock
 cargo:once_cell@1.21.4 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:openssl-probe@0.2.2 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:option-ext@0.2.0 | MPL-2.0 | sha256:66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172 | Cargo.lock
@@ -184,7 +186,7 @@ cargo:regex-lite@0.1.9 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f476
 cargo:reqwest@0.13.5 | MIT OR Apache-2.0 | sha256:751963a8b88c0e3a9f27e98933079fbcf09b9998b2c13ac49c2e4d58444520d6,sha256:dd87e27dfbaa888cb77ea34592648a7743636b8dce07e49543bddda0fcfc73bc | Cargo.lock
 cargo:ring@0.17.14 | Apache-2.0 AND ISC | sha256:005fc765ddc5115da796cca915baa9557abae13ff35e0a47c47affc56f6c414d,sha256:6ee2ed6c77710de911761acd5fc1ad1da00f476beb1a7ef27e78c2d1858deafc,sha256:9eacbcb81be660840c714a560a9d65ba07913db98dd4baf969f78dd499fdd60f,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:b3d734001a94efff3579978d953391aa7115f877657d25eb54037a43875d078a,sha256:f025ccfb7dfb6bdfedc75ca0f67acc69e6fb4998143d834f7c2f38a29989680f | Cargo.lock
 cargo:rtrb@0.4.1 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
-cargo:rubato@5.0.1 | MIT OR Apache-2.0 | sha256:0a0f8b42d28c6aaee4f5aff8f684af2bd58ba39ccb75c46f04de726dfe772f10,sha256:36dbd32f27adb0d2477b3d3f6ecbde9ca9ad8d72e24766bebe3ea631d235a7ef,sha256:db7332814a00615b025608278dc1cc53148209baaa4d71073e5f67cac82f979e | Cargo.lock
+cargo:rubato@5.1.0 | MIT OR Apache-2.0 | sha256:0a0f8b42d28c6aaee4f5aff8f684af2bd58ba39ccb75c46f04de726dfe772f10,sha256:36dbd32f27adb0d2477b3d3f6ecbde9ca9ad8d72e24766bebe3ea631d235a7ef,sha256:db7332814a00615b025608278dc1cc53148209baaa4d71073e5f67cac82f979e | Cargo.lock
 cargo:rusb@0.9.4 | MIT | sha256:d6b63b280f7998e4a5e9e21c7b0d2dbe79426e1b28a75e39e41bb8feae0f8b03 | Cargo.lock
 cargo:rustc-hash@2.1.3 | Apache-2.0 OR MIT | sha256:30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652,sha256:95bd3988beee069fa2848f648dab43cc6e0b2add2ad6bcb17360caf749802bcc | Cargo.lock
 cargo:rustfft@6.4.1 | MIT OR Apache-2.0 | sha256:2e54cd84a645bea25943c75dd8ae67cb291e66a47a11578333c9b4b3b6b86c85,sha256:8f5442dfa8e9169045697e386bc91d19f393c939635741fa2a665ec36ca6f0ad | Cargo.lock
@@ -193,7 +195,7 @@ cargo:rustls-native-certs@0.8.5 | Apache-2.0 OR ISC OR MIT | sha256:709e3175b421
 cargo:rustls-pki-types@1.16.0 | MIT OR Apache-2.0 | sha256:45fd05c4865e7c350b98ad7ac50e1b15462d49af4a91e9b0c9dd933dc9a69742,sha256:9117d922e667125508dde62b02c1f57ed22f5ad21eb536aa2e2d99e1c796e639 | Cargo.lock
 cargo:rustls-platform-verifier@0.7.1 | MIT OR Apache-2.0 | sha256:1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
 cargo:rustls-platform-verifier-android@0.2.0 | MIT OR Apache-2.0 | sha256:fdd15ea2479b28139c55ef1972360ba8e1dfc52e588abe40c537bac3a7b65744 | Cargo.lock
-cargo:rustls-webpki@0.103.16 | ISC | sha256:5b698ca13897be3afdb7174256fa1574f8c6892b8bea1a66dd6469d3fe27885a | Cargo.lock
+cargo:rustls-webpki@0.103.17 | ISC | sha256:5b698ca13897be3afdb7174256fa1574f8c6892b8bea1a66dd6469d3fe27885a | Cargo.lock
 cargo:rustversion@1.0.23 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
 cargo:schannel@0.1.30 | MIT | sha256:aa72991ac35b4de0034da0afe943e62b48c4092fc2ba13ae47806d8e9a4ad551 | Cargo.lock
 cargo:scopeguard@1.2.0 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7 | Cargo.lock
@@ -553,7 +555,7 @@ npm:loglevel@1.9.2 | MIT | sha256:18e8cf5f0dbaf13d9562e93b9bef79aff2acff18fab698
 npm:long@4.0.0 | Apache-2.0 | sha256:3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5 | pnpm-lock.yaml
 npm:long@5.3.2 | Apache-2.0 | sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | pnpm-lock.yaml
 npm:longest-streak@3.1.0 | MIT | sha256:9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10 | pnpm-lock.yaml
-npm:lucide-react@1.72.0 | ISC | sha256:3c510ff8c410b65ddad8795a805fde08cfd86d5c3b0c1935e59ca6aef28d9c72,sha256:3fca5145313166eb9795a9e26e1b7491a9796d0fc864e171e53633456b513bf4,sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 | pnpm-lock.yaml
+npm:lucide-react@1.73.0 | ISC | sha256:3c510ff8c410b65ddad8795a805fde08cfd86d5c3b0c1935e59ca6aef28d9c72,sha256:426d33e866614b895f0d40228afb6cab1421faf2acbed4a9aec51131139fb647,sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 | pnpm-lock.yaml
 npm:markdown-table@3.1.0 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
 npm:math-intrinsics@1.1.0 | MIT | sha256:2b770a704c15de238c3f622b01b0044ddd60b49ee30608ea6991ebf19db7a7a1 | pnpm-lock.yaml
 npm:mdast-util-find-and-replace@3.0.4 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
@@ -568,7 +570,7 @@ npm:mdast-util-mdx-expression@2.0.1 | MIT | sha256:536804b3adbff17dbbb9ed0d2bf96
 npm:mdast-util-mdx-jsx@3.2.1 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
 npm:mdast-util-mdxjs-esm@2.0.1 | MIT | sha256:536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61 | pnpm-lock.yaml
 npm:mdast-util-phrasing@4.1.0 | MIT | sha256:b6d1a4e1831b177acc96f22a817d4f0f4c18419355badc3125754445fc69e3a7 | pnpm-lock.yaml
-npm:mdast-util-to-hast@13.2.1 | MIT | sha256:ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d | pnpm-lock.yaml
+npm:mdast-util-to-hast@13.2.2 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
 npm:mdast-util-to-markdown@2.2.3 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
 npm:mdast-util-to-string@4.0.0 | MIT | sha256:63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf | pnpm-lock.yaml
 npm:meyda@5.6.3 | MIT | sha256:15be9b78aa3f0b48a2ef63359b0cacfd73e61ac9244818db8086d858fc7f8121 | pnpm-lock.yaml
@@ -681,7 +683,7 @@ npm:whatwg-url@5.0.0 | MIT | sha256:6b7a1792144374d84dc5ed3655b8bbe2754d06f4f1f6
 npm:which-module@2.0.1 | ISC | sha256:852bf81203aa93aa89afc9f881ebb035322dc7334aaceff435c557634c94a815 | pnpm-lock.yaml
 npm:wrap-ansi@6.2.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 | pnpm-lock.yaml
 npm:wrap-ansi@7.0.0 | MIT | sha256:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3 | pnpm-lock.yaml
-npm:ws@8.22.2 | MIT | sha256:2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef | server/package-lock.json
+npm:ws@8.23.0 | MIT | sha256:2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef | server/package-lock.json
 npm:y18n@4.0.3 | ISC | sha256:2034cce3b6fafcddd642c4175e01d3ddfc332a53b9f20fdc46b1466dc89ac469 | pnpm-lock.yaml
 npm:y18n@5.0.8 | ISC | sha256:2034cce3b6fafcddd642c4175e01d3ddfc332a53b9f20fdc46b1466dc89ac469 | pnpm-lock.yaml
 npm:yargs@15.4.1 | MIT | sha256:2f1a503bfab84b3ba7393627308b3274501e459e3b5185bbb56bbf16cb1602d4 | pnpm-lock.yaml
@@ -1409,7 +1411,7 @@ THE SOFTWARE.
 ===== sha256:07919255c7e04793d8ea760d6c2ce32d19f9ff02bdbdde3ce90b1e1880929a9b =====
 Evidence labels: LICENSE
 Packages:
-- cargo:mio@1.2.4
+- cargo:mio@1.2.5
 
 Copyright (c) 2014 Carl Lerche and other MIO contributors
 
@@ -1489,7 +1491,7 @@ the following restrictions:
 ===== sha256:0a0f8b42d28c6aaee4f5aff8f684af2bd58ba39ccb75c46f04de726dfe772f10 =====
 Evidence labels: LICENSE.txt
 Packages:
-- cargo:rubato@5.0.1
+- cargo:rubato@5.1.0
 
 This project is dual-licensed under either of:
 
@@ -5454,9 +5456,9 @@ limitations under the License.
 
 ===== end sha256:275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427 =====
 ===== sha256:2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef =====
-Evidence labels: LICENSE from https://registry.npmjs.org/ws/-/ws-8.22.2.tgz@sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==
+Evidence labels: LICENSE from https://registry.npmjs.org/ws/-/ws-8.23.0.tgz@sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==
 Packages:
-- npm:ws@8.22.2
+- npm:ws@8.23.0
 
 Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
 Copyright (c) 2013 Arnout Kazemier and contributors
@@ -6986,7 +6988,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===== sha256:36dbd32f27adb0d2477b3d3f6ecbde9ca9ad8d72e24766bebe3ea631d235a7ef =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:rubato@5.0.1
+- cargo:rubato@5.1.0
 
 Copyright (c) 2020 Henrik Enquist
 
@@ -7375,7 +7377,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===== sha256:3c510ff8c410b65ddad8795a805fde08cfd86d5c3b0c1935e59ca6aef28d9c72 =====
 Evidence labels: copyright.mjs.map
 Packages:
-- npm:lucide-react@1.72.0
+- npm:lucide-react@1.73.0
 
 {"version":3,"file":"copyright.mjs","sources":[],"sourcesContent":[],"names":[],"mappings":";;;;;;;"}
 
@@ -7895,22 +7897,6 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c =====
-===== sha256:3fca5145313166eb9795a9e26e1b7491a9796d0fc864e171e53633456b513bf4 =====
-Evidence labels: copyright.mjs
-Packages:
-- npm:lucide-react@1.72.0
-
-/**
- * @license lucide-react v1.72.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-
-export { default } from './circle-letter-c.mjs';
-//# sourceMappingURL=copyright.mjs.map
-
-===== end sha256:3fca5145313166eb9795a9e26e1b7491a9796d0fc864e171e53633456b513bf4 =====
 ===== sha256:403e4c9e406683aac7b63772667d4f424e82e9e73a172aa393d080b5906f5597 =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
@@ -8090,6 +8076,22 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:4249c8e6c5ebb85f97c77e6457c6fafc1066406eb8f1ef61e796fbdc5ff18482 =====
+===== sha256:426d33e866614b895f0d40228afb6cab1421faf2acbed4a9aec51131139fb647 =====
+Evidence labels: copyright.mjs
+Packages:
+- npm:lucide-react@1.73.0
+
+/**
+ * @license lucide-react v1.73.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+
+export { default } from './circle-letter-c.mjs';
+//# sourceMappingURL=copyright.mjs.map
+
+===== end sha256:426d33e866614b895f0d40228afb6cab1421faf2acbed4a9aec51131139fb647 =====
 ===== sha256:42fa16951ce7f24b5a467a40e5b449a1d41e662f97ca779864f053f39e097737 =====
 Evidence labels: LICENSE-MIT
 Packages:
@@ -11106,6 +11108,704 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab =====
+===== sha256:581271cbd7297ef32a4ed1fcd1962a0ad19d3797e37c2852ce2a4072e4b026a6 =====
+Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
+Packages:
+- cargo:objc2-metal@0.3.2
+
+Sourdaw assembled dependency license record
+
+Package: cargo:objc2-metal@0.3.2
+Locked source: https://crates.io/api/v1/crates/objc2-metal/0.3.2/download
+Locked revision: sha256:a0125f776a10d00af4152d74616409f0d4a2053a6f57fa5b7d6aa2854ac04794
+Declared license: Zlib OR Apache-2.0 OR MIT
+Selected SPDX terms: Apache-2.0
+
+The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
+
+===== installed package metadata Cargo.toml sha256:8ea9d2d00d2e462d2f1e0a5bb242ccc8753c2bcd3441edd1d2cf05cba69092ff =====
+# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
+#
+# When uploading crates to the registry Cargo will automatically
+# "normalize" Cargo.toml files for maximal compatibility
+# with all versions of Cargo and also rewrite `path` dependencies
+# to registry (e.g., crates.io) dependencies.
+#
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
+
+[package]
+edition = "2021"
+rust-version = "1.71"
+name = "objc2-metal"
+version = "0.3.2"
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Bindings to the Metal framework"
+readme = "README.md"
+keywords = [
+    "cocoa",
+    "apple",
+    "framework",
+    "macos",
+    "ios",
+]
+categories = [
+    "api-bindings",
+    "development-tools::ffi",
+    "external-ffi-bindings",
+    "os::macos-apis",
+]
+license = "Zlib OR Apache-2.0 OR MIT"
+repository = "https://github.com/madsmtm/objc2"
+
+[package.metadata.docs.rs]
+default-target = "aarch64-apple-darwin"
+rustc-args = [
+    "--cfg",
+    "docsrs",
+]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-tvos",
+    "aarch64-apple-ios-macabi",
+    "aarch64-apple-visionos",
+]
+features = ["objc2-io-surface"]
+
+[features]
+MTL4AccelerationStructure = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4Archive = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSString",
+]
+MTL4ArgumentTable = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4BinaryFunction = ["objc2-foundation/NSString"]
+MTL4BinaryFunctionDescriptor = [
+    "bitflags",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4BufferRange = []
+MTL4CommandAllocator = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4CommandBuffer = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTL4CommandEncoder = [
+    "bitflags",
+    "objc2-foundation/NSString",
+]
+MTL4CommandQueue = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTL4CommitFeedback = ["objc2-foundation/NSError"]
+MTL4Compiler = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSURL",
+]
+MTL4CompilerTask = []
+MTL4ComputeCommandEncoder = ["objc2-foundation/NSRange"]
+MTL4ComputePipeline = ["objc2-foundation/NSObject"]
+MTL4Counters = [
+    "objc2-foundation/NSData",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTL4FunctionDescriptor = ["objc2-foundation/NSObject"]
+MTL4LibraryDescriptor = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4LibraryFunctionDescriptor = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4LinkingDescriptor = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSDictionary",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4MachineLearningCommandEncoder = []
+MTL4MachineLearningPipeline = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTL4MeshRenderPipeline = ["objc2-foundation/NSObject"]
+MTL4PipelineDataSetSerializer = [
+    "bitflags",
+    "objc2-foundation/NSData",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSURL",
+]
+MTL4PipelineState = [
+    "bitflags",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4RenderCommandEncoder = [
+    "bitflags",
+    "objc2-foundation/NSRange",
+]
+MTL4RenderPass = ["objc2-foundation/NSObject"]
+MTL4RenderPipeline = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+]
+MTL4SpecializedFunctionDescriptor = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTL4StitchedFunctionDescriptor = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+]
+MTL4TileRenderPipeline = ["objc2-foundation/NSObject"]
+MTLAccelerationStructure = [
+    "bitflags",
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLAccelerationStructureCommandEncoder = [
+    "objc2-foundation/NSObject",
+    "MTLAccelerationStructure",
+]
+MTLAccelerationStructureTypes = []
+MTLAllocation = []
+MTLArgument = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSString",
+    "MTLDataType",
+]
+MTLArgumentEncoder = [
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTLBinaryArchive = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSURL",
+]
+MTLBlitCommandEncoder = [
+    "bitflags",
+    "objc2-foundation/NSRange",
+]
+MTLBlitPass = ["objc2-foundation/NSObject"]
+MTLBuffer = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTLCaptureManager = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSURL",
+]
+MTLCaptureScope = ["objc2-foundation/NSString"]
+MTLCommandBuffer = [
+    "bitflags",
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSEnumerator",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLCommandEncoder = [
+    "bitflags",
+    "objc2-foundation/NSString",
+]
+MTLCommandQueue = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLComputeCommandEncoder = ["objc2-foundation/NSRange"]
+MTLComputePass = ["objc2-foundation/NSObject"]
+MTLComputePipeline = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "MTLAllocation",
+]
+MTLCounters = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSData",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTLDataType = []
+MTLDefines = []
+MTLDepthStencil = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLDevice = [
+    "bitflags",
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSBundle",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSURL",
+    "MTLLibrary",
+    "MTLResource",
+    "MTLGPUAddress",
+]
+MTLDeviceCertification = [
+    "objc2-foundation/NSNotification",
+    "objc2-foundation/NSProcessInfo",
+    "objc2-foundation/NSString",
+]
+MTLDrawable = []
+MTLDynamicLibrary = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSURL",
+]
+MTLEvent = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLFence = ["objc2-foundation/NSString"]
+MTLFunctionConstantValues = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTLFunctionDescriptor = [
+    "bitflags",
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLFunctionHandle = ["objc2-foundation/NSString"]
+MTLFunctionLog = [
+    "objc2-foundation/NSEnumerator",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSURL",
+]
+MTLFunctionStitching = [
+    "bitflags",
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLGPUAddress = []
+MTLHeap = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLIOCommandBuffer = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSString",
+]
+MTLIOCommandQueue = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLIOCompressor = []
+MTLIndirectCommandBuffer = [
+    "bitflags",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+]
+MTLIndirectCommandEncoder = []
+MTLIntersectionFunctionTable = [
+    "bitflags",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+]
+MTLLibrary = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSDictionary",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLLinkedFunctions = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSDictionary",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLLogState = [
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLParallelRenderCommandEncoder = []
+MTLPipeline = ["objc2-foundation/NSObject"]
+MTLPixelFormat = []
+MTLRasterizationRate = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSValue",
+]
+MTLRenderCommandEncoder = [
+    "bitflags",
+    "objc2-foundation/NSRange",
+]
+MTLRenderPass = [
+    "bitflags",
+    "objc2-foundation/NSObject",
+]
+MTLRenderPipeline = [
+    "bitflags",
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+    "MTLAllocation",
+]
+MTLResidencySet = [
+    "objc2-foundation/NSArray",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLResource = [
+    "bitflags",
+    "objc2-foundation/NSString",
+]
+MTLResourceStateCommandEncoder = []
+MTLResourceStatePass = ["objc2-foundation/NSObject"]
+MTLResourceViewPool = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTLSampler = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLStageInputOutputDescriptor = [
+    "objc2-foundation/NSObject",
+    "MTLArgument",
+]
+MTLTensor = [
+    "bitflags",
+    "objc2-foundation/NSError",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSString",
+]
+MTLTexture = [
+    "bitflags",
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+    "objc2-foundation/NSString",
+]
+MTLTextureViewPool = []
+MTLTypes = []
+MTLVertexDescriptor = ["objc2-foundation/NSObject"]
+MTLVisibleFunctionTable = [
+    "objc2-foundation/NSObject",
+    "objc2-foundation/NSRange",
+]
+alloc = []
+bitflags = ["dep:bitflags"]
+block2 = ["dep:block2"]
+default = [
+    "std",
+    "MTL4AccelerationStructure",
+    "MTL4Archive",
+    "MTL4ArgumentTable",
+    "MTL4BinaryFunction",
+    "MTL4BinaryFunctionDescriptor",
+    "MTL4BufferRange",
+    "MTL4CommandAllocator",
+    "MTL4CommandBuffer",
+    "MTL4CommandEncoder",
+    "MTL4CommandQueue",
+    "MTL4CommitFeedback",
+    "MTL4Compiler",
+    "MTL4CompilerTask",
+    "MTL4ComputeCommandEncoder",
+    "MTL4ComputePipeline",
+    "MTL4Counters",
+    "MTL4FunctionDescriptor",
+    "MTL4LibraryDescriptor",
+    "MTL4LibraryFunctionDescriptor",
+    "MTL4LinkingDescriptor",
+    "MTL4MachineLearningCommandEncoder",
+    "MTL4MachineLearningPipeline",
+    "MTL4MeshRenderPipeline",
+    "MTL4PipelineDataSetSerializer",
+    "MTL4PipelineState",
+    "MTL4RenderCommandEncoder",
+    "MTL4RenderPass",
+    "MTL4RenderPipeline",
+    "MTL4SpecializedFunctionDescriptor",
+    "MTL4StitchedFunctionDescriptor",
+    "MTL4TileRenderPipeline",
+    "MTLAccelerationStructure",
+    "MTLAccelerationStructureCommandEncoder",
+    "MTLAccelerationStructureTypes",
+    "MTLAllocation",
+    "MTLArgument",
+    "MTLArgumentEncoder",
+    "MTLBinaryArchive",
+    "MTLBlitCommandEncoder",
+    "MTLBlitPass",
+    "MTLBuffer",
+    "MTLCaptureManager",
+    "MTLCaptureScope",
+    "MTLCommandBuffer",
+    "MTLCommandEncoder",
+    "MTLCommandQueue",
+    "MTLComputeCommandEncoder",
+    "MTLComputePass",
+    "MTLComputePipeline",
+    "MTLCounters",
+    "MTLDataType",
+    "MTLDefines",
+    "MTLDepthStencil",
+    "MTLDevice",
+    "MTLDeviceCertification",
+    "MTLDrawable",
+    "MTLDynamicLibrary",
+    "MTLEvent",
+    "MTLFence",
+    "MTLFunctionConstantValues",
+    "MTLFunctionDescriptor",
+    "MTLFunctionHandle",
+    "MTLFunctionLog",
+    "MTLFunctionStitching",
+    "MTLGPUAddress",
+    "MTLHeap",
+    "MTLIOCommandBuffer",
+    "MTLIOCommandQueue",
+    "MTLIOCompressor",
+    "MTLIndirectCommandBuffer",
+    "MTLIndirectCommandEncoder",
+    "MTLIntersectionFunctionTable",
+    "MTLLibrary",
+    "MTLLinkedFunctions",
+    "MTLLogState",
+    "MTLParallelRenderCommandEncoder",
+    "MTLPipeline",
+    "MTLPixelFormat",
+    "MTLRasterizationRate",
+    "MTLRenderCommandEncoder",
+    "MTLRenderPass",
+    "MTLRenderPipeline",
+    "MTLResidencySet",
+    "MTLResource",
+    "MTLResourceStateCommandEncoder",
+    "MTLResourceStatePass",
+    "MTLResourceViewPool",
+    "MTLSampler",
+    "MTLStageInputOutputDescriptor",
+    "MTLTensor",
+    "MTLTexture",
+    "MTLTextureViewPool",
+    "MTLTypes",
+    "MTLVertexDescriptor",
+    "MTLVisibleFunctionTable",
+    "bitflags",
+    "block2",
+    "dispatch2",
+    "objc2-core-foundation",
+]
+dispatch2 = ["dep:dispatch2"]
+objc2-core-foundation = ["dep:objc2-core-foundation"]
+objc2-io-surface = ["dep:objc2-io-surface"]
+std = ["alloc"]
+unstable-darwin-objc = []
+unstable-private = [
+    "objc2-foundation/NSString",
+    "objc2-foundation/NSError",
+]
+
+[lib]
+name = "objc2_metal"
+path = "src/lib.rs"
+
+[[test]]
+name = "null_error_handling"
+path = "tests/null_error_handling.rs"
+
+[[test]]
+name = "runs_with_core_graphics"
+path = "tests/runs_with_core_graphics.rs"
+
+[dependencies.bitflags]
+version = "2.5.0"
+features = ["std"]
+optional = true
+default-features = false
+
+[dependencies.block2]
+version = ">=0.6.1, <0.8.0"
+features = ["alloc"]
+optional = true
+default-features = false
+
+[dependencies.dispatch2]
+version = ">=0.3.0, <0.5.0"
+features = [
+    "alloc",
+    "objc2",
+]
+optional = true
+default-features = false
+
+[dependencies.objc2]
+version = ">=0.6.2, <0.8.0"
+features = ["std"]
+default-features = false
+
+[dependencies.objc2-core-foundation]
+version = "0.3.2"
+features = [
+    "CFDate",
+    "objc2",
+]
+optional = true
+default-features = false
+
+[dependencies.objc2-foundation]
+version = "0.3.2"
+features = ["alloc"]
+default-features = false
+
+[dependencies.objc2-io-surface]
+version = "0.3.2"
+features = [
+    "IOSurfaceRef",
+    "objc2",
+]
+optional = true
+default-features = false
+
+[lints.clippy]
+ptr_as_ptr = "warn"
+redundant_feature_names = "allow"
+
+[lints.clippy.cargo]
+level = "warn"
+priority = -1
+
+[lints.rust]
+elided_lifetimes_in_paths = "warn"
+missing_copy_implementations = "warn"
+non_ascii_idents = "deny"
+unreachable_pub = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+===== end installed package metadata Cargo.toml =====
+===== canonical SPDX Apache-2.0 sha256:074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff =====
+Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/Apache-2.0.txt
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions.
+
+"License" shall mean the terms and conditions for use, reproduction, and distribution as defined by Sections 1 through 9 of this document.
+
+"Licensor" shall mean the copyright owner or entity authorized by the copyright owner that is granting the License.
+
+"Legal Entity" shall mean the union of the acting entity and all other entities that control, are controlled by, or are under common control with that entity. For the purposes of this definition, "control" means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
+
+"You" (or "Your") shall mean an individual or Legal Entity exercising permissions granted by this License.
+
+"Source" form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
+
+"Object" form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
+
+"Work" shall mean the work of authorship, whether in Source or Object form, made available under the License, as indicated by a copyright notice that is included in or attached to the work (an example is provided in the Appendix below).
+
+"Derivative Works" shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work and for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship. For the purposes of this License, Derivative Works shall not include works that remain separable from, or merely link (or bind by name) to the interfaces of, the Work and Derivative Works thereof.
+
+"Contribution" shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted to Licensor for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner. For the purposes of this definition, "submitted" means any form of electronic, verbal, or written communication sent to the Licensor or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, the Licensor for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by the copyright owner as "Not a Contribution."
+
+"Contributor" shall mean Licensor and any individual or Legal Entity on behalf of whom a Contribution has been received by Licensor and subsequently incorporated within the Work.
+
+2. Grant of Copyright License. Subject to the terms and conditions of this License, each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare Derivative Works of, publicly display, publicly perform, sublicense, and distribute the Work and such Derivative Works in Source or Object form.
+
+3. Grant of Patent License. Subject to the terms and conditions of this License, each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work, where such license applies only to those patent claims licensable by such Contributor that are necessarily infringed by their Contribution(s) alone or by combination of their Contribution(s) with the Work to which such Contribution(s) was submitted. If You institute patent litigation against any entity (including a cross-claim or counterclaim in a lawsuit) alleging that the Work or a Contribution incorporated within the Work constitutes direct or contributory patent infringement, then any patent licenses granted to You under this License for that Work shall terminate as of the date such litigation is filed.
+
+4. Redistribution. You may reproduce and distribute copies of the Work or Derivative Works thereof in any medium, with or without modifications, and in Source or Object form, provided that You meet the following conditions:
+
+     (a) You must give any other recipients of the Work or Derivative Works a copy of this License; and
+
+     (b) You must cause any modified files to carry prominent notices stating that You changed the files; and
+
+     (c) You must retain, in the Source form of any Derivative Works that You distribute, all copyright, patent, trademark, and attribution notices from the Source form of the Work, excluding those notices that do not pertain to any part of the Derivative Works; and
+
+     (d) If the Work includes a "NOTICE" text file as part of its distribution, then any Derivative Works that You distribute must include a readable copy of the attribution notices contained within such NOTICE file, excluding those notices that do not pertain to any part of the Derivative Works, in at least one of the following places: within a NOTICE text file distributed as part of the Derivative Works; within the Source form or documentation, if provided along with the Derivative Works; or, within a display generated by the Derivative Works, if and wherever such third-party notices normally appear. The contents of the NOTICE file are for informational purposes only and do not modify the License. You may add Your own attribution notices within Derivative Works that You distribute, alongside or as an addendum to the NOTICE text from the Work, provided that such additional attribution notices cannot be construed as modifying the License.
+
+     You may add Your own copyright statement to Your modifications and may provide additional or different license terms and conditions for use, reproduction, or distribution of Your modifications, or for any such Derivative Works as a whole, provided Your use, reproduction, and distribution of the Work otherwise complies with the conditions stated in this License.
+
+5. Submission of Contributions. Unless You explicitly state otherwise, any Contribution intentionally submitted for inclusion in the Work by You to the Licensor shall be under the terms and conditions of this License, without any additional terms or conditions. Notwithstanding the above, nothing herein shall supersede or modify the terms of any separate license agreement you may have executed with Licensor regarding such Contributions.
+
+6. Trademarks. This License does not grant permission to use the trade names, trademarks, service marks, or product names of the Licensor, except as required for reasonable and customary use in describing the origin of the Work and reproducing the content of the NOTICE file.
+
+7. Disclaimer of Warranty. Unless required by applicable law or agreed to in writing, Licensor provides the Work (and each Contributor provides its Contributions) on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied, including, without limitation, any warranties or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE. You are solely responsible for determining the appropriateness of using or redistributing the Work and assume any risks associated with Your exercise of permissions under this License.
+
+8. Limitation of Liability. In no event and under no legal theory, whether in tort (including negligence), contract, or otherwise, unless required by applicable law (such as deliberate and grossly negligent acts) or agreed to in writing, shall any Contributor be liable to You for damages, including any direct, indirect, special, incidental, or consequential damages of any character arising as a result of this License or out of the use or inability to use the Work (including but not limited to damages for loss of goodwill, work stoppage, computer failure or malfunction, or any and all other commercial damages or losses), even if such Contributor has been advised of the possibility of such damages.
+
+9. Accepting Warranty or Additional Liability. While redistributing the Work or Derivative Works thereof, You may choose to offer, and charge a fee for, acceptance of support, warranty, indemnity, or other liability obligations and/or rights consistent with this License. However, in accepting such obligations, You may act only on Your own behalf and on Your sole responsibility, not on behalf of any other Contributor, and only if You agree to indemnify, defend, and hold each Contributor harmless for any liability incurred by, or claims asserted against, such Contributor by reason of your accepting any such warranty or additional liability.
+
+END OF TERMS AND CONDITIONS
+
+APPENDIX: How to apply the Apache License to your work.
+
+To apply the Apache License to your work, attach the following boilerplate notice, with the fields enclosed by brackets "[]" replaced with your own identifying information. (Don't include the brackets!)  The text should be enclosed in the appropriate comment syntax for the file format. We also recommend that a file or class name and description of purpose be included on the same "printed page" as the copyright notice for easier identification within third-party archives.
+
+Copyright [yyyy] [name of copyright owner]
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+===== end canonical SPDX Apache-2.0 =====
+
+===== end sha256:581271cbd7297ef32a4ed1fcd1962a0ad19d3797e37c2852ce2a4072e4b026a6 =====
 ===== sha256:58545fed1565e42d687aecec6897d35c6d37ccb71479a137c0deb2203e125c79 =====
 Evidence labels: LICENSE
 Packages:
@@ -11747,7 +12447,7 @@ That's all there is to it!
 ===== sha256:5b698ca13897be3afdb7174256fa1574f8c6892b8bea1a66dd6469d3fe27885a =====
 Evidence labels: LICENSE
 Packages:
-- cargo:rustls-webpki@0.103.16
+- cargo:rustls-webpki@0.103.17
 
 Except as otherwise noted, this project is licensed under the following
 (ISC-style) terms:
@@ -13733,7 +14433,7 @@ DEALINGS IN THE SOFTWARE.
 ===== sha256:65f94e99ddaf4f5d1782a6dae23f35d4293a9a01444a13135a6887017d353cee =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:bumpalo@3.20.3
+- cargo:bumpalo@3.20.4
 
 Copyright (c) 2019 Nick Fitzgerald
 
@@ -21227,7 +21927,7 @@ Packages:
 - cargo:automerge@0.12.0
 - cargo:base64@0.23.1
 - cargo:bitflags@2.13.2
-- cargo:bumpalo@3.20.3
+- cargo:bumpalo@3.20.4
 - cargo:cfg-if@1.0.5
 - cargo:core-foundation-sys@0.8.7
 - cargo:core-foundation@0.10.1
@@ -21641,7 +22341,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 ===== sha256:a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae =====
 Evidence labels: LICENSE-APACHE
 Packages:
-- cargo:ctor@1.0.13
+- cargo:ctor@1.0.14
+- cargo:link-section@0.19.4
 
 Apache License
                            Version 2.0, January 2004
@@ -22587,7 +23288,7 @@ DEALINGS IN THE SOFTWARE.
 Evidence labels: LICENSE
 Packages:
 - cargo:libloading@0.7.4
-- cargo:libloading@0.9.0
+- cargo:libloading@0.9.1
 
 Copyright © 2015, Simonas Kazlauskas
 
@@ -22892,7 +23593,7 @@ Packages:
 ===== sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 =====
 Evidence labels: LICENSE
 Packages:
-- npm:lucide-react@1.72.0
+- npm:lucide-react@1.73.0
 
 ISC License
 
@@ -23532,7 +24233,8 @@ DEALINGS IN THE SOFTWARE.
 ===== sha256:bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3 =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:ctor@1.0.13
+- cargo:ctor@1.0.14
+- cargo:link-section@0.19.4
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -25151,7 +25853,6 @@ Packages:
 - npm:is-alphanumerical@2.0.1
 - npm:is-decimal@2.0.1
 - npm:is-hexadecimal@2.0.1
-- npm:mdast-util-to-hast@13.2.1
 - npm:space-separated-tokens@2.0.2
 - npm:unist-util-stringify-position@4.0.0
 - npm:zwitch@2.0.4
@@ -27870,7 +28571,7 @@ MIT OR Apache-2.0
 ===== sha256:db7332814a00615b025608278dc1cc53148209baaa4d71073e5f67cac82f979e =====
 Evidence labels: LICENSE-APACHE
 Packages:
-- cargo:rubato@5.0.1
+- cargo:rubato@5.1.0
 
                                  Apache License
                            Version 2.0, January 2004
@@ -28159,6 +28860,7 @@ Packages:
 - npm:mdast-util-gfm-task-list-item@2.0.1
 - npm:mdast-util-gfm@3.1.0
 - npm:mdast-util-mdx-jsx@3.2.1
+- npm:mdast-util-to-hast@13.2.2
 - npm:mdast-util-to-markdown@2.2.3
 - npm:micromark-core-commonmark@2.0.4
 - npm:micromark-extension-gfm-table@2.1.2

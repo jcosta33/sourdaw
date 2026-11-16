@@ -91,7 +91,9 @@ describe('committed clip ordinary group lifetime', () => {
     it('the real hook releases its current group on unmount', () => {
         const hook = renderHook(() => useClipAudition());
         act(() => hook.result.current.toggleAudition({ clipId: 'clip', trackId: 'track' }));
-        act(() => vi.advanceTimersByTime(0));
+        act(() => {
+            vi.advanceTimersByTime(0);
+        });
         const group = fixture.play.mock.calls[0]?.[3];
         hook.unmount();
         expect(group?.isCurrent()).toBe(false);

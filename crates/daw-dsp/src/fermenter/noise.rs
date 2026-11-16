@@ -1,5 +1,5 @@
-/// Noise generator with white, pink, and brown noise.
-/// Uses a simple xorshift32 PRNG — no external dependencies.
+//! Noise generator with white, pink, and brown noise.
+//! Uses a simple xorshift32 PRNG — no external dependencies.
 
 /// Noise color constants.
 pub const NOISE_WHITE: u8 = 0;
@@ -94,5 +94,11 @@ impl NoiseGen {
         self.brown_state = self.brown_state * 0.995 + white * 0.05;
         // Normalize to roughly -1..1 range
         (self.brown_state * 10.0).clamp(-1.0, 1.0)
+    }
+}
+
+impl Default for NoiseGen {
+    fn default() -> Self {
+        Self::new()
     }
 }

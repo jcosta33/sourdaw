@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { type OverdubControllerRowsSnapshot } from '#/utils/handlerContract';
 
+import { type OverdubControllerRowsSnapshot } from '../../events/midiAppActions';
 import { pendingOverdubLandings } from '../../repositories/webMidi/pendingOverdubLandings';
 import {
     type RecordedControllerBuffer,

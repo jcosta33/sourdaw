@@ -177,7 +177,7 @@ pub async fn retire_native_engine(
     // it behind the handle above, which may or may not have happened by now.
     // A runtime still held simply survives this sweep and is freed by the
     // next one, exactly as `sweep_retired_engine_plugins` intends.
-    state.sweep_retired_engine_plugins();
+    state.sweep_retired_engine_plugins(windows_host);
 
     RetireNativeEngineResult::of(RetireOutcome::Retired, retired_instance_ids)
 }
@@ -187,7 +187,7 @@ pub async fn retire_native_engine(
 /// released, or the outcome that made the retire a no-op.
 enum DrainedEngine {
     Drained {
-        handle: EngineHandle,
+        handle: Box<EngineHandle>,
         engine_owned_plugins: Vec<(String, EnginePluginInstanceData)>,
         crumbs_work: Vec<crumbs::DrainedCrumbsWork>,
     },
@@ -227,7 +227,7 @@ async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> Draine
     registry.reset_for_engine_restart();
 
     DrainedEngine::Drained {
-        handle,
+        handle: Box::new(handle),
         engine_owned_plugins,
         crumbs_work,
     }
@@ -482,7 +482,7 @@ mod tests {
     /// lazy bootstrap in `apply_graph_commands` from opening a real device.
     fn fill_slot_with_capture_engine(state: &AppState) -> rtrb::Consumer<GraphCommand> {
         let (engine, commands, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         commands
     }
@@ -703,7 +703,7 @@ mod tests {
         );
 
         drop(scheduler_clone);
-        state.sweep_retired_engine_plugins();
+        state.sweep_retired_engine_plugins(&NoWindowHost);
 
         assert_eq!(
             retired_runtime_count(&state),
@@ -1059,7 +1059,7 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
-        let gate_guard = block_on_test(hold_plugin_runtime_gate_exclusively());
+        let gate_guard = hold_plugin_runtime_gate_exclusively();
         let (retire_started, retire_starting) = mpsc::channel();
 
         let retiring_state = &state;

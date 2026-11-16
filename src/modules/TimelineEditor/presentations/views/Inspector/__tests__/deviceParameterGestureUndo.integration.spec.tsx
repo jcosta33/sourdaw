@@ -934,7 +934,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         vi.stubGlobal('Worker', SchedulerWorker);
         try {
             transportStore.set({ ...defaultTransportState, isPlaying: true });
-            seekPlayhead(0);
+            await seekPlayhead(0);
             await waitFor(() => expect(tickScheduler).toBeTypeOf('function'));
             if (!tickScheduler) {
                 throw new Error('Seek did not restart the real playback scheduler');

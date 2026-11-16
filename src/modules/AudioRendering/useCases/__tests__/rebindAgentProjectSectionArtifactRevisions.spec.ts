@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
-
+import { type RenderProjectSectionJobSnapshot } from '../../events/audioRenderingAppActions';
 import { clearAgentSectionRenderArtifacts } from '../clearAgentSectionRenderArtifacts';
 import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifacts';
 import { rebindAgentProjectSectionArtifactRevisions } from '../rebindAgentProjectSectionArtifactRevisions';

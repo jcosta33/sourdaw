@@ -102,7 +102,7 @@ impl DynEqBand {
         }
 
         // 1. Sidechain: bandpass filter the input to detect level in target frequency range
-        let sc_coeffs = self.sc_bp_coeffs.next();
+        let sc_coeffs = self.sc_bp_coeffs.next_coeffs();
         let sc_l = self.sc_bp_l.process(l, &sc_coeffs);
         let sc_r = self.sc_bp_r.process(r, &sc_coeffs);
         let level = sc_l.abs().max(sc_r.abs());
@@ -156,7 +156,7 @@ impl DynEqBand {
             self.eq_coeffs.set_target(designed);
         }
 
-        let eq_coeffs = self.eq_coeffs.next();
+        let eq_coeffs = self.eq_coeffs.next_coeffs();
         let eq_l = self.eq_l.process(l, &eq_coeffs);
         let eq_r = self.eq_r.process(r, &eq_coeffs);
 

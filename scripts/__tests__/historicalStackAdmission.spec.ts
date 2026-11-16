@@ -2223,7 +2223,16 @@ describe('closed parent shell observation boundaries', () => {
                         }
                         return candidates(f.observation().parent);
                     }
-                    if (args[0] === 'rev-parse') {
+                    if (args.includes('--git-path')) {
+                        return join(root, 'objects');
+                    }
+                    if (args.includes('--show-object-format')) {
+                        return 'sha1';
+                    }
+                    if (args.includes('for-each-ref')) {
+                        return '';
+                    }
+                    if (args.includes('rev-parse')) {
                         return parent;
                     }
                     throw new Error('unexpected observer operation');

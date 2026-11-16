@@ -88,7 +88,13 @@ fn render_instance(instance: &mut ProofChamberInstance) -> Vec<f32> {
         let ptr = instance.process(&left, &right, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for i in 0..BLOCK {
-            output.push(unsafe { *ptr.add(i) });
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            output.push(unsafe { *slot });
         }
         index += BLOCK;
     }
@@ -255,7 +261,7 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
 /// this stimulus, the peak moved from 9.8297787e-1 to 9.9530500e-1 and RMS
 /// from 1.2425283e-1 to 1.2303977e-1.
 const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
-    peak: 9.9530500e-1,
+    peak: 9.953_05e-1,
     rms: 1.2303977e-1,
     onset: 1,
 };
@@ -833,17 +839,40 @@ fn streaming_freeze_cycle_restores_shimmer_tail_without_resending_shimmer() {
 
         let ptr_a = instance_resumed.process(&left, &right, BLOCK as u32);
         for i in 0..BLOCK {
-            output_resumed.push(unsafe { *ptr_a.add(i) });
+            // SAFETY: `ptr_a` is `instance_resumed`'s `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr_a.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes `instance_resumed` between its `process` and this
+            // read.
+            output_resumed.push(unsafe { *slot });
         }
 
         let ptr_b = instance_explicit_shimmer.process(&left, &right, BLOCK as u32);
         for i in 0..BLOCK {
-            output_explicit.push(unsafe { *ptr_b.add(i) });
+            // SAFETY: `ptr_b` is `instance_explicit_shimmer`'s `out_left`,
+            // allocated at `PROOF_CHAMBER_BLOCK_FRAMES` samples by
+            // `ProofChamberInstance::new` and never resized, and `i < BLOCK`,
+            // which is inside that capacity.
+            let slot = unsafe { ptr_b.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes `instance_explicit_shimmer` between its `process`
+            // and this read.
+            output_explicit.push(unsafe { *slot });
         }
 
         let ptr_c = instance_shimmer_off.process(&left, &right, BLOCK as u32);
         for i in 0..BLOCK {
-            output_off.push(unsafe { *ptr_c.add(i) });
+            // SAFETY: `ptr_c` is `instance_shimmer_off`'s `out_left`, allocated
+            // at `PROOF_CHAMBER_BLOCK_FRAMES` samples by
+            // `ProofChamberInstance::new` and never resized, and `i < BLOCK`,
+            // which is inside that capacity.
+            let slot = unsafe { ptr_c.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes `instance_shimmer_off` between its `process` and
+            // this read.
+            output_off.push(unsafe { *slot });
         }
 
         index += BLOCK;
@@ -899,12 +928,27 @@ fn freeze_disables_shimmer_while_frozen() {
 
         let ptr_a = instance_shimmer.process(&left, &right, BLOCK as u32);
         for i in 0..BLOCK {
-            out_shimmer.push(unsafe { *ptr_a.add(i) });
+            // SAFETY: `ptr_a` is `instance_shimmer`'s `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr_a.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes `instance_shimmer` between its `process` and this
+            // read.
+            out_shimmer.push(unsafe { *slot });
         }
 
         let ptr_b = instance_no_shimmer.process(&left, &right, BLOCK as u32);
         for i in 0..BLOCK {
-            out_no_shimmer.push(unsafe { *ptr_b.add(i) });
+            // SAFETY: `ptr_b` is `instance_no_shimmer`'s `out_left`, allocated
+            // at `PROOF_CHAMBER_BLOCK_FRAMES` samples by
+            // `ProofChamberInstance::new` and never resized, and `i < BLOCK`,
+            // which is inside that capacity.
+            let slot = unsafe { ptr_b.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes `instance_no_shimmer` between its `process` and
+            // this read.
+            out_no_shimmer.push(unsafe { *slot });
         }
 
         index += BLOCK;

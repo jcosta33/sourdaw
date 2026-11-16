@@ -215,7 +215,7 @@ impl SmoothedBiquadCoeffs {
     /// Returned by value so callers can hold the coefficients and the filter
     /// state mutably at the same time; `BiquadCoeffs` is five `f32`s.
     #[inline]
-    pub fn next(&mut self) -> BiquadCoeffs {
+    pub fn next_coeffs(&mut self) -> BiquadCoeffs {
         if self.remaining == 0 {
             return self.current;
         }
@@ -309,6 +309,12 @@ impl BiquadState {
     }
 }
 
+impl Default for BiquadState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod coefficient_smoothing_tests {
     use super::{BiquadCoeffs, BiquadState, SmoothedBiquadCoeffs};
@@ -364,7 +370,7 @@ mod coefficient_smoothing_tests {
                 if n == SWITCH_AT {
                     smoothed.set_target(boosted());
                 }
-                let coeffs = smoothed.next();
+                let coeffs = smoothed.next_coeffs();
                 state.process(probe(n), &coeffs)
             })
             .collect()
@@ -427,11 +433,11 @@ mod coefficient_smoothing_tests {
         );
 
         for _ in 0..RENDER_LEN {
-            smoothed.next();
+            smoothed.next_coeffs();
         }
 
         assert!(smoothed.is_settled(), "smoother must latch once it arrives");
-        let arrived = smoothed.next();
+        let arrived = smoothed.next_coeffs();
         let target = boosted();
         assert_eq!(arrived.b0.to_bits(), target.b0.to_bits());
         assert_eq!(arrived.a1.to_bits(), target.a1.to_bits());
@@ -443,7 +449,7 @@ mod coefficient_smoothing_tests {
     fn snap_applies_the_target_immediately() {
         let mut smoothed = SmoothedBiquadCoeffs::new(flat(), SAMPLE_RATE);
         smoothed.snap(boosted());
-        let applied = smoothed.next();
+        let applied = smoothed.next_coeffs();
         assert_eq!(applied.b0.to_bits(), boosted().b0.to_bits());
         assert!(smoothed.is_settled());
     }
@@ -482,7 +488,7 @@ mod coefficient_smoothing_tests {
                 let mut smoothed = SmoothedBiquadCoeffs::new(*from, SAMPLE_RATE);
                 smoothed.set_target(*to);
                 for step in 0..2_000 {
-                    let intermediate = smoothed.next();
+                    let intermediate = smoothed.next_coeffs();
                     let radius = pole_radius(&intermediate);
                     assert!(
                         radius < 1.0,
@@ -710,7 +716,7 @@ mod low_frequency_precision_tests {
 
     /// Pole radius of the coefficient set, used to size the settling run.
     fn pole_radius(c: &BiquadCoeffs) -> f64 {
-        let (a1, a2) = (c.a1 as f64, c.a2 as f64);
+        let (a1, a2) = (c.a1, c.a2);
         let disc = a1 * a1 - 4.0 * a2;
         if disc < 0.0 {
             a2.sqrt()

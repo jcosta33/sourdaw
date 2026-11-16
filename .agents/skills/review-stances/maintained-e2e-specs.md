@@ -52,7 +52,10 @@ an unselected spec carries no evidence for that head, then read its job result a
    outcome a readout that fails when the deciding canvas or selector is removed. A case that accepts the
    first dialog instead of the named outcome is the blind form: an unrelated dialog must not satisfy it.
    Playback evidence needs two distinct valid Bars.Beats.Ticks positions after start.
-   (#1871, #1536, #1590)
+   DOMContentLoaded does not admit the launch screen: trace launch-dependent layout assertions through the
+   actual launch-ready helper, then rename the required card and require the named case to fail. #6407
+   missed this precondition and charged cold module loading to a layout assertion.
+   (#1871, #1536, #1590, #6407)
 
 5. **The server lifecycle record never reaches the caller.**
    Probe: run a real child through the launcher in `scripts/e2eDevServer.ts` and require its actual PID,
@@ -105,3 +108,12 @@ scripts/__tests__/viteE2ePersistenceEntry.spec.ts`. Preserve checkout identity a
 scripts/__tests__/e2eServerIdentity.spec.ts`: it must fail. Isolating a lane's server never stops a
    foreign one.
    (#4032)
+
+10. **A key press lands before a closed dialog hands focus back.**
+    Probe: Radix's FocusScope returns focus to the dialog's opener from a `setTimeout` after the content
+    unmounts, so waiting only for the dialog's input to disappear leaves `<body>` focused and a pending
+    move back to the opener. A spec that closes the command palette or any dialog, then focuses another
+    control and presses keys, must first wait for focus to leave `<body>`; otherwise the timer moves focus
+    mid-sequence and later presses reach the opener. Remove that wait from the spec's palette helper and
+    the minimap case, which expects three arrow steps, reads two on a slow runner.
+    (#6421)

@@ -698,7 +698,7 @@ describe('duplicateTrack', () => {
         });
     });
 
-    it('starts a duplicated native plugin dormant while inheriting its saved state chunk', () => {
+    it('gives a duplicated native plugin its own instance id while inheriting its saved state chunk', () => {
         const source = createTrack({
             id: 'track-source',
             devices: [
@@ -712,6 +712,14 @@ describe('duplicateTrack', () => {
                     externalInstanceId: 'plugin-abc-live',
                     externalStateChunk: 'c2F2ZWQ=',
                 },
+                {
+                    id: 'device-builtin',
+                    name: 'EQ',
+                    type: 'builtin-eq',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalInstanceId: 'stale-instance',
+                },
             ],
             alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [] }],
             activeAlternativeId: 'alt-source',
@@ -721,10 +729,14 @@ describe('duplicateTrack', () => {
 
         duplicateTrack(source.id);
 
-        const copiedDevice = requireFirst(requireUpdatedTrack().devices, 'copied native device');
+        const copiedDevices = requireUpdatedTrack().devices;
+        const copiedDevice = requireFirst(copiedDevices, 'copied native device');
         // Must NOT share the source's live host instance — sharing caused capture to be
         // skipped and load-time restores to overwrite one instance, last-writer-wins.
-        expect(copiedDevice.externalInstanceId).toBeUndefined();
+        expect(copiedDevice.externalInstanceId).toMatch(/^plugin-abc-.+/);
+        expect(copiedDevice.externalInstanceId).not.toBe('plugin-abc-live');
+        // A device that hosts no plugin never carries an instance id.
+        expect(copiedDevices[1]?.externalInstanceId).toBeUndefined();
         // But it inherits the plugin binding and the saved state chunk (the sound).
         expect(copiedDevice.externalPluginId).toBe('plugin-abc');
         expect(copiedDevice.externalStateChunk).toBe('c2F2ZWQ=');

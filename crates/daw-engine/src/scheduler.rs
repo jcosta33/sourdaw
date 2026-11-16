@@ -17,12 +17,14 @@ use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{
     CaptureInputBlock, MidiControlEvent, MidiNoteEvent, NativePlugin, TransportState,
 };
+#[cfg(test)]
+use crate::timeline::timeline_rt_diagnostics_channel;
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
-    ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
-    DeviceParamEvent, DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget,
-    SendTap, TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot,
-    TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipPlacement, ClipPlayback,
+    CompensationDevices, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
+    DeviceParamTarget, RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip,
+    TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES,
+    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::bacteria::engine::BacteriaEngine;
@@ -288,7 +290,7 @@ impl MidiFxKind {
 /// theirs, never by the drain that applies the command.
 #[cfg(test)]
 fn knead_instance() -> PluginCore {
-    PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+    PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0).unwrap()
 }
 
 /// A built-in effect the graph can register, addressed without a name for the
@@ -1146,7 +1148,7 @@ impl GraphCommand {
 /// one nor free it (ADR 0020): it installs the instance into the effect
 /// table, or hands it back over the retirement channel, and nothing else.
 pub enum PluginCore {
-    Knead(KneadEngine),
+    Knead(Box<KneadEngine>),
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
     Gluten(Box<GlutenBody>),
@@ -1168,10 +1170,11 @@ impl PluginCore {
     /// [`BuiltinEffectType`] name mapping: every sender that resolves a wire
     /// name builds its instance here, against the sample rate the stream
     /// actually opened at, so no two producers can construct the same
-    /// built-in against different clocks.
-    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
-        match plugin_type {
-            BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+    /// built-in against different clocks. Fails when the body refuses the
+    /// sample rate.
+    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Result<Self, String> {
+        Ok(match plugin_type {
+            BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
@@ -1199,9 +1202,9 @@ impl PluginCore {
             }
             BuiltinEffectType::Scoring => Self::scoring_with_patch(sample_rate, &[]),
             BuiltinEffectType::TransientShaper => {
-                Self::transient_shaper_with_patch(sample_rate, &[])
+                Self::transient_shaper_with_patch(sample_rate, &[])?
             }
-        }
+        })
     }
 
     /// Build a Fermenter carrying `patch`, on the control thread.
@@ -1417,17 +1420,16 @@ impl PluginCore {
     pub fn transient_shaper_with_patch(
         sample_rate: f32,
         patch: &[(BuiltinParamName, f32)],
-    ) -> Self {
+    ) -> Result<Self, String> {
         let mut body = TransientShaperBody {
-            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)
-                .expect("native stream sample rate must be positive and finite"),
+            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)?,
             attack_gain: 1.0,
             sustain_gain: 1.0,
         };
         for (name, value) in patch {
             body.set_param(name.as_str(), *value);
         }
-        Self::TransientShaper(Box::new(body))
+        Ok(Self::TransientShaper(Box::new(body)))
     }
 
     /// The detection channel of the Tuner this core is, or `None` for every
@@ -1759,12 +1761,11 @@ impl FermenterBody {
         // The two buffers are separate heap allocations, so the pair of
         // slices aliases nothing. Nothing mutates the instrument between the
         // render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, frames),
-                std::slice::from_raw_parts(rendered_right, frames),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, frames) };
+        // SAFETY: `rendered_right` names the instrument's separate right
+        // buffer, sized and bounded exactly as the left one above, and nothing
+        // mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, frames) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -2244,12 +2245,11 @@ impl GrandBouleBody {
         // each slice lies inside the allocation it names. The two buffers are
         // separate heap allocations, so the pair of slices aliases nothing.
         // Nothing mutates the instrument between the render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, frames),
-                std::slice::from_raw_parts(rendered_right, frames),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, frames) };
+        // SAFETY: `rendered_right` names the instrument's separate right
+        // buffer, sized and bounded exactly as the left one above, and nothing
+        // mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, frames) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -3089,51 +3089,15 @@ impl BacteriaBody {
 /// alias another is answered here, where every other body answers it.
 const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 
-/// The Proof parameter name the graph owns rather than the chain, and which
-/// [`ProofBody::set_param`] therefore drops on both threads.
-///
-/// `bypass` is the device's bypass, and the device's bypass is
-/// [`GraphCommand::SetBypass`] for every body the engine hosts: the chain skips
-/// a bypassed device rather than handing it a block, and
-/// [`ActiveEffect::refresh_declared_latency`] reads that state to declare 0
-/// while it holds. Forwarding the name would put a second, invisible bypass
-/// inside a device the graph already believes it is running — the block would
-/// come back untouched while the graph went on declaring the chain's figure,
-/// so every route meeting the strip would wait for a delay the signal no longer
-/// takes.
-///
-/// `ab_bypass` is deliberately not here. It is the mastering panel's A/B
-/// compare, which `ProofChain::process` answers by returning the dry signal
-/// scaled by the loudness offset it has been tracking
-/// (`crates/daw-dsp/src/proof/chain.rs`). It is a chain control all the same,
-/// and a compare pressed while the session rolls natively is a gesture on the
-/// carrier that is sounding. Dropping it here would leave the panel's chip
-/// reading "A / dry" over the processed mix. The gain offset the compare is
-/// matched with is the chain's own: it opens at 0 dB and the chain re-derives
-/// it from its meters on every pass it processes, so this body gain-matches
-/// out of the same state the web twin does, whatever reads the meters
-/// afterwards.
-///
-/// The project has not persisted it since 11563e86b (2026-08-16) —
-/// `setProofParam` (`src/modules/Proof/useCases/proofParamBridge`) holds it out
-/// of the saved device row — but a row saved before that commit can still
-/// carry it. [`PROOF_RECORD_REFUSED`] is what refuses that name at the record
-/// door; this constant governs only the live arm.
-///
-/// The name is dropped on the control thread too, unlike
-/// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
-/// run the arm: it is that the arm belongs to a carrier this body is not. A
-/// persisted record carrying it leaves the chain exactly where the graph's own
-/// bypass put it.
-const PROOF_GRAPH_OWNED: &[&str] = &["bypass"];
-
 /// The Proof parameter name a persisted patch record must not carry, refused
 /// only at the record door in [`ProofBody::load_patch`]. A live
 /// [`ProofBody::set_param`] still forwards it: the arm it engages there is a
-/// session gesture, not a saved value, and [`PROOF_GRAPH_OWNED`]'s doc is what
-/// explains why that arm is not dropped on the live path.
+/// session gesture, not a saved value.
 ///
-/// `ab_bypass` is the mastering panel's A/B compare. Before 11563e86b
+/// `ab_bypass` is the mastering panel's A/B compare, which `ProofChain::process`
+/// answers by returning the dry signal scaled by the loudness offset it has been
+/// tracking (`crates/daw-dsp/src/proof/chain.rs`); a compare pressed while the
+/// session rolls natively is a gesture on the carrier that is sounding. Before 11563e86b
 /// (2026-08-16) the panel persisted it into the device row like any other
 /// control; that commit stopped the persistence, but a project saved before it
 /// can still carry `ab_bypass: 1`. Feeding that value through `load_patch`
@@ -3219,9 +3183,9 @@ fn proof_chain_order_slot(name: &str) -> Option<usize> {
 ///
 /// ## Names the graph owns
 ///
-/// [`PROOF_GRAPH_OWNED`] — `bypass` — is dropped here rather than forwarded, for
-/// the reason that constant carries: the device's bypass is
-/// [`GraphCommand::SetBypass`]. `ab_bypass` is not in it, and reaches the chain
+/// `bypass` is dropped here rather than forwarded (the parameter registry
+/// admits it as graph-owned), because the device's bypass is
+/// [`GraphCommand::SetBypass`]. `ab_bypass` is not dropped, and reaches the chain
 /// like any other control, so the panel's A/B compare is audible on a natively
 /// carried strip.
 ///
@@ -3449,7 +3413,7 @@ const DUTCH_OVEN_PATCH_PRECEDENCE: &[&str] = &[];
 /// never as a parameter — the `dutch-oven` descriptor
 /// (`src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
 /// declares no `bypass` row, and `ProofChamberInstance::set_param` has no arm
-/// for one — so there is no [`PROOF_GRAPH_OWNED`] analogue to withhold. Nor is
+/// for one — so there is no graph-owned name to withhold. Nor is
 /// there a record-door refusal like [`PROOF_RECORD_REFUSED`]: no wire name
 /// engages a session-only audition here, and the one internal name the record
 /// carries beyond the descriptor's automatable rows,
@@ -3544,12 +3508,11 @@ impl DutchOvenBody {
         // allocations, so the pair of slices aliases nothing, and neither
         // aliases the callback's own `left`/`right`. Nothing mutates the
         // instance between the render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, run),
-                std::slice::from_raw_parts(rendered_right, run),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, run) };
+        // SAFETY: `rendered_right` names the instance's separate `out_right`,
+        // sized and bounded exactly as `out_left` above, and nothing mutates
+        // the instance before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, run) };
         left.copy_from_slice(rendered_left);
         right.copy_from_slice(rendered_right);
     }
@@ -3879,12 +3842,12 @@ impl ToasterBody {
         // argument to that same capacity, so the frames it rendered are the
         // frames read here. Nothing mutates the instrument between the render
         // and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, run),
-                std::slice::from_raw_parts(rendered_right, run),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, run) };
+        // SAFETY: `rendered_right` is the right channel one 4096-frame capacity
+        // past the left inside that same allocation, so `run <= 128` frames
+        // from it stay inside it and overlap neither the left slice nor the
+        // callback's buffers; nothing mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, run) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -4265,12 +4228,11 @@ impl LevainBody {
         // separate heap allocations, so the pair of slices aliases nothing, and
         // neither aliases the callback's own `left`/`right`. Nothing mutates
         // the instrument between the render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, run),
-                std::slice::from_raw_parts(rendered_right, run),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, run) };
+        // SAFETY: `rendered_right` names the instrument's separate right
+        // buffer, sized and bounded exactly as the left one above, and nothing
+        // mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, run) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -5029,7 +4991,7 @@ impl IdSlotIndex {
 
     #[inline]
     fn bit_at(id: usize, depth: u32) -> usize {
-        ((id >> (usize::BITS - 1 - depth)) & 1) as usize
+        (id >> (usize::BITS - 1 - depth)) & 1
     }
 
     #[inline]
@@ -5201,9 +5163,8 @@ impl SlotWorkSet {
             return;
         }
         let index = position as usize - 1;
-        let moved = self.slots.pop().expect("work-set position names a slot");
-        if index < self.slots.len() {
-            self.slots[index] = moved;
+        self.slots.swap_remove(index);
+        if let Some(&moved) = self.slots.get(index) {
             self.positions[moved] = index as u32 + 1;
         }
         self.positions[slot] = 0;
@@ -6214,7 +6175,7 @@ pub struct AudioScheduler {
     /// the transport is playing, so a clip start and a parameter stamp mean
     /// the same position however many callbacks ran meanwhile.
     playhead_frames: u64,
-    command_rx: Option<Consumer<GraphCommand>>,
+    command_rx: Consumer<GraphCommand>,
     retired_tx: Producer<RetiredGraphObjects>,
     pending_retirement: Option<RetiredGraphObjects>,
     /// A consumed [`GraphCommand::BeginBatch`] whose body is not yet fully
@@ -6282,6 +6243,7 @@ impl AudioScheduler {
         Self::with_midi_rt_diagnostics(command_rx, retired_tx, sample_rate, diagnostics_tx)
     }
 
+    #[cfg(test)]
     pub(crate) fn with_midi_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
         retired_tx: Producer<RetiredGraphObjects>,
@@ -6331,7 +6293,7 @@ impl AudioScheduler {
             pdc_dirty: false,
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
-            command_rx: Some(command_rx),
+            command_rx,
             retired_tx,
             pending_retirement: None,
             pending_batch: None,
@@ -6553,12 +6515,11 @@ impl AudioScheduler {
                 }
                 self.pending_batch = None;
                 for _ in 0..commands {
-                    let cmd = self
-                        .command_rx
-                        .as_mut()
-                        .expect("command consumer")
-                        .pop()
-                        .expect("batch_ready proved the whole batch visible");
+                    // batch_ready proved the whole batch visible, so an empty
+                    // pop can only mean the batch has ended.
+                    let Ok(cmd) = self.command_rx.pop() else {
+                        break;
+                    };
                     // batch_ready reserved a retirement slot per command, so
                     // the drain cannot suspend inside the batch.
                     let retire_ok = self.apply_and_retire(cmd);
@@ -6571,7 +6532,7 @@ impl AudioScheduler {
                 continue;
             }
 
-            let Ok(cmd) = self.command_rx.as_mut().expect("command consumer").pop() else {
+            let Ok(cmd) = self.command_rx.pop() else {
                 return;
             };
             match cmd {
@@ -6596,7 +6557,7 @@ impl AudioScheduler {
     /// producer finishes its push, the reclaimer frees slots on its next poll
     /// — never a livelock.
     fn batch_ready(&self, commands: usize) -> bool {
-        let command_rx = self.command_rx.as_ref().expect("command consumer");
+        let command_rx = &self.command_rx;
         debug_assert!(
             command_rx.buffer().capacity() >= commands
                 && self.retired_tx.buffer().capacity() > commands,
@@ -6780,7 +6741,9 @@ impl AudioScheduler {
                     dry_delay,
                 } => match self.effect_mut(effect_id) {
                     Some(effect) => effect.aim_dry_line(latency_frames, dry_delay).map(|delay| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: delay,
+                        })
                     }),
                     None => {
                         // Refused like every other command naming an effect the
@@ -6788,7 +6751,9 @@ impl AudioScheduler {
                         // the retirement channel rather than being freed here.
                         self.timeline.record_unknown_target();
                         dry_delay.map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                     }
                 },
@@ -6980,7 +6945,7 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
-                    RetiredGraphObjects::timeline(RetiredTimelineObject::Track(rejected))
+                    RetiredGraphObjects::timeline(RetiredTimelineObject::Track { _track: rejected })
                 }),
                 GraphCommand::RemoveTrack(id) => {
                     let placed_on = EffectPlacement::Track(id);
@@ -6998,7 +6963,9 @@ impl AudioScheduler {
                                 }
                             }
                         }
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Track(track))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Track {
+                            _track: track,
+                        })
                     })
                 }
                 GraphCommand::SetTrackOutput(id, target) => {
@@ -7034,7 +7001,9 @@ impl AudioScheduler {
                     };
                     self.spare_input_hold(entry.effect_id, spliced, hold)
                         .map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                 }
                 GraphCommand::RemoveTrackDevice {
@@ -7080,7 +7049,9 @@ impl AudioScheduler {
                     };
                     self.spare_input_hold(entry.effect_id, spliced, hold)
                         .map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                 }
                 GraphCommand::RemoveBusDevice { bus_id, effect_id } => {
@@ -7107,11 +7078,15 @@ impl AudioScheduler {
                     .timeline
                     .add_send(track_id, bus_id, tap, level, delay)
                     .map(|refused| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: refused,
+                        })
                     }),
                 GraphCommand::RemoveSend { track_id, bus_id } => {
                     self.timeline.remove_send(track_id, bus_id).map(|removed| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: removed,
+                        })
                     })
                 }
                 GraphCommand::AddBusSend {
@@ -7124,7 +7099,9 @@ impl AudioScheduler {
                     .timeline
                     .add_bus_send(source_bus_id, bus_id, tap, level, delay)
                     .map(|refused| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: refused,
+                        })
                     }),
                 GraphCommand::RemoveBusSend {
                     source_bus_id,
@@ -7133,10 +7110,12 @@ impl AudioScheduler {
                     .timeline
                     .remove_bus_send(source_bus_id, bus_id)
                     .map(|removed| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: removed,
+                        })
                     }),
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
-                    RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
+                    RetiredGraphObjects::timeline(RetiredTimelineObject::Bus { _bus: rejected })
                 }),
                 GraphCommand::RemoveBus(id) => {
                     let placed_on = EffectPlacement::Bus(id);
@@ -7151,7 +7130,7 @@ impl AudioScheduler {
                                 }
                             }
                         }
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(bus))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus { _bus: bus })
                     })
                 }
                 GraphCommand::SetBusOutput(id, target) => {
@@ -7168,13 +7147,16 @@ impl AudioScheduler {
                 }
                 GraphCommand::AddClip(track_id, clip) => {
                     self.timeline.add_clip(track_id, clip).map(|rejected| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(rejected))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip {
+                            _clip: rejected,
+                        })
                     })
                 }
-                GraphCommand::RemoveClip(track_id, clip_id) => self
-                    .timeline
-                    .remove_clip(track_id, clip_id)
-                    .map(|clip| RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(clip))),
+                GraphCommand::RemoveClip(track_id, clip_id) => {
+                    self.timeline.remove_clip(track_id, clip_id).map(|clip| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip { _clip: clip })
+                    })
+                }
                 GraphCommand::SetClipPlacement(track_id, clip_id, placement) => {
                     self.timeline
                         .set_clip_placement(track_id, clip_id, placement);
@@ -7280,7 +7262,7 @@ impl AudioScheduler {
                     // decrements its Arc: the reclaimer still holds the old
                     // ring's consumer, so no heap is freed on this thread.
                     drop(std::mem::replace(&mut self.retired_tx, retired_tx));
-                    let old_rx = self.command_rx.replace(commands).expect("command consumer");
+                    let old_rx = std::mem::replace(&mut self.command_rx, commands);
                     // This fence was the old ring's last element (the control
                     // side stops pushing to a ring once it publishes the
                     // swap), so the old ring is drained dry; only the
@@ -8858,21 +8840,22 @@ impl DeviceChain for TrackDeviceChain<'_> {
 
 impl Drop for AudioScheduler {
     fn drop(&mut self) {
-        // Drop runs control-side (`StreamWithReclaimerShutdown`), never in
-        // the audio callback, so this reserve may allocate: a ring swap can
-        // have grown the live ring past the boot capacity `shutdown_commands`
-        // was preallocated with, and the drain below must hold a full ring.
-        let live_ring_capacity = self
-            .command_rx
-            .as_ref()
-            .expect("command consumer")
-            .buffer()
-            .capacity();
+        // Drop runs once the stream's last callback has returned, never
+        // inside one: where the stream is dropped on CoreAudio, and on the
+        // stream's own thread after its buffer loop exits on WASAPI and ALSA.
+        // So this reserve may allocate: a ring swap can have grown the live
+        // ring past the boot capacity `shutdown_commands` was preallocated
+        // with, and the drain below must hold a full ring.
+        let live_ring_capacity = self.command_rx.buffer().capacity();
         self.shutdown_commands.reserve(live_ring_capacity);
-        while let Ok(command) = self.command_rx.as_mut().expect("command consumer").pop() {
+        while let Ok(command) = self.command_rx.pop() {
             self.shutdown_commands.push(command);
         }
-        let command_rx = self.command_rx.take().expect("command consumer");
+        // The live consumer leaves with the shutdown retirement; the scheduler
+        // keeps an empty stand-in for its own fields to drop. Building it
+        // allocates one `Arc`, teardown work for the reason given above.
+        let (_, vacant_rx) = rtrb::RingBuffer::new(0);
+        let command_rx = std::mem::replace(&mut self.command_rx, vacant_rx);
         let command_rx = self.retain_command_consumer.then_some(command_rx);
         let retired = RetiredGraphObjects::shutdown(
             self.pending_retirement.take(),
@@ -9107,8 +9090,8 @@ mod tests {
         for ordinal in (0..64).step_by(2) {
             assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
         }
-        for ordinal in 64..128 {
-            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert_eq!(index.delete(id), Some(ordinal + 1_000));
         }
         assert!(
             index.last_delete_steps <= 2 * usize::BITS as usize,
@@ -9132,8 +9115,8 @@ mod tests {
         // Refill a fully removed shared-prefix branch. This would grow the node
         // store if deletion left dead paths behind; it also makes every
         // surviving mapping contend with reused radix nodes.
-        for ordinal in 64..128 {
-            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert!(index.insert(id, ordinal + 1_000));
         }
         assert_eq!(
             index.nodes.len(),
@@ -10190,7 +10173,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AddEffect(
                 7,
-                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .unwrap();
@@ -10227,7 +10210,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AddEffect(
                 9,
-                PluginCore::builtin(BuiltinEffectType::GrandBoule, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::GrandBoule, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .unwrap();
@@ -10271,7 +10254,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AddDetachedEffect(
                 7,
-                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .unwrap();
@@ -11619,7 +11602,7 @@ mod tests {
                 .expect("the refused splice must hand its line off");
             assert!(matches!(
                 &retired.timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
         }
 
@@ -11677,7 +11660,7 @@ mod tests {
                     .pop()
                     .expect("the refused send must hand its line off")
                     .timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
 
             command_tx
@@ -11695,7 +11678,7 @@ mod tests {
                     .pop()
                     .expect("the removed send must hand its line off")
                     .timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
         }
 
@@ -12301,7 +12284,7 @@ mod tests {
             const FRAMES: usize = 512;
             let frame_total = material.len();
             assert!(
-                frame_total % FRAMES == 0,
+                frame_total.is_multiple_of(FRAMES),
                 "the fixture material must be a whole number of callbacks"
             );
             let callbacks = frame_total / FRAMES;
@@ -13123,9 +13106,7 @@ mod timeline_tests {
         }
     }
 
-    fn parameter_recording_plugin(
-        accepts: bool,
-    ) -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<(u32, f64)>>>) {
+    fn parameter_recording_plugin(accepts: bool) -> (Box<dyn NativePlugin>, QueuedParameters) {
         let queued = Arc::new(Mutex::new(Vec::new()));
         (
             Box::new(ParameterRecordingPlugin {
@@ -13225,6 +13206,9 @@ mod timeline_tests {
     /// allocation the guard exists to catch.
     const RECORDED_NOTE_CAPACITY: usize = 64;
 
+    /// The `(parameter id, value)` writes a recording plugin has accepted.
+    type QueuedParameters = Arc<Mutex<Vec<(u32, f64)>>>;
+
     /// One note as an instrument received it: the absolute frame it landed
     /// on, which note it named, and whether it pressed or released.
     type RecordedNote = (u64, u8, bool);
@@ -13249,7 +13233,7 @@ mod timeline_tests {
     }
 
     impl FrameRecordingInstrument {
-        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
+        fn with_log() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
             let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
             let instrument = Box::new(Self {
                 processed: 0,
@@ -14547,7 +14531,7 @@ mod timeline_tests {
         // Every sample buffer the track and its clips own has to leave with
         // it: dropping them here is exactly the free ADR 0020 forbids.
         match &retired.timeline_object {
-            Some(RetiredTimelineObject::Track(track)) => {
+            Some(RetiredTimelineObject::Track { _track: track }) => {
                 assert_eq!(track.id(), 1);
                 assert_eq!(track.clip_ids().collect::<Vec<_>>(), vec![9, 10]);
             }
@@ -14566,12 +14550,12 @@ mod timeline_tests {
         let clip = harness.retired_rx.pop().expect("the removed clip");
         assert!(matches!(
             clip.timeline_object,
-            Some(RetiredTimelineObject::Clip(_))
+            Some(RetiredTimelineObject::Clip { _clip: _ })
         ));
         let bus = harness.retired_rx.pop().expect("the removed bus");
         assert!(matches!(
             bus.timeline_object,
-            Some(RetiredTimelineObject::Bus(_))
+            Some(RetiredTimelineObject::Bus { _bus: _ })
         ));
     }
 
@@ -14598,7 +14582,7 @@ mod timeline_tests {
                 .pop()
                 .expect("the rejected track")
                 .timeline_object,
-            Some(RetiredTimelineObject::Track(_))
+            Some(RetiredTimelineObject::Track { _track: _ })
         ));
     }
 
@@ -14629,7 +14613,7 @@ mod timeline_tests {
                 .pop()
                 .expect("the refused track")
                 .timeline_object,
-            Some(RetiredTimelineObject::Track(_))
+            Some(RetiredTimelineObject::Track { _track: _ })
         ));
     }
 
@@ -18386,7 +18370,7 @@ mod timeline_tests {
         assert!(
             matches!(
                 &retired.timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ),
             "the refused splice's own line is what leaves"
         );
@@ -19040,7 +19024,7 @@ mod timeline_tests {
         const CLIP_FRAMES: usize = 8_192;
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         insert_track_generator(harness, track_id, effect_id, instrument, 0);
         received
     }
@@ -19221,7 +19205,7 @@ mod timeline_tests {
     fn an_effect_without_a_store_refuses_scheduled_notes() {
         let mut harness = Harness::new(32);
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 1_024);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(7, instrument, None));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.playing();
@@ -19906,6 +19890,8 @@ mod timeline_tests {
         audio_only_calls: Arc<AtomicUsize>,
     }
 
+    type SharedTransports = Arc<Mutex<Vec<RecordedTransport>>>;
+
     /// The transport facts the assertion reads, at a precision that compares.
     #[derive(Clone, Copy, PartialEq, Debug)]
     struct RecordedTransport {
@@ -19971,11 +19957,7 @@ mod timeline_tests {
         const CHAIN_DEVICE: usize = 8;
         const MASTER_DEVICE: usize = 9;
 
-        fn recording_plugin() -> (
-            Box<dyn NativePlugin>,
-            Arc<Mutex<Vec<RecordedTransport>>>,
-            Arc<AtomicUsize>,
-        ) {
+        fn recording_plugin() -> (Box<dyn NativePlugin>, SharedTransports, Arc<AtomicUsize>) {
             let transports = Arc::new(Mutex::new(Vec::new()));
             let audio_only_calls = Arc::new(AtomicUsize::new(0));
             let plugin = Box::new(TransportRecordingPlugin {
@@ -20061,7 +20043,7 @@ mod timeline_tests {
         const FILL_FROM: u64 = LOOP_END - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY as u64;
 
         let mut harness = Harness::new(32);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(
             7,
             instrument,
@@ -20470,7 +20452,7 @@ mod timeline_tests {
         const NOTE_ON: u64 = 8;
 
         let mut harness = Harness::new(32);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(
             7,
             instrument,
@@ -20887,16 +20869,14 @@ mod timeline_tests {
             // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
             // frames into the instance's own pair of buffers, which are exactly
             // that long and are never resized.
-            unsafe {
-                worklet_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    FERMENTER_BLOCK_FRAMES,
-                ));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    FERMENTER_BLOCK_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, FERMENTER_BLOCK_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, FERMENTER_BLOCK_FRAMES)
+            });
         }
 
         assert!(
@@ -21387,16 +21367,14 @@ mod timeline_tests {
             // frames into the instance's own pair of buffers, which are
             // `GRAND_BOULE_BLOCK_FRAMES` long — never shorter, as the spec
             // below pins — and are never resized.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-                right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-            }
+            left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GRAND_BOULE_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GRAND_BOULE_RUN_FRAMES)
+            });
         }
         (left, right)
     }
@@ -21711,12 +21689,14 @@ mod timeline_tests {
             // `a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts`
             // pins — and `run_frames` never exceeds that. Both pointers are
             // read and copied here, before the instance is mutated again.
-            unsafe {
-                reference_left
-                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
-                reference_right
-                    .extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
-            }
+            reference_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, run_frames)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            reference_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, run_frames)
+            });
         }
 
         assert!(
@@ -21794,19 +21774,19 @@ mod timeline_tests {
             }
             let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
             let rendered_right = instance.get_right_ptr();
-            // SAFETY: as in the partial-tail spec above — the pointers name
-            // this run's fixed-length render into the instance's own
-            // buffers, copied before the instance is mutated again.
-            unsafe {
-                reference_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-                reference_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-            }
+            // SAFETY: as in the partial-tail spec above — `rendered_left`
+            // names the instance's own left buffer, `GRAND_BOULE_BLOCK_FRAMES`
+            // long and never resized, into which `process` has just rendered
+            // `GRAND_BOULE_RUN_FRAMES` frames, copied before the instance is
+            // mutated again.
+            reference_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GRAND_BOULE_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            reference_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GRAND_BOULE_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -23255,17 +23235,14 @@ mod timeline_tests {
     /// Render one pedal pressed alone, with the two single-pedal references to
     /// judge it against.
     ///
+    /// One rendered `(left, right)` pair.
+    type StereoRender = (Vec<f32>, Vec<f32>);
+
     /// Returns the hosted pair, the reference pair for `controller`'s own pedal,
     /// and the reference pair for the other switch pedal. Both references run
     /// the same programme and engage exactly one pedal, so the pair of them
     /// separates CC66 from CC67 rather than a pedal from no pedal.
-    fn render_one_grand_boule_pedal(
-        controller: u8,
-    ) -> (
-        (Vec<f32>, Vec<f32>),
-        (Vec<f32>, Vec<f32>),
-        (Vec<f32>, Vec<f32>),
-    ) {
+    fn render_one_grand_boule_pedal(controller: u8) -> (StereoRender, StereoRender, StereoRender) {
         const CALLBACK: usize = SINGLE_PEDAL_CALLBACK_FRAMES;
         const CALLBACKS: usize = 16;
         const RUNS: usize = CALLBACK * CALLBACKS / GRAND_BOULE_RUN_FRAMES;
@@ -23682,16 +23659,15 @@ mod timeline_tests {
             // instance's own output buffers, which are 4096 frames long and
             // are never resized; nothing mutates the instance between the
             // render and this copy.
-            unsafe {
-                worklet_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GLUTEN_RUN_FRAMES,
-                ));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GLUTEN_RUN_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GLUTEN_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the instance's separate right
+            // output buffer, sized exactly as the left one above and untouched
+            // since the render.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GLUTEN_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -23999,14 +23975,15 @@ mod timeline_tests {
             // instance's own output buffers, which are 4096 frames long and
             // are never resized; nothing mutates the instance between the
             // render and this copy.
-            unsafe {
-                worklet_left
-                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, CRUST_RUN_FRAMES));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    CRUST_RUN_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, CRUST_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the instance's separate right
+            // output buffer, sized exactly as the left one above and untouched
+            // since the render.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, CRUST_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -24283,16 +24260,15 @@ mod timeline_tests {
             // instance's own output buffers, which are `MAX_GRINDER_BLOCK_SIZE`
             // frames long and are never resized; nothing mutates the instance
             // between the render and this copy.
-            unsafe {
-                worklet_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GRINDER_RUN_FRAMES,
-                ));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GRINDER_RUN_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GRINDER_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the instance's separate right
+            // output buffer, sized exactly as the left one above and untouched
+            // since the render.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GRINDER_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -26110,15 +26086,15 @@ mod timeline_tests {
                 run as u32,
             );
             let run_right = instance.get_right_ptr();
-            // SAFETY: both pointers name the instance's own output buffers,
-            // which its constructor sizes at 1024 frames and no method resizes;
-            // `run` is bounded by `run_frames`, which every caller here passes
-            // at or below that length. Nothing mutates the instance between the
-            // render and these reads.
-            unsafe {
-                out_left.extend_from_slice(std::slice::from_raw_parts(run_left, run));
-                out_right.extend_from_slice(std::slice::from_raw_parts(run_right, run));
-            }
+            // SAFETY: `run_left` names the instance's own `out_left`, which its
+            // constructor sizes at `PROOF_CHAMBER_BLOCK_FRAMES` (1024) frames and
+            // no method resizes; `run` is bounded by `run_frames`, which this
+            // helper's only caller passes as exactly that length. Nothing
+            // mutates the instance between the render and this read.
+            out_left.extend_from_slice(unsafe { std::slice::from_raw_parts(run_left, run) });
+            // SAFETY: `run_right` names the separate `out_right`, sized and
+            // bounded exactly as `out_left` above.
+            out_right.extend_from_slice(unsafe { std::slice::from_raw_parts(run_right, run) });
             rendered = run_end;
         }
         (out_left, out_right)
@@ -26574,10 +26550,15 @@ mod timeline_tests {
             // well inside that, and the right channel starts one such channel
             // past the left. Nothing mutates the instrument between the render
             // and these reads.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
-                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
-            }
+            left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, run_frames)
+            });
+            // SAFETY: `rendered_right` is the right channel one 4096-frame
+            // channel past the left in that same buffer, so `run_frames` from it
+            // stay inside the allocation, untouched since the render.
+            right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, run_frames)
+            });
             rendered += run_frames;
             run += 1;
         }
@@ -27485,10 +27466,14 @@ mod timeline_tests {
             // buffers are separate allocations, so the reads alias nothing.
             // Nothing mutates the instrument between the render and these
             // reads.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
-                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
-            }
+            left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, run_frames)
+            });
+            // SAFETY: `rendered_right` names the instrument's separate right
+            // buffer, sized and bounded exactly as the left one above.
+            right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, run_frames)
+            });
             rendered += run_frames;
             run += 1;
         }
@@ -28163,7 +28148,7 @@ mod timeline_tests {
         const RUNS: usize = 8;
 
         let PluginCore::Levain(mut body) =
-            PluginCore::builtin(BuiltinEffectType::Levain, LEVAIN_RATE)
+            PluginCore::builtin(BuiltinEffectType::Levain, LEVAIN_RATE).unwrap()
         else {
             unreachable!("the name path builds the levain variant");
         };
@@ -28841,7 +28826,7 @@ mod timeline_tests {
         track_with_constant_clip(&mut harness, 1, 9, 0.5, frames);
         harness.send(GraphCommand::AddDetachedEffect(
             7,
-            PluginCore::builtin(BuiltinEffectType::TransientShaper, 48_000.0),
+            PluginCore::builtin(BuiltinEffectType::TransientShaper, 48_000.0).unwrap(),
             None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
@@ -28993,7 +28978,8 @@ mod timeline_tests {
                             (BuiltinParamName::parse("attackGain").unwrap(), 2.0),
                             (BuiltinParamName::parse("sustainGain").unwrap(), 2.0),
                         ],
-                    ),
+                    )
+                    .unwrap(),
                     None,
                 ));
                 harness.send(GraphCommand::AddPlugin(

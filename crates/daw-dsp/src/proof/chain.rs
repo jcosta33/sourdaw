@@ -29,6 +29,21 @@ pub enum ModuleId {
     Limiter = 4,
 }
 
+impl ModuleId {
+    /// The module a reorder message names by its discriminant, or `None` for a
+    /// value outside the chain.
+    fn from_wire(id: u8) -> Option<ModuleId> {
+        match id {
+            0 => Some(ModuleId::Eq),
+            1 => Some(ModuleId::Dynamics),
+            2 => Some(ModuleId::Imager),
+            3 => Some(ModuleId::Exciter),
+            4 => Some(ModuleId::Limiter),
+            _ => None,
+        }
+    }
+}
+
 const NUM_MODULES: usize = 5;
 // 6 taps: input + after each of the 5 modules
 const NUM_TAPS: usize = NUM_MODULES + 1;
@@ -315,23 +330,18 @@ impl ProofChain {
     /// Reorder modules. `new_order` contains ModuleId values in desired order.
     pub fn reorder(&mut self, new_order: [u8; NUM_MODULES]) {
         let mut seen = [false; NUM_MODULES];
-        for &id in &new_order {
-            if id as usize >= NUM_MODULES || seen[id as usize] {
+        let mut order = self.order;
+        for (slot, &id) in order.iter_mut().zip(&new_order) {
+            let Some(module) = ModuleId::from_wire(id) else {
+                return;
+            };
+            if seen[module as usize] {
                 return;
             }
-            seen[id as usize] = true;
+            seen[module as usize] = true;
+            *slot = module;
         }
-
-        for (i, &id) in new_order.iter().enumerate() {
-            self.order[i] = match id {
-                0 => ModuleId::Eq,
-                1 => ModuleId::Dynamics,
-                2 => ModuleId::Imager,
-                3 => ModuleId::Exciter,
-                4 => ModuleId::Limiter,
-                _ => unreachable!(),
-            };
-        }
+        self.order = order;
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -888,14 +898,14 @@ mod latency_contract_tests {
             right[i] = left[i];
         }
         chain.process(&mut left, &mut right);
-        for i in 0..BLOCK {
+        for (i, &actual) in left.iter().enumerate().take(BLOCK) {
             let expected = tone(n + i - latency);
             assert!(
-                (left[i] - expected).abs() < 1e-4,
+                (actual - expected).abs() < 1e-4,
                 "sample {i} of the post-bypass block read {} against an expected \
                  unity delayed tone of {expected} — the bypass left a stale gain \
                  applied to the line",
-                left[i]
+                actual
             );
         }
     }
@@ -946,14 +956,14 @@ mod latency_contract_tests {
         chain.process(&mut left, &mut right);
 
         let ab_gain = 10.0_f32.powf(chain.ab_gain_offset_db() / 20.0);
-        for i in 0..BLOCK {
+        for (i, &actual) in left.iter().enumerate().take(BLOCK) {
             let expected = tone(n + i - latency) * ab_gain;
             assert!(
-                (left[i] - expected).abs() < 1e-4,
+                (actual - expected).abs() < 1e-4,
                 "sample {i} of the first compared block read {} against an \
                  expected delayed tone of {expected} — the dry line was not kept \
                  fed while the compare was off",
-                left[i]
+                actual
             );
         }
     }

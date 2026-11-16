@@ -57,6 +57,9 @@ const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// Hands a take's completion service to the capture reclaimer worker.
+type CaptureServiceSender = Sender<Box<dyn CaptureCompletionService>>;
+
 /// Completion work for one native take, visited only off the audio callbacks.
 /// Implementations retain pending work on contention and must never reenter the
 /// engine from `engine_stopped`, which can run while its owner holds its lock.
@@ -168,7 +171,7 @@ impl CapturePeriodObservation {
 }
 
 struct CaptureServiceAdoption {
-    sender: Sender<Box<dyn CaptureCompletionService>>,
+    sender: CaptureServiceSender,
     // Device-backed workers stop with the output callback. A detached fixture
     // has no callback and owns its worker shutdown here instead.
     detached_shutdown: Option<Sender<()>>,
@@ -637,7 +640,7 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
 /// capture completion. Adoption occurs on the control thread, never on RT.
 fn spawn_capture_feed_reclaimer(
     mut retired: Consumer<CaptureFeed>,
-) -> Result<(Sender<()>, Sender<Box<dyn CaptureCompletionService>>), String> {
+) -> Result<(Sender<()>, CaptureServiceSender), String> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (adopt_tx, adopt_rx) = mpsc::channel::<Box<dyn CaptureCompletionService>>();
     thread::Builder::new()
@@ -1778,7 +1781,7 @@ struct OwnedDeviceStreams {
 
 impl Drop for OwnedDeviceStreams {
     fn drop(&mut self) {
-        drop(self.capture.take());
+        self.capture = None;
         if let Some(pending) = &self.pending_capture {
             pending.active.store(false, Ordering::Release);
             pending.observation.closed();
@@ -2383,7 +2386,7 @@ mod capture_seam_tests {
 
     #[test]
     fn capture_feed_reclaimer_services_take_work_without_ui_commands() {
-        let (engine, _commands, _retired) = crate::engine_handle_for_command_capture(4);
+        let (engine, _commands, _retired) = crate::engine_handle_for_command_capture(4).unwrap();
         let ready = Arc::new(AtomicBool::new(false));
         let (visited, visits) = mpsc::channel();
         engine
@@ -2426,7 +2429,7 @@ mod capture_seam_tests {
         blocked
             .recv_timeout(Duration::from_secs(2))
             .expect("plugin destructor is blocked");
-        let (engine, _commands, _retired) = crate::engine_handle_for_command_capture(4);
+        let (engine, _commands, _retired) = crate::engine_handle_for_command_capture(4).unwrap();
         let (visited, visits) = mpsc::channel();
         engine
             .adopt_capture_completion_service(Box::new(CadenceService {
@@ -2444,7 +2447,7 @@ mod capture_seam_tests {
 
     #[test]
     fn capture_service_teardown_does_not_reenter_locked_engine() {
-        let (engine, _commands, _retired) = crate::engine_handle_for_command_capture(4);
+        let (engine, _commands, _retired) = crate::engine_handle_for_command_capture(4).unwrap();
         let engine = Arc::new(Mutex::new(Some(engine)));
         let (visited, _visits) = mpsc::channel();
         let (stopped, stopped_rx) = mpsc::channel();
@@ -2507,7 +2510,8 @@ mod capture_seam_tests {
 
     #[test]
     fn capture_registration_publishes_only_after_take_preparation() {
-        let (mut engine, mut commands, _retired) = crate::engine_handle_for_command_capture(1);
+        let (mut engine, mut commands, _retired) =
+            crate::engine_handle_for_command_capture(1).unwrap();
         let (handle, owner_commands) = super::observed_audio_thread_handle();
         engine.audio_thread = handle;
         {
@@ -3075,7 +3079,8 @@ mod capture_seam_tests {
         WRONG_DROP_THREAD.store(false, Ordering::SeqCst);
         OUTPUT_DROPS.store(0, Ordering::SeqCst);
         REFUSE_SECOND.store(usize::from(refuse_second), Ordering::SeqCst);
-        let (mut engine, commands, _retired) = crate::engine_handle_for_command_capture(64);
+        let (mut engine, commands, _retired) =
+            crate::engine_handle_for_command_capture(64).unwrap();
         let mut ready = pending_capture();
         let (events_tx, events_rx) = engine_event_channel();
         let (control, writer) = crate::retrospective::retrospective_capture();
@@ -3447,7 +3452,8 @@ mod capture_seam_tests {
                 OUTPUT_DROPS.store(0, Ordering::SeqCst);
                 WRONG_DROP_THREAD.store(false, Ordering::SeqCst);
                 REFUSE_SECOND.store(0, Ordering::SeqCst);
-                let (mut engine, commands, _retired) = crate::engine_handle_for_command_capture(64);
+                let (mut engine, commands, _retired) =
+                    crate::engine_handle_for_command_capture(64).unwrap();
                 let mut ready = pending_capture();
                 let (events, events_rx) = engine_event_channel();
                 let (control, writer) = crate::retrospective::retrospective_capture();
@@ -6505,7 +6511,7 @@ mod compensation_render_alloc_guards {
     }
 
     impl NoteRecordingPlugin {
-        fn new() -> (Box<dyn NativePlugin>, Arc<ReceivedNoteLog>) {
+        fn with_log() -> (Box<dyn NativePlugin>, Arc<ReceivedNoteLog>) {
             let received = Arc::new(ReceivedNoteLog::new());
             let plugin = Box::new(Self {
                 processed: 0,
@@ -6611,7 +6617,7 @@ mod compensation_render_alloc_guards {
             is_playing: true,
             ..TransportState::default()
         }));
-        let (instrument, received) = NoteRecordingPlugin::new();
+        let (instrument, received) = NoteRecordingPlugin::with_log();
         harness.send(GraphCommand::AddHostedPlugin(
             EFFECT_ID,
             instrument,
@@ -6718,7 +6724,7 @@ mod compensation_render_alloc_guards {
         }));
         harness.send(GraphCommand::AddDetachedEffect(
             EFFECT_ID,
-            PluginCore::builtin(BuiltinEffectType::Fermenter, SAMPLE_RATE),
+            PluginCore::builtin(BuiltinEffectType::Fermenter, SAMPLE_RATE).unwrap(),
             Some(MidiNoteStore::new()),
         ));
         let entry = ChainEntry {
@@ -6813,6 +6819,7 @@ mod audio_deadline {
             super::new_render_liveness().rendering,
             slot,
         )
+        .unwrap()
     }
 
     /// An xrun is the deadline miss this evidence exists to count, and it is

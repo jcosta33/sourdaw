@@ -1,7 +1,7 @@
 import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type ClipMoveActionSnapshot } from '#/utils/handlerContract';
 
+import { type ClipMoveActionSnapshot } from '../../events/arrangementClipAppActions';
 import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';

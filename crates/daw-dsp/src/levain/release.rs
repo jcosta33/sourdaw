@@ -151,3 +151,9 @@ impl PedalDeferredRelease {
         self.count > 0
     }
 }
+
+impl Default for PedalDeferredRelease {
+    fn default() -> Self {
+        Self::new()
+    }
+}

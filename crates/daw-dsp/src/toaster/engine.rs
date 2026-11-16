@@ -81,9 +81,9 @@ impl PlateReverb {
     pub fn process(&mut self, input: f32) -> (f32, f32) {
         // Read taps
         let mut taps = [0.0f32; 4];
-        for i in 0..4 {
+        for (i, tap) in taps.iter_mut().enumerate() {
             let _len = self.buffers[i].len();
-            taps[i] = self.buffers[i][self.write_pos[i]];
+            *tap = self.buffers[i][self.write_pos[i]];
         }
 
         // Hadamard-like mixing
@@ -96,10 +96,10 @@ impl PlateReverb {
 
         // Damping + feedback + write
         let input_per_line = input * 0.25;
-        for i in 0..4 {
+        for (i, &mix) in mixed.iter().enumerate() {
             // DSP-2: the tank feedback state decays toward zero once input stops.
             let damped = settle_effect_state(flush_denormal(
-                self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]),
+                self.feedback[i] + (1.0 - self.damping) * (mix - self.feedback[i]),
             ));
             self.feedback[i] = damped;
             let len = self.buffers[i].len();
@@ -635,20 +635,15 @@ impl ToasterEngine {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        mut pad_outputs: Option<&mut [f32]>,
+        pad_outputs: Option<&mut [f32]>,
         pad_stride: usize,
     ) {
         let len = left.len().min(right.len()).min(self.bus_buffers_l[0].len());
         let required_pad_samples = self.pads.len().saturating_mul(2).saturating_mul(pad_stride);
-        let pad_outputs_valid = pad_stride >= len
-            && pad_outputs
-                .as_ref()
-                .is_some_and(|outputs| outputs.len() >= required_pad_samples);
+        let mut pad_outputs = pad_outputs
+            .filter(|outputs| pad_stride >= len && outputs.len() >= required_pad_samples);
 
-        if pad_outputs_valid {
-            let outputs = pad_outputs
-                .as_deref_mut()
-                .expect("validated pad output buffer");
+        if let Some(outputs) = pad_outputs.as_deref_mut() {
             for channel in 0..self.pads.len() * 2 {
                 let start = channel * pad_stride;
                 outputs[start..start + len].fill(0.0);
@@ -722,10 +717,7 @@ impl ToasterEngine {
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
 
-                    if pad_outputs_valid {
-                        let outputs = pad_outputs
-                            .as_deref_mut()
-                            .expect("validated pad output buffer");
+                    if let Some(outputs) = pad_outputs.as_deref_mut() {
                         let tap_start = pad_idx * 2 * pad_stride;
                         // The engine owns master gain for both the parent mix and
                         // routed pad taps so every output follows one render-quantum

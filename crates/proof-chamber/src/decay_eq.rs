@@ -619,8 +619,8 @@ impl DecayRateEq {
     /// different correction from one sitting where it is eating none.
     pub fn set_loop_gains(&mut self, gains: &[f32; NUM_PROBES]) {
         let mut changed = false;
-        for index in 0..NUM_PROBES {
-            let clamped = gains[index].clamp(MIN_LOOP_GAIN, 1.0);
+        for (index, gain) in gains.iter().enumerate() {
+            let clamped = gain.clamp(MIN_LOOP_GAIN, 1.0);
             if self.loop_gains[index] != clamped {
                 self.loop_gains[index] = clamped;
                 changed = true;

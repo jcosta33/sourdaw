@@ -118,12 +118,23 @@ mod tests {
         assert_eq!(inst.engine.shift_semitones, 3.0);
 
         let frames = 128usize;
-        unsafe {
+        {
             let in_l = inst.get_input_left_ptr();
             let in_r = inst.get_input_right_ptr();
             for i in 0..frames {
-                *in_l.add(i) = 0.1;
-                *in_r.add(i) = -0.1;
+                // SAFETY: `in_l` is `left_buf`, which `KneadInstance::new`
+                // allocates at 4096 samples and nothing resizes, and
+                // `i < frames = 128`, so the offset stays inside it.
+                let left_slot = unsafe { in_l.add(i) };
+                // SAFETY: `left_slot` is in bounds of that initialised buffer,
+                // and no reference to it is live while the test writes.
+                unsafe { *left_slot = 0.1 };
+                // SAFETY: `in_r` is the separate `right_buf`, sized and bounded
+                // exactly as `left_buf` above.
+                let right_slot = unsafe { in_r.add(i) };
+                // SAFETY: `right_slot` is in bounds of that initialised buffer,
+                // and no reference to it is live while the test writes.
+                unsafe { *right_slot = -0.1 };
             }
         }
         let out_l = inst.process(frames as u32);
@@ -182,17 +193,33 @@ mod tests {
         // GREEN: the instance boundary scrubs every non-finite sample to
         // silence and surfaces the exact flush count on the telemetry counter.
         let mut inst = KneadInstance::new(48_000.0);
-        unsafe {
+        {
             let in_l = inst.get_input_left_ptr();
             let in_r = inst.get_input_right_ptr();
             for i in 0..frames {
-                *in_l.add(i) = poison_l[i];
-                *in_r.add(i) = poison_r[i];
+                // SAFETY: `in_l` is `left_buf`, which `KneadInstance::new`
+                // allocates at 4096 samples and nothing resizes, and
+                // `i < frames = 4096`, so the offset stays inside it.
+                let left_slot = unsafe { in_l.add(i) };
+                // SAFETY: `left_slot` is in bounds of that initialised buffer,
+                // and no reference to it is live while the test writes.
+                unsafe { *left_slot = poison_l[i] };
+                // SAFETY: `in_r` is the separate `right_buf`, sized and bounded
+                // exactly as `left_buf` above.
+                let right_slot = unsafe { in_r.add(i) };
+                // SAFETY: `right_slot` is in bounds of that initialised buffer,
+                // and no reference to it is live while the test writes.
+                unsafe { *right_slot = poison_r[i] };
             }
         }
         let out_l = inst.process(frames as u32);
         let out_r = inst.get_right_ptr();
+        // SAFETY: `out_l` is `left_buf`, 4096 initialised samples that nothing
+        // resizes, and `frames` is 4096; `inst` is only read while the slice
+        // lives.
         let left = unsafe { std::slice::from_raw_parts(out_l, frames) };
+        // SAFETY: `out_r` is the separate `right_buf`, sized and held exactly
+        // as `left_buf` above.
         let right = unsafe { std::slice::from_raw_parts(out_r, frames) };
         assert!(
             left.iter().chain(right.iter()).all(|s| s.is_finite()),
@@ -221,17 +248,33 @@ mod tests {
         engine.process_block(&mut raw_l, &mut raw_r);
 
         let mut inst = KneadInstance::new(48_000.0);
-        unsafe {
+        {
             let in_l = inst.get_input_left_ptr();
             let in_r = inst.get_input_right_ptr();
-            for i in 0..frames {
-                *in_l.add(i) = signal[i];
-                *in_r.add(i) = signal[i];
+            for (i, &s) in signal.iter().enumerate().take(frames) {
+                // SAFETY: `in_l` is `left_buf`, which `KneadInstance::new`
+                // allocates at 4096 samples and nothing resizes, and
+                // `i < frames = 4096`, so the offset stays inside it.
+                let left_slot = unsafe { in_l.add(i) };
+                // SAFETY: `left_slot` is in bounds of that initialised buffer,
+                // and no reference to it is live while the test writes.
+                unsafe { *left_slot = s };
+                // SAFETY: `in_r` is the separate `right_buf`, sized and bounded
+                // exactly as `left_buf` above.
+                let right_slot = unsafe { in_r.add(i) };
+                // SAFETY: `right_slot` is in bounds of that initialised buffer,
+                // and no reference to it is live while the test writes.
+                unsafe { *right_slot = s };
             }
         }
         let out_l = inst.process(frames as u32);
         let out_r = inst.get_right_ptr();
+        // SAFETY: `out_l` is `left_buf`, 4096 initialised samples that nothing
+        // resizes, and `frames` is 4096; `inst` is only read while the slice
+        // lives.
         let left = unsafe { std::slice::from_raw_parts(out_l, frames) };
+        // SAFETY: `out_r` is the separate `right_buf`, sized and held exactly
+        // as `left_buf` above.
         let right = unsafe { std::slice::from_raw_parts(out_r, frames) };
 
         for i in 0..frames {

@@ -26,18 +26,13 @@ fn fast_tanh(x: f32) -> f32 {
     x * (27.0 + x2) / (27.0 + 9.0 * x2)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PercType {
+    #[default]
     Cowbell,
     Clave,
     Shaker,
     Rim,
-}
-
-impl Default for PercType {
-    fn default() -> Self {
-        Self::Cowbell
-    }
 }
 
 pub struct PercEngine {

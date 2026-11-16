@@ -31,11 +31,18 @@ unsafe extern "C" fn entry_init(_plugin_path: *const c_char) -> bool {
 
 unsafe extern "C" fn entry_deinit() {}
 
+/// # Safety
+/// `factory_id`, when non-null, must point to a NUL-terminated C string that
+/// stays live and unmodified for the duration of the call, as `clap/entry.h`
+/// requires of the host's `get_factory` argument.
 unsafe extern "C" fn entry_get_factory(factory_id: *const c_char) -> *const c_void {
     if factory_id.is_null() {
         return ptr::null();
     }
-    let id = CStr::from_ptr(factory_id);
+    // SAFETY: `factory_id` is non-null (checked above) and, per this
+    // function's `# Safety` contract, NUL-terminated and unmodified for the
+    // call; `id` does not outlive the call.
+    let id = unsafe { CStr::from_ptr(factory_id) };
     if id == CLAP_PLUGIN_FACTORY_ID {
         return &raw const factory::FACTORY as *const c_void;
     }

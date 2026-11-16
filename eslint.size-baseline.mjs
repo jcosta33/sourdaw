@@ -8,7 +8,8 @@
 //
 // A file leaves this list only once it complies with all four rules at their
 // configured limits. No file is ever added — new code is held to the ceilings
-// from the start. Keep the list sorted and free of duplicates; a moved or
+// from the start, and scripts/checkSizeBaselineShrinks.ts refuses any path absent
+// from the merge base's list. Keep the list sorted and free of duplicates; a moved or
 // deleted file must be removed here too, or scripts/__tests__/lintSizeBaseline.spec.ts
 // fails.
 export const sizeBaselineFiles = [
@@ -112,7 +113,6 @@ export const sizeBaselineFiles = [
     'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedBatchOutcome.ts',
     'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts',
     'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleVerifiedBatchReplay.ts',
-    'src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts',
     'src/modules/AiRuntime/useCases/agentRunLifecycle.ts',
     'src/modules/AiRuntime/useCases/agentToolCatalog.ts',
     'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts',
@@ -121,16 +121,12 @@ export const sizeBaselineFiles = [
     'src/modules/AiRuntime/useCases/cancelAgentRun.ts',
     'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts',
     'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts',
-    'src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts',
-    'src/modules/AiRuntime/useCases/describePlannedAction.ts',
     'src/modules/AiRuntime/useCases/executePlannedActions.ts',
     'src/modules/AiRuntime/useCases/executePromptActionGroup.ts',
     'src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts',
-    'src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts',
     'src/modules/AiRuntime/useCases/getProjectContext.ts',
     'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts',
     'src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/initEngine.ts',
-    'src/modules/AiRuntime/useCases/materializeActionStateGuards.ts',
     'src/modules/AiRuntime/useCases/modelProviderProtocol.ts',
     'src/modules/AiRuntime/useCases/musicMentor/generateLessons.ts',
     'src/modules/AiRuntime/useCases/parsePromptToActions.ts',
@@ -421,7 +417,6 @@ export const sizeBaselineFiles = [
     'src/modules/Project/presentations/views/TemplateChooser.tsx',
     'src/modules/Project/stores/arrangementStore.ts',
     'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts',
-    'src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts',
     'src/modules/Project/useCases/getAgentProjectModelContract.ts',
     'src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts',
     'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts',

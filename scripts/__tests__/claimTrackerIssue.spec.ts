@@ -93,7 +93,13 @@ type IssueFixture = {
     ignoreLabelEdit?: boolean;
     timeline?: TimelineEntry[];
     hideClaimComments?: boolean;
+    /** Runs after each timeline page is served, standing in for a write between two page fetches. */
+    afterTimelinePage?: (page: number, timeline: TimelineEntry[]) => TimelineEntry[] | undefined;
     commentIds?: number[];
+    boardTotalCount?: number;
+    boardsResponse?: string;
+    fieldLists?: Record<number, unknown>;
+    failItemEdit?: (args: string[]) => string | undefined;
 };
 
 type TimelineEntry = {
@@ -116,6 +122,19 @@ function fixtureToken(digit: string): string {
 const TOKEN_A = fixtureToken('a');
 const TOKEN_B = fixtureToken('b');
 const TOKEN_STALE = fixtureToken('c');
+
+/** The page size the claim requests, so fixtures can place entries on either side of a page boundary. */
+const TIMELINE_PAGE_SIZE = 100;
+
+/** Ordinary operator comments that are not claim tokens, numbered from 1. */
+function noteComments(count: number): TimelineEntry[] {
+    return Array.from({ length: count }, (_, index) => ({
+        event: 'commented',
+        id: index + 1,
+        body: `Progress note ${index + 1}.`,
+        user: { node_id: OPERATOR_NODE_ID },
+    }));
+}
 
 function tokenComment(id: number, token: string, nodeId: string = OPERATOR_NODE_ID): TimelineEntry {
     return {
@@ -154,6 +173,25 @@ function fakeIssue(initialLabels: string[], boards: BoardFixture[], issue: Issue
     const issueView = (viewed: string[]) =>
         JSON.stringify({ labels: viewed.map((name) => ({ name })), state: issue.state ?? 'OPEN' });
 
+    /**
+     * Pages are positional like GitHub's `page`/`per_page` timeline: each page is cut from the
+     * timeline as it stands when that page is fetched, so a deletion between two fetches shifts
+     * later entries onto a page already read.
+     */
+    function timelinePages(): TimelineEntry[][] {
+        const pages: TimelineEntry[][] = [];
+        for (let page = 0; ; page += 1) {
+            const visible =
+                issue.hideClaimComments === true ? timeline.filter((e) => e.event !== 'commented') : timeline;
+            const entries = visible.slice(page * TIMELINE_PAGE_SIZE, (page + 1) * TIMELINE_PAGE_SIZE);
+            pages.push(entries);
+            timeline = issue.afterTimelinePage?.(page, timeline) ?? timeline;
+            if (entries.length < TIMELINE_PAGE_SIZE) {
+                return pages;
+            }
+        }
+    }
+
     function claimer(options: { firstReadBeforeAnyEdit?: boolean } = {}) {
         const calls: string[][] = [];
         const firstRead = labels;
@@ -172,7 +210,7 @@ function fakeIssue(initialLabels: string[], boards: BoardFixture[], issue: Issue
                 return 'https://github.com/jcosta33/sourdaw/issues/4342';
             }
             if (args[0] === 'api' && args[1] === 'graphql') {
-                return boardsGraphql(boards);
+                return issue.boardsResponse ?? boardsGraphql(boards, issue.boardTotalCount);
             }
             if (args[0] === 'api' && args[1] === '-X' && args[2] === 'POST') {
                 const id = preassignedIds[postedComments] ?? 5000 + postedComments;
@@ -188,14 +226,18 @@ function fakeIssue(initialLabels: string[], boards: BoardFixture[], issue: Issue
                 return '';
             }
             if (args[0] === 'api' && args[1] === '--paginate') {
-                const visible =
-                    issue.hideClaimComments === true ? timeline.filter((e) => e.event !== 'commented') : timeline;
-                return JSON.stringify([visible.slice(0, 2), visible.slice(2)]);
+                return JSON.stringify(timelinePages());
             }
             if (args[0] === 'project' && args[1] === 'field-list') {
-                return fieldListJson(Number(args[2]));
+                const projectNumber = Number(args[2]);
+                const listing = issue.fieldLists?.[projectNumber];
+                return listing === undefined ? fieldListJson(projectNumber) : JSON.stringify(listing);
             }
             if (args[0] === 'project' && args[1] === 'item-edit') {
+                const failure = issue.failItemEdit?.(args);
+                if (failure !== undefined) {
+                    throw new Error(failure);
+                }
                 return '';
             }
             throw new Error(`unexpected gh call: ${args.join(' ')}`);
@@ -210,7 +252,7 @@ function fakeGh(initialLabels: string[], boards: BoardFixture[], issue: IssueFix
     const shared = fakeIssue(initialLabels, boards, issue);
     const { gh, calls } = shared.claimer();
     const logs: string[] = [];
-    return { gh, calls, logs, timeline: shared.timeline };
+    return { gh, calls, logs, timeline: shared.timeline, labels: shared.labels };
 }
 
 function claimComments(timeline: TimelineEntry[]): TimelineEntry[] {
@@ -227,12 +269,14 @@ describe('claim tracker issue', () => {
 
         claimTrackerIssue(4342, gh, (message) => logs.push(message));
 
+        const boardsIndex = calls.findIndex((call) => call[0] === 'api' && call[1] === 'graphql');
+        const fieldsIndex = calls.findIndex((call) => call[0] === 'project' && call[1] === 'field-list');
         const editIndex = calls.findIndex((call) => call[0] === 'issue' && call[1] === 'edit');
-        const boardsIndex = calls.findIndex((call) => call[0] === 'api');
         const moveIndex = calls.findIndex((call) => call[0] === 'project' && call[1] === 'item-edit');
-        expect(editIndex).toBeGreaterThanOrEqual(0);
-        expect(boardsIndex).toBeGreaterThan(editIndex);
-        expect(moveIndex).toBeGreaterThan(boardsIndex);
+        expect(boardsIndex).toBeGreaterThanOrEqual(0);
+        expect(fieldsIndex).toBeGreaterThan(boardsIndex);
+        expect(editIndex).toBeGreaterThan(fieldsIndex);
+        expect(moveIndex).toBeGreaterThan(editIndex);
         expect(calls).toContainEqual([
             'issue',
             'edit',
@@ -321,7 +365,8 @@ describe('claim tracker issue', () => {
             /issue #7 label edit was not observed: status:active missing, status:ready still present/
         );
         expect(callsWith(calls, ['issue', 'view'])).toHaveLength(2);
-        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
+        expect(callsWith(calls, ['api', '-X', 'POST'])).toEqual([]);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
     });
 
     it('refuses an issue closed during the claim before any board write', () => {
@@ -338,7 +383,8 @@ describe('claim tracker issue', () => {
             'issue #7 closed during the claim; status labels were edited, no board was moved'
         );
         expect(callsWith(calls, ['issue', 'edit'])).toHaveLength(1);
-        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
+        expect(callsWith(calls, ['api', '-X', 'POST'])).toEqual([]);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
     });
 
     it('reads the labels back after the edit and refuses when only a planned removal is still present', () => {
@@ -352,7 +398,8 @@ describe('claim tracker issue', () => {
         };
 
         expect(() => claimTrackerIssue(7, keepsReady, () => undefined)).toThrow(/status:ready still present/);
-        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
+        expect(callsWith(calls, ['api', '-X', 'POST'])).toEqual([]);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
     });
 
     it('claims a no-board issue with the label swap alone, touching no board', () => {
@@ -414,6 +461,92 @@ describe('claim tracker issue', () => {
     });
 });
 
+describe('board refusals before any claim write', () => {
+    const TWENTY_ONE_BOARDS = 21;
+    const refusals: { name: string; boards: BoardFixture[]; issue: IssueFixture; refusal: RegExp }[] = [
+        {
+            name: 'a second board whose Status field has no In progress option',
+            boards: [ROADMAP, BUGS],
+            issue: {
+                fieldLists: {
+                    2: { fields: [{ name: 'Status', id: 'F_status_2', options: [{ name: 'Done', id: 'opt_done' }] }] },
+                },
+            },
+            refusal: /board "Sourdaw Bugs" Status field has no "In progress" option/,
+        },
+        {
+            name: 'a board with no readable Status field',
+            boards: [ROADMAP],
+            issue: { fieldLists: { 3: { fields: [{ name: 'Area', id: 'F_area' }] } } },
+            refusal: /board "Sourdaw Roadmap" has no readable Status single-select field/,
+        },
+        {
+            name: 'a board whose field list is malformed',
+            boards: [ROADMAP],
+            issue: { fieldLists: { 3: { message: 'not found' } } },
+            refusal: /board "Sourdaw Roadmap" field list returned malformed data/,
+        },
+        {
+            name: 'more boards than one page reads',
+            boards: [ROADMAP],
+            issue: { boardTotalCount: TWENTY_ONE_BOARDS },
+            refusal: /sits on 21 project boards but the claim read only 1/,
+        },
+        {
+            name: 'a malformed board membership envelope',
+            boards: [ROADMAP],
+            issue: { boardsResponse: JSON.stringify({ data: { repository: { issue: {} } } }) },
+            refusal: /issue #7 board membership returned malformed data/,
+        },
+    ];
+
+    for (const row of refusals) {
+        it(`refuses ${row.name} before the label swap, the claim comment, or any board move`, () => {
+            const { gh, calls, labels, timeline } = fakeGh(['bug', 'status:ready'], row.boards, row.issue);
+
+            expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(row.refusal);
+
+            expect(callsWith(calls, ['issue', 'edit'])).toEqual([]);
+            expect(callsWith(calls, ['api', '-X'])).toEqual([]);
+            expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
+            expect(labels()).toEqual(['bug', 'status:ready']);
+            expect(timeline()).toEqual([]);
+        });
+    }
+
+    it('keeps the won claim and moves the other boards when one board move fails, naming the board to move by hand', () => {
+        const { gh, calls, labels, timeline } = fakeGh(['bug', 'status:ready'], [ROADMAP, BUGS], {
+            failItemEdit: (args) => (args.includes('PVT_roadmap') ? 'HTTP 403: Resource not accessible' : undefined),
+        });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 is claimed: status:active and this claim comment stay on the issue; ' +
+                'board "Sourdaw Roadmap" was not moved to In progress (HTTP 403: Resource not accessible); ' +
+                'move it by hand'
+        );
+
+        expect(callsWith(calls, ['project', 'item-edit'])).toHaveLength(2);
+        expect(callsWith(calls, ['api', '-X', 'DELETE'])).toEqual([]);
+        expect(labels()).toContain('status:active');
+        expect(claimComments(timeline()).map((entry) => entry.id)).toEqual([5000]);
+    });
+
+    it('names every board left unmoved when more than one board move fails', () => {
+        const { gh, calls, labels } = fakeGh(['bug', 'status:ready'], [ROADMAP, BUGS], {
+            failItemEdit: (args) => (args.includes('PVT_roadmap') ? 'HTTP 403' : 'HTTP 502'),
+        });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 is claimed: status:active and this claim comment stay on the issue; ' +
+                'board "Sourdaw Roadmap" was not moved to In progress (HTTP 403); ' +
+                'board "Sourdaw Bugs" was not moved to In progress (HTTP 502); move them by hand'
+        );
+
+        expect(callsWith(calls, ['project', 'item-edit'])).toHaveLength(2);
+        expect(labels()).toContain('status:active');
+    });
+});
+
 describe('concurrent claims', () => {
     function itemEdits(...callLists: string[][][]): string[][] {
         return callLists.flatMap((calls) => callsWith(calls, ['project', 'item-edit']));
@@ -453,6 +586,84 @@ describe('concurrent claims', () => {
         expect(claimComments(issue.timeline()).map((entry) => entry.id)).toEqual([5001]);
     });
 
+    it('refuses the later claim when a comment on an already-read timeline page is deleted before the next page is read', () => {
+        let deleteBetweenPages = false;
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP], {
+            timeline: noteComments(TIMELINE_PAGE_SIZE - 2),
+            afterTimelinePage: (page, timeline) => {
+                if (!deleteBetweenPages || page !== 0) {
+                    return undefined;
+                }
+                deleteBetweenPages = false;
+                return timeline.filter((entry) => entry.id !== 5);
+            },
+        });
+        const first = issue.claimer();
+        const second = issue.claimer({ firstReadBeforeAnyEdit: true });
+
+        claimTrackerIssue(7, first.gh, () => undefined, TOKEN_A);
+        deleteBetweenPages = true;
+        expect(() => claimTrackerIssue(7, second.gh, () => undefined, TOKEN_B)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5000; /
+        );
+
+        expect(deleteBetweenPages).toBe(false);
+        expect(itemEdits(first.calls)).toHaveLength(1);
+        expect(itemEdits(second.calls)).toEqual([]);
+        expect(second.calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5001']);
+        expect(claimComments(issue.timeline()).filter((entry) => entry.id === 5000 || entry.id === 5001)).toHaveLength(
+            1
+        );
+    });
+
+    it('refuses the later claim when deletions during two consecutive reads hide the same rival token from both', () => {
+        let armed = false;
+        let read = 0;
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP], {
+            timeline: noteComments(2 * TIMELINE_PAGE_SIZE - 2),
+            afterTimelinePage: (page, timeline) => {
+                if (!armed) {
+                    return undefined;
+                }
+                read += page === 0 ? 1 : 0;
+                if (read === 1 && page === 1) {
+                    return timeline.filter((entry) => entry.id !== 1);
+                }
+                if (read === 2 && page === 0) {
+                    return timeline.filter((entry) => entry.id === undefined || entry.id < 2 || entry.id > 101);
+                }
+                return undefined;
+            },
+        });
+        const first = issue.claimer();
+        const second = issue.claimer({ firstReadBeforeAnyEdit: true });
+
+        claimTrackerIssue(7, first.gh, () => undefined, TOKEN_A);
+        armed = true;
+        expect(() => claimTrackerIssue(7, second.gh, () => undefined, TOKEN_B)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5000; /
+        );
+
+        expect(read).toBeGreaterThanOrEqual(2);
+        expect(itemEdits(first.calls)).toHaveLength(1);
+        expect(itemEdits(second.calls)).toEqual([]);
+    });
+
+    it('refuses and withdraws when no two consecutive timeline reads agree', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
+            timeline: noteComments(TIMELINE_PAGE_SIZE - 2),
+            afterTimelinePage: (page, timeline) => (page === 0 ? timeline.slice(1) : undefined),
+        });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 timeline changed between every two consecutive reads of 4; no board was moved; ' +
+                'status:active stays on the issue — if no lane holds it, remove the label and claim again'
+        );
+        expect(callsWith(calls, ['api', '--paginate'])).toHaveLength(4);
+        expect(calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5000']);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
+    });
+
     it('refuses both claims and moves no board when each reads the timeline holding both tokens', () => {
         const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP]);
         const inner = issue.claimer({ firstReadBeforeAnyEdit: true });
@@ -471,15 +682,14 @@ describe('concurrent claims', () => {
             return inner.gh(args);
         };
         const outerGh: Gh = (args) => {
-            if (args[0] === 'api' && args[1] === '--paginate') {
+            if (args[0] === 'api' && args[1] === '--paginate' && outerView === undefined) {
                 try {
                     claimTrackerIssue(7, innerGh, () => undefined, TOKEN_B);
                 } catch (error) {
                     innerError = error;
                 }
-                return outerView ?? outer.gh(args);
             }
-            return outer.gh(args);
+            return args[0] === 'api' && args[1] === '--paginate' ? (outerView ?? outer.gh(args)) : outer.gh(args);
         };
 
         expect(() => claimTrackerIssue(7, outerGh, () => undefined, TOKEN_A)).toThrow(
@@ -521,20 +731,24 @@ describe('concurrent claims', () => {
         expect(claimComments(issue.timeline()).map((entry) => entry.id)).toEqual([5000]);
     });
 
-    it('posts the claim token only after the label swap is observed, and decides from the paginated timeline', () => {
+    it('posts the claim token only after the board reads and the observed label swap, and decides from the paginated timeline', () => {
         const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
 
         claimTrackerIssue(7, gh, () => undefined, TOKEN_A);
 
         const heads = calls.map((call) => call.slice(0, 3).join(' '));
-        expect(heads.slice(0, 5)).toEqual([
+        expect(heads).toEqual([
             'issue view 7',
+            'api graphql -f',
+            'project field-list 3',
             'issue edit 7',
             'issue view 7',
             'api -X POST',
             'api --paginate --slurp',
+            'api --paginate --slurp',
+            'project item-edit --project-id',
         ]);
-        expect(calls[3]).toEqual([
+        expect(calls[5]).toEqual([
             'api',
             '-X',
             'POST',
@@ -542,12 +756,13 @@ describe('concurrent claims', () => {
             '-f',
             `body=Claimed by pnpm issue:claim (sourdaw-claim:v1:${TOKEN_A}).`,
         ]);
-        expect(calls[4]).toEqual([
+        expect(calls[6]).toEqual([
             'api',
             '--paginate',
             '--slurp',
             'repos/jcosta33/sourdaw/issues/7/timeline?per_page=100',
         ]);
+        expect(calls[7]).toEqual(calls[6]);
     });
 
     it('ignores a claim token left before status:active was last removed', () => {
@@ -610,7 +825,7 @@ describe('concurrent claims', () => {
         expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
             /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-10; /
         );
-        expect(calls.some((call) => call[0] === 'project')).toBe(false);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
         expect(claimComments(timeline()).map((entry) => entry.id)).toEqual([10]);
     });
 
@@ -622,7 +837,7 @@ describe('concurrent claims', () => {
                 'status:active stays on the issue — if no lane holds it, remove the label and claim again'
         );
         expect(calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5000']);
-        expect(calls.some((call) => call[0] === 'project')).toBe(false);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
     });
 
     it('withdraws its comment when the timeline read fails, and reports a failed withdrawal too', () => {
@@ -657,7 +872,7 @@ describe('concurrent claims', () => {
         expect(() => claimTrackerIssue(7, malformed, () => undefined, TOKEN_A)).toThrow(
             'issue #7 timeline returned malformed data'
         );
-        expect(calls.some((call) => call[0] === 'project')).toBe(false);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
     });
 });
 
@@ -830,7 +1045,7 @@ describe('claim cli wiring', () => {
 
         await expect(runClaimTrackerIssueCli(['9'], deps)).resolves.toBe(0);
 
-        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'dispose']);
+        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'dispose']);
         expect(createGhSessions).toHaveLength(1);
         expect(createGhSessions[0]).toBe(authSession);
     });

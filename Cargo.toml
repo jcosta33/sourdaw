@@ -9,6 +9,7 @@ members = [
     "crates/daw-plugin-host",
     "crates/proof-chamber",
     "crates/scoring",
+    "crates/sourdaw-harness-fx",
     "crates/sourdaw-harness-tone",
     "crates/sourdaw-native"
 ]
@@ -36,51 +37,34 @@ windows = "0.62.2"
 unused = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
-dead_code = "warn"
 unsafe_op_in_unsafe_fn = "warn"
 unused_assignments = "warn"
-unused_mut = "warn"
-unused_variables = "warn"
 
+# Restriction lints weighed for this table and left out:
+# Rejected: indexing_slicing. Bounds-checked indexing is the DSP idiom; the
+# alternative adds a fallible branch to every inner render loop.
+# Rejected: mem_forget. Off-callback leaks are the bounded failure ADR 0020
+# prescribes (retrospective capture, a full shutdown retirement ring), and a
+# VST3 module whose factory is non-discardable is kept resident for the
+# process life on purpose.
+# Rejected: print_stderr. The native shell's tagged diagnostics write to
+# stderr by design; print_stdout appears only in tests.
+# Rejected: exit. Its one site is a test crash-boundary child that skips Drop
+# on purpose, as a terminated native process would.
 [workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
+all ={ level = "deny", priority = -1 }
 dbg_macro = "deny"
 get_unwrap = "deny"
+panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+unreachable = "deny"
 unwrap_used = "deny"
-await_holding_lock = "warn"
-bool_assert_comparison = "warn"
-chunks_exact_to_as_chunks = "warn"
-default_constructed_unit_structs = "warn"
-derivable_impls = "warn"
-empty_line_after_doc_comments = "warn"
-excessive_precision = "warn"
-field_reassign_with_default = "warn"
-if_same_then_else = "warn"
-int_plus_one = "warn"
-large_enum_variant = "warn"
-len_without_is_empty = "warn"
-manual_clamp = "warn"
-manual_div_ceil = "warn"
-manual_is_multiple_of = "warn"
-manual_range_contains = "warn"
-manual_repeat_n = "warn"
-needless_borrows_for_generic_args = "warn"
-needless_lifetimes = "warn"
-needless_range_loop = "warn"
-neg_cmp_op_on_partial_ord = "warn"
-new_ret_no_self = "warn"
-new_without_default = "warn"
-panic = "warn"
-result_large_err = "warn"
-result_unit_err = "warn"
-should_implement_trait = "warn"
 too_many_arguments = "warn"
-type_complexity = "warn"
-unnecessary_cast = "warn"
-useless_conversion = "warn"
-vec_box = "warn"
+# Rejected: timeline tracks, buses and clips cross the scheduler command ring
+# as boxes, so the audio thread neither reallocates nor copies large structs
+# when one is added or removed.
+vec_box = "allow"
 
 [profile.release]
 opt-level = 3

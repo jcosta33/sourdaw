@@ -582,19 +582,18 @@ describe('handleRemoveTrack', () => {
             expect(payload.automationLaneSnapshots).toEqual([removedAutomationLane]);
             expect(payload.takeLaneSnapshots).toEqual([removedTakeLane]);
 
+            // c2 sits only in the active alternative's stored copy, which is stale:
+            // the track holds its own clips and the inactive alternative's.
             expect(payload.midiNotesByClipId).toEqual({
                 c1: [noteC1],
-                c2: [noteC2],
                 c3: [noteC3],
             });
             expect(payload.midiCcByClipId).toEqual({
                 c1: [ccC1],
-                c2: [ccC2],
                 c3: [ccC3],
             });
             expect(payload.midiPitchBendByClipId).toEqual({
                 c1: [pitchBendC1],
-                c2: [pitchBendC2],
                 c3: [pitchBendC3],
             });
             expect(payload.sidechainRouteSnapshots).toEqual([removedSidechainRoute]);

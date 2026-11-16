@@ -13,6 +13,9 @@ import {
     EVENT_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
+    SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
+    SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     DIALOG_MESSAGE_CHANNEL,
     DIALOG_OPEN_CHANNEL,
@@ -84,12 +87,16 @@ describe('the published surface', () => {
             'nativeMenu',
             'paths',
             'platform',
+            'pluginFolders',
             'stream',
+            'system',
             'voiceDictation',
             'windowControls',
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
+        expect(Object.keys(bridge.pluginFolders)).toEqual(['add']);
+        expect(Object.keys(bridge.system)).toEqual(['totalMemoryBytes', 'gpuMemoryBudgetBytes']);
         expect(Object.keys(bridge.display)).toEqual(['setZoomFactor']);
         expect(Object.keys(bridge.windowControls).sort()).toEqual([
             'close',
@@ -692,6 +699,35 @@ describe('window controls', () => {
     });
 });
 
+describe('the plugin folder picker', () => {
+    it('asks main with no arguments and passes each answer shape through', async () => {
+        const answers: readonly unknown[] = [
+            { status: 'cancelled' },
+            { status: 'granted', path: '/Users/me/Plugins' },
+            { status: 'refused', reason: 'not a folder' },
+        ];
+        for (const answer of answers) {
+            const fake = fakeIpc(() => answer);
+
+            await expect(createSourdawBridge(fake.ipc).pluginFolders.add()).resolves.toEqual(answer);
+            expect(fake.invoke.mock.calls).toEqual([[PLUGIN_FOLDER_ADD_CHANNEL]]);
+        }
+    });
+
+    it.each([
+        null,
+        '/Users/me/Plugins',
+        { status: 'granted' },
+        { status: 'granted', path: 7 },
+        { status: 'refused' },
+        { status: 'unknown' },
+    ])('refuses an answer outside the contract: %j', async (answer) => {
+        await expect(createSourdawBridge(fakeIpc(() => answer).ipc).pluginFolders.add()).rejects.toThrow(
+            /unsupported payload/u
+        );
+    });
+});
+
 describe('dialogs and paths', () => {
     it('passes the options through and returns a cancellation as null', async () => {
         const fake = fakeIpc(() => null);
@@ -744,5 +780,54 @@ describe('dialogs and paths', () => {
 
         await expect(createSourdawBridge(fake.ipc).paths.samplesBase()).resolves.toBe('app://sourdaw/samples');
         expect(fake.invoke).toHaveBeenCalledWith(PATHS_SAMPLES_BASE_CHANNEL);
+    });
+
+    it('asks main for the total memory and returns a positive integer byte count', async () => {
+        const fake = fakeIpc(() => 17_179_869_184);
+
+        await expect(createSourdawBridge(fake.ipc).system.totalMemoryBytes()).resolves.toBe(17_179_869_184);
+        expect(fake.invoke).toHaveBeenCalledWith(SYSTEM_TOTAL_MEMORY_CHANNEL);
+    });
+
+    it.each([
+        { label: 'zero', answer: 0 },
+        { label: 'negative', answer: -1 },
+        { label: 'fractional', answer: 8.5e9 + 0.5 },
+        { label: 'above the safe integer range', answer: 2 ** 53 },
+        { label: 'not finite', answer: Number.POSITIVE_INFINITY },
+        { label: 'NaN', answer: Number.NaN },
+        { label: 'a numeric string', answer: '17179869184' },
+        { label: 'missing', answer: undefined },
+    ])('refuses a total-memory answer that is $label', async ({ answer }) => {
+        const bridge = createSourdawBridge(fakeIpc(() => answer).ipc);
+
+        await expect(bridge.system.totalMemoryBytes()).rejects.toThrow(TypeError);
+    });
+
+    it.each([
+        { label: 'known', answer: { state: 'known', bytes: 12_713_115_648 } },
+        { label: 'unknown', answer: { state: 'unknown' } },
+    ])('passes a $label GPU memory budget through', async ({ answer }) => {
+        const fake = fakeIpc(() => answer);
+
+        await expect(createSourdawBridge(fake.ipc).system.gpuMemoryBudgetBytes()).resolves.toEqual(answer);
+        expect(fake.invoke).toHaveBeenCalledWith(SYSTEM_GPU_MEMORY_BUDGET_CHANNEL);
+    });
+
+    it.each([
+        { label: 'known with zero bytes', answer: { state: 'known', bytes: 0 } },
+        { label: 'known with negative bytes', answer: { state: 'known', bytes: -1 } },
+        { label: 'known with fractional bytes', answer: { state: 'known', bytes: 8.5e9 + 0.5 } },
+        { label: 'known above the safe integer range', answer: { state: 'known', bytes: 2 ** 53 } },
+        { label: 'known with numeric-string bytes', answer: { state: 'known', bytes: '12713115648' } },
+        { label: 'known without bytes', answer: { state: 'known' } },
+        { label: 'an unrecognised state', answer: { state: 'partial', bytes: 1 } },
+        { label: 'a bare number', answer: 12_713_115_648 },
+        { label: 'null', answer: null },
+        { label: 'missing', answer: undefined },
+    ])('refuses a GPU memory budget answer that is $label', async ({ answer }) => {
+        const bridge = createSourdawBridge(fakeIpc(() => answer).ipc);
+
+        await expect(bridge.system.gpuMemoryBudgetBytes()).rejects.toThrow(TypeError);
     });
 });

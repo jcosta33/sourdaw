@@ -6,7 +6,10 @@ type ProductionBriefAdmission = {
 
 type ProductionBriefAdmissionGuard = (actions: readonly AppAction[]) => ProductionBriefAdmission;
 
+type ProductionBriefChangeSubscription = (listener: () => void) => () => void;
+
 let guard: ProductionBriefAdmissionGuard = () => ({ allowsCurrent: () => true });
+let subscribeToBriefChanges: ProductionBriefChangeSubscription = () => () => undefined;
 
 export const productionBriefAdmissionPort = {
     capture(actions: readonly AppAction[]): ProductionBriefAdmission {
@@ -14,5 +17,12 @@ export const productionBriefAdmissionPort = {
     },
     setGuard(nextGuard: ProductionBriefAdmissionGuard): void {
         guard = nextGuard;
+    },
+    /** Calls `listener` whenever the production brief changes, which can change what the guard admits. */
+    subscribe(listener: () => void): () => void {
+        return subscribeToBriefChanges(listener);
+    },
+    setSubscription(nextSubscription: ProductionBriefChangeSubscription): void {
+        subscribeToBriefChanges = nextSubscription;
     },
 };

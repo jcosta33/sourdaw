@@ -771,9 +771,14 @@ Backend errors should be translated at the bridge boundary.
 
 ### Rule
 
-Do not leak raw internal error chains directly to the frontend as your API contract.
+A function returns a typed error enum when any caller, Rust or TypeScript through the IPC message,
+distinguishes failure kinds. The enum is hand-written with `Display` and `std::error::Error`; its
+`Display` is the message the frontend receives, and classification is a method on the enum, never a
+prefix match on text. A failure that only propagates to the bridge or a log stays `String`.
 
-The shell should translate internal failures into stable frontend-facing errors.
+Do not leak raw internal error chains directly to the frontend as your API contract. `String` is the
+wire form at the napi and wasm-bindgen edges, and real-time paths never build an owned error. See
+[ADR 0059](../../.agents/decisions/0059-type-rust-errors-where-callers-distinguish-them.md).
 
 ---
 

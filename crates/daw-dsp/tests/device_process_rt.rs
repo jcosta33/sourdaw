@@ -54,8 +54,21 @@ fn excitation(frame: usize) -> (f32, f32) {
 unsafe fn fill_input(left: *mut f32, right: *mut f32, frames: usize, offset: usize) {
     for i in 0..frames {
         let (l, r) = excitation(offset + i);
-        *left.add(i) = l;
-        *right.add(i) = r;
+        // SAFETY: `i < frames` and this function's `# Safety` contract says
+        // `left` points to at least `frames` writable `f32`s, so the offset
+        // stays inside that allocation.
+        let left_slot = unsafe { left.add(i) };
+        // SAFETY: `left_slot` is in bounds of the `frames`-sample buffer
+        // (above), is aligned for `f32`, and the caller owns the buffer
+        // exclusively for this call, so the write is unaliased.
+        unsafe { *left_slot = l };
+        // SAFETY: `i < frames` and the `# Safety` contract says `right` points
+        // to at least `frames` writable `f32`s.
+        let right_slot = unsafe { right.add(i) };
+        // SAFETY: `right_slot` is in bounds of the `frames`-sample buffer
+        // (above), is aligned for `f32`, and the caller owns it exclusively
+        // for this call.
+        unsafe { *right_slot = r };
     }
 }
 
@@ -66,7 +79,18 @@ unsafe fn fill_input(left: *mut f32, right: *mut f32, frames: usize, offset: usi
 /// returns its own output buffer, sized at or above `frames`.
 unsafe fn read_output(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "render export returned a null buffer");
-    (0..frames).map(|i| *ptr.add(i)).collect()
+    (0..frames)
+        .map(|i| {
+            // SAFETY: `i < frames` and this function's `# Safety` contract
+            // says `ptr` points to at least `frames` readable `f32`s (it is
+            // also asserted non-null above), so the offset stays in bounds.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised `frames`-sample
+            // buffer and aligned for `f32`; the caller does not mutate the
+            // instance while this function runs.
+            unsafe { *slot }
+        })
+        .collect()
 }
 
 fn peak(samples: &[f32]) -> f32 {
@@ -135,6 +159,9 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     instance.set_param("codecArtifact", 0.65);
     instance.set_param("mix", 1.0);
 
+    // SAFETY: both pointers are `BacteriaInstance`'s input buffers, which
+    // `BacteriaInstance::new` allocates at 4096 samples and nothing resizes;
+    // `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -143,11 +170,16 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
             0,
         );
     }
+    // SAFETY: `process` returns the output-left buffer, allocated at 4096
+    // samples in `BacteriaInstance::new` and never resized; `BLOCK` (128) is
+    // within it and nothing touches the instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "bacteria");
 
     assert_no_alloc(|| {
         for block in 0..GUARDED_BLOCKS {
+            // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+            // never resized, and `BLOCK` (128) is within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -168,6 +200,8 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     // excitation and diverge whatever the codec setting is, which left the
     // engagement assertion at the bottom of this test unable to fail.
     const MEASURE_BLOCK: usize = GUARDED_BLOCKS;
+    // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`), never
+    // resized, and `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -176,6 +210,9 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
             MEASURE_BLOCK * BLOCK,
         );
     }
+    // SAFETY: `process` returns the 4096-sample output-left buffer
+    // (`BacteriaInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "bacteria");
     assert!(
@@ -198,6 +235,8 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     without_codec.set_param("mix", 1.0);
     let mut reference = Vec::new();
     for block in 0..=MEASURE_BLOCK {
+        // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+        // never resized, and `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 without_codec.get_input_left_ptr(),
@@ -206,6 +245,9 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
                 block * BLOCK,
             );
         }
+        // SAFETY: `process` returns the 4096-sample output-left buffer
+        // (`BacteriaInstance::new`); `BLOCK` (128) is within it and nothing
+        // touches the instance until the read finishes.
         reference = unsafe { read_output(without_codec.process(BLOCK as u32), BLOCK) };
     }
     let divergence = out
@@ -235,6 +277,8 @@ fn bacteria_granular_process_does_not_allocate_with_grains_sounding() {
     instance.set_param("mix", 1.0);
 
     for block in 0..8 {
+        // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+        // never resized, and `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -248,6 +292,8 @@ fn bacteria_granular_process_does_not_allocate_with_grains_sounding() {
 
     assert_no_alloc(|| {
         for block in 8..8 + GUARDED_BLOCKS {
+            // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+            // never resized, and `BLOCK` (128) is within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -260,6 +306,9 @@ fn bacteria_granular_process_does_not_allocate_with_grains_sounding() {
         }
     });
 
+    // SAFETY: `process` returns the 4096-sample output-left buffer
+    // (`BacteriaInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&output, "bacteria granular");
     assert!(
@@ -292,6 +341,8 @@ fn bacteria_smudge_mode_does_not_allocate() {
     // Warm the overlap-add path past its `ready` gate before the guard, so the
     // guarded region runs the transform rather than the dry passthrough.
     for block in 0..8 {
+        // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+        // never resized, and `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -305,6 +356,8 @@ fn bacteria_smudge_mode_does_not_allocate() {
 
     assert_no_alloc(|| {
         for block in 8..(8 + SMUDGE_BLOCKS) {
+            // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+            // never resized, and `BLOCK` (128) is within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -322,6 +375,8 @@ fn bacteria_smudge_mode_does_not_allocate() {
     // the reference below, and the two would then diverge whatever mode ran —
     // which is how the first draft of this test passed with smudge removed.
     const MEASURE_BLOCK: usize = 8 + SMUDGE_BLOCKS;
+    // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`), never
+    // resized, and `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -330,6 +385,9 @@ fn bacteria_smudge_mode_does_not_allocate() {
             MEASURE_BLOCK * BLOCK,
         );
     }
+    // SAFETY: `process` returns the 4096-sample output-left buffer
+    // (`BacteriaInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "bacteria smudge");
     assert!(
@@ -349,6 +407,8 @@ fn bacteria_smudge_mode_does_not_allocate() {
     soft_clip.set_param("mix", 1.0);
     let mut reference = Vec::new();
     for block in 0..=MEASURE_BLOCK {
+        // SAFETY: input buffers are 4096 samples (`BacteriaInstance::new`),
+        // never resized, and `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 soft_clip.get_input_left_ptr(),
@@ -357,6 +417,9 @@ fn bacteria_smudge_mode_does_not_allocate() {
                 block * BLOCK,
             );
         }
+        // SAFETY: `process` returns the 4096-sample output-left buffer
+        // (`BacteriaInstance::new`); `BLOCK` (128) is within it and nothing
+        // touches the instance until the read finishes.
         reference = unsafe { read_output(soft_clip.process(BLOCK as u32), BLOCK) };
     }
     let divergence = out
@@ -569,6 +632,10 @@ fn crumbs_process_does_not_allocate_with_a_sample_playing() {
     instance.note_on(60, 100);
     instance.note_on(67, 90);
 
+    // SAFETY: `process` returns the start of `CrumbsInstance`'s output buffer,
+    // allocated at `2 * MAX_BLOCK_SIZE` (8192) samples in `new` and never
+    // resized; its left half is 4096 samples, so `BLOCK` (128) is in bounds,
+    // and nothing touches the instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "crumbs");
 
@@ -578,6 +645,10 @@ fn crumbs_process_does_not_allocate_with_a_sample_playing() {
         }
     });
 
+    // SAFETY: `process` returns the start of `CrumbsInstance`'s output buffer,
+    // allocated at `2 * MAX_BLOCK_SIZE` (8192) samples in `new` and never
+    // resized; its left half is 4096 samples, so `BLOCK` (128) is in bounds,
+    // and nothing touches the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "crumbs");
     assert!(
@@ -661,6 +732,10 @@ fn crumbs_voice_stealing_does_not_allocate() {
     for step in 0..16_u8 {
         instance.note_on(step * 7, 100);
     }
+    // SAFETY: `process` returns the start of `CrumbsInstance`'s output buffer,
+    // allocated at `2 * MAX_BLOCK_SIZE` (8192) samples in `new` and never
+    // resized; its left half is 4096 samples, so `BLOCK` (128) is in bounds,
+    // and nothing touches the instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "crumbs steal");
     assert_eq!(
@@ -689,6 +764,10 @@ fn crumbs_voice_stealing_does_not_allocate() {
         instance.process(BLOCK as u32);
     });
 
+    // SAFETY: `process` returns the start of `CrumbsInstance`'s output buffer,
+    // allocated at `2 * MAX_BLOCK_SIZE` (8192) samples in `new` and never
+    // resized; its left half is 4096 samples, so `BLOCK` (128) is in bounds,
+    // and nothing touches the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "crumbs steal");
     assert!(
@@ -729,6 +808,10 @@ fn crumbs_resampling_budget_bounds_max_pitch_process_without_allocating() {
     assert_no_alloc(|| {
         output_ptr = instance.process(BLOCK as u32);
     });
+    // SAFETY: `output_ptr` is the start of `CrumbsInstance`'s output buffer
+    // returned by `process` above, allocated at `2 * MAX_BLOCK_SIZE` (8192)
+    // samples in `new` and never resized; its left half is 4096 samples, so
+    // `BLOCK` (128) is in bounds, and `instance` was not touched since.
     let output = unsafe { read_output(output_ptr, BLOCK) };
     assert_all_finite(&output, "crumbs max-pitch full pool");
     assert_eq!(instance.active_voices(), 24);
@@ -761,6 +844,9 @@ fn crust_process_does_not_allocate_while_limiting() {
     instance.set_param("dither", 3.0); // noise-shaped
     instance.set_param("output_bit_depth", 16.0);
 
+    // SAFETY: both pointers are `CrustInstance`'s input buffers, which
+    // `CrustInstance::new` allocates at 4096 samples and nothing resizes;
+    // `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -769,11 +855,16 @@ fn crust_process_does_not_allocate_while_limiting() {
             0,
         );
     }
+    // SAFETY: `process` returns the output-left buffer, allocated at 4096
+    // samples in `CrustInstance::new` and never resized; `BLOCK` (128) is
+    // within it and nothing touches the instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "crust");
 
     assert_no_alloc(|| {
         for block in 0..GUARDED_BLOCKS {
+            // SAFETY: input buffers are 4096 samples (`CrustInstance::new`),
+            // never resized, and `BLOCK` (128) is within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -786,6 +877,9 @@ fn crust_process_does_not_allocate_while_limiting() {
         }
     });
 
+    // SAFETY: `process` returns the 4096-sample output-left buffer
+    // (`CrustInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "crust");
     assert!(
@@ -815,6 +909,10 @@ fn fermenter_process_does_not_allocate_with_voices_sounding() {
         instance.note_on(note, 100);
     }
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "fermenter");
 
@@ -824,6 +922,10 @@ fn fermenter_process_does_not_allocate_with_voices_sounding() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "fermenter");
     assert!(
@@ -858,6 +960,10 @@ fn fermenter_karplus_glide_does_not_allocate_while_sounding() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "fermenter Karplus glide");
     assert!(
@@ -884,6 +990,10 @@ fn fermenter_scheduled_note_offsets_do_not_allocate() {
     // Warm up outside the guard so wavetable/voice-pool lazy work, if any,
     // happens before the interceptor is armed.
     instance.push_note_on(60, 100, 0, 37);
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "fermenter scheduled");
 
@@ -905,6 +1015,10 @@ fn fermenter_scheduled_note_offsets_do_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "fermenter scheduled");
     assert!(
@@ -961,6 +1075,10 @@ fn fermenter_voice_stealing_does_not_allocate() {
     for note in 36_u8..52 {
         instance.note_on(note, 100);
     }
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "fermenter steal");
     assert_eq!(
@@ -981,6 +1099,10 @@ fn fermenter_voice_stealing_does_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "fermenter steal");
     assert!(
@@ -1011,6 +1133,10 @@ fn fermenter_unison_sweep_does_not_allocate() {
     for note in 48_u8..56 {
         instance.note_on(note, 100);
     }
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "fermenter unison sweep");
 
@@ -1024,6 +1150,10 @@ fn fermenter_unison_sweep_does_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `FERMENTER_BLOCK_FRAMES` (128) samples in `FermenterInstance::new` and
+    // never resized, which equals `BLOCK`; nothing touches the instance until
+    // the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "fermenter unison sweep");
     assert!(
@@ -1049,6 +1179,9 @@ fn gluten_process_does_not_allocate_while_compressing() {
     instance.set_param("sc_eq_gain", 6.0);
     instance.set_param("thrust", 2.0);
 
+    // SAFETY: both pointers are `GlutenInstance`'s input buffers, which
+    // `GlutenInstance::new` allocates at 4096 samples and nothing resizes;
+    // `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -1057,11 +1190,16 @@ fn gluten_process_does_not_allocate_while_compressing() {
             0,
         );
     }
+    // SAFETY: `process` returns the output-left buffer, allocated at 4096
+    // samples in `GlutenInstance::new` and never resized; `BLOCK` (128) is
+    // within it and nothing touches the instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "gluten");
 
     assert_no_alloc(|| {
         for block in 0..GUARDED_BLOCKS {
+            // SAFETY: input buffers are 4096 samples (`GlutenInstance::new`),
+            // never resized, and `BLOCK` (128) is within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -1074,6 +1212,9 @@ fn gluten_process_does_not_allocate_while_compressing() {
         }
     });
 
+    // SAFETY: `process` returns the 4096-sample output-left buffer
+    // (`GlutenInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "gluten");
     assert!(
@@ -1108,6 +1249,9 @@ fn gluten_process_does_not_allocate_with_an_unlinked_detector() {
         instance.set_param("stereo_link", 0.35);
         instance.set_param("detection", 0.0);
 
+        // SAFETY: both pointers are `GlutenInstance`'s input buffers, which
+        // `GlutenInstance::new` allocates at 4096 samples and nothing resizes;
+        // `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -1116,11 +1260,16 @@ fn gluten_process_does_not_allocate_with_an_unlinked_detector() {
                 0,
             );
         }
+        // SAFETY: `process` returns the output-left buffer, allocated at 4096
+        // samples in `GlutenInstance::new` and never resized; `BLOCK` (128) is
+        // within it and nothing touches the instance until the read finishes.
         let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         assert_all_finite(&warmup, "gluten unlinked");
 
         assert_no_alloc(|| {
             for block in 0..GUARDED_BLOCKS {
+                // SAFETY: input buffers are 4096 samples (`GlutenInstance::new`),
+                // never resized, and `BLOCK` (128) is within them.
                 unsafe {
                     fill_input(
                         instance.get_input_left_ptr(),
@@ -1133,6 +1282,9 @@ fn gluten_process_does_not_allocate_with_an_unlinked_detector() {
             }
         });
 
+        // SAFETY: `process` returns the 4096-sample output-left buffer
+        // (`GlutenInstance::new`); `BLOCK` (128) is within it and nothing
+        // touches the instance until the read finishes.
         let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         assert_all_finite(&out, "gluten unlinked");
         assert!(
@@ -1161,6 +1313,9 @@ fn gluten_process_does_not_allocate_with_lookahead_on_every_topology() {
         instance.set_param("ratio", 8.0);
         instance.set_param("lookahead", 5.0);
 
+        // SAFETY: both pointers are `GlutenInstance`'s input buffers, which
+        // `GlutenInstance::new` allocates at 4096 samples and nothing resizes;
+        // `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -1169,11 +1324,16 @@ fn gluten_process_does_not_allocate_with_lookahead_on_every_topology() {
                 0,
             );
         }
+        // SAFETY: `process` returns the output-left buffer, allocated at 4096
+        // samples in `GlutenInstance::new` and never resized; `BLOCK` (128) is
+        // within it and nothing touches the instance until the read finishes.
         let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         assert_all_finite(&warmup, "gluten lookahead");
 
         assert_no_alloc(|| {
             for block in 0..GUARDED_BLOCKS {
+                // SAFETY: input buffers are 4096 samples (`GlutenInstance::new`),
+                // never resized, and `BLOCK` (128) is within them.
                 unsafe {
                     fill_input(
                         instance.get_input_left_ptr(),
@@ -1186,6 +1346,9 @@ fn gluten_process_does_not_allocate_with_lookahead_on_every_topology() {
             }
         });
 
+        // SAFETY: `process` returns the 4096-sample output-left buffer
+        // (`GlutenInstance::new`); `BLOCK` (128) is within it and nothing
+        // touches the instance until the read finishes.
         let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         assert_all_finite(&out, "gluten lookahead");
         assert!(
@@ -1235,6 +1398,10 @@ fn grand_boule_process_does_not_allocate_with_notes_held() {
     // damper curve governs it rather than the held-key short circuit.
     instance.note_off(48);
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "grand_boule");
 
@@ -1249,6 +1416,10 @@ fn grand_boule_process_does_not_allocate_with_notes_held() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "grand_boule");
     assert!(
@@ -1278,6 +1449,10 @@ fn grand_boule_process_with_pushed_notes_does_not_allocate() {
     instance.set_sustain(0.9);
     instance.note_on(48, 0.9);
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "grand_boule");
 
@@ -1297,6 +1472,10 @@ fn grand_boule_process_with_pushed_notes_does_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "grand_boule");
     assert!(
@@ -1323,6 +1502,10 @@ fn grand_boule_process_with_pushed_pedals_does_not_allocate() {
     instance.set_param("mic_position", 2.0);
     instance.note_on(48, 0.9);
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "grand_boule");
 
@@ -1339,6 +1522,10 @@ fn grand_boule_process_with_pushed_pedals_does_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "grand_boule");
     assert!(
@@ -1372,6 +1559,10 @@ fn grand_boule_fir_body_tail_and_control_updates_do_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&output, "grand_boule FIR body tail");
     assert!(
@@ -1395,6 +1586,10 @@ fn grand_boule_voice_steal_crossfade_does_not_allocate() {
         instance.process(BLOCK as u32);
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in `GrandBouleInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "grand_boule voice steal");
     assert!(
@@ -1421,6 +1616,10 @@ fn grand_boule_saturated_steal_tail_pool_does_not_allocate() {
         output = instance.process(BLOCK as u32);
     });
 
+    // SAFETY: `output` is `left_buf` returned by `process` in the guarded
+    // block above, allocated at `GRAND_BOULE_BLOCK_FRAMES` (4096) samples in
+    // `GrandBouleInstance::new` and never resized; `BLOCK` (128) is within it
+    // and `instance` was not touched since that call.
     let out = unsafe { read_output(output, BLOCK) };
     assert_all_finite(&out, "grand_boule saturated steal-tail pool");
     assert!(
@@ -1442,6 +1641,9 @@ fn grinder_process_and_automated_process_do_not_allocate() {
     instance.set_param("masterVolume", 0.8);
     instance.set_param("fat", 1.0);
 
+    // SAFETY: both pointers are `GrinderInstance`'s input buffers, which
+    // `GrinderInstance::new` allocates at `MAX_GRINDER_BLOCK_SIZE` (2048)
+    // samples and nothing resizes; `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -1450,11 +1652,19 @@ fn grinder_process_and_automated_process_do_not_allocate() {
             0,
         );
     }
+    // SAFETY: `process` returns the output-left buffer (null only when the
+    // request exceeds 2048, which `BLOCK` does not), allocated at
+    // `MAX_GRINDER_BLOCK_SIZE` (2048) samples in `GrinderInstance::new` and
+    // never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "grinder");
 
     assert_no_alloc(|| {
         for block in 0..GUARDED_BLOCKS {
+            // SAFETY: input buffers are `MAX_GRINDER_BLOCK_SIZE` (2048) samples
+            // (`GrinderInstance::new`), never resized, and `BLOCK` (128) is
+            // within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -1468,6 +1678,10 @@ fn grinder_process_and_automated_process_do_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns the output-left buffer (non-null for
+    // `BLOCK` <= 2048), allocated at 2048 samples in `GrinderInstance::new`
+    // and never resized; `BLOCK` (128) is within it and nothing touches the
+    // instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "grinder");
     assert!(
@@ -1488,6 +1702,9 @@ fn knead_process_does_not_allocate_while_shifting_pitch() {
     // PSOLA needs a full analysis frame (2048) buffered before it emits shifted
     // audio, so warm past that outside the guard.
     for block in 0..24 {
+        // SAFETY: both pointers are `KneadInstance`'s in-place channel
+        // buffers, which `KneadInstance::new` allocates at 4096 samples and
+        // nothing resizes; `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -1496,12 +1713,18 @@ fn knead_process_does_not_allocate_while_shifting_pitch() {
                 block * BLOCK,
             );
         }
+        // SAFETY: `process` returns `left_buf`, allocated at 4096 samples in
+        // `KneadInstance::new` and never resized; `BLOCK` (128) is within it
+        // and nothing touches the instance until the read finishes.
         let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         assert_all_finite(&out, "knead");
     }
 
     assert_no_alloc(|| {
         for block in 24..(24 + GUARDED_BLOCKS) {
+            // SAFETY: the channel buffers are 4096 samples
+            // (`KneadInstance::new`), never resized, and `BLOCK` (128) is
+            // within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -1514,6 +1737,9 @@ fn knead_process_does_not_allocate_while_shifting_pitch() {
         }
     });
 
+    // SAFETY: `process` returns the 4096-sample `left_buf`
+    // (`KneadInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "knead");
     assert!(
@@ -1541,6 +1767,9 @@ fn knead_process_does_not_allocate_with_formant_tracking_and_a_glide_in_flight()
     instance.set_shift_semitones(4.0);
 
     for block in 0..24 {
+        // SAFETY: both pointers are `KneadInstance`'s in-place channel
+        // buffers, which `KneadInstance::new` allocates at 4096 samples and
+        // nothing resizes; `BLOCK` (128) is within them.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -1549,6 +1778,9 @@ fn knead_process_does_not_allocate_with_formant_tracking_and_a_glide_in_flight()
                 block * BLOCK,
             );
         }
+        // SAFETY: `process` returns `left_buf`, allocated at 4096 samples in
+        // `KneadInstance::new` and never resized; `BLOCK` (128) is within it
+        // and nothing touches the instance until the read finishes.
         let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         assert_all_finite(&out, "knead formant/glide");
     }
@@ -1563,6 +1795,9 @@ fn knead_process_does_not_allocate_with_formant_tracking_and_a_glide_in_flight()
             if block == 40 {
                 instance.set_shift_semitones(7.0);
             }
+            // SAFETY: the channel buffers are 4096 samples
+            // (`KneadInstance::new`), never resized, and `BLOCK` (128) is
+            // within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -1575,6 +1810,9 @@ fn knead_process_does_not_allocate_with_formant_tracking_and_a_glide_in_flight()
         }
     });
 
+    // SAFETY: `process` returns the 4096-sample `left_buf`
+    // (`KneadInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "knead formant/glide");
     assert!(
@@ -1671,6 +1909,10 @@ fn levain_process_does_not_allocate_with_notes_held() {
     instance.note_on(60, 100);
     instance.note_on(64, 90);
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "levain");
 
@@ -1680,6 +1922,10 @@ fn levain_process_does_not_allocate_with_notes_held() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "levain");
     assert!(
@@ -1687,6 +1933,10 @@ fn levain_process_does_not_allocate_with_notes_held() {
         "levain produced silence with two notes held, so the guarded region \
          did not exercise the sampler voice path"
     );
+    // SAFETY: `get_right_ptr` is `right_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it, it was filled by the `process` call
+    // above, and nothing has touched the instance since.
     let right = unsafe { read_output(instance.get_right_ptr(), BLOCK) };
     assert!(
         peak(&right) > 1e-6,
@@ -1716,6 +1966,10 @@ fn levain_ensemble_onsets_do_not_allocate() {
     instance.set_param("legato_enabled", 0.0);
     instance.set_param("ensemble_timing", 1.0);
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "levain ensemble onsets");
 
@@ -1728,6 +1982,10 @@ fn levain_ensemble_onsets_do_not_allocate() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "levain ensemble onsets");
     assert!(
@@ -1761,6 +2019,10 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
     assert!(instance.commit_sample_bank());
     instance.set_param("tone", 0.85);
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "levain note lifecycle");
 
@@ -1784,6 +2046,10 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
         }
     });
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "levain note lifecycle");
     assert!(
@@ -1791,6 +2057,10 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
         "levain fell silent across the guarded lifecycle, so the guard did not \
          exercise the slur and release paths it exists to cover"
     );
+    // SAFETY: `get_right_ptr` is `right_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it, it was filled by the `process` call
+    // above, and nothing has touched the instance since.
     let right = unsafe { read_output(instance.get_right_ptr(), BLOCK) };
     assert!(
         peak(&right) > 1e-6,
@@ -1839,6 +2109,11 @@ fn levain_bank_commit_with_a_transition_does_not_allocate() {
     assert!(instance.commit_sample_bank());
     instance.note_on(60, 100);
     instance.note_on(64, 90);
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized (a bank commit swaps tables, not the output buffers); `BLOCK`
+    // (128) is within it and nothing touches the instance until the read
+    // finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "levain bank commit");
 
@@ -1863,6 +2138,11 @@ fn levain_bank_commit_with_a_transition_does_not_allocate() {
         "the displaced bank should wait in the retired slot, not be dropped by the commit"
     );
     instance.note_on(60, 100);
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized (a bank commit swaps tables, not the output buffers); `BLOCK`
+    // (128) is within it and nothing touches the instance until the read
+    // finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "levain after bank commit");
     assert!(
@@ -1906,6 +2186,10 @@ fn levain_bank_abort_does_not_allocate() {
     assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
     assert!(instance.commit_sample_bank());
     instance.note_on(60, 100);
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized; `BLOCK` (128) is within it and nothing touches the instance
+    // until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "levain bank abort");
 
@@ -1949,6 +2233,10 @@ fn levain_bank_abort_does_not_allocate() {
     while !instance.release_retired_bank(2) {}
     assert!(!instance.has_retired_bank());
 
+    // SAFETY: `process` returns `left_buf`, allocated at
+    // `LEVAIN_BLOCK_FRAMES` (4096) samples in `LevainInstance::new` and never
+    // resized (an abort retires a bank, not the output buffers); `BLOCK` (128)
+    // is within it and nothing touches the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "levain after bank abort");
     assert!(
@@ -1991,12 +2279,18 @@ fn levain_sample_chunks_and_seal_do_not_allocate() {
                 let target = instance.sample_write_ptr(sample_id);
                 assert!(chunk.len() <= window && !target.is_null());
                 // SAFETY: `target` addresses `window` floats of the reserved
-                // storage and the chunk fits; the floats are written before
-                // the commit that counts them.
-                accepted &= unsafe {
+                // storage and the chunk fits (`chunk.len() <= window`, target
+                // non-null, both asserted above); the source is a chunk of the
+                // test's own `pcm`, so it cannot overlap the instance's
+                // storage.
+                unsafe {
                     std::ptr::copy_nonoverlapping(chunk.as_ptr(), target, chunk.len());
-                    instance.commit_sample_frames(sample_id, chunk.len() as u32)
-                };
+                }
+                // SAFETY: the copy above wrote `chunk.len()` floats at the
+                // address `sample_write_ptr(sample_id)` returned, which is
+                // the contract `commit_sample_frames` documents; nothing has
+                // touched the instance in between.
+                accepted &= unsafe { instance.commit_sample_frames(sample_id, chunk.len() as u32) };
             }
         });
         assert!(accepted, "every chunk should have been accepted");
@@ -2096,6 +2390,9 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
     instance.set_param("eq_linear_phase", 1.0);
     instance.set_param("lim_ceiling", -1.0);
 
+    // SAFETY: both pointers are `ProofInstance`'s input buffers, which
+    // `ProofInstance::new` allocates at 4096 samples and nothing resizes;
+    // `BLOCK` (128) is within them.
     unsafe {
         fill_input(
             instance.get_input_left_ptr(),
@@ -2104,6 +2401,9 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
             0,
         );
     }
+    // SAFETY: `process` returns the output-left buffer, allocated at 4096
+    // samples in `ProofInstance::new` and never resized; `BLOCK` (128) is
+    // within it and nothing touches the instance until the read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "proof");
 
@@ -2115,6 +2415,8 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
         // guard.
         instance.set_param("lim_lookahead", 7.0);
         for block in 0..GUARDED_BLOCKS {
+            // SAFETY: input buffers are 4096 samples (`ProofInstance::new`),
+            // never resized, and `BLOCK` (128) is within them.
             unsafe {
                 fill_input(
                     instance.get_input_left_ptr(),
@@ -2127,6 +2429,9 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
         }
     });
 
+    // SAFETY: `process` returns the 4096-sample output-left buffer
+    // (`ProofInstance::new`); `BLOCK` (128) is within it and nothing touches
+    // the instance until the read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "proof");
     assert!(
@@ -2143,6 +2448,11 @@ fn toaster_process_does_not_allocate_with_pads_triggered() {
     instance.note_on(0, 1.0, 36);
     instance.note_on(1, 0.8, 38);
 
+    // SAFETY: `process` returns the start of `output_buf`, allocated at
+    // `(2 + num_pads * 2) * MAX_BLOCK_SIZE` samples in `ToasterInstance::new`
+    // and never resized; its left channel is the first 4096 samples, so
+    // `BLOCK` (128) is in bounds, and nothing touches the instance until the
+    // read finishes.
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "toaster");
 
@@ -2152,6 +2462,11 @@ fn toaster_process_does_not_allocate_with_pads_triggered() {
         }
     });
 
+    // SAFETY: `process` returns the start of `output_buf`, allocated at
+    // `(2 + num_pads * 2) * MAX_BLOCK_SIZE` samples in `ToasterInstance::new`
+    // and never resized; its left channel is the first 4096 samples, so
+    // `BLOCK` (128) is in bounds, and nothing touches the instance until the
+    // read finishes.
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "toaster");
     assert!(

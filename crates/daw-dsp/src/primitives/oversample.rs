@@ -99,6 +99,12 @@ impl Oversampler2x {
     }
 }
 
+impl Default for Oversampler2x {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Largest supported oversampling factor.
 pub const MAX_FACTOR: usize = 8;
 

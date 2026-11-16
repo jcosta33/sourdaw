@@ -83,6 +83,11 @@ printf '%s\n' \
     '    test) exit "${FAKE_CARGO_TEST_STATUS:-0}" ;;' \
     'esac' \
     > "$fake_bin/cargo"
+printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'printf "rustup %s\n" "$*" >> "$COMMAND_LOG"' \
+    > "$fake_bin/rustup"
 cat > "$fake_bin/curl" <<'SH'
 #!/bin/sh
 set -eu
@@ -133,7 +138,7 @@ exit "${FAKE_GITLEAKS_STATUS:-0}"
 GITLEAKS
 chmod +x "$extract_dir/gitleaks"
 SH
-chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
+chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/rustup" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
 cat > "$fake_bin/gh" <<'SH'
 #!/bin/sh
 set -eu
@@ -231,8 +236,8 @@ function expect(condition, message) {
 // scan still sees them in the commits that introduced them even though the head composes every
 // fixture from fragments and holds no literal of that shape. Each value is a hand-built header with
 // no key material behind it, and the reader refuses it exactly as it refuses a real one.
-// The final fingerprint is PR #5746's historical RFC 6455 section 1.2 WebSocket nonce, a public
-// protocol example rather than a credential. Its audited source comments are bound here too.
+// PR #5746's historical RFC 6455 nonce and the tracker fixtures are also audited historical
+// non-credentials. Their exact findings and source comments are bound here too.
 expect(
     gitleaksIgnore ===
         'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
@@ -245,7 +250,13 @@ expect(
             '\n' +
             '# RFC 6455 section 1.2 public WebSocket handshake nonce; historical test fixture, not a credential.\n' +
             '# https://www.rfc-editor.org/rfc/rfc6455.html#section-1.2\n' +
-            'cc52a482abc4b62519a79e1984e683893c31cbc0:scripts/__tests__/viteUpgradeReset.spec.ts:generic-api-key:54\n',
+            'cc52a482abc4b62519a79e1984e683893c31cbc0:scripts/__tests__/viteUpgradeReset.spec.ts:generic-api-key:54\n' +
+            '\n' +
+            '# Synthetic tracker mutation lease nonce in a historical recovery test; never an issued credential.\n' +
+            'e07bd6ab2e0842f15b463b96e6ade5de66664d44:scripts/__tests__/reconcileTrackerIssue.spec.ts:generic-api-key:325\n' +
+            '# Legacy GitHub User node ID beside TOKEN_STALE in fake claim timelines; a public identifier, not a credential.\n' +
+            '853bf6ea254697dbfcdeb043b773181ba4b017fa:scripts/__tests__/claimTrackerIssue.spec.ts:generic-api-key:504\n' +
+            '16b51d5e90ed73304eb4fd02597f9c754e4a4401:scripts/__tests__/claimTrackerIssue.spec.ts:generic-api-key:569\n',
     '.gitleaksignore must contain exactly the audited fixture fingerprints and provenance'
 );
 
@@ -1865,7 +1876,7 @@ PATH="$fake_bin:$PATH" \
     GITLEAKS_SHA256="$gitleaks_sha256" \
     sh "$temp_root/scripts/run-gitleaks-history-scan.sh" "$gitleaks_target" >/dev/null
 printf '%s\n' \
-    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $gitleaks_archive $gitleaks_url" \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 --output $gitleaks_archive $gitleaks_url" \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $gitleaks_archive" \
     "tar -xzf $gitleaks_archive -C $gitleaks_dir gitleaks" \
@@ -1885,7 +1896,7 @@ PATH="$fake_bin:$PATH" \
     GITLEAKS_EXIT_CODE=79 \
     sh "$temp_root/scripts/run-gitleaks-history-scan.sh" "$gitleaks_target" >/dev/null
 printf '%s\n' \
-    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $gitleaks_override_archive $gitleaks_url" \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 --output $gitleaks_override_archive $gitleaks_url" \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $gitleaks_override_archive" \
     "tar -xzf $gitleaks_override_archive -C $gitleaks_override_dir gitleaks" \
@@ -1908,7 +1919,7 @@ bad_checksum_status=$?
 set -e
 test "$bad_checksum_status" -eq 44
 printf '%s\n' \
-    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $bad_checksum_archive $gitleaks_url" \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 --output $bad_checksum_archive $gitleaks_url" \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $bad_checksum_archive" \
     > "$temp_root/expected-gitleaks-bad-checksum.log"
@@ -2120,6 +2131,8 @@ PATH="$fake_bin:$PATH" \
 printf '%s\n' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'rustup target add wasm32-unknown-unknown' \
+    'cargo clippy --target wasm32-unknown-unknown --package daw-dsp --package proof-chamber --package scoring --package daw-wasm-decoder --all-features' \
     'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-rust-success.log"
 diff -u "$temp_root/expected-rust-success.log" "$temp_root/rust-success.log"
@@ -2151,6 +2164,8 @@ test "$rust_test_status" -eq 134
 printf '%s\n' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'rustup target add wasm32-unknown-unknown' \
+    'cargo clippy --target wasm32-unknown-unknown --package daw-dsp --package proof-chamber --package scoring --package daw-wasm-decoder --all-features' \
     'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-rust-test-failure.log"
 diff -u "$temp_root/expected-rust-test-failure.log" "$temp_root/rust-test-failure.log"

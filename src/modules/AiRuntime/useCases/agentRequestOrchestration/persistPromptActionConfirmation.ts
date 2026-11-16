@@ -13,7 +13,12 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
+import { deriveAudibleImpact } from '../deriveAudibleImpact';
+import { NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
+
+import { createPromptConfirmationId } from './createPromptConfirmationId';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
@@ -41,6 +46,10 @@ type PersistPromptActionConfirmationInput = {
     /** What a terse refinement of this card inherits; present only for an ordinary card. */
     groundingBasis?: ConfirmationProposal['groundingBasis'];
     protectionFacts?: ConfirmationProposal['protectionFacts'];
+    /** The readings an ambiguous brief request offers on this card. */
+    briefReadings?: ConfirmationProposal['briefReadings'];
+    /** A id reserved earlier so a card it replaces can already name it; minted here when absent. */
+    confirmationId?: string;
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -91,32 +100,54 @@ function failUnretainedProposal(input: PersistPromptActionConfirmationInput): vo
     });
 }
 
+/**
+ * Binds the run's plan to the card just persisted: its metric-goal state, and the audible claim of
+ * this exact batch: the predictions of its frozen goals with their verification against the bound
+ * measurement, or the measured figures of a goalless plan. A plan whose earlier claim the new card
+ * does not repeat is rewritten too, so the claim never outlives its measurement.
+ */
 function recordConfirmationMetricGoalPlan(
     input: PersistPromptActionConfirmationInput,
     confirmation: NonNullable<ReturnType<typeof proposePendingActionConfirmation>>
 ): void {
     const run = agentRunLifecycle.get(input.runId);
-    if (run?.plan !== null && run?.plan !== undefined && confirmation.approvalSnapshot.metricGoalState !== undefined) {
-        agentRunLifecycle.recordPlan({
-            runId: input.runId,
-            summary: run.plan.summary,
-            commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-            serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
-            revision: input.projectRevision,
-            scope: run.scope,
-            grants: run.grants,
-            budgets: run.budgets,
-            plan: {
-                ...run.plan,
-                metricGoalState: confirmation.approvalSnapshot.metricGoalState,
-                revision: input.projectRevision,
-            },
-        });
+    if (run?.plan === null || run?.plan === undefined) {
+        return;
     }
+    const { metricGoalState, measuredPreview } = confirmation.approvalSnapshot;
+    const state = metricGoalStateCodec(metricGoalState);
+    const claim = deriveAudibleImpact({
+        state,
+        commandBatch: input.commandBatch,
+        envelope: input.parsedCommandBatch.envelope,
+        snapshotPreview: measuredPreview,
+        proofPreviews: state?.proofs.map((proof) => proof.preview) ?? [],
+    });
+    const audible = run.plan.expectedImpact.audible;
+    if (
+        metricGoalState === undefined &&
+        claim === null &&
+        audible.status === 'not-claimed' &&
+        audible.reason === NO_AUDIBLE_CLAIM_REASON
+    ) {
+        return;
+    }
+    agentRunLifecycle.recordPlan({
+        runId: input.runId,
+        summary: run.plan.summary,
+        commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+        serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
+        revision: input.projectRevision,
+        scope: run.scope,
+        grants: run.grants,
+        budgets: run.budgets,
+        plan: { ...run.plan, metricGoalState, revision: input.projectRevision },
+        audibleClaim: claim ?? undefined,
+    });
 }
 
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
-    const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
+    const confirmationId = input.confirmationId ?? createPromptConfirmationId();
     // A batch whose handlers cannot describe themselves still deserves a semantic view, so
     // the diff degrades to `irreversible` recoveries rather than losing the whole projection.
     const described = describeCommandBatchRecovery(input.parsedCommandBatch.envelope);
@@ -156,6 +187,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             batchPosition: input.batchPosition,
             groundingBasis: input.groundingBasis,
             protectionFacts: input.protectionFacts,
+            briefReadings: input.briefReadings,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

@@ -51,6 +51,7 @@ it('runs the actual health script without root dependencies and propagates failu
         'cargo',
         'if [ "${1:-}" = clippy ] && [ "${FAIL_CARGO:-}" = yes ]; then echo cargo-exit-37 >> "$WITNESS_LOG"; exit 37; fi'
     );
+    witness('rustup', ':');
     witness(
         'npm',
         'if [ "${1:-}" = test ] && [ "${FAIL_NPM_TEST:-}" = yes ]; then echo npm-exit-23 >> "$WITNESS_LOG"; exit 23; fi'
@@ -90,6 +91,8 @@ it('runs the actual health script without root dependencies and propagates failu
     const expected = [
         `${fixture}|cargo|fmt --all --check`,
         `${fixture}|cargo|clippy --workspace --exclude sourdaw-native --all-targets --all-features`,
+        `${fixture}|rustup|target add wasm32-unknown-unknown`,
+        `${fixture}|cargo|clippy --target wasm32-unknown-unknown --package daw-dsp --package proof-chamber --package scoring --package daw-wasm-decoder --all-features`,
         `${fixture}|cargo|test --workspace --exclude sourdaw-native --all-features`,
         `${fixture}|npm|--prefix server ls --depth=0 --silent --include=dev`,
         `${fixture}/server|npm|test`,
@@ -103,5 +106,5 @@ it('runs the actual health script without root dependencies and propagates failu
     expect(commands()).toEqual([...expected.slice(0, 2), 'cargo-exit-37']);
     writeFileSync(commandLog, '');
     expect(run({ FAIL_NPM_TEST: 'yes' }).status).toBe(1);
-    expect(commands()).toEqual([...expected.slice(0, 5), 'npm-exit-23']);
+    expect(commands()).toEqual([...expected.slice(0, 7), 'npm-exit-23']);
 });

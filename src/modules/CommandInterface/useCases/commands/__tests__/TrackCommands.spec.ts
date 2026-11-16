@@ -10,7 +10,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeAppAction: vi.fn().mockResolvedValue(undefined),
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('#/modules/Arrangement/useCases', () => ({ duplicateTrack: vi.fn(), removeTrack: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases', () => ({ removeTrack: vi.fn() }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
     resolveEligibleClipWriteTarget: vi.fn(),

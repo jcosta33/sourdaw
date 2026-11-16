@@ -91,13 +91,13 @@ describe('handleGenerateAllTransitions', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Placed 2 transition fills'), 'success');
     });
 
-    it('claims a fill for a two-section arrangement and actually places it', () => {
+    it('claims a fill for a two-section arrangement and actually places it', async () => {
         seedSections([
             { id: 's1', startBeat: 0, endBeat: 16, name: 'Verse', color: '#111' },
             { id: 's2', startBeat: 16, endBeat: 32, name: 'Chorus', color: '#222' },
         ]);
 
-        handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: undefined });
+        await handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: undefined });
 
         const clip = clipsOnTrack('t-drums')[0]!;
         const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
@@ -132,7 +132,7 @@ describe('handleGenerateAllTransitions', () => {
         );
     });
 
-    it('describes a guarded inverse whose clip id is the one the write creates', () => {
+    it('describes a guarded inverse whose clip id is the one the write creates', async () => {
         seedSections([
             { id: 's1', startBeat: 0, endBeat: 16, name: 'Verse', color: '#111' },
             { id: 's2', startBeat: 16, endBeat: 32, name: 'Chorus', color: '#222' },
@@ -143,7 +143,7 @@ describe('handleGenerateAllTransitions', () => {
         expect(described.label).toBe('Generate All Transitions');
         expect(described.inverseAction?.type).toBe('discardDuplicatedClip');
 
-        handleGenerateAllTransitions.execute(action);
+        await handleGenerateAllTransitions.execute(action);
 
         if (described.inverseAction?.type !== 'discardDuplicatedClip') {
             throw new Error('Expected a guarded clip discard inverse');

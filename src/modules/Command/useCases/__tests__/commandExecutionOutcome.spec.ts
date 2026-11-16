@@ -358,6 +358,40 @@ describe('command execution outcome vocabulary', () => {
             });
         });
 
+        it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+            'rejects the inherited name %s as an unregistered action type',
+            async (inheritedName) => {
+                const action = JSON.parse(`{"type":"${inheritedName}"}`);
+
+                const result = await executeAppActionBatch([action]);
+
+                expect(result).toEqual({
+                    status: 'rejected',
+                    reason: `No registered handler for action: ${inheritedName}`,
+                    actions: [],
+                });
+            }
+        );
+
+        it.each(['retiredType', 'constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+            'names the unregistered type %s ahead of an admission-mode action instead of failing its preflight',
+            async (unregisteredType) => {
+                registerHandlerMap(getArrangementHandlers());
+                const unregistered = JSON.parse(`{"type":"${unregisteredType}"}`);
+                const split = JSON.parse(
+                    '{"type":"splitClip","payload":{"clipId":"clip-1","trackId":"track-1","splitBeat":1}}'
+                );
+
+                const result = await executeAppActionBatch([unregistered, split]);
+
+                expect(result).toEqual({
+                    status: 'rejected',
+                    reason: `No registered handler for action: ${unregisteredType}`,
+                    actions: [],
+                });
+            }
+        );
+
         it('reports a conflict when a handler refuses to write', async () => {
             registerHandlerMap({
                 setEditingTool: createHandler<SetEditingToolAction>({

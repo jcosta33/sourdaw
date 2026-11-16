@@ -3,7 +3,8 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type HandlerMaterializationContext, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
-import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { projectsTakeLaneState } from '../models/ProjectsTakeLaneStateByActionType';
+import { getHeldClips } from '../models/TrackAlternativeClips';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { takeLaneStore } from '../stores/takeLaneStore';
@@ -25,14 +26,7 @@ function captureTakeLaneSnapshots(
     if (!state) {
         const hasProjectedPrefix = context?.actions
             .slice(0, context.actionIndex)
-            .some(
-                (action) =>
-                    action.type === 'setCompRegion' ||
-                    action.type === 'restoreCompRegionInterval' ||
-                    action.type === 'restoreTrack' ||
-                    action.type === 'removeTrack' ||
-                    action.type === 'selectTake'
-            );
+            .some((action) => projectsTakeLaneState(action.type));
         if (hasProjectedPrefix) {
             throw new Error('Could not project prior take-lane actions for track removal snapshot');
         }
@@ -92,7 +86,9 @@ export function captureTrackRemovalSnapshot(
     const automationLaneSnapshots = structuredClone(autoLanes);
 
     const midiState = midiStore.value;
-    const clipIds = collectTrackClipIds(track);
+    // Keyed like `removeTrack`'s cleanup: only the clips the track holds now,
+    // never a clip the active alternative's stale copy names after it moved.
+    const clipIds = [...new Set(getHeldClips(track).map((clip) => clip.id))];
     const midiNotesByClipId: Record<string, readonly MidiNoteEntry[]> = {};
     const midiCcByClipId: Record<string, readonly MidiCcEntry[]> = {};
     const midiPitchBendByClipId: Record<string, readonly MidiPitchBendEntry[]> = {};

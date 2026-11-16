@@ -240,15 +240,15 @@ describe('projectState — addChordEvent validation', () => {
 });
 
 describe('handleMoveChordEvent — execute delegates to moveChordEvent', () => {
-    it('calls moveChordEvent with eventId and beat', () => {
-        handleMoveChordEvent.execute({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 8 } });
+    it('calls moveChordEvent with eventId and beat', async () => {
+        await handleMoveChordEvent.execute({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 8 } });
         expect(mockedMove).toHaveBeenCalledWith('c1', 8);
     });
 });
 
 describe('handleUpdateChordEvent — execute delegates to updateChordEvent', () => {
-    it('calls updateChordEvent with eventId and payload', () => {
-        handleUpdateChordEvent.execute({
+    it('calls updateChordEvent with eventId and payload', async () => {
+        await handleUpdateChordEvent.execute({
             type: 'updateChordEvent',
             payload: { eventId: 'c1', root: 5, quality: 'minor' },
         });

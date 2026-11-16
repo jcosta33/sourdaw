@@ -1,16 +1,20 @@
 import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
+import { unloadDiscardedHostedPlugins } from '../../useCases/device/unloadDiscardedHostedPlugins';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
+import { matchesCreatedTrackFingerprint } from '../matchesCreatedTrackFingerprint';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
+
+import { recordDiscardedPluginStates } from './discardedPluginStateCarry';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
     canReapplyAfterDivergence: (action) => action.payload.generatedMidiStateGuard !== undefined,
@@ -21,7 +25,10 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         }
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track && guard.midiByClipIdJson === '{}') {
-            return matchesJsonFingerprint(projectTrackThroughPriorBatchActions(track, context), guard.entityJson);
+            return matchesCreatedTrackFingerprint(
+                projectTrackThroughPriorBatchActions(track, context),
+                guard.entityJson
+            );
         }
         return isGeneratedMidiStateCurrent({
             entityId: action.payload.trackId,
@@ -29,7 +36,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
             guard,
         });
     },
-    execute: (action) => {
+    execute: (action, context) => {
         const guard = action.payload.generatedMidiStateGuard;
         if (
             guard &&
@@ -42,6 +49,12 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
             return { status: 'conflict' };
         }
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
+        // Read before removeTrack: the instances are unreachable once the track leaves the store.
+        const heldTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId);
+        const hostedInstances = heldTrack ? collectHostedPluginInstances(heldTrack) : [];
+        if (heldTrack && context?.undoEntryId !== undefined) {
+            recordDiscardedPluginStates(context.undoEntryId, [heldTrack]);
+        }
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -59,6 +72,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
                 runAllAsyncEffects(
                     [
                         result.finalizeRuntimeRemoval,
+                        () => unloadDiscardedHostedPlugins(hostedInstances),
                         finalizeModulationRemoval.afterCommit,
                         () => publishTrackRemoved({ trackId: action.payload.trackId }),
                     ].map((effect) => runtimeAuthority.guardAbsent(action.payload.trackId, effect))
@@ -84,6 +98,9 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
                 } else {
                     effects.unshift(
                         runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            unloadDiscardedHostedPlugins(hostedInstances)
+                        ),
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
                         )

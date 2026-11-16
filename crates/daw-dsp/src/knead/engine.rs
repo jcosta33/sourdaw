@@ -116,8 +116,10 @@ pub struct KneadEngine {
 
 impl KneadEngine {
     pub fn new(sample_rate: f32) -> Self {
-        let mut yin_cfg = YinConfig::default();
-        yin_cfg.sample_rate = sample_rate;
+        let yin_cfg = YinConfig {
+            sample_rate,
+            ..YinConfig::default()
+        };
 
         let tau_max = (sample_rate / yin_cfg.f0_min).ceil() as usize;
         let frame_size = yin_cfg.frame_size;

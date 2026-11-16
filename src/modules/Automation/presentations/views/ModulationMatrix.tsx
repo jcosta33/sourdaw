@@ -4,6 +4,7 @@ import {
     type PointerEvent as ReactPointerEvent,
     type ReactElement,
     useEffect,
+    useId,
     useRef,
     useState,
 } from 'react';
@@ -174,6 +175,7 @@ type NewModulatorFormProps = {
 const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElement => {
     const defaultTrackId = tracks[0]?.id ?? '';
     const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM, trackId: defaultTrackId });
+    const fieldId = useId();
 
     // The form can open before tracks hydrate (fresh project load); a one-shot
     // seed would pin trackId to '' forever and leave Add permanently disabled
@@ -213,14 +215,20 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                 </Button>
             </Row>
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
-                <label className="text-[10px] text-muted-foreground">Name</label>
+                <label htmlFor={`${fieldId}-name`} className="text-[10px] text-muted-foreground">
+                    Name
+                </label>
                 <DawCompactInput
+                    id={`${fieldId}-name`}
                     value={form.name}
                     onChange={(event) => setField('name', event.target.value)}
                     aria-label="Modulator name"
                 />
-                <label className="text-[10px] text-muted-foreground">Kind</label>
+                <label htmlFor={`${fieldId}-kind`} className="text-[10px] text-muted-foreground">
+                    Kind
+                </label>
                 <DawCompactSelect
+                    id={`${fieldId}-kind`}
                     value={form.kind}
                     onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                         setField('kind', event.target.value as ModulatorKind)
@@ -234,8 +242,11 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     <option value="lfo">LFO</option>
                     <option value="step">Step</option>
                 </DawCompactSelect>
-                <label className="text-[10px] text-muted-foreground">Track</label>
+                <label htmlFor={`${fieldId}-track`} className="text-[10px] text-muted-foreground">
+                    Track
+                </label>
                 <DawCompactSelect
+                    id={`${fieldId}-track`}
                     value={form.trackId}
                     onChange={(event: ChangeEvent<HTMLSelectElement>) => setField('trackId', event.target.value)}
                     aria-label="Modulator track scope"
@@ -250,8 +261,11 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
 
                 {form.kind === 'lfo' ? (
                     <>
-                        <label className="text-[10px] text-muted-foreground">Waveform</label>
+                        <label htmlFor={`${fieldId}-waveform`} className="text-[10px] text-muted-foreground">
+                            Waveform
+                        </label>
                         <DawCompactSelect
+                            id={`${fieldId}-waveform`}
                             value={form.lfoWaveform}
                             onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                                 setField('lfoWaveform', event.target.value as FormState['lfoWaveform'])
@@ -264,8 +278,11 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                             <option value="square">Square</option>
                             <option value="random">Random</option>
                         </DawCompactSelect>
-                        <label className="text-[10px] text-muted-foreground">Rate (beats)</label>
+                        <label htmlFor={`${fieldId}-rate`} className="text-[10px] text-muted-foreground">
+                            Rate (beats)
+                        </label>
                         <DawCompactInput
+                            id={`${fieldId}-rate`}
                             type="number"
                             min="0.01"
                             step="0.01"
@@ -283,8 +300,11 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
 
                 {form.kind === 'step' ? (
                     <>
-                        <label className="text-[10px] text-muted-foreground">Steps</label>
+                        <label htmlFor={`${fieldId}-steps`} className="text-[10px] text-muted-foreground">
+                            Steps
+                        </label>
                         <DawCompactInput
+                            id={`${fieldId}-steps`}
                             type="number"
                             min="1"
                             max="64"

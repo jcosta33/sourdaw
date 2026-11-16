@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleDuplicateTrack } from '../duplicateTrack';
 
 const mocks = vi.hoisted(() => ({
+    captureTrackRemovalSnapshot: vi.fn(),
     duplicateTrack: vi.fn(),
     getTrackStoreState: vi.fn<() => { tracks: { id: string; name?: string; kind: string }[] } | null>(),
     serializeClipScopedAutomationLanes: vi.fn(),
@@ -10,6 +11,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../useCases/duplicateTrack', () => ({
     duplicateTrack: mocks.duplicateTrack,
+}));
+
+vi.mock('../../../useCases/captureTrackRemovalSnapshot', () => ({
+    captureTrackRemovalSnapshot: mocks.captureTrackRemovalSnapshot,
 }));
 
 vi.mock('../../../useCases/clip/serializeClipScopedAutomationLanes', () => ({
@@ -24,6 +29,7 @@ describe('handleDuplicateTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', name: 'Source', kind: 'audio' }] });
+        mocks.captureTrackRemovalSnapshot.mockImplementation((trackId: string) => ({ trackId, snapshot: 'copy' }));
     });
 
     it('honors an app-owned selection policy and finalizes the discard guard', async () => {
@@ -40,7 +46,7 @@ describe('handleDuplicateTrack', () => {
         mocks.duplicateTrack.mockReturnValue(createdDuplicate);
         // The guard finalizes from the committed store track — the use case's
         // return value predates its own copy steps.
-        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [] };
+        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', devices: [], clips: [] };
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
         });
@@ -57,6 +63,13 @@ describe('handleDuplicateTrack', () => {
             throw new Error('Expected a discardCreatedTrack inverse');
         }
         expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(committedDuplicate));
+        // Redo restores this exact copy: duplicating again would re-mint every
+        // device, clip and alternative id the guard names.
+        expect(mocks.captureTrackRemovalSnapshot).toHaveBeenCalledWith(targetTrackId);
+        expect(described?.redoAction).toEqual({
+            type: 'restoreTracks',
+            payload: { restores: [{ trackId: targetTrackId, snapshot: 'copy' }] },
+        });
 
         expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
             select: false,
@@ -79,7 +92,13 @@ describe('handleDuplicateTrack', () => {
         // onto the copies' new clip ids, so the finalized guard must capture
         // exactly those lanes — requiring absence would make the copy's own
         // undo conflict on what the duplication itself created.
-        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [{ id: 'clip-copy' }] };
+        const committedDuplicate = {
+            id: targetTrackId,
+            name: 'Copy',
+            kind: 'audio',
+            devices: [],
+            clips: [{ id: 'clip-copy' }],
+        };
         mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
@@ -95,6 +114,29 @@ describe('handleDuplicateTrack', () => {
         expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(committedDuplicate));
         expect(inverse.payload.generatedMidiStateGuard?.clipAutomationLanesJson).toBe('captured-lanes');
         expect(mocks.serializeClipScopedAutomationLanes).toHaveBeenCalledWith(['clip-copy']);
+    });
+
+    it('emits neither inverse nor redo when the committed copy cannot be captured', async () => {
+        const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
+            type: 'duplicateTrack',
+            payload: { trackId: 't1' },
+        };
+        const described = handleDuplicateTrack.describe(action);
+        const targetTrackId = action.payload.targetTrackId;
+        if (!targetTrackId) {
+            throw new Error('Expected describe to prepare a destination track id');
+        }
+        mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
+        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', devices: [], clips: [] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
+        });
+        mocks.captureTrackRemovalSnapshot.mockReturnValue(null);
+
+        await handleDuplicateTrack.execute(action);
+
+        expect(described.inverseAction).toBeNull();
+        expect(described.redoAction).toBeUndefined();
     });
 
     it('provides an inverse that removes the exact duplicate', () => {

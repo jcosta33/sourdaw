@@ -132,9 +132,14 @@ export async function desktopInvoke(cmd: string, args?: Record<string, unknown>)
  * pushes the bare payload and the seam wraps it, because every consumer
  * unwraps `.payload`.
  */
-export async function desktopListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
-    return sourdawBridge().listen(event, (payload) => {
-        handler({ event, payload });
+export function desktopListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
+    // The executor runs synchronously, so the listener registers now and a missing bridge rejects.
+    return new Promise((resolve) => {
+        resolve(
+            sourdawBridge().listen(event, (payload) => {
+                handler({ event, payload });
+            })
+        );
     });
 }
 
@@ -324,14 +329,14 @@ export type DesktopChannel<Payload> = {
  * await desktopInvoke('my_command', { onEvent: channel });
  * ```
  */
-export async function createChannel<Payload>(): Promise<DesktopChannel<Payload>> {
+export function createChannel<Payload>(): Promise<DesktopChannel<Payload>> {
     const channel: DesktopChannel<Payload> & { readonly [seamChannelTag]: true } = {
         id: -1,
         onmessage: () => undefined,
         toJSON: () => 'sourdaw-stream-channel',
         [seamChannelTag]: true,
     };
-    return channel;
+    return Promise.resolve(channel);
 }
 
 export type DesktopDialogFilter = {
@@ -361,6 +366,17 @@ export async function desktopOpenDialog(options: DesktopOpenDialogOptions = {}):
     return sourdawBridge().dialog.open(options);
 }
 
+/** What asking the desktop shell to pick and grant a plugin folder came to. */
+export type DesktopPluginFolderAddResult = Awaited<ReturnType<SourdawDesktopBridge['pluginFolders']['add']>>;
+
+/**
+ * Open the native folder picker and grant the pick as a plugin scan root.
+ * The shell grants only the folder its own picker returned.
+ */
+export async function desktopAddPluginFolder(): Promise<DesktopPluginFolderAddResult> {
+    return sourdawBridge().pluginFolders.add();
+}
+
 /** Open a native save dialog. Resolves `null` when the user cancels. */
 export async function desktopSaveDialog(options: DesktopSaveDialogOptions = {}): Promise<string | null> {
     return sourdawBridge().dialog.save(options);
@@ -374,6 +390,20 @@ export async function desktopPathJoin(...segments: string[]): Promise<string> {
 /** Base URL the bundled sample content is reachable at from the renderer. */
 export async function desktopSamplesBaseUrl(): Promise<string> {
     return sourdawBridge().paths.samplesBase();
+}
+
+/** Total physical memory of the desktop machine, in bytes. A positive safe integer; the bridge refuses anything else. */
+export async function desktopTotalMemoryBytes(): Promise<number> {
+    return sourdawBridge().system.totalMemoryBytes();
+}
+
+/**
+ * What a model's weights may occupy on the desktop machine's GPU, in bytes, or null when the OS does not
+ * report it. Not the system total. A positive safe integer when known; the bridge refuses anything else.
+ */
+export async function desktopGpuMemoryBudgetBytes(): Promise<number | null> {
+    const budget = await sourdawBridge().system.gpuMemoryBudgetBytes();
+    return budget.state === 'known' ? budget.bytes : null;
 }
 
 /** The platform the desktop shell runs on, or null off-desktop. */

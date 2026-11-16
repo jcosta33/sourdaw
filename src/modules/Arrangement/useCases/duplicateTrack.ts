@@ -11,6 +11,7 @@ import { setTrackState } from '../repositories/track/setTrackState';
 import { updateTrack } from '../repositories/track/updateTrack';
 
 import { addTrack } from './addTrack';
+import { copyExternalInstanceId } from './device/copyExternalInstanceId';
 
 type ClipCopy = { sourceClipId: string; targetClipId: string };
 type AutomationClipCopy = ClipCopy & { targetTrackId: string };
@@ -117,11 +118,11 @@ export function duplicateTrack(trackId: string, options: DuplicateTrackOptions =
             devices: source.devices.map((data) => ({
                 ...data,
                 id: `dev-dup-${crypto.randomUUID()}`,
-                // A duplicated native plugin must not share the source's live
-                // host instance. Clear the instance id so the duplicate starts
-                // dormant and gets its own instance on activation, while the
-                // copied externalStateChunk lets it hydrate to the same sound (PH-3).
-                externalInstanceId: undefined,
+                // A duplicated native plugin must not share the source's live host
+                // instance: it gets its own id, minted inside this write so undo and
+                // collaborators see it, while the copied externalStateChunk lets the
+                // instance activated after commit hydrate to the same sound (PH-3).
+                externalInstanceId: copyExternalInstanceId(data),
             })),
             sends: [...source.sends],
             alternatives: newAlternatives,

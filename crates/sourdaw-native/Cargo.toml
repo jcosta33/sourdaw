@@ -66,11 +66,48 @@ daw-io = { path = "../daw-io" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }
+# The GPU memory budget (commands/gpu_memory.rs): the default Metal device's
+# `recommendedMaxWorkingSetSize`, which is what a process may keep resident on
+# the GPU and is below unified memory. Only the device protocol and its
+# creation function are enabled; 0.3 shares the one objc2 0.6 and
+# objc2-foundation 0.3 the lockfile already resolves for cpal.
+objc2-metal = { version = "0.3", default-features = false, features = ["std", "MTLDevice"] }
+# Already in the dependency tree transitively; declared here so plugin folder
+# containment can compare names the way APFS does (commands/filesystem/grant_registry.rs).
+icu_normalizer = { version = "2.4", default-features = false, features = ["compiled_data"] }
 
 [target.'cfg(unix)'.dependencies]
 # Already in the dependency tree transitively; declared here for the
 # no-follow cached-model read in commands/verified_cached_model.rs.
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# The shell known-folder query behind the Windows plugin scan roots
+# (host/plugin_scan_policy.rs), and the file identity in the plugin registry's
+# fingerprint (host/plugin_registry_store.rs), which std's unstable
+# `file_index` cannot supply. The plugin scan helper's lifetime ties
+# (host/plugin_scan_worker.rs): the kill-on-close job object that ends a
+# helper with its spawner (`Win32_System_JobObjects`, whose job creation takes
+# `Win32_Security` attributes), and the helper's own parent watch and
+# self-termination (`Win32_System_Threading`). The GPU memory budget
+# (commands/gpu_memory.rs) enumerates adapters through DXGI
+# (`Win32_Graphics_Dxgi`, with `Win32_Graphics_Dxgi_Common` for the formats its
+# types name) and asks Direct3D 12 (`Win32_Graphics_Direct3D`,
+# `Win32_Graphics_Direct3D12`) whether each is unified-memory. The workspace pin daw-engine
+# already resolves, so the graph keeps one windows-core family.
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+] }
 
 [dev-dependencies]
 assert_no_alloc = "1.1"

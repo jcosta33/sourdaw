@@ -29,6 +29,7 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    tokenFreeGitEnv,
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
@@ -590,7 +591,7 @@ export function shellPort(
         readThread: (threadId) => readRepairReviewThread(threadId, gh),
         postReply: (threadId, body, clientMutationId) => postRepairReply(threadId, body, clientMutationId, gh),
         readEvidenceFile: (path) => readFileSync(path, 'utf8'),
-        isAncestor: shellIsAncestor(primaryRoot, session.env),
+        isAncestor: shellIsAncestor(primaryRoot, tokenFreeGitEnv(session.env)),
         reviews: (number) => readPublicReviews(gh, number),
         reviewComments: (number) => readPublicReviewComments(gh, number),
         log: (message) => {

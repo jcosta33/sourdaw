@@ -59,13 +59,16 @@ export type ClaimBoardItem = {
 };
 
 /**
- * The label swap runs before the board move: the labels are the claim another agent's survey
- * reads. The claim reads the labels back after the edit and moves no board until the swap is
- * observed. The read-back proves the write landed, not exclusivity: two operators claiming at
- * once both add an already-present label without error, so exclusivity comes from the claim
- * token below. A rerun cannot repair boards a partial claim left behind — once status:active is
- * on the issue the refusal below fires first — so the operator completes a stranded board move by
- * hand under the manual-gh exception for an issue's own project membership.
+ * The claim reads and validates every board it will move before its first write, so a board the
+ * claim cannot move (too many to read, no readable Status field, no In progress option) refuses
+ * with the issue untouched and a rerun can claim it once the board is fixed. The label swap then
+ * runs before the board move: the labels are the claim another agent's survey reads. The claim
+ * reads the labels back after the edit and moves no board until the swap is observed. The
+ * read-back proves the write landed, not exclusivity: two operators claiming at once both add an
+ * already-present label without error, so exclusivity comes from the claim token below. A board
+ * write that fails after the claim has won leaves the claim standing, so a rerun refuses on
+ * status:active; the operator completes that board move by hand under the manual-gh exception for
+ * an issue's own project membership.
  */
 export function labelSwapPlan(labels: string[]): { add: string; remove: string[] } {
     return {
@@ -265,11 +268,15 @@ export type Gh = (args: string[]) => string;
  * Every claim runs as the same operator credential and re-adding a present label succeeds
  * silently, so nothing a claim reads about the labels says which claim wrote them. Each claim
  * therefore posts one comment carrying a fresh random token after its label swap is observed,
- * then reads the timeline, and wins only when its token is the sole claim token since
+ * then reads the timeline until two consecutive reads agree, and wins only when its token is the sole claim token since
  * status:active was last removed. Of two concurrent claims, the one whose comment became visible
  * later sees both, so at most one sees itself alone, whatever order the comment ids or timestamps
  * fall in; both may lose and withdraw, never both win. A loser withdraws its own comment and moves
  * no board.
+ *
+ * The election assumes a comment is visible to every read that starts after its POST returns.
+ * GitHub documents no such read-after-write guarantee for the REST API. A claim whose own comment
+ * is not yet visible refuses; a rival's comment that one read cannot see yet is not detected.
  *
  * Posting after the swap means a claim that dies after posting leaves status:active behind, so
  * later claims refuse on the label, and removing that label releases the claim and starts a new
@@ -355,8 +362,7 @@ function claimTokenFromEntry(entry: TimelineEntry): ClaimToken | undefined {
 }
 
 /** The claim tokens posted since status:active was last removed, in comment id order. */
-export function claimTokensSinceRelease(pages: unknown, issue: number): ClaimToken[] {
-    const entries = timelineEntries(pages, issue);
+export function claimTokensSinceRelease(entries: TimelineEntry[]): ClaimToken[] {
     const releaseIndex = entries.findLastIndex(
         (entry) => entry.event === 'unlabeled' && entry.label?.name === ACTIVE_STATUS_LABEL
     );
@@ -371,15 +377,44 @@ export function claimTokensSinceRelease(pages: unknown, issue: number): ClaimTok
 
 const RELEASE_HINT = `; ${ACTIVE_STATUS_LABEL} stays on the issue — if no lane holds it, remove the label and claim again`;
 
+/**
+ * The timeline pages by position (`page` and `per_page`, its only documented paging parameters),
+ * and gh fetches each page as a separate request. Deleting an entry on a page already fetched
+ * shifts every later entry one slot earlier, so the entry at the next page boundary lands on a page
+ * already read and that read skips it: a rival token can vanish from one read. The deleted entry
+ * is in that read and in no read that starts after the deletion, so a read that skipped an entry
+ * never equals the next read. Two consecutive reads that agree entry for entry therefore prove the
+ * earlier one skipped nothing. Appended entries only push later entries back, which repeats an
+ * entry instead of skipping one. A timeline that keeps changing refuses after a bounded number of
+ * reads rather than deciding from a read it cannot trust.
+ */
+const TIMELINE_READ_LIMIT = 4;
+
+function readTimeline(issue: number, gh: Gh): TimelineEntry[] {
+    return timelineEntries(parseJson<unknown>(gh(issueTimelineArgs(issue)), `issue #${issue} timeline`), issue);
+}
+
+function readSettledTimeline(issue: number, gh: Gh): TimelineEntry[] {
+    let previous = readTimeline(issue, gh);
+    for (let read = 2; read <= TIMELINE_READ_LIMIT; read += 1) {
+        const current = readTimeline(issue, gh);
+        if (JSON.stringify(current) === JSON.stringify(previous)) {
+            return current;
+        }
+        previous = current;
+    }
+    return fail(
+        `issue #${issue} timeline changed between every two consecutive reads of ${TIMELINE_READ_LIMIT}; ` +
+            `no board was moved${RELEASE_HINT}`
+    );
+}
+
 function describeClaim(claim: ClaimToken): string {
     return claim.url ?? `comment ${claim.commentId}`;
 }
 
 function assertClaimWon(issue: number, token: string, gh: Gh): void {
-    const claims = claimTokensSinceRelease(
-        parseJson<unknown>(gh(issueTimelineArgs(issue)), `issue #${issue} timeline`),
-        issue
-    );
+    const claims = claimTokensSinceRelease(readSettledTimeline(issue, gh));
     if (!claims.some((claim) => claim.token === token)) {
         fail(`issue #${issue} claim comment was not observed on the timeline; no board was moved${RELEASE_HINT}`);
     }
@@ -430,6 +465,7 @@ export function claimTrackerIssue(
                 'read the board before choosing work'
         );
     }
+    const moves = planBoardMoves(issue, gh);
     const plan = labelSwapPlan(labels);
     gh(issueEditLabelsArgs(issue, plan));
     const edited = readIssueClaimRow(issue, gh);
@@ -440,25 +476,56 @@ export function claimTrackerIssue(
     decideClaim(issue, token, gh);
     const removed = plan.remove.length > 0 ? `, removed ${plan.remove.join(', ')}` : '';
     log(`issue #${issue}: added ${ACTIVE_STATUS_LABEL}${removed}`);
+    moveBoards(issue, moves, gh, log);
+}
+
+type BoardMove = { board: ClaimBoardItem; ids: { fieldId: string; optionId: string } | undefined };
+
+/** Every board the issue sits on, with the live Status ids for each one not already In progress. */
+function planBoardMoves(issue: number, gh: Gh): BoardMove[] {
     const boards = boardsFromGraphql(
         parseGraphqlResponse(gh(issueBoardsArgs(issue)), `issue #${issue} board membership`),
         issue
     );
-    if (boards.length === 0) {
+    return boards.map((board) => ({ board, ids: inProgressIds(board, gh) }));
+}
+
+/** The live Status field and In progress option ids, or none for a board already In progress. */
+function inProgressIds(board: ClaimBoardItem, gh: Gh): BoardMove['ids'] {
+    if (board.statusName === IN_PROGRESS_OPTION_NAME) {
+        return undefined;
+    }
+    return statusFieldIds(parseJson<unknown>(gh(fieldListArgs(board)), `board "${board.projectTitle}" fields`), board);
+}
+
+/**
+ * Runs only after the claim has won, so a failed board write cannot undo the claim: every board is
+ * attempted, and the refusal names the ones left for the operator to move by hand.
+ */
+function moveBoards(issue: number, moves: BoardMove[], gh: Gh, log: (message: string) => void): void {
+    if (moves.length === 0) {
         log(`issue #${issue} sits on no project board; nothing to move`);
         return;
     }
-    for (const board of boards) {
-        if (board.statusName === IN_PROGRESS_OPTION_NAME) {
+    const failures: string[] = [];
+    for (const { board, ids } of moves) {
+        if (ids === undefined) {
             log(`board "${board.projectTitle}": already ${IN_PROGRESS_OPTION_NAME}`);
             continue;
         }
-        const ids = statusFieldIds(
-            parseJson<unknown>(gh(fieldListArgs(board)), `board "${board.projectTitle}" fields`),
-            board
+        try {
+            gh(itemEditArgs(board, ids));
+            log(`board "${board.projectTitle}": moved to ${IN_PROGRESS_OPTION_NAME}`);
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            failures.push(`board "${board.projectTitle}" was not moved to ${IN_PROGRESS_OPTION_NAME} (${reason})`);
+        }
+    }
+    if (failures.length > 0) {
+        fail(
+            `issue #${issue} is claimed: ${ACTIVE_STATUS_LABEL} and this claim comment stay on the issue; ` +
+                `${failures.join('; ')}; move ${failures.length === 1 ? 'it' : 'them'} by hand`
         );
-        gh(itemEditArgs(board, ids));
-        log(`board "${board.projectTitle}": moved to ${IN_PROGRESS_OPTION_NAME}`);
     }
 }
 
@@ -554,7 +621,14 @@ function realClaimCliDeps(runtime: TrustedClaimRuntime): ClaimCliDeps {
     };
 }
 
-export async function runClaimTrackerIssueCli(args: string[], deps?: ClaimCliDeps): Promise<number> {
+export function runClaimTrackerIssueCli(args: string[], deps?: ClaimCliDeps): Promise<number> {
+    // The executor runs synchronously, so a refusal still rejects rather than throws.
+    return new Promise((resolve) => {
+        resolve(claimTrackerIssueFromCli(args, deps));
+    });
+}
+
+function claimTrackerIssueFromCli(args: string[], deps?: ClaimCliDeps): number {
     const parsed = parseClaimArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${CLAIM_USAGE.slice('usage: '.length)}`);

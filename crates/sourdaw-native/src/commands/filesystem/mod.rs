@@ -8,10 +8,12 @@
 //! renderer sends.
 
 pub mod grant_registry;
+mod refusals;
 
 use crate::host::runtime_scope::{RuntimeScope, SCOPE_NAMESPACE};
 use grant_registry::{FileGrant, GrantMode};
 use hound::{WavSpec, WavWriter};
+use refusals::FileRefusal;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io::Write;
@@ -238,10 +240,18 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
         std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     for entry in read_dir {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let metadata = entry
-            .metadata()
-            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let entry = entry.map_err(|e| {
+            FileRefusal::EntryUnreadable {
+                cause: e.to_string(),
+            }
+            .to_string()
+        })?;
+        let metadata = entry.metadata().map_err(|e| {
+            FileRefusal::MetadataUnreadable {
+                cause: e.to_string(),
+            }
+            .to_string()
+        })?;
 
         entries.push(DirectoryEntry {
             name: entry.file_name().to_string_lossy().to_string(),
@@ -272,6 +282,11 @@ pub async fn grant_path(path: String, mode: String, recursive: bool) -> Result<(
     let mode = parse_grant_mode(&mode)?;
     let requested = normalize_absolute_path(Path::new(path.trim()))?;
     let canonical = grant_registry::resolve_grant_target(&requested)?;
+    grant_registry::refuse_write_grant_in_plugin_folder(
+        &canonical,
+        mode,
+        &crate::host::plugin_folder_grants::plugin_code_roots(),
+    )?;
     grant_registry::grant(FileGrant {
         canonical,
         mode,
@@ -290,8 +305,8 @@ fn parse_grant_mode(mode: &str) -> Result<GrantMode, String> {
 
 pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
-    let canonical = canonicalize_existing_path(&resolved)?;
-    ensure_allowed_root(&canonical, GrantMode::Read)?;
+    let canonical = canonicalize_existing_path(&resolved).map_err(|e| e.to_string())?;
+    ensure_allowed_root(&canonical, GrantMode::Read).map_err(|e| e.to_string())?;
     if !canonical.is_file() {
         return Err("Path is not a file".to_string());
     }
@@ -300,10 +315,10 @@ pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
 
 pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
-    let canonical = canonicalize_existing_path(&resolved)?;
-    ensure_allowed_root(&canonical, GrantMode::Read)?;
+    let canonical = canonicalize_existing_path(&resolved).map_err(|e| e.to_string())?;
+    ensure_allowed_root(&canonical, GrantMode::Read).map_err(|e| e.to_string())?;
     if !canonical.is_dir() {
-        return Err("Not a directory".to_string());
+        return Err(FileRefusal::NotADirectory.to_string());
     }
     Ok(canonical)
 }
@@ -333,7 +348,7 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
     refuse_export_staging_path(&resolved)?;
     if let Ok(canonical) = canonicalize_existing_path(&resolved) {
-        ensure_allowed_root(&canonical, GrantMode::ReadWrite)?;
+        ensure_allowed_root(&canonical, GrantMode::ReadWrite).map_err(|e| e.to_string())?;
         if canonical.is_dir() {
             return Err("Path is a directory".to_string());
         }
@@ -349,7 +364,7 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
         return Err("Path must include a parent directory".to_string());
     }
     let destination = canonicalize_through_missing_tail(&resolved)?;
-    ensure_allowed_root(&destination, GrantMode::ReadWrite)?;
+    ensure_allowed_root(&destination, GrantMode::ReadWrite).map_err(|e| e.to_string())?;
     // The checked path is the one returned, never the caller's spelling of it.
     // Windows normalises a path on the way to the filesystem — a trailing
     // period or space on a segment is trimmed — so returning the untouched
@@ -433,9 +448,9 @@ fn normalize_absolute_path(path: &Path) -> Result<PathBuf, String> {
     Ok(normalized)
 }
 
-fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, String> {
+fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, FileRefusal> {
     path.canonicalize()
-        .map_err(|_| "File not found or not accessible".to_string())
+        .map_err(|_| FileRefusal::NotFoundOrNotAccessible)
 }
 
 /// Resolve `path` as far as the filesystem allows, keeping what is missing.
@@ -488,15 +503,15 @@ pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, 
 /// own storage and admit both modes, so they answer before the registry.
 /// `starts_with` is component-wise throughout, so no root or grant admits a
 /// sibling directory whose name merely shares its prefix.
-fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), String> {
+fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), FileRefusal> {
     if is_private_state_path(resolved_path) {
         // Refused with the same message as anything else outside the roots.
         // A distinct one would tell a probing renderer that it had found the
         // directory holding the state that decides what it may reach.
-        return Err("Path is outside allowed native file roots".to_string());
+        return Err(FileRefusal::OutsideAllowedRoots);
     }
     if mode == GrantMode::ReadWrite {
-        refuse_export_staging_path(resolved_path)?;
+        refuse_export_staging_path(resolved_path).map_err(FileRefusal::Message)?;
     }
 
     for root in built_in_roots() {
@@ -509,7 +524,7 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), Stri
     if grant_registry::admits(resolved_path, mode) {
         return Ok(());
     }
-    Err("Path is outside allowed native file roots".to_string())
+    Err(FileRefusal::OutsideAllowedRoots)
 }
 
 /// The roots Sourdaw owns, readable and writable without a user pick.
@@ -519,7 +534,11 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), Stri
 /// keeps projects in. The user's documents, downloads, desktop and music
 /// folders were roots here once (#3313); they are the user's, not the app's,
 /// and reach them now only through a grant the user made in a dialog.
-fn built_in_roots() -> Vec<PathBuf> {
+///
+/// A plugin folder grant may not overlap any of these: the renderer writes
+/// here without a pick, so an overlapping plugin folder would let a page plant
+/// native code that the scan and the loader execute.
+pub(crate) fn built_in_roots() -> Vec<PathBuf> {
     let mut roots = vec![ipc_temp_dir()];
 
     if let Some(data_dir) = application_data_directory() {
@@ -669,6 +688,7 @@ fn names_private_directory(component: &str) -> bool {
 /// Ensures the private state directory exists for both production and test
 /// addon initializations. [`create_private_state_directory`] is where the
 /// work is, and that is what tests drive directly.
+#[cfg(any(feature = "napi-addon", not(test)))]
 pub(crate) fn ensure_private_state_directory() {
     let Some(directory) = private_state_directory() else {
         return;
@@ -707,10 +727,14 @@ fn project_directory() -> Option<PathBuf> {
     Some(dirs::document_dir()?.join(PROJECT_DIR_NAME))
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 const MAX_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
+#[cfg(any(feature = "napi-addon", test))]
 const MAX_EXPORT_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
+#[cfg(any(feature = "napi-addon", test))]
 const EXPORT_MANIFEST_VERSION: u32 = 2;
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportTempRecord {
@@ -721,6 +745,7 @@ struct ExportTempRecord {
     identity: Option<ExportFileIdentity>,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "platform", deny_unknown_fields)]
 enum ExportFileObjectId {
@@ -728,6 +753,7 @@ enum ExportFileObjectId {
     Windows { volume: u64, file_id: [u8; 16] },
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportFileCreationTime {
@@ -735,6 +761,7 @@ struct ExportFileCreationTime {
     nanos: u32,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportFileIdentity {
@@ -742,6 +769,7 @@ struct ExportFileIdentity {
     created: Option<ExportFileCreationTime>,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, String> {
     let metadata = file
         .metadata()
@@ -765,6 +793,7 @@ fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, Stri
     })
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[cfg(unix)]
 fn export_file_object_id(
     _file: &std::fs::File,
@@ -777,6 +806,7 @@ fn export_file_object_id(
     })
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[cfg(windows)]
 fn export_file_object_id(
     file: &std::fs::File,
@@ -828,6 +858,7 @@ fn export_file_object_id(
     })
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[cfg(not(any(unix, windows)))]
 fn export_file_object_id(
     _file: &std::fs::File,
@@ -836,6 +867,7 @@ fn export_file_object_id(
     Err("Created export file identity is unavailable on this platform".into())
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportManifest {
@@ -844,6 +876,7 @@ struct ExportManifest {
     authentication: String,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 struct ExportFileTransaction {
     record: ExportTempRecord,
     generation: u64,
@@ -851,10 +884,12 @@ struct ExportFileTransaction {
     sealed: bool,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 struct ExportFileLock {
     file: std::fs::File,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl ExportFileLock {
     fn acquire(file: std::fs::File) -> Result<Self, String> {
         file.try_lock()
@@ -863,6 +898,7 @@ impl ExportFileLock {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl Drop for ExportFileLock {
     fn drop(&mut self) {
         // Passive duplicates must not extend ownership beyond this acquired owner's lifetime.
@@ -870,6 +906,7 @@ impl Drop for ExportFileLock {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 /// One host holds an OS lock for its entire lifetime. Recovery never races another live host.
 /// The authenticated manifest is private native state, never renderer-authored delete authority.
 pub(crate) struct ExportFileRegistry {
@@ -880,6 +917,7 @@ pub(crate) struct ExportFileRegistry {
     transactions: std::collections::BTreeMap<String, ExportFileTransaction>,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn export_manifest_mac(
     key: &[u8; 32],
     version: u32,
@@ -906,6 +944,7 @@ fn export_manifest_mac(
         .collect())
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn refuse_export_symlink(path: &Path) -> Result<(), String> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -917,6 +956,7 @@ fn refuse_export_symlink(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
     if uuid::Uuid::parse_str(&record.token)
         .map_err(|_| "Invalid export recovery token")?
@@ -950,6 +990,7 @@ fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 /// Hold the inspected object through its pathname operation. Observed substitution
 /// refuses; pathname rename/unlink can still race another same-user process.
 fn verified_export_temp(
@@ -992,6 +1033,7 @@ fn verified_export_temp(
     Ok(Some(file))
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl ExportFileRegistry {
     pub(crate) fn open(directory: &Path) -> Result<Self, String> {
         use std::io::Read;
@@ -1161,7 +1203,10 @@ impl ExportFileRegistry {
         {
             Ok(file) => {
                 let identity = export_file_identity(&file)?;
-                let transaction = self.transactions.get_mut(&key).expect("inserted export");
+                let transaction = self
+                    .transactions
+                    .get_mut(&key)
+                    .ok_or("Unknown export transaction")?;
                 transaction.record.identity = Some(identity);
                 transaction.file = Some(file);
                 self.persist()?;
@@ -1308,6 +1353,7 @@ impl ExportFileRegistry {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl Drop for ExportFileRegistry {
     fn drop(&mut self) {
         if !self.initializing {
@@ -1741,6 +1787,94 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_read_write_pick_inside_a_plugin_folder_is_refused_and_not_granted() {
+        let plugin_folder = crate::host::plugin_folder_grants::plugin_code_roots()
+            .into_iter()
+            .next()
+            .expect("every supported platform defines a plugin folder");
+        let pick = plugin_folder.join("Vendor");
+
+        grant_registry::with_grants_for_test(Vec::new(), || {
+            let refused = crate::block_on_test(grant_path(
+                pick.to_string_lossy().into_owned(),
+                "readwrite".to_string(),
+                true,
+            ));
+            assert!(
+                refused
+                    .as_ref()
+                    .is_err_and(|message| message.contains("plugin folder")),
+                "unexpected result {refused:?}"
+            );
+            assert!(!grant_registry::admits(&pick, GrantMode::Read));
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_read_write_pick_through_a_link_into_a_granted_plugin_folder_is_refused() {
+        use crate::host::plugin_folder_grants::test_support::{store_grants, TempTree};
+
+        let tree = TempTree::create("grant-path-link");
+        let plugin_folder = tree.dir("Granted/Plugins");
+        let vendor = tree.dir("Granted/Plugins/Vendor");
+        store_grants(&tree.store(), &[plugin_folder]);
+        let link = tree.path("Shortcut");
+        std::os::unix::fs::symlink(&vendor, &link).expect("link should be created");
+
+        crate::host::plugin_folder_grants::with_store_location_for_test(&tree.store(), || {
+            grant_registry::with_grants_for_test(Vec::new(), || {
+                let refused = crate::block_on_test(grant_path(
+                    link.to_string_lossy().into_owned(),
+                    "readwrite".to_string(),
+                    true,
+                ));
+                assert!(
+                    refused
+                        .as_ref()
+                        .is_err_and(|message| message.contains("plugin folder")),
+                    "unexpected result {refused:?}"
+                );
+                assert!(!grant_registry::admits(&vendor, GrantMode::Read));
+                assert!(!grant_registry::admits(&link, GrantMode::Read));
+            });
+        });
+    }
+
+    #[tokio::test]
+    async fn list_directory_refuses_a_missing_path_with_the_not_accessible_text() {
+        let scratch = TempAuthorityDir::create_owned_scratch();
+        let missing = scratch.path("missing");
+
+        let error = list_directory(missing.to_string_lossy().into_owned())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "File not found or not accessible");
+    }
+
+    #[tokio::test]
+    async fn list_directory_refuses_a_file_with_the_not_a_directory_text() {
+        let scratch = TempAuthorityDir::create_owned_scratch();
+        let file = scratch.path("file.txt");
+        std::fs::write(&file, b"x").unwrap();
+
+        let error = list_directory(file.to_string_lossy().into_owned())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "Not a directory");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_directory_refuses_an_ungranted_path_with_the_outside_roots_text() {
+        let error = list_directory("/etc".to_string()).await.unwrap_err();
+
+        assert_eq!(error, "Path is outside allowed native file roots");
+    }
+
     struct FileCommandOutcomes {
         read: Result<Vec<u8>, String>,
         list: Result<Vec<DirectoryEntry>, String>,
@@ -1836,11 +1970,15 @@ mod tests {
         .expect("the application data directory should resolve");
 
         assert_eq!(
-            ensure_allowed_root(&location, GrantMode::Read).unwrap_err(),
+            ensure_allowed_root(&location, GrantMode::Read)
+                .unwrap_err()
+                .to_string(),
             "Path is outside allowed native file roots"
         );
         assert_eq!(
-            ensure_allowed_root(&location, GrantMode::ReadWrite).unwrap_err(),
+            ensure_allowed_root(&location, GrantMode::ReadWrite)
+                .unwrap_err()
+                .to_string(),
             "Path is outside allowed native file roots"
         );
     }
@@ -1890,7 +2028,9 @@ mod tests {
             let destination = spelled_private_state_path(spelling, &grant_document_name());
 
             assert_eq!(
-                ensure_allowed_root(&destination, GrantMode::Read).unwrap_err(),
+                ensure_allowed_root(&destination, GrantMode::Read)
+                    .unwrap_err()
+                    .to_string(),
                 "Path is outside allowed native file roots",
                 "{spelling} must be refused for reading"
             );
@@ -1982,7 +2122,11 @@ mod tests {
 
         let error = grant_registry::with_grants_for_test(
             vec![grant_of(application_data, GrantMode::ReadWrite, true)],
-            || ensure_allowed_root(&destination, GrantMode::ReadWrite).unwrap_err(),
+            || {
+                ensure_allowed_root(&destination, GrantMode::ReadWrite)
+                    .unwrap_err()
+                    .to_string()
+            },
         );
 
         assert_eq!(error, "Path is outside allowed native file roots");

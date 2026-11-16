@@ -118,12 +118,13 @@ does not claim legal certainty or replace advice about any particular jurisdicti
 The decisive checks are the exact source-shape and legacy-literal rejections in
 `scripts/checkReleaseInventory.ts`, the coefficient-isolation test in `engine.rs` covering every
 body-only control at initial note-on and mid-note decay reset, the native/browser 64-voice benchmark
-census, and the pinned tracked-source digests in the `grand-boule` release-inventory row. Those
-checks pin admitted bytes and reject known legacy literals; they do not, and cannot, prove authorship.
+census, and the pinned digests in the `grand-boule` release-inventory row of the admitted Grand Boule
+DSP source and of this record. Those checks pin admitted bytes and reject known legacy literals; they
+do not, and cannot, prove authorship.
 
 The release checker pins the FIR source shape, project-tuning provenance label, neutral visible
-voicing IDs, complete release reachability, exact tracked-source digests, and generated WASM
-surface. Focused Rust tests pin finite-tail behavior, aggregate-bridge ordering, control isolation
+voicing IDs, complete release reachability, exact digests of the admitted DSP source and of this
+record, tracked and readable integration boundaries, and generated WASM surface. Focused Rust tests pin finite-tail behavior, aggregate-bridge ordering, control isolation
 from string coefficients, output level, and allocation freedom with the FIR tail active.
 
 ## Consequences

@@ -43,7 +43,6 @@ vi.mock('#/modules/Transport/useCases', () => ({
 
 vi.mock('../../trackShortcuts/clearSolos', () => ({ clearSolos: vi.fn() }));
 vi.mock('../../trackShortcuts/addTrack', () => ({ addTrack: vi.fn() }));
-vi.mock('../../trackShortcuts/duplicateTrack', () => ({ duplicateTrack: vi.fn() }));
 vi.mock('../../trackShortcuts/duplicateClip', () => ({ duplicateClip: vi.fn() }));
 vi.mock('../../trackShortcuts/duplicateClipToNextBar', () => ({ duplicateClipToNextBar: vi.fn() }));
 vi.mock('../../trackShortcuts/zoomTracksVertical', () => ({ zoomTracksVertical: vi.fn() }));

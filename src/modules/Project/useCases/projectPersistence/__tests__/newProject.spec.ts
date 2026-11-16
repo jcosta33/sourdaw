@@ -35,7 +35,9 @@ type Deferred<T> = {
 type MonitoredTrack = { id: string; inputMonitoring: 'on' | 'off' | 'auto'; inputId: string | null };
 
 const pluginHostMocks = vi.hoisted(() => ({
+    settleProjectSwitchPluginTeardown: vi.fn<(outcome: 'switched' | 'refused') => void>(),
     unloadPlugin: vi.fn(() => Promise.resolve()),
+    unloadPluginsBeforeProjectSwitch: vi.fn(() => Promise.resolve()),
 }));
 
 const resetMocks = vi.hoisted(() => ({
@@ -85,7 +87,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    settleProjectSwitchPluginTeardown: pluginHostMocks.settleProjectSwitchPluginTeardown,
     unloadPlugin: pluginHostMocks.unloadPlugin,
+    unloadPluginsBeforeProjectSwitch: pluginHostMocks.unloadPluginsBeforeProjectSwitch,
     activateExternalPlugin: vi.fn(),
     findSupportedPlugin: vi.fn(),
     isFaustInstrumentModule: vi.fn(),
@@ -177,7 +181,7 @@ describe('newProject injectable', () => {
         // Each case opens with a project that owes nothing for the takes before it.
         unsavedClosedTakes.acknowledgeAll();
         takeMocks.saveProject.mockResolvedValue(true);
-        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        pluginHostMocks.unloadPluginsBeforeProjectSwitch.mockResolvedValue(undefined);
         vi.mocked(clearRuntimeCachedAudioBuffers).mockReset().mockResolvedValue(undefined);
         resetMocks.finalize.mockReset();
         resetMocks.finalize.mockResolvedValue('finalized');
@@ -207,7 +211,10 @@ describe('newProject injectable', () => {
         expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
-        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
+        expect(pluginHostMocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledTimes(1);
+        // The outgoing carries end at the switch itself, never at the teardown.
+        expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(pluginHostMocks.settleProjectSwitchPluginTeardown.mock.calls).toEqual([['switched']]);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
         expect(resetCrdtProject).toHaveBeenCalledWith('Test', expect.any(Function), expect.any(Function));
@@ -307,9 +314,9 @@ describe('newProject injectable', () => {
             isCurrent: () => isCurrent,
             signal: new AbortController().signal,
         });
-        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        pluginHostMocks.unloadPluginsBeforeProjectSwitch.mockReturnValueOnce(unloading.promise);
         const activation = newProject('Older Project');
-        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledOnce());
         isCurrent = false;
         unloading.resolve(undefined);
         await expect(activation).resolves.toBe(false);
@@ -326,15 +333,22 @@ describe('newProject injectable', () => {
     it('hands the previous project back when its caller withdraws it during native teardown', async () => {
         const unloading = createDeferred<void>();
         let isStillChosen = true;
-        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        pluginHostMocks.unloadPluginsBeforeProjectSwitch.mockReturnValueOnce(unloading.promise);
         const activation = newProject('Withdrawn Project', { shouldProceed: () => isStillChosen });
-        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledOnce());
         isStillChosen = false;
         unloading.resolve(undefined);
 
         await expect(activation).resolves.toBe(false);
         expect(resetCrdtProject).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        // The rebuild reactivates the outgoing plugins from the live state the
+        // teardown carried, which the unkeyed unload would have dropped.
+        expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(pluginHostMocks.settleProjectSwitchPluginTeardown.mock.calls).toEqual([['refused']]);
+        expect(pluginHostMocks.settleProjectSwitchPluginTeardown.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            vi.mocked(ensureTrackStrips).mock.invocationCallOrder[0]!
+        );
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(projectStore.value).toMatchObject({
             name: 'Existing Project',
@@ -421,11 +435,13 @@ describe('newProject injectable', () => {
         await expect(newProject('Quiet Project')).resolves.toBe(true);
 
         expect(resetAudioGraph).toHaveBeenCalledTimes(2);
-        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(2);
+        expect(pluginHostMocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledTimes(2);
         const [firstReset, secondReset] = vi.mocked(resetCrdtProject).mock.invocationCallOrder;
         expect(vi.mocked(resetAudioGraph).mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
         expect(vi.mocked(resetAudioGraph).mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
-        expect(pluginHostMocks.unloadPlugin.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(pluginHostMocks.unloadPluginsBeforeProjectSwitch.mock.invocationCallOrder[1]!).toBeLessThan(
+            secondReset!
+        );
     });
 
     it('keeps stopping and asking until the reset finds the transport idle', async () => {
@@ -485,7 +501,7 @@ describe('newProject injectable', () => {
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
-        pluginHostMocks.unloadPlugin.mockRejectedValueOnce(new Error('native teardown failed'));
+        pluginHostMocks.unloadPluginsBeforeProjectSwitch.mockRejectedValueOnce(new Error('native teardown failed'));
         await expect(newProject('Test')).resolves.toBe(false);
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
     });
