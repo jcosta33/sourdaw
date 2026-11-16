@@ -1,6 +1,5 @@
 import { type getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
-import { collectProtectedScopes, isProjectWideScope } from '#/modules/Project/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
@@ -12,7 +11,6 @@ import {
     type VibeRunBeatWindow,
     type VibeRunBatch,
     type VibeRunExcludedTarget,
-    type VibeRunExcludedTargetReason,
     type VibeRunExpectedDelta,
     type VibeRunMeasurement,
     type VibeRunPlan,
@@ -24,7 +22,9 @@ import { isSilentVibeRunCell } from '../validators/isSilentVibeRunCell';
 
 import { resolveRoleFamily } from './canonicalRoleFamilies';
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
+import { findPlannableTrackExclusion } from './findPlannableTrackExclusion';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
+import { readBriefProtectedTrackIds } from './readBriefProtectedTrackIds';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -65,64 +65,6 @@ function orderSections(sections: readonly ProjectContextSection[]): VibeRunSecti
                 left.startBeat - right.startBeat || left.endBeat - right.endBeat || left.id.localeCompare(right.id)
         )
         .map(({ id, startBeat, endBeat }) => ({ id, startBeat, endBeat }));
-}
-
-/** An object scope may name the track itself or anything it owns, as batch admission reads it. */
-function trackOwnsObject(track: ProjectContextTrack, objectId: string): boolean {
-    return (
-        track.id === objectId ||
-        track.clips.some((clip) => clip.id === objectId) ||
-        track.devices.some((device) => device.id === objectId)
-    );
-}
-
-/**
- * The tracks the brief protects, read through the same protected-scope source batch admission reads:
- * locks and locked decisions alike. A project-wide protection reaches every track. A range, section
- * or decision scope guards what a time-ranged or brief-naming action touches, which a device recipe
- * on a track does not.
- */
-function readProtectedTrackIds(context: PlanWholeProjectVibeRunInput['context']): Set<string> {
-    const brief = context.productionBrief;
-    if (brief === undefined) {
-        return new Set();
-    }
-    const scopes = collectProtectedScopes(brief).map((protection) => protection.scope);
-    if (scopes.some((scope) => isProjectWideScope(scope))) {
-        return new Set(context.tracks.map((track) => track.id));
-    }
-    const protectedIds = new Set<string>();
-    for (const track of context.tracks) {
-        const isProtected = scopes.some(
-            (scope) =>
-                (scope.kind === 'track' && scope.trackId === track.id) ||
-                (scope.kind === 'object' && trackOwnsObject(track, scope.objectId))
-        );
-        if (isProtected) {
-            protectedIds.add(track.id);
-        }
-    }
-    return protectedIds;
-}
-
-/** What `recipe.expand` refuses a track for before it reads any recipe: guarded, a folder, or frozen. */
-function findExclusion(
-    track: ProjectContextTrack,
-    protectedIds: ReadonlySet<string>
-): VibeRunExcludedTargetReason | null {
-    if (protectedIds.has(track.id)) {
-        return 'protected';
-    }
-    if (track.kind === 'folder') {
-        return 'folder';
-    }
-    if (track.frozen === true) {
-        return 'frozen';
-    }
-    if (resolveRoleFamily(track) === null) {
-        return 'unclassified-role';
-    }
-    return null;
 }
 
 /** An edit step retunes exactly one live device of its type; `recipe.expand` refuses any other count. */
@@ -408,14 +350,14 @@ function classifyRoleTracks(
  */
 export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): VibeRunPlan {
     const protectedIds = new Set(input.protectedTargetIds);
-    for (const targetId of readProtectedTrackIds(input.context)) {
+    for (const targetId of readBriefProtectedTrackIds(input.context)) {
         protectedIds.add(targetId);
     }
     const excludedTargets: VibeRunExcludedTarget[] = [];
     const silentTargets: VibeRunPlan['silentTargets'][number][] = [];
     const tracksByRole = new Map<SemanticCommandListRoleFamily, ProjectContextTrack[]>();
     for (const track of input.context.tracks) {
-        const reason = findExclusion(track, protectedIds);
+        const reason = findPlannableTrackExclusion(track, protectedIds);
         const role = resolveRoleFamily(track);
         if (reason !== null) {
             excludedTargets.push({ targetId: track.id, reason });
