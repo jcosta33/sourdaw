@@ -35,6 +35,18 @@ export const TRANSITIVE_BOUNDARY_BASELINE_FILES: readonly string[] = [
 export const REACHABILITY_CRUISE_ROOT = 'src/';
 export const REACHABILITY_CRUISE_EXCLUDE = /\.(spec|test)\.(ts|tsx)$/u;
 
+/**
+ * Files that change what the reachability gate resolves without being cruised: `tsConfig.fileName`
+ * (`tsconfig.json`, no `extends`; its `paths` aliases are cruised edges), the gate's own config and
+ * script, and `package.json` `imports`/`exports`. A spec pins `tsconfig.json` to the config.
+ */
+export const REACHABILITY_RESOLVER_INPUTS: readonly string[] = [
+    'tsconfig.json',
+    '.dependency-cruiser.reachability.cjs',
+    'scripts/check-dependency-boundaries.mjs',
+    'package.json',
+];
+
 export const LINT_LEDGER_FILES = [
     // ESLint suppression counts per file and rule: two prunes of one count leave an unused suppression.
     'eslint-suppressions.json',
@@ -285,12 +297,33 @@ function rebound(base: BindingIndex, side: BindingIndex): string[] {
 
 function inReachabilityScope(path: string): boolean {
     const normalized = normalizedLedgerPath(path);
+    if (REACHABILITY_RESOLVER_INPUTS.includes(normalized)) {
+        return true;
+    }
     return normalized.startsWith(REACHABILITY_CRUISE_ROOT) && !REACHABILITY_CRUISE_EXCLUDE.test(normalized);
 }
 
-/** True when `main` changed, added or removed a transitive gate's baseline relative to the merge base. */
+/** Sorted canonical rows, so a reformat, key reorder or row reorder is not a change. */
+function canonicalRows(name: string, side: string, text: string): string[] {
+    return boundaryBaselineRows(name, side, text)
+        .map(({ row }) => canonicalJson(row))
+        .sort(compareKeys);
+}
+
+function baselineRowsDiffer(name: string, trees: LedgerTrees): boolean {
+    const base = trees.base[name];
+    const main = trees.main[name];
+    if (base === undefined || main === undefined) {
+        return base !== main;
+    }
+    const baseRows = canonicalRows(name, 'the merge base', base);
+    const mainRows = canonicalRows(name, 'main', main);
+    return baseRows.length !== mainRows.length || baseRows.some((row, index) => row !== mainRows[index]);
+}
+
+/** True when `main` changed, added or removed a row of, or deleted or created, a transitive gate's baseline. */
 export function mainChangedTransitiveBaseline(trees: LedgerTrees): boolean {
-    return TRANSITIVE_BOUNDARY_BASELINE_FILES.some((name) => trees.base[name] !== trees.main[name]);
+    return TRANSITIVE_BOUNDARY_BASELINE_FILES.some((name) => baselineRowsDiffer(name, trees));
 }
 
 /**

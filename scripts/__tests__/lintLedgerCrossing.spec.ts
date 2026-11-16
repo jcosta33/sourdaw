@@ -10,6 +10,7 @@ import {
     DEPENDENCY_BOUNDARY_BASELINE_FILES,
     REACHABILITY_CRUISE_EXCLUDE,
     REACHABILITY_CRUISE_ROOT,
+    REACHABILITY_RESOLVER_INPUTS,
     TRANSITIVE_BOUNDARY_BASELINE_FILES,
     lintLedgerCrossingPaths,
     lintLedgerCrossingRefusal,
@@ -528,6 +529,27 @@ describe('transitive reachability baseline crossing', () => {
         expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], trees)).toEqual(['src/hooks/Q.ts']);
     });
 
+    it.each(['tsconfig.json', '.dependency-cruiser.reachability.cjs'])(
+        'crosses a pull request edit to the resolver input %s when main changed the baseline',
+        (input) => {
+            const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: '[]' }, head: { [REACH]: WITH_ROW } };
+            expect(lintLedgerCrossingPaths([REACH], [input], trees)).toEqual([input]);
+        }
+    );
+
+    it('does not count a reformat or key reorder of the same rows as a baseline change', () => {
+        const reordered = `[\n  {"rule": {"name": "components-no-usecase-transitively", "severity": "error"},\n "to": "src/modules/Example/useCases/run.ts", "from": "${PANEL}", "type": "reachability-causal"}\n]\n`;
+        const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: reordered }, head: { [REACH]: WITH_ROW } };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], trees)).toEqual([]);
+    });
+
+    it('counts main deleting the baseline file, or creating it, as a change', () => {
+        const deleted = { base: { [REACH]: WITH_ROW }, main: {}, head: { [REACH]: WITH_ROW } };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], deleted)).toEqual(['src/hooks/Q.ts']);
+        const created = { base: {}, main: { [REACH]: WITH_ROW }, head: {} };
+        expect(lintLedgerCrossingPaths([REACH], ['src/hooks/Q.ts'], created)).toEqual(['src/hooks/Q.ts']);
+    });
+
     it('does not cross pull request files outside the cruised scope', () => {
         const trees = { base: { [REACH]: WITH_ROW }, main: { [REACH]: '[]' }, head: { [REACH]: WITH_ROW } };
         const outside = [
@@ -564,10 +586,13 @@ describe('transitive reachability baseline crossing', () => {
     it('spells the cruised scope the reachability gate uses', () => {
         const gate = readFileSync(repositoryFile('scripts/check-dependency-boundaries.mjs'), 'utf8');
         expect(gate).toContain(`const args = ['${REACHABILITY_CRUISE_ROOT.replace('/', '')}'];`);
-        const config: { options: { exclude: { path: string } } } = createRequire(import.meta.url)(
-            repositoryFile('.dependency-cruiser.reachability.cjs')
-        );
+        const config: { options: { exclude: { path: string }; tsConfig: { fileName: string } } } = createRequire(
+            import.meta.url
+        )(repositoryFile('.dependency-cruiser.reachability.cjs'));
         expect(REACHABILITY_CRUISE_EXCLUDE.source).toBe(config.options.exclude.path);
+        expect(REACHABILITY_RESOLVER_INPUTS).toContain(config.options.tsConfig.fileName);
+        const tsconfig = readFileSync(repositoryFile(config.options.tsConfig.fileName), 'utf8');
+        expect(tsconfig).not.toMatch(/"extends"/u);
     });
 });
 
