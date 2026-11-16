@@ -65,6 +65,7 @@ type ProspectiveObservation = {
 type BrowserProspectiveObservation = { requests: ProspectiveObservation[]; failures: string[]; restore(): void };
 type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]>; tasks(): MainThreadTask[] };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
+const elasticProspectiveObserverPages = new WeakMap<TestInfo, Page>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
     'devtools.timeline',
@@ -187,7 +188,7 @@ function assertProspectiveObservations(measures: PreparationMeasure[], requests:
     );
 }
 
-async function observeProspectiveRequests(page: Page): Promise<void> {
+async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<void> {
     await page.evaluate(() => {
         const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
         if (target.elasticProspectiveObservation) {
@@ -306,6 +307,7 @@ async function observeProspectiveRequests(page: Page): Promise<void> {
             },
         };
     });
+    elasticProspectiveObserverPages.set(info, page);
 }
 
 function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
@@ -533,25 +535,28 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
 
 test.afterEach(async ({ page: _page }, info) => {
     const failures: string[] = [];
-    try {
-        const observation = await _page.evaluate(() => {
-            const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
-            const current = target.elasticProspectiveObservation;
-            if (!current) {
-                return null;
-            }
-            current.restore();
-            return { requests: current.requests, failures: current.failures };
-        });
-        if (observation) {
+    const observerPage = elasticProspectiveObserverPages.get(info);
+    if (observerPage) {
+        try {
+            const observation = await observerPage.evaluate(() => {
+                const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
+                const current = target.elasticProspectiveObservation;
+                if (!current) {
+                    throw new Error('Installed prospective observations are missing during cleanup');
+                }
+                current.restore();
+                return { requests: current.requests, failures: current.failures };
+            });
             failures.push(...observation.failures);
             await info.attach('elastic-prospective-native-requests.json', {
                 body: JSON.stringify(observation),
                 contentType: 'application/json',
             });
+        } catch (error) {
+            failures.push(String(error));
+        } finally {
+            elasticProspectiveObserverPages.delete(info);
         }
-    } catch (error) {
-        failures.push(String(error));
     }
     for (const capture of elasticTaskTraces.get(info) ?? []) {
         try {
@@ -691,7 +696,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
-    await observeProspectiveRequests(page);
+    await observeProspectiveRequests(page, info);
     const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
         type Metrics = {
