@@ -44,16 +44,21 @@ function orderAmongSameName(track: ListedTrack, tracks: readonly ListedTrack[]):
     return tracks.filter((candidate) => sameName(candidate.name, track.name)).findIndex((c) => c.id === track.id) + 1;
 }
 
-type OrdinalReading =
-    | { status: 'read'; ranges: NamedRange[] }
-    | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[]; start: number; end: number }
-    | { status: 'collision'; text: string; name: string; start: number; end: number };
+type Span = { start: number; end: number };
+
+type OrdinalAsk =
+    | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] }
+    | { status: 'collision'; text: string; name: string };
+
+/** The order references read, every order phrase the text holds, and the first phrase that must be asked about. */
+type OrdinalReading = { ranges: NamedRange[]; phrases: Span[]; ask: OrdinalAsk | undefined };
 
 /**
  * The "[the] second Lead" references of the text, each the k-th track of that whole name. A phrase
  * whose words also name another track is no order reference: for a name one track holds it is left to
  * the name reading, and for a shared name it is a collision the caller must ask about. An ordinal past
- * the tracks sharing the name reads nothing but names those tracks, so the caller can ask which.
+ * the tracks sharing the name reads nothing but names those tracks, so the caller can ask which. Every
+ * phrase is read, past the first ask too, so the caller can check the whole text as one list.
  */
 function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): OrdinalReading {
     const names = [...new Set(tracks.map((track) => track.name.toLowerCase()))].toSorted(
@@ -64,8 +69,10 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
         return sameName(tracks.find((track) => track.id === range.id)?.name ?? '', name);
     }
     const ranges: NamedRange[] = [];
+    const phrases: Span[] = [];
+    let ask: OrdinalAsk | undefined;
     function taken(start: number, end: number): boolean {
-        return ranges.some((range) => range.start < end && range.end > start);
+        return phrases.some((phrase) => phrase.start < end && phrase.end > start);
     }
     for (const name of names) {
         const pattern = new RegExp(
@@ -88,18 +95,21 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
             }
             if (crossing.length > 0) {
                 if (sharing.length >= 2) {
-                    return { status: 'collision', text: match[0], name: sharing[0]!.name, start, end };
+                    phrases.push({ start, end });
+                    ask ??= { status: 'collision', text: match[0], name: sharing[0]!.name };
                 }
                 continue;
             }
+            phrases.push({ start, end });
             const target = sharing[ORDINAL_WORDS.indexOf(match[1]!.toLowerCase())];
             if (target === undefined) {
-                return { status: 'beyond-the-tracks', text: match[0], sharing, start, end };
+                ask ??= { status: 'beyond-the-tracks', text: match[0], sharing };
+                continue;
             }
             ranges.push({ id: target.id, start, end });
         }
     }
-    return { status: 'read', ranges };
+    return { ranges, phrases, ask };
 }
 
 function blank(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): string {
@@ -131,14 +141,10 @@ function readsAsList(text: string, ranges: ReadonlyArray<{ start: number; end: n
     return ranges.length > 0 && holdsOnlyListWords(text, ranges) && joinsEveryName(text, ranges);
 }
 
-/** The phrase beside every other name the text reads, in text order, as one list to check. */
-function listWithPhrase(
-    text: string,
-    phrase: { start: number; end: number },
-    tracks: readonly ListedTrack[]
-): Array<{ start: number; end: number }> {
-    const others = getBestAgentReferenceNameRanges(blank(text, [phrase]), tracks, 'with-number-forms');
-    return [...others, phrase].toSorted((left, right) => left.start - right.start || left.end - right.end);
+/** Every order phrase beside every other name the text reads, in text order, as one list to check. */
+function listWithPhrases(text: string, phrases: readonly Span[], tracks: readonly ListedTrack[]): Span[] {
+    const others = getBestAgentReferenceNameRanges(blank(text, phrases), tracks, 'with-number-forms');
+    return [...others, ...phrases].toSorted((left, right) => left.start - right.start || left.end - right.end);
 }
 
 /**
@@ -150,25 +156,23 @@ function listWithPhrase(
 export function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
+    const { ask } = ordinal;
     // Every ask is a verdict about a list: text that is otherwise no list stays unread, as it does without ordinals.
-    if (ordinal.status === 'collision') {
-        if (!readsAsList(text, listWithPhrase(text, { start: ordinal.start, end: ordinal.end }, tracks))) {
-            return { status: 'unread' };
-        }
-        return { status: 'collision', text: ordinal.text, name: ordinal.name };
+    if (ask !== undefined && !readsAsList(text, listWithPhrases(text, ordinal.phrases, tracks))) {
+        return { status: 'unread' };
     }
-    if (ordinal.status === 'beyond-the-tracks') {
+    if (ask?.status === 'collision') {
+        return { status: 'collision', text: ask.text, name: ask.name };
+    }
+    if (ask?.status === 'beyond-the-tracks') {
         // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
-        if (
-            ordinal.sharing.length < 2 ||
-            !readsAsList(text, listWithPhrase(text, { start: ordinal.start, end: ordinal.end }, tracks))
-        ) {
+        if (ask.sharing.length < 2) {
             return { status: 'unread' };
         }
         return {
             status: 'ambiguous',
-            text: ordinal.text,
-            candidates: ordinal.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
+            text: ask.text,
+            candidates: ask.sharing.map((track) => ({ ...track, order: orderAmongSameName(track, tracks) })),
         };
     }
     const ranges = [
