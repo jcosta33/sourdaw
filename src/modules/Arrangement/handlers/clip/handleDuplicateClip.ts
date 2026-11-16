@@ -1,7 +1,8 @@
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';

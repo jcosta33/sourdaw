@@ -1,10 +1,9 @@
 import { type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
-import {
-    type AutomationRecordingPolicy,
-    type DeviceSnapshot,
-    type DeviceStateChunkSnapshot,
-    type TrackKind,
-} from '#/utils/handlerContract';
+import { type AutomationRecordingPolicy, type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
+
+import { type DeviceSnapshot } from '../models/DeviceSnapshot';
+
+import { type TrackKind } from './arrangementTrackSnapshots';
 
 export type BatchRestoreDeviceSnapshot = {
     readonly trackId: string;

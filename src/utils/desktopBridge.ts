@@ -132,9 +132,14 @@ export async function desktopInvoke(cmd: string, args?: Record<string, unknown>)
  * pushes the bare payload and the seam wraps it, because every consumer
  * unwraps `.payload`.
  */
-export async function desktopListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
-    return sourdawBridge().listen(event, (payload) => {
-        handler({ event, payload });
+export function desktopListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
+    // The executor runs synchronously, so the listener registers now and a missing bridge rejects.
+    return new Promise((resolve) => {
+        resolve(
+            sourdawBridge().listen(event, (payload) => {
+                handler({ event, payload });
+            })
+        );
     });
 }
 
@@ -324,14 +329,14 @@ export type DesktopChannel<Payload> = {
  * await desktopInvoke('my_command', { onEvent: channel });
  * ```
  */
-export async function createChannel<Payload>(): Promise<DesktopChannel<Payload>> {
+export function createChannel<Payload>(): Promise<DesktopChannel<Payload>> {
     const channel: DesktopChannel<Payload> & { readonly [seamChannelTag]: true } = {
         id: -1,
         onmessage: () => undefined,
         toJSON: () => 'sourdaw-stream-channel',
         [seamChannelTag]: true,
     };
-    return channel;
+    return Promise.resolve(channel);
 }
 
 export type DesktopDialogFilter = {

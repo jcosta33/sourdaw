@@ -1,6 +1,6 @@
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
-import { type ClipSnapshot } from '#/utils/handlerContract';
 
+import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
 import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { type Clip } from '../../stores/trackStore';
 import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';

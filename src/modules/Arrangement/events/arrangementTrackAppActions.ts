@@ -1,19 +1,22 @@
+import { type AutomationMode } from '#/modules/Automation/events';
+import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot } from '#/modules/MIDI/events';
 import {
-    type AutomationMode,
     type AutomationRecordingPolicy,
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
-    type ClipSnapshot,
     type CompTakeLaneSnapshot,
-    type FreezeStateSnapshot,
-    type GeneratedMidiStateGuard,
-    type MidiCcSnapshot,
-    type MidiNotesSnapshot,
-    type MidiPitchBendSnapshot,
-    type RestoreTrackPayloadSnapshot,
-    type StemImportTrackSnapshot,
-    type TrackKind,
 } from '#/utils/handlerContract';
+
+import {
+    type ClipSnapshot,
+    type GeneratedMidiStateGuard,
+    type StemImportTrackSnapshot,
+} from './arrangementClipSnapshots';
+import {
+    type FreezeStateSnapshot,
+    type RestoreTrackPayloadSnapshot,
+    type TrackKind,
+} from './arrangementTrackSnapshots';
 
 export type TrackGroupMembershipSnapshot = { readonly trackId: string; readonly groupId: string | null };
 export type TrackHeightSnapshot = { readonly trackId: string; readonly height: number };
