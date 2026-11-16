@@ -28,11 +28,12 @@ repository = "https://github.com/jcosta33/sourdaw"
 windows = "0.62.2"
 
 # Workspace lint policy. Every crate opts in with `[lints] workspace = true`.
-# A lint with zero violations is denied. PR clippy enforces it on host-target
-# code only: Linux for every crate but sourdaw-native (health-gates-rust.sh),
-# macOS for sourdaw-native (native-macos). Windows-only and wasm32-only code is
-# not clippy-linted yet (#6528). No entry sits at `warn`: a lint either fails
-# the build or is not in the table (#6525).
+# A lint with zero violations is denied. PR clippy enforces it per target:
+# Linux host code for every crate but sourdaw-native, and wasm32 library code
+# for the wasm packages (both in health-gates-rust.sh); macOS for
+# sourdaw-native (native-macos); cfg(windows) code in daw-engine and
+# daw-plugin-host (native-windows). No entry sits at `warn`: a lint either
+# fails the build or is not in the table (#6525).
 [workspace.lints.rust]
 unused = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }
