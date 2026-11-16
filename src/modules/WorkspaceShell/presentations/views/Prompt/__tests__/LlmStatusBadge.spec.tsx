@@ -208,7 +208,7 @@ describe('LlmStatusBadge', () => {
                 hidden: [standard, pro, large],
             },
         ])('lists only what the reported memory clears: $label', async ({ bytes, listed, hidden }) => {
-            await openPicker({ state: 'known', totalBytes: bytes });
+            await openPicker({ state: 'known', totalBytes: bytes, gpuBudgetBytes: bytes });
 
             for (const name of listed) {
                 expect(screen.getByRole('button', { name })).toBeInTheDocument();
@@ -231,7 +231,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('lists the Large model as one that plans project edits, with its memory figure', async () => {
-            await openPicker({ state: 'known', totalBytes: 64_000_000_000 });
+            await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
 
             const card = screen.getByRole('button', { name: large });
             expect(card).toHaveTextContent('plans project edits');
@@ -247,7 +247,7 @@ describe('LlmStatusBadge', () => {
             const consent = 'Downloads and verifies this model for private use in this browser.';
 
             it('shows the notice on the Large card and in the consent line once Large is selected', async () => {
-                await openPicker({ state: 'known', totalBytes: 64_000_000_000 });
+                await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
 
                 const card = screen.getByRole('button', { name: large });
                 expect(card).toHaveTextContent(builtWithLlama);
@@ -262,7 +262,7 @@ describe('LlmStatusBadge', () => {
             });
 
             it('keeps the notice off the Qwen cards and their consent line', async () => {
-                await openPicker({ state: 'known', totalBytes: 64_000_000_000 });
+                await openPicker({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
 
                 for (const name of [light, standard, pro]) {
                     expect(screen.getByRole('button', { name })).not.toHaveTextContent(builtWithLlama);
@@ -288,7 +288,7 @@ describe('LlmStatusBadge', () => {
 
         it('selects the largest offered model, not the unoffered default, and loads that one', async () => {
             const onLoad = vi.fn();
-            await openPicker({ state: 'known', totalBytes: 8_000_000_000 }, onLoad);
+            await openPicker({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null }, onLoad);
 
             const downloadButton = screen.getByRole('button', { name: /^Download & Load/ });
             expect(downloadButton).toHaveTextContent('Download & Load Standard');
@@ -298,7 +298,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('states the machine memory and offers no download when no local model fits', async () => {
-            await openPicker({ state: 'known', totalBytes: 1_000_000_000 });
+            await openPicker({ state: 'known', totalBytes: 1_000_000_000, gpuBudgetBytes: null });
 
             expect(screen.getByText(/1\.0 GB of memory, and no local model fits/)).toBeInTheDocument();
             expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
@@ -317,7 +317,7 @@ describe('LlmStatusBadge', () => {
 
         // The engine's active model id is the Pro default: the model the retry used to fall back to.
         it('retries with the largest offered model, not the unoffered active default, on an 8 GB machine', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null });
             const onLoad = vi.fn();
             render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
 
@@ -327,7 +327,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('retries a Qwen model directly on a 64 GB machine, as it always did', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
             const onLoad = vi.fn();
             render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
 
@@ -338,7 +338,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('shows the Llama notice before retrying the Large download, and loads only on Download & Load', async () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000 });
             const onLoad = vi.fn();
             const { rerender } = render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
             fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
@@ -366,7 +366,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('offers no local retry when no local model fits', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 1_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 1_000_000_000, gpuBudgetBytes: null });
             render(<LlmStatusBadge status={errorStatus} onLoad={vi.fn()} />);
 
             expect(screen.queryByRole('button', { name: 'Retry Model Download' })).not.toBeInTheDocument();
@@ -387,7 +387,7 @@ describe('LlmStatusBadge', () => {
                 });
             });
             aiBackendPreferenceStore.set('cloud');
-            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000, gpuBudgetBytes: null });
             const onLoad = vi.fn();
             try {
                 render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
@@ -403,7 +403,7 @@ describe('LlmStatusBadge', () => {
         });
 
         it('describes the model that is loaded, not the one the picker would select', () => {
-            machineMemoryStore.set({ state: 'known', totalBytes: 16_000_000_000 });
+            machineMemoryStore.set({ state: 'known', totalBytes: 16_000_000_000, gpuBudgetBytes: null });
             render(
                 <LlmStatusBadge
                     status={{ state: 'ready', backend: 'webllm', modelId: 'Qwen3-1.7B-q4f16_1-MLC' }}

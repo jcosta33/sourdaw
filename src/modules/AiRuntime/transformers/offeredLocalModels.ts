@@ -4,23 +4,43 @@ import type { MachineMemoryReading } from '../models/MachineMemoryReading';
 
 type OfferableModel = { id: string; tier: LocalModelTier; memoryGb: number };
 
-/** Without a memory figure the picker offers every tier up to this one and hides the larger ones. */
+/**
+ * Without a figure for the memory a model needs on the GPU the picker offers every tier up to this one and
+ * hides the larger ones: an unknown GPU budget never hides a model that ships today, and never offers
+ * Large without evidence.
+ */
 const LARGEST_TIER_WITHOUT_FIGURE: LocalModelTier = 'pro';
 
 function tierRank(tier: LocalModelTier): number {
     return LOCAL_MODEL_TIERS.indexOf(tier);
 }
 
-/** The local models this machine can run: those whose memory figure its total memory clears, or, with no figure, every tier up to Pro. */
+function fitsGpu(model: OfferableModel, gpuBudgetGb: number | null): boolean {
+    if (gpuBudgetGb === null) {
+        return isWithoutFigureTier(model.tier);
+    }
+    return gpuBudgetGb >= model.memoryGb;
+}
+
+function isWithoutFigureTier(tier: LocalModelTier): boolean {
+    return tierRank(tier) <= tierRank(LARGEST_TIER_WITHOUT_FIGURE);
+}
+
+/**
+ * The local models this machine can run. With a known reading a model is offered when total RAM clears its
+ * memory figure and the GPU budget does too; with no GPU budget, only tiers up to Pro are offered, on RAM
+ * alone. With no reading, every tier up to Pro.
+ */
 export function offeredLocalModels<TModel extends OfferableModel>(
     models: readonly TModel[],
     reading: MachineMemoryReading
 ): TModel[] {
     if (reading.state === 'known') {
         const totalGb = reading.totalBytes / 1e9;
-        return models.filter((model) => totalGb >= model.memoryGb);
+        const gpuBudgetGb = reading.gpuBudgetBytes === null ? null : reading.gpuBudgetBytes / 1e9;
+        return models.filter((model) => totalGb >= model.memoryGb && fitsGpu(model, gpuBudgetGb));
     }
-    return models.filter((model) => tierRank(model.tier) <= tierRank(LARGEST_TIER_WITHOUT_FIGURE));
+    return models.filter((model) => isWithoutFigureTier(model.tier));
 }
 
 /**
