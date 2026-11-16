@@ -617,7 +617,7 @@ test('persisted clip edits replay exact owners and source material through real 
         await replayTwice(page, info, 'split', MIDI_NAME, ['splitClip'], capabilities, async (before) => {
             const allClips = before.tracks.flatMap((track) => track.clips);
             const midiClips = allClips.filter((entry) => entry.type === 'midi');
-            const clip = midiClips.sort((a, b) => b.endBeat - b.startBeat - (a.endBeat - a.startBeat))[0];
+            const clip = midiClips.sort((a, b) => b.endBeat - b.startBeat - (a.endBeat - a.startBeat)).at(0);
             if (!clip) {
                 throw new Error('Imported MIDI clip is absent');
             }
@@ -653,7 +653,7 @@ test('persisted clip edits replay exact owners and source material through real 
     await test.step('Remove one selected MIDI clip with Backspace', async () => {
         const seed = await readSnapshot(page);
         const midiClips = seed.tracks.flatMap((track) => track.clips).filter((clip) => clip.type === 'midi');
-        const target = midiClips.sort((a, b) => a.startBeat - b.startBeat)[0];
+        const target = midiClips.sort((a, b) => a.startBeat - b.startBeat).at(0);
         if (!target) {
             throw new Error('MIDI removal target is absent');
         }
@@ -713,7 +713,8 @@ test('persisted clip edits replay exact owners and source material through real 
                 if (!clips || clips.length !== 2) {
                     throw new Error('Delete Time did not leave the two actual audio fragments required by this group');
                 }
-                const [first, second] = clips;
+                const first = clips.at(0);
+                const second = clips.at(1);
                 if (!first || !second) {
                     throw new Error('Audio fragment identities are absent');
                 }

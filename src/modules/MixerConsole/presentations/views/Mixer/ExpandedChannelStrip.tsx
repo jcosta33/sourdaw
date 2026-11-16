@@ -21,6 +21,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { promptUser } from '#/utils/Notification/promptUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
+import { handleRovingRowKeyDown } from '#/utils/UI/rovingRowKeyboard';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -41,10 +42,17 @@ type PanMenu = { x: number; y: number; keyboardOpen: boolean } | null;
 type ExpandedChannelStripProps = {
     track: Track;
     isSelected: boolean;
+    /** Whether this strip is the mixer grid's single Tab stop. */
+    isTabStop?: boolean;
     widthClass: string;
 };
 
-export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: ExpandedChannelStripProps): ReactElement => {
+export const ExpandedChannelStrip = ({
+    track,
+    isSelected,
+    isTabStop = false,
+    widthClass,
+}: ExpandedChannelStripProps): ReactElement => {
     const actions = useChannelStripActions(track);
     const [ctxMenu, setCtxMenu] = useState<MixerMenu>(null);
     const [gainMenu, setGainMenu] = useState<GainMenu>(null);
@@ -538,12 +546,16 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 'flex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2',
                 widthClass,
                 'border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]',
-                isSelected && 'ring-1 ring-ring border-transparent'
+                isSelected && 'ring-1 ring-ring border-transparent',
+                'outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70'
             )}
             style={{ background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)' }}
             onClick={actions.select}
+            onKeyDown={(event) => handleRovingRowKeyDown(event, 'horizontal', actions.select)}
             onContextMenu={handleContextMenu}
-            role="group"
+            role="row"
+            tabIndex={isTabStop ? 0 : -1}
+            aria-selected={isSelected}
             aria-label={`${track.name} channel`}
             data-testid={`channel-${track.id}`}
         >

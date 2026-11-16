@@ -1,5 +1,5 @@
 import { test, expect } from './e2eTest';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 test.describe('Keyboard shortcuts — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
@@ -73,7 +73,7 @@ test.describe('Keyboard shortcuts — test-id targeted', () => {
     });
 
     test('Cmd+K opens command palette via keyboard', async ({ page }) => {
-        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+        const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
         const input = page.getByTestId('command-palette-input');

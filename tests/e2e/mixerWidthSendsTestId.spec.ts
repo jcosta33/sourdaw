@@ -24,7 +24,7 @@ test.describe('Mixer channel width and sends', () => {
     });
 
     test('Clap send to Reverb Plate starts at the template level and steps up', async ({ page }) => {
-        const clap = page.getByRole('group', { name: 'Clap channel', exact: true });
+        const clap = page.getByRole('row', { name: 'Clap channel', exact: true });
         const send = clap.getByRole('slider', { name: 'Send to Reverb Plate', exact: true });
         await send.scrollIntoViewIfNeeded();
         await expect(send).toHaveAttribute('aria-valuenow', '85');
@@ -34,7 +34,7 @@ test.describe('Mixer channel width and sends', () => {
     });
 
     test('Clap Reverb Plate send starts post-fader and latches to pre', async ({ page }) => {
-        const clap = page.getByRole('group', { name: 'Clap channel', exact: true });
+        const clap = page.getByRole('row', { name: 'Clap channel', exact: true });
         const toggle = clap.getByRole('button', { name: 'Toggle send to Reverb Plate pre-fader', exact: true });
         await toggle.scrollIntoViewIfNeeded();
         await expect(toggle).toHaveAttribute('data-active', 'false');

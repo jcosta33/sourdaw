@@ -20,7 +20,7 @@ import { type Device } from '../../../../models/TrackViewTypes';
 import { ExternalPluginParameterList } from '../ExternalPluginParameterList';
 
 const mockEdit = vi.fn<(input: { instanceId: string; parameterId: number; value: number }) => Promise<void>>();
-const mockRefresh = vi.fn<(instanceId: string) => Promise<void>>();
+const mockRefresh = vi.fn<(instanceId: string) => Promise<readonly ExternalPluginParameter[]>>();
 const mockHasRestoreFailure = vi.fn<(instanceId: string) => boolean>();
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
@@ -36,6 +36,16 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 const mockReadApplied = vi.fn<(deviceId: string, parameterId: string) => number | undefined>();
 /** The scheduler's write sequence the mocked read reports; a test bumps it to say the scheduler wrote. */
 let mockWriteSequence = 1;
+/** The scheduler write each published parameter object's re-read was issued under, as the contract tags them. */
+const mockReadIssues = new WeakMap<object, number>();
+vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/stores')>();
+    return {
+        ...actual,
+        readExternalPluginParameterReadIssue: (parameter: object) => mockReadIssues.get(parameter),
+    };
+});
+
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
@@ -130,12 +140,32 @@ const sentPromise = (index: number): Promise<void> => {
     return result.value;
 };
 
-const moveStoreValue = (id: number, name: string, value: number): void => {
+/** Replaces the store's parameters and returns the objects it put there, as a published re-read does. */
+const moveStoreValue = (id: number, name: string, value: number): readonly ExternalPluginParameter[] => {
+    const parameters = [parameter({ id, name, value })];
     externalPluginParameterStore.set({
         byInstanceId: {
-            [INSTANCE_ID]: { engineAttached: true, parameters: [parameter({ id, name, value })] },
+            [INSTANCE_ID]: { engineAttached: true, parameters },
         },
     });
+    return parameters;
+};
+
+/**
+ * Publishes parameter objects the way a re-read does: tags each with the scheduler write that was latest
+ * when the read was issued, which may be earlier than the write sequence at answer time.
+ */
+const publishTagged = (
+    issuedAt: number,
+    id: number,
+    name: string,
+    value: number
+): readonly ExternalPluginParameter[] => {
+    const parameters = moveStoreValue(id, name, value);
+    for (const published of parameters) {
+        mockReadIssues.set(published, issuedAt);
+    }
+    return parameters;
 };
 
 const scanRow = (id: number, flags: { is_stepped?: boolean; is_enum?: boolean }) => ({
@@ -218,7 +248,7 @@ class StubIntersectionObserver {
 describe('ExternalPluginParameterList', () => {
     beforeEach(() => {
         mockRefresh.mockReset();
-        mockRefresh.mockResolvedValue();
+        mockRefresh.mockResolvedValue([]);
         mockReadApplied.mockReset();
         mockWriteSequence = 1;
         frameCallbacks = new Map();
@@ -721,6 +751,123 @@ describe('ExternalPluginParameterList', () => {
             });
             expect(slider).toHaveValue('0.8');
             expect(slider).toHaveAttribute('aria-valuetext', '0.800');
+        });
+
+        it('keeps the value the scheduler delivered on the next play over a re-read issued before that write', async () => {
+            let releaseRead: () => void = () => {};
+            const readGate = new Promise<void>((resolve) => {
+                releaseRead = resolve;
+            });
+            mockRefresh.mockImplementation(async () => {
+                const issuedAt = mockWriteSequence;
+                await readGate;
+                return publishTagged(issuedAt, 7, 'Decay', 0.9);
+            });
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+            // Play again before the host answers: the scheduler rewrites the flat lane's 0.5.
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+            await act(async () => {
+                releaseRead();
+                await readGate;
+            });
+            runFrame(100);
+            runFrame(150);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+        });
+
+        it('shows a user edit made after a stale re-read landed during play', async () => {
+            let releaseRead: () => void = () => {};
+            const readGate = new Promise<void>((resolve) => {
+                releaseRead = resolve;
+            });
+            mockRefresh.mockImplementation(async () => {
+                const issuedAt = mockWriteSequence;
+                await readGate;
+                return publishTagged(issuedAt, 7, 'Decay', 0.9);
+            });
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+            await act(async () => {
+                releaseRead();
+                await readGate;
+            });
+            runFrame(100);
+
+            act(() => {
+                moveStoreValue(7, 'Decay', 0.3);
+            });
+            runFrame(150);
+            runFrame(200);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.3');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.300');
+        });
+
+        it('shows the plugin value when the re-read was issued at the latest scheduler write and answers differently', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+
+            // No scheduler write came after the re-read was issued, so its answer is the plugin's current value.
+            const issuedAt = mockWriteSequence;
+            act(() => {
+                publishTagged(issuedAt, 7, 'Decay', 0.9);
+            });
+            setPlaying(true);
+            runFrame(50);
+            runFrame(100);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.9');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.900');
+        });
+
+        it('keeps the delivered value over the answer to a re-read the list did not issue', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            // Another surface (the automation panel, a rescan) issues its own re-read now.
+            const issuedAt = mockWriteSequence;
+
+            // Play again: the scheduler rewrites the flat lane's 0.5 before the host answers.
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+            act(() => {
+                publishTagged(issuedAt, 7, 'Decay', 0.9);
+            });
+            runFrame(100);
+            runFrame(150);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
         });
 
         it('never publishes a followed value as a plugin edit', () => {

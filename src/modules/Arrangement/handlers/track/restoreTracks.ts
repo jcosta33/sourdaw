@@ -5,6 +5,8 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { handleRestoreTrack } from '../restore/handleRestoreTrack';
 
+import { forgetDiscardedPluginStates, overlayDiscardedPluginStates } from './discardedPluginStateCarry';
+
 /**
  * Inverse-action handler for `removeAllTracks`. Replays one `restoreTrack` snapshot
  * per removed track through the same restore logic `restoreTrack` itself uses, so the
@@ -13,7 +15,14 @@ import { handleRestoreTrack } from '../restore/handleRestoreTrack';
  * `undoable: false` — invoked only by undo machinery; must not create new undo entries.
  */
 export const handleRestoreTracks = createHandler<'restoreTracks'>({
-    execute: (action) => {
+    // A redo of a created track: the discard that undid it recorded the plugin state a
+    // save captured after the snapshot was taken.
+    materializeCommandArguments: (action, context) => {
+        if (context?.undoEntryId !== undefined) {
+            overlayDiscardedPluginStates(context.undoEntryId, action.payload.restores);
+        }
+    },
+    execute: (action, context) => {
         const { restores } = action.payload;
         if (restores.length === 0) {
             return { status: 'no-write' };
@@ -71,9 +80,15 @@ export const handleRestoreTracks = createHandler<'restoreTracks'>({
             }
         }
 
+        const undoEntryId = context?.undoEntryId;
         return {
             status: 'written',
-            afterCommit: () => runAllAsyncEffects(afterCommits),
+            afterCommit: () => {
+                if (undoEntryId !== undefined) {
+                    forgetDiscardedPluginStates(undoEntryId);
+                }
+                return runAllAsyncEffects(afterCommits);
+            },
             afterAmbiguousCommit: () => runAllAsyncEffects(afterAmbiguousCommits),
         };
     },

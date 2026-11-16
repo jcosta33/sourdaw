@@ -141,20 +141,21 @@ export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
         return;
     }
 
-    // A reconcile carrying both a mode and a sample change applies them as one
-    // pair, so the mirror must not run mid-pair: the mode lands synchronously
-    // beside the store's still-stale activeSample, and a persistence commit of
-    // that state would write {mode, staleSample} over the peer's document
-    // reference — a failed or slow decode then erases the reference
-    // cross-session. Hold the mirror until the paired load settles; the
-    // release below converges: it decides the settled sample leaf once — the
-    // document's current reference when it withdrew the pick mid-window,
-    // otherwise the pair's pick into an undecided store — commits it with a
-    // single store write, replays the persistence comparison against the
-    // settled store, and commits (#4764).
-    const paired = modeChanged && filePath !== null && sampleChanged;
+    // A reconcile carrying a sample change applies it, with any mode change, as
+    // one pair, so the mirror must not run mid-pair: until the decode lands the
+    // store still holds the stale local activeSample, beside the mode that
+    // landed synchronously or that the document already held, and a
+    // persistence commit of that state — a mid-pair mode edit's, or a refused
+    // key's delivered when the project unlocks (#6778) — would write the stale
+    // sample over the peer's document reference; a failed or slow decode then
+    // erases the reference cross-session. Hold the mirror until the paired load
+    // settles; the release below converges: it decides the settled sample leaf
+    // once — the document's current reference when it withdrew the pick
+    // mid-window, otherwise the pair's pick into an undecided store — commits
+    // it with a single store write, replays the persistence comparison against
+    // the settled store, and commits (#4764).
     const prePairSample = state.activeSample;
-    if (paired) {
+    if (sampleChanged) {
         beginCrumbsPairedReconcile(deviceId);
     }
     if (modeChanged) {
@@ -166,9 +167,6 @@ export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
                 logger.warn(`[Crumbs] could not reconcile sample "${filePath}" for ${deviceId}: ${String(error)}`);
             })
             .finally(() => {
-                if (!paired) {
-                    return;
-                }
                 endCrumbsPairedReconcile(deviceId);
                 if (hasUnsettledCrumbsPairedReconcile(deviceId)) {
                     // A younger paired reconcile still holds the mirror; its

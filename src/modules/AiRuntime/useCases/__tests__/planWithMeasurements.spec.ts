@@ -155,12 +155,29 @@ const MODES = [
 ] as const;
 type Mode = (typeof MODES)[number];
 
+/** Whether a measurement bound to the card exists for the claim to verify against. */
+const EXPECTED_VERIFICATION = {
+    matched: 'measured',
+    contradicted: 'measured',
+    'render-failed': null,
+    'two-recipes': 'measured',
+    'two-recipes-parameter-drift': 'measured',
+    'two-recipes-order-drift': 'measured',
+    'stopped-repreview': 'measured',
+    'project-edited-repreview': 'measured',
+    'project-saved-repreview': 'measured',
+    'project-edited-saved-repreview': 'measured',
+    'configuration-replaced-repreview': 'measured',
+    'two-recipes-subset': 'measured',
+} as const satisfies Record<Mode, 'measured' | null>;
+
 /**
- * What the plan claims once the first card is persisted: measured, with exactly the figures the card
- * shows as moved, wherever that card carries a bound preview in which a metric moved; nothing where it
- * carries none, or one in which nothing moved (the contradicted render changes no figure).
+ * What the plan lists as observed once the first card is persisted: the figures the card shows as moved
+ * wherever that card carries a bound preview in which a metric moved, and nothing where it carries none,
+ * or one in which nothing moved (the contradicted render changes no figure). The plan's claim itself is
+ * `predicted` in every mode, because the request is perceptual.
  */
-const EXPECTED_CLAIM = {
+const EXPECTED_OBSERVED = {
     matched: 'measured',
     contradicted: 'not-claimed',
     'render-failed': 'not-claimed',
@@ -761,9 +778,18 @@ describe('configured mixing plan with actual measurements', () => {
             throw new Error('The real measured plan must remain available for approval.');
         }
         const compiled = materialized.compiledActionExecution;
-        expect(agentRunLifecycle.get(RUN_ID)?.plan?.expectedImpact.audible.status).toBe('not-claimed');
         expect(agentRunLifecycle.get(RUN_ID)?.plan?.metricGoalState).toBe(compiled.metricGoalState);
         const state = metricGoalStateCodec(compiled.metricGoalState);
+        // Before any card is persisted the plan already states what the frozen goals predict, unverified.
+        const stated = planAudible();
+        if (stated?.status !== 'predicted') {
+            throw new Error(`Expected the perceptual plan to state its predictions, got: ${JSON.stringify(stated)}`);
+        }
+        expect(stated.predictions.map((prediction) => prediction.goalId)).toEqual(
+            state?.authorities.flatMap((authority) => authority.goals.map((goal) => goal.goalId))
+        );
+        expect(stated.verification).toBeNull();
+        expect(stated.predictions.every((prediction) => prediction.outcome === null)).toBe(true);
         if (multipleRecipes) {
             expect(
                 state?.binding?.prefixes,
@@ -850,8 +876,19 @@ describe('configured mixing plan with actual measurements', () => {
         expect(view?.actionLabels).toHaveLength(expectedCommands);
         expect(view?.canConfirm).toBe(matchedSingle);
         const claim = planAudible();
-        expect(claim?.status).toBe(EXPECTED_CLAIM[mode]);
-        expect(claim?.status === 'measured' ? claim.metrics : []).toEqual(movedFiguresOnCard(confirmationId));
+        if (claim?.status !== 'predicted') {
+            throw new Error(`Expected the perceptual plan to keep its predictions, got: ${JSON.stringify(claim)}`);
+        }
+        const observed = claim.observed.status === 'listed' ? claim.observed.metrics : [];
+        expect(observed.length > 0 ? 'measured' : 'not-claimed').toBe(EXPECTED_OBSERVED[mode]);
+        expect(observed).toEqual(movedFiguresOnCard(confirmationId));
+        // The claim's verdict is the card's own: a prediction the card refuses is shown as unmet, never as held.
+        expect(claim.verification?.status ?? null).toBe(
+            EXPECTED_VERIFICATION[mode] === null ? null : view?.metricGoals.status
+        );
+        expect(claim.verification?.failure ?? null).toBe(
+            EXPECTED_VERIFICATION[mode] === null ? null : view?.metricGoals.failure
+        );
         if (mode === 'render-failed') {
             // Confirm is refused for the missing measurement, not for a policy mismatch.
             const refused = await confirmPendingChatActions({ confirmationId });
@@ -909,10 +946,11 @@ describe('configured mixing plan with actual measurements', () => {
                 }
                 expect(getAgentApprovalView({ confirmationId: replaced.confirmationId })?.canConfirm).toBe(true);
                 const replacedClaim = planAudible();
-                if (replacedClaim?.status !== 'measured') {
-                    throw new Error('Expected the refreshed measurement to be claimed.');
+                if (replacedClaim?.status !== 'predicted' || replacedClaim.observed.status !== 'listed') {
+                    throw new Error('Expected the refreshed measurement to be listed beside the predictions.');
                 }
-                expect(replacedClaim.metrics).toEqual(movedFiguresOnCard(replaced.confirmationId));
+                expect(replacedClaim.verification).toMatchObject({ status: 'verified', failure: null });
+                expect(replacedClaim.observed.metrics).toEqual(movedFiguresOnCard(replaced.confirmationId));
                 expect(trackStore.value).toEqual(settledBeforeResume.tracks);
                 expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
                 return;

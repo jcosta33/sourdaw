@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
+import { engineState } from '../engineLifecycleState';
 import { generateWebLlmCompletion } from '../generateWebLlmCompletion';
 import { generateWebLlmToolCalls } from '../toolCalling';
 
@@ -25,6 +27,7 @@ type Outcome<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reas
 describe('generateWebLlmCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
         mocks.initWebLlmEngine.mockResolvedValue({
             interruptGenerate: mocks.interruptGenerate,
             chat: { completions: { create: mocks.createCompletion } },
@@ -84,6 +87,27 @@ describe('generateWebLlmCompletion', () => {
             expect.objectContaining({ max_tokens: 3_072, extra_body: { enable_thinking: false } })
         );
     });
+
+    it.each([
+        { modelId: 'Llama-3.1-70B-Instruct-q3f16_1-MLC', sendsThinkingSwitch: false },
+        { modelId: 'Qwen3-8B-q4f16_1-MLC', sendsThinkingSwitch: true },
+        { modelId: 'Qwen3-1.7B-q4f16_1-MLC', sendsThinkingSwitch: true },
+        { modelId: 'Qwen3-4B-q4f16_1-MLC', sendsThinkingSwitch: true },
+    ])(
+        'sends the thinking switch only to a model that has a thinking block: $modelId',
+        async ({ modelId, sendsThinkingSwitch }) => {
+            engineState.activeModelId = modelId;
+
+            await generateWebLlmCompletion('system', 'user', { enableThinking: false });
+
+            const payload = mocks.createCompletion.mock.calls[0]?.[0];
+            if (sendsThinkingSwitch) {
+                expect(payload).toMatchObject({ extra_body: { enable_thinking: false } });
+            } else {
+                expect(payload).not.toHaveProperty('extra_body');
+            }
+        }
+    );
 
     it('leaves thinking to the model when the caller does not turn it off', async () => {
         await generateWebLlmCompletion('system', 'user');
