@@ -52,7 +52,7 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/infra/store/useStoreSelector', async () => {
     const { useStore } = await import('#/infra/store/useStore');
     return {
-        useStoreSelector: (store: never, selector: (state: unknown) => unknown) => selector(useStore(store)),
+        useStoreSelector: (store: unknown, selector: (state: unknown) => unknown) => selector(useStore(store)),
     };
 });
 
