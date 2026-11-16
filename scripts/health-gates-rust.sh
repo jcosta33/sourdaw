@@ -40,9 +40,8 @@ fi
 #
 # What fails this run is decided by the `[workspace.lints]` tables in the root
 # `Cargo.toml`, which every crate opts into: a lint at `deny` there is an error
-# here, and a lint at `warn` is pending cleanup that reports without failing.
-# `-D warnings` is not set, so that table stays the single source of the
-# policy. The host clippy pass lints Linux host-target code. Code behind
+# here. The table holds no `warn` entries, and `-D warnings` is not set, so
+# that table stays the single source of the policy. The host clippy pass lints Linux host-target code. Code behind
 # `cfg(target_arch = "wasm32")` is linted by the second clippy pass below
 # (library targets only: the crates' integration tests are native-only and do
 # not compile for wasm32). Code behind `cfg(windows)` is linted by the

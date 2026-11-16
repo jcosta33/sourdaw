@@ -183,9 +183,11 @@ impl IAudioProcessorTrait for Vst3Echo {
         if num_ins != 1 || num_outs != 1 || inputs.is_null() || outputs.is_null() {
             return kResultFalse;
         }
-        // SAFETY: each array holds the one arrangement its count declares.
-        let stereo = unsafe { *inputs == SpeakerArr::kStereo && *outputs == SpeakerArr::kStereo };
-        if stereo {
+        // SAFETY: the input array holds the one arrangement its count declares.
+        let input = unsafe { *inputs };
+        // SAFETY: the output array holds the one arrangement its count declares.
+        let output = unsafe { *outputs };
+        if input == SpeakerArr::kStereo && output == SpeakerArr::kStereo {
             kResultOk
         } else {
             kResultFalse
@@ -251,10 +253,9 @@ impl IAudioProcessorTrait for Vst3Echo {
         }
         self.echo.record_block_mode(data.processMode);
         // SAFETY: every pointer inside `data` is valid for this call.
-        unsafe {
-            apply_parameter_changes(&self.echo, data);
-            render_block(&self.echo, data);
-        }
+        unsafe { apply_parameter_changes(&self.echo, data) };
+        // SAFETY: as above.
+        unsafe { render_block(&self.echo, data) };
         kResultOk
     }
 
@@ -270,24 +271,30 @@ unsafe fn apply_parameter_changes(echo: &Echo, data: &ProcessData) {
     let Some(changes) = (unsafe { ComRef::from_raw(data.inputParameterChanges) }) else {
         return;
     };
-    // SAFETY: the list and every queue it hands out are live for this call.
-    unsafe {
-        for index in 0..changes.getParameterCount() {
-            let Some(queue) = ComRef::from_raw(changes.getParameterData(index)) else {
-                continue;
-            };
-            if queue.getParameterId() != GAIN_PARAM_ID {
-                continue;
-            }
-            let points = queue.getPointCount();
-            if points <= 0 {
-                continue;
-            }
-            let mut offset = 0;
-            let mut value = 0.0;
-            if queue.getPoint(points - 1, &mut offset, &mut value) == kResultOk {
-                echo.set_gain(value);
-            }
+    // SAFETY: the list is live for this call.
+    let parameter_count = unsafe { changes.getParameterCount() };
+    for index in 0..parameter_count {
+        // SAFETY: the list is live for this call.
+        let queue_pointer = unsafe { changes.getParameterData(index) };
+        // SAFETY: a queue the live list hands out is live for this call.
+        let Some(queue) = (unsafe { ComRef::from_raw(queue_pointer) }) else {
+            continue;
+        };
+        // SAFETY: the queue is live for this call.
+        if unsafe { queue.getParameterId() } != GAIN_PARAM_ID {
+            continue;
+        }
+        // SAFETY: the queue is live for this call.
+        let points = unsafe { queue.getPointCount() };
+        if points <= 0 {
+            continue;
+        }
+        let mut offset = 0;
+        let mut value = 0.0;
+        // SAFETY: the queue is live and the out-pointers are local.
+        let read = unsafe { queue.getPoint(points - 1, &mut offset, &mut value) };
+        if read == kResultOk {
+            echo.set_gain(value);
         }
     }
 }
@@ -323,15 +330,27 @@ unsafe fn render_block(echo: &Echo, data: &ProcessData) {
         let mut sample_in = [0.0; CHANNELS];
         if !in_channels.is_null() {
             for (channel, sample) in sample_in.iter_mut().enumerate() {
-                // SAFETY: `channel < CHANNELS <= numChannels` and
-                // `frame < numSamples`.
-                *sample = unsafe { *(*in_channels.add(channel)).add(frame) };
+                // SAFETY: `channel < CHANNELS <= numChannels`, so the entry is
+                // inside the channel table.
+                let entry = unsafe { in_channels.add(channel) };
+                // SAFETY: `entry` is a table slot, as above.
+                let channel_buffer = unsafe { *entry };
+                // SAFETY: `frame < numSamples`.
+                let source = unsafe { channel_buffer.add(frame) };
+                // SAFETY: `source` is inside the channel buffer, as above.
+                *sample = unsafe { *source };
             }
         }
         let sample_out = echo.next_frame(sample_in);
         for (channel, sample) in sample_out.iter().enumerate() {
             // SAFETY: as above, for the output bus.
-            unsafe { *(*out_channels.add(channel)).add(frame) = *sample };
+            let entry = unsafe { out_channels.add(channel) };
+            // SAFETY: `entry` is a table slot, as above.
+            let channel_buffer = unsafe { *entry };
+            // SAFETY: `frame < numSamples`, as above.
+            let target = unsafe { channel_buffer.add(frame) };
+            // SAFETY: `target` is inside the output channel buffer.
+            unsafe { *target = *sample };
         }
     }
 }
@@ -587,9 +606,13 @@ impl IPluginFactoryTrait for Factory {
             return kResultFalse;
         };
         let pointer = instance.as_ptr();
-        // SAFETY: `pointer` is a live `FUnknown`; `queryInterface` takes its own
-        // reference for the caller, and `instance` releases this one on drop.
-        unsafe { ((*(*pointer).vtbl).queryInterface)(pointer, iid as *const TUID, obj) }
+        // SAFETY: `pointer` is a live `FUnknown`, so its vtable pointer is readable.
+        let vtbl = unsafe { (*pointer).vtbl };
+        // SAFETY: a live `FUnknown`'s vtable is valid.
+        let query_interface = unsafe { (*vtbl).queryInterface };
+        // SAFETY: `queryInterface` takes its own reference for the caller, and
+        // `instance` releases this one on drop.
+        unsafe { query_interface(pointer, iid as *const TUID, obj) }
     }
 }
 
