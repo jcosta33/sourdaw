@@ -40,6 +40,7 @@ import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
 import { prepareWorkflowMetricScopes } from '../prepareWorkflowMetricScopes';
 import { projectPlanningProviderToolSchemas } from '../projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from '../projectWorkflowMetricToolSchemas';
+import { readUnaccountedQualityWord } from '../readUnaccountedQualityWord';
 
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
@@ -179,6 +180,17 @@ describe('positive whole-request metric intent', () => {
         ['Make the vocal wider', 'wider'],
         ['Make the drums tight with the catalog drums-tight-transient recipe', 'tight'],
         ['Use a recipe to make the drums punchy', 'punchy'],
+        ['Brighten the vocal', 'Brighten'],
+        ['Thicken the pad', 'Thicken'],
+        ['Soften the snare', 'Soften'],
+        ['Sharpen the attack', 'Sharpen'],
+        ['Darken the keys', 'Darken'],
+        ['Widen the guitars', 'Widen'],
+        ['Loosen the drums', 'Loosen'],
+        ['Use a brighter recipe on the vocal', 'brighter'],
+        ['Add a track named Pad and make it brighter', 'brighter'],
+        ['Rename Drums to Kit and Make It Brighter', 'brighter'],
+        ['Add a track named Pad and Brighter is better', 'brighter'],
     ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
@@ -210,6 +222,11 @@ describe('positive whole-request metric intent', () => {
         'Rename Drums to Warm Pad',
         'Add an audio track named Dark Room',
         'Add a marker called Bright Chorus',
+        "Add a track named 'Warm Pad and Bright Keys'",
+        'Apply the lofi recipe',
+        'Apply the glue recipe',
+        'Apply the punch recipe',
+        'Apply the air recipe',
         'Set the volume of the three vocal tracks to -4 dB.',
         'Set the volume of Bass to -6 dB',
         'Set the level of the Bass to -3 dB',
@@ -237,6 +254,40 @@ describe('positive whole-request metric intent', () => {
             turn: 1,
         });
         expect(admitted).toMatchObject({ status: 'admitted', kind: 'literal' });
+    });
+
+    describe('quality-word reader read directly', () => {
+        function readQualityWord(prompt: string, trackName?: string) {
+            const context = createPlanningProject(getProjectContext(), 3);
+            const track = context.tracks[1];
+            if (trackName !== undefined && track !== undefined) {
+                track.name = trackName;
+            }
+            return readUnaccountedQualityWord(prompt, context);
+        }
+
+        it('admits the descriptor words of a real recipe id with its role removed, spaced or hyphenated, before "recipe"', () => {
+            const recipe = getMixRecipeCatalog().recipes.find((candidate) =>
+                /^drums-[a-z]+-[a-z]+$/u.test(candidate.id)
+            );
+            if (recipe === undefined) {
+                throw new Error('Expected a catalog recipe with a two-word descriptor.');
+            }
+            const descriptor = recipe.id.replace(/^drums-/u, '');
+            expect(readQualityWord(`Apply the ${descriptor.replace('-', ' ')} recipe`)).toBeNull();
+            expect(readQualityWord(`Apply the ${descriptor} recipes`)).toBeNull();
+            expect(readQualityWord(`Apply the ${recipe.id} recipe`)).toBeNull();
+            expect(readQualityWord(`Apply the ${descriptor.replace('-', ' ')} preset`)).not.toBeNull();
+        });
+
+        it('keeps a quality verb that is a track name out of the request own words', () => {
+            expect(readQualityWord('Mute Brighten', 'Brighten')).toBeNull();
+            expect(readQualityWord('Mute Bass and brighten it')).toBe('brighten');
+        });
+
+        it('reads a long letter run before a figure without rescanning it from every position', () => {
+            expect(readQualityWord(`${'a'.repeat(20_000)} by 3 dB`)).toBeNull();
+        });
     });
 
     it.each([false, 3, 'literal', [], { kind: 'literal', objectives: [], uncertainty: 'none', value: 1 }])(
