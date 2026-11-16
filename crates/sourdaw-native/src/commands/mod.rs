@@ -7,6 +7,7 @@ pub mod engine_lifecycle;
 pub mod engine_retrospective;
 pub mod engine_transport;
 pub mod filesystem;
+pub mod gpu_memory;
 pub mod graph;
 pub(crate) mod graph_refusals;
 pub mod levain;
