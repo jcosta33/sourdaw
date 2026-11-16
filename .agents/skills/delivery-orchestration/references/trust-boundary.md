@@ -92,6 +92,9 @@ path. The one exception is the exact checkout repository query (`gh repo view --
 answers from config any lane can write, where `remote.<name>.gh-resolved` overrides the remote URL,
 so a command reads it once, asserts it names the required repository, and passes that asserted name
 to every later call; a second read would let a lane move the calls after the check.
+The nightly CodeQL evidence reporter keeps its `gh` in place: its workflow checks out only the
+reporter's own files from the trusted commit into a fresh runner, so there is no lane config for
+Git to read, and importing the placement helper would break that sparse checkout.
 Keeping the token secret from same-account processes is outside this
 boundary. Every Git-read environment
 ignores replace refs. The

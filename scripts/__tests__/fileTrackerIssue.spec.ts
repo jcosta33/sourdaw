@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,9 +14,12 @@ import {
     renderIssueSubmission,
     resolveTemplatePath,
     runCli,
+    spawnGh,
     titleSubject,
     type IssueSubmission,
 } from '../fileTrackerIssue';
+
+import { withRecordingGh } from './helpers/recordingGh.ts';
 
 const templates = join(process.cwd(), '.github/ISSUE_TEMPLATE');
 
@@ -640,5 +644,37 @@ describe('runCli', () => {
         expect(runCli([...filing, '--milestone', 'Editor Groundwork', '--create'], gh.run)).toBe(1);
 
         expect(String(consoleError.mock.calls[0]?.[0])).toBe('GraphQL: Could not resolve to a Repository');
+    });
+});
+
+/** Sets `overrides` in the process environment for the body and restores every key afterwards. */
+function withProcessEnv(overrides: Record<string, string>, body: () => void): void {
+    const previous = new Map(Object.keys(overrides).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, overrides);
+    try {
+        body();
+    } finally {
+        for (const [key, value] of previous) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    }
+}
+
+describe('the default gh runner', () => {
+    it('starts a token-bearing gh outside the checkout it is run from, without the routing that leads back to it', () => {
+        const checkout = realpathSync(process.cwd());
+        const gitDir = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { encoding: 'utf8' }).stdout.trim();
+        withProcessEnv({ GH_TOKEN: `sentinel-${process.pid}`, GIT_DIR: gitDir, GIT_WORK_TREE: checkout }, () => {
+            withRecordingGh('', (recorded) => {
+                expect(spawnGh(['issue', 'list', '--repo', 'jcosta33/sourdaw']).status).toBe(0);
+
+                expect(recorded().toplevel).toBe('');
+                expect(recorded().cwd).not.toBe(checkout);
+            });
+        });
     });
 });
