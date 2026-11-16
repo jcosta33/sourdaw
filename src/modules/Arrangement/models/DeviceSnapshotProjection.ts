@@ -1,5 +1,4 @@
-import { type DeviceSnapshot } from '#/utils/handlerContract';
-
+import { type DeviceSnapshot } from './DeviceSnapshot';
 import { type Device } from './Track';
 
 /** Detached project values for a declared device-chain snapshot. */

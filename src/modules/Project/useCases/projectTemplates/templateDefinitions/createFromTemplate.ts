@@ -5,7 +5,7 @@ import { rearmInputMonitoring } from '#/modules/Arrangement/useCases';
 import { forgetProjectLatchedPedals, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
+import { settleProjectSwitchPluginTeardown, unloadPluginsBeforeProjectSwitch } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -44,6 +44,9 @@ function restoreAudioGraph(templateId: string): void {
         // The law settles every start, so a refusal cannot fail this restore.
         void rearmInputMonitoring(trackStore.value?.tracks ?? []);
     }
+    // The rebuild above consumed the live state the teardown carried; only the
+    // plugins it could not read come back without their edits.
+    settleProjectSwitchPluginTeardown('refused');
 }
 
 function restorePersistence(): void {
@@ -150,7 +153,7 @@ export async function createFromTemplate(
         persistenceStopped = true;
         graphWasReset = true;
         resetAudioGraph();
-        await unloadLoadedExternalPlugins();
+        await unloadPluginsBeforeProjectSwitch();
         if (!shouldContinue()) {
             restoreAudioGraph(templateId);
             restorePersistence();

@@ -57,7 +57,7 @@ export type { EvidenceDigestedPath, EvidenceFixture, EvidenceManifest, EvidenceR
  */
 export type AppDerivedDigests = { capabilityInventory: string; census: string };
 
-const FIXTURE_PREFIXES = ['src/', 'scripts/', 'tests/', 'evidence/'] as const;
+const FIXTURE_PREFIXES = ['src/', 'scripts/', 'tests/', 'evidence/', 'electron/'] as const;
 
 /**
  * Gates already running in this process tree. A verify command may invoke this runner on the very

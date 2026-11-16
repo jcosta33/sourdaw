@@ -7,6 +7,7 @@ import {
     type CreativeRequestAuthority,
     type CreativeRequestMode,
     type CreativeTargetCandidate,
+    type CreativeTargetProvenance,
 } from '../models/CreativeInterpretation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -38,6 +39,7 @@ const READ_ONLY_WITH_EDITS = 'A read-only interpretation cannot select edits or 
 const BRIEF_WITH_EDITS = 'A brief interpretation selects no target, edit dimension, constraint or creation slot.';
 const MISSING_FOR_MODE = 'Creative interpretation is missing a target, dimension, or creation slot for its mode.';
 const CONTEXTUAL_REPLACED_EXPLICIT = 'Explicit request references cannot be replaced by contextual selection.';
+const OUTRANKED_TARGET = 'A role family the request names outranks a selected or agent-decided target.';
 const DIMENSION_SELECTED_AND_EXCLUDED = 'Creative interpretation both selects and excludes one edit dimension.';
 const PROTECTED_OBJECT_TARGETED = 'Creative interpretation targets a protected object.';
 const DETACHED_CREATION_SLOT = 'Creative creation slot is not attached to a selected target.';
@@ -150,19 +152,43 @@ function findModeRuleViolation(
     return null;
 }
 
+/**
+ * How directly the request itself pointed at a target. A named object outranks a named role family,
+ * which outranks the selection and anything the application offered on the agent's behalf; a
+ * `new-object-slot` target is never published, and ranks with the selection.
+ */
+const TARGET_PROVENANCE_RANK: Readonly<Record<CreativeTargetProvenance, number>> = {
+    'explicit-reference': 3,
+    'role-reference': 2,
+    'contextual-selection': 1,
+    'new-object-slot': 1,
+    'agent-decided': 0,
+};
+
+/**
+ * Admitting a weaker target beside a stronger published one would silently retarget the request: a
+ * named object at whatever happened to be selected, a named role family at a track the agent picked.
+ */
+function findOutrankedTargetReason(
+    catalog: CreativeInterpretationCatalog,
+    targets: readonly CreativeTargetCandidate[]
+): string | null {
+    const strongest = Math.max(-1, ...catalog.targets.map((candidate) => TARGET_PROVENANCE_RANK[candidate.provenance]));
+    if (!targets.some((target) => TARGET_PROVENANCE_RANK[target.provenance] < strongest)) {
+        return null;
+    }
+    return strongest === TARGET_PROVENANCE_RANK['explicit-reference'] ? CONTEXTUAL_REPLACED_EXPLICIT : OUTRANKED_TARGET;
+}
+
 /** What one selection says about another, and about what the catalog already published. */
 function findSelectionRuleViolation(
     catalog: CreativeInterpretationCatalog,
     selections: ResolvedSelections
 ): string | null {
     const { targets, dimensions, constraints, creationSlots } = selections;
-    // A named object outranks the current selection. Admitting a contextual target beside a published
-    // explicit one would silently retarget the request at whatever happened to be selected.
-    if (
-        catalog.targets.some((candidate) => candidate.provenance === 'explicit-reference') &&
-        targets.some((target) => target.provenance !== 'explicit-reference')
-    ) {
-        return CONTEXTUAL_REPLACED_EXPLICIT;
+    const outrankedReason = findOutrankedTargetReason(catalog, targets);
+    if (outrankedReason !== null) {
+        return outrankedReason;
     }
     const selectedDimensions: CreativeEditDimension[] = dimensions.map((candidate) => candidate.dimension);
     if (
