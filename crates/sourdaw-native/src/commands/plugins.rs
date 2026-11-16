@@ -1736,6 +1736,18 @@ fn rescan_plugin_file(
             recorded_consumption,
         )
     })?;
+    rescanned_row(path, bundle, plugin_id, last_known_descriptor_id)
+}
+
+/// The row a targeted rescan resolves to, from the descriptor helper's
+/// answer. The answer is held to the scan's caps first: this route runs no
+/// instance pass and publishes the row as it stands.
+fn rescanned_row(
+    path: &Path,
+    bundle: Vec<ScannedDescriptor>,
+    plugin_id: &str,
+    last_known_descriptor_id: &str,
+) -> Result<ScannedPlugin, RescanFailure> {
     scanner::validate_scanned_bundle(&bundle).map_err(RescanFailure::Verdict)?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
@@ -12465,6 +12477,75 @@ mod tests {
             .expect("the row is published");
         assert_eq!(row.parameters.as_ref().map(Vec::len), Some(1));
         assert!(row.parameter_metadata_reason.is_none());
+    }
+
+    /// Mutation this catches: dropping the validation from `rescanned_row`
+    /// resolves a row out of an over-cap bundle.
+    #[test]
+    fn a_rescan_answer_over_the_plugin_cap_is_a_verdict_naming_the_cap() {
+        let cap = scanner::MAX_SCANNED_BUNDLE_PLUGINS as usize;
+        let path = Path::new("/plugins/Big.clap");
+        let wanted = "com.vendor.sibling-000";
+
+        let refused = rescanned_row(path, bundle_of(cap + 1), wanted, "")
+            .expect_err("an over-cap bundle must be refused");
+        match refused {
+            RescanFailure::Verdict(reason) => {
+                assert!(
+                    reason.contains("more than the 32 the scan accepts"),
+                    "{reason}"
+                );
+            }
+            RescanFailure::Inconclusive(reason) => panic!("a refusal is a verdict: {reason}"),
+        }
+
+        let accepted =
+            rescanned_row(path, bundle_of(cap), wanted, "").expect("exactly the cap is accepted");
+        assert_eq!(accepted.descriptor_id, wanted);
+    }
+
+    /// A descriptor answer carrying the instance pass's capabilities is a
+    /// data refusal: no row for the file, the refusal on the errors channel,
+    /// and no quarantine.
+    ///
+    /// Mutation this catches: dropping the instance-field check publishes the
+    /// row with the helper-supplied channel counts when the instance pass
+    /// times out.
+    #[test]
+    fn a_descriptor_answer_carrying_capabilities_is_refused_before_any_row_is_published() {
+        let mut dishonest = descriptor("com.vendor.dishonest");
+        dishonest.capabilities = Some(scanner::ScannedInstanceCapabilities {
+            audio_channels: Some(scanner::ScannedAudioChannelCounts {
+                inputs: u32::MAX,
+                outputs: 0,
+            }),
+            has_custom_ui: None,
+        });
+        let (result, instance_calls, bundle_path, state) = scan_bundle_then_healthy_candidate(
+            "descriptor-carries-capabilities",
+            vec![dishonest],
+            || Err(ScanFailure::TimedOut),
+        );
+
+        assert!(
+            !result
+                .plugins
+                .iter()
+                .any(|plugin| plugin.path == bundle_path.display().to_string()),
+            "no row is published for the file: {:?}",
+            result.plugins
+        );
+        assert!(
+            result.errors.iter().any(|error| error.contains("Aaa.clap")
+                && error.contains("only the instance inspection may report")),
+            "{:?}",
+            result.errors
+        );
+        assert_eq!(scan_calls_for(&instance_calls, &bundle_path), 0);
+        assert!(state
+            .plugin_registry_store
+            .is_quarantined(&bundle_path)
+            .is_none());
     }
 
     fn descriptor(descriptor_id: &str) -> scanner::ScannedDescriptor {

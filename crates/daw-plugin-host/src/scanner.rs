@@ -68,6 +68,15 @@ fn parameter_metadata_cost(name: &str, module: Option<&str>) -> usize {
 /// are not evidence about what it sent: the parent re-applies them to the
 /// answer before using it. Only the helper's existing caps are mirrored here,
 /// and they are read from the constants above rather than restated.
+///
+/// A descriptor answer also may not carry the instance pass's fields
+/// (`parameters`, `parameter_metadata_reason`, `capabilities`). The honest
+/// extractors leave all three `None` (`descriptor_metadata`,
+/// `first_audio_module_class` and the module-info reader) and the instance
+/// pass fills them later, so a descriptor that arrives with them is refused
+/// rather than cleared: values the instance pass's caps never saw would
+/// otherwise be published when that pass fails, or on a load-time rescan that
+/// runs no instance pass.
 pub fn validate_scanned_bundle(bundle: &[ScannedDescriptor]) -> Result<(), String> {
     if bundle.len() > MAX_SCANNED_BUNDLE_PLUGINS as usize {
         return Err(format!(
@@ -75,6 +84,17 @@ pub fn validate_scanned_bundle(bundle: &[ScannedDescriptor]) -> Result<(), Strin
             bundle.len(),
             MAX_SCANNED_BUNDLE_PLUGINS
         ));
+    }
+    let carries_instance_fields = |descriptor: &ScannedDescriptor| {
+        descriptor.parameters.is_some()
+            || descriptor.parameter_metadata_reason.is_some()
+            || descriptor.capabilities.is_some()
+    };
+    if bundle.iter().any(carries_instance_fields) {
+        return Err(
+            "The scan helper's descriptor answer carried parameter or capability data that only the instance inspection may report"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -1182,6 +1202,27 @@ mod tests {
     }
 
     #[test]
+    fn a_descriptor_carrying_an_instance_pass_field_is_refused() {
+        let mut with_parameters = bundle_descriptor();
+        with_parameters.parameters = Some(Vec::new());
+        let mut with_reason = bundle_descriptor();
+        with_reason.parameter_metadata_reason = Some("reason".to_string());
+        let mut with_capabilities = bundle_descriptor();
+        with_capabilities.capabilities = Some(ScannedInstanceCapabilities::default());
+        for (field, descriptor) in [
+            ("parameters", with_parameters),
+            ("parameter_metadata_reason", with_reason),
+            ("capabilities", with_capabilities),
+        ] {
+            assert!(
+                validate_scanned_bundle(&[bundle_descriptor(), descriptor]).is_err(),
+                "{field}"
+            );
+        }
+        assert!(validate_scanned_bundle(&[bundle_descriptor()]).is_ok());
+    }
+
+    #[test]
     fn an_instance_is_held_to_each_clap_cap_on_both_sides_of_it() {
         let instance_with = |parameters: Vec<ScannedParameterDescriptor>| ScannedInstance {
             parameters,
@@ -1219,6 +1260,14 @@ mod tests {
         };
         assert!(validate_scanned_instance(clap, &channels(1024)).is_ok());
         assert!(validate_scanned_instance(clap, &channels(1025)).is_err());
+        let inputs = |inputs: u32| {
+            let mut instance = ScannedInstance::default();
+            instance.capabilities.audio_channels =
+                Some(ScannedAudioChannelCounts { inputs, outputs: 0 });
+            instance
+        };
+        assert!(validate_scanned_instance(clap, &inputs(1024)).is_ok());
+        assert!(validate_scanned_instance(clap, &inputs(1025)).is_err());
         assert!(
             validate_scanned_instance(PluginFormat::Vst3, &channels(1025)).is_ok(),
             "the VST3 helper enforces no channel cap, so none is applied to its answer"
