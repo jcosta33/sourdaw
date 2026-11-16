@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "d01fc9d0acd842de238de77357f2f6e11d04f890d7bfd807005f7219bc73bd4c"
+        "digest": "8e8718811b01d6dd84799ab51fc66621f75594b538da0b7b1c06a6378459f483"
     },
     "census": {
-        "digest": "bc024d8f218cf5df0e3227802cb6fe46787ad7fc4d75a67ac6ac694eeffd08ff"
+        "digest": "c2276fc91f8a3294c075549738c3741285cedf482a424d2d569be74f85633086"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "ea1484b38be594a2cd9d54119094ea157ff1ba7881b423f67225fdb22878b3c7"
+                    "digest": "0fca7c65bf46092a8d3bed63896a8810fb299c2349ada1370fcdf31f204ef772"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
