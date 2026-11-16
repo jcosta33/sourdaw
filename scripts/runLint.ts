@@ -227,12 +227,16 @@ const PUBLIC_PLUGINS_CONFIG = '.oxlint-plugins.json';
 
 /**
  * Gitignore-style, as the linter reads them: `dir/` names a directory at any
- * depth, anything else is a glob over the repository-relative path.
+ * depth, a pattern without a slash matches the basename at any depth, anything
+ * else is a glob over the repository-relative path.
  */
 export function isIgnoredByPattern(file: string, pattern: string): boolean {
     if (pattern.endsWith('/')) {
         const directory = pattern.slice(0, -1);
         return file.split('/').slice(0, -1).includes(directory);
+    }
+    if (!pattern.includes('/')) {
+        return matchesGlob(file.slice(file.lastIndexOf('/') + 1), pattern);
     }
     return matchesGlob(file, pattern);
 }

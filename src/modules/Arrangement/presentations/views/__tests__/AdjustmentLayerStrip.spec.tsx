@@ -599,6 +599,22 @@ describe('AdjustmentLayerStrip', () => {
             }
         );
 
+        it('keeps the region cell out of click focus so a click on its border lands on the layer row', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+            const cell = findRegionElement().closest('[role="gridcell"]');
+            if (!(cell instanceof HTMLElement)) {
+                throw new TypeError('region cell not found');
+            }
+
+            // A pointer-down focuses the nearest focusable ancestor, so a cell that can take focus
+            // would keep the row's onFocus from firing.
+            cell.focus();
+
+            expect(cell).not.toHaveAttribute('tabindex');
+            expect(cell).not.toHaveFocus();
+        });
+
         it('opens the region menu, not the layer menu, on a right-click of a region edge', () => {
             mocks.layers = [layerWithRegion()];
             renderStrip();
