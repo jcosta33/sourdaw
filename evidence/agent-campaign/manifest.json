@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "3f6a7926474e363739b6662316467bbd441f48e26224189033e23f477ce6e20e"
+        "digest": "a6fb27b569e2e3564b31ec68e7663c7ba839a5fa27202444b2f62a72d4261192"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -478,7 +478,7 @@
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
-                    "digest": "d88555e52bc15d98cbfe403523b29b48a5c9d949b5beba6813369346c145eb49"
+                    "digest": "ce3afa9fe7ea24059a53d55cc0066857d3f5584805795cfe0f83ec1031e02103"
                 },
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
@@ -726,7 +726,7 @@
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
-                    "digest": "d88555e52bc15d98cbfe403523b29b48a5c9d949b5beba6813369346c145eb49"
+                    "digest": "ce3afa9fe7ea24059a53d55cc0066857d3f5584805795cfe0f83ec1031e02103"
                 },
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
@@ -794,15 +794,15 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "c21be7cd5f2f9f7fdb8eeab073aa201b573ac4d9c7ecc4bfd8332c65dea86472"
+                    "digest": "ea1484b38be594a2cd9d54119094ea157ff1ba7881b423f67225fdb22878b3c7"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
-                    "digest": "b5615d7e95539640cae79a2e9277383376ee6b1acc0957c8583ab99f120ebef5"
+                    "digest": "e3b1e894ebde7239b5ea9f5bb602090331f52707f60c60ee1d89ed3a3e559448"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "fc78e2dc345d9bf684a19a10db7a2149b07efd9498f9ad29a0e2d7374199cf97"
+                    "digest": "e2fe4c59c5211836bbda281ba3ec1ac28786b9af3df2ba30dfafc954e2afa8ae"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -814,7 +814,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "80ddd59f6b25c31ac0b47a4517e412c374a24068ca1b5870b089489b77e88c39"
+                    "digest": "5ca5fd53b70cd183725ceb5eeeb1286883d71653e8f56ba593335826c959d975"
                 }
             ]
         },
@@ -850,7 +850,7 @@
             "fixtures": [
                 {
                     "path": "crates/sourdaw-native/src",
-                    "digest": "d88555e52bc15d98cbfe403523b29b48a5c9d949b5beba6813369346c145eb49"
+                    "digest": "ce3afa9fe7ea24059a53d55cc0066857d3f5584805795cfe0f83ec1031e02103"
                 },
                 {
                     "path": "electron/__tests__/commands.spec.ts",
