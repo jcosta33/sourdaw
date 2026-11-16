@@ -71,6 +71,7 @@ const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: null } as any,
     takeLaneStoreValue: { value: null } as any,
     readClipSatelliteEntry: vi.fn(),
+    unloadDiscardedHostedPlugins: vi.fn(),
 }));
 
 const noActionHistoryMetadataPort = {
@@ -94,6 +95,9 @@ vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
 }));
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
+}));
+vi.mock('../../../useCases/device/unloadDiscardedHostedPlugins', () => ({
+    unloadDiscardedHostedPlugins: mocks.unloadDiscardedHostedPlugins,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -328,6 +332,42 @@ describe('handleRemoveTrack', () => {
 
             expect(mocks.finalizeModulationRemoval).toHaveBeenCalledOnce();
             expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
+        });
+
+        // #6557: an ambiguous commit releases the plugins only of a track committed truth no longer holds.
+        it.each([
+            { committed: 'absent', committedTracks: [], unloads: 1 },
+            { committed: 'present', committedTracks: ['t1'], unloads: 0 },
+        ])('releases hosted plugins after an ambiguous commit only when the track is $committed', async (row) => {
+            const track = TrackDummy.create({
+                id: 't1',
+                devices: [
+                    {
+                        id: 't1-plugin',
+                        name: 'Reverb',
+                        type: 'external-plugin',
+                        bypassed: false,
+                        parameterValues: {},
+                        externalPluginId: 'plugin-abc',
+                        externalInstanceId: 't1-instance',
+                    },
+                ],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+            const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: row.committedTracks.map(() => track),
+                selectedTrackId: null,
+            });
+
+            await result?.afterAmbiguousCommit?.();
+
+            expect(mocks.unloadDiscardedHostedPlugins).toHaveBeenCalledTimes(row.unloads);
+            if (row.unloads > 0) {
+                expect(mocks.unloadDiscardedHostedPlugins).toHaveBeenCalledWith([
+                    { deviceId: 't1-plugin', instanceId: 't1-instance' },
+                ]);
+            }
         });
 
         it('rebuilds a track that remains in durable truth after an ambiguous commit', async () => {

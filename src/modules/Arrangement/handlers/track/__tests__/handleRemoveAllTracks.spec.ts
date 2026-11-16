@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     publishTrackRemoved: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    unloadDiscardedHostedPlugins: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -28,6 +29,13 @@ vi.mock('../../../useCases/publishTrackRemoved', () => ({
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
+vi.mock('../../../useCases/device/unloadDiscardedHostedPlugins', () => ({
+    unloadDiscardedHostedPlugins: mocks.unloadDiscardedHostedPlugins,
+}));
+
+function hostedDevice(trackId: string) {
+    return { id: `${trackId}-plugin`, type: 'external-plugin', externalInstanceId: `${trackId}-instance` };
+}
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
     wireSidechainRoutes: mocks.wireSidechainRoutes,
@@ -109,11 +117,11 @@ describe('handleRemoveAllTracks', () => {
             mocks.getTrackStoreState
                 .mockReturnValueOnce({
                     tracks: [
-                        { id: 't1', devices: [] },
-                        { id: 't2', devices: [] },
+                        { id: 't1', devices: [hostedDevice('t1')] },
+                        { id: 't2', devices: [hostedDevice('t2')] },
                     ],
                 })
-                .mockReturnValue({ tracks: [{ id: 't2', devices: [] }] });
+                .mockReturnValue({ tracks: [{ id: 't2', devices: [hostedDevice('t2')] }] });
             const finalizeFirst = vi.fn();
             const finalizeSecond = vi.fn();
             mocks.removeTrack
@@ -125,6 +133,10 @@ describe('handleRemoveAllTracks', () => {
 
             expect(finalizeFirst).toHaveBeenCalledOnce();
             expect(finalizeSecond).not.toHaveBeenCalled();
+            // Only the track absent from committed truth releases its plugins (#6557).
+            expect(mocks.unloadDiscardedHostedPlugins.mock.calls).toEqual([
+                [[{ deviceId: 't1-plugin', instanceId: 't1-instance' }]],
+            ]);
             expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
             expect(mocks.publishTrackRemoved).not.toHaveBeenCalledWith({ trackId: 't2' });
             expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
