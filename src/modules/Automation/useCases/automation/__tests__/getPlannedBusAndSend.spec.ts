@@ -89,6 +89,24 @@ describe('planned bus and send', () => {
         expect(getPlannedSend('track', 'bus', [unlisted, discard])).toBeUndefined();
     });
 
+    it('drops a planned send once a batch discard lists its source track', () => {
+        const discard: AppAction = { type: 'discardCreatedTracks', payload: { trackIds: ['other', 'track'] } };
+
+        expect(getPlannedSend('track', 'bus', [unlisted, discard])).toBeUndefined();
+    });
+
+    it('drops a planned send once a batch discard lists its bus', () => {
+        const discard: AppAction = { type: 'discardCreatedTracks', payload: { trackIds: ['bus', 'other'] } };
+
+        expect(getPlannedSend('track', 'bus', [unlisted, discard])).toBeUndefined();
+    });
+
+    it('keeps a planned send when a batch discard lists only unrelated tracks', () => {
+        const discard: AppAction = { type: 'discardCreatedTracks', payload: { trackIds: ['other', 'another'] } };
+
+        expect(getPlannedSend('track', 'bus', [discard])).toMatchObject({ busId: 'bus', level: 0.5 });
+    });
+
     it('drops a planned send once the batch removes every track', () => {
         const removeAll: AppAction = { type: 'removeAllTracks' };
 

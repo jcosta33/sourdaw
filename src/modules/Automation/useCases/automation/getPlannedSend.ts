@@ -71,6 +71,18 @@ function afterTrackRemoved(
     return send;
 }
 
+function afterTracksDiscarded(
+    action: ActionOf<'discardCreatedTracks'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    if (action.payload.trackIds.some((id) => id === trackId || id === busId)) {
+        return undefined;
+    }
+    return send;
+}
+
 function afterAllTracksRemoved(): undefined {
     return undefined;
 }
@@ -342,7 +354,7 @@ const plannedSendByActionType: {
     restoreTrackGroupMemberships: unchangedSend,
     restoreTracks: unchangedSend,
     restoreTrackClipStates: unchangedSend,
-    discardCreatedTracks: unchangedSend,
+    discardCreatedTracks: afterTracksDiscarded,
     discardCreatedCompGroup: unchangedSend,
     restoreTrackAlternativeState: unchangedSend,
     restoreScratchPadState: unchangedSend,
