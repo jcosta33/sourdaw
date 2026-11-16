@@ -10,7 +10,14 @@ export const CREATIVE_INTERPRETATION_TOOL_NAME = 'selectCreativeInterpretation';
  */
 export type CreativeRequestMode = 'edit' | 'create' | 'read-only' | 'brief' | 'unresolved';
 
-export type CreativeTargetProvenance = 'explicit-reference' | 'contextual-selection' | 'new-object-slot';
+/**
+ * Why a target was offered: the request named it (`explicit-reference`), named its role family
+ * (`role-reference`), or named nothing and pointed at the selection (`contextual-selection`), or the
+ * application offered every plannable source because a perceptual request leaves the choice to the
+ * agent (`agent-decided`). Persisted authority carries it, so values are only ever added.
+ */
+export type CreativeTargetProvenance =
+    'explicit-reference' | 'contextual-selection' | 'new-object-slot' | 'role-reference' | 'agent-decided';
 
 /**
  * The edit dimensions a delegated request may hand over. These are Command effect dimensions rather

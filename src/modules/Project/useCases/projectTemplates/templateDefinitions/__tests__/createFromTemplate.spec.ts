@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({
     isAppActionCommittedError: vi.fn(),
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
+    settleProjectSwitchPluginTeardown: vi.fn<(outcome: 'switched' | 'refused') => void>(),
     unloadPlugin: vi.fn(),
+    unloadPluginsBeforeProjectSwitch: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
     rearmInputMonitoring: vi.fn(),
@@ -77,7 +79,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    settleProjectSwitchPluginTeardown: mocks.settleProjectSwitchPluginTeardown,
     unloadPlugin: mocks.unloadPlugin,
+    unloadPluginsBeforeProjectSwitch: mocks.unloadPluginsBeforeProjectSwitch,
     activateExternalPlugin: vi.fn(),
     findSupportedPlugin: vi.fn(),
     registerFaustDSP: vi.fn(),
@@ -190,7 +194,7 @@ describe('createFromTemplate', () => {
         mocks.saveProject.mockResolvedValue(true);
         // Each case opens with a project that owes nothing for the takes before it.
         unsavedClosedTakes.acknowledgeAll();
-        mocks.unloadPlugin.mockResolvedValue(undefined);
+        mocks.unloadPluginsBeforeProjectSwitch.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.finalize.mockResolvedValue('finalized');
         // A replacing reset always reports the point of no return, so the
@@ -229,7 +233,10 @@ describe('createFromTemplate', () => {
 
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
         expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
-        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+        expect(mocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledOnce();
+        // The outgoing carries end at the switch itself, never at the teardown.
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.settleProjectSwitchPluginTeardown.mock.calls).toEqual([['switched']]);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'createProjectFromTemplate', payload: { templateId: 'pop-song' } },
             { skipMacroRecording: true }
@@ -277,7 +284,7 @@ describe('createFromTemplate', () => {
     it('keeps recovery failures inside the boolean outcome boundary', async () => {
         // Fails before the authority switch, which is the only point at which
         // there is a previous project left to rebuild.
-        mocks.unloadPlugin.mockRejectedValue(new Error('native teardown failed'));
+        mocks.unloadPluginsBeforeProjectSwitch.mockRejectedValue(new Error('native teardown failed'));
         mocks.resetAudioGraph
             .mockImplementationOnce(() => undefined)
             .mockImplementationOnce(() => {
@@ -347,16 +354,23 @@ describe('createFromTemplate', () => {
     it('hands the previous project back when its caller withdraws it during native teardown', async () => {
         const unloading = Promise.withResolvers<void>();
         let isStillChosen = true;
-        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        mocks.unloadPluginsBeforeProjectSwitch.mockReturnValueOnce(unloading.promise);
 
         const creation = createFromTemplate('pop-song', { shouldProceed: () => isStillChosen });
-        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(mocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledOnce());
         isStillChosen = false;
         unloading.resolve();
 
         await expect(creation).resolves.toBe(false);
         expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        // The rebuild reactivates the outgoing plugins from the live state the
+        // teardown carried, which the unkeyed unload would have dropped.
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.settleProjectSwitchPluginTeardown.mock.calls).toEqual([['refused']]);
+        expect(mocks.settleProjectSwitchPluginTeardown.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            mocks.ensureTrackStrips.mock.invocationCallOrder[0]!
+        );
         expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
@@ -444,6 +458,10 @@ describe('createFromTemplate', () => {
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
 
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        // A refusal at the reset keeps the outgoing project's carries, removal
+        // carries included, for the graph rebuilt above.
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.settleProjectSwitchPluginTeardown.mock.calls).toEqual([['refused']]);
         expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(mocks.compactProject).not.toHaveBeenCalled();
         expect(mocks.finalize).not.toHaveBeenCalled();
@@ -547,11 +565,11 @@ describe('createFromTemplate', () => {
 
     it('does not replace authority when superseded during native teardown', async () => {
         const unloading = Promise.withResolvers<void>();
-        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        mocks.unloadPluginsBeforeProjectSwitch.mockReturnValueOnce(unloading.promise);
         mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
 
         const creation = createFromTemplate('pop-song');
-        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(mocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledOnce());
         unloading.resolve();
 
         await expect(creation).resolves.toBe(false);
@@ -612,11 +630,11 @@ describe('createFromTemplate', () => {
         await expect(createFromTemplate('pop-song')).resolves.toBe(true);
 
         expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
-        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
+        expect(mocks.unloadPluginsBeforeProjectSwitch).toHaveBeenCalledTimes(2);
         const [firstReset, secondReset] = mocks.resetCrdtProject.mock.invocationCallOrder;
         expect(mocks.resetAudioGraph.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
         expect(mocks.resetAudioGraph.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
-        expect(mocks.unloadPlugin.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(mocks.unloadPluginsBeforeProjectSwitch.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
     });
 
     it('keeps stopping and asking until the reset finds the transport idle', async () => {

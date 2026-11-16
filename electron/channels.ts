@@ -39,6 +39,12 @@ export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
 /** Renderer → main, invoke: the machine's total physical memory, in bytes. */
 export const SYSTEM_TOTAL_MEMORY_CHANNEL = 'sourdaw:system:total-memory';
 
+/** Renderer → main, invoke: how much GPU memory a model's weights may occupy, when the OS reports it. */
+export const SYSTEM_GPU_MEMORY_BUDGET_CHANNEL = 'sourdaw:system:gpu-memory-budget';
+
+/** The GPU memory budget in bytes: a positive safe integer, or unknown where the OS does not report one. */
+export type GpuMemoryBudget = { readonly state: 'known'; readonly bytes: number } | { readonly state: 'unknown' };
+
 /** Preload-only capability channels for local microphone dictation. */
 export const VOICE_DICTATION_ARM_CHANNEL = 'sourdaw:voice-dictation:arm';
 export const VOICE_DICTATION_DISARM_CHANNEL = 'sourdaw:voice-dictation:disarm';
@@ -206,6 +212,11 @@ export type SourdawBridge = {
     system: {
         /** Total physical memory of this machine, in bytes. Not free memory: it does not change while the app runs. */
         readonly totalMemoryBytes: () => Promise<number>;
+        /**
+         * What a model's weights may occupy on the GPU: the Metal working-set cap on macOS, the largest
+         * discrete adapter's dedicated memory on Windows, unknown elsewhere. It is not the system total.
+         */
+        readonly gpuMemoryBudgetBytes: () => Promise<GpuMemoryBudget>;
     };
     /** Deliberately outside generic `invoke`: start requires a preload-held activation. */
     voiceDictation: {

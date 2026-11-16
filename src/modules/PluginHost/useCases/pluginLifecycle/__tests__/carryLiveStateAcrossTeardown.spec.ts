@@ -13,11 +13,14 @@ import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures'
 import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { markExternalPluginRestoreFailure } from '../markExternalPluginRestoreFailure';
+import { projectSwitchLostPlugins } from '../projectSwitchLostPlugins';
 import { readExternalPluginStatesBeforeEngineRetire } from '../readExternalPluginStatesBeforeEngineRetire';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { restorePluginState } from '../restorePluginState';
+import { settleProjectSwitchPluginTeardown } from '../settleProjectSwitchPluginTeardown';
 import { unloadPlugin } from '../unloadPlugin';
 import { unloadPluginCarryingLiveState } from '../unloadPluginCarryingLiveState';
+import { unloadPluginsBeforeProjectSwitch } from '../unloadPluginsBeforeProjectSwitch';
 
 import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
 
@@ -105,6 +108,7 @@ describe('live plugin state across an app-initiated teardown', () => {
         vi.clearAllMocks();
         clearLoadedExternalPlugins();
         carriedExternalPluginStates.clear();
+        projectSwitchLostPlugins.clear();
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         mocks.loadPlugin.mockImplementation((_pluginId, instanceId) => Promise.resolve(pluginInstance(instanceId)));
         mocks.getPluginState.mockResolvedValue(LIVE_BYTES);
@@ -317,6 +321,138 @@ describe('live plugin state across an app-initiated teardown', () => {
             await unloadPlugin(INSTANCE_ID);
             await activate(SAVED_CHUNK);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+    });
+
+    describe('project switch', () => {
+        it('restores the live bytes, not the project chunk, when the switch is refused', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            await unloadPluginsBeforeProjectSwitch();
+            expect(loadedExternalInstances.size).toBe(0);
+            settleProjectSwitchPluginTeardown('refused');
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+            expect(warnings()).toEqual([]);
+        });
+
+        it("keeps the outgoing project's removal carry when the switch is refused", async () => {
+            await activateBothAndEdit();
+            await unloadPluginCarryingLiveState(OTHER_INSTANCE_ID);
+
+            await unloadPluginsBeforeProjectSwitch();
+            settleProjectSwitchPluginTeardown('refused');
+
+            expect(await reactivateBoth()).toEqual([
+                [INSTANCE_ID, LIVE_BYTES],
+                [OTHER_INSTANCE_ID, OTHER_LIVE_BYTES],
+            ]);
+        });
+
+        it('lets a Play before the switch consume the carry', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            await unloadPluginsBeforeProjectSwitch();
+            // The outgoing project's strips rebuilt by a Play landing before the switch.
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+        });
+
+        it('drops every carry, the removal carries included, when the switch happens', async () => {
+            await activateBothAndEdit();
+            await unloadPluginCarryingLiveState(OTHER_INSTANCE_ID);
+
+            await unloadPluginsBeforeProjectSwitch();
+            settleProjectSwitchPluginTeardown('switched');
+
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(await reactivateBoth()).toEqual([
+                [INSTANCE_ID, SAVED_BYTES],
+                [OTHER_INSTANCE_ID, SAVED_BYTES],
+            ]);
+        });
+
+        it('warns by plugin name about an unreadable instance only when the switch is refused', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.getPluginState.mockRejectedValueOnce(new Error('control lock timed out'));
+
+            await unloadPluginsBeforeProjectSwitch();
+            expect(warnings()).toEqual([]);
+            settleProjectSwitchPluginTeardown('refused');
+            await activate(SAVED_CHUNK);
+
+            expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('says nothing about an unreadable instance when the switch happens', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.getPluginState.mockRejectedValueOnce(new Error('control lock timed out'));
+
+            await unloadPluginsBeforeProjectSwitch();
+            settleProjectSwitchPluginTeardown('switched');
+            settleProjectSwitchPluginTeardown('refused');
+
+            expect(warnings()).toEqual([]);
+        });
+
+        it('carries nothing for an instance a failed unload left loaded', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.unloadPlugin.mockRejectedValueOnce(new Error('bridge down'));
+
+            await expect(unloadPluginsBeforeProjectSwitch()).rejects.toThrow('bridge down');
+            settleProjectSwitchPluginTeardown('refused');
+
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(warnings()).toEqual([]);
+        });
+
+        describe('when the unload tears one instance down and reports an error for the other', () => {
+            function unloadOnlyFirstInstance(): void {
+                mocks.unloadPlugin.mockImplementationOnce(() =>
+                    Promise.resolve({
+                        unloadedInstanceIds: [INSTANCE_ID],
+                        errors: [`${OTHER_INSTANCE_ID} is busy`],
+                        reports: [],
+                    })
+                );
+            }
+
+            it('carries the torn-down instance and nothing for the one left loaded', async () => {
+                await activateBothAndEdit();
+                unloadOnlyFirstInstance();
+
+                await expect(unloadPluginsBeforeProjectSwitch()).rejects.toThrow(`${OTHER_INSTANCE_ID} is busy`);
+                settleProjectSwitchPluginTeardown('refused');
+
+                expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
+                expect(loadedExternalInstances.has(OTHER_INSTANCE_ID)).toBe(true);
+                expect([...carriedExternalPluginStates.keys()]).toEqual([INSTANCE_ID]);
+                await activate(SAVED_CHUNK);
+                expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+                expect(warnings()).toEqual([]);
+            });
+
+            it('warns about the torn-down instance whose state could not be read', async () => {
+                await activateBothAndEdit();
+                mocks.getPluginState.mockImplementation((instanceId) => {
+                    if (instanceId === INSTANCE_ID) {
+                        return Promise.reject(new Error('control lock timed out'));
+                    }
+                    return Promise.resolve(OTHER_LIVE_BYTES);
+                });
+                unloadOnlyFirstInstance();
+
+                await expect(unloadPluginsBeforeProjectSwitch()).rejects.toThrow(`${OTHER_INSTANCE_ID} is busy`);
+                expect(warnings()).toEqual([]);
+                settleProjectSwitchPluginTeardown('refused');
+                await activate(SAVED_CHUNK);
+
+                expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+                expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+            });
         });
     });
 
