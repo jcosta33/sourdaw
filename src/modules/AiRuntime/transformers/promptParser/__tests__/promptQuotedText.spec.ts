@@ -36,4 +36,23 @@ describe('prompt quoted text', () => {
         expect(result.maskedText).toHaveLength('leave ‘Drummer’s Selected Clip unchanged'.length);
         expect(result.maskedText).toMatch(/^leave ‘ +$/u);
     });
+
+    it.each([
+        ["Make 'em louder than the 'Keys' track", true, "Make 'em louder than the '    ' track"],
+        ["Make the drums louder, 'cause the mix is dull", true, "Make the drums louder, 'cause the mix is dull"],
+        ["rock 'n' roll the bass", true, "rock 'n' roll the bass"],
+        ["'til the chorus, keep the vocal", true, "'til the chorus, keep the vocal"],
+        ["make 'em brighter", true, "make 'em brighter"],
+        ["Make 'Em louder", true, "Make 'Em louder"],
+        ["'Keys'", true, "'    '"],
+        ["the 'Lead Vocal' track", true, "the '          ' track"],
+        ["the 'emerald' pad", true, "the '       ' pad"],
+        ["don't touch the kick's tail on the drums' bus", true, "don't touch the kick's tail on the drums' bus"],
+        ["'Keys", false, "'    "],
+        ["'Til Dawn'", true, "'Til Dawn'"],
+        ['"Til Dawn"', true, '"        "'],
+        ['‘Til Dawn’', true, '‘        ’'],
+    ])('reads a word-initial elision as part of the word in %s', (value, complete, expected) => {
+        expect(scanPromptQuotedText(value)).toEqual({ complete, maskedText: expected });
+    });
 });

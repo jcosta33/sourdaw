@@ -1,3 +1,5 @@
+import { startsWordInitialElision } from './wordInitialElision';
+
 export type PromptQuotedTextScan = {
     complete: boolean;
     maskedText: string;
@@ -27,7 +29,7 @@ function getOpeningQuote(value: string, index: number): QuoteState | null {
     if (character === '‘') {
         return { closing: '’', single: true };
     }
-    if (character === "'" && !isWordCharacterBefore(value, index)) {
+    if (character === "'" && !isWordCharacterBefore(value, index) && !startsWordInitialElision(value, index)) {
         return { closing: "'", single: true };
     }
     return null;
