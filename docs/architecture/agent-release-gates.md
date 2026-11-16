@@ -137,9 +137,10 @@ Schema version 2 carries, per corpus file:
   an earlier expansion or a list of plain commands in the live project and in the isolated preview;
   `propose-compiled` then adopts those measured commands by call id and adds none of its own, so the
   figures stay bound to the exact batch that persists. A comparative names its subject and reference
-  exactly, and the subject comes before the reference in the fixture's track order, because the
-  catalog places a device slot only under the first track target; a case that needs a role target
-  or a slot under a second track waits rather than leaning on that order.
+  as fixture tracks, whether the request names them outright or by role ("the drums", "the backing
+  vocals"); the catalog gives every published track target its own device slot whatever its project
+  order, so a subject may follow its reference and a role-named subject may take a device on each of
+  its tracks.
 - `cases[].oracle.measuredGoals` — a measured proposal's metric claims, each `{metric, band?,
 relation, target, reference?}`: the agent metric (and band for a band metric), the relation the
   goal states (`increase`, `decrease`, or a comparative policy such as `greater-than-current`), the
