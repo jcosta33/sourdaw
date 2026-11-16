@@ -6,13 +6,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { AiActionHistoryPanel } from '#/modules/AiRuntime/presentations/views';
 import { aiActionHistoryStore } from '#/modules/AiRuntime/stores';
-import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { hydrateTracksForProject, setTrackState } from '#/modules/Arrangement/useCases';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { clearUndoHistory, pushUndoEntry } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
-import { makeTrackDummy } from '../../../__tests__/TrackDummy';
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { defaultWorkspaceState } from '../../../models/WorkspaceState';
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { StatusBar } from '../StatusBar';
@@ -39,7 +40,14 @@ const count = (id: keyof RenderCounts, element: ReactElement): ReactElement => (
     </Profiler>
 );
 
-const makeTrack = (armed: boolean, clipEndBeat: number): Track => makeTrackDummy({ armed, clipEndBeat });
+const makeTrack = (armed: boolean, clipEndBeat: number): Track => {
+    const clip: Clip = ClipDummy.create({ endBeat: clipEndBeat });
+    return TrackDummy.create({
+        armed,
+        clips: [clip],
+        alternatives: [{ id: 'track-1-alternative', name: 'Main', clips: [clip] }],
+    });
+};
 
 const pushUndo = (label: string): void => {
     pushUndoEntry(

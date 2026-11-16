@@ -3,11 +3,22 @@ import { Profiler } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { hydrateTracksForProject, setTrackState } from '#/modules/Arrangement/useCases';
 
-import { makeTrackDummy } from '../../../__tests__/TrackDummy';
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { useShellTrackFacts } from '../useShellTrackFacts';
+
+const trackWithClip = (clipOverrides: Partial<Clip>, trackOverrides: Partial<Track> = {}): Track => {
+    const id = trackOverrides.id ?? 'track-1';
+    const clip = ClipDummy.create({ trackId: id, ...clipOverrides });
+    return TrackDummy.create({
+        clips: [clip],
+        alternatives: [{ id: `${id}-alternative`, name: 'Main', clips: [clip] }],
+        ...trackOverrides,
+    });
+};
 
 const hydrateTracks = (tracks: Track[]): void => {
     act(() => {
@@ -39,7 +50,7 @@ describe('useShellTrackFacts', () => {
 
     beforeEach(() => {
         renders = 0;
-        hydrateTracksForProject({ tracks: [makeTrackDummy()] });
+        hydrateTracksForProject({ tracks: [TrackDummy.create()] });
     });
 
     afterEach(() => {
@@ -51,7 +62,7 @@ describe('useShellTrackFacts', () => {
         mount('clip-1');
         renders = 0;
 
-        setTracks([makeTrackDummy({ clipEndBeat: 8 })]);
+        setTracks([trackWithClip({ endBeat: 8 })]);
 
         expect(renders).toBe(0);
     });
@@ -61,7 +72,7 @@ describe('useShellTrackFacts', () => {
         expect(result.current.isAudioClipSelected).toBe(false);
         renders = 0;
 
-        setTracks([makeTrackDummy({ clipType: 'audio' })]);
+        setTracks([trackWithClip({ type: 'audio' })]);
 
         expect(result.current.isAudioClipSelected).toBe(true);
         expect(renders).toBeGreaterThan(0);
@@ -72,7 +83,7 @@ describe('useShellTrackFacts', () => {
         expect(result.current.takesTabAvailable).toBe(false);
         renders = 0;
 
-        setTracks([makeTrackDummy({ showVariationLanes: true })]);
+        setTracks([TrackDummy.create({ showVariationLanes: true })]);
 
         expect(result.current.takesTabAvailable).toBe(true);
         expect(result.current.variationLanesShown.get('track-1')).toBe(true);
@@ -83,7 +94,7 @@ describe('useShellTrackFacts', () => {
         const { result } = mount(null);
         renders = 0;
 
-        setTracks([makeTrackDummy(), makeTrackDummy({ id: 'track-2', showVariationLanes: true })]);
+        setTracks([TrackDummy.create(), TrackDummy.create({ id: 'track-2', showVariationLanes: true })]);
 
         expect(result.current.variationLanesShown.get('track-2')).toBe(true);
         expect(renders).toBeGreaterThan(0);
@@ -92,15 +103,15 @@ describe('useShellTrackFacts', () => {
     it('does not offer the Takes tab for a folder, whose lanes are never shown', () => {
         const { result } = mount(null);
 
-        setTracks([makeTrackDummy({ kind: 'folder', showVariationLanes: true })]);
+        setTracks([TrackDummy.create({ kind: 'folder', showVariationLanes: true })]);
 
         expect(result.current.takesTabAvailable).toBe(false);
         expect(result.current.variationLanesShown.get('track-1')).toBe(false);
     });
 
     it('reports an audio clip selected only when the selected clip id is an audio clip', () => {
-        const midiTrack = makeTrackDummy();
-        const audioTrack = (id: string): Track => makeTrackDummy({ id, clipId: `${id}-clip`, clipType: 'audio' });
+        const midiTrack = TrackDummy.create();
+        const audioTrack = (id: string): Track => trackWithClip({ id: `${id}-clip`, type: 'audio' }, { id });
         hydrateTracks([midiTrack, audioTrack('audio-1'), audioTrack('audio-2')]);
 
         expect(mount('clip-1').result.current.isAudioClipSelected).toBe(false);
@@ -109,11 +120,11 @@ describe('useShellTrackFacts', () => {
     });
 
     it('renders with the new value when lanes switch back off', () => {
-        hydrateTracksForProject({ tracks: [makeTrackDummy({ showVariationLanes: true })] });
+        hydrateTracksForProject({ tracks: [TrackDummy.create({ showVariationLanes: true })] });
         const { result } = mount(null);
         renders = 0;
 
-        setTracks([makeTrackDummy()]);
+        setTracks([TrackDummy.create()]);
 
         expect(result.current.takesTabAvailable).toBe(false);
         expect(renders).toBeGreaterThan(0);
