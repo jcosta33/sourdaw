@@ -178,8 +178,10 @@ function workspace(): { root: string; io: ClosureIo } {
         ].join('\n')
     );
     write(root, 'Cargo.toml', '[workspace]\nmembers = ["crates/*"]\n');
+    write(root, 'Cargo.lock', 'version = 4\n');
     write(root, 'rust-toolchain.toml', '[toolchain]\nchannel = "1.90.0"\n');
     write(root, '.cargo/config.toml', '[build]\n');
+    write(root, '.gitignore', 'target/\n*.log\n');
     for (const crate of CRATES) {
         write(root, `crates/${crate}/Cargo.toml`, `[package]\nname = "${crate}"\n`);
         write(root, `crates/${crate}/src/lib.rs`, 'pub fn value() -> u8 { 1 }\n');
@@ -305,6 +307,53 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
         ]);
     });
 
+    it('refuses a record once an untracked file appears in a tree it compiles, naming that file', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        const added = 'crates/root-crate/tests/added.rs';
+        write(root, added, '#[test]\nfn added() {}\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${added}`]);
+    });
+
+    it('passes a record when only a gitignored file appears in a tree it compiles', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        write(root, 'crates/root-crate/src/target/out.rs', 'fn built() {}\n');
+        write(root, 'crates/root-crate/tests/ignored.log', 'noise\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([]);
+    });
+
+    it('refuses a record once Cargo.lock changes, naming it', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        write(root, 'Cargo.lock', 'version = 4\n\n[[package]]\nname = "bumped"\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: Cargo.lock`]);
+    });
+
+    it('refuses a record once an example or bench of the tested crate appears, naming that file', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        write(root, 'crates/root-crate/examples/demo.rs', 'fn main() {}\n');
+        write(root, 'crates/root-crate/benches/speed.rs', 'fn main() {}\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([
+            `${SUITE.id}: closure file drifted: crates/root-crate/benches/speed.rs`,
+            `${SUITE.id}: closure file drifted: crates/root-crate/examples/demo.rs`,
+        ]);
+    });
+
+    it('refuses a record once a tracked file in its closure is deleted', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        const deleted = 'crates/root-crate/tests/it.rs';
+        rmSync(join(root, deleted));
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${deleted}`]);
+    });
+
     it('refuses a record once a file its suite declares it reads by path changes', async () => {
         const { root, io } = workspace();
         const record = await recordedRun(root, io, DECLARED_READ_SUITE);
@@ -321,6 +370,7 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
 
         expect(paths).toEqual([
             '.cargo/config.toml',
+            'Cargo.lock',
             'Cargo.toml',
             'crates/dep-crate/Cargo.toml',
             'crates/dep-crate/build.rs',

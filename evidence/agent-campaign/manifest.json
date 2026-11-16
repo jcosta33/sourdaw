@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "3d4fae24a077407707cc6668448763e335c7eb720dcfb9faa90efd6a78f41939"
+        "digest": "fab0217a517d31b9e43d0ea2be8a73b30909280a47e12dff8f361e2045e550ba"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
