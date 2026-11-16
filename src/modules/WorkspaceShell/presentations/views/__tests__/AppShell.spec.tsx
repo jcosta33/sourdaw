@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
 import {
@@ -33,6 +34,7 @@ import { type ActiveDevicePanel } from '../../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../../hooks/useAppEventHandlers';
 import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
+import { useShellTrackFacts } from '../../hooks/useShellTrackFacts';
 import { AppShell } from '../AppShell';
 
 const activeDevicePanelStateMock = vi.hoisted(() => ({
@@ -54,6 +56,12 @@ vi.mock('#/infra/store/useStore', () => ({
 
 // The shell reads its track and AI facts through selectors; the spec drives them from its own
 // fixtures and leaves every other store to the real hook.
+// The shell must read the tracks only through this hook, so the spec serves the hook's facts from
+// its fixture and lets the store-call assertions below see only the shell's own subscriptions.
+vi.mock('../../hooks/useShellTrackFacts', () => ({
+    useShellTrackFacts: vi.fn(),
+}));
+
 const realStoreSelector = vi.hoisted(() => ({
     use: null as typeof import('#/infra/store/useStoreSelector').useStoreSelector | null,
 }));
@@ -404,6 +412,15 @@ describe('AppShell', () => {
         agentProjectRepairState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
         // The Takes-lane effect reads the store directly, so serve it the same fixture.
+        vi.mocked(useShellTrackFacts).mockImplementation((selectedClipId) => ({
+            isAudioClipSelected:
+                selectedClipId !== null &&
+                trackStoreState.tracks.some((track) =>
+                    track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
+                ),
+            takesTabAvailable: hasVariationLanes(trackStoreState.tracks),
+            variationLanesShown: detectVariationLaneEnabling(null, trackStoreState.tracks).shown,
+        }));
         trackValueSpy = vi.spyOn(trackStore, 'value', 'get').mockImplementation(() => trackStoreState);
         vi.mocked(useStoreSelector).mockImplementation((store, selector, equalityFn) => {
             if (store === trackStore) {
@@ -565,6 +582,33 @@ describe('AppShell', () => {
         sidebarPanelActions.current?.revealDevice('device-1');
 
         expect(revealDeviceInInspectorMock).toHaveBeenCalledExactlyOnceWith('device-1');
+    });
+
+    it('reads the tracks only through useShellTrackFacts, never by following the whole store', () => {
+        selectedClipIdState = 'clip-1';
+        // Child panels follow the track store themselves; only a subscription made while the
+        // shell's own body runs belongs to the shell, and that body is the caller on the stack.
+        const shellTrackSubscriptions: string[] = [];
+        const recordShellCall = (store: unknown): void => {
+            if (store === trackStore && /at AppShell \(/.test(new Error('caller probe').stack ?? '')) {
+                shellTrackSubscriptions.push('AppShell');
+            }
+        };
+        const useStoreImplementation = vi.mocked(useStore).getMockImplementation();
+        const useStoreSelectorImplementation = vi.mocked(useStoreSelector).getMockImplementation();
+        vi.mocked(useStore).mockImplementation((store, defaultValue) => {
+            recordShellCall(store);
+            return useStoreImplementation?.(store, defaultValue);
+        });
+        vi.mocked(useStoreSelector).mockImplementation((store, selector, equalityFn) => {
+            recordShellCall(store);
+            return useStoreSelectorImplementation?.(store, selector, equalityFn);
+        });
+
+        render(<AppShell>Content</AppShell>);
+
+        expect(useShellTrackFacts).toHaveBeenCalledWith('clip-1');
+        expect(shellTrackSubscriptions).toEqual([]);
     });
 
     it('preserves falsy defaults for unlisted stores', () => {
