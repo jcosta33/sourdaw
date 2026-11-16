@@ -490,7 +490,10 @@ impl PluginRegistryStore {
     ///
     /// Entries are admitted only if the policy still authorizes their path and
     /// the file on disk is the file the scan recorded, at the size and age it
-    /// recorded.
+    /// recorded, and its path is not quarantined: a quarantined row stays the
+    /// last-known location but is never a registry hit, so a load misses and
+    /// takes the targeted rescan that runs the helper instead of loading a
+    /// plugin whose helper just crashed.
     /// Anything else is a plugin that has been updated, replaced or removed
     /// since, and resolving it would hand activation a path whose contents no
     /// longer match the descriptor id recorded next to it.
@@ -517,6 +520,7 @@ impl PluginRegistryStore {
         let unchanged_entries: Vec<(String, PluginRegistryEntry)> = stored
             .entries
             .iter()
+            .filter(|(_, entry)| !stored.quarantine.contains_key(&entry.plugin.path))
             .filter(|(_, entry)| entry_is_still_the_scanned_file(entry, scan_policy))
             .map(|(key, entry)| (key.clone(), entry.as_registry_entry()))
             .collect();
@@ -723,11 +727,22 @@ impl PluginRegistryStore {
     /// this scan, and the scan is a fresh authoritative look at the same disk:
     /// a plugin that was missing an hour ago and is indexed now must not keep
     /// answering from the older verdict.
+    ///
+    /// A row whose path is quarantined is kept whatever the predicate says. A
+    /// quarantined candidate is scanned but publishes nothing, so the
+    /// predicate reads it as gone; dropping the row would erase the
+    /// last-known location the activation miss path rescans to surface the
+    /// real refusal, and ordinary scans skip the candidate so nothing would
+    /// ever restore it. Quarantine keys are the candidate path's display
+    /// string, the same string a row stores as its `plugin.path`.
     pub fn apply_completed_scan_removals(&self, keeps_persisted_row: impl Fn(&Path) -> bool) {
-        let mut stored = self.lock_stored();
-        stored
-            .entries
-            .retain(|_, entry| keeps_persisted_row(Path::new(&entry.plugin.path)));
+        let mut guard = self.lock_stored();
+        let stored = &mut *guard;
+        let quarantine = &stored.quarantine;
+        stored.entries.retain(|_, entry| {
+            quarantine.contains_key(&entry.plugin.path)
+                || keeps_persisted_row(Path::new(&entry.plugin.path))
+        });
         stored.resolutions.clear();
     }
 
@@ -1433,6 +1448,112 @@ mod tests {
 
     fn one_row(path: &Path, stable_id: &str) -> Vec<ScanRow> {
         rows_for(vec![(stable_id, scanned_plugin(path, stable_id))])
+    }
+
+    /// A quarantined candidate is scanned but publishes nothing, so the scan's
+    /// retention predicate reads it as gone. Its row is the last-known
+    /// location the activation miss path rescans, and an ordinary scan skips
+    /// the candidate, so a dropped row would never come back.
+    #[test]
+    fn a_completed_scan_keeps_the_row_of_a_quarantined_path() {
+        let test_root = TestRegistryRoot::create("registry-removal-quarantined");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+
+        // Partial scan (nothing authorized by it) and complete scan (the root
+        // is scanned and nothing was found) both read the row as gone.
+        store.apply_completed_scan_removals(|_| false);
+        store.persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let last_known = next_launch
+            .last_known_entry("aaaa1111")
+            .expect("a quarantined path's row must survive a completed scan");
+        assert_eq!(last_known.plugin.path, plugin_path.display().to_string());
+        assert!(next_launch.is_quarantined(&plugin_path).is_some());
+    }
+
+    /// Only the quarantined path is spared: a sibling row the same scan reads
+    /// as gone still goes.
+    #[test]
+    fn a_completed_scan_still_removes_an_unquarantined_row_beside_a_quarantined_one() {
+        let test_root = TestRegistryRoot::create("registry-removal-sibling");
+        let hostile_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let gone_path = test_root.write_plugin_file("Gone.clap", b"clap-bytes-2");
+        let store = test_root.store();
+        let mut rows = one_row(&hostile_path, "hostile01");
+        rows.extend(one_row(&gone_path, "gone0001"));
+        store.persist(&rows);
+        store.quarantine_failure(&hostile_path, "Plugin scan helper timed out".to_string(), 1);
+
+        store.apply_completed_scan_removals(|_| false);
+
+        assert!(store.last_known_entry("hostile01").is_some());
+        assert!(
+            store.last_known_entry("gone0001").is_none(),
+            "a scanned, unquarantined row that published nothing is gone from disk"
+        );
+    }
+
+    /// A retry clears the quarantine before its helper runs; a row that then
+    /// publishes is replaced normally, and one that still publishes nothing
+    /// is removed like any other.
+    #[test]
+    fn a_cleared_quarantine_no_longer_spares_its_row() {
+        let test_root = TestRegistryRoot::create("registry-removal-cleared");
+        let plugin_path = test_root.write_plugin_file("Retried.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.clear_quarantine(&plugin_path);
+
+        store.apply_completed_scan_removals(|_| false);
+
+        assert!(store.last_known_entry("aaaa1111").is_none());
+    }
+
+    /// A kept quarantined row is replaced by the retry's own publication.
+    #[test]
+    fn a_kept_quarantined_row_is_replaced_when_the_retry_publishes() {
+        let test_root = TestRegistryRoot::create("registry-removal-retry-publishes");
+        let plugin_path = test_root.write_plugin_file("Retried.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.apply_completed_scan_removals(|_| false);
+
+        store.clear_quarantine(&plugin_path);
+        let mut republished = scanned_plugin(&plugin_path, "aaaa1111");
+        republished.version = "2.0.0".to_string();
+        store.persist(&rows_for(vec![("aaaa1111", republished)]));
+        store.apply_completed_scan_removals(|path| path == plugin_path);
+
+        let row = store
+            .last_known_entry("aaaa1111")
+            .expect("the republished row is kept");
+        assert_eq!(row.plugin.version, "2.0.0");
+    }
+
+    /// A kept quarantined row must not become a registry hit on the next
+    /// launch: that would load in process a plugin whose helper just crashed.
+    #[test]
+    fn hydration_keeps_a_quarantined_row_as_last_known_but_not_loadable() {
+        let test_root = TestRegistryRoot::create("registry-hydrate-quarantined");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.persist(&[]);
+
+        let next_launch = test_root.store();
+        let registry = Mutex::new(HashMap::new());
+        next_launch.hydrate_into(&registry, &test_root.scan_policy());
+
+        assert!(registry.lock().expect("registry lock").is_empty());
+        assert!(next_launch.last_known_entry("aaaa1111").is_some());
     }
 
     /// The defect: nothing survived the process, so a saved project reopened

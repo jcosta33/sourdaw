@@ -54,7 +54,18 @@ import {
 } from '../resourceGuardStorage';
 
 const roots: string[] = [];
-const childPids = new Set<number>();
+// Each process a case started, by PID, with the start time it had when registered. A PID can be
+// reused once its process exits, so cleanup and fixtures signal only a PID whose start still matches.
+const childStarts = new Map<number, string>();
+const childPids = {
+    add: (pid: number): void => {
+        const start = processStart(pid);
+        if (start !== undefined) {
+            childStarts.set(pid, start);
+        }
+    },
+    delete: (pid: number): boolean => childStarts.delete(pid),
+};
 const abundantMemoryBytes = 128 * 1024 ** 3;
 const linuxCensusObservationLimit = 32;
 const guardPath = resolve('scripts/resourceGuard.ts');
@@ -89,11 +100,22 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<
     }
 }
 
+// The absolute path keeps a case's fake `ps` on PATH from answering for the real one.
+function processStart(pid: number): string | undefined {
+    const sample = spawnSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' });
+    const start = sample.stdout.trim();
+    return sample.status === 0 && start !== '' ? start : undefined;
+}
+
+// Kills a registered process at most once, and never a later process that reused its PID.
 async function kill(pid: number): Promise<void> {
-    if (isAlive(pid)) {
-        process.kill(pid, 'SIGKILL');
-        await waitUntil(() => !isAlive(pid));
+    const registered = childStarts.get(pid);
+    childStarts.delete(pid);
+    if (registered === undefined || processStart(pid) !== registered) {
+        return;
     }
+    process.kill(pid, 'SIGKILL');
+    await waitUntil(() => !isAlive(pid));
 }
 
 async function waitForStorageAbandonment(tempDirectories: string[], deadline: number): Promise<void> {
@@ -129,10 +151,9 @@ async function waitForStorageAbandonment(tempDirectories: string[], deadline: nu
 }
 
 afterEach(async () => {
-    for (const pid of childPids) {
+    for (const pid of [...childStarts.keys()]) {
         await kill(pid);
     }
-    childPids.clear();
     for (const root of roots) {
         rmSync(root, { recursive: true, force: true });
     }
@@ -3809,20 +3830,35 @@ if(process.argv[2]==='-axo'){
         writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
         writeFileSync(
             join(bin, 'fixture.json'),
-            JSON.stringify({ ...values, runner: process.pid, calls: join(root, 'ps-calls'), log, events }),
+            JSON.stringify({
+                starts: Object.fromEntries(childStarts),
+                ...values,
+                runner: process.pid,
+                calls: join(root, 'ps-calls'),
+                log,
+                events,
+            }),
             { mode: 0o600 }
         );
+        // The fake tools run on every census invocation, so a process they signal may have exited
+        // and its PID been reused. `signalOnce` signals a PID at most once per fixture, after a
+        // marker records the request, and only while its start still matches `fixture.starts`
+        // (each registered process's start, see childPids); otherwise it exits 4 without signalling.
         // `forkAndExit` signals a forking holder (see startForkingHolder) and waits until it has
         // recorded its child and exited; `forkAndZombie` waits until an unreaped holder has recorded
         // its child and become a zombie; `handOff` waits until a live holder has recorded its heir.
         const prologue = `const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));
-const forkAndExit=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
+const signalOnce=(pid,signal)=>{const marker=require('node:path').join(__dirname,'signalled-'+pid+'-'+signal);if(fs.existsSync(marker))return;
+ const sample=require('node:child_process').spawnSync('/bin/ps',['-o','lstart=','-p',String(pid)],{encoding:'utf8'});
+ if(sample.status!==0||sample.stdout.trim()!==fixture.starts[pid]){process.stderr.write('fixture-signal-refused:pid='+pid+':start-mismatch\\n');process.exit(4)}
+ fs.writeFileSync(marker,signal,{flag:'wx'});process.kill(pid,signal);};
+const forkAndExit=()=>{signalOnce(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
  while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!gone)process.exit(3);};
-const forkAndZombie=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let zombie=false;
+const forkAndZombie=()=>{signalOnce(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let zombie=false;
  while(Date.now()<deadline&&!zombie){zombie=fs.existsSync(fixture.childPath)&&/^\\s*Z/.test(require('node:child_process').execFileSync('/bin/ps',['-o','stat=','-p',String(fixture.holder)],{encoding:'utf8'}));if(!zombie)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!zombie)process.exit(3);fs.appendFileSync(fixture.events,'zombie\\n');};
-const handOff=(signal)=>{process.kill(fixture.holder,signal);const deadline=Date.now()+3000;let ready=false;
+const handOff=(signal)=>{signalOnce(fixture.holder,signal);const deadline=Date.now()+3000;let ready=false;
  while(Date.now()<deadline&&!ready){ready=fs.existsSync(fixture.childPath)&&(signal!=='SIGHUP'||require('node:child_process').execFileSync('/bin/ps',['-o','ppid=','-p',fs.readFileSync(fixture.childPath,'utf8')],{encoding:'utf8'}).trim()==='1');if(!ready)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!ready)process.exit(3);};`;
         writeFileSync(
@@ -4096,6 +4132,53 @@ process.stdout.write(catalog);
         20_000
     );
 
+    it.skipIf(process.platform !== 'darwin').each([
+        { identity: 'a reused PID', start: 'Thu Jan  1 00:00:00 1970', statuses: [4, 4], received: [] },
+        { identity: 'the registered holder', start: undefined, statuses: [3, 3], received: ['SIGUSR1'] },
+    ])(
+        'signals a fixture holder at most once and never $identity',
+        async ({ start, statuses, received }) => {
+            const root = fixture();
+            const log = join(root, 'sentinel-signals');
+            const ready = join(root, 'sentinel.ready');
+            // The sentinel stands in for whatever process holds the holder's PID; it records every
+            // SIGUSR1 it receives and never exits, so each forkAndExit waits out its deadline.
+            const sentinel = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    "const fs=require('node:fs');const [log,ready]=process.argv.slice(1);for(const signal of ['SIGUSR1','SIGUSR2'])process.on(signal,()=>fs.appendFileSync(log,signal+'\\n'));fs.writeFileSync(ready,'ready');setInterval(()=>{},1000)",
+                    log,
+                    ready,
+                ],
+                { stdio: 'ignore' }
+            );
+            if (sentinel.pid === undefined) {
+                throw new Error('signal sentinel did not start');
+            }
+            const sentinelPid = sentinel.pid;
+            childPids.add(sentinelPid);
+            await waitUntil(() => existsSync(ready));
+            const values: Record<string, unknown> = { holder: sentinelPid, childPath: join(root, 'child.pid') };
+            if (start !== undefined) {
+                values.starts = { [sentinelPid]: start };
+            }
+            const { bin } = darwinCensusFixture(root, values, { listed: '[]', lsof: 'if(scoped)forkAndExit();' });
+            const invocations = [1, 2].map(() =>
+                spawnSync(join(bin, 'lsof'), ['-p', String(sentinelPid)], { encoding: 'utf8' })
+            );
+            // SIGUSR2 is a barrier: once it is recorded, every earlier fixture signal has been too.
+            process.kill(sentinelPid, 'SIGUSR2');
+            await waitUntil(() => existsSync(log) && readFileSync(log, 'utf8').includes('SIGUSR2'));
+            expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual([...received, 'SIGUSR2']);
+            expect(invocations.map((invocation) => invocation.status)).toEqual(statuses);
+            if (start !== undefined) {
+                expect(invocations[1]?.stderr).toBe(`fixture-signal-refused:pid=${sentinelPid}:start-mismatch\n`);
+            }
+        },
+        20_000
+    );
+
     // Starts a detached holder with its cwd in `temp`. Its launcher exits, so launchd reaps the
     // holder once it exits; an `unreaped` launcher instead blocks without reaping, so the exited
     // holder stays a zombie until the launcher is killed. On SIGUSR1 the holder forks a child into
@@ -4267,8 +4350,8 @@ process.stdout.write(catalog);
                     listed: "[fixture.holder,fixture.spawner,...(fs.existsSync(fixture.userPath)?[Number(fs.readFileSync(fixture.userPath,'utf8'))]:[])]",
                     lsof: `if(scoped){if(!fs.existsSync(fixture.userPath)){
  const deadline=Date.now()+3000;const pause=()=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
- process.kill(fixture.spawner,'SIGUSR2');while(!fs.existsSync(fixture.userPath)&&Date.now()<deadline)pause();
- process.kill(fixture.holder,'SIGKILL');let gone=false;
+ signalOnce(fixture.spawner,'SIGUSR2');while(!fs.existsSync(fixture.userPath)&&Date.now()<deadline)pause();
+ signalOnce(fixture.holder,'SIGKILL');let gone=false;
  while(!gone&&Date.now()<deadline){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'}if(!gone)pause()}
  if(!gone||!fs.existsSync(fixture.userPath))process.exit(3);
 }}else{catalog+=entry(fixture.spawner,fixture.outside);if(fs.existsSync(fixture.userPath))catalog+=entry(Number(fs.readFileSync(fixture.userPath,'utf8')),fixture.temp)}`,
@@ -4483,7 +4566,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                 {
                     listed: '[fixture.resident]',
                     afterListing: `if(call===1){
- process.kill(fixture.resident,'SIGKILL');
+ signalOnce(fixture.resident,'SIGKILL');
  const deadline=Date.now()+3000;let gone=false;
  while(!gone&&Date.now()<deadline){try{process.kill(fixture.resident,0)}catch(error){gone=error.code==='ESRCH'}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!gone)process.exit(3);
@@ -4522,7 +4605,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                 {
                     listed,
                     sample: `if(args[0]==='-p'&&args[1]===String(fixture.resident)){
- process.kill(fixture.resident,'SIGKILL');
+ signalOnce(fixture.resident,'SIGKILL');
  const deadline=Date.now()+3000;
  while(Date.now()<deadline){try{process.kill(fixture.resident,0)}catch(error){if(error.code==='ESRCH')process.exit(1)}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  process.exit(2);
@@ -5396,37 +5479,73 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(readdirSync(join(root, 'storage')).filter((name) => name !== '.claims')).toEqual([]);
     });
 
-    it('still reports leak and records a receipt when a process survives forced cleanup', async () => {
-        const root = fixture();
-        const pidPath = join(root, 'survivor.pid');
-        const realKill = process.kill.bind(process);
-        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-            if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-                return true;
-            }
-            return realKill(pid, signal);
-        });
-        let survivor: number | undefined;
-        try {
-            const { code, lines, result } = await runCli(root, {
-                args: [
-                    '-e',
-                    `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(c.pid))`,
-                ],
+    it.each(['available', 'unavailable'] as const)(
+        'still reports leak and records a receipt when a process survives forced cleanup with %s snapshot metadata',
+        async (snapshotStatus) => {
+            const root = fixture();
+            const pidPath = join(root, 'survivor.pid');
+            const realKill = process.kill.bind(process);
+            const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+                if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+                    throw Object.assign(new Error('fixture signal denial message'), { code: 'EPERM' });
+                }
+                return realKill(pid, signal);
             });
-            survivor = Number(readFileSync(pidPath, 'utf8'));
-            expect(result?.reason).toBe('leak');
-            expect(result?.retainedStorage).toBeUndefined();
-            expect(code).toBe(1);
-            expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
-            expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
-        } finally {
-            killSpy.mockRestore();
-            if (survivor !== undefined) {
-                childPids.add(survivor);
+            let survivor: number | undefined;
+            const metadataSnapshot = {
+                status: 'available' as const,
+                rows: [{ pid: 501, parentPid: 502, processGroupId: 503, uid: 504, state: 'S', start: 'fixture start' }],
+                truncated: false,
+            };
+            try {
+                const { code, lines, result } = await runCli(root, {
+                    args: [
+                        '-e',
+                        `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(process.argv[1],String(c.pid))`,
+                        pidPath,
+                    ],
+                    processSnapshot: () =>
+                        snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' },
+                });
+                survivor = Number(readFileSync(pidPath, 'utf8'));
+                expect(isAlive(survivor)).toBe(true);
+                expect(result?.reason).toBe('leak');
+                expect(result?.retainedStorage).toBeUndefined();
+                expect(code).toBe(1);
+                expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
+                expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe(
+                    'leak'
+                );
+                const diagnosticLine = result?.output
+                    .split('\n')
+                    .find((line) => line.startsWith('guard cleanup diagnostic: '));
+                expect(diagnosticLine).toBeDefined();
+                if (diagnosticLine === undefined) {
+                    throw new Error('guard cleanup diagnostic missing');
+                }
+                const diagnostic = JSON.parse(diagnosticLine.slice('guard cleanup diagnostic: '.length));
+                expect(diagnostic.treeExitProved).toBe(false);
+                expect(diagnostic.lastObservation.census).toBe('available');
+                expect(diagnostic.lastObservation.blockedBy).toBe('process-group');
+                expect(diagnostic.lastObservation.processGroupProbe.state).toBe('present');
+                expect(diagnostic.signalFailures).toContainEqual(
+                    expect.objectContaining({ pid: survivor, signal: 'SIGTERM', errno: 'EPERM' })
+                );
+                expect(diagnostic.signalFailures.length).toBeLessThanOrEqual(16);
+                expect(diagnostic.metadataAtReport.processGroup).toEqual(
+                    snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' }
+                );
+                expect(diagnosticLine).not.toContain('SOURDAW_PROCESS_SESSION=');
+                expect(diagnosticLine).not.toContain('fixture signal denial message');
+            } finally {
+                killSpy.mockRestore();
+                if (survivor !== undefined) {
+                    childPids.add(survivor);
+                }
             }
-        }
-    }, 30_000);
+        },
+        30_000
+    );
 
     it('reclaims retained storage on a later guarded run once provable and keeps what it cannot prove free', async () => {
         const root = fixture();
