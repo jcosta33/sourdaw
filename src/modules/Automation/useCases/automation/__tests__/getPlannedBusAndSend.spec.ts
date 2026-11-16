@@ -1,14 +1,58 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
 import { getPlannedBus } from '../getPlannedBus';
 import { getPlannedSend } from '../getPlannedSend';
 
 // An action neither planner lists: it must leave the plan as the live state stands.
 const unlisted: AppAction = { type: 'togglePlayback' };
+
+function restorePayload(
+    row: Track,
+    routingPatches: RestoreTrackPayloadSnapshot['routingPatches'] = []
+): RestoreTrackPayloadSnapshot {
+    return {
+        trackId: row.id,
+        trackSnapshot: structuredClone(row),
+        trackName: row.name,
+        trackKind: row.kind,
+        trackGain: row.gain,
+        trackParentId: row.parentId,
+        trackIndex: 0,
+        wasSelected: false,
+        routingPatches,
+        automationLaneSnapshots: [],
+        clipSatellites: [],
+        midiNotesByClipId: {},
+        midiCcByClipId: {},
+        midiPitchBendByClipId: {},
+        takeLaneSnapshots: [],
+        sidechainRouteSnapshots: [],
+        ownedModulatorSnapshots: [],
+        incomingModulationMappingSnapshots: [],
+    };
+}
+
+const busRow = createTrack({ id: 'bus', name: 'Bus', kind: 'bus' });
+const sendingTrackRow: Track = {
+    ...createTrack({ id: 'track', name: 'Track', kind: 'audio' }),
+    sends: [{ busId: 'bus', level: 0.25, preFader: true }],
+};
+const removeBus: AppAction = { type: 'removeTrack', payload: { trackId: 'bus' } };
+// What captureTrackRemovalSnapshot records for the bus: the surviving track's sends before the removal.
+const busRestore: AppAction = {
+    type: 'restoreTrack',
+    payload: restorePayload(busRow, [
+        {
+            trackId: 'track',
+            expected: { outputId: 'master', sends: [] },
+            replacement: { outputId: 'master', sends: [{ busId: 'bus', level: 0.5, preFader: false }] },
+        },
+    ]),
+};
 
 describe('planned bus and send', () => {
     beforeEach(() => {
@@ -111,5 +155,124 @@ describe('planned bus and send', () => {
         const removeAll: AppAction = { type: 'removeAllTracks' };
 
         expect(getPlannedSend('track', 'bus', [unlisted, removeAll])).toBeUndefined();
+    });
+
+    it('plans the bus a restoreTrack brings back', () => {
+        expect(getPlannedBus('bus', [removeBus])).toBeUndefined();
+        expect(getPlannedBus('bus', [removeBus, busRestore])).toMatchObject({ id: 'bus', kind: 'bus', name: 'Bus' });
+    });
+
+    it('plans the send a surviving track gets back when its restored bus returns', () => {
+        expect(getPlannedSend('track', 'bus', [removeBus])).toBeUndefined();
+        expect(getPlannedSend('track', 'bus', [removeBus, busRestore])).toEqual({
+            busId: 'bus',
+            level: 0.5,
+            preFader: false,
+        });
+    });
+
+    it('plans the sends a restored track returns with', () => {
+        const removeTrack: AppAction = { type: 'removeTrack', payload: { trackId: 'track' } };
+        const restore: AppAction = { type: 'restoreTrack', payload: restorePayload(sendingTrackRow) };
+
+        expect(getPlannedSend('track', 'bus', [removeTrack])).toBeUndefined();
+        expect(getPlannedSend('track', 'bus', [removeTrack, restore])).toEqual({
+            busId: 'bus',
+            level: 0.25,
+            preFader: true,
+        });
+    });
+
+    it('plans the bus and sends a restoreTracks brings back, leaving patched siblings to their own row', () => {
+        const removeAll: AppAction = { type: 'removeAllTracks' };
+        const restores: AppAction = {
+            type: 'restoreTracks',
+            payload: {
+                restores: [
+                    { ...restorePayload(busRow), trackIndex: 1 },
+                    {
+                        ...restorePayload(sendingTrackRow, [
+                            {
+                                trackId: 'other',
+                                expected: { outputId: 'master', sends: [] },
+                                replacement: {
+                                    outputId: 'master',
+                                    sends: [{ busId: 'bus', level: 0.75, preFader: false }],
+                                },
+                            },
+                        ]),
+                        trackIndex: 0,
+                    },
+                ],
+            },
+        };
+
+        expect(getPlannedBus('bus', [removeAll])).toBeUndefined();
+        expect(getPlannedBus('bus', [removeAll, restores])).toMatchObject({ id: 'bus', name: 'Bus' });
+        expect(getPlannedSend('track', 'bus', [removeAll, restores])).toEqual({
+            busId: 'bus',
+            level: 0.25,
+            preFader: true,
+        });
+        expect(getPlannedSend('other', 'bus', [removeAll, restores])).toEqual({
+            busId: 'bus',
+            level: 0.75,
+            preFader: false,
+        });
+    });
+
+    it('drops a planned send once the batch discards the imported stem set its track or bus belongs to', () => {
+        const discardSource: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'folder', stemTrackIds: ['track'], guards: [] },
+        };
+        const discardBus: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'folder', stemTrackIds: ['bus'], guards: [] },
+        };
+        const discardFolder: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'track', stemTrackIds: ['stem'], guards: [] },
+        };
+        const discardOther: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'folder', stemTrackIds: ['stem'], guards: [] },
+        };
+
+        expect(getPlannedSend('track', 'bus', [discardSource])).toBeUndefined();
+        expect(getPlannedSend('track', 'bus', [discardBus])).toBeUndefined();
+        expect(getPlannedSend('track', 'bus', [discardFolder])).toBeUndefined();
+        expect(getPlannedSend('track', 'bus', [discardOther])).toMatchObject({ busId: 'bus', level: 0.5 });
+    });
+
+    it('drops a bus once the batch discards the imported stem set holding it', () => {
+        const discardStem: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'folder', stemTrackIds: ['bus'], guards: [] },
+        };
+        const discardFolder: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'bus', stemTrackIds: [], guards: [] },
+        };
+        const discardOther: AppAction = {
+            type: 'discardImportedStemSet',
+            payload: { folderId: 'folder', stemTrackIds: ['stem'], guards: [] },
+        };
+
+        expect(getPlannedBus('bus', [discardStem])).toBeUndefined();
+        expect(getPlannedBus('bus', [discardFolder])).toBeUndefined();
+        expect(getPlannedBus('bus', [discardOther])?.name).toBe('Bus');
+    });
+
+    it('drops a bus once the batch removes every track', () => {
+        expect(getPlannedBus('bus', [unlisted, { type: 'removeAllTracks' }])).toBeUndefined();
+    });
+
+    it('drops a bus once a batch discard lists it and keeps it when the discard lists others', () => {
+        const discard: AppAction = { type: 'discardCreatedTracks', payload: { trackIds: ['other', 'bus'] } };
+        const discardOthers: AppAction = { type: 'discardCreatedTracks', payload: { trackIds: ['other'] } };
+
+        expect(getPlannedBus('bus', [discard])).toBeUndefined();
+        expect(getPlannedBus('bus', [discardOthers])?.name).toBe('Bus');
     });
 });
