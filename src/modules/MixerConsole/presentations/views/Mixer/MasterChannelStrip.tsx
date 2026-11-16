@@ -15,6 +15,7 @@ import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
+import { handleRovingRowKeyDown } from '#/utils/UI/rovingRowKeyboard';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { useChannelStripActions } from '../../hooks/useChannelStripActions';
@@ -27,6 +28,8 @@ type MasterChannelStripProps = {
     /** The master's track row; the strip selects and mutes it. Absent until a project has one. */
     track?: Track;
     isSelected?: boolean;
+    /** Whether this strip is the mixer grid's single Tab stop. */
+    isTabStop?: boolean;
 };
 
 type MasterChannelSurfaceProps = MasterChannelStripProps & {
@@ -435,6 +438,7 @@ const MasterChannelSurface = ({
     widthClass,
     track,
     isSelected = false,
+    isTabStop = false,
     displayGain,
     onChange,
     onEnterValue,
@@ -444,11 +448,17 @@ const MasterChannelSurface = ({
     onInvalidatePendingValue,
 }: MasterChannelSurfaceProps): ReactElement => (
     <DawChannelStripShell
-        className={cn('ml-2', widthClass)}
+        className={cn('ml-2 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70', widthClass)}
+        role="row"
+        tabIndex={isTabStop ? 0 : -1}
+        aria-selected={isSelected}
         aria-label="Master channel"
         data-testid="channel-master"
         selected={isSelected}
         onClick={track ? () => selectTrack(track.id) : undefined}
+        onKeyDown={
+            track ? (event) => handleRovingRowKeyDown(event, 'horizontal', () => selectTrack(track.id)) : undefined
+        }
     >
         <div className="h-1 w-full rounded-full bg-border-active" />
         <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
@@ -472,7 +482,12 @@ const MasterChannelSurface = ({
     </DawChannelStripShell>
 );
 
-export const MasterChannelStrip = ({ widthClass, track, isSelected }: MasterChannelStripProps): ReactElement => {
+export const MasterChannelStrip = ({
+    widthClass,
+    track,
+    isSelected,
+    isTabStop,
+}: MasterChannelStripProps): ReactElement => {
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
     const state = useMasterGainInteractionState();
     const commits = createMasterGainCommitHandlers(state);
@@ -485,6 +500,7 @@ export const MasterChannelStrip = ({ widthClass, track, isSelected }: MasterChan
             widthClass={widthClass}
             track={track}
             isSelected={isSelected}
+            isTabStop={isTabStop}
             displayGain={displayGain}
             onChange={handlers.handleFaderChange}
             onEnterValue={handlers.enterGain}

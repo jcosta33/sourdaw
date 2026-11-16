@@ -146,6 +146,10 @@ struct MainThreadEnv(napi::sys::napi_env);
 
 // SAFETY: the pointer is never dereferenced off `JsUiThread::thread_id`.
 unsafe impl Send for MainThreadEnv {}
+// SAFETY: a shared `&MainThreadEnv` exposes only the pointer value; its one
+// reader, `JsUiThread::env`, is reached only through `apply_editor_window_size`,
+// which `call_on_ui_thread` runs in place on the registering thread or posts to
+// the pump that drains on it, so the env is never used off that thread.
 unsafe impl Sync for MainThreadEnv {}
 
 /// The shell's main thread, as the plugin editor lifecycle reaches it.

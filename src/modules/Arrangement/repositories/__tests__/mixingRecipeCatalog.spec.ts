@@ -105,7 +105,10 @@ describe('mixingRecipeCatalog', () => {
 
     it('covers every descriptor and role pair', () => {
         const covered = new Set(
-            catalog.recipes.flatMap((recipe) => recipe.roles.map((role) => `${recipe.descriptor}/${role}`))
+            catalog.recipes.flatMap((recipe) => {
+                const { descriptor } = recipe;
+                return descriptor === null ? [] : recipe.roles.map((role) => `${descriptor}/${role}`);
+            })
         );
         const missing = MIX_RECIPE_DESCRIPTORS.flatMap((descriptor) =>
             MIX_RECIPE_ROLES.filter((role) => !covered.has(`${descriptor}/${role}`)).map(
@@ -189,6 +192,21 @@ describe('mixingRecipeCatalog', () => {
 
         expect(unknownCitedMetrics).toEqual([]);
         expect(misplacedBands).toEqual([]);
+    });
+
+    // A vibe run stacks a muddy recipe after a warm one on the same target and holds each claim from
+    // the batch's first figure to its last, where the warm lift outweighs the mud cut in broadband
+    // level. Mud is low-mid energy, so the low-mid band is the claim, and the only one.
+    it('claims only a lower low-mid band for every muddy recipe', () => {
+        const muddy = catalog.recipes.filter((recipe) => recipe.descriptor === 'muddy');
+
+        expect(muddy.length).toBeGreaterThan(0);
+        for (const recipe of muddy) {
+            expect({ id: recipe.id, metrics: recipe.metrics }).toEqual({
+                id: recipe.id,
+                metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
+            });
+        }
     });
 
     describe('measurability by analysis.measure', () => {

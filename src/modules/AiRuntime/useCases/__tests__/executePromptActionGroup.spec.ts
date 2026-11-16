@@ -64,6 +64,9 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
         completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
     }),
 }));
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    getAgentMeasurementMetricIds: () => [],
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectRevisionMatchesLiveWithinProjection: vi.fn(() => {
         throw new Error('Unexpected selection render admission in this fixture');

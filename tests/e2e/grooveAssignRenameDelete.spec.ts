@@ -95,7 +95,7 @@ async function commitExtractedGroove(page: Page): Promise<string> {
 
     const added = (await grooveTemplateOptions(page)).filter((text) => !before.includes(text));
     expect(added).toHaveLength(1);
-    const committedName = added[0];
+    const committedName = added.at(0);
     if (committedName === undefined) {
         throw new Error('Save groove did not add a template option');
     }

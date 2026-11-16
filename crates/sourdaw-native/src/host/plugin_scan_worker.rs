@@ -5,12 +5,13 @@ use daw_plugin_host::scanner::{
 use daw_plugin_host::vst3_scanner::{extract_vst3_instance_metadata, extract_vst3_metadata};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
 
@@ -37,6 +38,39 @@ pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worke
 /// bounded — this decides how long a scan waits before saying so, not whether
 /// it ever does.
 pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a leaf worker may live by its own clock, whoever spawned it.
+///
+/// Above [`WORKER_TIMEOUT`] — the longest bound any spawner gives a helper —
+/// so a live spawner's process-group kill always fires first and its
+/// [`ScanFailure::TimedOut`] is what quarantine sees. This deadline only
+/// decides anything when no spawner is left to fire: a helper whose spawner
+/// died without killing it must not spin in a plugin's constructor forever.
+const HELPER_DEADLINE: Duration = Duration::from_secs(WORKER_TIMEOUT.as_secs() + 2);
+
+/// The helper's exit code when its own [`HELPER_DEADLINE`] terminated it.
+///
+/// Distinct from 0, from the generic 2 and from
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] so that, whenever a spawner does
+/// observe it, it reads as what it is: a process failure of a helper the
+/// plugin kept from finishing, never a clean answer or the helper's own
+/// write refusal. A Unix helper that leads its process group may end by its
+/// group kill instead (see [`terminate_current_process`]), which a spawner
+/// classifies the same way.
+const HELPER_DEADLINE_EXIT_CODE: i32 = 4;
+
+/// The helper's exit code when it found the process that spawned it gone.
+/// Distinct from [`HELPER_DEADLINE_EXIT_CODE`] for the same reason that one
+/// is distinct from the rest: which tie ended the helper is a different
+/// story, and neither may be mistaken for a self-diagnosed refusal.
+const HELPER_PARENT_GONE_EXIT_CODE: i32 = 5;
+
+/// Env var a spawner sets to its own process id for the helper's parent
+/// watch. It names the helper's direct parent, so a launcher that forks
+/// rather than execs the helper would read as a parent that is already gone.
+pub const SCAN_PARENT_PID_ENV: &str = "SOURDAW_PLUGIN_SCAN_PARENT_PID";
+
+const WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// The largest response a leaf worker may write and the supervisor will read.
 ///
 /// Sized from measurement, and the measurement is enforced rather than trusted:
@@ -467,6 +501,7 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let Some(backend) = scan_backend(format) else {
         return Some(2);
     };
+    arm_helper_watchdog(helper_deadline());
     let result = match plugin_id {
         Some(plugin_id) => write_response(
             Path::new(response_path),
@@ -489,6 +524,229 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
         RESPONSE_WRITE_REFUSAL_EXIT_CODE
     })
 }
+/// What the helper's watchdog does after one look at its clock and its parent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchdogVerdict {
+    KeepWaiting,
+    Terminate(i32),
+}
+
+fn watchdog_verdict(elapsed: Duration, deadline: Duration, parent_alive: bool) -> WatchdogVerdict {
+    if !parent_alive {
+        return WatchdogVerdict::Terminate(HELPER_PARENT_GONE_EXIT_CODE);
+    }
+    if elapsed >= deadline {
+        return WatchdogVerdict::Terminate(HELPER_DEADLINE_EXIT_CODE);
+    }
+    WatchdogVerdict::KeepWaiting
+}
+
+/// The watchdog loop, platform-neutral: only the probe and the terminator
+/// differ per OS. Returns the code it terminated with, which only a test's
+/// terminator ever lets it reach.
+fn watch_helper_lifetime(
+    deadline: Duration,
+    parent_alive: impl Fn() -> bool,
+    terminate: impl FnOnce(i32),
+) -> i32 {
+    let armed_at = Instant::now();
+    loop {
+        match watchdog_verdict(armed_at.elapsed(), deadline, parent_alive()) {
+            WatchdogVerdict::KeepWaiting => std::thread::sleep(WATCHDOG_POLL_INTERVAL),
+            WatchdogVerdict::Terminate(code) => {
+                terminate(code);
+                return code;
+            }
+        }
+    }
+}
+
+/// Tie this helper's lifetime to `deadline` and to the process that spawned
+/// it, on a thread of its own so a plugin that never returns cannot hold it.
+///
+/// Armed only once the arguments name a real extraction, and before any
+/// plugin code runs. A failure to start the thread leaves the helper bounded
+/// by its spawner alone, as every helper was before this watchdog existed,
+/// rather than turning a resource fault into a plugin failure.
+fn arm_helper_watchdog(deadline: Duration) {
+    let parent_alive = parent_probe();
+    let _ = std::thread::Builder::new()
+        .name("sourdaw-scan-helper-watchdog".to_string())
+        .spawn(move || {
+            watch_helper_lifetime(deadline, parent_alive, terminate_current_process);
+        });
+}
+
+/// Test builds only: a re-exec child may shorten the deadline the real worker
+/// entry arms, so a test reaches it in milliseconds rather than seconds.
+#[cfg(test)]
+const TEST_HELPER_DEADLINE_MS_ENV: &str = "SOURDAW_TEST_HELPER_DEADLINE_MS";
+
+fn helper_deadline() -> Duration {
+    #[cfg(test)]
+    if let Some(milliseconds) = std::env::var(TEST_HELPER_DEADLINE_MS_ENV)
+        .ok()
+        .and_then(|value| value.parse().ok())
+    {
+        return Duration::from_millis(milliseconds);
+    }
+    HELPER_DEADLINE
+}
+
+fn declared_parent_pid() -> Option<u32> {
+    std::env::var(SCAN_PARENT_PID_ENV).ok()?.parse().ok()
+}
+
+/// A parent that died before this probe was built has already handed the
+/// helper to another reaper, so comparing against the declared pid catches
+/// it where a parent id read now would not.
+#[cfg(unix)]
+fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
+    let expected = declared_parent_pid()
+        .and_then(|pid| libc::pid_t::try_from(pid).ok())
+        // SAFETY: getppid has no preconditions and cannot fail.
+        .unwrap_or_else(|| unsafe { libc::getppid() });
+    // SAFETY: as above.
+    Box::new(move || unsafe { libc::getppid() } == expected)
+}
+
+/// What the Windows parent watch saw: the open that failed, or the answer of
+/// one zero-timeout wait on the opened handle.
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParentObservation {
+    OpenFailed(ParentOpenFailure),
+    Waited(ParentWaitOutcome),
+}
+
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParentOpenFailure {
+    /// No process has the declared pid.
+    NoSuchProcess,
+    /// Any other refusal, such as a token that may not open a live spawner.
+    Other,
+}
+
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParentWaitOutcome {
+    Exited,
+    Running,
+    Failed,
+}
+
+/// Only proof the parent is gone ends the helper. A watch that cannot tell
+/// reads the parent as alive and leaves the decision to the deadline and the
+/// spawner's own bound: exiting on it would quarantine a plugin for a helper
+/// that merely could not see its spawner.
+#[cfg(any(windows, test))]
+fn parent_alive_from(observation: ParentObservation) -> bool {
+    !matches!(
+        observation,
+        ParentObservation::OpenFailed(ParentOpenFailure::NoSuchProcess)
+            | ParentObservation::Waited(ParentWaitOutcome::Exited)
+    )
+}
+
+/// Windows has no parent link to read back, so the declared pid is opened
+/// once and its handle waited on; with no declaration there is nothing to
+/// watch and the deadline alone holds. `OpenProcess` reports a pid no process
+/// has as `ERROR_INVALID_PARAMETER`.
+#[cfg(windows)]
+fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
+    use windows::core::HRESULT;
+    use windows::Win32::Foundation::{
+        ERROR_INVALID_PARAMETER, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    };
+    use windows::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+    };
+
+    struct ParentHandle(HANDLE);
+    // SAFETY: a process handle is a kernel object reference, valid from any
+    // thread; the watchdog thread is its only user.
+    unsafe impl Send for ParentHandle {}
+
+    impl ParentHandle {
+        /// A method rather than a field read in the closure: edition 2021
+        /// closures capture the fields they name, and the bare `HANDLE`
+        /// field is not `Send` the way this wrapper is.
+        fn wait_outcome(&self) -> ParentWaitOutcome {
+            // SAFETY: the handle stays open for the life of the process.
+            match unsafe { WaitForSingleObject(self.0, 0) } {
+                WAIT_OBJECT_0 => ParentWaitOutcome::Exited,
+                WAIT_TIMEOUT => ParentWaitOutcome::Running,
+                _ => ParentWaitOutcome::Failed,
+            }
+        }
+    }
+
+    let Some(pid) = declared_parent_pid() else {
+        return Box::new(|| true);
+    };
+    // SAFETY: OpenProcess takes plain values and reports failure as an error.
+    let handle = match unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) } {
+        Ok(handle) => handle,
+        Err(error) => {
+            let failure = if error.code() == HRESULT::from_win32(ERROR_INVALID_PARAMETER.0) {
+                ParentOpenFailure::NoSuchProcess
+            } else {
+                ParentOpenFailure::Other
+            };
+            let alive = parent_alive_from(ParentObservation::OpenFailed(failure));
+            return Box::new(move || alive);
+        }
+    };
+    let parent = ParentHandle(handle);
+    Box::new(move || parent_alive_from(ParentObservation::Waited(parent.wait_outcome())))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
+    Box::new(|| true)
+}
+
+/// End this process now, from any thread, without running exit handlers or
+/// static destructors a wedged plugin may hold a lock inside, and without
+/// the crash report an abort would file against the plugin's host.
+///
+/// A helper that leads its own process group — every helper a spawner
+/// starts — kills that whole group, so a child the plugin forked ends with
+/// it. The helper itself then ends by that `SIGKILL` or by the `_exit` after
+/// it, whichever the kernel completes first. A helper in
+/// someone else's group, such as a test runner's, never signals that group
+/// and ends by `_exit` alone.
+#[cfg(unix)]
+fn terminate_current_process(code: i32) {
+    // SAFETY: getpid has no preconditions and cannot fail.
+    let pid = unsafe { libc::getpid() };
+    // SAFETY: getpgrp has no preconditions and cannot fail.
+    let group = unsafe { libc::getpgrp() };
+    if group == pid {
+        // SAFETY: kill takes plain values; the target is this process's own
+        // group, which this process leads.
+        let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
+    // SAFETY: _exit is async-signal-safe and never returns.
+    unsafe { libc::_exit(code) }
+}
+
+#[cfg(windows)]
+fn terminate_current_process(code: i32) {
+    use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+    // SAFETY: the pseudo-handle for the current process is always valid.
+    let terminated = unsafe { TerminateProcess(GetCurrentProcess(), code as u32) };
+    if terminated.is_err() {
+        std::process::exit(code);
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn terminate_current_process(code: i32) {
+    std::process::exit(code);
+}
+
 fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
     let bytes = serde_json::to_vec(response)
         .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))?;
@@ -612,6 +870,7 @@ fn scan_worker_with<T: DeserializeOwned>(
     command
         .arg(&response_path)
         .envs(&launcher.env)
+        .env(SCAN_PARENT_PID_ENV, std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -729,31 +988,240 @@ fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
     false
 }
 
+/// Every helper this process has running, and whether it was told to stop.
+///
+/// Production uses the one process-wide [`HELPER_REGISTRY`]; every function
+/// below takes the registry it works on so a test's stop never leaks into
+/// another test's spawns.
+///
+/// Spawning and deregistering happen under the lock that a stop holds while
+/// it kills, so no helper starts after a stop and no kill can land on a pid
+/// the OS has already handed to another process: a pid leaves the set before
+/// or as its process is reaped, never after.
+///
+/// Once stopped, no entry point returns to its caller: a thread that asks to
+/// spawn, reap or forget a helper parks for the rest of the process's life
+/// (see [`park_until_process_exit`]).
+struct HelperRegistry {
+    state: Mutex<HelperRegistryState>,
+}
+
+struct HelperRegistryState {
+    stopping: bool,
+    live: BTreeSet<u32>,
+}
+
+/// Stop exists only for a process about to exit, and a stopped scan has no
+/// truthful answer: any value returned to the walk — a refusal or an exit
+/// status — would let it publish a registry that drops every candidate it
+/// did not reach. So the calling thread never returns, and the process's
+/// exit ends it. The loop absorbs `park`'s spurious wake-ups.
+fn park_until_process_exit() -> ! {
+    loop {
+        std::thread::park();
+    }
+}
+
+impl HelperRegistry {
+    const fn new() -> Self {
+        Self {
+            state: Mutex::new(HelperRegistryState {
+                stopping: false,
+                live: BTreeSet::new(),
+            }),
+        }
+    }
+
+    /// Nothing panics while holding the lock, so a poisoned one still holds
+    /// a consistent set.
+    fn lock(&self) -> MutexGuard<'_, HelperRegistryState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The lock, or never: once stopped, the guard is released and the
+    /// calling thread parks.
+    fn lock_unless_stopped(&self) -> MutexGuard<'_, HelperRegistryState> {
+        let state = self.lock();
+        if state.stopping {
+            drop(state);
+            park_until_process_exit();
+        }
+        state
+    }
+
+    fn spawn(&self, command: &mut Command) -> Result<Child, ScanFailure> {
+        let mut state = self.lock_unless_stopped();
+        let child = command.spawn().map_err(|error| {
+            ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
+        })?;
+        state.live.insert(child.id());
+        Ok(child)
+    }
+
+    /// Reap the helper if it has exited, deregistering it under the same lock.
+    fn try_reap(&self, child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
+        let mut state = self.lock_unless_stopped();
+        let Some(status) = child.try_wait()? else {
+            return Ok(None);
+        };
+        state.live.remove(&child.id());
+        Ok(Some(status))
+    }
+
+    /// Take a helper out of the set before its spawner reaps it itself.
+    fn forget(&self, child: &Child) {
+        let mut state = self.lock_unless_stopped();
+        state.live.remove(&child.id());
+    }
+
+    /// Kill every live helper's tree and park every later caller, so the
+    /// stopped scan never answers.
+    fn stop(&self) {
+        let mut state = self.lock();
+        state.stopping = true;
+        for pid in &state.live {
+            kill_helper_tree(*pid);
+        }
+    }
+}
+
+static HELPER_REGISTRY: HelperRegistry = HelperRegistry::new();
+
+/// Kill every scan helper this process has running, and park every scan
+/// thread that next asks the registry for anything, so a stopped scan never
+/// answers and never publishes. For a process that is about to exit: nothing
+/// undoes it, and the exit is what ends the parked threads.
+pub fn stop_plugin_scan_helpers() {
+    HELPER_REGISTRY.stop();
+}
+
 fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, ScanFailure> {
+    run_bounded_in(&HELPER_REGISTRY, command, timeout)
+}
+
+fn run_bounded_in(
+    registry: &HelperRegistry,
+    command: &mut Command,
+    timeout: Duration,
+) -> Result<ExitStatus, ScanFailure> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command.spawn().map_err(|error| {
-        ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
-    })?;
-    wait_bounded(&mut child, timeout)
+    #[cfg(target_os = "linux")]
+    tie_to_spawner_death(command);
+    let mut child = registry.spawn(command)?;
+    #[cfg(windows)]
+    let _job = KillOnCloseJob::assign(&child);
+    wait_bounded(registry, &mut child, timeout)
 }
-fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, ScanFailure> {
+
+/// Have the kernel kill the helper when its spawner dies.
+///
+/// `PR_SET_PDEATHSIG` fires when the *thread* that forked the child exits,
+/// not the process. That is safe here because every spawn and its bounded
+/// wait run on one thread, which therefore outlives the helper. The parent
+/// check after it closes the race with a spawner that died before the signal
+/// was armed. Only async-signal-safe calls run between fork and exec.
+///
+/// The signal reaches the helper alone, not its group: a child the plugin
+/// forked survives a spawner killed outright on Linux. The helper's own
+/// watchdog does not cover it either, because the kernel's kill beats the
+/// watchdog's next poll.
+#[cfg(target_os = "linux")]
+fn tie_to_spawner_death(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: getpid has no preconditions and cannot fail.
+    let spawner = unsafe { libc::getpid() };
+    let tie = move || {
+        // A refused prctl leaves the helper's own parent watch and the
+        // spawner's deadline in force, so the spawn goes ahead.
+        // SAFETY: prctl with PR_SET_PDEATHSIG takes plain values and is
+        // async-signal-safe.
+        let _ = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) };
+        // SAFETY: getppid has no preconditions and is async-signal-safe.
+        if unsafe { libc::getppid() } != spawner {
+            // SAFETY: _exit is async-signal-safe and never returns.
+            unsafe { libc::_exit(HELPER_PARENT_GONE_EXIT_CODE) }
+        }
+        Ok(())
+    };
+    // SAFETY: the hook runs between fork and exec, and calls only prctl,
+    // getppid and _exit, all async-signal-safe; it allocates nothing and
+    // touches no memory shared with the parent.
+    unsafe {
+        command.pre_exec(tie);
+    }
+}
+
+/// A job that kills the helper's whole tree when its handle closes — when the
+/// spawner reaps the helper, or when the OS closes the handle of a spawner
+/// that died. Failing to create or assign it never fails the scan: the
+/// helper's own watchdog still holds, and it is also what covers the short
+/// window between spawn and assignment.
+#[cfg(windows)]
+struct KillOnCloseJob(windows::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl KillOnCloseJob {
+    fn assign(child: &Child) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        // SAFETY: an anonymous job with default security; failure is an error.
+        let job = Self(unsafe { CreateJobObjectW(None, PCWSTR::null()) }.ok()?);
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: `limits` outlives the call and the length is its own size.
+        unsafe {
+            SetInformationJobObject(
+                job.0,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&limits).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .ok()?;
+        // SAFETY: the child's handle is open until `child` is dropped, which
+        // is after this call.
+        unsafe { AssignProcessToJobObject(job.0, HANDLE(child.as_raw_handle())) }.ok()?;
+        Some(job)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for KillOnCloseJob {
+    fn drop(&mut self) {
+        // SAFETY: this wrapper owns the handle and closes it once.
+        let _ = unsafe { windows::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
+
+fn wait_bounded(
+    registry: &HelperRegistry,
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<ExitStatus, ScanFailure> {
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait() {
+        match registry.try_reap(child) {
             Ok(Some(status)) => return Ok(status),
             Ok(None) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10));
             }
             Ok(None) => {
-                terminate_process_tree(child);
+                terminate_process_tree(registry, child);
                 return Err(ScanFailure::TimedOut);
             }
             Err(error) => {
-                terminate_process_tree(child);
+                terminate_process_tree(registry, child);
                 return Err(ScanFailure::Refused(format!(
                     "Cannot observe plugin scan helper: {error}"
                 )));
@@ -761,30 +1229,32 @@ fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, Scan
         }
     }
 }
-#[cfg(unix)]
-fn terminate_process_tree(child: &mut Child) {
-    unsafe extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
-    }
-    unsafe {
-        let _ = kill(-(child.id() as i32), 9);
-    }
+
+/// Kill and reap the helper's tree.
+fn terminate_process_tree(registry: &HelperRegistry, child: &mut Child) {
+    registry.forget(child);
+    kill_helper_tree(child.id());
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// Every helper leads its own process group, so its pid is the group's id.
+#[cfg(unix)]
+fn kill_helper_tree(pid: u32) {
+    let Ok(group) = libc::pid_t::try_from(pid) else {
+        return;
+    };
+    // SAFETY: kill takes plain values; the group is unreaped while registered.
+    let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
 }
 #[cfg(windows)]
-fn terminate_process_tree(child: &mut Child) {
+fn kill_helper_tree(pid: u32) {
     let _ = Command::new("taskkill")
-        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status();
-    let _ = child.kill();
-    let _ = child.wait();
 }
 #[cfg(not(any(unix, windows)))]
-fn terminate_process_tree(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
-}
+fn kill_helper_tree(_pid: u32) {}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1093,7 +1563,15 @@ mod tests {
             r#"use std::ffi::{c_char,c_void};
 #[repr(C)] struct Version{major:u32,minor:u32,revision:u32}
 #[repr(C)] struct Entry{version:Version,init:Option<unsafe extern "C" fn(*const c_char)->bool>,deinit:Option<unsafe extern "C" fn()>,get_factory:Option<unsafe extern "C" fn(*const c_char)->*const c_void>}
+#[cfg(unix)] unsafe extern "C" { fn fork()->i32; }
+#[cfg(unix)] fn fork_a_spinning_child_then_hang(pid_file:std::ffi::OsString)->!{
+ let child=unsafe{fork()};
+ if child==0{loop{std::hint::spin_loop();}}
+ let _=std::fs::write(pid_file,child.to_string());
+ loop{std::thread::sleep(std::time::Duration::from_secs(1));}
+}
 unsafe extern "C" fn init(_: *const c_char)->bool{
+ #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){fork_a_spinning_child_then_hang(pid_file);}
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
  std::process::abort();
 }
@@ -1253,6 +1731,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn process_is_gone_within(pid: i32, window: Duration) -> bool {
         let deadline = Instant::now() + window;
         loop {
+            // SAFETY: `libc::kill` takes plain integers and touches no memory
+            // of ours; signal 0 only probes whether `pid` exists.
             let probe = unsafe { libc::kill(pid, 0) };
             let gone =
                 probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
@@ -1295,6 +1775,568 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             process_is_gone_within(pid, Duration::from_secs(2)),
             "sleep {pid} is still alive after the group kill's reap window"
         );
+    }
+
+    /// Whether `pid` has exited within `window`. An orphan is reaped by
+    /// whichever process adopted it, not by this test, so on Linux a zombie
+    /// still awaiting that reaper already counts as exited.
+    #[cfg(unix)]
+    fn process_has_exited_within(pid: i32, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            #[cfg(target_os = "linux")]
+            {
+                let zombie = fs::read_to_string(format!("/proc/{pid}/stat"))
+                    .ok()
+                    .and_then(|stat| {
+                        stat.rsplit_once(')')
+                            .map(|(_, rest)| rest.trim_start().starts_with('Z'))
+                    })
+                    .unwrap_or(false);
+                if zombie {
+                    return true;
+                }
+            }
+            if process_is_gone_within(pid, Duration::ZERO) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Wait for `child` to exit, never longer than `window`.
+    fn exit_status_within(child: &mut Child, window: Duration) -> Option<ExitStatus> {
+        let deadline = Instant::now() + window;
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Some(status);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Read a pid a child process wrote, never waiting longer than `window`.
+    #[cfg(unix)]
+    fn read_pid_within(path: &Path, window: Duration) -> Option<i32> {
+        let deadline = Instant::now() + window;
+        loop {
+            if let Some(pid) = fs::read_to_string(path)
+                .ok()
+                .and_then(|text| text.trim().parse().ok())
+            {
+                return Some(pid);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Kills whatever a lifetime test left running, so a regression fails
+    /// the test instead of leaving a spinning process behind it.
+    #[cfg(unix)]
+    struct Stragglers {
+        children: Vec<Child>,
+        pids: Vec<i32>,
+        files: Vec<PathBuf>,
+    }
+
+    #[cfg(unix)]
+    impl Stragglers {
+        fn cleaning(files: Vec<PathBuf>) -> Self {
+            Self {
+                children: Vec::new(),
+                pids: Vec::new(),
+                files,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Stragglers {
+        fn drop(&mut self) {
+            for pid in &self.pids {
+                if !process_is_gone_within(*pid, Duration::ZERO) {
+                    // SAFETY: kill takes plain values.
+                    let _ = unsafe { libc::kill(*pid, libc::SIGKILL) };
+                }
+            }
+            for child in &mut self.children {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            for file in &self.files {
+                let _ = fs::remove_file(file);
+            }
+        }
+    }
+
+    const ORPHAN_SPAWNER_PLUGIN_ENV: &str = "SOURDAW_TEST_ORPHAN_SPAWNER_PLUGIN";
+    const ORPHAN_HELPER_MARKER_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER";
+    const ORPHAN_HELPER_PID_FILE_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER_PID_FILE";
+    const DEADLINE_CHILD_MARKER_ENV: &str = "SOURDAW_TEST_DEADLINE_WATCHDOG_CHILD";
+    const PLAIN_SPAWNER_PID_FILE_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_HELPER_PID_FILE";
+
+    /// The stand-in spawner for the Linux kernel tie: runs a plain `sh`
+    /// helper, which arms no watchdog, through the real bounded spawn. The
+    /// test kills this process.
+    #[test]
+    fn plain_helper_spawner_child() {
+        let Some(pid_file) = std::env::var_os(PLAIN_SPAWNER_PID_FILE_ENV) else {
+            return;
+        };
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "echo $$ > \"$0\"; exec sleep 30"])
+            .arg(pid_file);
+        let _ = run_bounded_in(&HelperRegistry::new(), &mut command, WORKER_TIMEOUT);
+    }
+
+    /// Only `PR_SET_PDEATHSIG` can end this helper inside the window: it runs
+    /// no watchdog, and the spawner's own bound dies with the spawner.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_killed_spawner_takes_a_plain_helper_with_it_on_linux() {
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-plain-helper-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let spawner = Command::new(std::env::current_exe().expect("test executable should exist"))
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::plain_helper_spawner_child")
+            .env(PLAIN_SPAWNER_PID_FILE_ENV, &pid_file)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the stand-in spawner should start");
+        let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
+        stragglers.children.push(spawner);
+
+        let helper = read_pid_within(&pid_file, Duration::from_secs(10))
+            .expect("the plain helper should start and write its pid");
+        stragglers.pids.push(helper);
+
+        // SAFETY: kill takes plain values; the spawner is this test's child.
+        assert_eq!(unsafe { libc::kill(spawner_pid, libc::SIGKILL) }, 0);
+        for child in &mut stragglers.children {
+            let _ = child.wait();
+        }
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "plain helper {helper} outlived its killed spawner"
+        );
+    }
+
+    /// The stand-in spawner: scans the hanging fixture through the real
+    /// `scan_worker_with`, so the helper is launched exactly as production
+    /// launches it, parent pid and all. The test kills this process.
+    #[test]
+    fn orphan_spawner_child() {
+        let Some(plugin_path) = std::env::var_os(ORPHAN_SPAWNER_PLUGIN_ENV) else {
+            return;
+        };
+        let launcher = ScanWorkerCommand {
+            program: std::env::current_exe().expect("test executable should exist"),
+            // `--` hands the worker arguments to libtest as extra filters,
+            // which match no test, rather than as unknown options.
+            args: vec![
+                "--exact".to_string(),
+                "host::plugin_scan_worker::tests::orphan_helper_child".to_string(),
+                "--".to_string(),
+            ],
+            env: BTreeMap::from([
+                ("SOURDAW_TEST_PLUGIN_HANG".to_string(), "1".to_string()),
+                (ORPHAN_HELPER_MARKER_ENV.to_string(), "1".to_string()),
+            ]),
+        };
+        let _ = scan_worker_with::<Vec<ScannedDescriptor>>(
+            &launcher,
+            PluginFormat::Clap,
+            Path::new(&plugin_path),
+            None,
+            WORKER_TIMEOUT,
+            WORKER_ARGUMENT,
+        );
+    }
+
+    /// The stand-in helper: the real worker entry, whose plugin hangs in its
+    /// entry point and never returns.
+    #[test]
+    fn orphan_helper_child() {
+        if std::env::var_os(ORPHAN_HELPER_MARKER_ENV).is_none() {
+            return;
+        }
+        let pid_file = PathBuf::from(
+            std::env::var_os(ORPHAN_HELPER_PID_FILE_ENV)
+                .expect("the orphan helper needs a pid file to write"),
+        );
+        let staged = pid_file.with_extension("partial");
+        fs::write(&staged, std::process::id().to_string()).expect("the pid should be written");
+        fs::rename(&staged, &pid_file).expect("the pid file should be published");
+        let _ = run_from_process_args();
+        panic!("the hanging fixture should never return");
+    }
+
+    /// The defect itself: a spawner killed outright — no stop, no group kill —
+    /// must not leave its helper spinning. The window is far below both the
+    /// spawner's bound and the helper's own deadline, so neither of those can
+    /// end the helper inside it. What does is a parent tie: on Linux either
+    /// `PR_SET_PDEATHSIG` or the helper's parent watch, on macOS the parent
+    /// watch alone. The Linux signal is pinned on its own by
+    /// `a_killed_spawner_takes_a_plain_helper_with_it_on_linux`.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_does_not_outlive_its_killed_spawner() {
+        let fixture = build_hostile_clap("orphan");
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-orphan-helper-{}", uuid::Uuid::new_v4()));
+        let mut stragglers =
+            Stragglers::cleaning(vec![pid_file.clone(), pid_file.with_extension("partial")]);
+        let spawner = Command::new(std::env::current_exe().expect("test executable should exist"))
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::orphan_spawner_child")
+            .env(ORPHAN_SPAWNER_PLUGIN_ENV, &fixture.plugin_path)
+            .env(ORPHAN_HELPER_PID_FILE_ENV, &pid_file)
+            .env_remove(SCAN_PARENT_PID_ENV)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the stand-in spawner should start");
+        let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
+        stragglers.children.push(spawner);
+
+        let helper = read_pid_within(&pid_file, Duration::from_secs(10))
+            .expect("the stand-in helper should start and write its pid");
+        stragglers.pids.push(helper);
+        assert!(
+            !process_is_gone_within(helper, Duration::from_millis(500)),
+            "the helper {helper} must be hung in the fixture before its spawner dies"
+        );
+
+        // SAFETY: kill takes plain values; the spawner is this test's child.
+        assert_eq!(unsafe { libc::kill(spawner_pid, libc::SIGKILL) }, 0);
+        for child in &mut stragglers.children {
+            let _ = child.wait();
+        }
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "helper {helper} outlived its killed spawner"
+        );
+    }
+
+    /// The stand-in for a plugin that never yields: the real watchdog armed
+    /// with a short deadline, then a spin no check between calls could break.
+    #[test]
+    fn deadline_watchdog_child() {
+        if std::env::var_os(DEADLINE_CHILD_MARKER_ENV).is_none() {
+            return;
+        }
+        arm_helper_watchdog(Duration::from_millis(300));
+        loop {
+            std::hint::spin_loop();
+        }
+    }
+
+    #[test]
+    fn a_helper_that_never_yields_ends_at_its_own_deadline() {
+        let mut child =
+            Command::new(std::env::current_exe().expect("test executable should exist"))
+                .arg("--exact")
+                .arg("host::plugin_scan_worker::tests::deadline_watchdog_child")
+                .env(DEADLINE_CHILD_MARKER_ENV, "1")
+                .env_remove(SCAN_PARENT_PID_ENV)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("the spinning stand-in should start");
+
+        let status = exit_status_within(&mut child, Duration::from_secs(5));
+        if status.is_none() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        assert_eq!(
+            status.and_then(|status| status.code()),
+            Some(HELPER_DEADLINE_EXIT_CODE),
+            "the spinning helper must end itself at its deadline"
+        );
+    }
+
+    const GROUP_HELPER_PLUGIN_ENV: &str = "SOURDAW_TEST_GROUP_HELPER_PLUGIN";
+
+    /// The real worker entry over a plugin that forks a spinning child and
+    /// then hangs, with the deadline shortened for this child only.
+    #[test]
+    fn group_deadline_helper_child() {
+        let Some(plugin_path) = std::env::var_os(GROUP_HELPER_PLUGIN_ENV) else {
+            return;
+        };
+        let response_path =
+            std::env::temp_dir().join(format!("sourdaw-group-helper-{}", uuid::Uuid::new_v4()));
+        let _ = run_from_args([
+            OsString::from("sourdaw-group-helper-child"),
+            OsString::from(WORKER_ARGUMENT),
+            OsString::from(PluginFormat::Clap.wire_name()),
+            plugin_path,
+            response_path.into_os_string(),
+        ]);
+        panic!("the forking fixture should never return");
+    }
+
+    /// A helper's deadline ends its whole process group, so a child the
+    /// plugin forked cannot keep spinning after the helper is gone.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_deadline_also_ends_the_plugins_forked_child() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+
+        let fixture = build_hostile_clap("fork");
+        let fork_pid_file =
+            std::env::temp_dir().join(format!("sourdaw-forked-child-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![fork_pid_file.clone()]);
+        let mut helper =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        helper
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::group_deadline_helper_child")
+            .env(GROUP_HELPER_PLUGIN_ENV, &fixture.plugin_path)
+            .env("SOURDAW_TEST_PLUGIN_FORK_PID_FILE", &fork_pid_file)
+            .env(TEST_HELPER_DEADLINE_MS_ENV, "1000")
+            .env_remove(SCAN_PARENT_PID_ENV)
+            .process_group(0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        stragglers
+            .children
+            .push(helper.spawn().expect("the forking helper should start"));
+
+        let forked = read_pid_within(&fork_pid_file, Duration::from_secs(10))
+            .expect("the plugin should fork its child and record its pid");
+        stragglers.pids.push(forked);
+        let status = stragglers
+            .children
+            .first_mut()
+            .and_then(|child| exit_status_within(child, Duration::from_secs(5)));
+
+        // The group kill and the `_exit` after it race for the helper itself,
+        // so either end is the deadline's; the forked child is the proof.
+        assert!(
+            status.is_some_and(|status| status.signal() == Some(libc::SIGKILL)
+                || status.code() == Some(HELPER_DEADLINE_EXIT_CODE)),
+            "the helper must end at its deadline: {status:?}"
+        );
+        assert!(
+            process_has_exited_within(forked, Duration::from_secs(2)),
+            "the plugin's forked child {forked} outlived its helper"
+        );
+    }
+
+    /// The Windows parent watch exits only on proof the parent is gone; a
+    /// watch that cannot tell leaves the decision to the deadline.
+    #[test]
+    fn only_proof_of_a_gone_parent_reads_as_gone() {
+        let cases = [
+            (
+                ParentObservation::OpenFailed(ParentOpenFailure::NoSuchProcess),
+                false,
+            ),
+            (
+                ParentObservation::OpenFailed(ParentOpenFailure::Other),
+                true,
+            ),
+            (ParentObservation::Waited(ParentWaitOutcome::Exited), false),
+            (ParentObservation::Waited(ParentWaitOutcome::Running), true),
+            (ParentObservation::Waited(ParentWaitOutcome::Failed), true),
+        ];
+        for (observation, alive) in cases {
+            assert_eq!(parent_alive_from(observation), alive, "{observation:?}");
+        }
+    }
+
+    /// Whether this process's child `pid` has exited within `window`, reaping
+    /// it here. A child someone else already reaped (`ECHILD`) has exited too.
+    #[cfg(unix)]
+    fn child_has_exited_within(pid: i32, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            let mut status = 0;
+            // SAFETY: waitpid with WNOHANG takes plain values and a valid
+            // out-pointer, and never blocks.
+            let reaped = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            if reaped == pid {
+                return true;
+            }
+            if reaped == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD)
+            {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Stopping kills the live helper, and neither the scan that was waiting
+    /// on it nor one started afterwards ever answers: both threads park, so
+    /// the walk can never publish a stopped scan. Their parked threads are
+    /// deliberately left for this test process's exit to end.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_scan_kills_its_helpers_and_never_answers() {
+        let registry = std::sync::Arc::new(HelperRegistry::new());
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-stopped-helper-{}", uuid::Uuid::new_v4()));
+        let never_spawned =
+            std::env::temp_dir().join(format!("sourdaw-never-spawned-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone(), never_spawned.clone()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let scanning = std::sync::Arc::clone(&registry);
+        let hanging_pid_file = pid_file.clone();
+        std::thread::spawn(move || {
+            let mut command = Command::new("sh");
+            command
+                .args(["-c", "echo $$ > \"$0\"; exec sleep 30"])
+                .arg(&hanging_pid_file);
+            let _ = sender.send(run_bounded_in(&scanning, &mut command, WORKER_TIMEOUT));
+        });
+        let helper = read_pid_within(&pid_file, Duration::from_secs(5))
+            .expect("the hanging helper should start and write its pid");
+        stragglers.pids.push(helper);
+
+        registry.stop();
+
+        assert!(
+            child_has_exited_within(helper, Duration::from_secs(2)),
+            "the stopped helper {helper} is still alive"
+        );
+        assert!(
+            matches!(
+                receiver.recv_timeout(Duration::from_millis(500)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "the scan that was waiting on a stopped helper must never answer"
+        );
+
+        let (later_sender, later_receiver) = std::sync::mpsc::channel();
+        let later_registry = std::sync::Arc::clone(&registry);
+        let marker = never_spawned.clone();
+        std::thread::spawn(move || {
+            let mut later = Command::new("sh");
+            later.args(["-c", "touch \"$0\""]).arg(&marker);
+            let _ = later_sender.send(run_bounded_in(&later_registry, &mut later, WORKER_TIMEOUT));
+        });
+        assert!(
+            matches!(
+                later_receiver.recv_timeout(Duration::from_millis(500)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "a scan started after stop must never answer"
+        );
+        assert!(
+            !never_spawned.exists(),
+            "a helper asked for after stop must never start"
+        );
+    }
+
+    #[test]
+    fn the_watchdog_decides_from_its_parent_first_then_its_clock() {
+        let deadline = Duration::from_secs(1);
+        let cases = [
+            (
+                Duration::ZERO,
+                false,
+                WatchdogVerdict::Terminate(HELPER_PARENT_GONE_EXIT_CODE),
+            ),
+            (
+                deadline,
+                false,
+                WatchdogVerdict::Terminate(HELPER_PARENT_GONE_EXIT_CODE),
+            ),
+            (
+                deadline,
+                true,
+                WatchdogVerdict::Terminate(HELPER_DEADLINE_EXIT_CODE),
+            ),
+            (
+                deadline * 2,
+                true,
+                WatchdogVerdict::Terminate(HELPER_DEADLINE_EXIT_CODE),
+            ),
+            (Duration::ZERO, true, WatchdogVerdict::KeepWaiting),
+            (deadline / 2, true, WatchdogVerdict::KeepWaiting),
+        ];
+        for (elapsed, parent_alive, expected) in cases {
+            assert_eq!(
+                watchdog_verdict(elapsed, deadline, parent_alive),
+                expected,
+                "elapsed {elapsed:?}, parent alive {parent_alive}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_watchdog_terminates_once_its_parent_is_gone() {
+        let probes = std::cell::Cell::new(0);
+        let terminated = std::cell::Cell::new(None);
+
+        let code = watch_helper_lifetime(
+            Duration::from_secs(60),
+            || {
+                probes.set(probes.get() + 1);
+                probes.get() < 3
+            },
+            |code| terminated.set(Some(code)),
+        );
+
+        assert_eq!(code, HELPER_PARENT_GONE_EXIT_CODE);
+        assert_eq!(terminated.get(), Some(HELPER_PARENT_GONE_EXIT_CODE));
+        assert_eq!(
+            probes.get(),
+            3,
+            "the watchdog keeps waiting while the parent lives"
+        );
+    }
+
+    #[test]
+    fn the_watchdog_terminates_at_its_deadline_with_its_parent_alive() {
+        let terminated = std::cell::Cell::new(None);
+
+        let code = watch_helper_lifetime(
+            Duration::from_millis(120),
+            || true,
+            |code| terminated.set(Some(code)),
+        );
+
+        assert_eq!(code, HELPER_DEADLINE_EXIT_CODE);
+        assert_eq!(terminated.get(), Some(HELPER_DEADLINE_EXIT_CODE));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn watchdog_exits_sit_above_every_spawner_bound_and_read_as_process_failures() {
+        assert!(HELPER_DEADLINE > WORKER_TIMEOUT);
+        assert_ne!(HELPER_DEADLINE_EXIT_CODE, HELPER_PARENT_GONE_EXIT_CODE);
+        for code in [HELPER_DEADLINE_EXIT_CODE, HELPER_PARENT_GONE_EXIT_CODE] {
+            let failure = process_failure(
+                Path::new("/plugins/Wedged.clap"),
+                &exit_status_for_code(code),
+            );
+            assert!(failure.is_process_failure(), "exit {code}: {failure}");
+        }
     }
 
     /// The only two shapes crash quarantine exists to catch.

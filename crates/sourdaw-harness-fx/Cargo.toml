@@ -1,0 +1,28 @@
+[package]
+name = "sourdaw-harness-fx"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic CLAP and VST3 test effect for the plugin host's process-mode tests."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# `cdylib` is the artifact the tests load through the real wrappers. `rlib` is
+# added alongside it only so `cargo test` has a linkable crate to build for the
+# integration tests' implicit lib dependency slot: with `cdylib` alone, Cargo's
+# pipelined compilation emits interface metadata but skips full codegen, so
+# `cargo test` never writes the `.dylib`/`.so`/`.dll` the tests load. Requesting
+# both crate-types is one `rustc` invocation that emits both artifacts.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clap-sys = "0.5"
+vst3 = "0.3.0"
+
+[dev-dependencies]
+daw-plugin-host = { path = "../daw-plugin-host" }
+
+[lints]
+workspace = true

@@ -244,7 +244,7 @@ for (const input of CASES) {
                 deviceParameterLaw: {
                     acceptsAutomation: ({ deviceId, deviceType, parameterId }) =>
                         deviceId === device.id &&
-                        device.parameterValues[parameterId] !== undefined &&
+                        Object.hasOwn(device.parameterValues, parameterId) &&
                         isDeviceParameterAutomatable({ deviceType, paramId: parameterId }),
                     clampValue: ({ deviceType, paramId, value }) =>
                         clampDeviceParameterValue({ deviceType, paramId, value }),

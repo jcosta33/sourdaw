@@ -1,5 +1,5 @@
 import { test, expect } from './e2eTest';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 test.describe('Session view — clip launcher', () => {
     test.beforeEach(async ({ page }) => {

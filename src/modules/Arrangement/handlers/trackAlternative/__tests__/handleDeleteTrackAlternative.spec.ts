@@ -74,7 +74,7 @@ describe('handleDeleteTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
-    it('passes sibling tracks through untouched when deleting on the target track', () => {
+    it('passes sibling tracks through untouched when deleting on the target track', async () => {
         const sibling = {
             id: 'sibling',
             activeAlternativeId: 'sib-alt',
@@ -94,7 +94,7 @@ describe('handleDeleteTrackAlternative', () => {
             ],
         });
 
-        handleDeleteTrackAlternative.execute({
+        await handleDeleteTrackAlternative.execute({
             type: 'deleteTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });
@@ -552,7 +552,7 @@ describe('handleDeleteTrackAlternative', () => {
             expect(restoredTrack.clips).toEqual(alt1Clips);
         });
 
-        it('conflicts and writes nothing when an alternative was added between capture and restore', () => {
+        it('conflicts and writes nothing when an alternative was added between capture and restore', async () => {
             const alt1Clips = [makeClip('c1')];
             const alt2Clips = [makeClip('c2')];
             mocks.getTrackStoreState.mockReturnValue({
@@ -574,7 +574,7 @@ describe('handleDeleteTrackAlternative', () => {
             };
 
             const described = handleDeleteTrackAlternative.describe(action);
-            handleDeleteTrackAlternative.execute(action);
+            await handleDeleteTrackAlternative.execute(action);
             const postDeleteState = mocks.setTrackStoreState.mock.calls[0]?.[0];
             const inverseAction = asRestoreTrackAlternativeState(described.inverseAction);
 
@@ -593,7 +593,7 @@ describe('handleDeleteTrackAlternative', () => {
             expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
         });
 
-        it('conflicts and writes nothing when the active alternative id changed between capture and restore', () => {
+        it('conflicts and writes nothing when the active alternative id changed between capture and restore', async () => {
             const alt1Clips = [makeClip('c1')];
             const alt2Clips = [makeClip('c2')];
             mocks.getTrackStoreState.mockReturnValue({
@@ -616,7 +616,7 @@ describe('handleDeleteTrackAlternative', () => {
             };
 
             const described = handleDeleteTrackAlternative.describe(action);
-            handleDeleteTrackAlternative.execute(action);
+            await handleDeleteTrackAlternative.execute(action);
             const postDeleteState = mocks.setTrackStoreState.mock.calls[0]?.[0];
             const inverseAction = asRestoreTrackAlternativeState(described.inverseAction);
 

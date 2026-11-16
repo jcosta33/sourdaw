@@ -695,7 +695,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     </Stack>
                     <DawPluginLed tone="mint">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
                 </Row>
-                <Row gap={2} className="min-h-0 overflow-x-auto">
+                <Row role="grid" aria-label="Bands" gap={2} className="min-h-0 overflow-x-auto">
                     {Array.from({ length: state.patch.bandCount }, (_, index) => (
                         <BandStrip
                             key={index}
@@ -760,7 +760,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 </Stack>
                 <DawPluginLed tone="mint">{state.patch.crossoverMode}</DawPluginLed>
             </Row>
-            <Row gap={2} className="min-h-0 overflow-x-auto">
+            <Row role="grid" aria-label="Bands" gap={2} className="min-h-0 overflow-x-auto">
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
                     <BandStrip
                         key={index}

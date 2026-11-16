@@ -1,5 +1,6 @@
 pub mod latency_watcher;
 pub mod native_bridge;
+pub mod plugin_folder_grants;
 pub mod plugin_host_requests;
 pub mod plugin_parameter_events;
 pub mod plugin_registry_store;

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import { AutomergeStorageWriteConflictError } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -172,6 +173,27 @@ describe('commitToasterMorphKitChange on a refused project', () => {
         expect(await setMorphPosition(DEVICE_ID, 0.5)).toBe(false);
 
         expect(logger.error).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('logs a storage write conflict that drops the morph, which is not the guard abort', async () => {
+        unlock();
+        clearHandlerRegistry();
+        const handlers = getArrangementHandlers();
+        registerHandlerMap({
+            ...handlers,
+            setDeviceState: {
+                ...handlers.setDeviceState,
+                // A peer write lands between the morph's checks and its storage write.
+                execute: () => {
+                    throw new AutomergeStorageWriteConflictError('peer write landed first');
+                },
+            },
+        });
+
+        expect(await setMorphPosition(DEVICE_ID, 0.5)).toBe(false);
+
+        expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ message: 'Toaster morph commit failed' }));
         expect(notifyUser).not.toHaveBeenCalled();
     });
 

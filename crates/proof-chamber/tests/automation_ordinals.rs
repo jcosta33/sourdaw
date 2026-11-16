@@ -236,7 +236,21 @@ fn render(probe: &Probe, moving: bool, by_id: bool) -> Vec<f32> {
         let right_ptr = instance.get_right_ptr();
         assert!(!left_ptr.is_null() && !right_ptr.is_null());
         for frame in 0..BLOCK {
-            let pair = unsafe { [*left_ptr.add(frame), *right_ptr.add(frame)] };
+            // SAFETY: `left_ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `frame < BLOCK`, which is inside that
+            // capacity.
+            let left_slot = unsafe { left_ptr.add(frame) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `right_ptr` is the instance's `out_right`, sized and
+            // bounded exactly as `out_left` above.
+            let right_slot = unsafe { right_ptr.add(frame) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer,
+            // which nothing writes before this read.
+            let right_sample = unsafe { *right_slot };
+            let pair = [left_sample, right_sample];
             assert!(
                 pair.iter().all(|sample| sample.is_finite()),
                 "{} non-finite PCM",
@@ -290,9 +304,21 @@ fn existing_ordinals_and_unknown_id_retain_their_contract() {
         let named_ptr = named.process(&left, &right, BLOCK as u32);
         let by_id_ptr = by_id.process(&left, &right, BLOCK as u32);
         for frame in 0..BLOCK {
-            assert_eq!(unsafe { *named_ptr.add(frame) }, unsafe {
-                *by_id_ptr.add(frame)
-            });
+            // SAFETY: `named_ptr` is `named`'s `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `frame < BLOCK`, which is inside that
+            // capacity.
+            let named_slot = unsafe { named_ptr.add(frame) };
+            // SAFETY: `named_slot` is in bounds of that initialised buffer, and
+            // nothing writes `named` between its `process` and this read.
+            let named_sample = unsafe { *named_slot };
+            // SAFETY: `by_id_ptr` is `by_id`'s own `out_left`, sized and
+            // bounded exactly as `named`'s above.
+            let by_id_slot = unsafe { by_id_ptr.add(frame) };
+            // SAFETY: `by_id_slot` is in bounds of that initialised buffer, and
+            // nothing writes `by_id` between its `process` and this read.
+            let by_id_sample = unsafe { *by_id_slot };
+            assert_eq!(named_sample, by_id_sample);
         }
     }
     let mut untouched = ProofChamberInstance::new(RATE);
@@ -302,6 +328,19 @@ fn existing_ordinals_and_unknown_id_retain_their_contract() {
     let a = untouched.process(&input, &input, BLOCK as u32);
     let b = unknown.process(&input, &input, BLOCK as u32);
     for frame in 0..BLOCK {
-        assert_eq!(unsafe { *a.add(frame) }, unsafe { *b.add(frame) });
+        // SAFETY: `a` is `untouched`'s `out_left`, allocated at
+        // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+        // and never resized, and `frame < BLOCK`, which is inside that capacity.
+        let a_slot = unsafe { a.add(frame) };
+        // SAFETY: `a_slot` is in bounds of that initialised buffer, and nothing
+        // writes `untouched` between its `process` and this read.
+        let a_sample = unsafe { *a_slot };
+        // SAFETY: `b` is `unknown`'s own `out_left`, sized and bounded exactly
+        // as `untouched`'s above.
+        let b_slot = unsafe { b.add(frame) };
+        // SAFETY: `b_slot` is in bounds of that initialised buffer, and nothing
+        // writes `unknown` between its `process` and this read.
+        let b_sample = unsafe { *b_slot };
+        assert_eq!(a_sample, b_sample);
     }
 }

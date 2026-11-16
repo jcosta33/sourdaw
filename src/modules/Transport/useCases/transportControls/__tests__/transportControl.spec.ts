@@ -74,7 +74,7 @@ describe('Transport Controls', () => {
     });
 
     describe('stopPlayback', () => {
-        it('stops scheduler and resets playhead to 0 if no loop', () => {
+        it('stops scheduler and resets playhead to 0 if no loop', async () => {
             mocks.getTransportState.mockReturnValue({
                 isPlaying: true,
                 loopStart: 0,
@@ -82,7 +82,7 @@ describe('Transport Controls', () => {
                 playheadPosition: 10,
             });
 
-            stopPlayback();
+            await stopPlayback();
 
             expect(mocks.stopPlayheadScheduler).toHaveBeenCalled();
             expect(mocks.stopAllScheduled).toHaveBeenCalled();
@@ -95,7 +95,7 @@ describe('Transport Controls', () => {
             expect(mocks.playheadPositionRef.current).toBe(0);
         });
 
-        it('resets playhead to loopStart if loop is active', () => {
+        it('resets playhead to loopStart if loop is active', async () => {
             mocks.getTransportState.mockReturnValue({
                 isPlaying: true,
                 loopStart: 4,
@@ -103,7 +103,7 @@ describe('Transport Controls', () => {
                 playheadPosition: 6,
             });
 
-            stopPlayback();
+            await stopPlayback();
 
             expect(mocks.updateTransportState).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -114,10 +114,10 @@ describe('Transport Controls', () => {
     });
 
     describe('seekPlayhead', () => {
-        it('updates position and restarts scheduler if playing', () => {
+        it('updates position and restarts scheduler if playing', async () => {
             mocks.getTransportState.mockReturnValue({ isPlaying: true });
 
-            seekPlayhead(16);
+            await seekPlayhead(16);
 
             expect(mocks.stopPlayheadScheduler).toHaveBeenCalled();
             expect(mocks.updateTransportState).toHaveBeenCalledWith({ playheadPosition: 16 });
@@ -125,10 +125,10 @@ describe('Transport Controls', () => {
             expect(mocks.startPlayheadScheduler).toHaveBeenCalled();
         });
 
-        it('just updates position if not playing', () => {
+        it('just updates position if not playing', async () => {
             mocks.getTransportState.mockReturnValue({ isPlaying: false });
 
-            seekPlayhead(32);
+            await seekPlayhead(32);
 
             expect(mocks.updateTransportState).toHaveBeenCalledWith({ playheadPosition: 32 });
             expect(mocks.stopPlayheadScheduler).not.toHaveBeenCalled();

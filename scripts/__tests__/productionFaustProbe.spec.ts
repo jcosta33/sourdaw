@@ -3,7 +3,7 @@ import { runInNewContext } from 'node:vm';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installFaustProbe } from '../../tests/production-e2e/productionFaustProbe';
+import { faustProbeInitScripts } from '../../tests/production-e2e/productionFaustProbe';
 
 // These fake native primitives calibrate instrumentation, not DSP or product audio.
 // Analysers deliberately retain cached nonzero frames after disconnection.
@@ -177,11 +177,14 @@ beforeEach(() => {
     for (const [name, value] of Object.entries(platform.globals)) {
         vi.stubGlobal(name, value);
     }
-    installFaustProbe();
+    for (const installer of faustProbeInitScripts) {
+        installer();
+    }
 });
 
 afterEach(() => {
     Reflect.deleteProperty(window, 'productionFaustProbe');
+    Reflect.deleteProperty(window, 'productionFaustProbeState');
     vi.unstubAllGlobals();
 });
 
@@ -283,7 +286,7 @@ describe('passive Faust diagnostic connection calibration', () => {
         sandbox.window = sandbox;
         const result: unknown = runInNewContext(
             `
-            (${installFaustProbe.toString()})();
+            ${faustProbeInitScripts.map((installer) => `(${installer.toString()})();`).join('\n')}
             (async () => {
                 window.productionFaustProbe.setMode('pass');
                 const context = new AudioContext();

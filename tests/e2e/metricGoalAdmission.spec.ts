@@ -63,7 +63,7 @@ function comparisonIntake(request: ScriptedToolRequest, drumsId: string, bassId:
                 if (typeof reference !== 'number' || !Number.isSafeInteger(reference)) {
                     throw new TypeError('Expected a published metric expectation index.');
                 }
-                const expectation = expectations[reference];
+                const expectation = reference < 0 ? undefined : expectations.at(reference);
                 if (expectation === undefined) {
                     return false;
                 }
@@ -75,7 +75,7 @@ function comparisonIntake(request: ScriptedToolRequest, drumsId: string, bassId:
                 );
             })
         );
-    const objectiveId = objectiveIds[objectiveIndex];
+    const objectiveId = objectiveIndex < 0 ? undefined : objectiveIds.at(objectiveIndex);
     if (objectiveIndex < 0 || objectiveId === undefined) {
         throw new Error('Missing the actual published loudness-match policy objective.');
     }

@@ -85,6 +85,7 @@ function readRolePlanRecipes(input: PlanWholeProjectVibeRunInput, role: Semantic
     const measurable = new Set<string>(getAgentMeasurementMetricIds());
     return input.recipes.filter(
         (recipe) =>
+            recipe.descriptor !== null &&
             input.descriptors.includes(recipe.descriptor) &&
             recipe.roles.includes(role) &&
             hasMeasurableMetric(recipe, measurable) &&
@@ -98,7 +99,7 @@ function readExpectedDeltas(recipes: readonly MixRecipe[]): VibeRunExpectedDelta
     const deltas = new Map<string, VibeRunExpectedDelta>();
     for (const recipe of recipes) {
         for (const expectation of recipe.metrics) {
-            if (!measurable.has(expectation.metric)) {
+            if (recipe.descriptor === null || !measurable.has(expectation.metric)) {
                 continue;
             }
             const delta: VibeRunExpectedDelta = {
@@ -401,7 +402,13 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
                 ordinal,
                 objective: {
                     descriptors: [
-                        ...new Set(group.flatMap((target) => target.recipes.map((recipe) => recipe.descriptor))),
+                        ...new Set(
+                            group.flatMap((target) =>
+                                target.recipes.flatMap((recipe) =>
+                                    recipe.descriptor === null ? [] : [recipe.descriptor]
+                                )
+                            )
+                        ),
                     ],
                     role,
                     sections,

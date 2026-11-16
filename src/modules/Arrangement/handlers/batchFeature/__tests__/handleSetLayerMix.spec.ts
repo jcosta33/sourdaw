@@ -15,8 +15,8 @@ describe('handleSetLayerMix', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards layer id and mix value', () => {
-        handleSetLayerMix.execute({ type: 'setLayerMix', payload: { layerId: 'L', mix: 0.5 } });
+    it('forwards layer id and mix value', async () => {
+        await handleSetLayerMix.execute({ type: 'setLayerMix', payload: { layerId: 'L', mix: 0.5 } });
         expect(mocks.setLayerMix).toHaveBeenCalledWith('L', 0.5);
     });
 

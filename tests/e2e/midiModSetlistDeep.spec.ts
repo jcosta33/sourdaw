@@ -91,8 +91,8 @@ test.describe('Setlist — items and auto-advance', () => {
         const add_btn = page.getByRole('button', { name: 'Add setlist item' });
         await add_btn.click();
         await add_btn.click();
-        const items = page.getByRole('list', { name: 'Setlist items' });
-        expect(await items.getByRole('listitem').count()).toBe(2);
+        const items = page.getByRole('grid', { name: 'Setlist items' });
+        expect(await items.getByRole('row').count()).toBe(2);
 
         const auto = page.getByRole('button', { name: /Auto-advance/i });
         const before = await auto.getAttribute('aria-pressed');

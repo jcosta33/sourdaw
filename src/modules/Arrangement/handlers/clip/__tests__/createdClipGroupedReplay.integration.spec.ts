@@ -399,7 +399,9 @@ describe('created clip replay preserves its own action prefix', () => {
             restoreMidiClipNotes: {
                 ...handler,
                 execute: (action, context) => {
-                    handler.execute(action, context);
+                    if (handler.execute(action, context) instanceof Promise) {
+                        throw new TypeError('expected a synchronous restore result');
+                    }
                     staged = true;
                     return { status: 'conflict' };
                 },

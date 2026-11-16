@@ -60,10 +60,12 @@ function dropGrooveRevision(action: ActionOf<'extractGroove'>): AppAction {
     return { type: 'extractGroove', payload: { clipId, templateId, sourceName, subdivision } };
 }
 
-// A reverted section removal records a slot that belongs to the section list it was recorded
-// against, so replay appends like a fresh public request.
-function dropRecordedSectionIndex(action: ActionOf<'addSection'>): AppAction {
+// A reverted section or marker removal records a slot and neighbour anchors that belong to the
+// list it was recorded against, so replay appends like a fresh public request.
+function dropRecordedListSlot(action: ActionOf<'addSection'> | ActionOf<'addMarker'>): AppAction {
     delete action.payload.index;
+    delete action.payload.beforeId;
+    delete action.payload.afterId;
     return action;
 }
 
@@ -164,10 +166,10 @@ export const macroReplayPayloadResetByActionType: {
     restoreTrackInput: keepRecordedPayload,
     setEditingTool: keepRecordedPayload,
     setMarqueeSelection: keepRecordedPayload,
-    addMarker: keepRecordedPayload,
+    addMarker: dropRecordedListSlot,
     removeMarker: keepRecordedPayload,
     setMarkerColor: keepRecordedPayload,
-    addSection: dropRecordedSectionIndex,
+    addSection: dropRecordedListSlot,
     removeSection: keepRecordedPayload,
     renameSection: keepRecordedPayload,
     renameMarker: keepRecordedPayload,

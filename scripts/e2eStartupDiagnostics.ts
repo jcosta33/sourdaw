@@ -26,10 +26,7 @@ const CLIENT_SCRIPT = `(() => {
             method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store', keepalive: true,
             body: JSON.stringify({
                 timeOrigin: performance.timeOrigin, sequence, readyState: document.readyState,
-                entryStarted: document.documentElement.hasAttribute('data-sourdaw-entry-started'),
-                bootstrapStarted: document.documentElement.hasAttribute('data-sourdaw-bootstrap-started'),
-                appRenderIssued: document.documentElement.hasAttribute('data-sourdaw-app-render-issued'),
-                retryIssued: document.documentElement.hasAttribute('data-sourdaw-app-import-retry-issued')
+                entryStarted: document.documentElement.hasAttribute('data-sourdaw-entry-started')
             })
         }).catch(() => undefined);
         if (sequence >= ${MAX_CLIENT_BEATS}) { clearInterval(timer); }
@@ -44,9 +41,6 @@ type Heartbeat = {
     sequence: number;
     readyState: 'loading' | 'interactive' | 'complete';
     entryStarted: boolean;
-    bootstrapStarted: boolean;
-    appRenderIssued: boolean;
-    retryIssued: boolean;
 };
 
 function hasHeartbeatTiming(value: object): value is Pick<Heartbeat, 'timeOrigin' | 'sequence' | 'readyState'> {
@@ -66,19 +60,8 @@ function hasHeartbeatTiming(value: object): value is Pick<Heartbeat, 'timeOrigin
     );
 }
 
-function hasHeartbeatMarkers(
-    value: object
-): value is Pick<Heartbeat, 'entryStarted' | 'bootstrapStarted' | 'appRenderIssued' | 'retryIssued'> {
-    return (
-        'entryStarted' in value &&
-        typeof value.entryStarted === 'boolean' &&
-        'bootstrapStarted' in value &&
-        typeof value.bootstrapStarted === 'boolean' &&
-        'appRenderIssued' in value &&
-        typeof value.appRenderIssued === 'boolean' &&
-        'retryIssued' in value &&
-        typeof value.retryIssued === 'boolean'
-    );
+function hasHeartbeatMarkers(value: object): value is Pick<Heartbeat, 'entryStarted'> {
+    return 'entryStarted' in value && typeof value.entryStarted === 'boolean';
 }
 
 function readHeartbeat(text: string): Heartbeat | undefined {
@@ -99,9 +82,6 @@ function readHeartbeat(text: string): Heartbeat | undefined {
         sequence: value.sequence,
         readyState: value.readyState,
         entryStarted: value.entryStarted,
-        bootstrapStarted: value.bootstrapStarted,
-        appRenderIssued: value.appRenderIssued,
-        retryIssued: value.retryIssued,
     };
 }
 

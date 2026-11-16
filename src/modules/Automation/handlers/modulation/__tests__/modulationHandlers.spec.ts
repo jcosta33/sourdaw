@@ -50,7 +50,7 @@ const priorModulator = {
 type AddModulatorAction = Extract<AppAction, { type: 'addModulator' }>;
 
 describe('handleAddModulator', () => {
-    it('mints the modulator id onto the payload and executes with it', () => {
+    it('mints the modulator id onto the payload and executes with it', async () => {
         const action: AddModulatorAction = {
             type: 'addModulator',
             payload: {
@@ -64,7 +64,7 @@ describe('handleAddModulator', () => {
                 },
             },
         };
-        handleAddModulator.execute(action);
+        await handleAddModulator.execute(action);
         const [spec, id] = vi.mocked(addModulator).mock.calls[0]!;
         expect(id).toMatch(/^mod-lfo-/);
         expect(action.payload.modulatorId).toBe(id);
@@ -73,7 +73,7 @@ describe('handleAddModulator', () => {
         expect(inverseAction).toEqual({ type: 'removeModulator', payload: { modulatorId: id } });
     });
 
-    it('reuses an explicit modulatorId', () => {
+    it('reuses an explicit modulatorId', async () => {
         const action: AddModulatorAction = {
             type: 'addModulator',
             payload: {
@@ -88,7 +88,7 @@ describe('handleAddModulator', () => {
                 modulatorId: 'mod-step-fixed',
             },
         };
-        handleAddModulator.execute(action);
+        await handleAddModulator.execute(action);
         expect(vi.mocked(addModulator).mock.calls[0]![1]).toBe('mod-step-fixed');
         // The step modulator's frozen steps arrive at the use case as a mutable copy.
         expect(vi.mocked(addModulator).mock.calls[0]![0].config).toEqual({
@@ -101,9 +101,9 @@ describe('handleAddModulator', () => {
 });
 
 describe('handleRemoveModulator', () => {
-    it('executes the removal and inverts onto the exact prior modulator', () => {
+    it('executes the removal and inverts onto the exact prior modulator', async () => {
         mockState = { modulators: [priorModulator] };
-        handleRemoveModulator.execute({ type: 'removeModulator', payload: { modulatorId: 'mod-lfo-1' } });
+        await handleRemoveModulator.execute({ type: 'removeModulator', payload: { modulatorId: 'mod-lfo-1' } });
         expect(removeModulator).toHaveBeenCalledWith('mod-lfo-1');
         const { inverseAction } = handleRemoveModulator.describe({
             type: 'removeModulator',
@@ -143,9 +143,9 @@ describe('handleUpdateModulator', () => {
         expect(handleUpdateModulator.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
     });
 
-    it('executes the patch and inverts by patching back only the touched keys', () => {
+    it('executes the patch and inverts by patching back only the touched keys', async () => {
         mockState = { modulators: [priorModulator] };
-        handleUpdateModulator.execute({
+        await handleUpdateModulator.execute({
             type: 'updateModulator',
             payload: { modulatorId: 'mod-lfo-1', patch: { name: 'Renamed', enabled: false } },
         });
@@ -162,10 +162,10 @@ describe('handleUpdateModulator', () => {
 });
 
 describe('handleAddMapping', () => {
-    it('executes the add and inverts onto a target removal', () => {
+    it('executes the add and inverts onto a target removal', async () => {
         mockState = { modulators: [priorModulator] };
         const mapping = { targetTrackId: 't-bass', targetDeviceId: 'dev-2', targetParamId: 'res', amount: 0.5 };
-        handleAddMapping.execute({ type: 'addMapping', payload: { modulatorId: 'mod-lfo-1', mapping } });
+        await handleAddMapping.execute({ type: 'addMapping', payload: { modulatorId: 'mod-lfo-1', mapping } });
         expect(addMapping).toHaveBeenCalledWith('mod-lfo-1', mapping);
         const { inverseAction } = handleAddMapping.describe({
             type: 'addMapping',
@@ -191,9 +191,9 @@ describe('handleAddMapping', () => {
 });
 
 describe('handleRemoveMapping', () => {
-    it('executes the removal and inverts onto the exact prior mapping, amount included', () => {
+    it('executes the removal and inverts onto the exact prior mapping, amount included', async () => {
         mockState = { modulators: [priorModulator] };
-        handleRemoveMapping.execute({
+        await handleRemoveMapping.execute({
             type: 'removeMapping',
             payload: {
                 modulatorId: 'mod-lfo-1',

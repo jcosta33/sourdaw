@@ -45,16 +45,17 @@ async function paintOneNote(page: Page): Promise<void> {
 }
 
 async function readAdvancedBarsBeatsTicks(playhead: Locator): Promise<string | undefined> {
-    const [label, bar, firstSeparator, beat, secondSeparator, tick] = await playhead
+    // A readout with fewer spans leaves the missing parts empty, which the patterns below reject.
+    const [label, bar = '', firstSeparator, beat = '', secondSeparator, tick = ''] = await playhead
         .locator(':scope > span')
         .allTextContents();
     if (
         label !== 'Bars' ||
         firstSeparator !== '.' ||
         secondSeparator !== '.' ||
-        !/^[1-9]\d*$/.test(bar ?? '') ||
-        !/^[1-9]\d*$/.test(beat ?? '') ||
-        !/^\d{3}$/.test(tick ?? '')
+        !/^[1-9]\d*$/.test(bar) ||
+        !/^[1-9]\d*$/.test(beat) ||
+        !/^\d{3}$/.test(tick)
     ) {
         return undefined;
     }
