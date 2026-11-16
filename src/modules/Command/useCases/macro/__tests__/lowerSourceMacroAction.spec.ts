@@ -83,10 +83,20 @@ describe('lowerSourceMacroAction on captured source actions', () => {
         });
     });
 
-    it('lowers a restoreAudioClipSlip to the slipClipContent of the offset it names', () => {
+    it('lowers a restoreAudioClipSlip to the slipClipContent of the offset the restored clip holds in beats', () => {
+        // 1.5 s of source entry at 120 bpm is 3 beats: the restore must convert seconds to beats at the clip's tempo.
+        addClip({
+            id: 'slipped',
+            trackId: 'track',
+            name: 'Slipped',
+            type: 'audio',
+            startBeat: 16,
+            endBeat: 24,
+            audioOffsetSeconds: 1.5,
+        });
         const forward: AppAction = {
             type: 'slipClipContent',
-            payload: { clipId: 'clip', clipType: 'audio', offset: 2 },
+            payload: { clipId: 'slipped', clipType: 'audio', offset: 2 },
         };
         const inverse = recordedInverse(forward);
         const redo = recordedRedo(forward);
@@ -94,11 +104,11 @@ describe('lowerSourceMacroAction on captured source actions', () => {
         expect(inverse.type).toBe('restoreAudioClipSlip');
         expect(lowerSourceMacroAction(redo, new Map())).toEqual({
             type: 'slipClipContent',
-            payload: { clipId: 'clip', clipType: 'audio', offset: 2 },
+            payload: { clipId: 'slipped', clipType: 'audio', offset: 2 },
         });
         expect(lowerSourceMacroAction(inverse, new Map())).toEqual({
             type: 'slipClipContent',
-            payload: { clipId: 'clip', clipType: 'audio', offset: 0 },
+            payload: { clipId: 'slipped', clipType: 'audio', offset: 3 },
         });
     });
 
