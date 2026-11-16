@@ -1,7 +1,8 @@
 import { prepareRecordedControllersCommit, getMidiStoreState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type ClipStateSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type ClipStateSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { type Clip } from '../../stores/trackStore';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';

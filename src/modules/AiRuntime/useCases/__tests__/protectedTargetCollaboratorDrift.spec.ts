@@ -29,9 +29,9 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';

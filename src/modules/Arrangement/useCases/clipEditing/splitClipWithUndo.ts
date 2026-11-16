@@ -1,9 +1,9 @@
 import { executeUserAppAction, pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';

@@ -1,15 +1,13 @@
 import { getHeads } from '@automerge/automerge';
 
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import { getCrdtDoc, stageCommandSourcePublication } from '#/modules/CrdtDocument/useCases';
-import {
-    type CommandSourceProof,
-    type HandlerCommitValidation,
-    type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
 

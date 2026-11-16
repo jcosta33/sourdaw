@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type AutomationPointSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type AutomationPointSnapshot } from '../../events/automationSnapshots';
 import { type AutomationLane, type AutomationPoint } from '../../models/Automation';
 import { is_exact_automation_point } from '../../stores/automationStore';
 import { restoreAutomationPointPresence } from '../../useCases/automation/restoreAutomationPointPresence';

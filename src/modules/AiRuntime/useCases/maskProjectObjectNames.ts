@@ -49,22 +49,21 @@ function readObjectNames(context: ProjectContext, devices: readonly NamedDevice[
  * stays a claim about sound. The clause is the unit, so a device named in another clause never accounts for it.
  */
 function blankDeviceParameterNames(text: string, devices: readonly NamedDevice[], separator: RegExp): string {
-    const ranges: Array<[number, number]> = [];
+    const parts: string[] = [];
     let cursor = 0;
     for (const boundary of text.matchAll(new RegExp(separator.source, `${separator.flags}g`))) {
-        ranges.push([cursor, boundary.index]);
+        parts.push(blankClauseParameterNames(text.slice(cursor, boundary.index), devices), boundary[0]);
         cursor = boundary.index + boundary[0].length;
     }
-    ranges.push([cursor, text.length]);
-    let result = text;
-    for (const [start, end] of ranges) {
-        const clause = result.slice(start, end);
-        const parameterNames = devices
-            .filter((device) => findAgentReferenceNameSpans(clause, device.name, 'exact', [device.name]).length > 0)
-            .flatMap((device) => device.parameterNames);
-        result = result.slice(0, start) + blankSpans(clause, parameterNames) + result.slice(end);
-    }
-    return result;
+    parts.push(blankClauseParameterNames(text.slice(cursor), devices));
+    return parts.join('');
+}
+
+function blankClauseParameterNames(clause: string, devices: readonly NamedDevice[]): string {
+    const parameterNames = devices
+        .filter((device) => findAgentReferenceNameSpans(clause, device.name, 'exact', [device.name]).length > 0)
+        .flatMap((device) => device.parameterNames);
+    return blankSpans(clause, parameterNames);
 }
 
 /**

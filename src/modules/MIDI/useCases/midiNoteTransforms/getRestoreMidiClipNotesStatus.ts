@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
+import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';
 import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';

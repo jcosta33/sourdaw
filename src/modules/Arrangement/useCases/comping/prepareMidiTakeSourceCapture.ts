@@ -1,5 +1,5 @@
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { type MidiTakeSource, type Take } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';

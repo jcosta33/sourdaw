@@ -1,5 +1,5 @@
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { getNotesForClip, projectSyncopatedArpeggio } from '#/modules/MIDI/useCases';
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type SyncopatedArpeggioCapability } from '../../models/SyncopatedArpeggioCapability';

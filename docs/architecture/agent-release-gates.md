@@ -270,14 +270,20 @@ Named fixtures are not everything a suite's evidence depends on. A suite's closu
   configuration, declared per script in `EVIDENCE_SCRIPT_RUNTIME_FILES`, and, for a Vitest run,
   every setup file `vite.config.ts` can name, read from its `setupFiles` expression as the union of
   its branches;
-- for each crate it tests with `cargo test -p`, the workspace `Cargo.toml`, `rust-toolchain.toml`
-  and `.cargo/config.toml`, plus that crate and its transitive workspace path-dependency closure
+- for each crate it tests with `cargo test -p`, the workspace `Cargo.toml`, `Cargo.lock`,
+  `rust-toolchain.toml` and `.cargo/config.toml`, plus that crate and its transitive workspace path-dependency closure
   from `cargo metadata --offline --no-deps`. Each package contributes its `Cargo.toml`, its `src`
   tree and its build script. The tested crate also contributes its dev-dependencies and its `tests`
-  directory; a dependency's dev-dependencies do not compile and are excluded;
+  directory and every target's source directory from cargo metadata (`examples`, `benches`, or wherever
+  `Cargo.toml` points; a directory with no files contributes nothing); a dependency's dev-dependencies do not compile and are excluded;
 - its other named fixtures, and the files or trees its specs read by path, declared per suite in
   `EVIDENCE_SUITE_CLOSURE_READS` in `scripts/agent-campaign/evidenceGateContract.ts`. A tree stands
   for its tracked files.
+
+Every tree and import walk counts the files git lists as tracked or as untracked and not ignored
+(`git ls-files --cached --others --exclude-standard`): a new file inside a closure tree drifts the
+record before it is committed, and gitignored build output never does. A tracked file deleted from
+the working tree drops out of the live closure and drifts by membership.
 
 Derivation is offline and fails closed. An import that cannot be resolved, a reached file that is
 not tracked, a path dependency missing from the metadata, a script `package.json` does not declare
