@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type AdjustmentLayerSnapshot, type AppAction } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type AdjustmentLayerSnapshot } from '../../../events/arrangementClipSnapshots';
 import { adjustmentLayerHandlers } from '../adjustmentLayerHandlers';
 import { handleAddAdjustmentRegion } from '../handleAddAdjustmentRegion';
 import { handleRemoveAdjustmentRegion } from '../handleRemoveAdjustmentRegion';

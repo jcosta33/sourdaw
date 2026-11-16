@@ -39,6 +39,36 @@ describe('getPlannedTrackState', () => {
         expect(planned).toMatchObject({ id: 'bus', kind: 'bus', name: 'Verb', gain: 0.5 });
     });
 
+    it('names a nameless addTrack by the default its position in the batch earns', () => {
+        const prior: AppAction[] = [{ type: 'addTrack', payload: { id: 'first', kind: 'audio' } }];
+        const first = plan(prior, 'first');
+        const second = plan([...prior, { type: 'addTrack', payload: { id: 'second', kind: 'audio' } }], 'second');
+        expect(first?.name).toBe('Audio 1');
+        expect(second?.name).toBe('Audio 2');
+    });
+
+    it('plans an addTrack under the default gain and carries its parent and output', () => {
+        const planned = plan(
+            [
+                {
+                    type: 'addTrack',
+                    payload: { id: 'new', kind: 'audio', name: 'A', parentId: 'folder', outputId: 'out' },
+                },
+            ],
+            'new'
+        );
+        expect(planned).toMatchObject({ gain: 0.8, parentId: 'folder', outputId: 'out' });
+    });
+
+    it('plans a createBus without an initial gain at the default gain', () => {
+        const planned = plan([{ type: 'createBus', payload: { busId: 'bus', name: 'Verb' } }], 'bus');
+        expect(planned).toMatchObject({ id: 'bus', kind: 'bus', name: 'Verb', gain: 0.8 });
+    });
+
+    it('plans nothing for a bus id no earlier createBus creates', () => {
+        expect(plan([{ type: 'createBus', payload: { busId: 'other', name: 'Verb' } }], 'bus')).toBeNull();
+    });
+
     it('plans nothing for an id no earlier action creates', () => {
         expect(plan([{ type: 'addTrack', payload: { id: 'other', kind: 'audio' } }], 'new')).toBeNull();
     });

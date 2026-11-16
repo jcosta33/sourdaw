@@ -86,6 +86,16 @@ does not guard this boundary.
    `verifyNativeTransportMutations.spec.ts` "does not schedule main-only transport and graph changes for an older
    tooling feature".
 
+10. **A moved validation step stops observing the files it names (PR #6610).** The plugin lint pass was
+    handed shell globs through `spawnSync`, linted one file and reported success in under a second for
+    months; PR #6610's review lacked a stance asking whether a relocated step still observes its targets.
+    Probe: plant a known violation in a file the step claims to cover and confirm its CI run goes red, and
+    compare its reported file count and duration with a directory run. In full mode the pass must receive
+    directories, never globs, and must fail when it lints fewer files than the tracked, non-ignored sources
+    under its targets, or when a target contributes none: restoring the glob targets must fail
+    `scripts/__tests__/runLint.spec.ts` "hands a full run directories, because a shell-less spawn leaves
+    globs unexpanded" and "lists the tracked files of the same directories it hands the plugin pass".
+
 ## Retired lessons
 
 - Tooling paths missing from the browser selector or validation path filter (#4854, #4902, #4484, #4932, #4933) →

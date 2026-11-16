@@ -47,6 +47,8 @@ export const AdjustmentRegionBand = ({
     return (
         <div
             role="gridcell"
+            // Focusable for the menu and inspector handlers; the band button inside is the Tab stop.
+            tabIndex={-1}
             className="absolute top-0 bottom-0 rounded-sm border"
             style={style}
             // The cell owns the region's menu and inspector for its body, edges and fades alike.

@@ -1,4 +1,6 @@
-import { type AppAction, type StemImportRole } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
+
+import { type StemImportRole } from './StemImportRole';
 
 export type StemImportProviderCall = {
     name: string;

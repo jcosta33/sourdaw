@@ -1,7 +1,8 @@
 import { revokePluginFolderGrant } from '../../../repositories/pluginBridge/revokePluginFolderGrant';
 import { type GrantedPluginFolder, pluginScanStore } from '../../../stores/pluginScanStore';
 
-import { getState, isWithinFolder } from './helpers';
+import { getState } from './helpers';
+import { isWithinFolder } from './isWithinFolder';
 import { refreshPluginFolderGrants } from './refreshPluginFolderGrants';
 
 export type RemovePluginFolderOutcome = { removed: true } | { removed: false; reason: string };

@@ -1,78 +1,96 @@
 {
-    "schemaVersion": 4,
+    "schemaVersion": 5,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "267aeca90ab2ac0c6e7fb61918f46e1e366d301a71624613623efa954e66cdb4",
+        "cargoLockSha256": "776a7a8d8a0d62cc5c7f1f0042079ab9ab91e5e6e5f65d60712220390e821656",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
+                "projection": "whole-file",
                 "sha256": "87a73e86e8a585112d5f4723573bafebd99681cda7d358c25d733c07239b1c3b"
             },
             {
                 "path": "Cargo.toml",
-                "sha256": "980989da64dd8f71a720aabe1b29cf135f0c8520216b3705cf6855b7293bc907"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "4fe1542d8a6ecc23132c556f222fe0ac0843c602e9bd151cb7e218f4a795cd7c"
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
-                "sha256": "55995e155a17deeb7af96b36489be5e5b747ecb5d462ad343f70396a7a5745b9"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "76ffe8bc0ae0dd9e64515c65b2a3a8d5f8738d121a60844385a7312f3e22b9f2"
             },
             {
                 "path": "crates/daw-core/Cargo.toml",
-                "sha256": "0447870e4a7d28be607be53c99f2aad5804d7950ce81c94cd74646d3a5aa0b3c"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "0f6dd96dffe1b8d3c273be202a391da36a0ff2d0b57b038bf8eedb621536410b"
             },
             {
                 "path": "crates/daw-dsp/Cargo.toml",
-                "sha256": "30ea4878106741e1b371229b8efb23c99c8fcd91c2123c2125e84536ca4e56cb"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "35153c930d4195ddb9a9bd6234ef4f386dc1d2c2eae5330706db98c4614f8bb4"
             },
             {
                 "path": "crates/daw-engine/Cargo.toml",
-                "sha256": "cf28de21a3038a87f1101694750a2494d10d22eb563fd77f3f74597c9eaf1036"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "7738c0609005b81121eb5a9cd9fbc945c9e1bc845f94824f85864e516c255a1e"
             },
             {
                 "path": "crates/daw-io/Cargo.toml",
-                "sha256": "4f0abd60abeb327119ad04a307851b2b5906da6b92636c626ce1442ed2e05a52"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "dd1173eed53187a36dc3319db8965360754336390bb8bb6ea4f4d6565228ffb1"
             },
             {
                 "path": "crates/daw-plugin-host/Cargo.toml",
-                "sha256": "e1334c1fde2399dffcef1a2c56d1164ee1e5a7e7129e48c9ae29fe6be88ebf5b"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "1958cec26ba3f9a921fe018238b2a3cf78d5e60cba0383b72cf90d4b22d53a9f"
             },
             {
                 "path": "crates/daw-wasm-decoder/Cargo.toml",
-                "sha256": "65a1b46b1ea20d4a0388b16a01449d65ef804177cc6385304545b2df120f1011"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "f1ae3b477a0db73d65f3cfb17a7936d3a3bed4afbdc5d20f220cd79059024dc5"
             },
             {
                 "path": "crates/proof-chamber/Cargo.toml",
-                "sha256": "38763c6e51fce62ae4d4502580aecd5f70193612b1c43770e75b01177a487e77"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "c76f17e6f12bbdbf5e8b88ccb9928182332c51db986b803b07635ae9bd8283f1"
             },
             {
                 "path": "crates/scoring/Cargo.toml",
-                "sha256": "4b69775740f4daa786f72de85294dec6560679847096f2d38f3bc79985823fea"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "837e7606ff213cd217f705d40ff3906715ef1d9819db6f83213142cf8554ef85"
             },
             {
                 "path": "crates/sourdaw-harness-fx/Cargo.toml",
-                "sha256": "0485c546aeed914b7f75cd26b068748587d436d9c4a01aef7451064bdd3c9390"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "87eabccded429b0391a2eced9f760d282c3597301891aa8a5b27e810ac273e3e"
             },
             {
                 "path": "crates/sourdaw-harness-tone/Cargo.toml",
-                "sha256": "fc98d87df8bdbf48927422903c6aeeb7c52139ec489c7aa002998f926fe651be"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "a5814a8bbda34a7a38e2e53a0610de8d186493fa688678121b3026c5181d2442"
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "0c2928e89c17b562bd7e602c037b99e840329c8a5c0c73ddf46e38fa931bd773"
+                "projection": "cargo-manifest-licence-graph",
+                "sha256": "42e01ba6d5e54c88e1e0be589c5c6feac40b39bfb5a9683023933f9af262e59d"
             },
             {
                 "path": "electron-builder.yml",
+                "projection": "whole-file",
                 "sha256": "6c0fc543587be211dc9e41bd04ccf05f36b9f74180d117eea83b6141df11e14b"
             },
             {
                 "path": "package.json",
-                "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
+                "projection": "package-json-packaging",
+                "sha256": "59e41a0f87ad36a861f17c897091a7e895407ad15dca7f2454cf8e540048f711"
             },
             {
                 "path": "rust-toolchain.toml",
+                "projection": "whole-file",
                 "sha256": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33"
             },
             {
                 "path": "scripts/buildNativeAddon.ts",
+                "projection": "whole-file",
                 "sha256": "87ac59fba9b32642964edc3d6e02ace51c9978f790721991575c89b9013aa1d1"
             }
         ],

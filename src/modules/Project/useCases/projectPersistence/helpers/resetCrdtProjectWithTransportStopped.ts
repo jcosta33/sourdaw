@@ -1,6 +1,6 @@
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { resetCrdtProject } from '#/modules/CrdtDocument/useCases';
-import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
+import { settleProjectSwitchPluginTeardown, unloadPluginsBeforeProjectSwitch } from '#/modules/PluginHost/useCases';
 import { countSettledTakes, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -97,6 +97,9 @@ export async function resetCrdtProjectWithTransportStopped(
     const replaceAuthority = (): void => {
         unsavedClosedTakes.acknowledgeAll();
         commitProjectAuthority();
+        // The outgoing project's carries end here, in the switch's own turn:
+        // persisted instance ids return with the incoming project.
+        settleProjectSwitchPluginTeardown('switched');
         onAuthorityReplaced();
     };
     async function settleClosedTakes(): Promise<void> {
@@ -131,7 +134,7 @@ export async function resetCrdtProjectWithTransportStopped(
         }
         await settleClosedTakes();
         resetAudioGraph();
-        await unloadLoadedExternalPlugins();
+        await unloadPluginsBeforeProjectSwitch();
         if (!shouldContinue()) {
             return { status: 'refused', reason: 'superseded' };
         }

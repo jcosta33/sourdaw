@@ -167,6 +167,13 @@ pub struct ClapWrapper {
     /// thread, which may not allocate or take the I/O lock, and read by the
     /// control path, which is the only thread that may report it.
     process_refused: bool,
+    /// Whether a block passed through untouched because the plugin was not in
+    /// the processing state while the host wanted it there — its start was
+    /// refused. A requested stop is not this. Raised by the audio thread, read
+    /// by the control path, like the process-failure latch above. The block is
+    /// still passed through: only a caller that needs every block processed
+    /// (an offline print) refuses on it.
+    processing_start_refused: bool,
     /// Whether that refusal has already been reported. A plugin that fails every
     /// block would otherwise print once per control visit for the rest of the
     /// session.
@@ -1051,6 +1058,7 @@ impl ClapWrapper {
             steady_time: 0,
             tail_mode_reported: false,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             audio,
             is_instrument,
@@ -1098,6 +1106,7 @@ impl ClapWrapper {
             steady_time: 0,
             tail_mode_reported: false,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             audio: AudioBusLayout::portless(),
             is_instrument: false,
@@ -2334,6 +2343,9 @@ impl ClapWrapper {
         if !self.processing.is_processing() {
             // Either the plugin refused to start, or a stop has been requested
             // and performed. Either way it must not be handed a block.
+            if self.processing.wants_processing() {
+                self.processing_start_refused = true;
+            }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
         }
@@ -3459,6 +3471,14 @@ impl HostedPluginRuntime for ClapWrapper {
     fn report_plugin_observations(&mut self) {
         ClapWrapper::report_plugin_observations(self)
     }
+
+    fn has_failed_a_process_call(&self) -> bool {
+        self.process_refused
+    }
+
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        self.processing_start_refused
+    }
 }
 
 impl Drop for ClapWrapper {
@@ -3910,6 +3930,7 @@ mod tests {
             steady_time: 0,
             tail_mode_reported: false,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             audio,
             // Derived from the stub's own descriptor, the way the loader

@@ -103,8 +103,9 @@ export async function audioBufferToWav(
     validateWavShape(buffer, bitDepth, blockAlign, totalLength);
     const chunks: Uint8Array[] = [];
     const destination = writer ?? {
-        write: async (bytes: Uint8Array) => {
+        write: (bytes: Uint8Array) => {
             chunks.push(bytes);
+            return Promise.resolve();
         },
     };
     destination.checkCancelled?.();

@@ -171,8 +171,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:3cf59e8f920d5cabb9c7469d8599d16309cfdd163757f12893d11eda15615b4f:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:7a28a068f7b88ac06e80c694f3556d7b57800ca1d9be677284c1ef262925ce9b:release/dependency-license-proofs.json"
+                "sha256:9618b166c517b8d835473cc23298f0897d88babb932bc4f89e6c5828896c0cdc:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:7ff0851fcf10cc371cc0df9dd416354a4d7682392110397a5641e58ee8eb6b07:@curated-packages:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -298,7 +298,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102",
+                "sha256:db528de47f26d5dd5392af22a354e25e9a40e57396813e3bca39b488267067ee",
                 "sha256:a94654faf2322892cd82b403a21b97fe3d8c88df091e1724c685bc6217eb6550",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:76902df6b865b869ea6d8ade45a532f5a7f70ba6b739c71bebe8dd675076a2a7:public/legal/THIRD-PARTY-NOTICES.md"
@@ -372,7 +372,7 @@
                 "sha256:c4e4e5ba9ceb16f7da586195bbc498d4235fefaae49f068f934234bf5fbb723b:src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
                 "sha256:7e5f06c67a7824cf43f307d7e1c92d8de1c1396759c52f43d7564f05c17a8848:src/modules/BrowserAi/services/computeDdspSessionKey.ts",
                 "sha256:79825048a714b52c3da3ef8059f9d5ae8bbd956e9a5429b4f6cd835b9d4b34cb:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
-                "sha256:5f1f9ff20d903c3bec83dc38cd49956da251b5743c5c805cbf02b8efe8a464de:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
+                "sha256:1b6fe44a6e8a6a2e284bbc5ffd046f351ffb133a10d99d9821663067ddd22d85:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
@@ -424,7 +424,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:267aeca90ab2ac0c6e7fb61918f46e1e366d301a71624613623efa954e66cdb4",
+                "sha256:776a7a8d8a0d62cc5c7f1f0042079ab9ab91e5e6e5f65d60712220390e821656",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -842,7 +842,7 @@
                 "sha256:556d1e1b766aba32aa3ef0cadbbf45e6dabb321b2178b59988d60862a339cdf7:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
                 "sha256:2eda85bf62b8b8b63bef3a86f7b10009ab0e4c6a1e17cac7e1897943d3ca1ca0:src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
                 "sha256:6c7d4d4b94518787ed0d28ccaef0e60019cd71c0305cc513e344fe049fc8a9b2:src/modules/BrowserAi/workers/modelStorageWorker.ts",
-                "sha256:0dbd7b59f74ffaf300cb13539e275c563ae811c8c983778ec0a18a8d6f828e4e:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "sha256:c4f9201285fcf2d327bee859dc47f2c0a3a4e7001cfbec33029adfa37246779c:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
@@ -1199,6 +1199,7 @@
                 "src/modules/AudioEngine/models/AudioEngineState.ts",
                 "src/modules/AudioEngine/models/GrandBouleRingProtocol.ts",
                 "src/modules/AudioEngine/repositories/createWebAudioEngine.ts",
+                "src/modules/AudioEngine/repositories/webAudioEngine/**",
                 "src/modules/AudioEngine/workers/grandBouleEngineWorker.ts",
                 "src/modules/AudioEngine/worklets/grandBoule*.ts",
                 "src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts",
@@ -1910,7 +1911,8 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
+            "sha256": "59e41a0f87ad36a861f17c897091a7e895407ad15dca7f2454cf8e540048f711",
+            "projection": "package-json-packaging"
         },
         {
             "path": "server/package.json",
@@ -1922,15 +1924,16 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102"
+            "sha256": "db528de47f26d5dd5392af22a354e25e9a40e57396813e3bca39b488267067ee"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "980989da64dd8f71a720aabe1b29cf135f0c8520216b3705cf6855b7293bc907"
+            "sha256": "4fe1542d8a6ecc23132c556f222fe0ac0843c602e9bd151cb7e218f4a795cd7c",
+            "projection": "cargo-manifest-licence-graph"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "267aeca90ab2ac0c6e7fb61918f46e1e366d301a71624613623efa954e66cdb4"
+            "sha256": "776a7a8d8a0d62cc5c7f1f0042079ab9ab91e5e6e5f65d60712220390e821656"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",

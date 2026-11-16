@@ -16,6 +16,12 @@ const actionTypesRequiringMintedArguments = [
 ];
 
 describe('hasDeterministicSerializedArguments', () => {
+    it('applies no check to an inherited object property name read from an untrusted envelope', () => {
+        const operation: AppActionType = JSON.parse('"constructor"');
+
+        expect(hasDeterministicSerializedArguments(operation, {})).toBe(true);
+    });
+
     it('refuses empty arguments for exactly the action types that need minted ones', () => {
         const refusing = allActionTypes.filter((type) => !hasDeterministicSerializedArguments(type, {}));
 
