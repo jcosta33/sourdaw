@@ -1,9 +1,14 @@
 //! The VST3 front end: one combined class (component, audio processor and edit
 //! controller in one object) over the same DSP, its factory, and the module
 //! entry points each platform's host resolves.
+//!
+//! The factory lists the class three times: the second differs only in
+//! answering one `process` call ([`crate::FAILING_PROCESS_CALL`]) with
+//! `kResultFalse`, and the third only in refusing `setProcessing(true)`: both
+//! are what a host must not let pass as processed audio.
 
 use crate::clap_front::GAIN_PARAM_ID;
-use crate::echo::{Echo, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
+use crate::echo::{Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
 use crate::state::CHUNK_BYTES;
 use std::ffi::{c_char, c_void};
 use std::ptr;
@@ -23,9 +28,24 @@ use vst3::Steinberg::{
 };
 use vst3::{uid, Class, ComRef, ComWrapper};
 
-/// The class id of the one class the factory lists.
+/// The class id of the class that processes every block.
 pub const VST3_CLASS_ID: TUID = uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A2);
+/// The class id of the class that fails one `process` call.
+pub const VST3_PROCESS_ERROR_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A3);
 const CLASS_NAME: &str = "Sourdaw Harness Fx";
+const PROCESS_ERROR_CLASS_NAME: &str = "Sourdaw Harness Fx Process Error";
+/// The class id of the class that refuses to start processing.
+pub const VST3_START_REFUSED_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A4);
+const START_REFUSED_CLASS_NAME: &str = "Sourdaw Harness Fx Start Refused";
+
+/// How one class departs from the plain effect.
+#[derive(Clone, Copy, Default)]
+struct Departures {
+    fails_a_process_call: bool,
+    refuses_to_start_processing: bool,
+}
 
 struct Vst3Echo {
     echo: Echo,
@@ -33,6 +53,8 @@ struct Vst3Echo {
     /// controller calls and by `setComponentState`; the processor's gain moves
     /// only through `ProcessData` and `setState`, as VST3 separates the two.
     controller_gain: AtomicU64,
+    process_calls: ProcessCalls,
+    refuses_to_start_processing: bool,
 }
 
 impl Class for Vst3Echo {
@@ -40,10 +62,12 @@ impl Class for Vst3Echo {
 }
 
 impl Vst3Echo {
-    fn new() -> Self {
+    fn new(departures: Departures) -> Self {
         Self {
             echo: Echo::new(),
             controller_gain: AtomicU64::new(GAIN_DEFAULT.to_bits()),
+            process_calls: ProcessCalls::new(departures.fails_a_process_call),
+            refuses_to_start_processing: departures.refuses_to_start_processing,
         }
     }
 }
@@ -207,7 +231,10 @@ impl IAudioProcessorTrait for Vst3Echo {
         kResultOk
     }
 
-    unsafe fn setProcessing(&self, _state: TBool) -> tresult {
+    unsafe fn setProcessing(&self, state: TBool) -> tresult {
+        if state != 0 && self.refuses_to_start_processing {
+            return kResultFalse;
+        }
         kResultOk
     }
 
@@ -219,6 +246,9 @@ impl IAudioProcessorTrait for Vst3Echo {
         }
         // SAFETY: the host passes a live `ProcessData` for this call.
         let data = unsafe { &*data };
+        if self.process_calls.this_call_fails() {
+            return kResultFalse;
+        }
         self.echo.record_block_mode(data.processMode);
         // SAFETY: every pointer inside `data` is valid for this call.
         unsafe {
@@ -504,19 +534,25 @@ impl IPluginFactoryTrait for Factory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        1
+        3
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
-        if index != 0 || info.is_null() {
+        let (cid, name) = match index {
+            0 => (VST3_CLASS_ID, CLASS_NAME),
+            1 => (VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME),
+            2 => (VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME),
+            _ => return kInvalidArgument,
+        };
+        if info.is_null() {
             return kInvalidArgument;
         }
         // SAFETY: `info` is a valid out parameter.
         let info = unsafe { &mut *info };
-        info.cid = VST3_CLASS_ID;
+        info.cid = cid;
         info.cardinality = ClassCardinality_::kManyInstances as int32;
         write_char8(&mut info.category, "Audio Module Class");
-        write_char8(&mut info.name, CLASS_NAME);
+        write_char8(&mut info.name, name);
         kResultOk
     }
 
@@ -530,10 +566,24 @@ impl IPluginFactoryTrait for Factory {
             return kInvalidArgument;
         }
         // SAFETY: a class id is sixteen bytes.
-        if unsafe { *(cid as *const TUID) } != VST3_CLASS_ID {
+        let requested = unsafe { *(cid as *const TUID) };
+        let departures = if requested == VST3_CLASS_ID {
+            Departures::default()
+        } else if requested == VST3_PROCESS_ERROR_CLASS_ID {
+            Departures {
+                fails_a_process_call: true,
+                ..Departures::default()
+            }
+        } else if requested == VST3_START_REFUSED_CLASS_ID {
+            Departures {
+                refuses_to_start_processing: true,
+                ..Departures::default()
+            }
+        } else {
             return kInvalidArgument;
-        }
-        let Some(instance) = ComWrapper::new(Vst3Echo::new()).to_com_ptr::<FUnknown>() else {
+        };
+        let Some(instance) = ComWrapper::new(Vst3Echo::new(departures)).to_com_ptr::<FUnknown>()
+        else {
             return kResultFalse;
         };
         let pointer = instance.as_ptr();
