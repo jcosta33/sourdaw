@@ -220,7 +220,7 @@ export type MeasuredScheduledVibeRunPlan = {
     readonly schemaVersion: 2;
     readonly briefRevision: number;
     readonly batches: readonly ScheduledVibeRunBatch[];
-    /** Absent on a plan stored before the tier was recorded, which reads as `local`; outside the plan digest. */
+    /** Absent on a plan stored before the tier was recorded, which reads as `local`; bound by the plan digest when present. */
     readonly valueChoiceTier?: VibeRunValueChoiceTier;
     readonly initial: VibeRunInitialEvidence;
     readonly initialDigest: string;

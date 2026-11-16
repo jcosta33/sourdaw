@@ -16,6 +16,7 @@ import {
     type VibeRunExpectedDelta,
 } from '../models/VibeRunPlan';
 
+import { digestScheduledVibeRunPlan } from './digestScheduledVibeRunPlan';
 import { recordedSilenceHolds } from './isSilentVibeRunCell';
 import { readVibeRunInitialReceipt } from './readVibeRunInitialReceipt';
 
@@ -585,15 +586,21 @@ function parseScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | n
     if (value.schemaVersion === 1) {
         return { schemaVersion: 1, briefRevision: value.briefRevision, batches };
     }
+    const tier = value.valueChoiceTier;
+    if (tier !== undefined && tier !== 'hosted' && tier !== 'local') {
+        return null;
+    }
     if (
         !initialEvidence(value.initial, batches) ||
         value.initialDigest !== digest(value.initial) ||
-        value.planDigest !== digest({ briefRevision: value.briefRevision, batches, initialDigest: value.initialDigest })
+        value.planDigest !==
+            digestScheduledVibeRunPlan({
+                briefRevision: value.briefRevision,
+                batches,
+                initialDigest: value.initialDigest,
+                valueChoiceTier: tier,
+            })
     ) {
-        return null;
-    }
-    const tier = value.valueChoiceTier;
-    if (tier !== undefined && tier !== 'hosted' && tier !== 'local') {
         return null;
     }
     const plan: MeasuredScheduledVibeRunPlan = {

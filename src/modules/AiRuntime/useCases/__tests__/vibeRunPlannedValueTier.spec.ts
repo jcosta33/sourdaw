@@ -17,12 +17,13 @@ import {
     type RenderInput,
 } from '../../__tests__/vibeRunWorkflowFixture';
 import { type ToolSchema } from '../../models/ToolDefinitions';
-import { agentRunLifecycle } from '../agentRunLifecycle';
+import { digestScheduledVibeRunPlan } from '../../validators/digestScheduledVibeRunPlan';
+import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { preflightVibeRunBatch } from '../agentRequestOrchestration/preflightVibeRunBatch';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME } from '../vibeRun/buildVibeBatchValueRequest';
-import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
@@ -163,24 +164,52 @@ describe('the backend tier a vibe run was planned on', () => {
         ]);
     });
 
-    // Red when a stored plan with no recorded tier is read as hosted on a hosted chain.
-    it('treats a stored plan with no recorded tier as planned locally', async () => {
-        const brief = await planOn('cloud');
-        await confirmOn(brief, 'cloud');
-        const run = agentRunLifecycle.get(brief.runId);
-        const schedule = run?.plan?.batchSchedule;
-        if (run === null || schedule?.kind !== 'vibe-run') {
-            throw new TypeError('Expected the vibe run and its schedule');
+    // Red when a stored plan with no recorded tier is read as hosted on a hosted chain, or when the
+    // reader stops binding the tier to the plan digest.
+    describe('a stored plan', () => {
+        async function storedPlan() {
+            const brief = await planOn('cloud');
+            await confirmOn(brief, 'cloud');
+            const run = agentRunLifecycle.get(brief.runId);
+            const schedule = run?.plan?.batchSchedule;
+            if (run === null || schedule?.kind !== 'vibe-run') {
+                throw new TypeError('Expected the vibe run and its schedule');
+            }
+            const stored = readScheduledVibeRunPlan(schedule.serializedPlan);
+            if (stored === null || stored.schemaVersion !== 2) {
+                throw new TypeError('Expected a measured stored plan');
+            }
+            return { run, schedule, stored };
         }
-        const stored = readScheduledVibeRunPlan(schedule.serializedPlan);
-        if (stored === null || stored.schemaVersion !== 2) {
-            throw new TypeError('Expected a measured stored plan');
-        }
-        expect(stored.valueChoiceTier).toBe('hosted');
 
-        const { valueChoiceTier: _recorded, ...legacy } = stored;
-        const older = { ...schedule, serializedPlan: JSON.stringify(legacy) };
-        const preflight = preflightVibeRunBatch(run, older, 2);
-        expect(preflight).toMatchObject({ status: 'admitted', valueChoiceTier: 'local' });
+        it('records the tier it was planned under', async () => {
+            const { stored } = await storedPlan();
+            expect(stored.valueChoiceTier).toBe('hosted');
+        });
+
+        it('is rejected when its tier is changed after planning', async () => {
+            const { stored } = await storedPlan();
+            const flipped = JSON.stringify({ ...stored, valueChoiceTier: 'local' });
+            expect(readScheduledVibeRunPlan(flipped)).toBeNull();
+        });
+
+        it('with no recorded tier and its original digest still reads, and is planned locally', async () => {
+            const { run, schedule, stored } = await storedPlan();
+            const { valueChoiceTier: _recorded, ...rest } = stored;
+            const legacy = {
+                ...rest,
+                planDigest: digestScheduledVibeRunPlan({
+                    briefRevision: stored.briefRevision,
+                    batches: stored.batches,
+                    initialDigest: stored.initialDigest,
+                }),
+            };
+            const older = { ...schedule, serializedPlan: JSON.stringify(legacy) };
+            expect(readScheduledVibeRunPlan(older.serializedPlan)).not.toBeNull();
+            expect(preflightVibeRunBatch(run, older, 2)).toMatchObject({
+                status: 'admitted',
+                valueChoiceTier: 'local',
+            });
+        });
     });
 });

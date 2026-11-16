@@ -2,8 +2,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
-import { type VibeRunValueChoiceTier } from '../../models/VibeRunPlan';
 import { type ToolCallResult } from '../../models/ToolCallResult';
+import { type VibeRunValueChoiceTier } from '../../models/VibeRunPlan';
 import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
