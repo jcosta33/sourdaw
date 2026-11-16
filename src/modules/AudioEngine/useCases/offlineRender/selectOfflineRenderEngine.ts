@@ -66,11 +66,8 @@ import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeN
 import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
 import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
-import {
-    classifyNativeOfflineHostedDevice,
-    readNativeOfflineHostedRuntime,
-    type NativeOfflineHostedRuntime,
-} from './nativeOfflineHostedDevice';
+import { classifyNativeOfflineHostedDevice, type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
+import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
 import { resolveOutputTarget } from './resolveOutputTarget';
 
 export type OfflineRenderEngineSelection =

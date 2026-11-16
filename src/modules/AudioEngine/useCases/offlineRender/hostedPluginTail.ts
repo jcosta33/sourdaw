@@ -29,10 +29,7 @@ import { engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore'
 export const UNENDING_PLUGIN_TAIL_SAMPLES = 2_147_483_647;
 
 /** Seconds of tail, or `null` when the report bounds nothing the render can honour. */
-export function hostedPluginTailSeconds(input: {
-    tailSamples: number;
-    activationSampleRate: number | null;
-}): number | null {
+function hostedPluginTailSeconds(input: { tailSamples: number; activationSampleRate: number | null }): number | null {
     const { tailSamples, activationSampleRate } = input;
     if (tailSamples >= UNENDING_PLUGIN_TAIL_SAMPLES || activationSampleRate === null || activationSampleRate <= 0) {
         return null;

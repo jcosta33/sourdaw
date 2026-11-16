@@ -240,23 +240,6 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
  * A cancel that reaches the native side before its render is kept and still
  * cancels it; one for a finished or unknown id does nothing.
  */
-export async function cancelNativeGraphOfflineRender(renderId: string): Promise<void> {
+async function cancelNativeGraphOfflineRender(renderId: string): Promise<void> {
     await desktopInvoke('cancel_graph_offline', { renderId });
-}
-
-/**
- * The text every cancelled native render's error carries
- * (`OFFLINE_RENDER_CANCELLED` in `crates/sourdaw-native/src/commands/
- * offline_plugins.rs`). A seam contract — never reword one side alone.
- */
-export const NATIVE_OFFLINE_RENDER_CANCELLED = 'offline-render-cancelled';
-
-/**
- * Whether a failed render was one `cancel_graph_offline` stopped. Matched as
- * contained rather than leading text: the desktop IPC prefixes the native
- * message with its own channel name when it rejects the invoke.
- */
-export function isNativeOfflineRenderCancelled(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return message.includes(NATIVE_OFFLINE_RENDER_CANCELLED);
 }

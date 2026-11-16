@@ -2,7 +2,7 @@ import { adjustmentLayerStore } from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
-import { readNativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
+import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
 import { renderOfflineWithNativeEngine } from './renderOfflineWithNativeEngine';
 import { type resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { selectOfflineRenderEngine } from './selectOfflineRenderEngine';

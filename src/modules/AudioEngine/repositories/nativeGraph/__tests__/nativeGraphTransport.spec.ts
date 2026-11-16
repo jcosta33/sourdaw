@@ -2,11 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
-import {
-    cancelNativeGraphOfflineRender,
-    createDesktopNativeGraphTransport,
-    type NativeLevainBankLayout,
-} from '../nativeGraphTransport';
+import { createDesktopNativeGraphTransport, type NativeLevainBankLayout } from '../nativeGraphTransport';
 import { type NativeGraphWireBatch } from '../serializeAudioGraphCommand';
 
 vi.mock('#/utils/desktopBridge', () => ({
@@ -167,7 +163,7 @@ describe('createDesktopNativeGraphTransport', () => {
     it('cancels a render by its id through cancel_graph_offline', async () => {
         vi.mocked(desktopInvoke).mockResolvedValue(undefined);
 
-        await cancelNativeGraphOfflineRender('bounce-7');
+        await createDesktopNativeGraphTransport().cancelGraphOfflineRender?.('bounce-7');
 
         expect(desktopInvoke).toHaveBeenCalledWith('cancel_graph_offline', { renderId: 'bounce-7' });
     });

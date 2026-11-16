@@ -32,12 +32,9 @@
  */
 
 import { type Device } from '#/modules/Arrangement/stores';
-import { pluginScanStore } from '#/modules/PluginHost/stores';
 
-import { isDesktopExternalPluginRuntime } from '../../repositories/deviceStrategy/isDesktopExternalPluginRuntime';
 import { isEngineHostedPluginDeviceType } from '../../repositories/deviceStrategy/isEngineHostedPluginDeviceType';
 import { isHostedPluginInstanceLoaded } from '../../repositories/deviceStrategy/isHostedPluginInstanceLoaded';
-import { readLoadedExternalInstanceIds } from '../livePlayback/readLoadedExternalInstanceIds';
 
 export type HostedPluginKind = 'effect' | 'instrument';
 
@@ -50,26 +47,6 @@ export type NativeOfflineHostedRuntime = Readonly<{
 }>;
 
 export type NativeOfflineHostedVerdict = 'not-loaded' | 'effect' | 'instrument' | 'unknown';
-
-/** The scan's own split, mirrored from `chain_kind_for_category`. */
-export function readScannedPluginKind(externalPluginId: string): HostedPluginKind | null {
-    const plugin = pluginScanStore.value?.scannedPlugins.find((candidate) => candidate.id === externalPluginId);
-    if (!plugin) {
-        return null;
-    }
-    return plugin.category === 'instrument' ? 'instrument' : 'effect';
-}
-
-/** The live runtime, over a loaded-instance set the caller may have captured already. */
-export function readNativeOfflineHostedRuntime(
-    loadedInstanceIds: ReadonlySet<string> = readLoadedExternalInstanceIds()
-): NativeOfflineHostedRuntime {
-    return {
-        loadedInstanceIds,
-        onDesktopRuntime: isDesktopExternalPluginRuntime(),
-        pluginKind: readScannedPluginKind,
-    };
-}
 
 export function classifyNativeOfflineHostedDevice(
     device: Pick<Device, 'type' | 'externalPluginId' | 'externalInstanceId'>,

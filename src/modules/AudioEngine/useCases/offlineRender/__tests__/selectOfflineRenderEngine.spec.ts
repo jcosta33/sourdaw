@@ -36,10 +36,11 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { renderOffline } from '../../renderOffline';
+import { nativeOfflineDeviceEntries } from '../nativeOfflineDeviceEntries';
+import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
+import { readScannedPluginKind } from '../readScannedPluginKind';
 import { resolveOutputTarget } from '../resolveOutputTarget';
 import { type OfflineRenderContext } from '../resolveRenderContext';
-import { type NativeOfflineHostedRuntime, readScannedPluginKind } from '../nativeOfflineHostedDevice';
-import { nativeOfflineDeviceEntries } from '../renderOfflineWithNativeEngine';
 import { selectOfflineRenderEngine, type SelectOfflineRenderEngineInput } from '../selectOfflineRenderEngine';
 
 import { createNullTestRenderHarness } from './nullTestRenderHarness';

@@ -77,6 +77,7 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { createExportError } from '../../errors/ExportError';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
@@ -84,12 +85,9 @@ import {
     type AudioGraphParameterWrite,
 } from '../../models/AudioGraphBackend';
 import { STEREO_CHANNEL_COUNT } from '../../models/ChannelLaw';
-import { createExportError } from '../../errors/ExportError';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
-import {
-    isNativeOfflineRenderCancelled,
-    type NativeGraphTransport,
-} from '../../repositories/nativeGraph/nativeGraphTransport';
+import { isNativeOfflineRenderCancelled } from '../../repositories/nativeGraph/isNativeOfflineRenderCancelled';
+import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflinePpqEndpointProjector,
@@ -98,7 +96,6 @@ import {
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { nativeBuiltinAutomation } from '../livePlayback/nativeBuiltinAutomation';
-import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 import { nativeDeviceParameterLaw } from '../livePlayback/nativeDeviceParameterLaw';
 // Project truth spells a built-in's parameters as the ids a panel authors; the
 // native mapper resolves them against the engine's own vocabulary and refuses
@@ -110,15 +107,13 @@ import { automationWriteCommand } from './automationWriteCommand';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
 import { deviceParameterOverlapReason } from './deviceParameterOverlapReason';
-import {
-    classifyNativeOfflineHostedDevice,
-    readNativeOfflineHostedRuntime,
-    type NativeOfflineHostedRuntime,
-} from './nativeOfflineHostedDevice';
+import { nativeOfflineDeviceEntries } from './nativeOfflineDeviceEntries';
+import { type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
 import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
-import { projectStripAutomationWrites, type StripAutomationDeviceEntry } from './projectStripAutomationWrites';
+import { projectStripAutomationWrites } from './projectStripAutomationWrites';
+import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
 import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
@@ -184,26 +179,6 @@ function writeCommands(
     writes: readonly AudioGraphParameterWrite[]
 ): AudioGraphCommand[] {
     return writes.map((write) => automationWriteCommand(target, write));
-}
-
-/**
- * The devices on this strip the native render prints and stamps, in chain
- * order: the built-ins it builds a body for and the hosted effects it builds an
- * offline instance of, admitted by the selection's own predicate.
- */
-export function nativeOfflineDeviceEntries(
-    track: Track,
-    hostedRuntime: NativeOfflineHostedRuntime
-): readonly StripAutomationDeviceEntry[] {
-    return track.devices.flatMap((device): StripAutomationDeviceEntry[] => {
-        if (
-            device.externalInstanceId !== undefined &&
-            classifyNativeOfflineHostedDevice(device, hostedRuntime) === 'effect'
-        ) {
-            return [{ deviceId: device.id, deviceType: device.type, externalInstanceId: device.externalInstanceId }];
-        }
-        return nativeBuiltinBody(device.type) === null ? [] : [{ deviceId: device.id, deviceType: device.type }];
-    });
 }
 
 /**
