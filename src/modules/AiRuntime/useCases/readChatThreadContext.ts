@@ -9,6 +9,7 @@ import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmat
 import { buildThreadContext } from '../transformers/buildThreadContext';
 
 import { readConfirmationBatchId } from './agentRequestOrchestration/readConfirmationBatchId';
+import { readMetricCreativeAuthorityIds } from './metricGoalStateCodec';
 
 function groupIdsOf(entries: ReadonlyArray<{ groupId?: string }>): ReadonlySet<string> {
     return new Set(entries.flatMap((entry) => (entry.groupId === undefined ? [] : [entry.groupId])));
@@ -26,8 +27,12 @@ export function readChatThreadContext(): ThreadContext | null {
         confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map((confirmation) => ({
             ...confirmation,
             batchId: readConfirmationBatchId(confirmation),
+            creativeAuthorityIds: readMetricCreativeAuthorityIds(confirmation.approvalSnapshot.metricGoalState),
         })),
-        runs: agentRunStore.value?.runs ?? [],
+        runs: (agentRunStore.value?.runs ?? []).map((run) => ({
+            ...run,
+            creativeAuthorityIds: readMetricCreativeAuthorityIds(run.plan?.metricGoalState),
+        })),
         actionGroups: aiActionHistoryStore.value?.groups ?? [],
         projectId: captureProjectIdentity(),
         pastGroupIds: groupIdsOf(history?.past ?? []),

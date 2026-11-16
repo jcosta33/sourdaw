@@ -166,7 +166,7 @@ const OTHER_PROJECT = 'project-other';
 function confirmation(input: {
     runId: string;
     assistantMessageId: string;
-    status: 'proposed' | 'executed' | 'cancelled' | 'failed';
+    status: 'proposed' | 'accepted' | 'executed' | 'cancelled' | 'failed';
     supersededBy?: string | null;
     measuredPreview?: MeasuredPreview;
     batchId?: string;
@@ -340,6 +340,21 @@ describe('thread context for the planner', () => {
                 confirmationId: 'confirmation:radio-run:radio-card',
                 creativeInterpretation: 'A small vintage receiver',
             });
+        });
+        it('does not treat an accepted confirmation without its batch receipt as committed', () => {
+            const card = confirmation({ runId: 'accepted-run', assistantMessageId: 'card', status: 'accepted' });
+            expect(
+                buildThreadContext(
+                    sources({
+                        messages: [
+                            message('request', 'user', 'change the sound'),
+                            message('card', 'assistant', 'Applying'),
+                        ],
+                        confirmations: [card],
+                        runs: [{ runId: 'accepted-run', receipts: [] }],
+                    })
+                )
+            ).toBeNull();
         });
         it('has no state when nothing is pending or committed, and the message carries no section', () => {
             const thread = buildThreadContext(

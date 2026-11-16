@@ -20,6 +20,7 @@ import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
 import { createPromptConfirmationId } from './createPromptConfirmationId';
 import { readPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
+import { readMetricCreativeAuthorityIds } from '../metricGoalStateCodec';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
@@ -207,7 +208,8 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
 
         recordConfirmationMetricGoalPlan(input, confirmation);
         const interpretation = readPublicCreativeInterpretation(
-            agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? []
+            agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? [],
+            readMetricCreativeAuthorityIds(confirmation.approvalSnapshot?.metricGoalState)
         );
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,

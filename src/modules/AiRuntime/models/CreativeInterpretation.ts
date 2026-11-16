@@ -15,8 +15,11 @@ export function isPublicCreativeInterpretation(value: unknown): value is string 
 
 /** Read only a successfully admitted creative intake, never a receipt summary or request. */
 export function readPublicCreativeInterpretation(
-    receipts: readonly { toolName: string; status: string; data: unknown }[]
+    receipts: readonly { toolName: string; status: string; data: unknown }[],
+    authorityIds?: readonly string[]
 ): string | null {
+    if (authorityIds !== undefined && new Set(authorityIds).size !== 1) return null;
+    const candidates = new Map<string, Set<string>>();
     for (const receipt of receipts) {
         if (
             receipt.toolName !== CREATIVE_INTERPRETATION_TOOL_NAME ||
@@ -28,14 +31,20 @@ export function readPublicCreativeInterpretation(
             continue;
         const data = receipt.data as Record<string, unknown>;
         if (
-            data.kind === 'metric-intent' &&
-            typeof data.authorityId === 'string' &&
-            data.authorityId.length > 0 &&
-            isPublicCreativeInterpretation(data.creativeInterpretation)
+            data.kind !== 'metric-intent' ||
+            typeof data.authorityId !== 'string' ||
+            data.authorityId.length === 0 ||
+            (authorityIds !== undefined && !authorityIds.includes(data.authorityId))
         )
-            return data.creativeInterpretation;
+            continue;
+        if (!isPublicCreativeInterpretation(data.creativeInterpretation)) return null;
+        const readings = candidates.get(data.authorityId) ?? new Set<string>();
+        readings.add(data.creativeInterpretation);
+        candidates.set(data.authorityId, readings);
     }
-    return null;
+    if (candidates.size !== 1) return null;
+    const readings = [...candidates.values()][0];
+    return readings?.size === 1 ? [...readings][0]! : null;
 }
 
 /**

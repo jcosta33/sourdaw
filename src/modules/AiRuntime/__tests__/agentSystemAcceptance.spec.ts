@@ -105,6 +105,7 @@ import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/ba
 import { materializePromptCommandPlan } from '../useCases/agentRequestOrchestration/materializePromptCommandPlan';
 import { agentRunLifecycle } from '../useCases/agentRunLifecycle';
 import { agentWorkBudget } from '../useCases/agentWorkBudget';
+import { cancelPendingChatActions } from '../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { evaluateMetricGoalAdmission } from '../useCases/evaluateMetricGoalAdmission';
 import { getBriefMixIntentCatalog } from '../useCases/getBriefMixIntentCatalog';
@@ -2938,6 +2939,139 @@ describe('scripted proposal plans', () => {
 
 describe('agent acceptance corpora', () => {
     beforeEach(() => fixtureLifetime.drain());
+    it.each([
+        ['A small vintage receiver', 'commit'],
+        ['A polished broadcast sound', 'commit'],
+        ['A small vintage receiver', 'cancel'],
+        ['A small vintage receiver', 'deleted'],
+    ] as const)('carries the actual admitted public reading %s through a %s chat result', (reading, disposition) =>
+        fixtureLifetime.track(async () => {
+            const testCase = corpusCase('development', 'AC067-DEV-PERCEPTUAL-1');
+            const projectBefore = projectStore.value;
+            const markersBefore = markerStore.value;
+            openVibeRunProject();
+            agentRunLifecycle.clear();
+            projectStore.set({
+                ...structuredClone(defaultProjectStoreState),
+                projectId: FIXTURE_PROJECT_ID,
+                initialized: true,
+                loading: false,
+            });
+            try {
+                const turns = testCase.providerTurns.map((turn) => toScriptedTurn(turn));
+                const intake = turns[0];
+                if (!intake) throw new Error('Expected creative intake');
+                turns[0] = (message, view) =>
+                    intake(message, view).map((call) => ({
+                        ...call,
+                        arguments: { ...call.arguments, creativeInterpretation: reading },
+                    }));
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+                const scriptErrors: string[] = [];
+                const seen = scriptProviderTurns(
+                    runtimeMocks.generateWebLlmCompletion,
+                    turns.map((turn) => (message, view) => {
+                        try {
+                            return turn(message, view);
+                        } catch (error) {
+                            scriptErrors.push(String(error));
+                            throw error;
+                        }
+                    })
+                );
+                await sendChatMessage(testCase.prompt, { mode: 'apply' });
+                const ids = proposedConfirmationIds();
+                expect(
+                    ids,
+                    `${lastAssistantReply()} calls=${seen.length} errors=${scriptErrors.join('; ')}`
+                ).toHaveLength(1);
+                const card = getPendingActionConfirmation(ids[0]!);
+                if (!card) throw new Error('Expected proposal');
+                expect(lastAssistantReply()).toContain(`Interpretation: ${reading}`);
+                if (disposition !== 'cancel') {
+                    await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({
+                        status: 'executed',
+                    });
+                } else {
+                    await expect(cancelPendingChatActions({ confirmationId: card.id })).resolves.toEqual({
+                        status: 'cancelled',
+                    });
+                }
+                const thread = readChatThreadContext();
+                const result = disposition !== 'cancel' ? thread?.lastCommit : thread?.lastCancelled;
+                expect(result).toMatchObject({
+                    runId: card.runId,
+                    confirmationId: card.id,
+                    creativeInterpretation: reading,
+                });
+                expect(result?.batchId).toBeDefined();
+                if (disposition !== 'cancel') expect(thread?.lastCommit?.receiptIds).toHaveLength(1);
+                else expect(thread?.lastCommit).toBeNull();
+                if (disposition === 'deleted') {
+                    await commandUseCases.executeAppAction({
+                        type: 'removeTrack',
+                        payload: { trackId: 'track-guitar' },
+                    });
+                    const current = trackStore.value;
+                    if (!current) throw new Error('Expected the open track store');
+                    trackStore.set({ ...current, selectedTrackId: 'track-kick' });
+                    const kickBefore = structuredClone(
+                        trackStore.value?.tracks.find((track) => track.id === 'track-kick')
+                    );
+                    runtimeMocks.generateWebLlmCompletion.mockReset();
+                    let freshCatalog: ScriptedCreativeCatalog | undefined;
+                    const deletedMessages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                        (message, view) => {
+                            freshCatalog = readCreativeInterpretationCatalog(message, view);
+                            return [
+                                selectCreativeInterpretationCall({
+                                    catalog: freshCatalog,
+                                    modeId: 'unresolved',
+                                    uncertainty: 'authority',
+                                }),
+                            ];
+                        },
+                    ]);
+                    await sendChatMessage('Keep the tone on "Guitar"', { mode: 'apply' });
+                    expect(deletedMessages).toHaveLength(1);
+                    expect(deletedMessages[0]).toContain(reading);
+                    expect(freshCatalog?.modes).toContain('unresolved');
+                    expect(freshCatalog?.targets).toEqual([]);
+                    expect(proposedConfirmationIds()).toEqual([]);
+                    expect(trackStore.value?.tracks.find((track) => track.id === 'track-kick')).toEqual(kickBefore);
+                    return;
+                }
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+                const messages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                    () => [declineCall({ kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] })],
+                ]);
+                await sendChatMessage('Keep that tone, but make the lick less busy', { mode: 'apply' });
+                expect(messages).toHaveLength(1);
+                expect(messages[0]).toContain(reading);
+                expect(messages[0]).toContain(result!.batchId);
+                const currentTracks = trackStore.value;
+                if (!currentTracks) throw new Error('Expected the open track store');
+                trackStore.set({ ...currentTracks, selectedTrackId: 'track-kick' });
+                expect(getProjectContext().selectedTrackId).toBe('track-kick');
+                const afterSelection = readChatThreadContext();
+                const retained = disposition === 'commit' ? afterSelection?.lastCommit : afterSelection?.lastCancelled;
+                expect(retained).toMatchObject({ batchId: result!.batchId, creativeInterpretation: reading });
+                const currentChat = chatStore.value;
+                if (!currentChat) throw new Error('Expected the chat');
+                chatStore.set({ ...currentChat, messages: [] });
+                expect(readChatThreadContext()).toBeNull();
+                chatStore.set(currentChat);
+                resetCrdtProjectAuthority('switch project');
+                expect(readChatThreadContext()).toBeNull();
+            } finally {
+                for (const track of context.tracks) removeTrackStrip(track.id);
+                markerStore.set(markersBefore);
+                projectStore.set(projectBefore);
+                closeChatProject();
+                agentRunLifecycle.clear();
+            }
+        })
+    );
     it('carries unique case ids across both corpora and held-out prompts disjoint from development', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
         expect(new Set(allIds).size).toBe(allIds.length);

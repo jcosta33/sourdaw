@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
-import { createCreativeInterpretationToolSchema } from '../../models/CreativeInterpretation';
+import {
+    createCreativeInterpretationToolSchema,
+    readPublicCreativeInterpretation,
+} from '../../models/CreativeInterpretation';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
@@ -47,6 +50,21 @@ function legacyCall(catalogId: string) {
 }
 
 describe('joint planning interpretation consumes the actual printed context view', () => {
+    it('never chooses an unrelated or conflicting intake reading', () => {
+        const receipt = (authorityId: string, creativeInterpretation: string) => ({
+            toolName: 'selectCreativeInterpretation',
+            status: 'success',
+            data: { kind: 'metric-intent', authorityId, creativeInterpretation },
+        });
+        const receipts = [receipt('old', 'vintage receiver'), receipt('current', 'broadcast sound')];
+        expect(readPublicCreativeInterpretation(receipts, ['current'])).toBe('broadcast sound');
+        expect(readPublicCreativeInterpretation(receipts, ['missing'])).toBeNull();
+        expect(readPublicCreativeInterpretation(receipts, ['current', 'old'])).toBeNull();
+        expect(readPublicCreativeInterpretation(receipts)).toBeNull();
+        expect(
+            readPublicCreativeInterpretation([...receipts, receipt('current', 'different reading')], ['current'])
+        ).toBeNull();
+    });
     it('retains the bounded public creative reading separately from authority', () => {
         const value = fixture();
         const call = legacyCall(value.creative.catalogId);

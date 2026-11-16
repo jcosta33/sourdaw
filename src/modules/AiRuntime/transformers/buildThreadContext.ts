@@ -23,6 +23,7 @@ type ThreadConfirmation = {
      * group id, which a re-proposed subset keeps from the proposal it replaced.
      */
     batchId: string | null;
+    creativeAuthorityIds?: readonly string[];
     /** What each executed action changed: project state, or only the runtime (transport and the like). */
     executedActions: ReadonlyArray<{ executionKind: 'project' | 'runtime' }>;
     approvalSnapshot: {
@@ -37,6 +38,7 @@ type ThreadConfirmation = {
 type ThreadRun = {
     runId: string;
     receipts: readonly AgentRunReceipt[];
+    creativeAuthorityIds?: readonly string[];
     plan?: { applicationToolReceipts?: readonly ApplicationToolReceipt[] } | null;
 };
 
@@ -76,8 +78,11 @@ function isOpenProjectConfirmation(confirmation: ThreadConfirmation, sources: Th
     return confirmation.approvalSnapshot.commandBatch?.authority.projectId === sources.projectId;
 }
 
-function interpretationForRun(run: ThreadRun | undefined): { creativeInterpretation?: string } {
-    const interpretation = readPublicCreativeInterpretation(run?.plan?.applicationToolReceipts ?? []);
+function interpretationForRun(
+    run: ThreadRun | undefined,
+    authorityIds = run?.creativeAuthorityIds
+): { creativeInterpretation?: string } {
+    const interpretation = readPublicCreativeInterpretation(run?.plan?.applicationToolReceipts ?? [], authorityIds);
     return interpretation === null ? {} : { creativeInterpretation: interpretation };
 }
 
@@ -165,7 +170,7 @@ function readConfirmedCommit(
         runId: confirmation.runId,
         batchId: confirmation.batchId,
         confirmationId: confirmation.id,
-        ...interpretationForRun(run),
+        ...interpretationForRun(run, confirmation.creativeAuthorityIds),
         receiptIds: [receipt.receiptIdentity],
         standing: readStanding(receipt, sources),
         commands: commandsOfSnapshot(confirmation.approvalSnapshot),
@@ -239,7 +244,10 @@ function readPendingProposal(
                 runId: pending.runId,
                 confirmationId: pending.id,
                 batchPosition: pending.approvalSnapshot.batchPosition ?? null,
-                ...interpretationForRun(sources.runs.find((run) => run.runId === pending.runId)),
+                ...interpretationForRun(
+                    sources.runs.find((run) => run.runId === pending.runId),
+                    pending.creativeAuthorityIds
+                ),
                 commands: commandsOfSnapshot(pending.approvalSnapshot),
             };
         }
@@ -268,7 +276,10 @@ function readLastCancelled(
                 runId: cancelled.runId,
                 confirmationId: cancelled.id,
                 batchId: cancelled.batchId,
-                ...interpretationForRun(sources.runs.find((run) => run.runId === cancelled.runId)),
+                ...interpretationForRun(
+                    sources.runs.find((run) => run.runId === cancelled.runId),
+                    cancelled.creativeAuthorityIds
+                ),
                 commands: commandsOfSnapshot(cancelled.approvalSnapshot),
             };
         }
