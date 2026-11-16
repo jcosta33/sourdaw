@@ -65,7 +65,7 @@ class SchedulerWorker {
                     generation: this.generation,
                     sequence: ++this.sequence,
                     scheduledAtMs: received - 2,
-                    sentAtMs: received - 1,
+                    sentAtMs: received,
                 },
             })
         );

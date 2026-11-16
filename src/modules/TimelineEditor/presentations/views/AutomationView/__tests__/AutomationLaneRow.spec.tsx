@@ -19,6 +19,7 @@ import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
 import {
+    insertAutomationPointPreservingShape,
     onDrawMouseDown,
     onPointMouseDown,
     onRubberBandStart,
@@ -34,6 +35,7 @@ const {
     mockWorkspaceState,
     mockTimelineEditingState,
     mockTransportState,
+    mockCaptureGestureBeat,
 } = vi.hoisted(() => ({
     mockWorkspaceStoreRef: {},
     mockTimelineEditingStoreRef: {},
@@ -41,6 +43,7 @@ const {
     mockWorkspaceState: { activeTool: 'pointer' },
     mockTimelineEditingState: { snapValue: 1 },
     mockTransportState: { playheadPosition: 0 },
+    mockCaptureGestureBeat: vi.fn(() => 0),
 }));
 
 vi.mock('#/utils/Styles/cn', () => ({
@@ -110,6 +113,7 @@ vi.mock('../../../helpers/automationLaneConstants', () => ({
 }));
 
 vi.mock('../../../helpers/automationDrag', () => ({
+    insertAutomationPointPreservingShape: vi.fn(() => true),
     onDrawMouseDown: vi.fn(),
     onRubberBandStart: vi.fn(),
     onTensionMouseDown: vi.fn(),
@@ -137,6 +141,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: mockTransportStoreRef,
+    captureGestureBeat: mockCaptureGestureBeat,
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
@@ -195,6 +200,7 @@ describe('AutomationLaneRow', () => {
         mockTimelineEditingState.snapValue = 1;
         mockTransportState.playheadPosition = 0;
         playheadPositionRef.current = 0;
+        mockCaptureGestureBeat.mockReturnValue(0);
     });
 
     afterEach(() => {
@@ -715,5 +721,65 @@ describe('AutomationLaneRow', () => {
             "M 0 93.6 ",
           ]
         `);
+    });
+
+    describe('keyboard cursor at the playhead', () => {
+        const getLane = () => screen.getByRole('group', { name: 'Volume automation lane' });
+
+        // Each case gives the latest-value channel and the transport store
+        // other beats than the gesture clock: the key press's beat is the
+        // gesture clock's alone.
+        it('inserts a shape-preserving point at the gesture beat on Enter and claims the key', () => {
+            playheadPositionRef.current = 9;
+            mockTransportState.playheadPosition = 2;
+            mockCaptureGestureBeat.mockReturnValue(6);
+            render(<AutomationLaneRow {...defaultProps} />);
+
+            expect(fireEvent.keyDown(getLane(), { key: 'Enter' })).toBe(false);
+
+            expect(insertAutomationPointPreservingShape).toHaveBeenCalledWith('lane-1', 6);
+        });
+
+        it('still claims Enter when the shape at the playhead refuses a point', () => {
+            vi.mocked(insertAutomationPointPreservingShape).mockReturnValueOnce(false);
+            render(<AutomationLaneRow {...defaultProps} />);
+
+            expect(fireEvent.keyDown(getLane(), { key: 'Enter' })).toBe(false);
+            expect(insertAutomationPointPreservingShape).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }])(
+            'opens the shape menu at the gesture beat on $key',
+            (keyInit) => {
+                playheadPositionRef.current = 7;
+                mockTransportState.playheadPosition = 1;
+                mockCaptureGestureBeat.mockReturnValue(3);
+                render(<AutomationLaneRow {...defaultProps} />);
+
+                expect(fireEvent.keyDown(getLane(), keyInit)).toBe(false);
+
+                const menu = screen.getByTestId('context-menu');
+                expect(menu).toHaveAttribute('data-section', 'shape');
+                expect(menu).toHaveAttribute('data-beat', '3');
+            }
+        );
+
+        it('leaves Enter from inside the lane and modified Enter to their owners', () => {
+            const { container } = render(<AutomationLaneRow {...defaultProps} />);
+
+            expect(fireEvent.keyDown(container.querySelector('svg')!, { key: 'Enter' })).toBe(true);
+            expect(fireEvent.keyDown(getLane(), { key: 'Enter', shiftKey: true })).toBe(true);
+            expect(insertAutomationPointPreservingShape).not.toHaveBeenCalled();
+        });
+
+        it('starts no curve gesture for a press on the lane header', () => {
+            render(<AutomationLaneRow {...defaultProps} />);
+
+            fireEvent.mouseDown(screen.getByTestId('lane-header'), { button: 0 });
+            fireEvent.contextMenu(screen.getByTestId('lane-header'));
+
+            expect(onRubberBandStart).not.toHaveBeenCalled();
+            expect(screen.queryByTestId('context-menu')).not.toBeInTheDocument();
+        });
     });
 });

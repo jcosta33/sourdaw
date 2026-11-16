@@ -115,6 +115,35 @@ describe('StepPatternEditor — octave badge', () => {
         fireEvent.click(screen.getByText('+2'));
         expect(onStepChange).toHaveBeenCalledWith(0, expect.objectContaining({ octaveOffset: -2 }));
     });
+
+    it('is a named native button beside the step cell, not nested inside it', () => {
+        renderEditor([makeStep({ octaveOffset: 1 })]);
+        const badge = screen.getByRole('button', { name: 'Step 1 octave +1' });
+        // A native button is what makes Enter and Space activate it.
+        expect(badge.tagName).toBe('BUTTON');
+        expect(screen.getByRole('button', { name: 'Step 1' })).not.toContainElement(badge);
+    });
+
+    it('does not start a velocity paint stroke when the badge is pressed', () => {
+        // jsdom lays nothing out; a cell with height is what lets a press paint.
+        const rect = vi
+            .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+            .mockReturnValue(new DOMRect(0, 0, 20, 40));
+        try {
+            const onStepChange = vi.fn();
+            renderEditor([makeStep({ octaveOffset: 1 })], { onStepChange });
+
+            fireEvent.pointerDown(screen.getByRole('button', { name: 'Step 1 octave +1' }), { clientY: 10 });
+            expect(onStepChange).not.toHaveBeenCalled();
+
+            fireEvent.pointerDown(screen.getByRole('button', { name: 'Step 1' }), { clientY: 10 });
+            expect(onStepChange).toHaveBeenCalledWith(0, expect.objectContaining({ velocityOverride: true }), {
+                stroke: true,
+            });
+        } finally {
+            rect.mockRestore();
+        }
+    });
 });
 
 describe('StepPatternEditor — ratchet indicator', () => {

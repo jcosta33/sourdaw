@@ -46,7 +46,7 @@ async function numericAttribute(knob: Locator, name: string): Promise<number> {
     }
     const value = Number(raw);
     if (!Number.isFinite(value)) {
-        throw new Error(`${name} is not a finite number: ${raw}`);
+        throw new TypeError(`${name} is not a finite number: ${raw}`);
     }
     return value;
 }
