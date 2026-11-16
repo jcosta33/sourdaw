@@ -358,9 +358,10 @@ async function releaseCollection(page: Page): Promise<number> {
 async function beginSaveWaitingForLock(page: Page): Promise<void> {
     await page.evaluate(async (lockName) => {
         const { saveProject } = await import('/src/modules/Project/useCases/index.ts');
-        let settled = false;
+        // A property, not a local: the `finally` callback sets it while the loop awaits.
+        const save = { settled: false };
         const pending = saveProject().finally(() => {
-            settled = true;
+            save.settled = true;
         });
         Reflect.set(globalThis, '__sourdawPendingNativeSave', pending);
         for (;;) {
@@ -368,7 +369,7 @@ async function beginSaveWaitingForLock(page: Page): Promise<void> {
             if (state.pending?.some((lock) => lock.name === lockName)) {
                 return;
             }
-            if (settled) {
+            if (save.settled) {
                 throw new Error('Production save settled before waiting for project audio storage admission');
             }
             await new Promise<void>((resolve) => setTimeout(resolve, 0));

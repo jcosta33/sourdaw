@@ -306,7 +306,7 @@ function deliverWorkerTick(): void {
                 generation: worker.generation,
                 sequence: ++sequence,
                 scheduledAtMs: received - 2,
-                sentAtMs: received - 1,
+                sentAtMs: received,
             },
         });
     }

@@ -1,7 +1,39 @@
 import { type AppActionType } from '#/utils/handlerContract';
 
-/** The grants and delete-count rule one action type puts on a versioned command batch. */
+type CommandArguments = Readonly<Record<string, unknown>>;
+
+/** Reads one count the batch budgets from the command's untrusted arguments. */
+export type CommandBatchCountReader = (commandArguments: CommandArguments) => number;
+
+function arrayLength(value: unknown): number {
+    return Array.isArray(value) ? value.length : 0;
+}
+
+function countOne(): number {
+    return 1;
+}
+
+function countZero(): number {
+    return 0;
+}
+
+/** A range edit writes two edge points per track. */
+function twoPointsPerTrack(commandArguments: CommandArguments): number {
+    return arrayLength(commandArguments.trackIds) * 2;
+}
+
+/** The grants and counts one action type puts on a versioned command batch. */
 export type CommandBatchActionEffect = {
+    /** Tracks the action creates; absent means none. */
+    readonly createdTracks?: CommandBatchCountReader;
+    /** Objects the action deletes; absent means one when `delete` is set, none otherwise. */
+    readonly deletedObjects?: CommandBatchCountReader;
+    /** Automation points the action writes at most; absent means none. */
+    readonly automationPoints?: CommandBatchCountReader;
+    /** Audio assets the action imports; absent means none. */
+    readonly importedAssets?: CommandBatchCountReader;
+    /** Render jobs the action starts; absent means none. */
+    readonly renderJobs?: CommandBatchCountReader;
     readonly create?: true;
     readonly delete?: true;
     readonly routing?: true;
@@ -14,10 +46,22 @@ export type CommandBatchActionEffect = {
 const NONE: CommandBatchActionEffect = {};
 
 export const commandBatchEffectByActionType: { readonly [Type in AppActionType]: CommandBatchActionEffect } = {
-    importStemSet: { create: true, file: true, audioUpload: true },
+    importStemSet: {
+        create: true,
+        file: true,
+        audioUpload: true,
+        createdTracks: (commandArguments) => arrayLength(commandArguments.stems) + 1,
+        importedAssets: (commandArguments) => arrayLength(commandArguments.stems),
+    },
     discardImportedStemSet: NONE,
-    addTrack: { create: true },
-    removeTrack: { delete: true },
+    addTrack: { create: true, createdTracks: countOne },
+    removeTrack: {
+        delete: true,
+        deletedObjects: (commandArguments) =>
+            1 +
+            arrayLength(commandArguments.expectedClipIds) +
+            arrayLength(commandArguments.expectedAlternativeClipIds),
+    },
     discardCreatedTrack: NONE,
     restoreTrack: NONE,
     restoreClip: NONE,
@@ -67,7 +111,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     restoreClipPlacement: NONE,
     duplicateClip: { create: true },
     duplicateClipToNextBar: { create: true },
-    duplicateTrack: { create: true },
+    duplicateTrack: { create: true, createdTracks: countOne },
     removeClip: { delete: true },
     renameClip: NONE,
     splitClip: { create: true },
@@ -93,7 +137,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setDeviceState: NONE,
     setFermenterPatch: NONE,
     setGrandBouleDeviceState: NONE,
-    createBus: { create: true, routing: true },
+    createBus: { create: true, routing: true, createdTracks: countOne },
     createFolder: NONE,
     setSend: { routing: true },
     setWorkspaceMode: NONE,
@@ -133,18 +177,32 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     addMapping: NONE,
     removeMapping: NONE,
     addAutomationLane: { create: true },
-    automateSendRange: { create: true },
-    automateSendRanges: { create: true },
+    automateSendRange: { create: true, automationPoints: twoPointsPerTrack },
+    automateSendRanges: {
+        create: true,
+        automationPoints: (commandArguments) =>
+            arrayLength(commandArguments.trackIds) * arrayLength(commandArguments.sectionIds) * 2,
+    },
     removeSendAutomationRanges: NONE,
-    renderProjectSections: { create: true, file: true },
+    renderProjectSections: {
+        create: true,
+        file: true,
+        renderJobs: (commandArguments) => arrayLength(commandArguments.sectionIds),
+    },
     removeRenderedProjectSections: NONE,
-    automateTrackGainRange: { create: true },
-    automateParameterRange: { create: true, delete: true },
+    automateTrackGainRange: { create: true, automationPoints: twoPointsPerTrack },
+    automateParameterRange: {
+        create: true,
+        delete: true,
+        // At most: the opening point, the start value a ramp leaves from, the two ends of the held
+        // target, and the closing point.
+        automationPoints: () => 5,
+    },
     removeTrackGainAutomationRange: NONE,
     removeSendAutomationRange: NONE,
     removeAutomationLane: NONE,
     setAutomationLaneEnabled: NONE,
-    addAutomationPoint: { create: true },
+    addAutomationPoint: { create: true, automationPoints: countOne },
     quantizeNotes: NONE,
     removeShortMidiOverlaps: NONE,
     createDrumPreviewBranches: { create: true },
@@ -170,7 +228,11 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     normalizeClip: NONE,
     reverseClip: NONE,
     restoreReversedClip: NONE,
-    glueClips: { create: true, delete: true },
+    glueClips: {
+        create: true,
+        delete: true,
+        deletedObjects: (commandArguments) => Math.max(1, arrayLength(commandArguments.clipIds)),
+    },
     restoreClipGlueState: NONE,
     setCompRegion: NONE,
     removeCompRegion: NONE,
@@ -220,7 +282,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     stretchAutomation: NONE,
     invertAutomation: NONE,
     reverseAutomation: NONE,
-    thinAutomation: { delete: true },
+    thinAutomation: { delete: true, deletedObjects: countZero },
     quantizeAutomation: { delete: true },
     restoreAutomationLanePoints: NONE,
     restoreAutomationPointPresence: NONE,

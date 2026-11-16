@@ -159,7 +159,7 @@ describe('aiActionHistoryStore', () => {
     });
 
     describe('pushAiActionGroup', () => {
-        it('appends a new group and opens the panel', () => {
+        it('appends a new group and leaves a closed panel closed', () => {
             const group = {
                 id: 'g1',
                 prompt: 'test prompt',
@@ -174,6 +174,23 @@ describe('aiActionHistoryStore', () => {
             const state = aiActionHistoryStore.value!;
             expect(state.groups).toHaveLength(1);
             expect(state.groups[0]).toEqual(group);
+            expect(state.panelOpen).toBe(false);
+        });
+
+        it('keeps an open panel open when a group is appended', () => {
+            toggleAiHistoryPanel();
+
+            pushAiActionGroup({
+                id: 'g1',
+                prompt: 'test prompt',
+                actions: [],
+                groupId: 'g1',
+                timestamp: RETAINED_TIMESTAMP,
+                reverted: false,
+            });
+
+            const state = aiActionHistoryStore.value!;
+            expect(state.groups).toHaveLength(1);
             expect(state.panelOpen).toBe(true);
         });
 

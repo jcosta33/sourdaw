@@ -473,7 +473,7 @@ describe('restamp dependency bump', () => {
 
         expect(result.ok).toBe(false);
         expect(result.output.split('\n')[0]).toBe(UNRESTAMPED_DIGEST_CLASSES);
-        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule tracked-set');
+        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule content-pinned tracked-set');
         expect(result.output).toContain('grand-boule: tracked-set digest drifted');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(recorded);
     });

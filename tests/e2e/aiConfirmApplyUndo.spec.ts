@@ -130,8 +130,8 @@ test.describe('AI chat over an admitted loopback provider', () => {
         expect(provider.completionRequests.length).toBeGreaterThan(0);
         expect(provider.completionRequests[0]).toContain(provider.model);
         expect(provider.completionRequests).toHaveLength(3);
-        const first = JSON.parse(provider.completionRequests[0]!) as { tools: Array<{ function: { name: string } }> };
-        const second = JSON.parse(provider.completionRequests[2]!) as {
+        const first = JSON.parse(provider.completionRequests[0]) as { tools: Array<{ function: { name: string } }> };
+        const second = JSON.parse(provider.completionRequests[2]) as {
             tools: Array<{ function: { name: string } }>;
             messages: Array<{ role: string; tool_call_id?: string; content: string }>;
         };
@@ -161,7 +161,8 @@ test.describe('AI chat over an admitted loopback provider', () => {
             await provider.close();
             let range: { startBeat: number; endBeat: number } | undefined;
             let figures:
-                Record<string, { status: string; value: number; unit: string; confidence: string }> | undefined;
+                | Partial<Record<string, { status: string; value: number; unit: string; confidence: string }>>
+                | undefined;
             const measuredProvider = await startScriptedToolProvider((request, turn) => {
                 if (turn === 0) {
                     const call = createLoopbackAnswerIntake(request, {
@@ -215,7 +216,7 @@ test.describe('AI chat over an admitted loopback provider', () => {
                 expect(receipt.status).toBe('success');
                 expect(receipt.data.kind).toBe('analysis-measurement');
                 expect(receipt.data.targets[0]?.targetId).toBe('master');
-                figures = receipt.data.targets[0]!.measurements;
+                figures = receipt.data.targets[0].measurements;
                 expect(figures.integratedLoudness?.status).toBe('measured');
                 expect(figures.truePeak?.status).toBe('measured');
                 return [
@@ -287,7 +288,10 @@ test.describe('AI chat over an admitted loopback provider', () => {
                 ['integratedLoudness', 'integrated loudness'],
                 ['truePeak', 'true peak'],
             ] as const) {
-                const value = figures[metric]!;
+                const value = figures[metric];
+                if (value === undefined) {
+                    throw new Error(`The provider received no measured ${label}.`);
+                }
                 expect(Number.isFinite(value.value)).toBe(true);
                 const rounded = Math.round(value.value * 100) / 100;
                 await expect(conversation).toContainText(

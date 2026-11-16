@@ -210,7 +210,7 @@ test.describe('Agent workspace over an admitted loopback provider', () => {
                         const referenced =
                             described === null ? '' : (document.getElementById(described)?.textContent ?? '');
                         const title = element.getAttribute('title') ?? '';
-                        const text = element.textContent ?? '';
+                        const text = element.textContent;
                         return `${label}${referenced}${title}${text}`.trim() === '';
                     })
                     .map((element) => element.outerHTML.slice(0, 120))

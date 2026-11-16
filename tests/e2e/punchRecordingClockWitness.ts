@@ -1,6 +1,5 @@
-import type { Page } from '@playwright/test';
-
 import type { DiagnosticWindow } from './punchRecordingClockObserver';
+import type { Page } from '@playwright/test';
 
 export * from './punchRecordingClockObserver';
 

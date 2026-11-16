@@ -51,7 +51,7 @@ async function withinBudget(operation: Promise<void>, milliseconds: number): Pro
     try {
         await Promise.race([
             operation,
-            new Promise<never>((_, reject) => {
+            new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
                     () =>
                         reject(new Error('Native input/observation deadline exceeded; pending input is not cancelled')),
@@ -104,7 +104,7 @@ function validateNativeInputOrder(inputs: TransportEvent[]): void {
                 'Native Stop input was untrusted, missing, moved, hidden, covered or targeted another element'
             );
         }
-        if (`${event.event}:${event.phase}` !== order[index]) {
+        if (`${event.event ?? ''}:${event.phase ?? ''}` !== order[index]) {
             throw new Error('Native Stop events arrived out of order or more than once');
         }
     }
@@ -150,7 +150,7 @@ function observationRecord(value: unknown): object {
 function observationString(value: object, key: string): string {
     const field: unknown = Reflect.get(value, key);
     if (typeof field !== 'string') {
-        throw new Error('Malformed production transport observation');
+        throw new TypeError('Malformed production transport observation');
     }
     return field;
 }
@@ -158,7 +158,7 @@ function observationString(value: object, key: string): string {
 function observationNumber(value: object, key: string): number {
     const field: unknown = Reflect.get(value, key);
     if (typeof field !== 'number' || !Number.isFinite(field)) {
-        throw new Error('Malformed production transport geometry or timestamp');
+        throw new TypeError('Malformed production transport geometry or timestamp');
     }
     return field;
 }
@@ -233,7 +233,7 @@ function pointMatches(current: Geometry, client: Point, main: Point): boolean {
 function observationBoolean(value: object, key: string): boolean {
     const observed: unknown = Reflect.get(value, key);
     if (typeof observed !== 'boolean') {
-        throw new Error('Missing native event admission evidence');
+        throw new TypeError('Missing native event admission evidence');
     }
     return observed;
 }
@@ -277,7 +277,7 @@ export function parseProductionTransportEvent(text: string): TransportEvent {
 // Each browser entry is self-contained: Playwright serializes its source without module closures.
 export function observeProductionTransportState(original: Element, options: { marker: string }) {
     if (!(original instanceof HTMLButtonElement)) {
-        throw new Error('Production Stop is not a native button');
+        throw new TypeError('Production Stop is not a native button');
     }
     const cluster = original.closest('[role="group"][aria-label="Playback controls"]');
     const host = window.frameElement;
@@ -301,7 +301,7 @@ export function observeProductionTransportState(original: Element, options: { ma
     function observeState() {
         const play = controls.querySelector('[data-testid="transport-play"]');
         const state = {
-            status: controls.querySelector('[role="status"]')?.textContent?.trim() ?? '',
+            status: controls.querySelector('[role="status"]')?.textContent.trim() ?? '',
             play: play?.getAttribute('aria-label') ?? '',
             active: play?.getAttribute('data-active') ?? '',
         };
@@ -335,7 +335,7 @@ export function installProductionTransportCapture(
     options: { marker: string; initialGeometry: Geometry; point: Point }
 ) {
     if (!(original instanceof HTMLButtonElement)) {
-        throw new Error('Production Stop is not a native button');
+        throw new TypeError('Production Stop is not a native button');
     }
     const button: HTMLButtonElement = original;
     const cluster = button.closest('[role="group"][aria-label="Playback controls"]');
@@ -375,7 +375,7 @@ export function installProductionTransportCapture(
         const target = event.composedPath().find((node) => node instanceof HTMLButtonElement);
         const play = controls.querySelector('[data-testid="transport-play"]');
         const state = {
-            status: controls.querySelector('[role="status"]')?.textContent?.trim() ?? '',
+            status: controls.querySelector('[role="status"]')?.textContent.trim() ?? '',
             play: play?.getAttribute('aria-label') ?? '',
             active: play?.getAttribute('data-active') ?? '',
         };
@@ -435,10 +435,8 @@ async function measureStop(page: Page, stop: Locator) {
     if (count !== 1) {
         assertTransportAdmission(count, false, false);
     }
+    // Locator.elementHandle waits for the element and throws when it never attaches.
     const element = await stop.elementHandle();
-    if (!element) {
-        throw new Error('Production Stop disappeared before measured admission');
-    }
     try {
         assertTransportAdmission(count, await element.isVisible(), await element.isEnabled());
         expect(await element.getAttribute('data-testid')).toBe('transport-stop');
@@ -464,10 +462,14 @@ async function measureStop(page: Page, stop: Locator) {
     }
 }
 
+function asError(error: unknown): Error {
+    return error instanceof Error ? error : new Error('A non-Error value was thrown', { cause: error });
+}
+
 function createObservationJournal(page: Page, marker: string) {
     const events: TransportEvent[] = [];
     let changed: (() => void) | undefined;
-    let failure: unknown;
+    let failure: Error | undefined;
     const assertHealthy = () => {
         if (failure) {
             throw failure;
@@ -480,7 +482,7 @@ function createObservationJournal(page: Page, marker: string) {
         try {
             events.push(parseProductionTransportEvent(message.text().slice(marker.length)));
         } catch (error) {
-            failure = error;
+            failure = asError(error);
         }
         changed?.();
     };
@@ -500,7 +502,7 @@ function createObservationJournal(page: Page, marker: string) {
                                     resolve();
                                 }
                             } catch (error) {
-                                reject(error);
+                                reject(asError(error));
                             }
                         };
                         changed();
