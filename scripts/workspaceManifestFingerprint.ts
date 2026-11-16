@@ -26,50 +26,53 @@
  * fingerprint, exactly the class of bug this module exists to prevent).
  */
 
-/** Strip a TOML `#` comment (only outside a quoted string) and trailing whitespace. */
-function stripTomlCommentAndTrailingWhitespace(line: string): string {
+type TomlLineScan = {
+    /** The line up to (excluding) a `#` comment that starts outside any string. */
+    code: string;
+    /** Net change in `{}`/`[]` nesting depth outside strings. */
+    depthDelta: number;
+};
+
+/**
+ * One pass over a line tracking string state: a basic string `"..."` skips the
+ * character after a backslash (so `\"` and `\\` never end or extend it), a
+ * literal string `'...'` has no escapes. A `#` outside a string starts a
+ * comment; brackets and braces outside a string change the nesting depth.
+ */
+function scanTomlLine(line: string): TomlLineScan {
+    let depthDelta = 0;
     let quoteChar: string | undefined;
     for (let index = 0; index < line.length; index += 1) {
         const char = line[index];
         if (quoteChar !== undefined) {
-            if (char === quoteChar) {
+            if (char === '\\' && quoteChar === '"') {
+                index += 1;
+            } else if (char === quoteChar) {
                 quoteChar = undefined;
             }
             continue;
         }
         if (char === '"' || char === "'") {
             quoteChar = char;
-            continue;
-        }
-        if (char === '#') {
-            return line.slice(0, index).trimEnd();
+        } else if (char === '#') {
+            return { code: line.slice(0, index), depthDelta };
+        } else if (char === '{' || char === '[') {
+            depthDelta += 1;
+        } else if (char === '}' || char === ']') {
+            depthDelta -= 1;
         }
     }
-    return line.trimEnd();
+    return { code: line, depthDelta };
+}
+
+/** Strip a TOML `#` comment (only outside a quoted string) and trailing whitespace. */
+function stripTomlCommentAndTrailingWhitespace(line: string): string {
+    return scanTomlLine(line).code.trimEnd();
 }
 
 /** Net change in unquoted `{}`/`[]` nesting depth contributed by `line`. */
 function tomlBracketDepthDelta(line: string): number {
-    let delta = 0;
-    let quoteChar: string | undefined;
-    for (const char of line) {
-        if (quoteChar !== undefined) {
-            if (char === quoteChar) {
-                quoteChar = undefined;
-            }
-            continue;
-        }
-        if (char === '"' || char === "'") {
-            quoteChar = char;
-            continue;
-        }
-        if (char === '{' || char === '[') {
-            delta += 1;
-        } else if (char === '}' || char === ']') {
-            delta -= 1;
-        }
-    }
-    return delta;
+    return scanTomlLine(line).depthDelta;
 }
 
 /** A TOML table-header line, e.g. `[profile.release]` or `[[bin]]`. */
@@ -104,8 +107,11 @@ export function* tomlTableLines(text: string): Generator<TomlTableLine> {
     let currentHeader = '';
     let pendingLine: string | undefined;
     let pendingDepth = 0;
+    let pendingStartLine = 0;
+    let lineNumber = 0;
 
     for (const rawLine of text.split('\n')) {
+        lineNumber += 1;
         const stripped = stripTomlCommentAndTrailingWhitespace(rawLine);
         if (pendingLine !== undefined) {
             if (stripped.trim() === '') {
@@ -132,9 +138,13 @@ export function* tomlTableLines(text: string): Generator<TomlTableLine> {
         if (depth > 0) {
             pendingLine = stripped.trim();
             pendingDepth = depth;
+            pendingStartLine = lineNumber;
             continue;
         }
         yield { header: currentHeader, line: stripped.trim() };
+    }
+    if (pendingLine !== undefined) {
+        throw new Error(`Unterminated TOML inline table or array starting at line ${pendingStartLine}: ${pendingLine}`);
     }
 }
 

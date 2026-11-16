@@ -1,5 +1,5 @@
 import { readTempoAtBeat, readSecondsAtBeat, readBeatAtSamples } from '#/modules/Transport/stores';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 
 import { type TempoTimeline } from '../../models/TempoTimeline';
 

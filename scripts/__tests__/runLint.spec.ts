@@ -1,20 +1,27 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+    assertPluginCoverage,
     buildEslintArgv,
+    buildPublicPluginsArgv,
     ensureServerDependencies,
     ESLINT_SUPPRESSIONS_FILE,
     eslintEnvironment,
+    expectedPluginFiles,
     FULL_ESLINT_TARGETS,
     FULL_OXLINT_TARGETS,
+    isIgnoredByPattern,
     lintConcurrency,
     lintThreads,
     parseArgs,
+    parseLintedFileCount,
+    publicPluginTargets,
+    unignoredSourceFiles,
 } from '../runLint.ts';
 
 function cacheStrategy(argv: string[]): string | undefined {
@@ -44,6 +51,130 @@ describe('full-run lint targets', () => {
         expect(FULL_ESLINT_TARGETS).toContain('scripts/**/*.ts');
         expect(FULL_ESLINT_TARGETS).toContain('electron/**/*.ts');
         expect(FULL_ESLINT_TARGETS).toContain('scripts/lint/sourdaw.mjs');
+    });
+});
+
+describe('public plugin pass coverage', () => {
+    it('hands a full run directories, because a shell-less spawn leaves globs unexpanded', () => {
+        const targets = publicPluginTargets({ files: [], full: true });
+
+        expect(targets.filter((target) => /[*?{}[\]]/.test(target))).toEqual([]);
+        expect(targets).toEqual(['src', 'scripts', 'electron']);
+        expect(buildPublicPluginsArgv(targets).filter((argument) => argument.includes('*'))).toEqual([]);
+    });
+
+    it('lints the named files in a focused run', () => {
+        expect(publicPluginTargets({ files: ['src/a.ts', 'scripts/b.ts'], full: false })).toEqual([
+            'src/a.ts',
+            'scripts/b.ts',
+        ]);
+    });
+
+    it('reads the linted file count from the oxlint summary', () => {
+        const summary =
+            'Found 0 warnings and 0 errors.\nFinished in 1.2s on 12481 files with 102 rules using 12 threads.';
+
+        expect(parseLintedFileCount(summary)).toBe(12_481);
+        expect(parseLintedFileCount('Finished in 12ms on 1 file with 102 rules using 2 threads.')).toBe(1);
+        expect(parseLintedFileCount('no summary here')).toBeUndefined();
+    });
+
+    const expectedFiles = ['src/a.ts', 'src/b.ts', 'scripts/c.ts', 'electron/d.ts'];
+    const targets = ['src', 'scripts', 'electron'];
+
+    it('fails a pass that linted fewer files than its targets track, naming both numbers', () => {
+        expect(() => assertPluginCoverage(1, expectedFiles, targets)).toThrow(
+            /linted 1 files but 4 tracked source files/
+        );
+    });
+
+    it('fails a pass one file short, however large the tree', () => {
+        expect(() => assertPluginCoverage(3, expectedFiles, targets)).toThrow(/linted 3 files but 4/);
+    });
+
+    it('fails a pass that reported no count', () => {
+        expect(() => assertPluginCoverage(undefined, expectedFiles, targets)).toThrow(/no linted file count/);
+    });
+
+    it('passes a count equal to or above the tracked files, since untracked files may be linted too', () => {
+        expect(() => assertPluginCoverage(4, expectedFiles, targets)).not.toThrow();
+        expect(() => assertPluginCoverage(5, expectedFiles, targets)).not.toThrow();
+    });
+
+    it('fails when a directory target contributes no file, even if the total count suffices', () => {
+        expect(() => assertPluginCoverage(9, ['src/a.ts', 'src/b.ts', 'scripts/c.ts'], targets)).toThrow(
+            /target electron contributes no tracked source file/
+        );
+    });
+
+    it('filters tracked files by trailing-slash directory patterns at any depth and by ** patterns', () => {
+        const files = [
+            'src/a.ts',
+            'src/build/b.ts',
+            'scripts/dist/c.ts',
+            'electron/out/d.ts',
+            'electron/out/deep/e.ts',
+            'electron/main.ts',
+            'src/notes.md',
+            'src/modules/gen/x.js',
+        ];
+        const patterns = ['build/', 'dist/', 'electron/out/**', 'src/modules/gen/*.js'];
+
+        expect(unignoredSourceFiles(files, patterns)).toEqual(['src/a.ts', 'electron/main.ts']);
+        expect(isIgnoredByPattern('src/builder/a.ts', 'build/')).toBe(false);
+        expect(isIgnoredByPattern('electron/outer.ts', 'electron/out/**')).toBe(false);
+    });
+
+    it('expects exactly the tracked source files under the targets that its config does not ignore', () => {
+        const expected = expectedPluginFiles(['scripts/lint']);
+
+        expect(expected).toContain('scripts/lint/sourdaw.mjs');
+        expect(expected.every((file) => file.startsWith('scripts/lint/'))).toBe(true);
+    });
+});
+
+describe('full run through the entrypoint', () => {
+    function runFull(options: { lintedFiles: number; trackedFiles: string[] }) {
+        const directory = mkdtempSync(join(tmpdir(), 'run-lint-full-'));
+        try {
+            const argsFile = join(directory, 'git-args');
+            writeFileSync(
+                join(directory, 'pnpm'),
+                `#!/bin/sh\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then echo "plugins-args=$*"; echo "Finished in 1s on ${options.lintedFiles} files with 1 rules using 1 threads."; else echo "$2 output"; fi\n`
+            );
+            const tracked = options.trackedFiles.map((file) => `${file}\\0`).join('');
+            writeFileSync(join(directory, 'git'), `#!/bin/sh\necho "$*" > "${argsFile}"\nprintf '${tracked}'\n`);
+            chmodSync(join(directory, 'pnpm'), 0o755);
+            chmodSync(join(directory, 'git'), 0o755);
+            const result = spawnSync(process.execPath, [resolve('scripts/runLint.ts'), '--full'], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: directory },
+            });
+            const gitArgs = existsSync(argsFile) ? readFileSync(argsFile, 'utf8').trim() : '';
+            return { result, gitArgs };
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    }
+
+    const trackedFiles = ['src/a.ts', 'scripts/b.ts', 'electron/c.ts'];
+
+    it('fails a plugin pass that lints fewer files than the targets track, before ESLint runs', () => {
+        const { result } = runFull({ lintedFiles: 1, trackedFiles });
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('oxlint-plugins linted 1 files but 3 tracked source files');
+        expect(result.stdout).not.toContain('lint: eslint started');
+    });
+
+    it('lists the tracked files of the same directories it hands the plugin pass', () => {
+        const { result, gitArgs } = runFull({ lintedFiles: 3, trackedFiles });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(gitArgs).toBe('ls-files -z -- src scripts electron');
+        expect(result.stdout).toContain('plugins-args=exec oxlint --config=.oxlint-plugins.json --quiet');
+        expect(result.stdout).toMatch(/plugins-args=.* src scripts electron\n/);
+        expect(result.stdout).toContain('lint: eslint passed');
     });
 });
 

@@ -35,6 +35,7 @@ import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
 import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
+import { advanceRootIdentityEpoch, readRootIdentityEpoch } from '../stores/rootIdentityEpoch';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
@@ -361,7 +362,9 @@ class AutomergeRepository {
     private get documentIdentityEpoch(): number {
         return readDocumentIdentityEpoch();
     }
-    private rootIdentityEpoch = 0;
+    private get rootIdentityEpoch(): number {
+        return readRootIdentityEpoch();
+    }
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
     private documentPublicationsByOwner = new WeakMap<object, readonly OwnedDocumentPublication[]>();
@@ -1727,7 +1730,7 @@ class AutomergeRepository {
     }
 
     private markRootIdentityMutation(): void {
-        this.rootIdentityEpoch += 1;
+        advanceRootIdentityEpoch();
     }
 
     /** Get the incremental changes since a given set of heads. */

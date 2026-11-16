@@ -25,3 +25,25 @@ export { readBarStartBeat } from './readBarStartBeat';
 export { readBarAtBeat } from './readBarAtBeat';
 export { readNextPhysicalBarBoundary } from './readNextPhysicalBarBoundary';
 export { readTempoMapEditTargets } from './readTempoMapEditTargets';
+
+export type { DeferredTempoRecordingSources } from './deferredTempoRecordingSources';
+export { withoutDeferredTempoRecordingSources } from './deferredTempoRecordingSources';
+export { getTempoAudioSourceRequirements, tempoAudioSourceCoverageMatches } from './tempoAudioSourceCoverage';
+export type {
+    TempoScalarTransition,
+    TempoSourceClock,
+    TempoSourceClockPath,
+    TempoSourceOwner,
+    TempoSourceOwnerWitness,
+} from './tempoAudioSourcePromotion';
+export {
+    captureTempoSourceOwnerValue,
+    isTempoAudioSourcePromotion,
+    normalizeTempoSourceClockContext,
+    normalizeTempoSourceOwnerContext,
+    projectTempoSourceClock,
+    readTempoSourceClockValue,
+    readTempoSourceOwner,
+    tempoSourceOwnerWitnessMatches,
+    tempoSourcePromotionsEqual,
+} from './tempoAudioSourcePromotion';

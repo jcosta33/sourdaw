@@ -5,10 +5,11 @@ import {
     isAudioSourceSnapshot,
     isAudioSourceTile,
     partitionAudioSourceTiles,
-} from './audioSourceTime';
-import { compBaseGapWindows } from './compBaseGapWindows';
-import { type TempoAudioSourcePromotionSnapshot } from './handlerContract';
-import { isRecord, valuesEqual } from './structuralEquality';
+} from '#/utils/audioSourceTime';
+import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+
+import { type TempoAudioSourcePromotionSnapshot } from '../events/tempoAudioSourceSnapshots';
 
 type ClipValue = Record<string, unknown> & { id: string; trackId: string; startBeat: number; endBeat: number };
 type Owner = {

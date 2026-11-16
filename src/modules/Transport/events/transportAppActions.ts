@@ -1,5 +1,6 @@
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { type TempoMapEdit, type TempoMapRowPlan } from '#/utils/tempoMapRowPlan';
+
+import { type TempoAudioSourcePromotionSnapshot } from './tempoAudioSourceSnapshots';
 
 export type TransportAppAction =
     | {
