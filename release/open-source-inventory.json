@@ -172,7 +172,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:e6c6b461d05a82a80876a97da635a287340b4a0900acd478121c52509e528b88:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:a07c20254e6cf46bb90c9b61f09af9f1a8247597adc27c595b350e1dbff31b38:release/dependency-license-proofs.json"
+                "sha256:97f75a6a3e0f412feeafe8f6c16d28b66be42dc55a726c19c09ca5ba081d7b97:@curated-packages:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1910,7 +1910,8 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
+            "sha256": "591fef2ce9b3effbf48d21d9c165f0db8a3655b636505ef03f961242c60c8c78",
+            "projection": "package-json-licence-fields"
         },
         {
             "path": "server/package.json",
@@ -1926,7 +1927,8 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "e0d41dbefe296c435d78563b6c1578f4ceeedf7d83d02a6ea689449992986c37"
+            "sha256": "515d85917adf739ddfe830788e46b292e52ab1c9d0fe7d788bf3c8481876e5a2",
+            "projection": "cargo-manifest-licence-graph"
         },
         {
             "path": "Cargo.lock",

@@ -27,6 +27,7 @@ import {
     validateProjectLicense,
     validateServerThirdPartyNotices,
 } from '../checkProjectLicense';
+import { licenceInputDigest } from '../dependencyLicenseInputProjection';
 import {
     assertLicenseExpressionEvidence,
     expectedProofIdentities,
@@ -103,7 +104,7 @@ function restampCargoInventoryFixtureDigests(root: string, manifest: CargoInvent
     }
     inventory.cargoLockSha256 = sha256File(root, 'Cargo.lock');
     for (const input of inventory.sourceInputs) {
-        input.sha256 = sha256File(root, input.path);
+        Object.assign(input, licenceInputDigest(input.path, readFileSync(join(root, input.path))));
     }
     writeCargoInventoryFixtureManifest(root, manifest);
 }
@@ -113,6 +114,7 @@ type CargoInventoryFixtureManifest = {
         cargoLockSha256: string;
         sourceInputs: Array<{
             path: string;
+            projection: string;
             sha256: string;
         }>;
         featureSelection: {
@@ -334,11 +336,11 @@ describe('project license', () => {
             DEPENDENCY_LICENSE_PROOFS_PATH,
             `${JSON.stringify(
                 {
-                    schemaVersion: 4,
+                    schemaVersion: 5,
                     packages: proofs,
                     cargoRuntimeInventory: {
                         cargoLockSha256: '0'.repeat(64),
-                        sourceInputs: [{ path: 'Cargo.lock', sha256: '0'.repeat(64) }],
+                        sourceInputs: [{ path: 'Cargo.lock', projection: 'whole-file', sha256: '0'.repeat(64) }],
                         featureSelection: CARGO_RUNTIME_FEATURE_SELECTION,
                         packages: [
                             {
@@ -465,11 +467,18 @@ describe('project license', () => {
         expect(() => collectCargoDependencyLicenses(root)).toThrow('proof source is not the crates.io registry');
     });
 
+    // Each row edits what the licence generator or `cargo metadata` reads, so the pinned projection moves.
     it.each([
         ['Cargo.toml', 'resolver = "2"', 'resolver = "3"'],
+        ['Cargo.toml', '"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n'],
+        ['Cargo.toml', 'windows = "0.62.2"', 'windows = "0.63.0"'],
         ['crates/sourdaw-native/Cargo.toml', 'napi-addon =', 'napi-addon-renamed ='],
-        ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
-        ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+        ['crates/sourdaw-native/Cargo.toml', 'rtrb = "0.4"', 'rtrb = "0.5"'],
+        ['crates/sourdaw-native/Cargo.toml', 'rtrb = "0.4"\n', 'rtrb = "0.4"\nitoa = "1"\n'],
+        ['crates/sourdaw-native/Cargo.toml', 'license.workspace = true', 'license = "MIT"'],
+        ['electron-builder.yml', "    - '!node_modules/**/*'\n", ''],
+        ['package.json', '"license": "Apache-2.0"', '"license": "MIT"'],
+        ['package.json', '"build": "vite build"', '"build": "vite build --mode bundled"'],
         ['scripts/buildNativeAddon.ts', "'napi-addon'", "'napi-addon-renamed'"],
     ])('rejects Cargo resolution input drift in %s without invoking Cargo', (path, before, after) => {
         writeCargoInventoryFixture(root);
@@ -480,6 +489,28 @@ describe('project license', () => {
         writeFileSync(inputPath, input.replace(before, after));
 
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    // Each row edits a field neither the licence generator nor `cargo metadata`'s runtime graph reads.
+    it.each([
+        ['Cargo.toml', 'todo = "deny"', 'todo = "warn"'],
+        ['Cargo.toml', 'lto = true', 'lto = false'],
+        ['crates/daw-core/Cargo.toml', '[lints]\nworkspace = true\n', ''],
+        ['crates/sourdaw-native/Cargo.toml', 'version = "0.1.0"', 'version = "0.2.0"'],
+        ['crates/sourdaw-native/Cargo.toml', 'description = "Sourdaw', 'description = "The Sourdaw'],
+        ['crates/sourdaw-native/Cargo.toml', '[dependencies]\n', '[dependencies]\n# Runtime dependencies.\n'],
+        ['crates/sourdaw-native/Cargo.toml', 'serde_json = "1"\ndirs = "7.0"\n', 'dirs = "7.0"\nserde_json = "1"\n'],
+        ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
+        ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+        ['package.json', '"build": "vite build",', '"build": "vite build",\n        "fixture:extra": "true",'],
+    ])('accepts licence-irrelevant drift in %s without a restamp', (path, before, after) => {
+        writeCargoInventoryFixture(root);
+        const inputPath = join(root, path);
+        const input = readFileSync(inputPath, 'utf8');
+        expect(input).toContain(before);
+        writeFileSync(inputPath, input.replace(before, after));
+
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
     });
 
     it('rejects Cargo source-input symlinks that escape the repository', () => {
@@ -493,7 +524,7 @@ describe('project license', () => {
             const manifest = readCargoInventoryFixtureManifest(root);
             manifest.cargoRuntimeInventory!.sourceInputs.push({
                 path: 'outside-Cargo.toml',
-                sha256: createHash('sha256').update(readFileSync(outsidePath)).digest('hex'),
+                ...licenceInputDigest('outside-Cargo.toml', readFileSync(outsidePath)),
             });
             manifest.cargoRuntimeInventory!.sourceInputs.sort((left, right) => {
                 if (left.path === right.path) {

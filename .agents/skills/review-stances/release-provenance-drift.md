@@ -22,9 +22,16 @@ limitation, never as passed.
    has a missing file, or has an unsafe (symlink, non-regular, or outside-repository) file; probe by emptying
    one pathspec or replacing a tracked file with a symlink and confirming `pnpm test:release-inventory`
    names it.
-2. **A `package.json` edit moves the Cargo source pin (#5642).** `scripts/dependencyLicenseReport.ts` digests
-   `package.json` into its Cargo source pin, so every `package.json` edit must move the dependency restamp
-   artifacts under `release/` in the same diff. Read the diff for both; one without the other is the finding.
+2. **A licence-input edit leaves the dependency restamp stale, or an irrelevant edit moves it (#5642).** The
+   proof's `sourceInputs` and the inventory's `package.json` and `Cargo.toml` snapshots pin each manifest by
+   the projection `scripts/dependencyLicenseInputProjection.ts` names: every Cargo dependency table,
+   `[features]`, `[patch*]`, `[replace]`, `[workspace]` members/exclude/default-members/resolver and the
+   licence keys; `package.json` `license` and `scripts.build`; the `electron-builder.yml` `node_modules`
+   exclusion. An edit to any of those must move the restamp artifacts under `release/` in the same diff
+   (`pnpm release:restamp`); an edit to anything else in those files (a script, a crate `version`, `[lints]`,
+   a comment) must leave them untouched. The inventory pins the proof file only by its curated `packages`;
+   the generated Cargo runtime inventory is checked live by the licence preflight. A diff that narrows a
+   projection must show a still-fail spec row for every field it drops.
 3. **A new URL literal lacks its external-reference assignment (#3127, #5625).** Runs: CI; the reviewer reads the
    Release inventory step on the head. Every new URL literal needs an external-reference assignment in the
    `externalReferences` list of `release/open-source-inventory.json`; the reviewer lists URL literals the diff adds and checks each has one at

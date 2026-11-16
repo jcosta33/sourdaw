@@ -32,7 +32,13 @@ import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
-import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import {
+    curatedDependencyLicenseProofsProjection,
+    licenceInputDigest,
+    licenceInputProjectionKind,
+    type LicenceInputProjection,
+} from './dependencyLicenseInputProjection.ts';
+import { DEPENDENCY_LICENSE_PROOFS_PATH, DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -59,6 +65,12 @@ export const REQUIRED_SNAPSHOT_PATHS = [
     'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
     'public/wasm/manifest.json',
 ] as const;
+
+/**
+ * Snapshots pinned by the licence-input projection the dependency licence proof pins them by, so
+ * an edit the proof cannot see (a new script, a crate `[lints]` table) leaves the inventory alone.
+ */
+export const LICENCE_PROJECTED_SNAPSHOT_PATHS: readonly string[] = ['package.json', 'Cargo.toml'];
 
 export const RELEASE_INVENTORY_READ_LIMITS = {
     inventoryBytes: 8 * 1024 * 1024,
@@ -229,7 +241,7 @@ type ExternalReference = {
 export type ReleaseInventory = {
     schemaVersion: number;
     surfaces: ReleaseSurface[];
-    snapshots: Array<{ path: string; sha256: string }>;
+    snapshots: Array<{ path: string; projection?: LicenceInputProjection; sha256: string }>;
     externalReferences: Array<ExternalReference & { surface: string }>;
     marks: Array<{ value: string; paths: string[] }>;
 };
@@ -238,6 +250,8 @@ export type RepositorySnapshot = {
     releaseFiles: string[];
     externalReferences: ExternalReference[];
     fileDigests: Record<string, string>;
+    /** The digest of each `LICENCE_PROJECTED_SNAPSHOT_PATHS` file's licence-input projection. */
+    snapshotProjectionDigests: Record<string, string>;
     markPaths: Record<string, string[]>;
 };
 
@@ -1529,6 +1543,20 @@ export function assertAdaptedMitSourceProofs(root: string): void {
     }
 }
 
+/**
+ * Pins only the hand-curated `packages` proofs. The proof file's generated Cargo runtime inventory
+ * is checked live by the licence preflight against Cargo.lock, the licence-input projections and
+ * the dependency licence report, which this surface still pins whole.
+ */
+function curatedDependencyLicenseProofsDigest(root: string): string {
+    const projection = curatedDependencyLicenseProofsProjection(
+        readFileSync(resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8'),
+        DEPENDENCY_LICENSE_PROOFS_PATH
+    );
+    const digest = createHash('sha256').update(projection, 'utf8').digest('hex');
+    return `sha256:${digest}:@curated-packages:${DEPENDENCY_LICENSE_PROOFS_PATH}`;
+}
+
 export function projectLicenseDistributionReleaseInventoryContract(root: string): SurfaceContract {
     const paths = [
         '.gitattributes',
@@ -1560,7 +1588,7 @@ export function projectLicenseDistributionReleaseInventoryContract(root: string)
             `sha256:${fileSha256(resolve(root, 'LICENSE'))}:LICENSE`,
             `sha256:${fileSha256(resolve(root, 'NOTICE'))}:NOTICE`,
             `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
-            `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
+            curatedDependencyLicenseProofsDigest(root),
         ],
         licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
@@ -3030,7 +3058,17 @@ export function validateReleaseInventory(
                 errors.push(`${entry.path}: snapshot path must be tracked`);
             } else if (!/^[0-9a-f]{64}$/.test(entry.sha256)) {
                 errors.push(`${entry.path}: snapshot must be a SHA-256 digest`);
-            } else if (snapshot.fileDigests[entry.path] !== entry.sha256) {
+            } else if (!LICENCE_PROJECTED_SNAPSHOT_PATHS.includes(entry.path)) {
+                if (entry.projection !== undefined) {
+                    errors.push(`${entry.path}: snapshot must pin the whole file`);
+                } else if (snapshot.fileDigests[entry.path] !== entry.sha256) {
+                    errors.push(`${entry.path}: snapshot drifted`);
+                }
+            } else if (entry.projection !== licenceInputProjectionKind(entry.path)) {
+                errors.push(
+                    `${entry.path}: snapshot must pin the ${licenceInputProjectionKind(entry.path)} projection`
+                );
+            } else if (snapshot.snapshotProjectionDigests[entry.path] !== entry.sha256) {
                 errors.push(`${entry.path}: snapshot drifted`);
             }
         }
@@ -3191,6 +3229,19 @@ export function loadRepositorySnapshot(
             }
         })
     );
+    const snapshotProjectionDigests = Object.fromEntries(
+        LICENCE_PROJECTED_SNAPSHOT_PATHS.filter(isSafeTrackedPath).map((path) => {
+            try {
+                const bytes = readRepositoryRegularBuffer(rootRealPath, resolve(root, path), readFile, readBudget);
+                return [path, licenceInputDigest(path, bytes).sha256];
+            } catch (error) {
+                if (error instanceof RepositoryFileReadLimitError) {
+                    throw error;
+                }
+                return [path, 'missing'];
+            }
+        })
+    );
     const markPaths = Object.fromEntries(
         (inventory.marks ?? []).map((mark) => [
             mark.value,
@@ -3209,6 +3260,7 @@ export function loadRepositorySnapshot(
             return { file: file ?? '', value: value ?? '', ...(templateSha256 && { templateSha256 }) };
         }),
         fileDigests,
+        snapshotProjectionDigests,
         markPaths,
     };
 }

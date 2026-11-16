@@ -11,12 +11,14 @@ import {
     ADAPTED_MIT_NOTICE_PATH,
     checkReleaseInventory,
     fileSha256,
+    LICENCE_PROJECTED_SNAPSHOT_PATHS,
     pathAddressedSha256,
     projectLicenseDistributionReleaseInventoryContract,
     REQUIRED_SNAPSHOT_PATHS,
     SNAPSHOT_DIGEST_SURFACES,
     type ReleaseInventory,
 } from './checkReleaseInventory.ts';
+import { licenceInputDigest } from './dependencyLicenseInputProjection.ts';
 import {
     assertLicenseExpressionEvidence,
     canonicalSpdxLicensesSatisfy,
@@ -390,9 +392,16 @@ function restampRequiredSnapshots(root: string, inventory: ReleaseInventory): vo
         if (!RESTAMPED_SNAPSHOT_PATHS.has(entry.path)) {
             continue;
         }
-        const digest = currentDigest(root, entry.path);
-        if (digest !== undefined) {
+        const absolute = resolve(root, entry.path);
+        if (!existsSync(absolute)) {
+            continue;
+        }
+        if (LICENCE_PROJECTED_SNAPSHOT_PATHS.includes(entry.path)) {
+            const { projection, sha256: digest } = licenceInputDigest(entry.path, readFileSync(absolute));
+            entry.projection = projection;
             entry.sha256 = digest;
+        } else {
+            entry.sha256 = fileSha256(absolute);
         }
     }
 }

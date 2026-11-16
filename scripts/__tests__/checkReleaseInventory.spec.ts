@@ -65,6 +65,7 @@ import {
     GRAND_BOULE_RELEASE_REGISTRY,
     GRAND_BOULE_RUST_SOURCE_ADMISSION,
     grandBouleReleaseInventoryContract,
+    LICENCE_PROJECTED_SNAPSHOT_PATHS,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
     ownerVisualAssetReleaseInventoryContract,
@@ -80,7 +81,8 @@ import {
     validateReleaseInventory,
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
-import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
+import { licenceInputDigest, licenceInputProjectionKind } from '../dependencyLicenseInputProjection';
+import { DEPENDENCY_LICENSE_PROOFS_PATH, DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
@@ -1335,7 +1337,11 @@ function inventory(): ReleaseInventory {
                 obligations: ['Preserve attribution.'],
             },
         ],
-        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) => ({ path, sha256: fixtureDigest })),
+        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) =>
+            LICENCE_PROJECTED_SNAPSHOT_PATHS.includes(path)
+                ? { path, projection: licenceInputProjectionKind(path), sha256: fixtureDigest }
+                : { path, sha256: fixtureDigest }
+        ),
         externalReferences: [{ surface: 'runtime', file: 'src/provider.ts', value: 'https://provider.example/v1' }],
         marks: [],
     };
@@ -1346,6 +1352,9 @@ function snapshot(): RepositorySnapshot {
         releaseFiles: [...new Set([...REQUIRED_SNAPSHOT_PATHS, 'public/icon.png', 'src/provider.ts'])],
         externalReferences: [{ file: 'src/provider.ts', value: 'https://provider.example/v1' }],
         fileDigests: Object.fromEntries(REQUIRED_SNAPSHOT_PATHS.map((path) => [path, fixtureDigest])),
+        snapshotProjectionDigests: Object.fromEntries(
+            LICENCE_PROJECTED_SNAPSHOT_PATHS.map((path) => [path, fixtureDigest])
+        ),
         markPaths: {},
     };
 }
@@ -4560,6 +4569,144 @@ describe('release inventory', () => {
                 digests: ['sha256:stale:LICENSE'],
             })
         ).toThrow('project license distribution release inventory digests does not match provenance');
+    });
+
+    describe('licence-projected snapshots and curated proof evidence', () => {
+        const projectedFixturePaths = ['package.json', 'Cargo.toml', 'Cargo.lock'] as const;
+
+        function withProjectedFixture(edit: (root: string) => void): string[] {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-projection-'));
+            try {
+                for (const path of projectedFixturePaths) {
+                    writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
+                }
+                const value = inventory();
+                value.snapshots = projectedFixturePaths.map((path) => {
+                    const { projection, sha256: digest } = licenceInputDigest(path, readFileSync(join(root, path)));
+                    return projection === 'whole-file'
+                        ? { path, sha256: digest }
+                        : { path, projection, sha256: digest };
+                });
+                edit(root);
+                return validateReleaseInventory(
+                    value,
+                    loadRepositorySnapshot(root, value, [...projectedFixturePaths])
+                ).filter((error) => projectedFixturePaths.some((path) => error.startsWith(`${path}: snapshot`)));
+            } finally {
+                removeTemporaryDirectory(root);
+            }
+        }
+
+        function replaceIn(root: string, path: string, before: string, after: string): void {
+            const contents = readFileSync(join(root, path), 'utf8');
+            expect(contents).toContain(before);
+            writeFileSync(join(root, path), contents.replace(before, after));
+        }
+
+        it('accepts the projected fixture unedited', () => {
+            expect(withProjectedFixture(() => undefined)).toEqual([]);
+        });
+
+        it.each([
+            ['package.json', '"license": "Apache-2.0"', '"license": "MIT"'],
+            ['package.json', '"build": "vite build"', '"build": "vite build --mode bundled"'],
+            ['Cargo.toml', 'windows = "0.62.2"', 'windows = "0.63.0"'],
+            ['Cargo.toml', '[workspace.dependencies]\n', '[workspace.dependencies]\nlibc = "0.2"\n'],
+            ['Cargo.toml', '"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n'],
+            ['Cargo.toml', 'license = "Apache-2.0"', 'license = "MIT"'],
+            ['Cargo.lock', 'version = 4', 'version = 3'],
+        ])('reports %s licence-input drift as a drifted snapshot', (path, before, after) => {
+            expect(withProjectedFixture((root) => replaceIn(root, path, before, after))).toEqual([
+                `${path}: snapshot drifted`,
+            ]);
+        });
+
+        it.each([
+            ['package.json', '"build": "vite build",', '"build": "vite build",\n        "fixture:extra": "true",'],
+            ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+            ['Cargo.toml', 'todo = "deny"', 'todo = "warn"'],
+            ['Cargo.toml', 'lto = true', 'lto = false'],
+            ['Cargo.toml', '[workspace.package]\n', '# Inherited by every member.\n[workspace.package]\n'],
+        ])('accepts licence-irrelevant drift in %s without a restamp', (path, before, after) => {
+            expect(withProjectedFixture((root) => replaceIn(root, path, before, after))).toEqual([]);
+        });
+
+        it('refuses a projected snapshot recorded without its projection, and a whole-file one with one', () => {
+            const value = inventory();
+            const packageJson = value.snapshots.find((entry) => entry.path === 'package.json');
+            const cargoLock = value.snapshots.find((entry) => entry.path === 'Cargo.lock');
+            delete packageJson!.projection;
+            cargoLock!.projection = 'cargo-manifest-licence-graph';
+            expect(validateReleaseInventory(value, snapshot())).toEqual(
+                expect.arrayContaining([
+                    'package.json: snapshot must pin the package-json-licence-fields projection',
+                    'Cargo.lock: snapshot must pin the whole file',
+                ])
+            );
+        });
+
+        function curatedDigestAfter(edit: (manifest: Record<string, unknown>) => void): string | undefined {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-curated-proofs-'));
+            try {
+                for (const path of [
+                    'LICENSE',
+                    'NOTICE',
+                    DEPENDENCY_LICENSE_REPORT_PATH,
+                    DEPENDENCY_LICENSE_PROOFS_PATH,
+                ]) {
+                    mkdirSync(dirname(join(root, path)), { recursive: true });
+                    writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
+                }
+                const proofsPath = join(root, DEPENDENCY_LICENSE_PROOFS_PATH);
+                const manifest = JSON.parse(readFileSync(proofsPath, 'utf8')) as Record<string, unknown>;
+                edit(manifest);
+                writeFileSync(proofsPath, `${JSON.stringify(manifest, null, 4)}\n`);
+                return projectLicenseDistributionReleaseInventoryContract(root).digests.find((digest) =>
+                    digest.endsWith(`:@curated-packages:${DEPENDENCY_LICENSE_PROOFS_PATH}`)
+                );
+            } finally {
+                removeTemporaryDirectory(root);
+            }
+        }
+
+        type ProofPackages = Record<string, { assembled?: { licenses: string[] }; files?: Array<{ sha256: string }> }>;
+
+        function firstProof(manifest: Record<string, unknown>, kind: 'assembled' | 'files') {
+            const packages = manifest.packages as ProofPackages;
+            const entry = Object.values(packages).find((proof) => proof[kind] !== undefined);
+            if (entry === undefined) {
+                throw new Error(`the live proof manifest has no ${kind} proof`);
+            }
+            return entry;
+        }
+
+        it.each([
+            [
+                'a curated licence election',
+                (manifest: Record<string, unknown>) => {
+                    firstProof(manifest, 'assembled').assembled!.licenses = ['Zlib'];
+                },
+            ],
+            [
+                'a curated legal file entry',
+                (manifest: Record<string, unknown>) => {
+                    firstProof(manifest, 'files').files![0]!.sha256 = '0'.repeat(64);
+                },
+            ],
+        ])('moves the curated proof digest on %s', (_change, edit) => {
+            const baseline = curatedDigestAfter(() => undefined);
+            expect(baseline).toMatch(/^sha256:[0-9a-f]{64}:@curated-packages:/u);
+            expect(curatedDigestAfter(edit)).not.toBe(baseline);
+        });
+
+        it('leaves the generated Cargo runtime inventory to the live licence preflight', () => {
+            const baseline = curatedDigestAfter(() => undefined);
+            expect(
+                curatedDigestAfter((manifest) => {
+                    (manifest.cargoRuntimeInventory as { cargoLockSha256: string }).cargoLockSha256 = '0'.repeat(64);
+                })
+            ).toBe(baseline);
+        });
     });
 
     it('rejects a new release file without a classification', () => {
