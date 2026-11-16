@@ -11,7 +11,9 @@
  * - a `Cargo.toml` keeps every dependency table (normal, `dev-`, `build-`, `target.*.`, and
  *   `[workspace.dependencies]`), `[features]`, `[patch*]`, `[replace]`, `[workspace]` `members`,
  *   `exclude`, `default-members` and `resolver`, and the `license`/`license-file` keys of
- *   `[package]` and `[workspace.package]`, workspace-inherited forms included. Members are the
+ *   `[package]` and `[workspace.package]`, workspace-inherited and underscore-separated forms
+ *   included. Any other key segment ending in `dependencies` outside `[*.metadata]` fails closed,
+ *   so a table spelling the projection does not know cannot reach the graph unpinned. Members are the
  *   roots the runtime graph walks from, so a new member brings its dependencies into the proof.
  *   Dev-dependencies stay because `cargo metadata` unifies features across dependency kinds: a
  *   dev-dependency that enables an optional dependency adds a normal edge to the runtime graph.
@@ -43,12 +45,19 @@ export type LicenceInputDigest = { projection: LicenceInputProjection; sha256: s
 /** The packaging line that keeps `node_modules` out of the desktop bundle; the generator relies on it. */
 export const ELECTRON_NODE_MODULES_EXCLUSION_PATTERN = /^\s*- '!node_modules\/\*\*\/\*'$/u;
 
-const CARGO_DEPENDENCY_KEY_PATTERN = /(?:^|\.)(?:dependencies|dev-dependencies|build-dependencies)(?:\.|$)/u;
+// Each multi-word key accepts `_` as well as `-`: Cargo reads `[dev_dependencies]` and
+// `[build_dependencies]` as the hyphenated tables (deprecated, accepted before the 2024 edition),
+// and projecting an underscore spelling Cargo ignores costs only a spurious restamp.
+const CARGO_DEPENDENCY_KEY_PATTERN = /(?:^|\.)(?:dependencies|dev[-_]dependencies|build[-_]dependencies)(?:\.|$)/u;
 const CARGO_FEATURES_KEY_PATTERN = /^features(?:\.|$)/u;
 const CARGO_SOURCE_OVERRIDE_KEY_PATTERN = /^(?:patch|replace)(?:\.|$)/u;
-const CARGO_WORKSPACE_GRAPH_KEY_PATTERN = /^workspace\.(?:members|exclude|default-members|resolver)$/u;
-const CARGO_PACKAGE_LICENCE_KEY_PATTERN = /^(?:package|workspace\.package)\.(?:license|license-file)(?:\.|$)/u;
+const CARGO_WORKSPACE_GRAPH_KEY_PATTERN = /^workspace\.(?:members|exclude|default[-_]members|resolver)$/u;
+const CARGO_PACKAGE_LICENCE_KEY_PATTERN = /^(?:package|workspace\.package)\.(?:license|license[-_]file)(?:\.|$)/u;
 const CARGO_PACKAGE_RESOLVER_KEY = 'package.resolver';
+/** A key segment naming a dependency table; one the patterns above miss is a spelling they do not know. */
+const CARGO_DEPENDENCY_SEGMENT_PATTERN = /(?:^|\.)[^.]*dependencies(?:\.|$)/u;
+/** Tables Cargo ignores and leaves to other tools, so any key may live there. */
+const CARGO_METADATA_KEY_PATTERN = /^(?:package|workspace)\.metadata(?:\.|$)/u;
 
 export function licenceInputProjectionKind(path: string): LicenceInputProjection {
     if (path === 'Cargo.toml' || path.endsWith('/Cargo.toml')) {
@@ -96,8 +105,11 @@ export function cargoManifestLicenceGraphProjection(text: string, path: string):
     }
     const entries: string[] = [];
     for (const { header, line } of tomlTableLines(text)) {
-        if (isCargoLicenceGraphKey(cargoKeyPath(header, line, path))) {
+        const keyPath = cargoKeyPath(header, line, path);
+        if (isCargoLicenceGraphKey(keyPath)) {
             entries.push(`[${header.trim()}]\n${line}`);
+        } else if (CARGO_DEPENDENCY_SEGMENT_PATTERN.test(keyPath) && !CARGO_METADATA_KEY_PATTERN.test(keyPath)) {
+            throw new Error(`${path}: unrecognised dependency table key ${keyPath}`);
         }
     }
     return `${entries.sort().join('\n')}\n`;

@@ -171,6 +171,56 @@ describe('dependency licence input projection', () => {
         expect(projectEdit(before, after)).toBe(baseline);
     });
 
+    // Cargo reads `[dev_dependencies]` and `[build_dependencies]` as the hyphenated tables, so an
+    // entry there can enable an optional, already-locked crate and change the runtime graph.
+    const UNDERSCORE_MANIFEST = `[workspace]
+members = ["crates/a"]
+default_members = ["crates/a"]
+
+[package]
+name = "demo"
+license_file = "LICENSE"
+
+[dev_dependencies]
+tempfile = "3"
+
+[build_dependencies]
+cc = "1"
+
+[target.'cfg(unix)'.dev_dependencies]
+libc = "0.2"
+`;
+    const underscoreBaseline = cargoManifestLicenceGraphProjection(UNDERSCORE_MANIFEST, 'Cargo.toml');
+
+    it.each([
+        [
+            '[dev_dependencies] add',
+            'tempfile = "3"\n',
+            'tempfile = "3"\nnapi = { version = "3", features = ["tokio"] }\n',
+        ],
+        ['[dev_dependencies] re-version', 'tempfile = "3"', 'tempfile = "4"'],
+        ['[build_dependencies] add', 'cc = "1"\n', 'cc = "1"\nnapi-build = "2"\n'],
+        ["[target.'cfg(unix)'.dev_dependencies] add", 'libc = "0.2"\n', 'libc = "0.2"\nnix = "0.29"\n'],
+        ['[package] license_file', 'license_file = "LICENSE"', 'license_file = "LICENSE-MIT"'],
+        ['[workspace] default_members', 'default_members = ["crates/a"]', 'default_members = []'],
+    ])('moves the Cargo projection on the underscore spelling %s', (_change, before, after) => {
+        expect(UNDERSCORE_MANIFEST).toContain(before);
+        const edited = cargoManifestLicenceGraphProjection(UNDERSCORE_MANIFEST.replace(before, after), 'Cargo.toml');
+        expect(edited).not.toBe(underscoreBaseline);
+    });
+
+    it('fails closed on a dependency table spelling the projection does not know', () => {
+        expect(() =>
+            cargoManifestLicenceGraphProjection('[target.\'cfg(unix)\'.devdependencies]\nlibc = "0.2"\n', 'Cargo.toml')
+        ).toThrow("unrecognised dependency table key target.'cfg(unix)'.devdependencies.libc");
+        expect(() =>
+            cargoManifestLicenceGraphProjection('[package]\nnormal_dependencies = []\n', 'Cargo.toml')
+        ).toThrow('unrecognised dependency table key package.normal_dependencies');
+        expect(
+            cargoManifestLicenceGraphProjection('[package.metadata.machete]\nignored-dependencies = []\n', 'Cargo.toml')
+        ).toBe('\n');
+    });
+
     it('leaves the Cargo projection alone on table reorder', () => {
         const table = '[dev-dependencies]\ntempfile = "3"\n';
         expect(MANIFEST).toContain(`${table}\n`);
