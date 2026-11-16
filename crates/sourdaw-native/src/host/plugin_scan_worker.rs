@@ -2614,6 +2614,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .expect("the scan must return instead of blocking on the response")
     }
 
+    #[cfg(unix)]
     const REAL_WORKER_EXE_ENV: &str = "SOURDAW_TEST_REAL_WORKER_EXE";
     const REAL_WORKER_PLUGIN_ENV: &str = "SOURDAW_TEST_REAL_WORKER_PLUGIN";
     const REAL_WORKER_RESPONSE_ENV: &str = "SOURDAW_TEST_REAL_WORKER_RESPONSE";
@@ -2714,9 +2715,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     #[test]
     fn an_exit_3_a_plugin_arranged_still_quarantines() {
-        let moved_aside =
-            std::env::temp_dir().join(format!("sourdaw-moved-response-{}", uuid::Uuid::new_v4()));
-        let moved = moved_aside.display();
+        let moved_aside = RemovedOnDrop(
+            std::env::temp_dir().join(format!("sourdaw-moved-response-{}", uuid::Uuid::new_v4())),
+        );
+        let moved = moved_aside.0.display();
         for (forgery, script) in [
             ("plain exit 3", "exit 3".to_string()),
             (
@@ -2734,10 +2736,21 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             assert!(error.is_process_failure(), "{forgery}: {error}");
         }
         assert!(
-            moved_aside.is_dir(),
+            moved_aside.0.is_dir(),
             "the symlink case must have run: the moved directory is its proof"
         );
-        let _ = fs::remove_dir_all(&moved_aside);
+    }
+
+    /// A directory a test's helper creates outside any response directory,
+    /// removed however the test ends.
+    #[cfg(unix)]
+    struct RemovedOnDrop(PathBuf);
+
+    #[cfg(unix)]
+    impl Drop for RemovedOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 
     /// A response past the limit is written as its length alone and read
