@@ -135,6 +135,12 @@ export type MixRecipeBand = (typeof MIX_RECIPE_BANDS)[number];
  * meaningful only for `frequencyBandEnergy`. `hold` states that the recipe is
  * expected to leave the metric where it was, which is a claim a planner can
  * falsify just as readily as a direction.
+ *
+ * An expectation names the measurement the descriptor is judged by, not a side effect of the move.
+ * A planner may stack recipes for several descriptors on one source and hold each expectation
+ * across all of them, so a by-product another recipe's move can outweigh (the broadband level a mud
+ * cut lowers and a warm lift raises) is a claim the stack cannot keep. A corrective recipe claims
+ * the band its fault lives in: mud is low-mid energy.
  */
 export type MixRecipeMetricExpectation = {
     metric: MixRecipeMetricId;

@@ -749,7 +749,7 @@
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
-                    "digest": "e0715ee32a0289e1b14649e29b1baf49bbb2c2dc12f809cd10d4efffbb61d5bc"
+                    "digest": "e75e1da60d84a3a21bda087d4e74c665700158819b8ba1d61ce6ecee42230827"
                 }
             ]
         },

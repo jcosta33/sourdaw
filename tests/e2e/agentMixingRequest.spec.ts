@@ -1,6 +1,7 @@
 import { type Page } from '@playwright/test';
 
 import { advertisedAnswerCandidateId } from '../../src/modules/AiRuntime/useCases/__tests__/answerWireFixture';
+
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
@@ -65,7 +66,7 @@ function comparisonIntake(request: ScriptedToolRequest, drumsId: string, bassId:
                 if (typeof reference !== 'number' || !Number.isSafeInteger(reference)) {
                     throw new TypeError('Expected a published metric expectation index.');
                 }
-                const expectation = expectations[reference];
+                const expectation = reference < 0 ? undefined : expectations.at(reference);
                 if (expectation === undefined) {
                     return false;
                 }
@@ -77,7 +78,7 @@ function comparisonIntake(request: ScriptedToolRequest, drumsId: string, bassId:
                 );
             })
         );
-    const objectiveId = objectiveIds[objectiveIndex];
+    const objectiveId = objectiveIndex < 0 ? undefined : objectiveIds.at(objectiveIndex);
     if (objectiveIndex < 0 || objectiveId === undefined) {
         throw new Error('Missing the actual published loudness-match policy objective.');
     }
@@ -125,9 +126,13 @@ async function projectTruth(page: Page) {
         const pcm = [];
         for (const track of tracks.trackStore.value?.tracks ?? []) {
             for (const clip of track.clips) {
-                if (clip.audioBufferId === undefined) continue;
+                if (clip.audioBufferId === undefined) {
+                    continue;
+                }
                 const buffer = audio.getCachedAudioBuffer({ bufferId: clip.audioBufferId });
-                if (buffer === null) throw new Error('A real source buffer disappeared.');
+                if (buffer === null) {
+                    throw new Error('A real source buffer disappeared.');
+                }
                 const hashes = [];
                 for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
                     const samples = buffer.getChannelData(channel);
@@ -162,12 +167,16 @@ async function fixtureState(page: Page, subjects: FixtureSubjects) {
             await import('/src/modules/Project/stores/index.ts');
         const section = stores.markerStore.value?.sections.find((entry) => entry.id === sectionId);
         const projectId = project.projectStore.value?.projectId;
-        if (section === undefined || projectId === undefined) throw new Error('Missing genuine fixture identity.');
+        if (section === undefined || projectId === undefined) {
+            throw new Error('Missing genuine fixture identity.');
+        }
         return {
             projectId,
             tracks: [drumsId, bassId].map((id) => {
                 const track = stores.trackStore.value?.tracks.find((entry) => entry.id === id);
-                if (track === undefined) throw new Error('Missing genuine fixture track.');
+                if (track === undefined) {
+                    throw new Error('Missing genuine fixture track.');
+                }
                 return {
                     id: track.id,
                     name: track.name,
@@ -267,16 +276,18 @@ async function installOutputProbe(page: Page, confirmationId: string) {
             await import('/src/modules/AiRuntime/useCases/metricGoalStateCodec.ts');
         // Read the genuine producer's retained addresses, never supply an audition resource.
         const raw = codec.metricGoalStateCodec(confirmation?.approvalSnapshot.metricGoalState);
-        if (raw === null) throw new Error('Missing actual measured proof.');
+        if (raw === null) {
+            throw new Error('Missing actual measured proof.');
+        }
         const proof = raw.proofs.at(-1);
         const target = proof?.preview.targets.find((entry) => entry.targetKind === 'track');
         const baseline = rendering.getAgentMeasurementArtifact(
-            target?.audition?.baseline?.artifact?.contentAddress ?? ''
+            target?.audition?.baseline.artifact.contentAddress ?? ''
         );
-        const proposal = rendering.getAgentMeasurementArtifact(
-            target?.audition?.preview?.artifact?.contentAddress ?? ''
-        );
-        if (baseline === null || proposal === null) throw new Error('The current exact retained pair is unavailable.');
+        const proposal = rendering.getAgentMeasurementArtifact(target?.audition?.preview.artifact.contentAddress ?? '');
+        if (baseline === null || proposal === null) {
+            throw new Error('The current exact retained pair is unavailable.');
+        }
         const baselineLufs = target?.audition?.baselineIntegratedLoudness;
         const proposedLufs = target?.audition?.previewIntegratedLoudness;
         if (
@@ -286,8 +297,9 @@ async function installOutputProbe(page: Page, confirmationId: string) {
             typeof proposedLufs.value !== 'number' ||
             !Number.isFinite(baselineLufs.value) ||
             !Number.isFinite(proposedLufs.value)
-        )
+        ) {
             throw new Error('Missing genuine finite match figures.');
+        }
         const match = Math.min(baselineLufs.value, proposedLufs.value);
         const expectedGains = {
             baseline: 10 ** ((match - baselineLufs.value) / 20),
@@ -295,8 +307,9 @@ async function installOutputProbe(page: Page, confirmationId: string) {
         };
         const context = audio.audioEngine.context;
         // This deterministic fixture uses one known rate; production accepts differing formats.
-        if (baseline.sampleRate !== context.sampleRate || proposal.sampleRate !== context.sampleRate)
+        if (baseline.sampleRate !== context.sampleRate || proposal.sampleRate !== context.sampleRate) {
             throw new Error('Unexpected software oracle fixture sample rate.');
+        }
         const blocks: ProbeBlock[] = [];
         const starts: SourceStart[] = [];
         const module = new Blob(
@@ -328,7 +341,9 @@ async function installOutputProbe(page: Page, confirmationId: string) {
         tap.connect(silentPull);
         silentPull.connect(context.destination);
         tap.port.onmessage = (event: MessageEvent<ProbeBlock>) => {
-            if (blocks.length < 256) blocks.push(event.data);
+            if (blocks.length < 256) {
+                blocks.push(event.data);
+            }
         };
         const originalFactory = context.createBufferSource;
         context.createBufferSource = new Proxy(originalFactory, {
@@ -337,19 +352,21 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                 let gain = 1;
                 source.connect = new Proxy(source.connect, {
                     apply(connect, node, connectArgs) {
-                        if (connectArgs[0] instanceof GainNode) gain = connectArgs[0].gain.value;
+                        if (connectArgs[0] instanceof GainNode) {
+                            gain = connectArgs[0].gain.value;
+                        }
                         return Reflect.apply(connect, node, connectArgs);
                     },
                 });
                 source.start = new Proxy(source.start, {
                     apply(start, node, startArgs) {
-                        const side =
-                            source.buffer === baseline.buffer
-                                ? 'baseline'
-                                : source.buffer === proposal.buffer
-                                  ? 'preview'
-                                  : null;
-                        if (side !== null)
+                        let side: 'baseline' | 'preview' | null = null;
+                        if (source.buffer === baseline.buffer) {
+                            side = 'baseline';
+                        } else if (source.buffer === proposal.buffer) {
+                            side = 'preview';
+                        }
+                        if (side !== null) {
                             starts.push({
                                 side,
                                 frame: Math.round(context.currentTime * context.sampleRate),
@@ -360,6 +377,7 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                                 frames: source.buffer!.length,
                                 expectedFrames: (side === 'baseline' ? baseline : proposal).frameCount,
                             });
+                        }
                         return Reflect.apply(start, node, startArgs);
                     },
                 });
@@ -375,7 +393,9 @@ async function installOutputProbe(page: Page, confirmationId: string) {
         const holdResume = async () => {
             await context.suspend();
             const gate: unknown = Reflect.get(audio.audioEngine, 'previewProgrammeGate');
-            if (!(gate instanceof GainNode)) throw new Error('Missing actual programme gate.');
+            if (!(gate instanceof GainNode)) {
+                throw new TypeError('Missing actual programme gate.');
+            }
             const originalDisconnect = gate.disconnect;
             gate.disconnect = new Proxy(originalDisconnect, {
                 apply(disconnect, receiver, args) {
@@ -438,21 +458,26 @@ async function installOutputProbe(page: Page, confirmationId: string) {
             },
             residual: () => {
                 const start = starts.at(-1);
-                if (start === undefined) return null;
+                if (start === undefined) {
+                    return null;
+                }
                 const selectedBlocks = blocks.filter((block) => block.frame >= start.frame + 512).slice(0, 8);
-                if (selectedBlocks.length !== 8) return null;
+                if (selectedBlocks.length !== 8) {
+                    return null;
+                }
                 const expected = (start.side === 'baseline' ? baseline : proposal).buffer.getChannelData(0);
                 let residual = Infinity;
                 for (let shift = -256; shift <= 256; shift++) {
                     let maximum = 0;
-                    for (const block of selectedBlocks)
+                    for (const block of selectedBlocks) {
                         for (let index = 0; index < block.selected.length; index++) {
                             const expectedIndex = block.frame - start.frame + index + shift;
                             maximum = Math.max(
                                 maximum,
-                                Math.abs(block.selected[index]! - (expected[expectedIndex] ?? 0) * start.expectedGain)
+                                Math.abs(block.selected[index] - (expected[expectedIndex] ?? 0) * start.expectedGain)
                             );
                         }
+                    }
                     residual = Math.min(residual, maximum);
                 }
                 return {
@@ -617,13 +642,19 @@ test('auditions one genuine retained measured request before Confirm without pro
     });
     const egress: string[] = [];
     page.on('request', (request) => {
-        if (request.method() !== 'POST') return;
+        if (request.method() !== 'POST') {
+            return;
+        }
         const contentType = request.headers()['content-type'] ?? '';
-        if (/audio|octet-stream|multipart/i.test(contentType)) egress.push(`${request.url()} ${contentType}`);
+        if (/audio|octet-stream|multipart/i.test(contentType)) {
+            egress.push(`${request.url()} ${contentType}`);
+        }
     });
     const provider = await startScriptedToolProvider((request, turn) => {
-        if (turn === 0) return [comparisonIntake(request, subjects.drumsId, subjects.bassId)];
-        if (turn === 1)
+        if (turn === 0) {
+            return [comparisonIntake(request, subjects.drumsId, subjects.bassId)];
+        }
+        if (turn === 1) {
             return [
                 {
                     id: 'audition-discovery',
@@ -631,6 +662,7 @@ test('auditions one genuine retained measured request before Confirm without pro
                     arguments: { category: 'command', names: ['setDeviceParameter'] },
                 },
             ];
+        }
         if (turn === 3) {
             // The held comparative proposal's measurement step offers the measurement tool alone. A
             // live master read witnesses the step without proving the unapplied preview.
@@ -716,7 +748,9 @@ test('auditions one genuine retained measured request before Confirm without pro
             const current = stores.pendingActionConfirmationStore.value?.confirmations.findLast(
                 (entry) => entry.status === 'proposed'
             );
-            if (current === undefined) throw new Error('Missing real re-preview confirmation.');
+            if (current === undefined) {
+                throw new Error('Missing real re-preview confirmation.');
+            }
             const receipts = stores.agentRunStore.value?.runs.find((run) => run.runId === current.runId)?.plan
                 ?.applicationToolReceipts;
             if (
@@ -726,8 +760,9 @@ test('auditions one genuine retained measured request before Confirm without pro
                         entry.toolName === 'analysis.measure' &&
                         entry.origin === 'application-verification'
                 )
-            )
+            ) {
                 throw new Error('No genuine application preview receipt.');
+            }
             return { id: current.id };
         });
         expect(await projectTruth(page)).toEqual(beforeRequest);
@@ -792,8 +827,13 @@ test('auditions one genuine retained measured request before Confirm without pro
             .poll(() =>
                 page.evaluate(() => {
                     const probe = window.measuredAuditionProbe;
-                    const frame = probe?.resumeFrame();
-                    if (probe === undefined || frame == null) return 0;
+                    if (probe === undefined) {
+                        return 0;
+                    }
+                    const frame = probe.resumeFrame();
+                    if (frame === null) {
+                        return 0;
+                    }
                     return probe.blocks.filter((block) => block.frame >= frame).length;
                 })
             )
@@ -825,7 +865,9 @@ test('auditions one genuine retained measured request before Confirm without pro
         // https://webaudio.github.io/web-audio-api/#rendering-loop
         const firstResume = pending.resumeCalls?.[0];
         const cut = pending.cuts?.[0];
-        if (firstResume === undefined || cut === undefined) throw new Error('Missing actual gate/resume calls.');
+        if (firstResume === undefined || cut === undefined) {
+            throw new Error('Missing actual gate/resume calls.');
+        }
         expect(cut.toPreviewOutput).toBe(true);
         expect(cut.time).toBe(firstResume.time);
         expect(cut.calledAt).toBeLessThan(firstResume.calledAt);

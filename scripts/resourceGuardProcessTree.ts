@@ -362,7 +362,7 @@ export function processSignalErrno(error: unknown): string {
     return 'unknown';
 }
 
-function probeProcess(pid: number, host: ProcessTreeHost): ProcessProbe {
+function probeProcess(pid: number, host: Pick<ProcessTreeHost, 'kill'>): ProcessProbe {
     try {
         host.kill(pid, 0);
         return { state: 'present' };
@@ -372,10 +372,10 @@ function probeProcess(pid: number, host: ProcessTreeHost): ProcessProbe {
     }
 }
 
-function observeProcessIdentity(
+export function observeProcessIdentity(
     pid: number,
     storedStartedAt: string | undefined,
-    host: ProcessTreeHost
+    host: Pick<ProcessTreeHost, 'kill' | 'processStartedAt'>
 ): ProcessIdentityObservation {
     const signalZero = probeProcess(pid, host);
     const currentStartedAt = signalZero.state === 'absent' ? undefined : host.processStartedAt(pid);

@@ -266,10 +266,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip when the guitar already sounds thin on its own.',
             'Skip when a parent bus already carries the same corrective cut.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'rms', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
         source: 'Guitar mud gathers between 250 Hz and 400 Hz, below the mid band the descriptor usually reaches, because that is where cabinet and body resonance overlap with everything else in the arrangement. The shallow shelf underneath removes the broad shoulder the bell alone leaves behind.',
     },
     {
