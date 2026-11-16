@@ -7360,9 +7360,13 @@ mod tests {
         process: *const clap_process,
     ) -> i32 {
         // SAFETY: the host hands a live process struct for the length of this call.
-        let (in_events, out_events) = unsafe { ((*process).in_events, (*process).out_events) };
+        let in_events = unsafe { (*process).in_events };
+        // SAFETY: as above — the live process struct.
+        let out_events = unsafe { (*process).out_events };
         // SAFETY: the host's live input list for this `process` call.
-        let (size, get) = unsafe { ((*in_events).size, (*in_events).get) };
+        let size = unsafe { (*in_events).size };
+        // SAFETY: as above — the live input list.
+        let get = unsafe { (*in_events).get };
         // SAFETY: the host's live output list for this `process` call.
         let try_push = unsafe { (*out_events).try_push };
         let (Some(size), Some(get), Some(try_push)) = (size, get, try_push) else {
