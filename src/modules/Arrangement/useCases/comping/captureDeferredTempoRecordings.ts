@@ -1,7 +1,10 @@
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { type DeferredTempoRecordingSources } from '#/utils/deferredTempoRecordingSources';
+import {
+    captureTempoSourceOwnerValue,
+    type DeferredTempoRecordingSources,
+    type TempoSourceOwner,
+} from '#/modules/Transport/stores';
 import { isRecord } from '#/utils/structuralEquality';
-import { captureTempoSourceOwnerValue, type TempoSourceOwner } from '#/utils/tempoAudioSourcePromotion';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { type Clip, type Track } from '../../models/Track';

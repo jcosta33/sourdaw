@@ -100,17 +100,26 @@ describe('executableAppActionEffectsByType', () => {
         }
     });
 
-    it('S6: cross-checks against the exported grant sets from getVersionedCommandBatchEffects', () => {
+    it('S6: cross-checks against the routing, tempo, master, create and delete flags of commandBatchEffectByActionType', () => {
         for (const actionType of onlyExecutableActionTypes(actionTypesWith('routing'))) {
-            expect(rowFor(actionType).dimensions, `${actionType}: ROUTING_OPERATIONS member`).toContain('routing');
+            expect(
+                rowFor(actionType).dimensions,
+                `${actionType}: routing flag in commandBatchEffectByActionType`
+            ).toContain('routing');
         }
 
         for (const actionType of onlyExecutableActionTypes(actionTypesWith('tempo'))) {
-            expect(rowFor(actionType).dimensions, `${actionType}: TEMPO_OPERATIONS member`).toContain('project-timing');
+            expect(
+                rowFor(actionType).dimensions,
+                `${actionType}: tempo flag in commandBatchEffectByActionType`
+            ).toContain('project-timing');
         }
 
         for (const actionType of onlyExecutableActionTypes(actionTypesWith('master'))) {
-            expect(rowFor(actionType).dimensions, `${actionType}: MASTER_OPERATIONS member`).toContain('master');
+            expect(
+                rowFor(actionType).dimensions,
+                `${actionType}: master flag in commandBatchEffectByActionType`
+            ).toContain('master');
         }
 
         const expectedCreateOperations = new Set(

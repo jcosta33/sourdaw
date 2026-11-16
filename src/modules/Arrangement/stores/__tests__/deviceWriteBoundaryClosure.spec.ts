@@ -957,6 +957,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // that reads the request's constraint clauses while planning the
         // schedule. Pure prompt reading; no device hydration or write.
         'src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts': 3,
+        // Count provenance: new file entry, measured 3 — the
+        // `compilePerceptualConstraints` import, its module path and one call
+        // that blanks the clauses the constraint reader consumed before the
+        // literal label's quality words are read. Pure prompt reading; no
+        // device hydration or write.
+        'src/modules/AiRuntime/useCases/readUnaccountedQualityWord.ts': 3,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
         // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
         // Compilers, barrel re-exports, the loadPreset handler, and

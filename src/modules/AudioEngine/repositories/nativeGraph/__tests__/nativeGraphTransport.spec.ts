@@ -2,11 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
-import {
-    cancelNativeGraphOfflineRender,
-    createDesktopNativeGraphTransport,
-    type NativeLevainBankLayout,
-} from '../nativeGraphTransport';
+import { createDesktopNativeGraphTransport, type NativeLevainBankLayout } from '../nativeGraphTransport';
 import { type NativeGraphWireBatch } from '../serializeAudioGraphCommand';
 
 vi.mock('#/utils/desktopBridge', () => ({
@@ -162,14 +158,6 @@ describe('createDesktopNativeGraphTransport', () => {
             command: 'render_graph_offline',
             args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: 'bounce-7' },
         });
-    });
-
-    it('cancels a render by its id through cancel_graph_offline', async () => {
-        vi.mocked(desktopInvoke).mockResolvedValue(undefined);
-
-        await cancelNativeGraphOfflineRender('bounce-7');
-
-        expect(desktopInvoke).toHaveBeenCalledWith('cancel_graph_offline', { renderId: 'bounce-7' });
     });
 
     it('applies live batches through apply_graph_commands', async () => {

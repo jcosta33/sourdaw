@@ -1,7 +1,7 @@
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 import { type AppAction, type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 
 import { type TakeLane } from '../../models/TakeLane';

@@ -1,5 +1,5 @@
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 
 import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
 import { type TakeLane } from '../../models/TakeLane';

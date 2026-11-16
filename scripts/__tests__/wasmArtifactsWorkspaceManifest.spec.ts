@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -146,6 +147,54 @@ foo = { git = "https://example.com/foo" }
         expect(rendered).toContain('[patch.crates-io]');
         expect(rendered).toContain('foo = { git = "https://example.com/foo" }');
         expect(rendered).toContain('resolver = "2"');
+    });
+
+    it('keeps reading entries after an escaped quote followed by # inside a basic string (#6889)', () => {
+        const manifestWith = (laterVersion: string) => `[workspace.dependencies]
+probe = { version = "1", note = "\\" #" }
+later = "${laterVersion}"
+`;
+        const used = new Set(['probe', 'later']);
+
+        const first = workspaceManifestFingerprintInput(manifestWith('1'), used);
+        const second = workspaceManifestFingerprintInput(manifestWith('2'), used);
+
+        expect(first).toContain('later = "1"');
+        expect(second).toContain('later = "2"');
+        expect(second).not.toBe(first);
+    });
+
+    it('treats # inside a literal string as text and an escaped backslash as closing the string', () => {
+        const manifest = `[workspace.dependencies]
+lit = { version = "1", note = '# not a comment' }
+esc = { version = "2", note = "a\\\\" } # comment
+`;
+
+        const rendered = workspaceManifestFingerprintInput(manifest, new Set(['lit', 'esc']));
+
+        expect(rendered).toContain('lit = { version = "1", note = \'# not a comment\' }');
+        expect(rendered).toContain('esc = { version = "2", note = "a\\\\" }\n');
+        expect(rendered).not.toContain('comment\n');
+    });
+
+    it('throws naming the start line when an inline table is never closed', () => {
+        const manifest = `[workspace.dependencies]
+windows = "0.62.2"
+broken = { version = "1",
+`;
+
+        expect(() => workspaceManifestFingerprintInput(manifest, new Set(['broken']))).toThrow(/line 3/);
+    });
+
+    it('renders the real root Cargo.toml byte-identically to the line scanner before #6889 (guards wasm closure hashes)', () => {
+        const rootManifest = readFileSync(wasmArtifacts.absolute('Cargo.toml'), 'utf8');
+
+        const rendered = workspaceManifestFingerprintInput(rootManifest, new Set(['windows']));
+
+        // Pinned from the pre-change implementation: any drift moves every wasm package hash.
+        expect(createHash('sha256').update(rendered).digest('hex')).toBe(
+            'ee4051abae18785c645356c92957fd78e011b0fbc033d12b8b3044127f0490ef'
+        );
     });
 });
 

@@ -530,5 +530,5 @@
     "src/modules/Yeast/workers/processors/GrooveModule.ts": 600,
     "src/modules/Yeast/workers/yeastWorker.ts": 600,
     "src/utils/automationCurve.ts": 600,
-    "src/utils/handlerContract.ts": 1412
+    "src/utils/handlerContract.ts": 766
 }

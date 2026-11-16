@@ -1,4 +1,4 @@
-import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/stores';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -70,9 +70,13 @@ function createCommittedOrders(): CommittedOrders {
     };
 }
 
-/** Where an open episode stands now: replaced project, admitted again, or still refused. */
+/**
+ * Where an open episode stands now: replaced project, admitted again, or still refused. Only a new
+ * root document replaces the project; a merge that adds child documents keeps the session state
+ * the episode would write.
+ */
 function readVerdict(episode: OpenEpisode): 'stale' | 'admitted' | 'refused' {
-    if (episode.projectIdentity !== captureProjectIdentity()) {
+    if (episode.projectIdentity !== captureProjectRootIdentity()) {
         return 'stale';
     }
     return isAppActionAdmitted(episode.action) ? 'admitted' : 'refused';
