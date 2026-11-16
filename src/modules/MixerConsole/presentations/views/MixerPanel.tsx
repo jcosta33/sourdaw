@@ -21,6 +21,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { cycleChannelStripWidth } from '#/modules/WorkspaceShell/useCases';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
+import { type Track } from '../../models/TrackViewTypes';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
@@ -37,6 +38,25 @@ type MixerPanelProps = {
     style?: CSSProperties;
 };
 
+/**
+ * The mixer grid has one Tab stop: the selected channel strip, else the first
+ * channel. The master strip, index -1, holds it when selected or alone.
+ */
+const getMixerTabStopIndex = (
+    channelTracks: readonly Track[],
+    masterTrack: Track | undefined,
+    selectedTrackId: string | null
+): number => {
+    const selectedChannelIndex = channelTracks.findIndex((track) => track.id === selectedTrackId);
+    if (selectedChannelIndex >= 0) {
+        return selectedChannelIndex;
+    }
+    if (channelTracks.length === 0 || (masterTrack !== undefined && masterTrack.id === selectedTrackId)) {
+        return -1;
+    }
+    return 0;
+};
+
 const STRIP_WIDTH_CLASS: Record<ChannelStripWidth, string> = {
     narrow: 'w-20',
     normal: 'w-28',
@@ -46,6 +66,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const channelTracks = getMixerChannelTracks(tracks);
     const masterTrack = tracks.find((track) => track.kind === 'master');
+    const tabStopIndex = getMixerTabStopIndex(channelTracks, masterTrack, selectedTrackId);
     const { channelStripWidth } = useWorkspaceState();
     const widthClass = STRIP_WIDTH_CLASS[channelStripWidth];
 
@@ -216,12 +237,13 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
             />
             <MixHealthDialog open={showMixHealth} onOpenChange={setShowMixHealth} />
             <ScrollArea className="flex-1">
-                <Row align="stretch" gap={1} className="h-full p-2">
-                    {channelTracks.map((track) => (
+                <Row role="grid" aria-label="Mixer channels" align="stretch" gap={1} className="h-full p-2">
+                    {channelTracks.map((track, index) => (
                         <ExpandedChannelStrip
                             key={track.id}
                             track={track}
                             isSelected={track.id === selectedTrackId}
+                            isTabStop={index === tabStopIndex}
                             widthClass={widthClass}
                         />
                     ))}
@@ -230,6 +252,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                         widthClass={widthClass}
                         track={masterTrack}
                         isSelected={masterTrack !== undefined && masterTrack.id === selectedTrackId}
+                        isTabStop={tabStopIndex === -1}
                     />
 
                     {channelTracks.length === 0 ? (

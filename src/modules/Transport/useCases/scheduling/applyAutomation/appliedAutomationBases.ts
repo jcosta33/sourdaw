@@ -1,3 +1,5 @@
+import { takeNextObservationSequence } from '#/infra/ordering/observationSequence';
+
 /**
  * The device-parameter values the live automation pass actually wrote
  * on the current tick, indexed `deviceId → parameterId → value`.
@@ -47,14 +49,11 @@ export function clearAppliedAutomationBases(): void {
  */
 export const appliedAutomationWriteSequences = new Map<string, Map<string, number>>();
 
-let lastWriteSequence = 0;
-
 export function recordAppliedAutomationWrite(deviceId: string, parameterId: string): void {
     let byParameter = appliedAutomationWriteSequences.get(deviceId);
     if (!byParameter) {
         byParameter = new Map<string, number>();
         appliedAutomationWriteSequences.set(deviceId, byParameter);
     }
-    lastWriteSequence += 1;
-    byParameter.set(parameterId, lastWriteSequence);
+    byParameter.set(parameterId, takeNextObservationSequence());
 }

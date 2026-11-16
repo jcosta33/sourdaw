@@ -55,8 +55,8 @@ async function observeSignal(page: Page, mode: 'first' | 'loop') {
             const context = audio.getAudioContext();
             const cursor = document.querySelector('[data-testid="transport-playhead"]');
             const play = document.querySelector('[data-testid="transport-play"]');
-            if (!analyser || !cursor || !play) {
-                throw new Error('Required master analyser or transport surface is missing');
+            if (!cursor || !play) {
+                throw new Error('Required transport surface is missing');
             }
             const samples = new Float32Array(analyser.fftSize);
             const deadline = performance.now() + 20_000;
@@ -77,7 +77,7 @@ async function observeSignal(page: Page, mode: 'first' | 'loop') {
                 incomingBeat: number;
             }>((resolve, reject) => {
                 const tick = (): void => {
-                    const position = /^Bars\s*(\d+)\s*\.\s*(\d+)\s*\.\s*(\d+)$/.exec(cursor.textContent?.trim() ?? '');
+                    const position = /^Bars\s*(\d+)\s*\.\s*(\d+)\s*\.\s*(\d+)$/.exec(cursor.textContent.trim());
                     if (!position) {
                         reject(new Error('Musical cursor is unavailable'));
                         return;
@@ -138,9 +138,6 @@ async function expectStoppedSilence(page: Page): Promise<void> {
             page.evaluate(async (entry) => {
                 const { audio }: typeof import('./persistedHydrationEntry') = await import(entry);
                 const analyser = audio.getMasterAnalyser();
-                if (!analyser) {
-                    throw new Error('Master analyser is missing after Stop');
-                }
                 const samples = new Float32Array(analyser.fftSize);
                 analyser.getFloatTimeDomainData(samples);
                 return samples.reduce((peak, sample) => Math.max(peak, Math.abs(sample)), 0);

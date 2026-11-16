@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import { chromium, type FullConfig } from '@playwright/test';
+import { type Browser, chromium, type FullConfig } from '@playwright/test';
 
 import { assertServingCheckoutIdentity } from '../../scripts/e2eServerIdentity';
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
@@ -119,22 +119,28 @@ async function warmOrigin(baseURL: string): Promise<void> {
         }
     } catch (error) {
         warmupFailure = { error };
-        throw error;
-    } finally {
-        logWarmupPhase('browser close: start');
-        try {
-            await browser.close();
-        } catch (closeError) {
-            if (warmupFailure !== undefined) {
-                const closeMessage =
-                    closeError instanceof Error ? `${closeError.name}: ${closeError.message}` : String(closeError);
-                console.error(
-                    `[first-paint warmup] browser close failed while preserving the original warmup failure: ${closeMessage}`
-                );
-                throw warmupFailure.error;
-            }
+    }
+    await closeWarmupBrowser(browser, warmupFailure);
+    if (warmupFailure !== undefined) {
+        throw warmupFailure.error;
+    }
+}
+
+// A close failure after a warmup failure is logged, so the caller rethrows the original failure.
+async function closeWarmupBrowser(browser: Browser, warmupFailure: { error: unknown } | undefined): Promise<void> {
+    logWarmupPhase('browser close: start');
+    try {
+        await browser.close();
+    } catch (closeError) {
+        if (warmupFailure === undefined) {
             throw closeError;
         }
-        logWarmupPhase('browser close: complete');
+        const closeMessage =
+            closeError instanceof Error ? `${closeError.name}: ${closeError.message}` : String(closeError);
+        console.error(
+            `[first-paint warmup] browser close failed while preserving the original warmup failure: ${closeMessage}`
+        );
+        return;
     }
+    logWarmupPhase('browser close: complete');
 }

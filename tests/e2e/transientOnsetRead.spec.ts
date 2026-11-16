@@ -52,7 +52,7 @@ function toolWith(request: ScriptedToolRequest, properties: string[]): string {
 function receipt(request: ScriptedToolRequest, callId: string): Record<string, unknown> {
     const wire = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === callId);
     if (typeof wire?.content !== 'string') {
-        throw new Error(`Missing correlated receipt ${callId}`);
+        throw new TypeError(`Missing correlated receipt ${callId}`);
     }
     const value: unknown = JSON.parse(wire.content);
     if (!isRecord(value) || value.status !== 'success' || !isRecord(value.data)) {
@@ -65,7 +65,7 @@ function numericHits(data: Record<string, unknown>) {
     expect(data.kind).toBe('transient-onset-read');
     expect(data.timeAxis).toBe('source-buffer');
     if (typeof data.sampleRate !== 'number' || !Array.isArray(data.hits)) {
-        throw new Error('Source geometry or numeric page is absent');
+        throw new TypeError('Source geometry or numeric page is absent');
     }
     let previous = -1;
     for (const hit of data.hits as unknown[]) {
@@ -170,19 +170,19 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
             const dataText = request.messages
                 .map((message) => message.content)
                 .find((content) => content?.includes('untrusted_project_data:\n'))!;
-            const data = JSON.parse(dataText.split('untrusted_project_data:\n')[1]!.split('\n')[0]!).data as {
+            const data = JSON.parse(dataText.split('untrusted_project_data:\n')[1].split('\n')[0]).data as {
                 selectableTargets: Array<{ clips: Array<{ id: string }> }>;
             };
             const trackIndex = data.selectableTargets.findIndex((track) =>
                 track.clips.some((clip) => clip.id === imported.clips[0].id)
             );
             expect(trackIndex).toBeGreaterThanOrEqual(0);
-            const clipIndex = data.selectableTargets[trackIndex]!.clips.findIndex(
+            const clipIndex = data.selectableTargets[trackIndex].clips.findIndex(
                 (clip) => clip.id === imported.clips[0].id
             );
             const reference = `c${String(trackIndex)}.${String(clipIndex)}`;
             const index = view.scopes.findIndex((row) => row[0] === 'clips' && row[1].includes(reference));
-            const scopeId = ids[index];
+            const scopeId = index < 0 ? undefined : ids.at(index);
             expect(view.scopes[index]?.[1]).toEqual([reference]);
             if (scopeId === undefined) {
                 throw new Error('Imported source clip was not advertised.');

@@ -1811,6 +1811,37 @@ mod tests {
         });
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_read_write_pick_through_a_link_into_a_granted_plugin_folder_is_refused() {
+        use crate::host::plugin_folder_grants::test_support::{store_grants, TempTree};
+
+        let tree = TempTree::create("grant-path-link");
+        let plugin_folder = tree.dir("Granted/Plugins");
+        let vendor = tree.dir("Granted/Plugins/Vendor");
+        store_grants(&tree.store(), &[plugin_folder]);
+        let link = tree.path("Shortcut");
+        std::os::unix::fs::symlink(&vendor, &link).expect("link should be created");
+
+        crate::host::plugin_folder_grants::with_store_location_for_test(&tree.store(), || {
+            grant_registry::with_grants_for_test(Vec::new(), || {
+                let refused = crate::block_on_test(grant_path(
+                    link.to_string_lossy().into_owned(),
+                    "readwrite".to_string(),
+                    true,
+                ));
+                assert!(
+                    refused
+                        .as_ref()
+                        .is_err_and(|message| message.contains("plugin folder")),
+                    "unexpected result {refused:?}"
+                );
+                assert!(!grant_registry::admits(&vendor, GrantMode::Read));
+                assert!(!grant_registry::admits(&link, GrantMode::Read));
+            });
+        });
+    }
+
     #[tokio::test]
     async fn list_directory_refuses_a_missing_path_with_the_not_accessible_text() {
         let scratch = TempAuthorityDir::create_owned_scratch();

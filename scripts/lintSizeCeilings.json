@@ -99,7 +99,6 @@
     "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedBatchOutcome.ts": 600,
     "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts": 600,
     "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleVerifiedBatchReplay.ts": 600,
-    "src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts": 704,
     "src/modules/AiRuntime/useCases/agentRunLifecycle.ts": 2559,
     "src/modules/AiRuntime/useCases/agentToolCatalog.ts": 600,
     "src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts": 600,

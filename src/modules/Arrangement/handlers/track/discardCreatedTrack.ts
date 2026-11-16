@@ -1,6 +1,5 @@
 import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
@@ -12,7 +11,10 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
+import { matchesCreatedTrackFingerprint } from '../matchesCreatedTrackFingerprint';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
+
+import { recordDiscardedPluginStates } from './discardedPluginStateCarry';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
     canReapplyAfterDivergence: (action) => action.payload.generatedMidiStateGuard !== undefined,
@@ -23,7 +25,10 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         }
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track && guard.midiByClipIdJson === '{}') {
-            return matchesJsonFingerprint(projectTrackThroughPriorBatchActions(track, context), guard.entityJson);
+            return matchesCreatedTrackFingerprint(
+                projectTrackThroughPriorBatchActions(track, context),
+                guard.entityJson
+            );
         }
         return isGeneratedMidiStateCurrent({
             entityId: action.payload.trackId,
@@ -31,7 +36,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
             guard,
         });
     },
-    execute: (action) => {
+    execute: (action, context) => {
         const guard = action.payload.generatedMidiStateGuard;
         if (
             guard &&
@@ -47,6 +52,9 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         // Read before removeTrack: the instances are unreachable once the track leaves the store.
         const heldTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId);
         const hostedInstances = heldTrack ? collectHostedPluginInstances(heldTrack) : [];
+        if (heldTrack && context?.undoEntryId !== undefined) {
+            recordDiscardedPluginStates(context.undoEntryId, [heldTrack]);
+        }
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,

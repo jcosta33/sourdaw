@@ -16,7 +16,7 @@ test.describe('Mixer Advanced', () => {
     test('Mixer panel shows channel strips for tracks and master', async ({ page }) => {
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
         await expect(mixer).toBeVisible();
-        const channels = mixer.getByRole('group', { name: /channel/i });
+        const channels = mixer.getByRole('row', { name: /channel/i });
         await expect(channels.first()).toBeVisible({ timeout: 5000 });
         const channel_count = await channels.count();
         expect(channel_count).toBeGreaterThanOrEqual(2);
