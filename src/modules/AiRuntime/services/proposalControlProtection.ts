@@ -1,5 +1,6 @@
 import { automationFallbackScopeByActionType, noFallbackScope } from '../models/AutomationFallbackScopeByActionType';
 import { canonicalControlByActionType } from '../models/CanonicalControlByActionType';
+import { changesLinkedValuesByActionType } from '../models/ChangesLinkedValuesByActionType';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 
@@ -50,7 +51,10 @@ function parameterOperation(parameterId: string, fallback: string): string {
  * Followers read those points independently of the source lane's enabled flag and track automation mode.
  */
 function changesLinkedValues(actionType: string): boolean {
-    return !['addAutomationLane', 'setAutomationLaneEnabled', 'setAutomationMode'].includes(actionType);
+    if (!hasOwnKey(changesLinkedValuesByActionType, actionType)) {
+        return true;
+    }
+    return changesLinkedValuesByActionType[actionType];
 }
 
 function collectParameterRoots(lanes: readonly Lane[], roots: Set<string>, trackId: string, parameterId: string): void {
