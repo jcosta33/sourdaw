@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "a1b5f85a041a8f01b204ec64b5df5f00fb27ed0a746b0011031aeda2a5cdb9bd"
+                    "digest": "dd2e6aface7508b64eebd13153aa5fe4cdb259eaffc57e9e298f45abdb8e21e8"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",

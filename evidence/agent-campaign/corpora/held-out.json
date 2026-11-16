@@ -415,7 +415,7 @@
             }
         },
         {
-            "id": "AC054-HO-CLARIFY-1",
+            "id": "AC067-HO-MULTI-1",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
             "prompt": "make the chorus hit harder",
@@ -425,7 +425,7 @@
             }
         },
         {
-            "id": "AC054-HO-CLARIFY-2",
+            "id": "AC067-HO-MULTI-2",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
             "prompt": "polish the low end",
@@ -435,7 +435,7 @@
             }
         },
         {
-            "id": "AC054-HO-CLARIFY-3",
+            "id": "AC067-HO-MULTI-3",
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
             "prompt": "tighten up the drums",
@@ -445,7 +445,7 @@
             }
         },
         {
-            "id": "AC054-HO-CLARIFY-4",
+            "id": "AC054-HO-CLARIFY-1",
             "promptClass": "boundary",
             "class": "clarify-required",
             "prompt": "give this more energy",
@@ -464,7 +464,7 @@
             }
         },
         {
-            "id": "AC054-HO-CLARIFY-5",
+            "id": "AC054-HO-CLARIFY-2",
             "promptClass": "boundary",
             "class": "clarify-required",
             "prompt": "make it feel more professional",
@@ -611,7 +611,7 @@
             "id": "AC054-HO-DENY-2",
             "promptClass": "boundary",
             "class": "deny-policy",
-            "prompt": "save",
+            "prompt": "fresh project",
             "providerTurns": [],
             "oracle": {
                 "kind": "denied"
@@ -621,7 +621,7 @@
             "id": "AC054-HO-DENY-3",
             "promptClass": "boundary",
             "class": "deny-policy",
-            "prompt": "bounce",
+            "prompt": "import wav",
             "providerTurns": [],
             "oracle": {
                 "kind": "denied"
@@ -641,7 +641,7 @@
             "id": "AC054-HO-DENY-5",
             "promptClass": "boundary",
             "class": "deny-policy",
-            "prompt": "mixdown",
+            "prompt": "open midi",
             "providerTurns": [],
             "oracle": {
                 "kind": "denied"
