@@ -1,6 +1,6 @@
 # Transport module — Agent Guidelines
 
-Playback lifecycle and control (play, stop, seek, record, overdub), playhead positioning & high-frequency scheduler, tempo maps and ramps, time signature maps, metronome, loop/punch regions, master gain headroom, and PPQ/sample position projections; does not own the WebAudio graph (AudioEngine) or arrangement track/clip items (Arrangement).
+Playback lifecycle and control (play, stop, seek, record, overdub), playhead positioning & high-frequency scheduler, tempo maps and ramps, time signature maps, metronome, loop/punch regions, master gain headroom, and PPQ/sample position projections; owns the tempo-promotion snapshots and helpers that record the clip, take and region facts a tempo edit must preserve; does not own the WebAudio graph (AudioEngine) or the arrangement track/clip items themselves (Arrangement).
 
 ## Public Contract Surface
 
