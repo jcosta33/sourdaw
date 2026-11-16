@@ -399,6 +399,20 @@ describe('readTempoSourceClockValue', () => {
         expect(readTempoSourceClockValue(context, 'second')).toBe(77.5);
     });
 
+    it('reads nothing when two tempo-map changes share the id', () => {
+        const context = {
+            transport: { tempo: 93 },
+            tempoMap: {
+                changes: [
+                    { id: 'shared', tempo: 141 },
+                    { id: 'shared', tempo: 77.5 },
+                ],
+            },
+        };
+
+        expect(readTempoSourceClockValue(context, 'shared')).toBeNull();
+    });
+
     it('reads nothing for an unknown change or a non-positive base tempo', () => {
         expect(
             readTempoSourceClockValue({ tempoMap: { changes: [{ id: 'first', tempo: 141 }] } }, 'missing')

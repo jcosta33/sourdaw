@@ -28,6 +28,10 @@ const sources = [
     },
 ];
 
+const contextWithoutRecording = {
+    tracks: { tracks: [{ id: 'audio', activeAlternativeId: 'main', clips: [] }] },
+};
+
 describe('withoutDeferredTempoRecordingSources', () => {
     it('accepts an owner whose live value is the captured value', () => {
         expect(withoutDeferredTempoRecordingSources(contextAt(3.5), sources)).not.toBeNull();
@@ -35,6 +39,14 @@ describe('withoutDeferredTempoRecordingSources', () => {
 
     it('accepts an owner whose live value is the staged value', () => {
         expect(withoutDeferredTempoRecordingSources(contextAt(11.25), sources)).not.toBeNull();
+    });
+
+    it('projects an owner whose live value is the captured value to the exact context without it', () => {
+        expect(withoutDeferredTempoRecordingSources(contextAt(3.5), sources)).toEqual(contextWithoutRecording);
+    });
+
+    it('projects an owner whose live value is the staged value to the exact context without it', () => {
+        expect(withoutDeferredTempoRecordingSources(contextAt(11.25), sources)).toEqual(contextWithoutRecording);
     });
 
     it('refuses an owner whose live value is neither the captured nor the staged value', () => {
