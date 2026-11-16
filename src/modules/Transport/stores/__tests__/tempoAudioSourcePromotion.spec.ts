@@ -5,6 +5,7 @@ import { type TempoAudioSourcePromotionSnapshot } from '../../events/tempoAudioS
 import {
     captureTempoSourceOwnerValue,
     isTempoAudioSourcePromotion,
+    readTempoSourceClockValue,
     tempoSourcePromotionsEqual,
 } from '../tempoAudioSourcePromotion';
 
@@ -357,5 +358,32 @@ describe('tempoSourcePromotionsEqual', () => {
                 { ...base, clips: [third, base.clips[0]!] }
             )
         ).toBe(false);
+    });
+});
+
+describe('readTempoSourceClockValue', () => {
+    it('reads the base tempo, not a default', () => {
+        expect(readTempoSourceClockValue({ transport: { tempo: 93 } }, null)).toBe(93);
+    });
+
+    it('reads the named tempo-map change, not the base tempo', () => {
+        const context = {
+            transport: { tempo: 93 },
+            tempoMap: {
+                changes: [
+                    { id: 'first', tempo: 141 },
+                    { id: 'second', tempo: 77.5 },
+                ],
+            },
+        };
+
+        expect(readTempoSourceClockValue(context, 'second')).toBe(77.5);
+    });
+
+    it('reads nothing for an unknown change or a non-positive base tempo', () => {
+        expect(
+            readTempoSourceClockValue({ tempoMap: { changes: [{ id: 'first', tempo: 141 }] } }, 'missing')
+        ).toBeNull();
+        expect(readTempoSourceClockValue({ transport: { tempo: 0 } }, null)).toBeNull();
     });
 });
