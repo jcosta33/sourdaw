@@ -1247,7 +1247,7 @@ export async function serializedPullRequestClosure(
     let unsafeFailure = false;
     let outcome: SupersessionOutcome;
     try {
-        outcome = await serialize(primaryRoot, number, async (boundary): Promise<SupersessionOutcome> => {
+        outcome = await serialize(primaryRoot, number, (boundary): Promise<SupersessionOutcome> => {
             const markMutation = () => {
                 boundary.markRemoteMutationAttempt();
                 attemptedOwner = boundary.ownerOid;
@@ -1268,17 +1268,21 @@ export async function serializedPullRequestClosure(
                     return inputPort.close(number);
                 },
             };
-            try {
-                return {
-                    success: close(port),
-                };
-            } catch (error) {
-                if (error instanceof VerifiedSupersessionCompensationError) {
-                    return { compensated: error };
+            // A throw from the executor rejects, so an unsafe failure still reaches the lock as a rejection.
+            return new Promise((resolve) => {
+                try {
+                    resolve({
+                        success: close(port),
+                    });
+                } catch (error) {
+                    if (error instanceof VerifiedSupersessionCompensationError) {
+                        resolve({ compensated: error });
+                        return;
+                    }
+                    unsafeFailure = true;
+                    throw error;
                 }
-                unsafeFailure = true;
-                throw error;
-            }
+            });
         });
     } catch (error) {
         if (unsafeFailure && attemptedOwner !== undefined) {

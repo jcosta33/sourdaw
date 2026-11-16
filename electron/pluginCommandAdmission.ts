@@ -23,6 +23,11 @@
  * after the cascade drained the runtimes, it would tear down instances the
  * cascade already owns and leave the shell answering a retire mid-exit.
  *
+ * `render_graph_offline` is here for both reasons too: it borrows each live
+ * runtime to capture its state and constructs offline instances of its own.
+ * Admitted after the cascade drained the runtimes, it would borrow ones the
+ * cascade already retired and start plugin work on the way out.
+ *
  * The engine transport commands are deliberately absent. `engine_transport_position`
  * only reads a published snapshot, and `engine_transport_set_maps` refuses outright
  * when no engine is running rather than bootstrapping one — so neither can insert
@@ -38,6 +43,7 @@ export const PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
+    'render_graph_offline',
     RETIRE_NATIVE_ENGINE,
     SCAN_PLUGINS,
     'set_plugin_bypass',

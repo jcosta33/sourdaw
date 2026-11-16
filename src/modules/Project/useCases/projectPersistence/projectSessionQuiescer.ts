@@ -45,6 +45,8 @@ const quarantineFailedRuntime = async (): Promise<void> => {
 };
 
 const repair = async (): Promise<ProjectSessionQuiesceOutcome> => {
+    // Reopening keeps the live plugin state the retirement carried, so the
+    // rebuild below restores it in place of each plugin's saved chunk.
     pluginRetirement?.reopen();
     pluginRetirement = undefined;
     try {
@@ -145,7 +147,9 @@ export const projectSessionQuiescer = {
         if (recoveryFailed) {
             return;
         }
-        pluginRetirement?.reopen();
+        // The session really ended, so the live plugin state a cancellation
+        // would have restored goes with it.
+        pluginRetirement?.release();
         pluginRetirement = undefined;
     },
     cancel: async (requestId: number): Promise<ProjectSessionQuiesceOutcome> => {

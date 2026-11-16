@@ -1,3 +1,4 @@
+import { type ScratchPadSectionSnapshot } from '#/modules/Arrangement/events';
 import { markerStore, scratchPadStore } from '#/modules/Arrangement/stores';
 import {
     captureArrangementToScratchPad,
@@ -5,7 +6,7 @@ import {
     isScratchPadCaptureSectionIds,
 } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type ScratchPadSectionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { workspaceStore } from '../../stores/workspaceStore';
 

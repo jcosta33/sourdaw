@@ -17,6 +17,7 @@ import { refinementCourtesy } from './agentReference/refinementCourtesy';
 import { resolveAgentReference } from './agentReference/resolveAgentReference';
 import { resolveWholeMember } from './agentReference/resolveWholeMember';
 import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
+import { readRoleFamilyWords } from './agentReference/roleFamilyWords';
 import { discoverMixRecipes } from './discoverMixRecipes';
 import { maskTrackReferences } from './maskTrackReferences';
 import { readFirstPerceptualTerm } from './readFirstPerceptualTerm';
@@ -48,21 +49,10 @@ function maskTrackNames(prompt: string, context: ProjectContext): string {
     return maskTrackReferences(prompt, context, ' ');
 }
 
-function readRoleWords(role: RecipeRole): string[] {
-    if (role === 'bass') {
-        return ['bass', 'basses'];
-    }
-    if (role === 'bus') {
-        return ['bus', 'buses'];
-    }
-    const singular = role.endsWith('s') ? role.slice(0, -1) : role;
-    return [singular, `${singular}s`];
-}
-
 function readNamedRole(prompt: string, catalog: MixRecipeCatalog): RecipeRole | null {
     const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
     const roles = catalog.roles.filter((role) =>
-        readRoleWords(role).some((word) =>
+        readRoleFamilyWords(role).some((word) =>
             new RegExp(`^(?:the )?${escapeRegExp(word)}(?: tracks?)?$`, 'u').test(normalized)
         )
     );
@@ -75,7 +65,7 @@ function readSelectionReference(prompt: string, catalog: MixRecipeCatalog): { te
     const roles = new Set<RecipeRole>();
     const ranges: Array<{ start: number; end: number }> = [];
     for (const role of catalog.roles) {
-        for (const word of readRoleWords(role)) {
+        for (const word of readRoleFamilyWords(role)) {
             const pattern = new RegExp(`\\b(selected|current|this)(\\s+)(${escapeRegExp(word)})\\s+track\\b`, 'giu');
             for (const match of masked.matchAll(pattern)) {
                 const start = match.index + match[1]!.length + match[2]!.length;
