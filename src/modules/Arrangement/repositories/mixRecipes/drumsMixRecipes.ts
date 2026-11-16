@@ -94,10 +94,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip at very fast tempi where a 50 ms release cannot recover between sixteenth notes.',
             'Skip when the kit already sounds gated or truncated.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'decrease' },
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'crestFactor', direction: 'increase' }],
         source: 'A release shorter than the gap between hits shortens the audible decay of each drum, which is the mechanism behind a tight kit rather than any single frequency move. The small low shelf trim removes the sustained shoulder under the kick that the compressor would otherwise lengthen.',
     },
     {
