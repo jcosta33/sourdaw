@@ -310,11 +310,15 @@ describe('production Oxlint public-plugin migration', () => {
         'preserves frozen import ranking, JSON resolver fallback and cofix bytes on %s',
         (filename) => {
             const result = lintImportOrderParity(filename);
-            const messages = (entries: typeof result.baselineCheck.messages, orderOnly = false) =>
-                entries
-                    .filter((entry) => !orderOnly || entry.ruleId?.endsWith('/order'))
-                    .map((entry) => ({ ...entry, ruleId: entry.ruleId?.replace('import-x-js/', 'import-x/') }))
-                    .sort((left, right) => left.message.localeCompare(right.message));
+            const messages = (entries: typeof result.baselineCheck.messages, orderOnly = false) => {
+                const relevant = entries.filter((entry) => !orderOnly || entry.ruleId?.endsWith('/order'));
+                const normalized = relevant.map((entry) => ({
+                    ...entry,
+                    ruleId: entry.ruleId?.replace('import-x-js/', 'import-x/'),
+                }));
+                const ordered = normalized.sort((left, right) => left.message.localeCompare(right.message));
+                return ordered;
+            };
             expect(result.baselineCheck.status, result.baselineCheck.output).toBe(1);
             expect(
                 result.baselineCheck.messages.every((message) =>
@@ -473,8 +477,8 @@ describe('production Oxlint public-plugin migration', () => {
         const input =
             '// eslint-disable-next-line no-useless-computed-key -- Controlled suppression scope probe.\n' +
             "export function example() { return { ['key']: 1 }; }\n";
-        const formatted =
-            input.slice(0, input.indexOf('\n') + 1) + "export function example() {\n    return { ['key']: 1 };\n}\n";
+        const suppression = input.slice(0, input.indexOf('\n') + 1);
+        const formatted = `${suppression}export function example() {\n    return { ['key']: 1 };\n}\n`;
         withStockLintAlternatives(input, (probe) => {
             const baseline = probe.eslint({ subject: 'computed', fix: true });
             expect(baseline.status, baseline.output).toBe(0);

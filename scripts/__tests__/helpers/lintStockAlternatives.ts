@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import { type Linter } from 'eslint';
+
 import { withLintFixture } from './lintMigratedRules.ts';
 
 type Subject = 'imports' | 'computed' | 'format';
@@ -30,6 +32,42 @@ const importOrder = {
     alphabetize: { order: 'asc', caseInsensitive: true },
 };
 const jsonResolver = { 'import-x/resolver': { typescript: true, node: { preserveSymlinks: false } } };
+
+function stockResolverSettings(options: Options) {
+    if (options.typescriptOnly) {
+        return { 'import-x/resolver': { typescript: true } };
+    }
+    return jsonResolver;
+}
+
+function stockRules(engine: 'eslint' | 'oxlint', options: Options): Linter.RulesRecord {
+    const rules: Linter.RulesRecord = {};
+    if (options.subject === 'imports') {
+        let name = 'import-x-js/order';
+        if (engine === 'eslint' && !options.canonicalAlias) {
+            name = 'import-x/order';
+        }
+        rules[name] = ['error', importOrder];
+    }
+    if (options.subject === 'computed') {
+        rules['no-useless-computed-key'] = 'error';
+    }
+    if (options.prettier !== false) {
+        rules['prettier/prettier'] = 'error';
+    }
+    return rules;
+}
+
+function stockArguments(engine: 'eslint' | 'oxlint', config: string, options: Options): string[] {
+    if (engine === 'eslint') {
+        return ['--no-config-lookup', '--config', config, '--format=json'];
+    }
+    let selectedConfig = config;
+    if (options.production) {
+        selectedConfig = resolve('.oxlint-plugins.json');
+    }
+    return [`--config=${selectedConfig}`, '--threads=2', '--format=json'];
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -63,24 +101,15 @@ export function withStockLintAlternatives<Value>(
         const configDirectory = mkdtempSync(join(dirname(fixture), 'lint-stock-config-'));
         const configuration = join(configDirectory, 'stock-alternative');
         const run = (engine: 'eslint' | 'oxlint', options: Options): Result => {
-            const prettier = options.prettier !== false;
-            const resolverSettings = options.typescriptOnly
-                ? { 'import-x/resolver': { typescript: true } }
-                : jsonResolver;
-            const rules = {
-                ...(options.subject === 'imports'
-                    ? {
-                          [engine === 'eslint' && !options.canonicalAlias ? 'import-x/order' : 'import-x-js/order']: [
-                              'error',
-                              importOrder,
-                          ],
-                      }
-                    : {}),
-                ...(options.subject === 'computed' ? { 'no-useless-computed-key': 'error' } : {}),
-                ...(prettier ? { 'prettier/prettier': 'error' } : {}),
-            };
+            const resolverSettings = stockResolverSettings(options);
+            const rules = stockRules(engine, options);
             const config = `${configuration}.${engine === 'eslint' ? 'mjs' : 'json'}`;
             if (engine === 'eslint') {
+                let resolverSource =
+                    "{ 'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()] }";
+                if (options.jsonResolver || options.canonicalAlias) {
+                    resolverSource = JSON.stringify(resolverSettings);
+                }
                 writeFileSync(
                     config,
                     `
@@ -93,7 +122,7 @@ export function withStockLintAlternatives<Value>(
                         linterOptions: { reportUnusedDisableDirectives: false },
                         languageOptions: { parser: tseslint.parser, sourceType: 'module' },
                         plugins: { 'import-x': importPlugin, 'import-x-js': importPlugin, prettier: prettierPlugin },
-                        settings: ${options.jsonResolver || options.canonicalAlias ? JSON.stringify(resolverSettings) : "{ 'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()] }"},
+                        settings: ${resolverSource},
                         rules: ${JSON.stringify({ ...rules, 'import-x/order': 'off', 'import-x-js/order': 'off' })},
                     }, {
                         files: ['**/*.{js,jsx,ts,tsx,mts,cts}'],
@@ -121,14 +150,7 @@ export function withStockLintAlternatives<Value>(
                     })
                 );
             }
-            const args =
-                engine === 'eslint'
-                    ? ['--no-config-lookup', '--config', config, '--format=json']
-                    : [
-                          `--config=${options.production ? resolve('.oxlint-plugins.json') : config}`,
-                          '--threads=2',
-                          '--format=json',
-                      ];
+            const args = stockArguments(engine, config, options);
             if (options.fix) {
                 args.push('--fix');
             }

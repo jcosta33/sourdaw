@@ -3,24 +3,24 @@ import { dirname, join } from 'node:path';
 
 import { withStockLintAlternatives } from './lintStockAlternatives.ts';
 
-const imports =
-    [
-        "import type { Value } from './type';",
-        "import index from './index';",
-        "import zoo from './Zoo';",
-        "import alpha from './alpha';",
-        "import parent from '../parent';",
-        "import unknown from '#/lint-parity-unknown';",
-        "import internal from '#/utils/base64';",
-        "import React from 'react';",
-        "import grouped from 'src/parity-unresolved';",
-        "import { join } from 'node:path';",
-        "import { readFileSync } from 'fs';",
-        "import { z } from 'zod';",
-        "import conditional from 'lint-parity-conditional';",
-        "import fallback from 'lint-parity-fallback';",
-        'export const value = [index, zoo, alpha, parent, unknown, internal, React, grouped, join, readFileSync, z, conditional, fallback];',
-    ].join('\n') + '\n';
+const imports = [
+    "import type { Value } from './type';",
+    "import index from './index';",
+    "import zoo from './Zoo';",
+    "import alpha from './alpha';",
+    "import parent from '../parent';",
+    "import unknown from '#/lint-parity-unknown';",
+    "import internal from '#/utils/base64';",
+    "import React from 'react';",
+    "import grouped from 'src/parity-unresolved';",
+    "import { join } from 'node:path';",
+    "import { readFileSync } from 'fs';",
+    "import { z } from 'zod';",
+    "import conditional from 'lint-parity-conditional';",
+    "import fallback from 'lint-parity-fallback';",
+    'export const value = [index, zoo, alpha, parent, unknown, internal, React, grouped, join, readFileSync, z, conditional, fallback];',
+    '',
+].join('\n');
 
 function prepare(fixture: string) {
     const directory = dirname(fixture);
@@ -55,10 +55,10 @@ function prepare(fixture: string) {
 }
 
 export function lintImportOrderParity(filename: string) {
-    const input =
-        filename.endsWith('.js') || filename.endsWith('.jsx')
-            ? imports.replace("import type { Value } from './type';\n", '')
-            : imports;
+    let input = imports;
+    if (filename.endsWith('.js') || filename.endsWith('.jsx')) {
+        input = imports.replace("import type { Value } from './type';\n", '');
+    }
     return withStockLintAlternatives(
         input,
         (probe) => {
