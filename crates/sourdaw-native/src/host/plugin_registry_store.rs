@@ -108,9 +108,9 @@ use crate::state::PluginRegistryEntry;
 /// A bump would instead have discarded every last known location, and every
 /// saved project's plugins would refuse until the user scanned by hand.
 ///
-/// Not bumped when the document gained `scan_room` either: a version-6
-/// document without the column has simply recorded no pre-scan readings, so
-/// it defaults to empty, which is what a fresh install has.
+/// Not bumped when the document gained `scan_consumption` either: a version-6
+/// document without the column has simply measured no scan helper runs, so it
+/// defaults to empty, which is what a fresh install has.
 const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 6;
 
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -180,10 +180,10 @@ pub struct PersistedScanRegistry {
     /// Binaries a scan helper crashed or timed out on, keyed by path. Ordered
     /// for the same byte-stability reason as `entries`.
     pub quarantine: BTreeMap<String, PersistedQuarantineEntry>,
-    /// The largest recent free-space reading taken before a scan helper ran
-    /// for each binary, keyed by path; see [`PersistedScanRoom`].
+    /// The most free space one recent scan helper run of each binary consumed,
+    /// keyed by path; see [`PersistedScanConsumption`].
     #[serde(default)]
-    pub scan_room: BTreeMap<String, PersistedScanRoom>,
+    pub scan_consumption: BTreeMap<String, PersistedScanConsumption>,
 }
 
 /// The document as it is written: the same columns as
@@ -201,10 +201,10 @@ struct PersistedScanRegistryRef<'a> {
     schema_version: u32,
     entries: &'a BTreeMap<String, PersistedPluginEntry>,
     quarantine: &'a BTreeMap<String, PersistedQuarantineEntry>,
-    scan_room: &'a BTreeMap<String, PersistedScanRoom>,
+    scan_consumption: &'a BTreeMap<String, PersistedScanConsumption>,
 }
 
-/// The keyed columns — `quarantine` and `scan_room` — out of a document at
+/// The keyed columns — `quarantine` and `scan_consumption` — out of a document at
 /// this build's own schema whose `entries` this build may not be able to read.
 ///
 /// Every field but `schema_version` and the keyed columns is ignored rather than
@@ -223,7 +223,7 @@ struct PersistedScanRegistryRef<'a> {
 /// version [`SCAN_REGISTRY_SCHEMA_VERSION`], so that document cannot
 /// reach here. The default instead covers a same-schema file that was
 /// hand-edited or truncated before the key was written: it reads as "nothing
-/// quarantined" rather than as unreadable. `scan_room` defaults for that
+/// quarantined" rather than as unreadable. `scan_consumption` defaults for that
 /// reason and because a version-6 document may predate it.
 #[derive(Default, Deserialize)]
 struct KeyedColumns {
@@ -231,7 +231,7 @@ struct KeyedColumns {
     #[serde(default)]
     quarantine: BTreeMap<String, PersistedQuarantineEntry>,
     #[serde(default)]
-    scan_room: BTreeMap<String, PersistedScanRoom>,
+    scan_consumption: BTreeMap<String, PersistedScanConsumption>,
 }
 
 /// One persisted quarantine row: a binary a scan will not spawn a helper for
@@ -245,39 +245,39 @@ pub struct PersistedQuarantineEntry {
     pub quarantined_at_ms: u64,
 }
 
-/// How long a pre-scan free-space reading keeps attributing a later full disk
-/// to the binary it was taken for: seven days.
+/// How long a scan helper run's consumption keeps attributing a later full
+/// disk to the binary it ran: seven days.
 ///
 /// A plugin that fills most of the volume on one scan and the rest on a later
-/// one must find its earlier reading still recorded (#6943), and a user whose
-/// disk fills by their own hand must not have a stale reading blame a good
-/// plugin for it. A patient plugin can wait the window out, but only by
-/// leaving the volume within a gigabyte of full for a week, which the user
-/// sees and the operating system warns about long before. A disk that shrinks
-/// over months outlives every reading. The wrongful quarantine a shorter fill
-/// inside the window causes is cleared by the user's retry-quarantined rescan.
-pub const SCAN_ROOM_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+/// one must find its earlier run still recorded (#6943). Only a run's own fall
+/// in free space is recorded, so a user filling the disk between scans blames
+/// no binary, however recently it was scanned. The window bounds the other
+/// cost: a run another process wrote a gibibyte during counts against that
+/// binary only this long. A patient plugin can wait the window out, but only
+/// by leaving the volume within a gigabyte of full for a week, which the user
+/// sees and the operating system warns about long before.
+pub const SCAN_CONSUMPTION_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 
-/// The largest free space read before a scan helper ran for one binary, and
-/// when it was read.
+/// The most free space one scan helper run of a binary consumed between its
+/// spawn and its exit, and when that run was measured.
 ///
-/// One value per binary rather than a history: a larger reading replaces it,
-/// a smaller one inside [`SCAN_ROOM_WINDOW_MS`] leaves it, and once the window
-/// has passed the next reading replaces it whatever its size.
+/// One value per binary rather than a history: a larger consumption replaces
+/// it, a smaller one inside [`SCAN_CONSUMPTION_WINDOW_MS`] leaves it, and once
+/// the window has passed the next measurement replaces it whatever its size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PersistedScanRoom {
-    pub room_bytes: u64,
+pub struct PersistedScanConsumption {
+    pub consumed_bytes: u64,
     pub observed_at_ms: u64,
 }
 
-impl PersistedScanRoom {
-    /// Whether this reading was taken inside the window ending at `now_ms`. A
-    /// reading stamped in the future is not: the clock moved back, and the
-    /// window cannot be measured from it.
+impl PersistedScanConsumption {
+    /// Whether this run was measured inside the window ending at `now_ms`. A
+    /// measurement stamped in the future is not: the clock moved back, and
+    /// the window cannot be measured from it.
     fn is_recent(&self, now_ms: u64) -> bool {
         now_ms
             .checked_sub(self.observed_at_ms)
-            .is_some_and(|age| age <= SCAN_ROOM_WINDOW_MS)
+            .is_some_and(|age| age <= SCAN_CONSUMPTION_WINDOW_MS)
     }
 }
 
@@ -442,12 +442,12 @@ struct StoredRegistry {
     /// in this set from `quarantine` — a key this process never touched
     /// defers entirely to whatever is on disk.
     quarantine_touched: BTreeSet<String>,
-    /// Each binary's largest recent pre-scan reading, keyed by path. Loaded on
-    /// hydration and mutated by [`PluginRegistryStore::record_scan_room`].
-    scan_room: BTreeMap<String, PersistedScanRoom>,
-    /// The `scan_room` keys this process recorded or expired, overlaid on the
+    /// Each binary's largest recent run consumption, keyed by path. Loaded on
+    /// hydration and mutated by [`PluginRegistryStore::record_scan_consumption`].
+    scan_consumption: BTreeMap<String, PersistedScanConsumption>,
+    /// The `scan_consumption` keys this process recorded or expired, overlaid on the
     /// file's column at persist the way `quarantine_touched` is.
-    scan_room_touched: BTreeSet<String>,
+    scan_consumption_touched: BTreeSet<String>,
 }
 
 /// The verdict on a caller's request to run the targeted rescan a registry key
@@ -621,7 +621,7 @@ impl PluginRegistryStore {
         };
         stored.entries = document.entries;
         stored.quarantine = document.quarantine;
-        stored.scan_room = document.scan_room;
+        stored.scan_consumption = document.scan_consumption;
 
         let unchanged_entries: Vec<(String, PluginRegistryEntry)> = stored
             .entries
@@ -758,49 +758,50 @@ impl PluginRegistryStore {
         self.lock_stored().quarantine.values().cloned().collect()
     }
 
-    /// The largest free space recorded before a recent scan of `path`, or
-    /// `None` when no reading inside [`SCAN_ROOM_WINDOW_MS`] of `now_ms` is.
-    pub fn recent_scan_room(&self, path: &Path, now_ms: u64) -> Option<u64> {
+    /// The most free space a recent scan helper run of `path` consumed, or
+    /// `None` when no run inside [`SCAN_CONSUMPTION_WINDOW_MS`] of `now_ms` was
+    /// measured.
+    pub fn recent_scan_consumption(&self, path: &Path, now_ms: u64) -> Option<u64> {
         self.lock_stored()
-            .scan_room
+            .scan_consumption
             .get(&path.display().to_string())
-            .filter(|reading| reading.is_recent(now_ms))
-            .map(|reading| reading.room_bytes)
+            .filter(|measured| measured.is_recent(now_ms))
+            .map(|measured| measured.consumed_bytes)
     }
 
-    /// Remember `room_bytes`, read before a scan helper ran for `path` at
-    /// `now_ms`, if it is the largest recent reading for that binary.
+    /// Remember `consumed_bytes`, what a scan helper run of `path` measured at
+    /// `now_ms` consumed, if it is the largest recent one for that binary.
     ///
-    /// Every expired reading is dropped on the way, so the column holds only
+    /// Every expired measurement is dropped on the way, so the column holds only
     /// binaries scanned inside the window.
-    pub fn record_scan_room(&self, path: &Path, room_bytes: u64, now_ms: u64) {
+    pub fn record_scan_consumption(&self, path: &Path, consumed_bytes: u64, now_ms: u64) {
         let key = path.display().to_string();
         let mut stored = self.lock_stored();
         let expired: Vec<String> = stored
-            .scan_room
+            .scan_consumption
             .iter()
-            .filter(|(_, reading)| !reading.is_recent(now_ms))
+            .filter(|(_, measured)| !measured.is_recent(now_ms))
             .map(|(key, _)| key.clone())
             .collect();
         for expired_key in expired {
-            stored.scan_room.remove(&expired_key);
-            stored.scan_room_touched.insert(expired_key);
+            stored.scan_consumption.remove(&expired_key);
+            stored.scan_consumption_touched.insert(expired_key);
         }
         let earlier_had_more = stored
-            .scan_room
+            .scan_consumption
             .get(&key)
-            .is_some_and(|earlier| earlier.room_bytes >= room_bytes);
+            .is_some_and(|earlier| earlier.consumed_bytes >= consumed_bytes);
         if earlier_had_more {
             return;
         }
-        stored.scan_room.insert(
+        stored.scan_consumption.insert(
             key.clone(),
-            PersistedScanRoom {
-                room_bytes,
+            PersistedScanConsumption {
+                consumed_bytes,
                 observed_at_ms: now_ms,
             },
         );
-        stored.scan_room_touched.insert(key);
+        stored.scan_consumption_touched.insert(key);
     }
 
     /// Drop quarantine records this scan proves gone from disk.
@@ -976,10 +977,10 @@ impl PluginRegistryStore {
         // (`quarantine_touched`) — every other key defers entirely to the
         // fresh disk read, which is how a sibling process's own quarantine or
         // clear survives a persist from this one.
-        // `scan_room` is keyed the same way and merged the same way.
+        // `scan_consumption` is keyed the same way and merged the same way.
         let KeyedColumns {
             mut quarantine,
-            mut scan_room,
+            mut scan_consumption,
             ..
         } = read_keyed_columns(location);
         overlay_touched_keys(
@@ -987,7 +988,11 @@ impl PluginRegistryStore {
             &stored.quarantine,
             &stored.quarantine_touched,
         );
-        overlay_touched_keys(&mut scan_room, &stored.scan_room, &stored.scan_room_touched);
+        overlay_touched_keys(
+            &mut scan_consumption,
+            &stored.scan_consumption,
+            &stored.scan_consumption_touched,
+        );
 
         // The union is already in `stored.entries`, so a failed write leaves
         // memory ahead of disk rather than behind it. That is the recoverable
@@ -1000,13 +1005,13 @@ impl PluginRegistryStore {
                 schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
                 entries: &stored.entries,
                 quarantine: &quarantine,
-                scan_room: &scan_room,
+                scan_consumption: &scan_consumption,
             },
         );
         match written {
             Ok(()) => {
                 stored.quarantine = quarantine;
-                stored.scan_room = scan_room;
+                stored.scan_consumption = scan_consumption;
             }
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
@@ -2339,7 +2344,7 @@ mod tests {
                 schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
                 entries,
                 quarantine: BTreeMap::new(),
-                scan_room: BTreeMap::new(),
+                scan_consumption: BTreeMap::new(),
             })
             .expect("the oversized registry should serialize"),
         )
@@ -2959,38 +2964,38 @@ mod tests {
 
     /// A moment well clear of the epoch, so a window measured back from it
     /// never underflows.
-    const SCAN_ROOM_NOW_MS: u64 = 1_800_000_000_000;
+    const SCAN_CONSUMPTION_NOW_MS: u64 = 1_800_000_000_000;
 
-    /// #6943: the pre-scan reading one launch records is the reading the
-    /// next launch attributes against. Mutation this catches: dropping the
+    /// #6943: the run consumption one launch records is the one the next
+    /// launch attributes against. Mutation this catches: dropping the
     /// column from the persisted document or from hydration.
     #[test]
-    fn a_recorded_pre_scan_room_survives_a_persist_and_the_next_hydration() {
-        let test_root = TestRegistryRoot::create("registry-scan-room-round-trip");
+    fn a_recorded_scan_consumption_survives_a_persist_and_the_next_hydration() {
+        let test_root = TestRegistryRoot::create("registry-scan-consumption-round-trip");
         let plugin_path = test_root.write_plugin_file("Filler.clap", b"clap-bytes");
 
         let writer = test_root.store();
-        writer.record_scan_room(&plugin_path, 64 << 30, SCAN_ROOM_NOW_MS);
-        writer.record_scan_room(&plugin_path, 1 << 20, SCAN_ROOM_NOW_MS + 1);
+        writer.record_scan_consumption(&plugin_path, 64 << 30, SCAN_CONSUMPTION_NOW_MS);
+        writer.record_scan_consumption(&plugin_path, 1 << 20, SCAN_CONSUMPTION_NOW_MS + 1);
         writer.persist(&[]);
 
         let next_launch = test_root.store();
         next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
 
         assert_eq!(
-            next_launch.recent_scan_room(&plugin_path, SCAN_ROOM_NOW_MS + 2),
+            next_launch.recent_scan_consumption(&plugin_path, SCAN_CONSUMPTION_NOW_MS + 2),
             Some(64 << 30),
-            "the largest recent reading, not the latest, is the one kept"
+            "the largest recent consumption, not the latest, is the one kept"
         );
     }
 
     /// A registry written before the column existed hydrates with no
-    /// readings rather than reading as unreadable. Mutation this catches:
+    /// measurements rather than reading as unreadable. Mutation this catches:
     /// dropping the column's serde default, which discards the whole
     /// document and every last known plugin location with it.
     #[test]
-    fn a_registry_without_the_scan_room_column_hydrates_with_no_readings() {
-        let test_root = TestRegistryRoot::create("registry-scan-room-absent");
+    fn a_registry_without_the_scan_consumption_column_hydrates_with_no_measurements() {
+        let test_root = TestRegistryRoot::create("registry-scan-consumption-absent");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
         test_root
             .store()
@@ -3002,7 +3007,7 @@ mod tests {
         document
             .as_object_mut()
             .expect("the registry is an object")
-            .remove("scan_room")
+            .remove("scan_consumption")
             .expect("the fixture must carry the column it removes");
         fs::write(
             &location,
@@ -3015,39 +3020,39 @@ mod tests {
 
         assert!(next_launch.last_known_entry("aaaa1111").is_some());
         assert_eq!(
-            next_launch.recent_scan_room(&plugin_path, SCAN_ROOM_NOW_MS),
+            next_launch.recent_scan_consumption(&plugin_path, SCAN_CONSUMPTION_NOW_MS),
             None
         );
     }
 
-    /// A reading older than the window no longer attributes, and the next
-    /// reading replaces it however small, so a disk that shrinks over time
-    /// blames nothing. A reading stamped after now is not trusted either.
+    /// A consumption older than the window no longer attributes, and the next
+    /// one replaces it however small. One stamped after now is not trusted
+    /// either.
     /// Mutation this catches: dropping the window from either the lookup or
     /// the replacement rule.
     #[test]
-    fn a_pre_scan_room_older_than_the_window_no_longer_attributes() {
+    fn a_scan_consumption_older_than_the_window_no_longer_attributes() {
         let store = PluginRegistryStore::in_memory_only();
         let plugin_path = Path::new("/plugins/Filler.clap");
-        store.record_scan_room(plugin_path, 64 << 30, SCAN_ROOM_NOW_MS);
+        store.record_scan_consumption(plugin_path, 64 << 30, SCAN_CONSUMPTION_NOW_MS);
 
-        let last_recent_ms = SCAN_ROOM_NOW_MS + SCAN_ROOM_WINDOW_MS;
+        let last_recent_ms = SCAN_CONSUMPTION_NOW_MS + SCAN_CONSUMPTION_WINDOW_MS;
         assert_eq!(
-            store.recent_scan_room(plugin_path, last_recent_ms),
+            store.recent_scan_consumption(plugin_path, last_recent_ms),
             Some(64 << 30)
         );
         assert_eq!(
-            store.recent_scan_room(plugin_path, last_recent_ms + 1),
+            store.recent_scan_consumption(plugin_path, last_recent_ms + 1),
             None
         );
         assert_eq!(
-            store.recent_scan_room(plugin_path, SCAN_ROOM_NOW_MS - 1),
+            store.recent_scan_consumption(plugin_path, SCAN_CONSUMPTION_NOW_MS - 1),
             None
         );
 
-        store.record_scan_room(plugin_path, 1 << 20, last_recent_ms + 1);
+        store.record_scan_consumption(plugin_path, 1 << 20, last_recent_ms + 1);
         assert_eq!(
-            store.recent_scan_room(plugin_path, last_recent_ms + 2),
+            store.recent_scan_consumption(plugin_path, last_recent_ms + 2),
             Some(1 << 20)
         );
     }

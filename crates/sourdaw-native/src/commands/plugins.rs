@@ -704,18 +704,23 @@ async fn scan_plugins_with_policy(
         PRODUCTION_SCAN_BUDGET,
         state,
         move |format, path, timeout| {
-            remembering_scan_room(&descriptor_store, path, |recorded_room| {
-                plugin_scan_worker::scan_descriptor_metadata(format, path, timeout, recorded_room)
+            remembering_scan_consumption(&descriptor_store, path, |recorded_consumption| {
+                plugin_scan_worker::scan_descriptor_metadata(
+                    format,
+                    path,
+                    timeout,
+                    recorded_consumption,
+                )
             })
         },
         move |format, path, plugin_id, timeout| {
-            remembering_scan_room(&instance_store, path, |recorded_room| {
+            remembering_scan_consumption(&instance_store, path, |recorded_consumption| {
                 plugin_scan_worker::scan_instance_metadata(
                     format,
                     path,
                     plugin_id,
                     timeout,
-                    recorded_room,
+                    recorded_consumption,
                 )
             })
         },
@@ -723,26 +728,26 @@ async fn scan_plugins_with_policy(
     .await
 }
 
-/// Run one scan helper for the binary at `path` with the largest free space
-/// recently read before an earlier scan of it, and remember this run's own
-/// pre-spawn reading against it.
+/// Run one scan helper for the binary at `path` with the most free space a
+/// recent earlier run of it consumed, and remember what this run consumed
+/// against it.
 ///
-/// The helper attributes a full disk after an exit 3 to the plugin when any
-/// recent scan of the binary saw room (#6943), so a plugin cannot fill most of
-/// the volume on one scan that exits 0 and the rest on the next. The reading is
-/// recorded before the next helper of the same scan runs, so the descriptor
-/// pass's reading covers the instance passes after it. A process-lifetime
-/// cache would lose it on restart and let the plugin escape on the first scan
-/// after every launch, so it lives in the registry file.
-fn remembering_scan_room<T>(
+/// The helper attributes a full disk after an exit 3 to the plugin when a
+/// recent run of the binary itself consumed a gibibyte (#6943), so a plugin
+/// cannot fill most of the volume on one scan that exits 0 and the rest on the
+/// next. The consumption is recorded before the next helper of the same scan
+/// runs, so the descriptor pass's run covers the instance passes after it. A
+/// process-lifetime cache would lose it on restart and let the plugin escape
+/// on the first scan after every launch, so it lives in the registry file.
+fn remembering_scan_consumption<T>(
     registry_store: &PluginRegistryStore,
     path: &Path,
     scan: impl FnOnce(Option<u64>) -> ScanAttempt<T>,
 ) -> Result<T, ScanFailure> {
     let now_ms = quarantine_timestamp_ms();
-    let attempt = scan(registry_store.recent_scan_room(path, now_ms));
-    if let Some(room) = attempt.room_before_spawn {
-        registry_store.record_scan_room(path, room, now_ms);
+    let attempt = scan(registry_store.recent_scan_consumption(path, now_ms));
+    if let Some(consumed) = attempt.consumed_bytes {
+        registry_store.record_scan_consumption(path, consumed, now_ms);
     }
     attempt.result
 }
@@ -1673,14 +1678,14 @@ fn rescan_plugin_file(
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| RescanFailure::Verdict(format!("Unknown plugin format: {format}")))?;
     // A targeted rescan never quarantines, but its helper runs the plugin like
-    // any other, so its reading joins the binary's history: a fill begun here
+    // any other, so its consumption joins the binary's history: a fill begun here
     // is still attributed on the next full scan.
-    let bundle = remembering_scan_room(registry_store, path, |recorded_room| {
+    let bundle = remembering_scan_consumption(registry_store, path, |recorded_consumption| {
         plugin_scan_worker::scan_descriptor_metadata(
             format,
             path,
             TARGETED_RESCAN_TIMEOUT,
-            recorded_room,
+            recorded_consumption,
         )
     })?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
@@ -12123,41 +12128,44 @@ mod tests {
         }
     }
 
-    /// #6943: the reading one helper run takes before it spawns reaches the
-    /// next run for the same binary, and only that binary. Mutation this
-    /// catches: not recording the reading, or not handing it to the next
-    /// helper.
+    /// #6943: what one helper run consumed reaches the next run for the same
+    /// binary, and only that binary. Mutation this catches: not recording the
+    /// consumption, or not handing it to the next helper.
     #[test]
-    fn a_pre_scan_reading_reaches_the_next_helper_run_for_the_same_binary() {
+    fn a_runs_consumption_reaches_the_next_helper_run_for_the_same_binary() {
         let store = PluginRegistryStore::in_memory_only();
         let filler = Path::new("/plugins/Filler.clap");
-        let roomy = 64_u64 << 30;
-        let ran = |room_before_spawn| ScanAttempt {
+        let filled = 64_u64 << 30;
+        let ran = |consumed_bytes| ScanAttempt {
             result: Ok(()),
-            room_before_spawn,
+            consumed_bytes,
         };
 
         let mut first_recorded = Some(0);
-        remembering_scan_room(&store, filler, |recorded_room| {
-            first_recorded = recorded_room;
-            ran(Some(roomy))
+        remembering_scan_consumption(&store, filler, |recorded_consumption| {
+            first_recorded = recorded_consumption;
+            ran(Some(filled))
         })
         .expect("the stand-in run succeeds");
         let mut next_recorded = None;
-        remembering_scan_room(&store, filler, |recorded_room| {
-            next_recorded = recorded_room;
+        remembering_scan_consumption(&store, filler, |recorded_consumption| {
+            next_recorded = recorded_consumption;
             ran(Some(0))
         })
         .expect("the stand-in run succeeds");
         let mut other_recorded = Some(0);
-        remembering_scan_room(&store, Path::new("/plugins/Other.clap"), |recorded_room| {
-            other_recorded = recorded_room;
-            ran(None)
-        })
+        remembering_scan_consumption(
+            &store,
+            Path::new("/plugins/Other.clap"),
+            |recorded_consumption| {
+                other_recorded = recorded_consumption;
+                ran(None)
+            },
+        )
         .expect("the stand-in run succeeds");
 
         assert_eq!(first_recorded, None);
-        assert_eq!(next_recorded, Some(roomy));
+        assert_eq!(next_recorded, Some(filled));
         assert_eq!(other_recorded, None);
     }
 }
