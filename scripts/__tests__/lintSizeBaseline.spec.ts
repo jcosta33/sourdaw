@@ -24,7 +24,16 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    copyFileSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -32,7 +41,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
-import { checkSizeBaselineShrinks as checkSizeBaselineShrinksWith } from '../checkSizeBaselineShrinks';
+import { checkSizeBaselineShrinks as checkSizeBaselineShrinksWith, isEntryModule } from '../checkSizeBaselineShrinks';
 import {
     countFileLines,
     describeSizeBaselineGrowth,
@@ -394,10 +403,11 @@ type GrowthCase = {
     name: string;
     base: { files: string[]; ceilings: Record<string, number> };
     head: { files: string[]; ceilings: Record<string, number> };
+    headExempt?: string[];
     expected: ReturnType<typeof findSizeBaselineGrowth>;
 };
 
-const noGrowth = { addedPaths: [], addedCeilingKeys: [], raisedCeilings: [] };
+const noGrowth = { addedPaths: [], addedCeilingKeys: [], removedCeilingKeys: [], raisedCeilings: [] };
 
 const growthCases: GrowthCase[] = [
     {
@@ -416,33 +426,65 @@ const growthCases: GrowthCase[] = [
         name: 'an added baseline path with its ceiling',
         base: { files: ['a.ts'], ceilings: { 'a.ts': 700 } },
         head: { files: ['a.ts', 'z.ts'], ceilings: { 'a.ts': 700, 'z.ts': 950 } },
-        expected: { addedPaths: ['z.ts'], addedCeilingKeys: ['z.ts'], raisedCeilings: [] },
+        expected: { addedPaths: ['z.ts'], addedCeilingKeys: ['z.ts'], removedCeilingKeys: [], raisedCeilings: [] },
     },
     {
         name: 'an added ceiling key for a path already listed',
         base: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 700 } },
         head: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 700, 'b.ts': 600 } },
-        expected: { addedPaths: [], addedCeilingKeys: ['b.ts'], raisedCeilings: [] },
+        expected: { addedPaths: [], addedCeilingKeys: ['b.ts'], removedCeilingKeys: [], raisedCeilings: [] },
     },
     {
         name: 'a raised ceiling',
         base: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 700, 'b.ts': 800 } },
         head: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 701, 'b.ts': 800 } },
-        expected: { addedPaths: [], addedCeilingKeys: [], raisedCeilings: [{ path: 'a.ts', from: 700, to: 701 }] },
+        expected: {
+            addedPaths: [],
+            addedCeilingKeys: [],
+            removedCeilingKeys: [],
+            raisedCeilings: [{ path: 'a.ts', from: 700, to: 701 }],
+        },
+    },
+    {
+        name: 'a ceiling key dropped while its path stays baselined',
+        base: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 700, 'b.ts': 800 } },
+        head: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 700 } },
+        expected: { addedPaths: [], addedCeilingKeys: [], removedCeilingKeys: ['b.ts'], raisedCeilings: [] },
+    },
+    {
+        name: 'every ceiling dropped with the file while paths stay baselined',
+        base: { files: ['a.ts', 'b.ts'], ceilings: { 'a.ts': 700, 'b.ts': 800 } },
+        head: { files: ['a.ts', 'b.ts'], ceilings: {} },
+        expected: { addedPaths: [], addedCeilingKeys: [], removedCeilingKeys: ['a.ts', 'b.ts'], raisedCeilings: [] },
+    },
+    {
+        name: 'a ceiling key dropped for a path the head exempts',
+        base: { files: ['a.ts', 'gen.ts'], ceilings: { 'a.ts': 700, 'gen.ts': 800 } },
+        head: { files: ['a.ts', 'gen.ts'], ceilings: { 'a.ts': 700 } },
+        headExempt: ['gen.ts'],
+        expected: noGrowth,
+    },
+    {
+        name: 'a ceiling key dropped for a baselined path the head does not exempt, beside an exempt one',
+        base: { files: ['a.ts', 'gen.ts'], ceilings: { 'a.ts': 700, 'gen.ts': 800 } },
+        head: { files: ['a.ts', 'gen.ts'], ceilings: {} },
+        headExempt: ['gen.ts'],
+        expected: { addedPaths: [], addedCeilingKeys: [], removedCeilingKeys: ['a.ts'], raisedCeilings: [] },
     },
     {
         name: 'a moved file, which is a removal plus an addition',
         base: { files: ['old.ts'], ceilings: { 'old.ts': 700 } },
         head: { files: ['new.ts'], ceilings: { 'new.ts': 700 } },
-        expected: { addedPaths: ['new.ts'], addedCeilingKeys: ['new.ts'], raisedCeilings: [] },
+        expected: { addedPaths: ['new.ts'], addedCeilingKeys: ['new.ts'], removedCeilingKeys: [], raisedCeilings: [] },
     },
 ];
 
 describe('size baseline growth', () => {
-    it.each(growthCases)('should report exactly the growth for $name', ({ base, head, expected }) => {
+    it.each(growthCases)('should report exactly the growth for $name', ({ base, head, headExempt, expected }) => {
         const growth = findSizeBaselineGrowth(
             { baselineFiles: base.files, ceilings: base.ceilings },
-            { baselineFiles: head.files, ceilings: head.ceilings }
+            { baselineFiles: head.files, ceilings: head.ceilings },
+            headExempt ?? []
         );
         expect(growth).toEqual(expected);
     });
@@ -452,11 +494,13 @@ describe('size baseline growth', () => {
             describeSizeBaselineGrowth({
                 addedPaths: ['z.ts'],
                 addedCeilingKeys: ['z.ts'],
+                removedCeilingKeys: ['y.ts'],
                 raisedCeilings: [{ path: 'a.ts', from: 700, to: 750 }],
             })
         ).toEqual([
             'z.ts: added to eslint.size-baseline.mjs; no file is ever added. Split the file below the size rules instead.',
             'z.ts: new ceiling in scripts/lintSizeCeilings.json; ceilings exist only for files already baselined.',
+            'y.ts: ceiling removed from scripts/lintSizeCeilings.json while the file is still baselined; it would then grow unchecked.',
             'a.ts: ceiling raised from 700 to 750 in scripts/lintSizeCeilings.json; ceilings are never raised.',
         ]);
     });
@@ -479,7 +523,6 @@ describe('size baseline list text', () => {
 
     it.each([
         { name: 'no array', text: 'export const other = [];\n' },
-        { name: 'an empty array', text: 'export const sizeBaselineFiles = [\n    // nothing\n];\n' },
         {
             name: 'a template literal entry',
             text: "export const sizeBaselineFiles = [\n    `a.ts`,\n    'b.ts',\n];\n",
@@ -488,6 +531,10 @@ describe('size baseline list text', () => {
         { name: 'an unclosed array', text: "export const sizeBaselineFiles = [\n    'a.ts',\n" },
     ])('should throw for $name', ({ text }) => {
         expect(() => parseSizeBaselineFilesText(text)).toThrow();
+    });
+
+    it('should read an empty array as no paths', () => {
+        expect(parseSizeBaselineFilesText('export const sizeBaselineFiles = [\n    // nothing\n];\n')).toEqual([]);
     });
 
     it('should keep a real entry that follows a string containing a double slash', () => {
@@ -514,6 +561,40 @@ function evaluateInNode(absolutePath: string): Promise<unknown> {
 function checkSizeBaselineShrinks(root: string): Promise<string[]> {
     return checkSizeBaselineShrinksWith(root, evaluateInNode);
 }
+
+describe('entry module detection', () => {
+    let dir = '';
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'lint-size-entry-'));
+    });
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it.each(['plain', 'has#hash', 'has%25percent'])('should match the script under a %s directory', (name) => {
+        mkdirSync(join(dir, name));
+        const script = join(dir, name, 'entry.ts');
+        writeFileSync(script, '');
+        expect(isEntryModule(pathToFileURL(script).href, script)).toBe(true);
+    });
+
+    it('should match the real path when the script is reached through a symlink', () => {
+        mkdirSync(join(dir, 'real'));
+        writeFileSync(join(dir, 'real', 'entry.ts'), '');
+        symlinkSync(join(dir, 'real'), join(dir, 'link'));
+        expect(isEntryModule(pathToFileURL(join(dir, 'real', 'entry.ts')).href, join(dir, 'link', 'entry.ts'))).toBe(
+            true
+        );
+    });
+
+    it('should not match another module or a missing entry', () => {
+        writeFileSync(join(dir, 'entry.ts'), '');
+        expect(isEntryModule(pathToFileURL(join(dir, 'other.ts')).href, join(dir, 'entry.ts'))).toBe(false);
+        expect(isEntryModule(pathToFileURL(join(dir, 'entry.ts')).href, undefined)).toBe(false);
+    });
+});
 
 describe('size baseline check against the merge base', () => {
     let dir = '';
@@ -558,6 +639,70 @@ describe('size baseline check against the merge base', () => {
         writeBaseline(['a.ts'], { 'a.ts': 650 });
         commit('head');
         expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
+    });
+
+    it('should accept an empty base and an empty head', async () => {
+        writeBaseline([], {});
+        commit('empty base');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeFileSync(join(dir, 'unrelated.txt'), 'x\n');
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
+    });
+
+    it('should report a path added to an empty base', async () => {
+        writeBaseline([], {});
+        commit('empty base');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['z.ts'], { 'z.ts': 950 });
+        commit('head');
+        const findings = await checkSizeBaselineShrinks(dir);
+        expect(findings).toHaveLength(2);
+        expect(findings.some((finding) => finding.startsWith('z.ts: added to eslint.size-baseline.mjs'))).toBe(true);
+    });
+
+    it('should report a ceiling key deleted while its path stays baselined', async () => {
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['a.ts', 'b.ts'], { 'a.ts': 700 });
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([
+            `b.ts: ceiling removed from ${SIZE_CEILINGS_PATH} while the file is still baselined; it would then grow unchecked.`,
+        ]);
+    });
+
+    it('should accept a head that removes the ceiling of a real generated exemption still baselined', async () => {
+        const exemptPath = GENERATED_SIZE_EXEMPTIONS[0]?.path;
+        if (exemptPath === undefined) {
+            throw new Error('GENERATED_SIZE_EXEMPTIONS is empty; this case needs a real exemption.');
+        }
+        writeBaseline(['a.ts', exemptPath], { 'a.ts': 700, [exemptPath]: 800 });
+        commit('base with generated exemption');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['a.ts', exemptPath], { 'a.ts': 700 });
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
+    });
+
+    it('should still report a ceiling removed for a path that is not a generated exemption', async () => {
+        const exemptPath = GENERATED_SIZE_EXEMPTIONS[0]?.path;
+        if (exemptPath === undefined) {
+            throw new Error('GENERATED_SIZE_EXEMPTIONS is empty; this case needs a real exemption.');
+        }
+        writeBaseline(['a.ts', exemptPath], { 'a.ts': 700, [exemptPath]: 800 });
+        commit('base with generated exemption');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['a.ts', exemptPath], { [exemptPath]: 800 });
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([
+            `a.ts: ceiling removed from ${SIZE_CEILINGS_PATH} while the file is still baselined; it would then grow unchecked.`,
+        ]);
+    });
+
+    it('should report every ceiling when the head deletes the ceilings file', async () => {
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        git('rm', '-q', SIZE_CEILINGS_PATH);
+        commit('head');
+        expect(await checkSizeBaselineShrinks(dir)).toHaveLength(2);
     });
 
     it('should fail closed when origin/main is missing', async () => {
@@ -694,6 +839,26 @@ describe('size baseline check against the merge base', () => {
                 status: 1,
                 mentionsPath: true,
             });
+        });
+
+        it('should still check when started through a symlink to the checkout', () => {
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            writeBaseline(['a.ts', 'b.ts', 'z.ts'], { 'a.ts': 700, 'b.ts': 800, 'z.ts': 950 });
+            runCli();
+            const link = `${dir}-link`;
+            symlinkSync(dir, link);
+            try {
+                const result = spawnSync('node', [join(link, 'scripts/checkSizeBaselineShrinks.ts')], {
+                    cwd: dir,
+                    encoding: 'utf8',
+                });
+                expect({ status: result.status, mentionsPath: result.stderr.includes('z.ts: added') }).toEqual({
+                    status: 1,
+                    mentionsPath: true,
+                });
+            } finally {
+                rmSync(link, { force: true });
+            }
         });
 
         it('should exit 0 and print the success line for a clean head', () => {

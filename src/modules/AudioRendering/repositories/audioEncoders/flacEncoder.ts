@@ -381,8 +381,9 @@ export async function audioBufferToFlac(
     }
     const chunks: Uint8Array[] = [];
     const destination = writer ?? {
-        write: async (bytes: Uint8Array) => {
+        write: (bytes: Uint8Array) => {
             chunks.push(bytes);
+            return Promise.resolve();
         },
     };
     const header = new Uint8Array(42);

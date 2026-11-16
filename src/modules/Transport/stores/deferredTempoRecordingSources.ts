@@ -1,4 +1,5 @@
-import { valuesEqual } from './structuralEquality';
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import {
     captureTempoSourceOwnerValue,
     normalizeTempoSourceOwnerContext,

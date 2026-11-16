@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DEPENDENCY_LICENSE_PROOFS_PATH } from './dependencyLicenseReport.ts';
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
@@ -15,7 +13,6 @@ import {
 } from './releaseHistory.ts';
 import {
     CHANGELOG_PATH,
-    RELEASE_INVENTORY_PATH,
     aggregateIncrement,
     compareSemanticVersions,
     composeChangelogEntry,
@@ -28,8 +25,6 @@ import {
     releaseTagName,
     upsertChangelogEntry,
     withPackageVersion,
-    withPathAddressedDigest,
-    withSnapshotDigest,
     type MergedPullRequest,
     type ReleaseIncrement,
     type SemanticVersion,
@@ -37,38 +32,12 @@ import {
 
 export const RELEASE_BASE_REVISION = 'refs/remotes/origin/main';
 
-/**
- * The release gates pin digests in a chain, so a bump that moves `package.json` and nothing else
- * lands a release pull request they refuse. The dependency-license proofs pin the manifest, and the
- * inventory pins both the manifest and the proofs — so the proofs are rewritten first and the
- * inventory records the digest that rewrite produced. Nothing pins the inventory, which is what
- * ends the chain.
- */
-function rewritePinnedDigests(manifest: string, port: ProposeReleasePort): void {
-    const manifestDigest = port.digest(manifest);
-    const proofs = withSnapshotDigest(
-        port.readWorkspaceFile(DEPENDENCY_LICENSE_PROOFS_PATH),
-        'package.json',
-        manifestDigest
-    );
-    port.writeWorkspaceFile(DEPENDENCY_LICENSE_PROOFS_PATH, proofs);
-    port.writeWorkspaceFile(
-        RELEASE_INVENTORY_PATH,
-        withPathAddressedDigest(
-            withSnapshotDigest(port.readWorkspaceFile(RELEASE_INVENTORY_PATH), 'package.json', manifestDigest),
-            DEPENDENCY_LICENSE_PROOFS_PATH,
-            port.digest(proofs)
-        )
-    );
-}
-
 export type ProposeReleasePort = {
     releaseTags: () => string[];
     versionAtBase: () => string;
     mergedPullRequests: (previousTag: string | undefined) => MergedPullRequest[];
     readWorkspaceFile: (path: string) => string;
     writeWorkspaceFile: (path: string, contents: string) => void;
-    digest: (contents: string) => string;
     today: () => string;
     log: (message: string) => void;
 };
@@ -117,6 +86,10 @@ function baseVersion(port: ProposeReleasePort, previousTag: string | undefined):
 /**
  * Rewrites the release pull request's whole payload from the base revision every time it runs, so a
  * second proposal in the same lane converges rather than stacking a second entry or a second bump.
+ *
+ * The payload is the version and the changelog only. The dependency-license proofs and the release
+ * inventory pin `package.json` by the licence fields the proof generator reads, never its version,
+ * so a bump moves no pinned digest.
  */
 export function proposeRelease(port: ProposeReleasePort): ReleaseProposal | undefined {
     const releaseTags = port.releaseTags();
@@ -142,7 +115,6 @@ export function proposeRelease(port: ProposeReleasePort): ReleaseProposal | unde
             releaseTags
         )
     );
-    rewritePinnedDigests(manifest, port);
     const formatted = formatSemanticVersion(version);
     const proposal = {
         version: formatted,
@@ -179,7 +151,6 @@ export function shellPort(root: string): ProposeReleasePort {
         writeWorkspaceFile: (path, contents) => {
             writeFileSync(join(root, path), contents, 'utf8');
         },
-        digest: (contents) => createHash('sha256').update(contents, 'utf8').digest('hex'),
         today: () => new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
         log: (message) => {
             console.log(message);

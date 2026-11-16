@@ -1,4 +1,4 @@
-import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
@@ -36,9 +36,9 @@ type UserAppActionRefusalEpisodeOptions = {
  * refuses stays open and silent once its user was warned, including one the
  * gate refuses again before its delivery runs; an episode the gate admitted
  * before any warning warns when it is refused again. An episode belongs to the project its dispatch started
- * in: once the project is replaced it is dropped without `onAdmitted` or a
+ * in: once the project is replaced (a new root document) it is dropped without `onAdmitted` or a
  * warning, because the session state it would write belongs to the outgoing
- * project. A refusal whose key the caller ended while its dispatch was in
+ * project. A merge that only adds documents replaces nothing, so the episode stays open. A refusal whose key the caller ended while its dispatch was in
  * flight opens nothing, because the key left the session store before the
  * refusal landed. Neither does a refusal from a dispatch that started before a
  * committed dispatch on the key, because that newer commit already saved the
@@ -58,7 +58,7 @@ export function createUserAppActionRefusalEpisodes(
     return {
         async execute(key, action, executeOptions) {
             const dispatch = { committed: false };
-            const projectIdentity = captureProjectIdentity();
+            const projectIdentity = captureProjectRootIdentity();
             const start = episodes.beginDispatch(key);
             try {
                 await executeAppAction(action, {

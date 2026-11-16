@@ -108,3 +108,12 @@ scripts/__tests__/viteE2ePersistenceEntry.spec.ts`. Preserve checkout identity a
 scripts/__tests__/e2eServerIdentity.spec.ts`: it must fail. Isolating a lane's server never stops a
    foreign one.
    (#4032)
+
+10. **A key press lands before a closed dialog hands focus back.**
+    Probe: Radix's FocusScope returns focus to the dialog's opener from a `setTimeout` after the content
+    unmounts, so waiting only for the dialog's input to disappear leaves `<body>` focused and a pending
+    move back to the opener. A spec that closes the command palette or any dialog, then focuses another
+    control and presses keys, must first wait for focus to leave `<body>`; otherwise the timer moves focus
+    mid-sequence and later presses reach the opener. Remove that wait from the spec's palette helper and
+    the minimap case, which expects three arrow steps, reads two on a slow runner.
+    (#6421)

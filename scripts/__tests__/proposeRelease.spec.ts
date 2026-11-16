@@ -1,7 +1,9 @@
-import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { licenceInputDigest } from '../dependencyLicenseInputProjection.ts';
 import { DEPENDENCY_LICENSE_PROOFS_PATH } from '../dependencyLicenseReport.ts';
 import { proposeRelease, type ProposeReleasePort } from '../proposeRelease.ts';
 import {
@@ -14,6 +16,9 @@ import {
 
 import type { MergedPullRequest } from '../releaseVersion.ts';
 
+const repositoryRoot = resolve(import.meta.dirname, '../..');
+const repositoryFile = (path: string) => readFileSync(resolve(repositoryRoot, path), 'utf8');
+
 const manifest = (version: string) => `{
     "name": "sourdaw",
     "private": true,
@@ -22,32 +27,11 @@ const manifest = (version: string) => `{
 }
 `;
 
-const proofs = (manifestDigest: string) => `{
-    "cargoRuntimeInventory": {
-        "sourceInputs": [
-            {
-                "path": "package.json",
-                "sha256": "${manifestDigest}"
-            }
-        ]
-    }
-}
-`;
+type PinnedInput = { path: string; projection?: string; sha256: string };
 
-const inventory = (manifestDigest: string, proofsDigest: string) => `{
-    "surfaces": [
-        {
-            "digests": ["sha256:${proofsDigest}:${DEPENDENCY_LICENSE_PROOFS_PATH}"]
-        }
-    ],
-    "snapshots": [
-        {
-            "path": "package.json",
-            "sha256": "${manifestDigest}"
-        }
-    ]
+function pinnedPackageJson(entries: readonly PinnedInput[]): PinnedInput | undefined {
+    return entries.find(({ path }) => path === 'package.json');
 }
-`;
 
 const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
 
@@ -70,8 +54,6 @@ function fakePort(overrides: Overrides = {}): ProposeReleasePort & {
     const files: Record<string, string> = {
         'package.json': manifest(overrides.versionAtBase ?? '0.1.0'),
         [CHANGELOG_PATH]: CHANGELOG_PREAMBLE,
-        [RELEASE_INVENTORY_PATH]: inventory('0'.repeat(64), '1'.repeat(64)),
-        [DEPENDENCY_LICENSE_PROOFS_PATH]: proofs('0'.repeat(64)),
         ...overrides.files,
     };
     const messages: string[] = [];
@@ -86,7 +68,6 @@ function fakePort(overrides: Overrides = {}): ProposeReleasePort & {
         writeWorkspaceFile: (path, contents) => {
             files[path] = contents;
         },
-        digest: (contents) => createHash('sha256').update(contents, 'utf8').digest('hex'),
         today: () => '2026-08-28',
         log: (message) => messages.push(message),
     };
@@ -132,15 +113,29 @@ describe('proposing a release', () => {
         );
     });
 
-    it('moves the whole pinned-digest chain with the manifest it bumped', () => {
-        const port = fakePort();
-        proposeRelease(port);
-        const sha256 = (contents: string) => createHash('sha256').update(contents, 'utf8').digest('hex');
-        const expectedProofs = proofs(sha256(port.files['package.json'] ?? ''));
-        expect(port.files[DEPENDENCY_LICENSE_PROOFS_PATH]).toBe(expectedProofs);
-        expect(port.files[RELEASE_INVENTORY_PATH]).toBe(
-            inventory(sha256(port.files['package.json'] ?? ''), sha256(expectedProofs))
-        );
+    it('bumps the real manifest without moving any pin the release gates hold on it', () => {
+        const pinned = {
+            'package.json': repositoryFile('package.json'),
+            [DEPENDENCY_LICENSE_PROOFS_PATH]: repositoryFile(DEPENDENCY_LICENSE_PROOFS_PATH),
+            [RELEASE_INVENTORY_PATH]: repositoryFile(RELEASE_INVENTORY_PATH),
+        };
+        const baseVersion = packageVersion(pinned['package.json']);
+        const port = fakePort({ versionAtBase: baseVersion, files: pinned });
+
+        const proposal = proposeRelease(port);
+
+        expect(proposal?.version).not.toBe(baseVersion);
+        const bumped = port.files['package.json'] ?? '';
+        expect(packageVersion(bumped)).toBe(proposal?.version);
+        expect(port.files[DEPENDENCY_LICENSE_PROOFS_PATH]).toBe(pinned[DEPENDENCY_LICENSE_PROOFS_PATH]);
+        expect(port.files[RELEASE_INVENTORY_PATH]).toBe(pinned[RELEASE_INVENTORY_PATH]);
+        const live = { path: 'package.json', ...licenceInputDigest('package.json', Buffer.from(bumped, 'utf8')) };
+        const proofs = JSON.parse(pinned[DEPENDENCY_LICENSE_PROOFS_PATH]) as {
+            cargoRuntimeInventory: { sourceInputs: PinnedInput[] };
+        };
+        const inventory = JSON.parse(pinned[RELEASE_INVENTORY_PATH]) as { snapshots: PinnedInput[] };
+        expect(pinnedPackageJson(proofs.cargoRuntimeInventory.sourceInputs)).toEqual(live);
+        expect(pinnedPackageJson(inventory.snapshots)).toEqual(live);
     });
 
     it('names the conventional commit the release lane needs', () => {

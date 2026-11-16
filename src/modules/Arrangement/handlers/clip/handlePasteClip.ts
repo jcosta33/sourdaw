@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
+import { type TrackClipStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { clipboardStore } from '../../stores/clipboardStore';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';

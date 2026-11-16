@@ -52,12 +52,21 @@ function createReportPairLedger(input: { requireReportPairs?: boolean; directory
 }
 
 /** A batch owns only native-issued transaction tokens; paths are granted and checked in Rust. */
-export async function streamExportToNative(input: {
+type NativeExportBatchInput = {
     directoryPath?: string;
     selectedFilePath?: string;
     requireReportPairs?: boolean;
     checkCancelled: () => void;
-}): Promise<NativeExportBatch> {
+};
+
+export function streamExportToNative(input: NativeExportBatchInput): Promise<NativeExportBatch> {
+    // The executor runs synchronously, so a refused report-pair request still rejects rather than throws.
+    return new Promise((resolve) => {
+        resolve(openNativeExportBatch(input));
+    });
+}
+
+function openNativeExportBatch(input: NativeExportBatchInput): NativeExportBatch {
     const reportPairs = createReportPairLedger(input);
     const tokens: string[] = [];
     const pendingBegins = new Set<Promise<string>>();

@@ -32,7 +32,13 @@ import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
+import { licenceInputDigest, type LicenceInputProjection } from './dependencyLicenseInputProjection.ts';
 import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import {
+    curatedDependencyLicenseProofsDigest,
+    LICENCE_PROJECTED_SNAPSHOT_PATHS,
+    licenceSnapshotError,
+} from './releaseInventoryLicenceSnapshots.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -229,7 +235,7 @@ type ExternalReference = {
 export type ReleaseInventory = {
     schemaVersion: number;
     surfaces: ReleaseSurface[];
-    snapshots: Array<{ path: string; sha256: string }>;
+    snapshots: Array<{ path: string; projection?: LicenceInputProjection; sha256: string }>;
     externalReferences: Array<ExternalReference & { surface: string }>;
     marks: Array<{ value: string; paths: string[] }>;
 };
@@ -238,6 +244,8 @@ export type RepositorySnapshot = {
     releaseFiles: string[];
     externalReferences: ExternalReference[];
     fileDigests: Record<string, string>;
+    /** The digest of each `LICENCE_PROJECTED_SNAPSHOT_PATHS` file's licence-input projection. */
+    snapshotProjectionDigests: Record<string, string>;
     markPaths: Record<string, string[]>;
 };
 
@@ -1560,7 +1568,7 @@ export function projectLicenseDistributionReleaseInventoryContract(root: string)
             `sha256:${fileSha256(resolve(root, 'LICENSE'))}:LICENSE`,
             `sha256:${fileSha256(resolve(root, 'NOTICE'))}:NOTICE`,
             `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
-            `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
+            curatedDependencyLicenseProofsDigest(root),
         ],
         licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
@@ -1655,6 +1663,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/AudioEngine/models/AudioEngineState.ts',
                 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
                 'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/repositories/webAudioEngine/**',
                 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
                 'src/modules/AudioEngine/worklets/grandBoule*.ts',
                 'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
@@ -1665,6 +1674,9 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/AudioEngine/models/AudioEngineState.ts',
                 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
                 'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                // The engine's concern units hash with the composer; their specs reach no artifact.
+                'src/modules/AudioEngine/repositories/webAudioEngine',
+                ':(exclude,glob)src/modules/AudioEngine/repositories/webAudioEngine/**/__tests__/**',
                 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
                 ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
                 'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
@@ -3030,8 +3042,11 @@ export function validateReleaseInventory(
                 errors.push(`${entry.path}: snapshot path must be tracked`);
             } else if (!/^[0-9a-f]{64}$/.test(entry.sha256)) {
                 errors.push(`${entry.path}: snapshot must be a SHA-256 digest`);
-            } else if (snapshot.fileDigests[entry.path] !== entry.sha256) {
-                errors.push(`${entry.path}: snapshot drifted`);
+            } else {
+                const error = licenceSnapshotError(entry, snapshot);
+                if (error !== undefined) {
+                    errors.push(error);
+                }
             }
         }
     }
@@ -3191,6 +3206,19 @@ export function loadRepositorySnapshot(
             }
         })
     );
+    const snapshotProjectionDigests = Object.fromEntries(
+        LICENCE_PROJECTED_SNAPSHOT_PATHS.filter(isSafeTrackedPath).map((path) => {
+            try {
+                const bytes = readRepositoryRegularBuffer(rootRealPath, resolve(root, path), readFile, readBudget);
+                return [path, licenceInputDigest(path, bytes).sha256];
+            } catch (error) {
+                if (error instanceof RepositoryFileReadLimitError) {
+                    throw error;
+                }
+                return [path, 'missing'];
+            }
+        })
+    );
     const markPaths = Object.fromEntries(
         (inventory.marks ?? []).map((mark) => [
             mark.value,
@@ -3209,6 +3237,7 @@ export function loadRepositorySnapshot(
             return { file: file ?? '', value: value ?? '', ...(templateSha256 && { templateSha256 }) };
         }),
         fileDigests,
+        snapshotProjectionDigests,
         markPaths,
     };
 }

@@ -37,15 +37,17 @@ export type NativeChainRelease = {
 };
 
 export function recordNativeChainReleases(reports: readonly NativeChainRelease[]): Promise<void> {
-    return queueOnNativeLiveGraphSession(async () => {
-        const held = reports.filter((report) => nativeLiveGraphSession.nativeChainByStripId.has(report.id));
-        if (held.length === 0) {
-            return;
-        }
-        const next = new Map(nativeLiveGraphSession.nativeChainByStripId);
-        for (const report of held) {
-            next.set(report.id, report.deviceIds);
-        }
-        nativeLiveGraphSession.nativeChainByStripId = next;
-    });
+    return queueOnNativeLiveGraphSession(() => Promise.resolve(narrowHeldNativeChains(reports)));
+}
+
+function narrowHeldNativeChains(reports: readonly NativeChainRelease[]): void {
+    const held = reports.filter((report) => nativeLiveGraphSession.nativeChainByStripId.has(report.id));
+    if (held.length === 0) {
+        return;
+    }
+    const next = new Map(nativeLiveGraphSession.nativeChainByStripId);
+    for (const report of held) {
+        next.set(report.id, report.deviceIds);
+    }
+    nativeLiveGraphSession.nativeChainByStripId = next;
 }

@@ -1,9 +1,9 @@
 import { getObjectId } from '@automerge/automerge';
 
 import { getCrdtDoc, hasForeignPendingProjectWrites } from '#/modules/CrdtDocument/useCases';
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';
 
