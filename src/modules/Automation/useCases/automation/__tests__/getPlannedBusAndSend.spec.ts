@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { type AppAction, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { getPlannedBus } from '../getPlannedBus';
 import { getPlannedSend } from '../getPlannedSend';
+
+type RestoreTrackPayloadSnapshot = Extract<AppAction, { type: 'restoreTrack' }>['payload'];
 
 // An action neither planner lists: it must leave the plan as the live state stands.
 const unlisted: AppAction = { type: 'togglePlayback' };
