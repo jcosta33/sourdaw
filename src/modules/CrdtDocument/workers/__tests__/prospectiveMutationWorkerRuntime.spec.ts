@@ -60,6 +60,33 @@ function fixture() {
 }
 
 describe('private canonical materialization Worker runtime', () => {
+    it('bounds an explicitly requested native sequence while retaining the actual canonical target', () => {
+        const initial = from({ slot: { text: '' } }, { actor });
+        const result = materializeProspectiveMutation({
+            seed: save(clone(initial)),
+            actor,
+            heads: getHeads(initial),
+            preparationPolicy: 'bounded-native-sequence-v1',
+            message: 'Capture arrangement',
+            mutation: {
+                kind: 'canonical-json-slot-v1',
+                key: 'slot',
+                baseValue: { text: '' },
+                value: { text: 'native sequence '.repeat(300) },
+                documentPresence: { slot: { text: '' } },
+            },
+        });
+        expect(result.changes.length).toBeGreaterThan(1);
+        let replay = clone(initial, { actor });
+        for (const bytes of result.changes) {
+            expect(bytes.byteLength).toBeLessThanOrEqual(65_536);
+            expect(decodeChange(bytes).ops.length).toBeLessThanOrEqual(1024);
+            [replay] = applyChanges(replay, [bytes]);
+        }
+        expect(replay).toEqual({ slot: { text: 'native sequence '.repeat(300) } });
+        expect(getHeads(replay)).toEqual(result.heads);
+    });
+
     it.each([
         {},
         { message: undefined, time: undefined },

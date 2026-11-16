@@ -1,10 +1,12 @@
+import { NATIVE_SEQUENCE_MAX_BYTES } from '../models/NativeMutationSequence';
 import {
+    isNativeMutationSequence,
     type ProspectiveMutationWorkerRequest,
     type ProspectiveMutationWorkerResult,
 } from '../models/ProspectiveMutationWorkerProtocol';
 
-function isOwnedChangeArray(value: unknown): value is Uint8Array<ArrayBuffer>[] {
-    if (!Array.isArray(value) || value.length > 1) {
+function isOwnedChangeArray(value: unknown, maximumChanges = 1): value is Uint8Array<ArrayBuffer>[] {
+    if (!Array.isArray(value) || value.length > maximumChanges) {
         return false;
     }
     const entries: unknown[] = Array.from(value);
@@ -27,6 +29,29 @@ function isNativeHeadArray(value: unknown): value is string[] {
         entries.every((head) => typeof head === 'string' && /^[a-f0-9]{64}$/.test(head)) &&
         new Set(entries).size === entries.length
     );
+}
+
+function readBoundedNativeResponse(data: object & { status: unknown }): ProspectiveMutationWorkerResult | undefined {
+    if (
+        data.status === 'complete' &&
+        'changes' in data &&
+        isOwnedChangeArray(data.changes, Number.MAX_SAFE_INTEGER) &&
+        data.changes.every((bytes) => bytes.length <= NATIVE_SEQUENCE_MAX_BYTES && bytes[8] === 1) &&
+        'heads' in data &&
+        isNativeHeadArray(data.heads) &&
+        'sequence' in data &&
+        isNativeMutationSequence(data.sequence, data.changes.length)
+    ) {
+        return {
+            changes: data.changes.map((bytes) => Uint8Array.from(bytes)),
+            heads: [...data.heads],
+            sequence: {
+                changeCount: data.sequence.changeCount,
+                operationCount: data.sequence.operationCount,
+            },
+        };
+    }
+    return undefined;
 }
 
 /** Each private job owns its transferable seed, callbacks, deadline and Worker. */
@@ -73,7 +98,15 @@ export function requestProspectiveMutation(
                 finish(undefined, new Error('Invalid prospective mutation Worker response'));
                 return;
             }
+            if (request.preparationPolicy === 'bounded-native-sequence-v1') {
+                const bounded = readBoundedNativeResponse(data);
+                if (bounded) {
+                    finish(bounded);
+                    return;
+                }
+            }
             if (
+                request.preparationPolicy === undefined &&
                 data.status === 'complete' &&
                 'changes' in data &&
                 isOwnedChangeArray(data.changes) &&

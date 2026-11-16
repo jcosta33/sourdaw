@@ -1,6 +1,7 @@
 import { type ChangeFn } from '@automerge/automerge';
 
 import { type CanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
+import { type AutomergeStoragePreparationOptions } from '#/infra/store/storage/createAutomergeStorage';
 
 import { automergeRepository } from '../repositories/automergeRepository';
 
@@ -26,6 +27,7 @@ export type MutateCrdtDocInput<DocShape> = {
      */
     localSlots?: readonly string[];
     canonicalMutation?: CanonicalStorageSlotMutation;
+    preparationPolicy?: AutomergeStoragePreparationOptions['preparationPolicy'];
     prospectiveValidation?: Parameters<typeof automergeRepository.changeDoc<DocShape>>[5];
 };
 

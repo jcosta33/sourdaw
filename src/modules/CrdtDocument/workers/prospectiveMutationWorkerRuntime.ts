@@ -7,6 +7,8 @@ import {
     type ProspectiveMutationWorkerResult,
 } from '../models/ProspectiveMutationWorkerProtocol';
 
+import { encodeBoundedMutationSequence } from './encodeBoundedMutationSequence';
+
 export function materializeProspectiveMutation(request: unknown): ProspectiveMutationWorkerResult {
     const input = parseProspectiveMutationWorkerRequest(request);
     let document: Doc<Record<string, unknown>> | undefined;
@@ -25,6 +27,9 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
         document = change(document, options, (draft) => applyCanonicalStorageSlotMutation(draft, input.mutation));
         if (getMissingDeps(document, []).length > 0) {
             throw new Error('Prospective mutation candidate has missing dependencies');
+        }
+        if (input.preparationPolicy === 'bounded-native-sequence-v1') {
+            return encodeBoundedMutationSequence(document, input.heads);
         }
         return {
             changes: getChangesSince(document, [...input.heads]).map((bytes) => Uint8Array.from(bytes)),

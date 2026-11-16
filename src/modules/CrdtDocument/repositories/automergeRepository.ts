@@ -2,19 +2,15 @@ import {
     type Doc,
     type ChangeFn,
     type Heads,
-    type ChangeMetadata,
     init,
     load,
     save,
     saveIncremental,
     saveSince,
     loadIncremental,
-    applyChanges,
     merge,
     change,
     getChanges,
-    getChangesMetaSince,
-    getMissingDeps,
     view,
     getHeads,
     clone,
@@ -28,6 +24,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type CanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import {
     getCurrentAutomergeStorageMutationOwner,
+    captureAutomergeStorageMutationAuthority,
     runOutsideAutomergeStoragePublisherScope,
 } from '#/infra/store/storage/createAutomergeStorage';
 
@@ -38,9 +35,15 @@ import {
     retainsActiveFrontier,
     type IncrementalsEncodedResponse,
 } from '../models/NativeIncrementalEncoding';
-import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
+import { isBoundedNativePreparationPolicy } from '../models/NativeMutationSequence';
+import {
+    type ProspectiveMutationWorkerResult,
+    type ProspectiveMutationWorkerRequest,
+} from '../models/ProspectiveMutationWorkerProtocol';
 import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
+import { admitBoundedNativeSequence } from './admitBoundedNativeSequence';
+import { adoptProspectiveMutationChanges } from './adoptProspectiveMutationChanges';
 import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
 import { captureNativeIncrementals } from './captureNativeIncrementals';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
@@ -552,8 +555,15 @@ class AutomergeRepository {
         message?: string,
         snapshotTransaction?: object,
         localSlots?: readonly string[],
-        canonicalMutation?: CanonicalStorageSlotMutation
+        canonicalMutation?: CanonicalStorageSlotMutation,
+        preparationPolicy?: ProspectiveMutationWorkerRequest['preparationPolicy']
     ) {
+        if (preparationPolicy !== undefined && !isBoundedNativePreparationPolicy(preparationPolicy)) {
+            throw new Error('Unsupported native preparation policy');
+        }
+        if (preparationPolicy !== undefined && !canonicalMutation) {
+            throw new Error('Native sequence preparation requires a canonical slot');
+        }
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
@@ -563,12 +573,19 @@ class AutomergeRepository {
         const actor = getActorId(doc);
         const previousHeads = getHeads(doc);
         let candidate: Doc<TDoc> | undefined = clone(doc, { actor });
+        let admittedSequence: Doc<TDoc> | undefined;
         authority.assertCurrent();
         let cloneConsumed = false;
         let workerRequested = false;
         let workerResult: ProspectiveMutationWorkerResult | undefined;
         let removeMaterializationAbortListener: (() => void) | undefined;
         const controller = new AbortController();
+        const assertSequenceAuthority = captureAutomergeStorageMutationAuthority(() => {
+            if (cloneConsumed) {
+                throw new Error('Prospective clone has already settled');
+            }
+            authority.assertCurrent();
+        });
         const releaseClone = (): void => {
             removeMaterializationAbortListener?.();
             removeMaterializationAbortListener = undefined;
@@ -576,8 +593,16 @@ class AutomergeRepository {
                 free(candidate);
                 candidate = undefined;
             }
+            if (admittedSequence) {
+                free(admittedSequence);
+                admittedSequence = undefined;
+            }
         };
         const nativeAuthor = canonicalMutation ? getAuthor(doc) : undefined;
+        if (preparationPolicy !== undefined && nativeAuthor !== undefined && nativeAuthor !== null) {
+            releaseClone();
+            throw new Error('Native sequence preparation requires an absent author');
+        }
         let requestMaterialization: ((signal: AbortSignal) => Promise<void>) | undefined;
         if (canonicalMutation && (nativeAuthor === null || nativeAuthor === undefined)) {
             requestMaterialization = (signal: AbortSignal): Promise<void> => {
@@ -605,10 +630,57 @@ class AutomergeRepository {
                         free(encodingClone);
                     }
                     authority.assertCurrent();
-                    return requestProspectiveMutation(
-                        { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
-                        materializationSignal
-                    )
+                    let request: ProspectiveMutationWorkerRequest = {
+                        seed,
+                        heads: previousHeads,
+                        actor,
+                        message,
+                        mutation: canonicalMutation,
+                    };
+                    if (preparationPolicy !== undefined) {
+                        request = { ...request, preparationPolicy };
+                    }
+                    const response = requestProspectiveMutation(request, materializationSignal);
+                    if (preparationPolicy === 'bounded-native-sequence-v1') {
+                        let captured: Doc<TDoc> | undefined = candidate;
+                        candidate = undefined;
+                        return response
+                            .then(async (result) => {
+                                if (!captured || cloneConsumed) {
+                                    throw new Error('Prospective clone has already settled');
+                                }
+                                const owned = captured;
+                                captured = undefined;
+                                const admitted = await admitBoundedNativeSequence({
+                                    candidate: owned,
+                                    source: doc,
+                                    result,
+                                    previousHeads,
+                                    actor,
+                                    message,
+                                    key: canonicalMutation.key,
+                                    signal: materializationSignal,
+                                    assertCurrent: assertSequenceAuthority,
+                                });
+                                try {
+                                    materializationSignal.throwIfAborted();
+                                    assertSequenceAuthority();
+                                    admittedSequence = admitted;
+                                } catch (error) {
+                                    free(admitted);
+                                    throw error;
+                                }
+                            })
+                            .catch((error: unknown) => {
+                                if (captured) {
+                                    free(captured);
+                                    captured = undefined;
+                                }
+                                releaseClone();
+                                throw error;
+                            });
+                    }
+                    return response
                         .then((result) => {
                             if (cloneConsumed) {
                                 return;
@@ -656,125 +728,41 @@ class AutomergeRepository {
                 cloneConsumed = true;
                 try {
                     authority.assertCurrent();
+                    if (preparationPolicy === 'bounded-native-sequence-v1' && !admittedSequence) {
+                        throw new Error('Prospective mutation Worker has not completed');
+                    }
                 } catch (error) {
+                    if (preparationPolicy === 'bounded-native-sequence-v1') {
+                        controller.abort(error);
+                    }
                     releaseClone();
                     throw error;
                 }
                 let updated: Doc<TDoc>;
-                if (workerRequested) {
-                    let loaded: Doc<TDoc> | undefined;
-                    try {
-                        if (!workerResult || !candidate) {
-                            throw new Error('Prospective mutation Worker has not completed');
-                        }
-                        const { heads, changes } = workerResult;
-                        workerResult = undefined;
-                        // The returned JS root shares this private native handle. Transfer
-                        // ownership before apply, so cleanup never frees its consumed alias.
-                        loaded = candidate;
-                        candidate = undefined;
-                        const applyStarted = performance.now();
-                        try {
-                            if (changes.length > 0) {
-                                // TypeScript does not track writes to captured locals through the native callback.
-                                const application = { ownedSlotChanged: false, retiredEvidence: false };
-                                [loaded] = applyChanges(loaded, changes, {
-                                    patchCallback: (patches) => {
-                                        for (const patch of patches) {
-                                            const retiresEvidence =
-                                                patch.action === 'del' &&
-                                                patch.path.length === 1 &&
-                                                patch.path[0] === '_storagePublicationEvidence';
-                                            if (patch.path[0] !== canonicalMutation?.key && !retiresEvidence) {
-                                                throw new Error('Prospective mutation Worker changed an unowned slot');
-                                            }
-                                            application.ownedSlotChanged ||= patch.path[0] === canonicalMutation?.key;
-                                            application.retiredEvidence ||= retiresEvidence;
-                                        }
-                                    },
-                                });
-                                // Native patch order need not place the owned slot before metadata retirement.
-                                if (application.retiredEvidence && !application.ownedSlotChanged) {
-                                    throw new Error('Prospective mutation Worker changed an unowned slot');
-                                }
-                            }
-                        } finally {
-                            performance.measure('automerge-prospective-apply-task', {
-                                start: applyStarted,
-                                end: performance.now(),
-                            });
-                            performance.clearMeasures('automerge-prospective-apply-task');
-                        }
-                        const authorityStarted = performance.now();
-                        try {
-                            if (getMissingDeps(loaded, []).length > 0) {
-                                throw new Error('Prospective mutation Worker left missing native dependencies');
-                            }
-                            if (getMissingDeps(loaded, previousHeads).length > 0) {
-                                throw new Error('Prospective mutation Worker lost the native frontier');
-                            }
-                            const additions = getChangesMetaSince(loaded, previousHeads);
-                            if (additions.length > 1) {
-                                throw new Error('Prospective mutation Worker changed native authorship');
-                            }
-                            const addition = additions[0];
-                            if (addition) {
-                                const previousOwnChange = getChangesMetaSince(doc, []).reduce<
-                                    ChangeMetadata | undefined
-                                >(
-                                    (latest, entry) =>
-                                        entry.actor === actor && (!latest || entry.seq > latest.seq) ? entry : latest,
-                                    undefined
-                                );
-                                const nextSequence = (previousOwnChange?.seq ?? 0) + 1;
-                                const expectedDependencies = new Set(previousHeads);
-                                // Native transactions also name this actor's last change when it is no longer a head.
-                                if (previousOwnChange) {
-                                    expectedDependencies.add(previousOwnChange.hash);
-                                }
-                                const dependencies = new Set(addition.deps);
-                                if (
-                                    addition.actor !== actor ||
-                                    addition.seq !== nextSequence ||
-                                    addition.message !== (message || null) ||
-                                    addition.deps.length !== dependencies.size ||
-                                    dependencies.size !== expectedDependencies.size ||
-                                    addition.deps.some((head) => !expectedDependencies.has(head))
-                                ) {
-                                    throw new Error('Prospective mutation Worker changed native authority');
-                                }
-                            }
-                            const expectedHeads = addition ? [addition.hash] : previousHeads;
-                            const installedHeads = getHeads(loaded);
-                            if (
-                                heads.length !== expectedHeads.length ||
-                                heads.some((head) => !expectedHeads.includes(head)) ||
-                                installedHeads.length !== expectedHeads.length ||
-                                installedHeads.some((head) => !expectedHeads.includes(head))
-                            ) {
-                                throw new Error('Prospective mutation Worker changed native heads');
-                            }
-                            if (getActorId(loaded) !== actor) {
-                                throw new Error('Prospective mutation Worker changed native authority');
-                            }
-                            authority.assertCurrent();
-                        } finally {
-                            performance.measure('automerge-prospective-authority-task', {
-                                start: authorityStarted,
-                                end: performance.now(),
-                            });
-                            performance.clearMeasures('automerge-prospective-authority-task');
-                        }
+                if (admittedSequence) {
+                    updated = admittedSequence;
+                    admittedSequence = undefined;
+                    releaseClone();
+                } else if (workerRequested) {
+                    if (!workerResult || !candidate) {
                         releaseClone();
-                        updated = loaded;
-                        loaded = undefined;
-                    } catch (error) {
-                        if (loaded) {
-                            free(loaded);
-                        }
-                        releaseClone();
-                        throw error;
+                        throw new Error('Prospective mutation Worker has not completed');
                     }
+                    const result = workerResult;
+                    workerResult = undefined;
+                    const captured = candidate;
+                    candidate = undefined;
+                    updated = adoptProspectiveMutationChanges({
+                        candidate: captured,
+                        doc,
+                        result,
+                        actor,
+                        previousHeads,
+                        message,
+                        key: canonicalMutation?.key,
+                        assertCurrent: authority.assertCurrent,
+                        releaseClone,
+                    });
                 } else {
                     if (!candidate) {
                         throw new Error('Prospective clone is unavailable');

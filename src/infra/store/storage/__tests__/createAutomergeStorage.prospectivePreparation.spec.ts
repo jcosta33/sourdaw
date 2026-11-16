@@ -7,6 +7,8 @@ import {
     appendAutomergeStoragePublicationMetadata,
     AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY,
     captureAutomergeStoragePreparationScope,
+    captureAutomergeStorageMutationAuthority,
+    getCurrentAutomergeStorageMutationOwner,
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
     createAutomergeStorage,
@@ -21,6 +23,7 @@ let message: string;
 let reused: boolean[];
 let ordinaryCalls: number;
 let descriptions: unknown[];
+let preparationPolicies: unknown[];
 
 beforeEach(() => {
     document = from<Document>({ state: { count: 0 }, checkpoint: { records: [] }, other: 0 });
@@ -28,6 +31,7 @@ beforeEach(() => {
     reused = [];
     ordinaryCalls = 0;
     descriptions = [];
+    preparationPolicies = [];
     const candidates = new WeakMap<object, Doc<Document>>();
     const port: Port = {
         getDoc: () => document,
@@ -38,6 +42,7 @@ beforeEach(() => {
             document = change(document, { message: input.message }, input.changeFn);
         },
         cloneDocForMutation: (input) => {
+            preparationPolicies.push(input.preparationPolicy);
             descriptions.push(input.canonicalMutation);
             const original = document;
             const copied = clone(document, { actor: getActorId(document) });
@@ -117,6 +122,25 @@ function stage(prepared: ReturnType<typeof prepare>) {
 }
 
 describe('invisible conditional Automerge preparation', () => {
+    it('bounds an explicitly requested native sequence only for that preparation', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        storage.hydrate?.();
+        const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        const plan = storage.prepareSet?.(transaction.value, { count: 1 }, undefined, {
+            preparationPolicy: 'bounded-native-sequence-v1',
+        });
+        if (!plan) {
+            throw new Error('Expected eligible owner-scoped preparation');
+        }
+        plan.clone();
+        expect(preparationPolicies).toEqual(['bounded-native-sequence-v1']);
+        plan.discard();
+        transaction.abort();
+    });
+
     it('does not stage cache, pending writes or live actor state in either private phase', () => {
         const original = document;
         const before = countPendingAutomergeStorageWrites();
@@ -280,5 +304,64 @@ describe('invisible conditional Automerge preparation', () => {
         expect(reused).toEqual([true]);
         expect(validate).toHaveBeenCalledOnce();
         expect(ordinaryCalls).toBe(0);
+    });
+});
+
+describe('captured native preparation authority', () => {
+    it('restores exact owner only inside synchronous checks after an await and after throwing', async () => {
+        let capturedOwner: object | undefined;
+        const observed: (object | undefined)[] = [];
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            capturedOwner = getCurrentAutomergeStorageMutationOwner();
+            return captureAutomergeStorageMutationAuthority(() => {
+                observed.push(getCurrentAutomergeStorageMutationOwner());
+                throw new Error('authority refusal');
+            });
+        });
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        expect(capturedOwner).toBeDefined();
+        expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+        await Promise.resolve();
+        const foreign = runWithAutomergeStorageTransaction(undefined, () => {
+            const foreignOwner = getCurrentAutomergeStorageMutationOwner();
+            expect(foreignOwner).not.toBe(capturedOwner);
+            expect(transaction.value).toThrow('authority refusal');
+            expect(getCurrentAutomergeStorageMutationOwner()).toBe(foreignOwner);
+        });
+        foreign.abort();
+        expect(observed).toEqual([capturedOwner]);
+        expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+        transaction.abort();
+    });
+
+    it.each(['abort', 'commit'] as const)('refuses captured owner after %s without invoking its assertion', (close) => {
+        const assertion = vi.fn();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            captureAutomergeStorageMutationAuthority(assertion)
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        transaction[close]();
+        expect(transaction.value).toThrow('Captured Automerge storage owner is no longer open');
+        expect(assertion).not.toHaveBeenCalled();
+        expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+    });
+
+    it('keeps captured unscoped assertions unscoped inside another ambient owner', () => {
+        const observed: (object | undefined)[] = [];
+        const check = captureAutomergeStorageMutationAuthority(() =>
+            observed.push(getCurrentAutomergeStorageMutationOwner())
+        );
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            const owner = getCurrentAutomergeStorageMutationOwner();
+            check();
+            expect(getCurrentAutomergeStorageMutationOwner()).toBe(owner);
+        });
+        transaction.abort();
+        expect(observed).toEqual([undefined]);
+        expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
     });
 });
