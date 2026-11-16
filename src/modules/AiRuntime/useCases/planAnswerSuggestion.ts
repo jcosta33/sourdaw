@@ -6,7 +6,8 @@ import { type ThreadContext } from '../models/ThreadContext';
 
 import { groundApplicationRecipeBatch } from './groundApplicationRecipeBatch';
 
-type GroundedBatch = Extract<ReturnType<typeof groundApplicationRecipeBatch>, { status: 'grounded' }>['grounded'];
+type GroundedRecipeBatch = Extract<ReturnType<typeof groundApplicationRecipeBatch>, { status: 'grounded' }>;
+type GroundedBatch = GroundedRecipeBatch['grounded'];
 
 type PlanAnswerSuggestionResult =
     | { status: 'refused'; reason: string }
@@ -14,6 +15,7 @@ type PlanAnswerSuggestionResult =
           status: 'grounded';
           grounded: GroundedBatch;
           adoptedRecipe: AdoptedRecipe;
+          compilations: GroundedRecipeBatch['compilations'];
           creativeAuthority: CreativeRequestAuthority;
       };
 
@@ -77,6 +79,7 @@ export function planAnswerSuggestion(input: {
                 status: 'grounded',
                 grounded: batch.grounded,
                 adoptedRecipe: batch.adoptedRecipes[0]!,
+                compilations: batch.compilations,
                 creativeAuthority: batch.creativeAuthority,
             };
         default: {

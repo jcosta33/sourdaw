@@ -33,7 +33,7 @@ function describeMeasuredDeltas(criteria: readonly Criterion[], context: Pick<Pr
         .filter((criterion) => criterion.source.kind === 'recipe')
         .map(
             (criterion) =>
-                `${readVibeMetricLabel(criterion.metricId, criterion.band)} on ${criterion.targetIds.map((id) => readVibeTargetName(context, id)).join(', ')} approval preview, ${criterion.range?.sectionId ?? 'arrangement'} [${String(criterion.range?.startBeat)}, ${String(criterion.range?.endBeat)}], ${formatVibeFigure(criterion.baseline[0], criterion.unit)} → ${formatVibeFigure(criterion.observed[0], criterion.unit)}`
+                `${readVibeMetricLabel(criterion.metricId, criterion.band)} on ${criterion.targetIds.map((id) => readVibeTargetName(context, id)).join(', ')} approval preview, ${criterion.range?.sectionId ?? 'arrangement'} [${String(criterion.range?.startBeat)}, ${String(criterion.range?.endBeat)}], ${formatVibeFigure(criterion.initial[0], criterion.unit)} → ${formatVibeFigure(criterion.final[0], criterion.unit)}`
         );
     return deltas.length === 0 ? 'no measured change recorded' : deltas.join('; ');
 }
