@@ -1732,6 +1732,11 @@ async function scorePlannedCorpusCase(
     }
 
     let matchesOracle = true;
+    if (testCase.oracle.kind === 'denied') {
+        // A fixed policy denies before any provider turn; a denial reached after one is the provider's
+        // own decline or rejection, never the policy the case pins.
+        matchesOracle = runtimeMocks.generateWebLlmCompletion.mock.calls.length === 0;
+    }
     if (testCase.oracle.kind === 'answer') {
         matchesOracle = answerMatchesOracle({
             oracle: parseAnswerOracle(testCase.oracle, testCase.questionKind),
@@ -3318,6 +3323,37 @@ describe('agent acceptance corpora', () => {
                 vi.unstubAllGlobals();
                 runtimeMocks.generateWebLlmCompletion.mockReset();
             }
+        });
+
+        it('scores a policy denial only when no provider turn came before it', async () => {
+            const policyDenial = corpusCase('development', 'AC054-DEV-DENY-1');
+            const providerDenial: CorpusCase = {
+                ...policyDenial,
+                id: 'deny-after-provider-turn',
+                prompt: 'publish this song to every streaming service',
+                providerTurns: [
+                    {
+                        kind: 'decline',
+                        args: { kind: 'unsupported', reason: 'No command publishes a song.', questions: [] },
+                    },
+                ],
+            };
+            const scored = async (testCase: CorpusCase) =>
+                fixtureLifetime.track(async () => {
+                    const barrel = spyOnBarrelWrites();
+                    try {
+                        return await runCorpusCase(testCase, barrel.log);
+                    } finally {
+                        barrel.restore();
+                    }
+                });
+
+            const policy = await scored(policyDenial);
+            expect(policy.result).toMatchObject({ observed: 'deny-policy', exactMatch: true });
+
+            const provider = await scored(providerDenial);
+            expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(1);
+            expect(provider.result).toMatchObject({ observed: 'deny-policy', exactMatch: false });
         });
 
         it('counts a project write a preview render makes against its measured case', async () => {
