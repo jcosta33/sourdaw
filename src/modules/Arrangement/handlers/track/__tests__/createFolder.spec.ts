@@ -61,7 +61,7 @@ describe('handleCreateFolder', () => {
         expect(desc.redoAction).toBeUndefined();
     });
 
-    it('emits neither inverse nor redo when the committed folder cannot be read back', () => {
+    it('emits neither inverse nor redo when the committed folder cannot be read back', async () => {
         // The use case is mocked, so the store never holds the folder: a guard cannot be finalized.
         mocks.createFolder.mockReturnValue(true);
         const action = {
@@ -70,7 +70,7 @@ describe('handleCreateFolder', () => {
         };
 
         const desc = handleCreateFolder.describe(action);
-        handleCreateFolder.execute(action);
+        await handleCreateFolder.execute(action);
 
         expect(desc.inverseAction).toBeNull();
         expect(desc.redoAction).toBeUndefined();
