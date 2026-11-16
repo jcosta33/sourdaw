@@ -1,7 +1,7 @@
 ---
 type: adr
 id: 0059
-title: Type Rust errors where a caller distinguishes them
+title: Type Rust errors at every module boundary
 status: accepted
 date: 2026-11-14
 owner: The Sourdaw team
@@ -15,7 +15,7 @@ sources:
     - src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
 ---
 
-# 0059 - Type Rust errors where a caller distinguishes them
+# 0059 - Type Rust errors at every module boundary
 
 ## Context
 
@@ -44,16 +44,21 @@ process paths already use typed or `Copy` refusals. The house pattern for typed 
 hand-written `Display` and `std::error::Error` impl (`TuningParseError` in `daw-core`,
 `TimeStretchError` in `daw-dsp`). No crate depends on `thiserror` directly.
 
+An earlier position kept every error no caller classifies as `String`. That position is reversed:
+a caller that later needs to tell two failures apart finds only text, and is pushed back into the
+prefix matching this decision removes.
+
 ## Decision
 
-1. **A function returns a typed error enum when any caller distinguishes failure kinds.** The caller
-   may be Rust, or TypeScript through the IPC message. The enum's `Display` carries today's text
-   byte-identically, and classification is a method on the enum, never a prefix match.
+1. **The enum carries the message and the kind.** Its `Display` prints the text the `String` carried,
+   byte-identically, because TypeScript receives that text through the IPC message. A caller, Rust
+   or TypeScript, classifies a failure by matching a variant or calling a method on the enum, never
+   by a prefix match on text.
 2. **No signature below the edge returns `Result<_, String>`.** Each module boundary exposes one
    typed enum, so a caller that later needs to tell two failures apart matches a variant rather
-   than discovering that only text exists. A `napi` command body converts the typed error with
-   `to_string()` where it hands the error to the addon, and that is the only place `String` is built
-   from it.
+   than discovering that only text exists. A `napi` command body, or a wasm-bindgen export building
+   its `JsError`, converts the typed error with `to_string()` there, and those are the only places
+   `String` is built from it.
 3. **Errors are hand-written enums with `Display` and `std::error::Error`; no `thiserror`.** It
    would add a direct proc-macro dependency to crates in wasm closures and change nothing a caller
    can observe.
