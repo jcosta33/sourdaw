@@ -164,7 +164,9 @@ const CARGO_WORKSPACE_FILES: readonly string[] = [
  */
 function optionalTestedTrees(cargoPackage: CargoPackage): readonly string[] {
     const directories = cargoPackage.targets.map((target) => dirname(target.source));
-    return [...new Set(directories)].filter((directory) => directory !== cargoPackage.directory).sort();
+    return Array.from(new Set(directories))
+        .filter((directory) => directory !== cargoPackage.directory)
+        .sort();
 }
 
 type CargoClosurePaths = { readonly required: readonly string[]; readonly optionalTrees: readonly string[] };
