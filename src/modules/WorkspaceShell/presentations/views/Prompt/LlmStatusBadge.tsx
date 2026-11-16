@@ -410,7 +410,11 @@ function describeNoFittingModel(machineMemory: MachineMemoryReading): string {
     if (machineMemory.state !== 'known') {
         return 'No local model fits this machine.';
     }
-    return `This machine has ${(machineMemory.totalBytes / 1e9).toFixed(1)} GB of memory, and no local model fits. Use a hosted model.`;
+    const { totalBytes, gpuBudgetBytes } = machineMemory;
+    if (gpuBudgetBytes !== null && gpuBudgetBytes < totalBytes) {
+        return `This machine's GPU can hold ${(gpuBudgetBytes / 1e9).toFixed(1)} GB, and no local model fits. Use a hosted model.`;
+    }
+    return `This machine has ${(totalBytes / 1e9).toFixed(1)} GB of memory, and no local model fits. Use a hosted model.`;
 }
 
 // ── Model setup panel ───────────────────────────────────────────────────

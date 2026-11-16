@@ -15,6 +15,7 @@
 //! The event sink is a threadsafe function registered once at construction. It
 //! takes owned arguments and is never reachable from the render callback.
 
+mod gpu;
 mod windows;
 
 use std::sync::{Arc, Mutex, RwLock};

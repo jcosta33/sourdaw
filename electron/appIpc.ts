@@ -22,6 +22,7 @@ import {
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
     PLUGIN_FOLDER_ADD_CHANNEL,
+    SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
@@ -32,6 +33,7 @@ import {
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
     type PluginFolderAddResult,
+    type GpuMemoryBudget,
     type RendererSessionQuiesceResult,
 } from './channels.js';
 import { commandChannel, SCAN_PLUGINS } from './commands.js';
@@ -356,16 +358,23 @@ export type RegisterSystemChannelsInput = {
     readonly isTrustedFrameUrl: TrustGuard;
     /** `os.totalmem`. Injected so the specs do not depend on the host machine. */
     readonly totalMemoryBytes: () => number;
+    /** The native addon's GPU memory read, answering unknown when no addon is loaded. */
+    readonly gpuMemoryBudget: () => GpuMemoryBudget;
 };
 
 export const registerSystemChannels = ({
     ipcMain,
     isTrustedFrameUrl,
     totalMemoryBytes,
+    gpuMemoryBudget,
 }: RegisterSystemChannelsInput): void => {
     ipcMain.handle(
         SYSTEM_TOTAL_MEMORY_CHANNEL,
         withTrustedSender('system.totalMemoryBytes', isTrustedFrameUrl, () => totalMemoryBytes())
+    );
+    ipcMain.handle(
+        SYSTEM_GPU_MEMORY_BUDGET_CHANNEL,
+        withTrustedSender('system.gpuMemoryBudgetBytes', isTrustedFrameUrl, () => gpuMemoryBudget())
     );
 };
 
