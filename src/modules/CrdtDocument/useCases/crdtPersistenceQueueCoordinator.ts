@@ -813,11 +813,17 @@ async function persistIncrementalCrdtProject(
     // it further.
     sessionUndoWitnessStampPort.stamp();
 
-    for (const id of activeDocIds) {
-        const captured = automergeRepository.captureDocIncremental(id, persistenceState.exportFrontiers.get(id) ?? []);
-        if (!captured) {
-            continue;
-        }
+    const capturedBatch = await automergeRepository.captureIncrementalsOffThread(
+        new Map(persistenceState.exportFrontiers)
+    );
+    if (generation !== persistenceState.persistenceGeneration) {
+        return;
+    }
+    if (!capturedBatch.isCurrent()) {
+        throw new Error('[CrdtPersistence] Project authority changed during incremental encoding');
+    }
+    for (const captured of capturedBatch.chunks) {
+        const id = captured.id;
         if (captured.chunk.length > 0) {
             persistenceState.pendingChunks.push({
                 generation,

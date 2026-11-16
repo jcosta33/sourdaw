@@ -29,7 +29,25 @@ const { mockAutomergeRepo, mockSaveAllToIdb, mockSaveIncrementals, mockLoadSnaps
             mergeBundle: vi.fn(),
             saveAll: vi.fn(),
             capturePersistenceBundle: vi.fn(),
-            captureDocIncremental: vi.fn(),
+            captureDocIncremental:
+                vi.fn<(id: string, heads: string[]) => { chunk: Uint8Array; heads: string[] } | undefined>(),
+            captureIncrementalsOffThread: vi.fn(
+                async (
+                    frontiers: ReadonlyMap<string, string[]>
+                ): Promise<{
+                    chunks: { id: string; chunk: Uint8Array; heads: string[] }[];
+                    isCurrent: () => boolean;
+                }> => {
+                    const chunks: { id: string; chunk: Uint8Array; heads: string[] }[] = [];
+                    for (const id of mockAutomergeRepo.getDocIds()) {
+                        const captured = mockAutomergeRepo.captureDocIncremental(id, frontiers.get(id) ?? []);
+                        if (captured) {
+                            chunks.push({ id, ...captured });
+                        }
+                    }
+                    return { chunks, isCurrent: () => true };
+                }
+            ),
             getHeads: vi.fn<(id: string) => string[]>(() => []),
             reserveSnapshotTransactionDocuments: vi.fn(),
             transactSnapshot: vi.fn(async (operation: (transaction: object) => Promise<void>) => {

@@ -15,7 +15,6 @@ import {
     getChanges,
     getChangesMetaSince,
     getMissingDeps,
-    hasHeads,
     view,
     getHeads,
     clone,
@@ -34,10 +33,16 @@ import {
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import {
+    hasNativeWorkerRequestId,
+    retainsActiveFrontier,
+    type IncrementalsEncodedResponse,
+} from '../models/NativeIncrementalEncoding';
 import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
 import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
 import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
+import { captureNativeIncrementals } from './captureNativeIncrementals';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
 
@@ -102,47 +107,13 @@ function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>)
     return retainsActiveFrontier(replacement, getHeads(previous));
 }
 
-function retainsActiveFrontier(replacement: Doc<unknown>, previousHeads: Heads): boolean {
-    const replacementHeads = getHeads(replacement);
-    const unreachedHeads = new Set(previousHeads);
-    for (const head of replacementHeads) {
-        unreachedHeads.delete(head);
-    }
-    if (unreachedHeads.size === 0) {
-        return true;
-    }
-    if (!hasHeads(replacement, previousHeads)) {
-        return false;
-    }
-
-    const dependencies = new Map(
-        getChangesMetaSince(replacement, previousHeads).map((change) => [change.hash, change.deps])
-    );
-    const visited = new Set<string>();
-    const pending = [...replacementHeads];
-    while (pending.length > 0 && unreachedHeads.size > 0) {
-        const head = pending.pop();
-        if (!head || visited.has(head)) {
-            continue;
-        }
-        visited.add(head);
-        if (unreachedHeads.delete(head)) {
-            continue;
-        }
-        const dependentHeads = dependencies.get(head);
-        if (dependentHeads) {
-            pending.push(...dependentHeads);
-        }
-    }
-    return unreachedHeads.size === 0;
-}
-
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
 // Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
 // background Worker so the main thread stays responsive during project open
 // and collaboration patch ingestion.
 
 type WorkerResponse =
+    | (IncrementalsEncodedResponse & { id: number })
     | { id: number; type: 'loaded'; compacted: [string, Uint8Array][]; rootId: string }
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: [string, Uint8Array][] }
@@ -215,6 +186,10 @@ function createCrdtWorkerInstance(): CrdtWorkerInstance {
 
     function handleMessage(event: MessageEvent): void {
         if (instance.failed) {
+            return;
+        }
+        if (!hasNativeWorkerRequestId(event.data)) {
+            failCrdtWorker(instance, new Error('Invalid CRDT Worker response request identity'));
             return;
         }
 
@@ -1066,6 +1041,29 @@ class AutomergeRepository {
         const heads = getHeads(doc);
         const frontier = retainsActiveFrontier(doc, previousHeads) ? previousHeads : [];
         return { chunk: Uint8Array.from(saveSince(doc, frontier)), heads };
+    }
+
+    async captureIncrementalsOffThread(frontiers: ReadonlyMap<DocId, Heads>) {
+        const identity = this.getDocumentIdentityEpoch();
+        const rootIdentity = this.getRootIdentityEpoch();
+        const discarded = this.getLastHistoryDiscardEpoch();
+        const chunks = await captureNativeIncrementals(
+            this.docs,
+            frontiers,
+            (documents) => invokeWorker({ type: 'encodeIncrementals', documents }),
+            (error) =>
+                logger.warn(
+                    '[AutomergeRepository] Incremental Worker failed; encoding captured state synchronously:',
+                    error
+                )
+        );
+        return {
+            chunks,
+            isCurrent: () =>
+                identity === this.getDocumentIdentityEpoch() &&
+                rootIdentity === this.getRootIdentityEpoch() &&
+                discarded === this.getLastHistoryDiscardEpoch(),
+        };
     }
 
     /** Serialize all documents as a bundle. */

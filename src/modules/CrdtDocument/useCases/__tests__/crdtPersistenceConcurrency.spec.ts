@@ -1,6 +1,12 @@
-import { clone as cloneDoc } from '@automerge/automerge';
+import { clone as cloneDoc, load, loadIncremental, getHeads, saveSince } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    ControlledWorker,
+    respondToLoad,
+    respondToEncodeIncrementals,
+    type EncodeIncrementalsRequest,
+} from '../../repositories/__tests__/automergeWorkerTestHarness';
 import { type CrdtPersistenceSnapshot } from '../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
@@ -179,11 +185,13 @@ async function expectDurableDocumentPresence({
     documentId,
     present,
     expectedRoot,
+    absentRootKeys = [],
 }: {
     context: PersistenceContext;
     documentId: string;
     present: boolean;
     expectedRoot?: Record<string, unknown>;
+    absentRootKeys?: readonly string[];
 }): Promise<void> {
     const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
     if (!snapshot?.bundle) {
@@ -201,6 +209,9 @@ async function expectDurableDocumentPresence({
             expectedRoot
         );
     }
+    for (const key of absentRootKeys) {
+        expect(reload.repository.automergeRepository.getDoc('root')).not.toHaveProperty(key);
+    }
 }
 
 describe('CRDT persistence across independent queue contexts', () => {
@@ -217,6 +228,283 @@ describe('CRDT persistence across independent queue contexts', () => {
                 }
             }
         );
+    });
+
+    it('waits for native incremental encoding before any durable append or frontier advance', async () => {
+        const context = await importContext();
+        context.repository.automergeRepository.createProject('project');
+        const initial = context.queue.runCrdtPersistenceOperation('compact');
+        const baseWrite = await persistence.waitForTransaction('readwrite', 1);
+        baseWrite.complete();
+        await initial;
+        const base = context.repository.automergeRepository.saveDoc('root');
+        const frontier = context.repository.automergeRepository.getHeads('root');
+        context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.beforeWorker = true;
+        });
+        ControlledWorker.reset();
+        vi.stubGlobal('Worker', ControlledWorker);
+        const requested = Promise.withResolvers<{ worker: ControlledWorker; request: EncodeIncrementalsRequest }>();
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'loadBundle') {
+                queueMicrotask(() => respondToLoad(worker, request));
+            }
+            if (request.type === 'encodeIncrementals') {
+                requested.resolve({ worker, request });
+            }
+        };
+        const saving = context.queue.runCrdtPersistenceOperation('incremental');
+        const first = await Promise.race([
+            requested.promise.then((held) => ({ kind: 'worker' as const, held })),
+            persistence
+                .waitForTransaction('readwrite', 2)
+                .then((transaction) => ({ kind: 'write' as const, transaction })),
+        ]);
+        if (first.kind === 'write') {
+            first.transaction.complete();
+            await saving;
+        }
+        expect(first.kind, 'A durable append started before real Worker encoding').toBe('worker');
+        if (first.kind !== 'worker' || !base || !frontier) {
+            throw new Error('Expected a captured native Worker batch');
+        }
+        expect(persistence.getTransactions('readwrite')).toHaveLength(1);
+        expect(first.held.request.documents.map((entry) => entry.id)).toEqual(['root']);
+        expect(first.held.request.documents[0]?.frontier).toEqual(frontier);
+        const capturedHeads = context.repository.automergeRepository.getHeads('root');
+        const capturedDoc = context.repository.automergeRepository.getDoc('root');
+        if (!capturedDoc) {
+            throw new Error('Expected the captured native root');
+        }
+        const expected = Uint8Array.from(saveSince(capturedDoc, frontier));
+        context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.afterWorker = true;
+        });
+        respondToEncodeIncrementals(first.held.worker, first.held.request);
+        const committed = await persistence.waitForTransaction('readwrite', 2);
+        const incremental = committed.writes.find((write) => write.key.startsWith('root:incremental:'));
+        expect(incremental?.value).toEqual(expected);
+        committed.complete();
+        await saving;
+        const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        if (!snapshot?.bundle) {
+            throw new Error('Expected durable native bytes');
+        }
+        const replay = loadIncremental(load(base), expected);
+        expect(getHeads(replay)).toEqual(capturedHeads);
+        expect(replay).toMatchObject({ beforeWorker: true });
+        expect(replay).not.toHaveProperty('afterWorker');
+        const nextRequest = Promise.withResolvers<{ worker: ControlledWorker; request: EncodeIncrementalsRequest }>();
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'encodeIncrementals') {
+                nextRequest.resolve({ worker, request });
+            }
+        };
+        const next = context.queue.runCrdtPersistenceOperation('incremental');
+        const later = await nextRequest.promise;
+        expect(later.request.documents[0]?.frontier).toEqual(capturedHeads);
+        respondToEncodeIncrementals(later.worker, later.request);
+        const laterWrite = await persistence.waitForTransaction('readwrite', 3);
+        laterWrite.complete();
+        await next;
+    });
+
+    it('retains the captured native edit when a Worker returns an empty changed-document payload', async () => {
+        const { first: context } = await createSharedContexts({ persistence });
+        const frontier = context.repository.automergeRepository.getHeads('root');
+        context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.mustPersist = true;
+        });
+        const native = context.repository.automergeRepository.getDoc('root');
+        if (!frontier || !native) {
+            throw new Error('Expected native capture authority');
+        }
+        const expected = Uint8Array.from(saveSince(native, frontier));
+        expect(expected.byteLength).toBeGreaterThan(0);
+        ControlledWorker.reset();
+        vi.stubGlobal('Worker', ControlledWorker);
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'encodeIncrementals') {
+                queueMicrotask(() =>
+                    worker.emitMessage({
+                        id: request.id,
+                        type: 'incrementalsEncoded',
+                        documents: request.documents.map(({ id, heads }) => ({ id, heads, chunk: new Uint8Array() })),
+                    })
+                );
+            }
+        };
+        const saving = context.queue.runCrdtPersistenceOperation('incremental');
+        const outcome = await Promise.race([
+            saving.then(() => ({ kind: 'settled' as const })),
+            persistence
+                .waitForTransaction('readwrite', 2)
+                .then((transaction) => ({ kind: 'write' as const, transaction })),
+        ]);
+        if (outcome.kind === 'write') {
+            outcome.transaction.complete();
+            await saving;
+        }
+        expect(outcome.kind, 'A changed frontier advanced without durable native bytes').toBe('write');
+        if (outcome.kind !== 'write') {
+            throw new Error('Expected the exact captured-state fallback bytes');
+        }
+        expect(outcome.transaction.writes.find((write) => write.key.startsWith('root:incremental:'))?.value).toEqual(
+            expected
+        );
+    });
+
+    it.each(['load', 'replacement', 'rollback'] as const)(
+        'discards a held native batch before retaining bytes on %s',
+        async (kind) => {
+            const { first: context } = await createSharedContexts({ persistence });
+            const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+            const base = context.repository.automergeRepository.getDoc('root');
+            if (!snapshot?.bundle || !base) {
+                throw new Error('Expected a durable native baseline');
+            }
+            const baseHeads = getHeads(base);
+            context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.obsolete = true;
+            });
+            ControlledWorker.reset();
+            vi.stubGlobal('Worker', ControlledWorker);
+            const requested = Promise.withResolvers<{ worker: ControlledWorker; request: EncodeIncrementalsRequest }>();
+            ControlledWorker.onPostMessage = (worker, request) => {
+                if (request.type === 'loadBundle') {
+                    queueMicrotask(() => respondToLoad(worker, request));
+                }
+                if (request.type === 'encodeIncrementals') {
+                    requested.resolve({ worker, request });
+                }
+            };
+            const saving = context.queue.runCrdtPersistenceOperation('incremental');
+            const settled = saving.then(
+                () => null,
+                (error: unknown) => error
+            );
+            const held = await requested.promise;
+            let loading: Promise<boolean> | undefined;
+            if (kind === 'load') {
+                loading = context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
+                    const installed: { heads?: Map<string, string[]> } = {};
+                    const loaded = await context.repository.automergeRepository.loadAll({
+                        bundle: snapshot.bundle!,
+                        shouldCommit,
+                        onInstalled: (heads) => {
+                            installed.heads = heads;
+                        },
+                    });
+                    return { loaded, snapshot, durableHeadsByDoc: installed.heads };
+                });
+            } else if (kind === 'replacement') {
+                context.queue.beginPersistenceReplacement({
+                    epoch: 'replacement-during-native-encode',
+                    old: snapshot.authority,
+                });
+                context.repository.automergeRepository.createProject('replacement');
+            } else {
+                context.repository.automergeRepository.replaceDocInLineage('root', cloneDoc(base));
+            }
+            respondToEncodeIncrementals(held.worker, held.request);
+            const error = await settled;
+            if (kind === 'rollback') {
+                expect(error).toMatchObject({
+                    message: '[CrdtPersistence] Project authority changed during incremental encoding',
+                });
+            } else {
+                expect(error).toBeNull();
+            }
+            if (loading) {
+                await expect(loading).resolves.toBe(true);
+            }
+            expect(persistence.getTransactions('readwrite')).toHaveLength(1);
+            const laterRequest = Promise.withResolvers<{
+                worker: ControlledWorker;
+                request: EncodeIncrementalsRequest;
+            }>();
+            ControlledWorker.onPostMessage = (worker, request) => {
+                if (request.type === 'loadBundle') {
+                    queueMicrotask(() => respondToLoad(worker, request));
+                }
+                if (request.type === 'encodeIncrementals') {
+                    laterRequest.resolve({ worker, request });
+                }
+            };
+            context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.afterRetirement = true;
+            });
+            const later = context.queue.runCrdtPersistenceOperation('incremental');
+            if (kind !== 'replacement') {
+                const next = await laterRequest.promise;
+                expect(next.request.documents[0]?.frontier).toEqual(baseHeads);
+                respondToEncodeIncrementals(next.worker, next.request);
+            }
+            const write = await persistence.waitForTransaction('readwrite', 2);
+            write.complete();
+            await later;
+            await expectDurableDocumentPresence({
+                context,
+                documentId: 'root',
+                present: true,
+                expectedRoot: { afterRetirement: true },
+                absentRootKeys: ['obsolete'],
+            });
+        }
+    );
+
+    it('retries owned native bytes before encoding a later live edit', async () => {
+        const { first: context } = await createSharedContexts({ persistence });
+        context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.first = true;
+        });
+        ControlledWorker.reset();
+        vi.stubGlobal('Worker', ControlledWorker);
+        const requested = Promise.withResolvers<{ worker: ControlledWorker; request: EncodeIncrementalsRequest }>();
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'encodeIncrementals') {
+                requested.resolve({ worker, request });
+            }
+        };
+        const first = context.queue.runCrdtPersistenceOperation('incremental');
+        const rejected = expect(first).rejects.toThrow();
+        const held = await requested.promise;
+        respondToEncodeIncrementals(held.worker, held.request);
+        const failedWrite = await persistence.waitForTransaction('readwrite', 2);
+        const original = failedWrite.writes.find((write) => write.key.startsWith('root:incremental:'))?.value;
+        expect(original?.length).toBeGreaterThan(0);
+        failedWrite.abort();
+        await rejected;
+        context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.later = true;
+        });
+        const nextRequest = Promise.withResolvers<{ worker: ControlledWorker; request: EncodeIncrementalsRequest }>();
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'encodeIncrementals') {
+                nextRequest.resolve({ worker, request });
+            }
+        };
+        const retry = context.queue.runCrdtPersistenceOperation('incremental');
+        const nextEvent = await Promise.race([
+            persistence
+                .waitForTransaction('readwrite', 3)
+                .then((transaction) => ({ kind: 'retry' as const, transaction })),
+            nextRequest.promise.then(() => ({ kind: 'premature-encoding' as const })),
+        ]);
+        expect(nextEvent.kind).toBe('retry');
+        if (nextEvent.kind !== 'retry') {
+            throw new Error('Retained bytes must precede later encoding');
+        }
+        expect(nextEvent.transaction.writes.find((write) => write.key.startsWith('root:incremental:'))?.value).toEqual(
+            original
+        );
+        nextEvent.transaction.complete();
+        const next = await nextRequest.promise;
+        expect(next.request.documents[0]?.frontier).toEqual(held.request.documents[0]?.heads);
+        respondToEncodeIncrementals(next.worker, next.request);
+        const laterWrite = await persistence.waitForTransaction('readwrite', 4);
+        laterWrite.complete();
+        await retry;
     });
 
     it('reports a committed exact-head failure after conflict merge persistence', async () => {

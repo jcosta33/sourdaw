@@ -1,6 +1,8 @@
 import { change, getHeads, init, load, loadIncremental, merge, save } from '@automerge/automerge';
 
+import { type EncodedIncremental } from '../../models/NativeIncrementalEncoding';
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
+import { encodeNativeIncrementals } from '../encodeNativeIncrementals';
 
 import type { TransactionalPersistence } from '../../testing/transactionalPersistence';
 
@@ -37,10 +39,21 @@ export type InspectCheckpointRootMediaRequest = {
     rootBytes: Uint8Array;
 };
 
+export type EncodeIncrementalsRequest = {
+    id: number;
+    type: 'encodeIncrementals';
+    documents: { id: string; seed: Uint8Array; heads: string[]; frontier: string[] }[];
+};
+
 export type WorkerRequest =
-    LoadBundleRequest | MergeBundleRequest | CompactShadowRequest | InspectCheckpointRootMediaRequest;
+    | LoadBundleRequest
+    | MergeBundleRequest
+    | CompactShadowRequest
+    | InspectCheckpointRootMediaRequest
+    | EncodeIncrementalsRequest;
 
 export type WorkerResponse =
+    | { id: number; type: 'incrementalsEncoded'; documents: EncodedIncremental[] }
     | { id: number; type: 'loaded'; compacted: BundleEntry[]; rootId: string }
     | { id: number; type: 'merged'; compacted: BundleEntry[]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: BundleEntry[] }
@@ -74,6 +87,9 @@ function isHeadsEntries(value: unknown): value is HeadsEntry[] {
                 entry[1].every((hash) => typeof hash === 'string')
         )
     );
+}
+function isNativeHeads(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((head: unknown) => typeof head === 'string');
 }
 
 /**
@@ -130,6 +146,28 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
     if (value.type === 'inspectCheckpointRootMedia' && 'rootBytes' in value && value.rootBytes instanceof Uint8Array) {
         return { id: value.id, type: value.type, rootBytes: value.rootBytes };
     }
+    if (value.type === 'encodeIncrementals' && 'documents' in value && Array.isArray(value.documents)) {
+        const documents: EncodeIncrementalsRequest['documents'] = [];
+        const entries: unknown[] = value.documents;
+        for (const entry of entries) {
+            if (
+                typeof entry !== 'object' ||
+                entry === null ||
+                !('id' in entry) ||
+                typeof entry.id !== 'string' ||
+                !('seed' in entry) ||
+                !(entry.seed instanceof Uint8Array) ||
+                !('heads' in entry) ||
+                !('frontier' in entry) ||
+                !isNativeHeads(entry.heads) ||
+                !isNativeHeads(entry.frontier)
+            ) {
+                throw new TypeError('Expected captured incremental documents');
+            }
+            documents.push({ id: entry.id, seed: entry.seed, heads: entry.heads, frontier: entry.frontier });
+        }
+        return { id: value.id, type: value.type, documents };
+    }
     throw new TypeError('Expected a supported worker request');
 }
 
@@ -185,6 +223,10 @@ export class ControlledWorker {
     }
 
     emitMessage(response: WorkerResponse): void {
+        this.emitRawMessage(response);
+    }
+
+    emitRawMessage(response: unknown): void {
         this.dispatch('message', new MessageEvent('message', { data: response }));
     }
 
@@ -240,6 +282,14 @@ export function respondToLoad(worker: ControlledWorker, request: LoadBundleReque
         type: 'loaded',
         compacted: [...documents].map(([id, document]) => [id, save(document)]),
         rootId: 'root',
+    });
+}
+
+export function respondToEncodeIncrementals(worker: ControlledWorker, request: EncodeIncrementalsRequest): void {
+    worker.emitMessage({
+        id: request.id,
+        type: 'incrementalsEncoded',
+        documents: encodeNativeIncrementals(request.documents),
     });
 }
 

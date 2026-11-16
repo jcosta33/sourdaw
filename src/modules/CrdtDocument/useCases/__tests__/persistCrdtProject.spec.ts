@@ -512,7 +512,7 @@ describe('persistCrdtProject', () => {
         });
         const expectedDocument = automergeRepository.getDoc('root')!;
         const expectedHeads = getHeads(expectedDocument);
-        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'captureDocIncremental');
+        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'captureIncrementalsOffThread');
 
         const firstAttempt = persistCrdtProject();
         const firstTransaction = await persistence.waitForTransaction('readwrite', 2);

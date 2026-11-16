@@ -89,7 +89,7 @@ describe('AutomergeRepository mutation ownership', () => {
         expect(loadIncremental(init(), afterRollback.chunk)).toEqual(automergeRepository.getDoc('root'));
     });
 
-    it('refuses descendant heads known to the native backend but outside the current active history', () => {
+    it('refuses descendant heads discarded by a cloned rollback view and unrelated frontiers', () => {
         automergeRepository.createProject('p');
         const original = automergeRepository.getDoc<Record<string, unknown>>('root')!;
         const descendant = change(clone(original), (doc) => {
