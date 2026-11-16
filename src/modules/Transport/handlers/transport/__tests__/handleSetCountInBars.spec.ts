@@ -32,7 +32,7 @@ describe('handleSetCountInBars', () => {
     });
 
     it('has no inverse when the transport state is unavailable', () => {
-        vi.mocked(getTransportState).mockReturnValue(undefined);
+        vi.mocked(getTransportState).mockReturnValue(null);
 
         expect(
             handleSetCountInBars.describe({ type: 'setCountInBars', payload: { bars: 2 } }).inverseAction

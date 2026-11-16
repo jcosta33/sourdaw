@@ -32,7 +32,7 @@ describe('handleSetPreRollBars', () => {
     });
 
     it('has no inverse when the transport state is unavailable', () => {
-        vi.mocked(getTransportState).mockReturnValue(undefined);
+        vi.mocked(getTransportState).mockReturnValue(null);
 
         expect(
             handleSetPreRollBars.describe({ type: 'setPreRollBars', payload: { bars: 3 } }).inverseAction
