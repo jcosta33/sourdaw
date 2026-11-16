@@ -587,7 +587,8 @@ function emitSchedulerTick(worker: SchedulerWorkerHarness, generation = schedule
             generation,
             sequence: schedulerTickSequence,
             scheduledAtMs: receivedAtMs - 2,
-            sentAtMs: receivedAtMs - 1,
+            // Stamped at send time: the scheduler drops ticks sent before an overrunning tick settled.
+            sentAtMs: receivedAtMs,
         },
     });
 }

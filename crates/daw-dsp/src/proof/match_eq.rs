@@ -50,16 +50,16 @@ impl SpectrumProfile {
 
             // DFT (real-only, compute magnitude at each bin)
             // Using direct DFT for correctness (FFT crate not available in this no-std-like context)
-            for k in 0..num_bins {
+            for (k, avg) in avg_power.iter_mut().enumerate().take(num_bins) {
                 let mut sum_re = 0.0_f64;
                 let mut sum_im = 0.0_f64;
-                for n in 0..fft_size {
+                for (n, &re) in real.iter().enumerate().take(fft_size) {
                     let angle = -2.0 * PI * k as f64 * n as f64 / fft_size as f64;
-                    sum_re += real[n] * angle.cos();
-                    sum_im += real[n] * angle.sin();
+                    sum_re += re * angle.cos();
+                    sum_im += re * angle.sin();
                 }
                 let power = sum_re * sum_re + sum_im * sum_im;
-                avg_power[k] += power;
+                *avg += power;
             }
 
             frame_count += 1;
@@ -218,5 +218,11 @@ impl MatchEq {
     }
     pub fn get_correction_curve(&self) -> &[f32] {
         &self.correction_curve
+    }
+}
+
+impl Default for MatchEq {
+    fn default() -> Self {
+        Self::new()
     }
 }

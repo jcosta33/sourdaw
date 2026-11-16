@@ -1,5 +1,4 @@
-import { type AppAction } from '#/utils/handlerContract';
-
+import { semanticDiffClassificationByActionType } from '../models/SemanticDiffActionClassification';
 import { type CommandBatchRange, type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
@@ -33,122 +32,6 @@ type SemanticFact = {
 type DestructiveClassification =
     'deletion' | 'replacement' | 'consolidation' | 'overwrite' | 'source-mutation' | 'irreversible-external-effect';
 
-const CREATED_OPERATIONS = new Set<AppAction['type']>([
-    'addTrack',
-    'createBus',
-    'duplicateTrack',
-    'addClip',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'splitClip',
-    'quantizeTransients',
-    'stripSilence',
-    'extractGroove',
-    'createVcaGroup',
-    'addDevice',
-    'addSend',
-    'addSidechainRoute',
-    'addAdjustmentRegion',
-    'addAutomationLane',
-    'addAutomationPoint',
-    'addMarker',
-    'addSection',
-]);
-const MOVED_OPERATIONS = new Set<AppAction['type']>([
-    'moveAdjustmentRegion',
-    'moveChordEvent',
-    'moveClip',
-    'nudgeClip',
-    'quantizeTransients',
-    'reorderTrack',
-    'trimClipEnd',
-    'trimClipStart',
-]);
-const ROUTED_OPERATIONS = new Set<AppAction['type']>([
-    'createBus',
-    'addSend',
-    'setSend',
-    'removeSend',
-    'setTrackOutput',
-    'addSidechainRoute',
-    'removeSidechainRoute',
-]);
-const PROJECT_OPERATIONS = new Set<AppAction['type']>([
-    'setTempo',
-    'setTimeSignature',
-    'addTimeSignatureChange',
-    'removeTimeSignatureChange',
-    'setProductionBrief',
-    'insertTime',
-    'deleteTime',
-    'duplicateTimeRange',
-]);
-const REPLACEMENT_OPERATIONS = new Set<AppAction['type']>([
-    'bounceInPlace',
-    'flattenTrack',
-    'freezeTrack',
-    'loadPreset',
-    'loadTrackTemplate',
-    'quantizeTransients',
-    // The segments replace the clip and play the same source, which strip silence never rewrites.
-    'stripSilence',
-    'restoreProjectVersion',
-]);
-const CONSOLIDATION_OPERATIONS = new Set<AppAction['type']>([
-    'glueClips',
-    'consolidateAllTracks',
-    'consolidateSelection',
-    'createCompGroup',
-]);
-const OVERWRITE_OPERATIONS = new Set<AppAction['type']>([
-    'copyMidiArticulations',
-    'commitScratchPad',
-    'setDeviceState',
-    'setExternalPluginState',
-    'setProductionBrief',
-]);
-const SOURCE_MUTATION_OPERATIONS = new Set<AppAction['type']>([
-    'commitPitchEdit',
-    'normalizeClip',
-    'reverseClip',
-    'enableWarping',
-]);
-const EXTERNAL_EFFECT_OPERATIONS = new Set<AppAction['type']>([
-    'renderProjectSections',
-    'importStemSet',
-    'importAudioFile',
-    'importDawProject',
-    'importMidiFile',
-    'exportDawProject',
-    'exportMidi',
-    'exportProject',
-    'stemSeparate',
-    'audioToMidi',
-]);
-const STRUCTURAL_AUDIO_OPERATIONS = new Set<AppAction['type']>([
-    'setTempo',
-    'setTimeSignature',
-    'addTrack',
-    'removeTrack',
-    'createBus',
-    'addDevice',
-    'removeDevice',
-    ...ROUTED_OPERATIONS,
-]);
-const NO_AUDIO_OPERATIONS = new Set<AppAction['type']>([
-    'addMarker',
-    'removeMarker',
-    'setMarkerColor',
-    'addSection',
-    'removeSection',
-    'renameSection',
-    'renameTrack',
-    'renameClip',
-    'setTrackColor',
-    'setClipColor',
-    'selectTrack',
-]);
-
 function groupId(command: VersionedCommandEnvelope): string {
     return commandBatchGroupId(command);
 }
@@ -178,26 +61,27 @@ function commandObjectIds(command: VersionedCommandEnvelope): string[] {
 }
 
 function semanticFactKinds(command: VersionedCommandEnvelope): SemanticFactKind[] {
+    const classification = semanticDiffClassificationByActionType[command.operation];
     const kinds: SemanticFactKind[] = [];
-    if (CREATED_OPERATIONS.has(command.operation)) {
+    if (classification.created) {
         kinds.push('created');
     }
-    if (MOVED_OPERATIONS.has(command.operation)) {
+    if (classification.moved) {
         kinds.push('moved');
     }
     if (command.operation.startsWith('rename')) {
         kinds.push('renamed');
     }
-    if (ROUTED_OPERATIONS.has(command.operation)) {
+    if (classification.routed) {
         kinds.push('routed');
     }
     if (command.operation.toLowerCase().includes('automation')) {
         kinds.push('automated');
     }
-    if (EXTERNAL_EFFECT_OPERATIONS.has(command.operation)) {
+    if (classification.externalEffect) {
         kinds.push('asset');
     }
-    if (PROJECT_OPERATIONS.has(command.operation)) {
+    if (classification.project) {
         kinds.push('project');
     }
     if (kinds.length === 0) {
@@ -207,6 +91,7 @@ function semanticFactKinds(command: VersionedCommandEnvelope): SemanticFactKind[
 }
 
 function destructiveClassification(command: VersionedCommandEnvelope): DestructiveClassification | null {
+    const classification = semanticDiffClassificationByActionType[command.operation];
     if (
         command.operation.startsWith('remove') ||
         command.operation.startsWith('delete') ||
@@ -214,19 +99,19 @@ function destructiveClassification(command: VersionedCommandEnvelope): Destructi
     ) {
         return 'deletion';
     }
-    if (REPLACEMENT_OPERATIONS.has(command.operation)) {
+    if (classification.replacement) {
         return 'replacement';
     }
-    if (CONSOLIDATION_OPERATIONS.has(command.operation)) {
+    if (classification.consolidation) {
         return 'consolidation';
     }
-    if (command.operation.startsWith('clear') || OVERWRITE_OPERATIONS.has(command.operation)) {
+    if (command.operation.startsWith('clear') || classification.overwrite) {
         return 'overwrite';
     }
-    if (SOURCE_MUTATION_OPERATIONS.has(command.operation)) {
+    if (classification.sourceMutation) {
         return 'source-mutation';
     }
-    if (EXTERNAL_EFFECT_OPERATIONS.has(command.operation)) {
+    if (classification.externalEffect) {
         return 'irreversible-external-effect';
     }
     return null;
@@ -243,13 +128,14 @@ function commandTimeRange(command: VersionedCommandEnvelope): CommandBatchRange 
 }
 
 function impactForCommand(command: VersionedCommandEnvelope): AudioImpactLevel {
-    if (EXTERNAL_EFFECT_OPERATIONS.has(command.operation)) {
+    const classification = semanticDiffClassificationByActionType[command.operation];
+    if (classification.externalEffect) {
         return 'external';
     }
-    if (STRUCTURAL_AUDIO_OPERATIONS.has(command.operation)) {
+    if (classification.structuralAudio) {
         return 'structural';
     }
-    if (NO_AUDIO_OPERATIONS.has(command.operation)) {
+    if (classification.noAudio) {
         return 'none';
     }
     return 'audible';

@@ -37,7 +37,6 @@ impl Default for PsolaConfig {
 /// The rate is a *curve* parallel to the input, not a config field: the RT
 /// engine fills it per frame (the ratio tracks the retune glide), and the
 /// offline commit renders one rate per position from the glided shift.
-
 /// Offline PSOLA processing over a pre-computed array of pitch marks and target f0 curve.
 /// Writes the result into the provided `out` slice.
 ///
@@ -149,12 +148,12 @@ pub(crate) fn psola_process_span(
         // Nearest analysis mark to this output position.
         let mut nearest_idx = mark_hint;
         let mut nearest_dist = usize::MAX;
-        for idx in mark_hint..pitch_marks.len() {
-            let dist = pitch_marks[idx].abs_diff(src_center);
+        for (idx, &mark) in pitch_marks.iter().enumerate().skip(mark_hint) {
+            let dist = mark.abs_diff(src_center);
             if dist < nearest_dist {
                 nearest_dist = dist;
                 nearest_idx = idx;
-            } else if pitch_marks[idx] > src_center {
+            } else if mark > src_center {
                 break; // marks are sorted; distance only grows from here
             }
         }
@@ -243,7 +242,7 @@ pub(crate) fn psola_process_span(
             continue;
         }
 
-        for src_idx in start..end {
+        for (src_idx, &src_sample) in input.iter().enumerate().take(end).skip(start) {
             let win_idx = (src_idx as isize - pm as isize + half_grain) as usize;
             let win = window[win_idx.min(full_len - 1)];
             // src/dst in lockstep: dst − src == center − pm, also for
@@ -252,7 +251,7 @@ pub(crate) fn psola_process_span(
             let dst_idx = center + src_idx as isize - pm as isize + out_offset;
 
             if dst_idx >= 0 && (dst_idx as usize) < out.len() {
-                out[dst_idx as usize] += input[src_idx] * win;
+                out[dst_idx as usize] += src_sample * win;
             }
         }
 

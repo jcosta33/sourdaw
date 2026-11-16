@@ -1,12 +1,13 @@
 import { getObjectId } from '@automerge/automerge';
 
 import { getCrdtDoc, hasForeignPendingProjectWrites } from '#/modules/CrdtDocument/useCases';
-import { type HandlerCommitValidation, type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
+import { type TempoSourceClock } from '#/modules/Transport/stores';
+import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import { type Clip } from '../../models/Track';
 import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';

@@ -22,17 +22,23 @@ const GENERATED_ID_PATTERNS: Readonly<Record<BatchLocalActionIdentity['actionTyp
     createBus: GENERATED_BUS_ID_PATTERN,
 };
 
+type IdentityType = BatchLocalActionIdentity['actionType'];
+type IdentityOf<Type extends IdentityType> = Extract<BatchLocalActionIdentity, { actionType: Type }>;
+
+const identityIdByActionType: { readonly [Type in IdentityType]: (identity: IdentityOf<Type>) => string } = {
+    createBus: (identity) => identity.busId,
+    addDevice: (identity) => identity.deviceId,
+    addTrack: (identity) => identity.trackId,
+    addClip: (identity) => identity.clipId,
+    addAutomationLane: (identity) => identity.laneId,
+};
+
+function lookupIdentityId<Type extends IdentityType>(identity: IdentityOf<Type>): string {
+    return identityIdByActionType[identity.actionType](identity);
+}
+
 function getIdentityId(identity: BatchLocalActionIdentity): string {
-    if (identity.actionType === 'createBus') {
-        return identity.busId;
-    }
-    if (identity.actionType === 'addDevice') {
-        return identity.deviceId;
-    }
-    if (identity.actionType === 'addAutomationLane') {
-        return identity.laneId;
-    }
-    return identity.actionType === 'addTrack' ? identity.trackId : identity.clipId;
+    return lookupIdentityId(identity);
 }
 
 function hasValidInitialGain(identity: BatchLocalActionIdentity): boolean {
@@ -105,33 +111,50 @@ function applyCreateBusIdentity(
     };
 }
 
+type ApplyIdentity = {
+    readonly [Type in IdentityType]: (
+        action: RuntimeAction,
+        identity: IdentityOf<Type>
+    ) => MaterializableRuntimeAction | null;
+};
+
+const applyIdentityByActionType: ApplyIdentity = {
+    createBus: (action, identity) => (action.type === 'createBus' ? applyCreateBusIdentity(action, identity) : null),
+    addDevice: (action, identity) =>
+        action.type === 'addDevice'
+            ? { type: 'addDevice', payload: { ...action.payload, deviceId: identity.deviceId } }
+            : null,
+    addTrack: (action, identity) =>
+        action.type === 'addTrack'
+            ? {
+                  type: 'addTrack',
+                  payload: {
+                      ...action.payload,
+                      id: identity.trackId,
+                      ...(identity.initialDeviceId === undefined ? {} : { initialDeviceId: identity.initialDeviceId }),
+                  },
+              }
+            : null,
+    addClip: (action, identity) =>
+        action.type === 'addClip' ? { type: 'addClip', payload: { ...action.payload, id: identity.clipId } } : null,
+    addAutomationLane: (action, identity) =>
+        action.type === 'addAutomationLane'
+            ? { type: 'addAutomationLane', payload: { ...action.payload, laneId: identity.laneId } }
+            : null,
+};
+
+function lookupApplyIdentity<Type extends IdentityType>(
+    action: RuntimeAction,
+    identity: IdentityOf<Type>
+): MaterializableRuntimeAction | null {
+    return applyIdentityByActionType[identity.actionType](action, identity);
+}
+
 function applyBatchLocalActionIdentity(
     action: RuntimeAction,
     identity: BatchLocalActionIdentity
 ): MaterializableRuntimeAction | null {
-    if (action.type === 'createBus' && identity.actionType === 'createBus') {
-        return applyCreateBusIdentity(action, identity);
-    }
-    if (action.type === 'addDevice' && identity.actionType === 'addDevice') {
-        return { type: 'addDevice', payload: { ...action.payload, deviceId: identity.deviceId } };
-    }
-    if (action.type === 'addTrack' && identity.actionType === 'addTrack') {
-        return {
-            type: 'addTrack',
-            payload: {
-                ...action.payload,
-                id: identity.trackId,
-                ...(identity.initialDeviceId === undefined ? {} : { initialDeviceId: identity.initialDeviceId }),
-            },
-        };
-    }
-    if (action.type === 'addClip' && identity.actionType === 'addClip') {
-        return { type: 'addClip', payload: { ...action.payload, id: identity.clipId } };
-    }
-    if (action.type === 'addAutomationLane' && identity.actionType === 'addAutomationLane') {
-        return { type: 'addAutomationLane', payload: { ...action.payload, laneId: identity.laneId } };
-    }
-    return null;
+    return lookupApplyIdentity(action, identity);
 }
 
 function isCreationActionType(actionType: string): actionType is BatchLocalActionIdentity['actionType'] {

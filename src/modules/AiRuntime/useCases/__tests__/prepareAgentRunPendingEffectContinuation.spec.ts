@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { type RenderProjectSectionJobSnapshot } from '#/modules/AudioRendering/events';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -8,7 +9,6 @@ import {
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { readAgentRunState } from '../../stores/agentRunStore';

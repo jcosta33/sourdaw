@@ -20,9 +20,9 @@ beforeEach(() => {
 });
 
 describe('handleRemoveSection — execute', () => {
-    it('calls removeSection with sectionId', () => {
+    it('calls removeSection with sectionId', async () => {
         mockedRemove.mockReturnValue(true);
-        handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 's1' } });
+        await handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 's1' } });
         expect(mockedRemove).toHaveBeenCalledWith('s1');
     });
 
@@ -68,5 +68,30 @@ describe('handleRemoveSection — describe', () => {
         expect(payload.startBeat).toBe(8);
         expect(payload.endBeat).toBe(24);
         expect(payload.sectionId).toBe('s1');
+    });
+
+    it('puts the removed section live list slot in the inverse payload', () => {
+        mockedGetState.mockReturnValue({
+            markers: [],
+            sections: [
+                { id: 's0', name: 'Intro', startBeat: 0, endBeat: 8, color: '#111' },
+                { id: 's1', name: 'Chorus', startBeat: 8, endBeat: 24, color: '#0f0' },
+                { id: 's2', name: 'Outro', startBeat: 24, endBeat: 32, color: '#222' },
+            ],
+        });
+        const result = handleRemoveSection.describe({ type: 'removeSection', payload: { sectionId: 's1' } });
+        expect(result.inverseAction).toEqual({
+            type: 'addSection',
+            payload: {
+                startBeat: 8,
+                endBeat: 24,
+                name: 'Chorus',
+                sectionId: 's1',
+                color: '#0f0',
+                index: 1,
+                beforeId: 's2',
+                afterId: 's0',
+            },
+        });
     });
 });

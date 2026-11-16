@@ -96,7 +96,14 @@ fn render() -> Vec<f32> {
         let ptr = instance.process(&input, &input, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for offset in 0..BLOCK {
-            let sample = unsafe { *ptr.add(offset) };
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `offset < BLOCK`, which is inside that
+            // capacity.
+            let slot = unsafe { ptr.add(offset) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let sample = unsafe { *slot };
             assert!(
                 sample.is_finite(),
                 "non-finite output at frame {}",

@@ -1,5 +1,4 @@
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
-
+import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';
 import { copyMidiArticulationsToNotes } from '../../transformers/copyMidiArticulationsToNotes';
 

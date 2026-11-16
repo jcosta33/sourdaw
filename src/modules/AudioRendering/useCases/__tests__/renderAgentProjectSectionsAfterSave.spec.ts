@@ -21,8 +21,8 @@ import {
     projectStore,
 } from '#/modules/Project/stores';
 import { buildProjectData } from '#/modules/Project/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { type RenderProjectSectionJobSnapshot } from '../../events/audioRenderingAppActions';
 import { clearAgentSectionRenderArtifacts } from '../clearAgentSectionRenderArtifacts';
 import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifacts';
 import { renderAgentProjectSections } from '../renderAgentProjectSections';

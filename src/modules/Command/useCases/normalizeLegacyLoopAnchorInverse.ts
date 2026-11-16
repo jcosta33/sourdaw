@@ -1,4 +1,13 @@
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+
+import { type ActionOf, legacyLoopAnchorInverseByActionType } from './legacyLoopAnchorInverseByActionType';
+
+function lookup<Type extends AppActionType>(action: ActionOf<Type>): AppAction {
+    if (!Object.hasOwn(legacyLoopAnchorInverseByActionType, action.type)) {
+        return action;
+    }
+    return legacyLoopAnchorInverseByActionType[action.type](action);
+}
 
 /**
  * The undo seam's normalization for recorded inverses that predate the loop
@@ -33,24 +42,5 @@ import { type AppAction } from '#/utils/handlerContract';
  * and an audio slip's replay path reads it not at all.
  */
 export function normalizeLegacyLoopAnchorInverse(action: AppAction): AppAction {
-    if (action.type === 'trimClipStart' && !Object.hasOwn(action.payload, 'loopOriginBeat')) {
-        return { ...action, payload: { ...action.payload, loopOriginBeat: null } };
-    }
-    if (action.type === 'restoreClipLoop' && !Object.hasOwn(action.payload.replacement, 'loopOriginBeat')) {
-        return {
-            ...action,
-            payload: {
-                ...action.payload,
-                replacement: { ...action.payload.replacement, loopOriginBeat: null },
-            },
-        };
-    }
-    if (
-        action.type === 'slipClipContent' &&
-        action.payload.clipType === 'midi' &&
-        !Object.hasOwn(action.payload, 'rowLiftBeats')
-    ) {
-        return { ...action, payload: { ...action.payload, rowLiftBeats: 0 } };
-    }
-    return action;
+    return lookup(action);
 }

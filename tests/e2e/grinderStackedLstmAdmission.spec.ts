@@ -107,7 +107,9 @@ test('rebuilt WASM refuses stacked wide LSTM while the previous capture keeps re
                 reference.load_neural_model(single_layer);
                 supported.load_neural_model(stacked_mono);
                 for (let block = 0; block < 32; block++) {
-                    for (const engine of [actual, reference, dry, supported]) process(engine, block * 128);
+                    for (const engine of [actual, reference, dry, supported]) {
+                        process(engine, block * 128);
+                    }
                 }
                 const replacement_error = refusal(actual);
                 let retention_delta = 0;
@@ -154,7 +156,9 @@ test('rebuilt WASM refuses stacked wide LSTM while the previous capture keeps re
                     frames: pcm.length,
                 };
             } finally {
-                for (const engine of instances) engine.free();
+                for (const engine of instances) {
+                    engine.free();
+                }
             }
         },
         { single_layer, unsupported: lstm_capture(2, 2), stacked_mono: lstm_capture(2, 1) }

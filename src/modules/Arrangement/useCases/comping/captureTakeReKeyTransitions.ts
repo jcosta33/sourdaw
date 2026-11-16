@@ -1,8 +1,8 @@
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import { getMidiStoreState, snapshotMidiClipData } from '#/modules/MIDI/useCases';
 import { captureAudioSourceSnapshot, type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';

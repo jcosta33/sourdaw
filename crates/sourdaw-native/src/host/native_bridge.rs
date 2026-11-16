@@ -461,11 +461,41 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     dropped_note_events: AtomicU64,
     /// How much of `dropped_note_events` the control path has already logged.
     reported_dropped_note_events: AtomicU64,
+    /// Blocks a slot handed this plugin that it was not served — the lifecycle
+    /// closed, the plugin inactive, or the control path holding the seam — and
+    /// so passed through dry. Written by the audio thread, read by the control
+    /// path. Live playback only counts them; an offline render refuses a print
+    /// that holds one (`commands::offline_plugins`).
+    unserved_blocks: AtomicU64,
+    /// Records the thread the wrapper is torn down on. Declared last so it
+    /// drops after `wrapper`, on the same thread.
+    #[cfg(test)]
+    teardown_witness: OnceLock<TeardownWitness>,
+}
+
+/// Pushes the thread it drops on into a test's record.
+#[cfg(test)]
+pub(crate) struct TeardownWitness(Arc<Mutex<Vec<thread::ThreadId>>>);
+
+#[cfg(test)]
+impl Drop for TeardownWitness {
+    fn drop(&mut self) {
+        if let Ok(mut threads) = self.0.lock() {
+            threads.push(thread::current().id());
+        }
+    }
 }
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
 // path never waits; if non-RT control owns the wrapper, processing bypasses it.
 unsafe impl<Runtime: HostedPluginRuntime> Send for SharedHostedPlugin<Runtime> {}
+// SAFETY: every field but `wrapper` is `Sync` on its own (atomics, `Mutex`,
+// `Arc<ProcessingGate>`, `String`, `bool`). `wrapper` is reached only as
+// `&mut` while holding the `access_state` claim, taken by an `Acquire`
+// compare-exchange from idle and released by `PluginAccessGuard`'s `Release`
+// store, so at most one thread touches it at a time and each holder sees the
+// previous holder's writes; `Runtime: Send` (via `AudioPlugin`) lets that
+// holder be any thread.
 unsafe impl<Runtime: HostedPluginRuntime> Sync for SharedHostedPlugin<Runtime> {}
 
 impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
@@ -487,7 +517,41 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             editor_parameter_writes: PendingParameterQueue::new(),
             dropped_note_events: AtomicU64::new(0),
             reported_dropped_note_events: AtomicU64::new(0),
+            unserved_blocks: AtomicU64::new(0),
+            #[cfg(test)]
+            teardown_witness: OnceLock::new(),
         }
+    }
+
+    /// Record into `threads` the thread this plugin's wrapper is torn down on.
+    #[cfg(test)]
+    pub(crate) fn witness_teardown(&self, threads: Arc<Mutex<Vec<thread::ThreadId>>>) {
+        let _ = self.teardown_witness.set(TeardownWitness(threads));
+    }
+
+    /// How many blocks a slot handed this plugin without its being served.
+    pub fn unserved_blocks(&self) -> u64 {
+        self.unserved_blocks.load(Ordering::Acquire)
+    }
+
+    /// One atomic add: the audio thread may not do more.
+    fn record_unserved_block(&self) {
+        self.unserved_blocks.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Leave the processing state on the thread that processed this plugin,
+    /// after its last block.
+    ///
+    /// Both formats bind leaving the processing state to the audio thread
+    /// (CLAP `stop_processing`, VST3 `setProcessing(false)`). A live instance
+    /// gets more blocks after `begin_unload` asks, and leaves there; an offline
+    /// render's instance gets no block after its print, so the render thread —
+    /// its audio thread — leaves it here before the instance is torn down.
+    /// Without it the wrapper's drop performs the stop off the audio thread
+    /// and counts the deviation.
+    pub fn leave_processing_after_last_block(&self) {
+        self.processing.request_stop();
+        self.leave_processing_state_on_audio_thread();
     }
 
     /// How many note events this plugin has lost to a full retention queue.
@@ -897,6 +961,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         // park the worker for the whole plugin call.
         without_stalling_async_worker(|| {
             if let Some(_guard) = self.try_claim_control() {
+                // SAFETY: `_guard` holds the control side of the access seam
+                // until this return, so neither the audio thread nor another
+                // control visit can be inside the wrapper.
                 return operation(unsafe { &mut *self.wrapper.get() });
             }
 
@@ -941,6 +1008,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
         loop {
             if let Some(_guard) = self.try_claim_control() {
+                // SAFETY: `_guard` holds the control side of the access seam
+                // until this return, so neither the audio thread nor another
+                // control visit can be inside the wrapper.
                 return operation(unsafe { &mut *self.wrapper.get() });
             }
 
@@ -989,6 +1059,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             access_state: &self.access_state,
         };
         Some(operation(
+            // SAFETY: the compare-exchange above moved the seam from idle to
+            // processing and `_guard` releases it only after `operation`
+            // returns, so no control visit can be inside the wrapper.
             unsafe { &mut *self.wrapper.get() },
             &self.pending_parameters,
         ))
@@ -1020,6 +1093,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         let _guard = PluginAccessGuard {
             access_state: &self.access_state,
         };
+        // SAFETY: the compare-exchange above moved the seam from idle to
+        // processing and `_guard` releases it only at the end of this scope,
+        // so no control visit can be inside the wrapper.
         unsafe { &mut *self.wrapper.get() }.sync_processing_state();
     }
 }
@@ -1147,7 +1223,9 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
         });
 
         if processed.is_none() {
-            // Non-RT state/editor control owns the plugin. Leave the block as-is.
+            // Non-RT state/editor control owns the plugin, or it is unloading
+            // or inactive: the block passes through as-is, and is counted.
+            self.plugin.record_unserved_block();
         }
     }
 
@@ -1241,6 +1319,7 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 // behind it: the staged ones fit, and any the queue cannot
                 // hold are counted as dropped.
                 self.retain_events(midi_events);
+                self.plugin.record_unserved_block();
             }
         }
     }
@@ -1375,10 +1454,10 @@ mod tests {
         }
     }
 
-    fn editor_recording_plugin() -> (
-        SharedHostedPlugin<EditorRecordingPlugin>,
-        Arc<Mutex<Vec<(u32, f64)>>>,
-    ) {
+    /// The `(parameter id, value)` writes a recording plugin has received.
+    type ParameterWrites = Arc<Mutex<Vec<(u32, f64)>>>;
+
+    fn editor_recording_plugin() -> (SharedHostedPlugin<EditorRecordingPlugin>, ParameterWrites) {
         let editor_writes = Arc::new(Mutex::new(Vec::new()));
         let shared = SharedHostedPlugin::new(EditorRecordingPlugin {
             name: "fixture".to_string(),
@@ -1438,13 +1517,16 @@ mod tests {
         );
     }
 
+    /// The parameter updates each process call was handed, one entry per call.
+    type ProcessedBlocks = Arc<Mutex<Vec<Vec<(u32, f64)>>>>;
+
     /// A backend that records the parameter updates every process call is
     /// handed — the only place a queued write becomes observable to the plugin.
     /// One entry per call, so a write that arrives on the wrong block or not at
     /// all is visible rather than merely absent from a total.
     struct ProcessRecordingPlugin {
         processing: Arc<ProcessingGate>,
-        processed: Arc<Mutex<Vec<Vec<(u32, f64)>>>>,
+        processed: ProcessedBlocks,
     }
 
     impl ProcessRecordingPlugin {
@@ -1543,7 +1625,7 @@ mod tests {
     fn process_recording_slot() -> (
         HostedPluginSlot<ProcessRecordingPlugin>,
         Arc<SharedHostedPlugin<ProcessRecordingPlugin>>,
-        Arc<Mutex<Vec<Vec<(u32, f64)>>>>,
+        ProcessedBlocks,
     ) {
         let processed = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::new(SharedHostedPlugin::new(ProcessRecordingPlugin {
@@ -2845,6 +2927,8 @@ mod tests {
     /// here rather than a note that still arrives.
     type RecordedNote = (u8, u8, i16, bool, u32);
 
+    type RecordedNotes = Arc<Mutex<Vec<RecordedNote>>>;
+
     impl AudioPlugin for MidiRecordingPlugin {
         fn process(
             &mut self,
@@ -3210,7 +3294,7 @@ mod tests {
     fn seam_recording_slot() -> (
         HostedPluginSlot<MidiRecordingPlugin>,
         Arc<SharedHostedPlugin<MidiRecordingPlugin>>,
-        Arc<Mutex<Vec<RecordedNote>>>,
+        RecordedNotes,
     ) {
         let notes = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::new(SharedHostedPlugin::new(MidiRecordingPlugin {
@@ -3399,6 +3483,53 @@ mod tests {
             "the retained note-off is delivered on the first block after release"
         );
     }
+
+    /// Both process entries count a block they could not hand the plugin, and
+    /// neither counts one they did. Mutation: drop either
+    /// `record_unserved_block` call — its count stays behind.
+    #[test]
+    fn a_block_the_slot_could_not_serve_is_counted_and_a_served_one_is_not() {
+        let (mut slot, shared, _notes) = seam_recording_slot();
+        render_block_with_events(&mut slot, &[]);
+        let mut left = [0.25f32; 64];
+        let mut right = [0.25f32; 64];
+        slot.process_audio(&mut left, &mut right, 64);
+        assert_eq!(shared.unserved_blocks(), 0, "both blocks were served");
+
+        let guard = shared
+            .try_claim_control()
+            .expect("the control path takes a free seam");
+        render_block_with_events(&mut slot, &[]);
+        // The served block above left the plugin's output in both buffers.
+        left.fill(0.25);
+        right.fill(0.25);
+        slot.process_audio(&mut left, &mut right, 64);
+        drop(guard);
+
+        assert_eq!(shared.unserved_blocks(), 2);
+        assert!(
+            left.iter().chain(&right).all(|sample| *sample == 0.25),
+            "an unserved block passes through untouched"
+        );
+    }
+
+    /// The count is an atomic add on the audio thread, never an allocation.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn counting_an_unserved_block_never_allocates() {
+        let (mut slot, shared, _notes) = seam_recording_slot();
+        let guard = shared
+            .try_claim_control()
+            .expect("the control path takes a free seam");
+        let mut left = [0.5f32; 64];
+        let mut right = [0.5f32; 64];
+        assert_no_alloc::assert_no_alloc(|| {
+            slot.process_audio(&mut left, &mut right, 64);
+            slot.process_with_events(&mut left, &mut right, 64, &[], &TransportState::default());
+        });
+        drop(guard);
+        assert_eq!(shared.unserved_blocks(), 2);
+    }
 }
 
 /// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
@@ -3585,16 +3716,31 @@ pub enum NativeCrumbsCommand {
     StopTake { take_id: u64 },
 }
 
+/// The Crumbs command ring had no free slot, so the command was not queued.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CrumbsCommandQueueFull;
+
+impl std::fmt::Display for CrumbsCommandQueueFull {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Command queue full")
+    }
+}
+
+impl std::error::Error for CrumbsCommandQueueFull {}
+
 /// Keeps ordinary writes unchanged while the same FIFO carries take identity.
 pub struct CrumbsCommandSender(pub rtrb::Producer<NativeCrumbsCommand>);
 impl CrumbsCommandSender {
-    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), ()> {
+    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), CrumbsCommandQueueFull> {
         self.0
             .push(NativeCrumbsCommand::Engine(command))
-            .map_err(|_| ())
+            .map_err(|_| CrumbsCommandQueueFull)
     }
-    pub fn push_native(&mut self, command: NativeCrumbsCommand) -> Result<(), ()> {
-        self.0.push(command).map_err(|_| ())
+    pub fn push_native(
+        &mut self,
+        command: NativeCrumbsCommand,
+    ) -> Result<(), CrumbsCommandQueueFull> {
+        self.0.push(command).map_err(|_| CrumbsCommandQueueFull)
     }
     pub fn slots(&self) -> usize {
         self.0.slots()

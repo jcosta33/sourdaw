@@ -5,7 +5,12 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { addPitchBend, removePitchBend, movePitchBend, restorePitchBend } from '#/modules/MIDI/useCases';
 
 import { type MidiPitchBend } from '../../../../models/MidiNoteViewTypes';
+import { readClipPlayheadBeat } from '../../../helpers/clipPlayheadBeat';
 import { PitchBendLane } from '../PitchBendLane';
+
+vi.mock('../../../helpers/clipPlayheadBeat', () => ({
+    readClipPlayheadBeat: vi.fn(() => undefined),
+}));
 
 vi.mock('#/components/daw/DawBlockedState', () => ({
     DawBlockedState: ({ title, description }: { title: string; description: string }) => (
@@ -55,6 +60,8 @@ vi.mock('#/modules/Command/useCases', () => ({
         throw new Error('Unexpected replay-authority reset in this lane fixture');
     },
     getExecutableAppActionEffect: vi.fn(() => null),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
@@ -111,7 +118,7 @@ describe('PitchBendLane', () => {
 
     it('should render without crashing with clipId', () => {
         render(<PitchBendLane {...defaultProps} />);
-        expect(screen.getByRole('group')).toBeInTheDocument();
+        expect(screen.getByRole('toolbar')).toBeInTheDocument();
     });
 
     it('should render blocked state when clipId is null', () => {
@@ -128,6 +135,61 @@ describe('PitchBendLane', () => {
     it('should render add hint when no points exist', () => {
         render(<PitchBendLane {...defaultProps} />);
         expect(screen.getByText(/Click to add pitch bend points/)).toBeInTheDocument();
+    });
+
+    describe('adding a point from the keyboard', () => {
+        it('is a tab stop that names Enter as its shortcut', () => {
+            render(<PitchBendLane {...defaultProps} />);
+            const lane = screen.getByRole('toolbar', { name: 'Pitch bend automation lane' });
+
+            expect(lane).toHaveAttribute('tabindex', '0');
+            expect(lane).toHaveAttribute('aria-keyshortcuts', 'Enter');
+        });
+
+        it('adds an undoable point on the line at the playhead on Enter and claims the key', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(3);
+            laneMocks.midiState.pitchBendByClipId['clip-1'] = [
+                { id: 'pb-late', value: -4000, beat: 4, channel: 0 },
+                { id: 'pb-early', value: 1001, beat: 0, channel: 0 },
+            ];
+            render(<PitchBendLane {...defaultProps} />);
+
+            expect(fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' })).toBe(false);
+
+            // 1001 + (-4000 - 1001) * 3 / 4 = -2749.75, rounded to the wire's integer delta.
+            expect(addPitchBend).toHaveBeenCalledWith('clip-1', -2750, 3);
+            expect(pushUndoEntry).toHaveBeenCalledWith(
+                'Add pitch bend point',
+                expect.any(Function),
+                expect.any(Function)
+            );
+        });
+
+        it('starts an empty lane at no bend', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(2);
+            render(<PitchBendLane {...defaultProps} />);
+
+            fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' });
+
+            expect(addPitchBend).toHaveBeenCalledWith('clip-1', 0, 2);
+        });
+
+        it('adds nothing while the playhead is outside the clip, yet still claims Enter', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(undefined);
+            render(<PitchBendLane {...defaultProps} />);
+
+            expect(fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' })).toBe(false);
+            expect(addPitchBend).not.toHaveBeenCalled();
+        });
+
+        it('leaves Enter from a point alone', () => {
+            vi.mocked(readClipPlayheadBeat).mockReturnValue(1);
+            laneMocks.midiState.pitchBendByClipId['clip-1'] = [{ id: 'pb-a', value: 0, beat: 0, channel: 0 }];
+            const { container } = render(<PitchBendLane {...defaultProps} />);
+
+            expect(fireEvent.keyDown(container.querySelector('[data-pb-point="true"]')!, { key: 'Enter' })).toBe(true);
+            expect(addPitchBend).not.toHaveBeenCalled();
+        });
     });
 
     describe('point rendering', () => {
@@ -186,7 +248,7 @@ describe('PitchBendLane', () => {
             const beat = beatFromX(48, defaultProps.beatWidth);
             const value = valueFromY(76, 80);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 76 });
 
             expect(addPitchBend).toHaveBeenCalledWith('clip-1', value, beat);
             expect(pushUndoEntry).toHaveBeenCalledWith(
@@ -203,7 +265,7 @@ describe('PitchBendLane', () => {
         ])('should write the signed wire delta $expected for a click at the $where', ({ clientY, expected }) => {
             render(<PitchBendLane {...defaultProps} />);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY });
 
             expect(addPitchBend).toHaveBeenCalledWith('clip-1', expected, 1);
         });
@@ -213,7 +275,7 @@ describe('PitchBendLane', () => {
             vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, -0.001, 800, 80));
             render(<PitchBendLane {...defaultProps} />);
 
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 40 });
 
             const stored = vi.mocked(addPitchBend).mock.calls[0]?.[1];
             expect(Object.is(stored, 0)).toBe(true);
@@ -221,7 +283,7 @@ describe('PitchBendLane', () => {
 
         it('should wire undo/redo for an added point to remove/re-add it', () => {
             render(<PitchBendLane {...defaultProps} />);
-            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+            fireEvent.click(screen.getByRole('toolbar'), { clientX: 48, clientY: 76 });
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
@@ -374,7 +436,7 @@ describe('PitchBendLane', () => {
 
                 // Without touch-action: none the browser claims the stroke for panning and
                 // cancels it mid-gesture, so a touch drag never completes.
-                expect(screen.getByRole('group').style.touchAction).toBe('none');
+                expect(screen.getByRole('toolbar').style.touchAction).toBe('none');
                 expect(getPoint(container).style.touchAction).toBe('none');
             });
 
@@ -472,7 +534,7 @@ describe('PitchBendLane', () => {
                 seedPoint();
                 const { container } = render(<PitchBendLane {...defaultProps} />);
                 const point = getPoint(container);
-                const lane = screen.getByRole('group');
+                const lane = screen.getByRole('toolbar');
 
                 fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
                 fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
@@ -600,7 +662,7 @@ describe('PitchBendLane', () => {
                 expect(view.container.querySelector('[data-pb-point="true"]')).toBeNull();
 
                 // The release now lands on the lane itself; it must still commit the gesture.
-                fireEvent.pointerUp(screen.getByRole('group'), { pointerId: 2, clientX: 88, clientY: 20 });
+                fireEvent.pointerUp(screen.getByRole('toolbar'), { pointerId: 2, clientX: 88, clientY: 20 });
 
                 expect(pushUndoEntry).toHaveBeenCalledWith(
                     'Move pitch bend point',
@@ -656,7 +718,7 @@ describe('PitchBendLane', () => {
                 seedPoint();
                 render(<PitchBendLane {...defaultProps} />);
 
-                fireEvent.pointerMove(screen.getByRole('group'), { pointerId: 1, clientX: 88, clientY: 20 });
+                fireEvent.pointerMove(screen.getByRole('toolbar'), { pointerId: 1, clientX: 88, clientY: 20 });
 
                 expect(movePitchBend).not.toHaveBeenCalled();
             });

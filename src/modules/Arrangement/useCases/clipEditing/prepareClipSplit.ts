@@ -1,12 +1,12 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
 import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { continuesLoopingMidiPhase, loopingMidiLengthEntry } from '#/utils/clipLoopOrigin';
+
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import {
     type ClipAutomationLaneSnapshot,
     type ClipSplitActionSnapshot,
-    type TakeReKeyLaneTransitionSnapshot,
-} from '#/utils/handlerContract';
-
+} from '../../events/arrangementClipStateSnapshots';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { getNextClipId } from '../../repositories/clipIdCounter';

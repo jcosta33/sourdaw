@@ -6,7 +6,11 @@
 //! equivalent gap for FDN-8, FDN-16, Spring, and Reverse at both product sample
 //! rates.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use proof_chamber::ProofChamberInstance;
 
@@ -89,18 +93,18 @@ struct Character {
 const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
     [
         Character {
-            peak: 0.355_920_911,
-            rms: 0.036_786_821,
+            peak: 0.355_920_9,
+            rms: 0.036_786_82,
             active_span_ms: 3_984.467,
-            late_energy_ratio: 0.051_378_369,
-            high_frequency_ratio: 0.187_111_273,
+            late_energy_ratio: 0.051_378_37,
+            high_frequency_ratio: 0.187_111_27,
         },
         Character {
-            peak: 0.343_176_007,
+            peak: 0.343_176,
             rms: 0.042_337_045,
             active_span_ms: 3_984.467,
             late_energy_ratio: 0.053_829_677,
-            high_frequency_ratio: 0.128_171_325,
+            high_frequency_ratio: 0.128_171_32,
         },
         Character {
             peak: 0.481_467_52,
@@ -114,13 +118,13 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             // one-sample change in the modulated read moves this ratio by
             // 2.8%. The other four figures are left as measured before the
             // change because they stayed inside their tolerances.
-            high_frequency_ratio: 0.165_666_193,
+            high_frequency_ratio: 0.165_666_2,
         },
         Character {
             // Updated for the complementary sin² overlap (#3792): the
             // boundary fade that attenuated peaks is gone, so the render
             // carries ~4.5% more peak level at the same settings.
-            peak: 0.319_111_705,
+            peak: 0.319_111_7,
             rms: 0.013_234_116,
             active_span_ms: 111.088,
             late_energy_ratio: 0.0,
@@ -129,29 +133,29 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
     ],
     [
         Character {
-            peak: 0.293_714_762,
-            rms: 0.037_104_450,
+            peak: 0.293_714_76,
+            rms: 0.037_104_45,
             active_span_ms: 3_984.458,
-            late_energy_ratio: 0.050_845_221,
+            late_energy_ratio: 0.050_845_22,
             high_frequency_ratio: 0.085_059_196,
         },
         Character {
-            peak: 0.370_771_289,
-            rms: 0.040_721_010,
+            peak: 0.370_771_3,
+            rms: 0.040_721_01,
             active_span_ms: 3_984.458,
-            late_energy_ratio: 0.055_192_590,
-            high_frequency_ratio: 0.092_838_548,
+            late_energy_ratio: 0.055_192_59,
+            high_frequency_ratio: 0.092_838_55,
         },
         Character {
-            peak: 0.509_640_22,
+            peak: 0.509_640_2,
             rms: 0.023_865_303,
             active_span_ms: 941.542,
             late_energy_ratio: 0.000_000_104,
             // Same re-measurement as the 44.1 kHz Spring row above.
-            high_frequency_ratio: 0.175_849_587,
+            high_frequency_ratio: 0.175_849_59,
         },
         Character {
-            peak: 0.321_296_245,
+            peak: 0.321_296_24,
             rms: 0.013_222_702,
             active_span_ms: 111.100,
             late_energy_ratio: 0.0,
@@ -179,34 +183,34 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
 const EXPECTED_AT_DEFAULT_SIZE: [[Character; 2]; 2] = [
     [
         Character {
-            peak: 0.434_468_806,
+            peak: 0.434_468_8,
             rms: 0.027_193_857,
             active_span_ms: 3_979.864,
             late_energy_ratio: 0.049_626_954,
-            high_frequency_ratio: 0.234_121_159,
+            high_frequency_ratio: 0.234_121_16,
         },
         Character {
-            peak: 0.415_174_931,
-            rms: 0.024_251_200,
+            peak: 0.415_174_93,
+            rms: 0.024_251_2,
             active_span_ms: 3_969.592,
-            late_energy_ratio: 0.048_002_899,
-            high_frequency_ratio: 0.271_005_929,
+            late_energy_ratio: 0.048_002_9,
+            high_frequency_ratio: 0.271_005_93,
         },
     ],
     [
         Character {
-            peak: 0.407_224_894,
+            peak: 0.407_224_9,
             rms: 0.026_554_497,
             active_span_ms: 3_981.708,
             late_energy_ratio: 0.050_607_596,
-            high_frequency_ratio: 0.179_569_095,
+            high_frequency_ratio: 0.179_569_1,
         },
         Character {
-            peak: 0.373_465_598,
-            rms: 0.024_114_160,
+            peak: 0.373_465_6,
+            rms: 0.024_114_16,
             active_span_ms: 3_979.458,
-            late_energy_ratio: 0.052_145_820,
-            high_frequency_ratio: 0.205_256_239,
+            late_energy_ratio: 0.052_145_82,
+            high_frequency_ratio: 0.205_256_24,
         },
     ],
 ];
@@ -259,8 +263,20 @@ fn render(algorithm: Algorithm, sample_rate: f32, size: f32) -> Vec<f32> {
         let right = chamber.get_right_ptr();
         assert!(!left.is_null(), "{} returned a null buffer", algorithm.name);
         for offset in 0..frames {
-            let left_sample = unsafe { *left.add(offset) };
-            let right_sample = unsafe { *right.add(offset) };
+            // SAFETY: `left` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `offset < frames <= BLOCK`, which is
+            // inside that capacity.
+            let left_slot = unsafe { left.add(offset) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `right` is the instance's `out_right`, sized and bounded
+            // exactly as `out_left` above.
+            let right_slot = unsafe { right.add(offset) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer,
+            // which nothing writes before this read.
+            let right_sample = unsafe { *right_slot };
             assert!(
                 left_sample.is_finite() && right_sample.is_finite(),
                 "{} emitted a non-finite sample at frame {}",
@@ -289,16 +305,22 @@ fn character(output: &[f32], sample_rate: f32) -> Character {
         .fold(0.0_f32, |maximum, sample| maximum.max(sample.abs()));
     let floor = peak * AUDIBILITY_FRACTION;
     let first_frame = output
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .position(|frame| frame[0].abs().max(frame[1].abs()) > floor)
         .expect("render never crossed its relative audibility floor");
     let last_frame = output
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .rposition(|frame| frame[0].abs().max(frame[1].abs()) > floor)
         .expect("render never crossed its relative audibility floor");
 
     let high_passed: Vec<f32> = output
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|frame| (frame[0] + frame[1]) * 0.5)
         .collect::<Vec<_>>()
         .windows(2)

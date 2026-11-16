@@ -10,6 +10,7 @@ import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { closeUndoHistory } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -20,13 +21,19 @@ import { moveHistoryToStep } from '../../useCases/moveHistoryToStep';
 const defaultState: UndoStepStoreState = { pastSteps: [], futureSteps: [] };
 
 export const UndoHistoryPanel = (): ReactElement | null => {
-    const wsOpen = useStore(workspaceStore)?.undoHistoryOpen ?? false;
-
-    const state = useStore(undoStepStore, defaultState);
+    // Closed, the panel shows nothing, so it must not follow the undo history a committed
+    // action extends; only the open flag decides whether the list below mounts and subscribes.
+    const wsOpen = useStoreSelector(workspaceStore, (state) => state?.undoHistoryOpen ?? false);
 
     if (!wsOpen) {
         return null;
     }
+
+    return <UndoHistoryList />;
+};
+
+const UndoHistoryList = (): ReactElement => {
+    const state = useStore(undoStepStore, defaultState);
 
     const close = closeUndoHistory;
 

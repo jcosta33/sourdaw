@@ -426,13 +426,16 @@ mod tests {
         wrapper
     }
 
+    /// The `(width, height)` host-window moves a fixture recorded, in order.
+    type WindowSizes = Arc<Mutex<Vec<(u32, u32)>>>;
+
     /// One fixture whose plugin raised `clap_host_gui.request_resize` exactly as
     /// a plugin does from its own callback — size slot recorded, process-wide
     /// hint set, channel untouched — with every host-window move recorded into
     /// the returned log.
-    fn wrapper_with_resize_asked(size: (u32, u32)) -> (ClapWrapper, Arc<Mutex<Vec<(u32, u32)>>>) {
+    fn wrapper_with_resize_asked(size: (u32, u32)) -> (ClapWrapper, WindowSizes) {
         let mut wrapper = fixture_wrapper();
-        let applied: Arc<Mutex<Vec<(u32, u32)>>> = Arc::new(Mutex::new(Vec::new()));
+        let applied: WindowSizes = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&applied);
         // The notifier install is what marks the instance as one whose asks get
         // carried — without it the ask is refused outright.
@@ -469,6 +472,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: Some(Arc::clone(&queue)),
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
 

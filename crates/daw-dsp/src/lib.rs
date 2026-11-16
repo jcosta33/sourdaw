@@ -1,6 +1,11 @@
 #![cfg_attr(
     test,
-    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        reason = "tests assert by unwrapping and fail by panicking"
+    )
 )]
 
 // Native consumers retain every runtime API even when they need only primitives in WASM.

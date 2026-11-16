@@ -24,8 +24,14 @@ fn fixture_pcm(frames: usize) -> Vec<f32> {
         .collect()
 }
 
+/// # Safety
+///
+/// `ptr` must point to at least `frames` initialised, aligned `f32` values that
+/// stay valid and unmodified for the duration of the call.
 unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
-    std::slice::from_raw_parts(ptr, frames).to_vec()
+    // SAFETY: the function's `# Safety` contract guarantees `ptr` is non-null, aligned and
+    // valid for `frames` initialised `f32` reads, and the slice is copied out before returning.
+    unsafe { std::slice::from_raw_parts(ptr, frames) }.to_vec()
 }
 
 fn peak(samples: &[f32]) -> f32 {
@@ -50,7 +56,14 @@ fn panned_note(pan: f32) -> (f32, f32) {
     for _ in 0..30 {
         let _ = instance.process(BLOCK as u32);
     }
-    let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+    let left_ptr = instance.process(BLOCK as u32);
+    // SAFETY: `left_ptr` is the start of `CrumbsInstance`'s output buffer, which `new` allocates
+    // at `2 * MAX_BLOCK_SIZE` (4096 per channel) floats; `process` just zeroed and filled the
+    // first `BLOCK = 128` of the left channel, and nothing mutates the instance during the copy.
+    let left = unsafe { read_channel(left_ptr, BLOCK) };
+    // SAFETY: `get_right_ptr` is that buffer offset by `MAX_BLOCK_SIZE`, so the right channel
+    // holds 4096 floats; the same `process` call filled its first `BLOCK = 128`, and nothing
+    // mutates the instance during the copy.
     let right = unsafe { read_channel(instance.get_right_ptr(), BLOCK) };
     (peak(&left), peak(&right))
 }

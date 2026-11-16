@@ -187,7 +187,7 @@ describe('startPlayback', () => {
         vi.mocked(claimSchedulerSession).mockReset();
     });
 
-    it('should resume engine and mark playing when state exists', () => {
+    it('should resume engine and mark playing when state exists', async () => {
         const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -197,7 +197,7 @@ describe('startPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         expect(resumeEngine).toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalled();
@@ -206,7 +206,7 @@ describe('startPlayback', () => {
         expect(startPlayheadScheduler).toHaveBeenCalled();
     });
 
-    it('retires an exclusive preview before requesting engine resume', () => {
+    it('retires an exclusive preview before requesting engine resume', async () => {
         const events: string[] = [];
         const exclusive = previewIntents.beginExclusive();
         exclusive.signal.addEventListener('abort', () => events.push('preview-abort'));
@@ -217,7 +217,7 @@ describe('startPlayback', () => {
             return Promise.resolve();
         });
 
-        startPlayback();
+        await startPlayback();
 
         expect(exclusive.signal.aborted).toBe(true);
         expect(events).toEqual(['preview-abort', 'resume-requested']);
@@ -232,7 +232,7 @@ describe('startPlayback', () => {
         });
         vi.mocked(resumeEngine).mockRejectedValue(new Error('resume blocked'));
 
-        startPlayback();
+        await startPlayback();
 
         // The transport still advances (resume is best-effort), but the rejection
         // is no longer swallowed — the user is warned to re-arm audio.
@@ -380,7 +380,7 @@ describe('startPlayback', () => {
         });
     });
 
-    it('rolls in over the bars the time-signature map defines, not the flat numerator', () => {
+    it('rolls in over the bars the time-signature map defines, not the flat numerator', async () => {
         // 4/4 until beat 6, 3/4 from there. The two bars before beat 12 are both
         // 3/4 (beats 9..12 and 6..9), so a 2-bar pre-roll opens at beat 6.
         // Multiplying the transport numerator gave 12 - 2*4 = 4 — a beat and a
@@ -401,13 +401,13 @@ describe('startPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 6 });
         expect(playheadPositionRef.current).toBe(6);
     });
 
-    it('opens the pre-roll on a real bar line when a meter change lands mid-bar', () => {
+    it('opens the pre-roll on a real bar line when a meter change lands mid-bar', async () => {
         // 3/4 arriving at beat 5, one quarter into the second 4/4 bar. Nothing
         // snaps a change to a bar line, so this is an ordinary project state. Bar
         // lines run 0, 4, 5, 8, 11, and a 3-bar pre-roll from 11 must open at 4.
@@ -426,13 +426,13 @@ describe('startPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 4 });
         expect(playheadPositionRef.current).toBe(4);
     });
 
-    it('sizes a pre-roll bar by the meter denominator, not by the numerator alone', () => {
+    it('sizes a pre-roll bar by the meter denominator, not by the numerator alone', async () => {
         // 6/8 bars are three quarter notes long, so two of them reach back six
         // beats from 12. Treating the numerator as quarter notes reached back
         // twelve and started the pre-roll at the timeline origin.
@@ -448,12 +448,12 @@ describe('startPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 6 });
     });
 
-    it('clamps a pre-roll that reaches back past the timeline origin', () => {
+    it('clamps a pre-roll that reaches back past the timeline origin', async () => {
         const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -464,12 +464,12 @@ describe('startPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 0 });
     });
 
-    it('starts the native live graph session at the beat playback actually opens on', () => {
+    it('starts the native live graph session at the beat playback actually opens on', async () => {
         // 4/4 at 120 BPM, so the 2-bar pre-roll opens at beat 4 — two seconds in.
         // Sending the raw playhead would start the native engine four seconds
         // ahead of the Web Audio transport it is meant to shadow.
@@ -482,7 +482,7 @@ describe('startPlayback', () => {
             preRollBars: 2,
         });
 
-        startPlayback();
+        await startPlayback();
 
         const request = vi.mocked(startNativeLiveGraphSession).mock.calls[0]?.[0];
         // The beat play opens on is the whole of the position, and the start is
@@ -499,7 +499,7 @@ describe('startPlayback', () => {
         );
     });
 
-    it('gives the native session the arrangement maps the engine has to follow', () => {
+    it('gives the native session the arrangement maps the engine has to follow', async () => {
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -510,7 +510,7 @@ describe('startPlayback', () => {
             loopEnd: 8,
         });
 
-        startPlayback();
+        await startPlayback();
 
         // Beats out, seconds in: at the default 120 BPM the loop spans beats
         // 4..8, which is two to four seconds on the engine's clock.
@@ -523,18 +523,18 @@ describe('startPlayback', () => {
         );
     });
 
-    it('should not start when transport state is missing', () => {
+    it('should not start when transport state is missing', async () => {
         const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         expect(resumeEngine).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
     });
 
-    it('should be a no-op when already playing so a duplicate trigger does not re-snap the scheduler', () => {
+    it('should be a no-op when already playing so a duplicate trigger does not re-snap the scheduler', async () => {
         const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -543,7 +543,7 @@ describe('startPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        startPlayback();
+        await startPlayback();
 
         // Re-running while playing would re-call startPlayheadScheduler, which
         // re-snaps lastTickTime and costs one tick of playhead advance.
@@ -631,7 +631,7 @@ describe('startPlayback', () => {
                 return { outcome: 'started', runtimeRevision: 1, reports: [] };
             });
 
-            startPlayback();
+            const starting = startPlayback();
 
             expect(startPlayheadScheduler).not.toHaveBeenCalled();
             await drainHold();
@@ -641,6 +641,7 @@ describe('startPlayback', () => {
             // before the wait would read 3.25 here and seek the engine past
             // material Web Audio never sounded.
             expect(rollingSinceAtRoll).toBeNull();
+            await starting;
         });
 
         it('hands recording the admitted native scheduler anchor after the hold ends', async () => {
@@ -665,10 +666,11 @@ describe('startPlayback', () => {
         it('starts the scheduler once when the native session fails, so a dead addon cannot silence play', async () => {
             vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
 
-            startPlayback();
+            const starting = startPlayback();
 
             await drainHold();
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            await starting;
         });
 
         it('stops the admitted roll when native scheduler startup fails', async () => {
@@ -693,7 +695,7 @@ describe('startPlayback', () => {
                 })
             );
 
-            startPlayback();
+            const starting = startPlayback();
             // What a stop, pause, seek-while-playing or dispose does inside the
             // hold: each bumps the scheduler generation. `isPlaying` would not
             // catch this — it is shared by every play, so a stop and a second
@@ -708,6 +710,7 @@ describe('startPlayback', () => {
             // A release written before the guard would answer 3.25 here, and
             // the engine would seek there for a transport that never opened.
             expect(webAudioRollingSince()).toBeNull();
+            await starting;
         });
 
         it('leaves a transport paused inside the hold alone, before the pause has bumped the generation', async () => {
@@ -820,7 +823,8 @@ describe('startPlayback', () => {
             try {
                 playheadWrapCountRef.current = 2;
 
-                startPlayback();
+                // Left in flight: the case inspects the hold before the native session answers.
+                void startPlayback();
 
                 // The epoch write and the reset are synchronous, and the session
                 // has not answered, so the zero below can only have come from
@@ -832,10 +836,10 @@ describe('startPlayback', () => {
             }
         });
 
-        it('hands browser admission to the scheduler without asking for a native session', () => {
+        it('hands browser admission to the scheduler without asking for a native session', async () => {
             vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
 
-            startPlayback();
+            await startPlayback();
 
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
             expect(startNativeLiveGraphSession).not.toHaveBeenCalled();

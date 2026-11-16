@@ -119,3 +119,11 @@ export function createWorkflowCapabilityToolSchema(
     }
     return schema;
 }
+
+/** What a local planning turn can ground a workflow in. */
+export type LocalWorkflowGrounding = {
+    /** The workflows whose capability data the local message kept. */
+    keptCapabilityIds: readonly WorkflowCapabilityId[];
+    /** The workflow this run already admitted, whose actions its later turns still plan. */
+    admittedCapabilityId?: WorkflowCapabilityId;
+};

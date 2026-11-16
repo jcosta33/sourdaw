@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { type AutomationPointSnapshot } from '#/modules/Automation/events';
 import { automationStore } from '#/modules/Automation/stores';
-import { type AutomationPointSnapshot, type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 
+import { type ClipAutomationLaneSnapshot } from '../../../events/arrangementClipStateSnapshots';
 import { applyClipAutomationLaneTransition } from '../applyClipAutomationLaneTransition';
 
 function lane(

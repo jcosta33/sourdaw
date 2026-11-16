@@ -21,6 +21,13 @@ import { trackStore } from '../../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { trackTemplateCache } from '../../../useCases/trackTemplate';
+import { handleLoadTrackTemplate } from '../handleLoadTrackTemplate';
+
+const notifyUserMock = vi.hoisted(() => vi.fn());
+// A refused undo reports through the notification seam, which needs the UI event bus.
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: notifyUserMock,
+}));
 
 class NoopArrangementEventBus extends ArrangementEventBus {
     async emit(): Promise<void> {}
@@ -39,6 +46,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getTrackAnalyser: vi.fn(() => null),
     getMasterAnalyser: vi.fn(() => null),
     createTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     removeTrackStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
     setTrackGain: vi.fn(),
@@ -46,6 +54,20 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     setTrackMute: vi.fn(),
     setTrackSolo: vi.fn(),
     setTrackSoloGate: vi.fn(),
+}));
+
+const pluginHostMocks = vi.hoisted(() => ({
+    activateExternalPlugin: vi.fn(),
+    unloadPlugin: vi.fn(),
+}));
+// Only the two lifecycle calls are stubbed: the subject is which instance ids the
+// template load requests from the plugin host, not the native host itself.
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    activateExternalPlugin: pluginHostMocks.activateExternalPlugin,
+    unloadPlugin: pluginHostMocks.unloadPlugin,
+    // The discard unload carries live state; its instance ids are this spec's subject.
+    unloadPluginCarryingLiveState: pluginHostMocks.unloadPlugin,
 }));
 
 const noActionHistoryMetadataPort = {
@@ -56,6 +78,9 @@ const noActionHistoryMetadataPort = {
 
 describe('loadTrackTemplate undo/redo integration', () => {
     beforeEach(() => {
+        notifyUserMock.mockClear();
+        pluginHostMocks.activateExternalPlugin.mockClear();
+        pluginHostMocks.unloadPlugin.mockClear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('load track template integration');
         removeCrdtDoc('root');
@@ -145,5 +170,206 @@ describe('loadTrackTemplate undo/redo integration', () => {
         // entry itself popped.
         await undo();
         expect(trackStore.value?.tracks).toEqual([]);
+    });
+
+    function installHostedTemplate(): void {
+        trackTemplateCache.templates = [
+            {
+                id: 'tmpl-hosted',
+                name: 'Hosted',
+                category: 'user',
+                trackKind: 'audio',
+                devices: [
+                    {
+                        id: 'tmpl-device',
+                        name: 'Reverb',
+                        type: 'external-plugin',
+                        bypassed: false,
+                        parameterValues: {},
+                        externalPluginId: 'plugin-abc',
+                        // A legacy template saved with a stale id must never reuse it.
+                        externalInstanceId: 'plugin-abc-live',
+                        externalStateChunk: 'c2F2ZWQ=',
+                    },
+                ],
+                sends: [],
+                gain: 1,
+                pan: 0,
+                color: '#123456',
+                createdAt: 0,
+            },
+        ];
+    }
+
+    it('activates a template-loaded hosted plugin under a fresh instance and unloads it on undo', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        expect(instanceId).toMatch(/^plugin-abc-.+/);
+        expect(instanceId).not.toBe('plugin-abc-live');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-abc', instanceId, stateChunk: 'c2F2ZWQ=' })
+        );
+        expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalled();
+
+        await undo();
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
+    });
+
+    async function captureLoadedPluginState(stateChunk: string): Promise<void> {
+        const device = trackStore.value!.tracks[0]!.devices[0]!;
+        await executeAppAction(
+            {
+                type: 'setExternalPluginState',
+                payload: {
+                    intent: 'capture',
+                    deviceId: device.id,
+                    stateChunk,
+                    expectedInstanceId: device.externalInstanceId!,
+                    expectedStateChunk: device.externalStateChunk ?? null,
+                },
+            },
+            { source: 'manual', skipMacroRecording: true }
+        );
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe(stateChunk);
+    }
+
+    it('redoes a template load with the plugin state a save captured, not the template chunk (issue #6597)', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        const createdId = trackStore.value!.tracks[0]!.id;
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        await captureLoadedPluginState('ZWRpdGVk');
+
+        await undo();
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
+        pluginHostMocks.activateExternalPlugin.mockClear();
+
+        await redo();
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual([createdId]);
+        expect(trackStore.value!.tracks[0]!.devices[0]!.externalStateChunk).toBe('ZWRpdGVk');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ stateChunk: 'ZWRpdGVk' })
+        );
+
+        await undo();
+        expect(trackStore.value?.tracks).toEqual([]);
+    });
+
+    it('gives every load of the same template a distinct instance id', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+
+        const instanceIds = trackStore.value!.tracks.map((track) => track.devices[0]!.externalInstanceId);
+        expect(instanceIds).toHaveLength(2);
+        expect(new Set([...instanceIds, 'plugin-abc-live']).size).toBe(3);
+    });
+
+    it('activates the loaded plugin with its committed id and chunk when commit status is ambiguous', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        const result = await handleLoadTrackTemplate.execute({
+            type: 'loadTrackTemplate',
+            payload: { templateId: 'tmpl-hosted' },
+        });
+        if (!result?.afterAmbiguousCommit) {
+            throw new Error('Expected an afterAmbiguousCommit effect for a template holding a hosted plugin');
+        }
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        expect(pluginHostMocks.activateExternalPlugin).not.toHaveBeenCalled();
+
+        await result.afterAmbiguousCommit();
+
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-abc', instanceId, stateChunk: 'c2F2ZWQ=' })
+        );
+    });
+    function renameCreatedTrack(name: string): void {
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track, index) => (index === 0 ? { ...track, name } : track)),
+        });
+    }
+
+    it('refuses the undo and keeps the track once a collaborator edited what the template created (issue #6817)', async () => {
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-lead' } },
+            { source: 'manual' }
+        );
+        const createdId = trackStore.value!.tracks[0]!.id;
+        renameCreatedTrack('Collaborator lead');
+
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: false });
+        expect(notifyUserMock).toHaveBeenCalledWith(
+            'Cannot undo "Load Track Template": project state has changed',
+            'warning'
+        );
+        expect(trackStore.value!.tracks.map((track) => [track.id, track.name])).toEqual([
+            [createdId, 'Collaborator lead'],
+        ]);
+    });
+
+    it('undoes a template load whose only change since is a plugin state capture (issue #6817)', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        await captureLoadedPluginState('ZWRpdGVk');
+
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+    });
+
+    it('refuses the undo after a redo once a collaborator edited the restored track (issue #6817)', async () => {
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-lead' } },
+            { source: 'manual' }
+        );
+        await undo();
+        await redo();
+        renameCreatedTrack('Collaborator lead');
+
+        const result = await undo();
+
+        expect(result).toEqual({ headConsumed: false });
+        expect(notifyUserMock).toHaveBeenCalledWith(
+            'Cannot undo "Load Track Template": project state has changed',
+            'warning'
+        );
+        expect(trackStore.value!.tracks.map((track) => track.name)).toEqual(['Collaborator lead']);
     });
 });

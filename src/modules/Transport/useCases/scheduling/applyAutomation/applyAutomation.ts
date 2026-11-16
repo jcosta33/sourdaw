@@ -42,6 +42,7 @@ import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
 import { clearDeviceReadBeatByTrack, deviceReadBeatByTrack } from './deviceReadBeatByTrack';
 import { deviceRuntimeParameterWriters } from './deviceRuntimeParameterWriters';
+import { recordAppliedAutomationWrite } from './recordAppliedAutomationWrite';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 import { scheduleComposedTrackGainAutomation } from './scheduleComposedTrackGainAutomation';
 
@@ -855,6 +856,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     isDiscontinuity ||
                     enteredLaneScope ||
                     (Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
+                if (moved) {
+                    // A write of an unchanged value is invisible to a display that compares values.
+                    recordAppliedAutomationWrite(device.id, paramId);
+                }
                 const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
                 // A device the native session carries has its parameters
                 // stamped on the audio thread from the engine's own queue,

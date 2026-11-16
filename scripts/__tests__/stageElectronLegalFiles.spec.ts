@@ -1,16 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-    createAfterExtract,
-    stageElectronLegalFiles,
-    verifyStagedElectronLegalFiles,
-    type AfterPackContext,
-} from '../flipElectronFuses';
+import { createAfterExtract, verifyStagedElectronLegalFiles, type AfterPackContext } from '../flipElectronFuses';
 
 import type { ElectronRuntimeContract } from '../electronRuntimeContract';
 
@@ -20,13 +15,9 @@ function digest(value: string): string {
     return createHash('sha256').update(value).digest('hex');
 }
 
-function fixture(): { root: string; source: string; context: AfterPackContext; contract: ElectronRuntimeContract } {
+function fixture(): { root: string; context: AfterPackContext; contract: ElectronRuntimeContract } {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-electron-legal-'));
     roots.push(root);
-    const source = join(root, 'electron-dist');
-    mkdirSync(source, { recursive: true });
-    writeFileSync(join(source, 'LICENSE'), 'license');
-    writeFileSync(join(source, 'LICENSES.chromium.html'), 'notices');
     const contract: ElectronRuntimeContract = {
         schemaVersion: 1,
         package: 'electron',
@@ -61,6 +52,20 @@ function fixture(): { root: string; source: string; context: AfterPackContext; c
                 noticesSha256: digest('notices'),
             },
             {
+                platform: 'linux',
+                arch: 'x64',
+                archive: 'electron-v1.2.3-linux-x64.zip',
+                sha256: digest('linux-archive'),
+                noticesSha256: digest('notices'),
+            },
+            {
+                platform: 'linux',
+                arch: 'arm64',
+                archive: 'electron-v1.2.3-linux-arm64.zip',
+                sha256: digest('linux-arm64-archive'),
+                noticesSha256: digest('notices'),
+            },
+            {
                 platform: 'win32',
                 arch: 'x64',
                 archive: 'electron-v1.2.3-win32-x64.zip',
@@ -71,7 +76,6 @@ function fixture(): { root: string; source: string; context: AfterPackContext; c
     };
     return {
         root,
-        source,
         contract,
         context: {
             appOutDir: join(root, 'out'),
@@ -82,6 +86,21 @@ function fixture(): { root: string; source: string; context: AfterPackContext; c
     };
 }
 
+function postCleanupSourceRoot(context: AfterPackContext): string {
+    if (context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas') {
+        return join(context.appOutDir, 'Electron.app/Contents/Resources');
+    }
+    return context.appOutDir;
+}
+
+function writePostCleanupFiles(context: AfterPackContext): string {
+    const source = postCleanupSourceRoot(context);
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'LICENSE.electron.txt'), 'license');
+    writeFileSync(join(source, 'LICENSES.chromium.html'), 'notices');
+    return source;
+}
+
 afterEach(() => {
     for (const root of roots.splice(0)) {
         rmSync(root, { recursive: true, force: true });
@@ -89,38 +108,50 @@ afterEach(() => {
 });
 
 describe('Electron legal-file staging', () => {
-    it("accepts electron-builder's one-argument afterExtract call", async () => {
-        const { root, source, context, contract } = fixture();
-        mkdirSync(context.appOutDir, { recursive: true });
-        for (const name of ['LICENSE', 'LICENSES.chromium.html']) {
-            writeFileSync(join(context.appOutDir, name), readFileSync(join(source, name)));
+    it.each([
+        {
+            platform: 'darwin',
+            arch: 3,
+            source: 'Electron.app/Contents/Resources',
+            final: 'Sourdaw.app/Contents/Resources',
+        },
+        { platform: 'win32', arch: 1, source: 'resources', final: 'resources' },
+        { platform: 'linux', arch: 1, source: 'resources', final: 'resources' },
+        { platform: 'linux', arch: 3, source: 'resources', final: 'resources' },
+    ])('stages and verifies post-cleanup files for $platform', async ({ platform, arch, source, final }) => {
+        const { context, contract } = fixture();
+        const target = { ...context, electronPlatformName: platform, arch };
+        writePostCleanupFiles(target);
+
+        await createAfterExtract(contract)(target);
+
+        const legal = join(target.appOutDir, source, 'legal');
+        expect(readFileSync(join(legal, 'electron-LICENSE.txt'), 'utf8')).toBe('license');
+        expect(readFileSync(join(legal, 'electron-LICENSES.chromium.html'), 'utf8')).toBe('notices');
+        if (platform === 'darwin') {
+            renameSync(join(target.appOutDir, 'Electron.app'), join(target.appOutDir, 'Sourdaw.app'));
         }
-
-        await createAfterExtract(contract)(context);
-
-        const legal = join(root, 'out/Electron.app/Contents/Resources/legal');
-        expect(readFileSync(join(legal, 'electron-LICENSE.txt'), 'utf8')).toBe('license');
-        expect(readFileSync(join(legal, 'electron-LICENSES.chromium.html'), 'utf8')).toBe('notices');
+        expect(readFileSync(join(target.appOutDir, final, 'legal/electron-LICENSE.txt'), 'utf8')).toBe('license');
+        await expect(verifyStagedElectronLegalFiles(target, contract)).resolves.toBeUndefined();
     });
 
-    it('rejects altered upstream legal bytes', async () => {
-        const { source, context, contract } = fixture();
-        writeFileSync(join(source, 'LICENSES.chromium.html'), 'different');
+    it.each(['LICENSE.electron.txt', 'LICENSES.chromium.html'])('rejects altered upstream %s', async (name) => {
+        const { context, contract } = fixture();
+        const source = writePostCleanupFiles(context);
+        writeFileSync(join(source, name), 'different');
 
-        await expect(stageElectronLegalFiles(context, source, contract)).rejects.toThrow(
-            'LICENSES.chromium.html does not match Electron 1.2.3'
-        );
+        await expect(createAfterExtract(contract)(context)).rejects.toThrow(`${name} does not match Electron 1.2.3`);
     });
 
-    it("reads electron-builder's renamed Windows license", async () => {
-        const { root, source, context, contract } = fixture();
-        writeFileSync(join(source, 'LICENSE.electron.txt'), 'license');
-        const windows = { ...context, electronPlatformName: 'win32', arch: 1 };
-        await stageElectronLegalFiles(windows, source, contract);
+    it.each(['LICENSE.electron.txt', 'LICENSES.chromium.html'])('rejects missing upstream %s', async (name) => {
+        const { context, contract } = fixture();
+        const source = writePostCleanupFiles(context);
+        unlinkSync(join(source, name));
 
-        const legal = join(root, 'out/resources/legal');
-        expect(readFileSync(join(legal, 'electron-LICENSE.txt'), 'utf8')).toBe('license');
-        expect(readFileSync(join(legal, 'electron-LICENSES.chromium.html'), 'utf8')).toBe('notices');
+        await expect(createAfterExtract(contract)(context)).rejects.toMatchObject({
+            code: 'ENOENT',
+            path: join(source, name),
+        });
     });
 
     it('rejects legal files changed after extraction', async () => {
@@ -135,11 +166,14 @@ describe('Electron legal-file staging', () => {
         );
     });
 
-    it('rejects an unpinned package target', async () => {
-        const { source, context, contract } = fixture();
-
-        await expect(stageElectronLegalFiles({ ...context, arch: 1 }, source, contract)).rejects.toThrow(
-            'Electron legal-file contract has no darwin/1 target'
-        );
+    it.each([
+        { platform: 'darwin', arch: 1 },
+        { platform: 'mas', arch: 3 },
+        { platform: 'freebsd', arch: 1 },
+    ])('rejects unpinned $platform/$arch', async ({ platform, arch }) => {
+        const { context, contract } = fixture();
+        await expect(
+            createAfterExtract(contract)({ ...context, electronPlatformName: platform, arch })
+        ).rejects.toThrow(`Electron legal-file contract has no ${platform}/${String(arch)} target`);
     });
 });

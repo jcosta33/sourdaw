@@ -56,8 +56,8 @@ impl Lr4Crossover {
     pub fn process(&mut self, l: f32, r: f32) -> ((f32, f32), (f32, f32)) {
         // One ramp step per sample, shared by both channels and both cascaded
         // sections so the LR-4 pair stays matched.
-        let lp = self.lp_coeffs.next();
-        let hp = self.hp_coeffs.next();
+        let lp = self.lp_coeffs.next_coeffs();
+        let hp = self.hp_coeffs.next_coeffs();
 
         let low_l = self.lp2_l.process(self.lp1_l.process(l, &lp), &lp);
         let low_r = self.lp2_r.process(self.lp1_r.process(r, &lp), &lp);
@@ -742,14 +742,14 @@ mod tests {
                 ramp_samples,
             );
             assert_coefficients_exact(
-                crossover.lp_coeffs.next(),
+                crossover.lp_coeffs.next_coeffs(),
                 expected_lowpass,
                 crossover_index,
                 "lowpass",
                 ramp_step,
             );
             assert_coefficients_exact(
-                crossover.hp_coeffs.next(),
+                crossover.hp_coeffs.next_coeffs(),
                 expected_highpass,
                 crossover_index,
                 "highpass",
@@ -781,14 +781,14 @@ mod tests {
             let expected_lowpass = reference_lowpass_coefficients(frequency, sample_rate);
             let expected_highpass = reference_highpass_coefficients(frequency, sample_rate);
             assert_coefficients_exact(
-                crossover.lp_coeffs.next(),
+                crossover.lp_coeffs.next_coeffs(),
                 expected_lowpass,
                 crossover_index,
                 "lowpass",
                 (0.005 * sample_rate).round() as usize,
             );
             assert_coefficients_exact(
-                crossover.hp_coeffs.next(),
+                crossover.hp_coeffs.next_coeffs(),
                 expected_highpass,
                 crossover_index,
                 "highpass",

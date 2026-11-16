@@ -1,9 +1,11 @@
-import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
+import { applyRecordingHostEffect } from './recordingHostEffectByActionType';
 import { regionsOverlap } from './regionsOverlap';
 
 /**
@@ -21,17 +23,7 @@ export function retiredTakeLaneOwnersMatchStore(
     const lanes = projectedTakeLaneOwners(priorActions);
     const hostIds = new Set(getTrackStoreState()?.tracks.map((track) => track.id) ?? []);
     for (const action of priorActions) {
-        if (action.type === 'removeTrack') {
-            hostIds.delete(action.payload.trackId);
-        } else if (action.type === 'restoreTrack') {
-            hostIds.add(action.payload.trackId);
-        } else if (action.type === 'removeAllTracks') {
-            hostIds.clear();
-        } else if (action.type === 'restoreTracks') {
-            for (const restore of action.payload.restores) {
-                hostIds.add(restore.trackId);
-            }
-        }
+        applyRecordingHostEffect(action, hostIds);
     }
     return retiredLanes.every(({ lane, retiredTakeIds, retiredBaseGapAudioSources }) => {
         const target = lanes.find((live) => live.id === lane.id || live.trackId === lane.trackId);

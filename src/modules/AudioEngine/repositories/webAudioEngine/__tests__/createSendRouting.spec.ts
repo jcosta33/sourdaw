@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createSendRouting, type SendRoutingPorts } from '../createSendRouting';
 
-import type { BusStrip, TrackChannelStrip } from '../../../models/AudioEngineState';
+import type { BusStrip, SendNode, TrackChannelStrip } from '../../../models/AudioEngineState';
 
 type FakeGain = {
     gain: {
@@ -195,6 +195,83 @@ describe('createSendRouting', () => {
         expect(carrierGate.disconnect).toHaveBeenCalledExactlyOnceWith(created[0]);
         expect(rebuiltCarrier.connect).toHaveBeenCalledExactlyOnceWith(created[0]);
         expect(routing.sendNodes.get('t1→b1')?.sourceNode).toBe(rebuiltCarrier);
+    });
+
+    it('re-attaches a pre-fader send to the pre-fader tap of a rebuilt strip, not the carrier', () => {
+        const { routing, created, preFaderSendGate } = createFixture();
+        routing.setSend('t1', 'b1', 0.5, true);
+        const rebuiltPreFader = createFakeGain();
+        const rebuiltCarrier = createFakeGain();
+        const rebuilt = {
+            preFaderSendGate: rebuiltPreFader,
+            carrierGate: rebuiltCarrier,
+        } as unknown as TrackChannelStrip;
+
+        routing.reconnectTrack('t1', rebuilt);
+
+        expect(preFaderSendGate.disconnect).toHaveBeenCalledExactlyOnceWith(created[0]);
+        expect(rebuiltPreFader.connect).toHaveBeenCalledExactlyOnceWith(created[0]);
+        expect(rebuiltCarrier.connect).not.toHaveBeenCalled();
+        expect(routing.sendNodes.get('t1→b1')?.sourceNode).toBe(rebuiltPreFader);
+    });
+
+    it('removes only the sends of the named source track', () => {
+        const strip = {
+            preFaderSendGate: createFakeGain(),
+            carrierGate: createFakeGain(),
+        } as unknown as TrackChannelStrip;
+        const { routing } = createFixture({ readTrackStrip: () => strip });
+        routing.setSend('t1', 'b1', 0.5, false);
+        routing.setSend('t2', 'b1', 0.5, false);
+
+        routing.removeSendsFromTrack('t1');
+
+        expect(Array.from(routing.sendNodes.keys())).toEqual(['t2→b1']);
+    });
+
+    it('pins the outgoing gain at its live value before ramping it to silence', () => {
+        const { routing, created } = createFixture();
+        routing.setSend('t1', 'b1', 0.5, false);
+        const [oldGain] = created;
+        if (oldGain) {
+            oldGain.gain.value = 0.3;
+        }
+
+        routing.setSend('t1', 'b1', 0.5, true);
+
+        expect(oldGain?.gain.setValueAtTime).toHaveBeenCalledExactlyOnceWith(0.3, 4);
+    });
+
+    it('clamps a negative send level to silence', () => {
+        const { routing, created } = createFixture();
+
+        routing.setSend('t1', 'b1', -0.4, false);
+
+        expect(created[0]?.gain.value).toBe(0);
+    });
+
+    it('changes nothing when a tap crossfade has no source strip', () => {
+        vi.useFakeTimers();
+        const { routing, created, busInput, context } = createFixture();
+        const oldGain = createFakeGain();
+        const oldSource = createFakeGain();
+        const orphan = {
+            sourceTrackId: 'missing',
+            busId: 'b1',
+            gainNode: oldGain,
+            sourceNode: oldSource,
+            preFader: false,
+        } as unknown as SendNode;
+
+        routing.crossfadeSendTap(orphan, { gainNode: busInput } as unknown as BusStrip, true, 0.5);
+        vi.advanceTimersByTime(1000);
+
+        expect(context.createGain).not.toHaveBeenCalled();
+        expect(created).toHaveLength(0);
+        expect(oldGain.gain.cancelScheduledValues).not.toHaveBeenCalled();
+        expect(oldGain.disconnect).not.toHaveBeenCalled();
+        expect(oldSource.disconnect).not.toHaveBeenCalled();
+        expect(orphan).toMatchObject({ gainNode: oldGain, sourceNode: oldSource, preFader: false });
     });
 
     it('sweeps sends by source track and by bus', () => {

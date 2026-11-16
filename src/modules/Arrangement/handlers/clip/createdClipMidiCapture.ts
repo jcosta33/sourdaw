@@ -2,7 +2,8 @@ import { getHeads } from '@automerge/automerge';
 
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
 import { captureProjectIdentity, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { type AppAction, type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
+import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipMidiSnapshot } from '../../useCases/clipEditing/readClipMidiSnapshot';

@@ -237,6 +237,72 @@ describe('playMacro', () => {
         expect(macroStore.value?.macros).toEqual([saved]);
     });
 
+    it('replays a recorded section restoration as a fresh append without its list slot', async () => {
+        const sectionMacro: Macro = {
+            id: 'section-restoration',
+            name: 'Section restoration',
+            actions: [
+                {
+                    type: 'addSection',
+                    payload: {
+                        startBeat: 8,
+                        endBeat: 16,
+                        name: 'Verse',
+                        sectionId: 's1',
+                        index: 1,
+                        beforeId: 's2',
+                        afterId: 's0',
+                    },
+                },
+            ],
+            createdAt: 0,
+        };
+        const saved = structuredClone(sectionMacro);
+        macroStore.set({ macros: [sectionMacro], recording: false, currentRecording: [] });
+
+        await playMacro(sectionMacro.id);
+
+        const dispatched = executeAppActionMock.mock.calls[0]![0];
+        expect(dispatched.type).toBe('addSection');
+        if (dispatched.type !== 'addSection') {
+            return;
+        }
+        expect(dispatched.payload).toMatchObject({ startBeat: 8, endBeat: 16, name: 'Verse' });
+        expect(Object.hasOwn(dispatched.payload, 'index')).toBe(false);
+        expect(Object.hasOwn(dispatched.payload, 'beforeId')).toBe(false);
+        expect(Object.hasOwn(dispatched.payload, 'afterId')).toBe(false);
+        expect(macroStore.value?.macros).toEqual([saved]);
+    });
+
+    it('replays a recorded marker restoration as a fresh append without its list slot', async () => {
+        const markerMacro: Macro = {
+            id: 'marker-restoration',
+            name: 'Marker restoration',
+            actions: [
+                {
+                    type: 'addMarker',
+                    payload: { beat: 8, name: 'Drop', markerId: 'm1', index: 1, beforeId: 'm2', afterId: 'm0' },
+                },
+            ],
+            createdAt: 0,
+        };
+        const saved = structuredClone(markerMacro);
+        macroStore.set({ macros: [markerMacro], recording: false, currentRecording: [] });
+
+        await playMacro(markerMacro.id);
+
+        const dispatched = executeAppActionMock.mock.calls[0]![0];
+        expect(dispatched.type).toBe('addMarker');
+        if (dispatched.type !== 'addMarker') {
+            return;
+        }
+        expect(dispatched.payload).toMatchObject({ beat: 8, name: 'Drop' });
+        expect(Object.hasOwn(dispatched.payload, 'index')).toBe(false);
+        expect(Object.hasOwn(dispatched.payload, 'beforeId')).toBe(false);
+        expect(Object.hasOwn(dispatched.payload, 'afterId')).toBe(false);
+        expect(macroStore.value?.macros).toEqual([saved]);
+    });
+
     it('should no-op when macro id is missing', async () => {
         await playMacro('missing');
         expect(executeAppActionMock).not.toHaveBeenCalled();

@@ -13,6 +13,8 @@
  */
 import { join } from 'node:path';
 
+import type { GpuMemoryBudget } from './channels.js';
+
 /**
  * A command method on the addon.
  *
@@ -46,6 +48,17 @@ export type NativeHost = {
      */
     readonly grantPath: (path: string, mode: FileGrantMode, recursive: boolean) => Promise<void>;
     /**
+     * Grant one folder the user picked as an additional plugin scan root,
+     * resolving its canonical path or rejecting with the user-readable reason
+     * the native policy refused it.
+     *
+     * Main-process-only for the reason `grantPath` is: it widens what
+     * `scan_plugins` will load code from, so it is withheld from
+     * `EXPOSED_COMMANDS` and its only caller is the plugin-folder picker in
+     * `appIpc.ts`, which passes the path its own dialog returned.
+     */
+    readonly grantPluginFolder: (path: string) => Promise<string>;
+    /**
      * Begin a renderer session, answering the generation a retrospective arm
      * from that session must still match when it lands.
      *
@@ -64,6 +77,11 @@ export type NativeHost = {
 } & Record<string, NativeCommand>;
 
 export type NativeAddon = {
+    /**
+     * The GPU memory budget in bytes, null when the OS does not report one. Absent on an addon built
+     * before it existed, which the shell reads as unknown rather than refusing to load.
+     */
+    readonly gpuMemoryBudget?: () => unknown;
     // Runtime scope support is inspected before construction by the main-only factory.
     // Keeping this legacy constructor contract also admits unscoped older addons.
     readonly SourdawNative: new (onEvent: NativeEventCallback) => NativeHost;
@@ -190,3 +208,23 @@ export type LoadNativeAddonInput = {
 };
 
 export const loadNativeAddon = ({ path, load }: LoadNativeAddonInput): NativeAddon => asNativeAddon(load(path), path);
+
+/**
+ * The GPU memory budget the addon reports. Anything but a positive safe integer is unknown: an older
+ * addon without the export, a throw, or a malformed answer must never narrow or widen what is offered.
+ */
+export const readGpuMemoryBudget = (addon: NativeAddon | undefined): GpuMemoryBudget => {
+    const read = addon?.gpuMemoryBudget;
+    if (read === undefined) {
+        return { state: 'unknown' };
+    }
+    try {
+        const bytes: unknown = read();
+        if (typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes > 0) {
+            return { state: 'known', bytes };
+        }
+    } catch (error) {
+        console.error(`[shell] the native addon could not read the GPU memory budget: ${String(error)}`);
+    }
+    return { state: 'unknown' };
+};

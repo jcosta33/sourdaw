@@ -81,27 +81,66 @@ function refusal(
     };
 }
 
+/**
+ * The producer rates the tail on its own only when it lasted at least one
+ * segment target or no segment has closed yet; otherwise its samples point one
+ * past the last rate. They are admitted only as a contiguous
+ * run at the end of the row that directly follows a sample of the last closed
+ * segment, in a row whose indices never decrease; returns the run's first
+ * sample index, or undefined when there is none.
+ */
+function unratedTailStart(input: QuantumMeasurementCalibrationInput): number | undefined {
+    const unratedIndex = input.segmentRates.length;
+    const { segmentIndex } = input;
+    let start = segmentIndex.length;
+    while (start > 0 && segmentIndex[start - 1] === unratedIndex) {
+        start -= 1;
+    }
+    if (start === segmentIndex.length || start === 0 || unratedIndex === 0) {
+        return undefined;
+    }
+    if (segmentIndex[start - 1] !== unratedIndex - 1 || !isNonDecreasing(segmentIndex)) {
+        return undefined;
+    }
+    return start;
+}
+
+function isNonDecreasing(values: readonly number[]): boolean {
+    return values.every((value, index) => index === 0 || value >= values[index - 1]!);
+}
+
+function resolveRateIndex(
+    input: QuantumMeasurementCalibrationInput,
+    sampleIndex: number,
+    tailStart: number | undefined
+): number | undefined {
+    const segmentIndex = input.segmentIndex[sampleIndex];
+    if (tailStart !== undefined && sampleIndex >= tailStart) {
+        return input.segmentRates.length - 1;
+    }
+    if (segmentIndex === undefined || !Number.isInteger(segmentIndex) || segmentIndex < 0) {
+        return undefined;
+    }
+    return segmentIndex < input.segmentRates.length ? segmentIndex : undefined;
+}
+
 function calibrateRow(input: QuantumMeasurementCalibrationInput): QuantumMeasurementCalibrationResult {
     if (input.samplesTicks.length !== input.segmentIndex.length) {
         return refusal(input, Math.min(input.samplesTicks.length, input.segmentIndex.length), 'length-mismatch');
     }
 
+    const tailStart = unratedTailStart(input);
     const samplesMs: number[] = [];
     for (let sampleIndex = 0; sampleIndex < input.samplesTicks.length; sampleIndex++) {
-        const originalSegmentIndex = input.segmentIndex[sampleIndex];
-        if (
-            originalSegmentIndex === undefined ||
-            !Number.isInteger(originalSegmentIndex) ||
-            originalSegmentIndex < 0 ||
-            originalSegmentIndex >= input.segmentRates.length
-        ) {
+        const rateIndex = resolveRateIndex(input, sampleIndex, tailStart);
+        if (rateIndex === undefined) {
             return refusal(input, sampleIndex, 'invalid-segment-index');
         }
-        const originalSegmentRate = input.segmentRates[originalSegmentIndex];
-        if (originalSegmentRate === undefined || !Number.isFinite(originalSegmentRate) || originalSegmentRate <= 0) {
+        const rate = input.segmentRates[rateIndex];
+        if (rate === undefined || !Number.isFinite(rate) || rate <= 0) {
             return refusal(input, sampleIndex, 'invalid-rate');
         }
-        samplesMs.push(input.samplesTicks[sampleIndex]! / originalSegmentRate);
+        samplesMs.push(input.samplesTicks[sampleIndex]! / rate);
     }
     return { status: 'calibrated', rows: [{ deviceId: input.deviceId, samplesMs }] };
 }

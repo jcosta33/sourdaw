@@ -65,8 +65,17 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   monitor is shadowed: the shadow decides what the device is handed, never what a strip renders. A
   hosted instance no chain holds runs nowhere — it is registered homed detached, so releasing it
   from a chain returns it there rather than onto the master mix.
-- No instance can be bound where no engine holds one: an offline render, and any batch mapped before
-  its own attach ran, map with an empty lookup and fall back on the degradation law.
+- No instance can be bound where no engine holds one: a batch mapped before its own attach ran maps
+  with an empty lookup and falls back on the degradation law.
+- An offline render never borrows a live instance. For every engine-attached hosted effect on a
+  sounding strip it builds an independent offline instance (`commands/offline_plugins.rs`): the live
+  instance's state captured once at render start, construction on the UI thread from the file its
+  load vetted, activation at the export rate in offline mode, and release on the UI thread on every
+  path out. The live instance is touched only by that state read. An instance the engine does not
+  hold, a hosted instrument, an unreadable state, a failed construction, and a block the offline
+  instance was not served or failed to process each refuse the render by device and plugin name;
+  nothing prints dry.
+  `map_graph_batch` admits and refuses exactly that set, through the same mapping.
 
 ## Constraints
 
@@ -78,11 +87,14 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   MTS-ESP host support is absent; add no registration or publication until its ownership and
   distribution contracts are settled.
 - Plugin scanning is policy-gated (`host/plugin_scan_policy.rs`): absolute paths only, symlinks
-  rejected. Every read that touches a plugin's own code — its descriptor, its parameter contract, its
-  capability extensions — runs only in the bounded `plugin_scan_worker` child-process mode; the
-  application process may enumerate authorized candidates but must never load their entry points
-  during discovery. A new question for a plugin goes to the instance that worker already has, never
-  to another process.
+  rejected. A folder beyond the platform defaults needs a grant from a native folder pick made in
+  the main process (`host/plugin_folder_grants.rs`); the grant command is never renderer-callable,
+  every policy re-validates the stored grants from disk, and `PluginScanPolicy::production` is the
+  only production constructor that widens past the defaults. Every read that touches a plugin's
+  own code — its descriptor, its parameter contract, its capability extensions — runs only in the
+  bounded `plugin_scan_worker` child-process mode; the application process may enumerate
+  authorized candidates but must never load their entry points during discovery. A new question
+  for a plugin goes to the instance that worker already has, never to another process.
 - A scanned capability the worker did not query is published as a default carrying
   `capability_metadata_reason`. Never drop that reason while keeping the value: a default without it
   reads downstream as a measurement.

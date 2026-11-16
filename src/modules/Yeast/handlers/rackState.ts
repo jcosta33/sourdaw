@@ -1,6 +1,6 @@
-import { type YeastProcessorSnapshot } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type YeastProcessorSnapshot } from '../events/yeastAppActions';
 import { yeastStore, type YeastProcessorInfo, type YeastState } from '../stores/yeastStore';
 
 /** Live rack state, or `null` when the store has not hydrated yet. */

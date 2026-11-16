@@ -52,7 +52,16 @@ fn burst() -> (Vec<f32>, Vec<f32>) {
 /// no larger than `PROOF_CHAMBER_BLOCK_FRAMES`, which is that guarantee.
 unsafe fn read_output(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
-    (0..frames).map(|i| *ptr.add(i)).collect()
+    (0..frames)
+        .map(|i| {
+            // SAFETY: `i < frames`, and the `# Safety` contract makes `ptr` the
+            // start of at least `frames` readable `f32`s.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is inside those `frames` readable samples, which
+            // `process` initialised.
+            unsafe { *slot }
+        })
+        .collect()
 }
 
 /// Index of the largest-magnitude sample, and that magnitude.
@@ -79,6 +88,8 @@ fn reverse_renders_its_first_block_at_192_khz_without_a_size_write() {
     instance.set_param("algorithm", ALGORITHM_REVERSE);
 
     let (left, right) = burst();
+    // SAFETY: `process` returns the instance's `out_left`, which it just wrote
+    // and which holds `PROOF_CHAMBER_BLOCK_FRAMES` samples, at least `BURST`.
     let out = unsafe { read_output(instance.process(&left, &right, BURST as u32), BURST) };
 
     for (i, sample) in out.iter().enumerate() {
@@ -153,6 +164,9 @@ fn the_instance_clamps_a_block_to_its_exported_capacity() {
     let left: Vec<f32> = (0..overrun).map(|i| 0.25 + i as f32 * 1e-4).collect();
     let right = left.clone();
 
+    // SAFETY: `process` returns the instance's `out_left`, which holds exactly
+    // `PROOF_CHAMBER_BLOCK_FRAMES` samples, and clamps the overrun to that, so
+    // every sample `read_output` reads was just written.
     let out = unsafe {
         read_output(
             instance.process(&left, &right, overrun as u32),
@@ -183,6 +197,9 @@ fn an_over_range_size_write_still_renders_within_the_capture_buffer() {
         let (left, right) = burst();
         // Process at least four 128-frame blocks
         for _ in 0..4 {
+            // SAFETY: `process` returns the instance's `out_left`, which it
+            // just wrote and which holds `PROOF_CHAMBER_BLOCK_FRAMES` samples,
+            // at least `BURST`.
             let out = unsafe { read_output(instance.process(&left, &right, BURST as u32), BURST) };
             for (i, sample) in out.iter().enumerate() {
                 assert!(

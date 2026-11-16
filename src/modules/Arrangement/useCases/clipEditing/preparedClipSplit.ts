@@ -1,4 +1,5 @@
-import { type ClipSplitActionSnapshot, type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
+import { type ClipSplitActionSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 export type PreparedClipSplit = {
     readonly adjustedMediaSplit: number;

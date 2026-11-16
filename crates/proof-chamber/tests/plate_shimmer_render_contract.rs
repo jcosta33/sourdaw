@@ -42,7 +42,11 @@
 //! each of those defects leaves behind, so a change that lands under it has
 //! stopped Shimmer being audible and the number is not the thing to move.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use proof_chamber::ProofChamberInstance;
 
@@ -139,7 +143,14 @@ fn render_shimmer_tail(sample_rate: f32, pitch_setting: f32, tone_hz: f32) -> Ve
         let ptr = instance.process(&input, &input, block as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for offset in 0..block {
-            let sample = unsafe { *ptr.add(offset) };
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `offset < block <= BLOCK`, which is inside
+            // that capacity.
+            let slot = unsafe { ptr.add(offset) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let sample = unsafe { *slot };
             assert!(
                 sample.is_finite(),
                 "non-finite output at frame {}",

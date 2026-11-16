@@ -1,6 +1,10 @@
 //! Spring's late energy must come from the real selected body, not the picker.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::bacteria::convolution::ConvolutionProcessor;
 use daw_dsp::bacteria::engine::BacteriaEngine;

@@ -1242,7 +1242,11 @@ const validators = {
     autoOrganizeProject: 'unchecked',
 
     // Scratch pad
-    captureScratchPad: 'unchecked',
+    captureScratchPad: (param): param is PayloadOf<'captureScratchPad'> =>
+        hasNoPayload(param) ||
+        (isObj(param) &&
+            hasOnlyKeys(param, ['sectionIds']) &&
+            isOptionalOwn(param, 'sectionIds', isUniqueNonEmptyStringArray)),
     commitScratchPad: 'unchecked',
     clearScratchPad: 'unchecked',
     toggleScratchPad: 'unchecked',
@@ -1299,7 +1303,13 @@ const validators = {
         isOptionalOwn(param, 'subdivision', (value): value is string =>
             ['1/8', '1/16', '1/32', '1/16T'].includes(String(value))
         ),
-    applyGroove: 'unchecked',
+    // A provider names the clip, a template from the groove pool and the strength; the pool is checked by the owner.
+    applyGroove: (param): param is PayloadOf<'applyGroove'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'grooveId', 'amount']) &&
+        isNonEmptyString(param.clipId) &&
+        isNonEmptyString(param.grooveId) &&
+        isOptionalOwn(param, 'amount', (value): value is number => isInRange(value, 0, 1)),
 
     // Pattern instance
     createPatternInstance: 'unchecked',

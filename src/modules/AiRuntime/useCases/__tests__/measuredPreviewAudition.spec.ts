@@ -119,7 +119,12 @@ function programmeOpen(gate: Node): boolean {
     return gate.connections.length > 0;
 }
 const ID = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0';
-const INPUT = { confirmationId: 'pending', targetId: 'drums', side: 'baseline' as const };
+const INPUT = {
+    confirmationId: 'pending',
+    targetId: 'drums',
+    side: 'baseline' as const,
+    surface: 'agent-workspace' as const,
+};
 const applied = (admittedBatch: number) => ({
     acceptance: 'accepted' as const,
     application: 'applied' as const,

@@ -7,6 +7,7 @@ import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { voiceInputAvailabilityStore, voiceModelSetupStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { downloadWhisperModel, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { TimelineClipNavigator } from '#/modules/Arrangement/presentations/views';
@@ -23,7 +24,6 @@ import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { cn } from '#/utils/Styles/cn';
 
-import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 import { windowChromeControls } from '../../useCases/windowChrome';
 import { VoiceButton } from '../components/Transport/VoiceButton';
@@ -31,7 +31,7 @@ import { TITLEBAR_NO_DRAG_SELECTOR } from '../helpers/titlebarDragRegion';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useProjectState } from '../hooks/useProjectState';
 import { useTransportState } from '../hooks/useTransportState';
-import { useUndoState } from '../hooks/useUndoState';
+import { useUndoAvailability } from '../hooks/useUndoState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { PromptBar } from './PromptBar';
@@ -45,7 +45,6 @@ import { TransportControls } from './Transport/TransportControls';
 import { UndoRedoButtons } from './Transport/UndoRedoButtons';
 import { WindowControls } from './Transport/WindowControls';
 
-const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
 const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
 const isCompactLayoutViewport = (): boolean => {
     if (typeof window === 'undefined') {
@@ -90,12 +89,19 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
     const { rippleEditing } = useStore(timelineEditingStore, defaultTimelineEditingState);
     const transport = useTransportState();
     const audioState = useAudioRecordingState();
-    const undoState = useUndoState();
+    const undoState = useUndoAvailability();
     const project = useProjectState();
 
-    const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
-    const hasTimelineSurface =
-        mode !== 'automation' && tracks.some((track) => track.kind !== 'master' && track.kind !== 'folder');
+    // The bar shows only these three facts about the tracks, so a clip edit that changes none of
+    // them must not render it again.
+    const hasTrackWithTimeline = useStoreSelector(trackStore, (state) =>
+        (state?.tracks ?? []).some((track) => track.kind !== 'master' && track.kind !== 'folder')
+    );
+    const hasTimelineSurface = mode !== 'automation' && hasTrackWithTimeline;
+    const anyTrackArmed = useStoreSelector(trackStore, (state) => (state?.tracks ?? []).some((track) => track.armed));
+    const anyMidiTrackArmed = useStoreSelector(trackStore, (state) =>
+        (state?.tracks ?? []).some((track) => track.armed && track.kind === 'midi')
+    );
 
     useEffect(() => {
         if (!hasTimelineSurface) {
@@ -117,8 +123,6 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
         // The confirmation click in the setup popover IS the consent gesture.
         void downloadWhisperModel({ downloadConsent: true });
     };
-    const anyTrackArmed = tracks.some((time) => time.armed);
-    const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 
     const isRecording = transport.isRecording;
 

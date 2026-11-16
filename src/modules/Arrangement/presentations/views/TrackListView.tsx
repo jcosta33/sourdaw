@@ -3,6 +3,7 @@ import {
     type CSSProperties,
     type DragEvent,
     type KeyboardEvent,
+    type MouseEvent,
     useRef,
     useState,
     useLayoutEffect,
@@ -185,6 +186,17 @@ export const TrackListView = ({
         setDragOverIndex(null);
     };
 
+    // The grid owns selection for both inputs: the keyboard in `handleKeyDown`,
+    // the pointer through the row a click lands in.
+    const handleRowClick = (event: MouseEvent<HTMLDivElement>): void => {
+        // Keyed by the track id, not the row role: the track header renders a row of its own.
+        const row = event.target instanceof Element ? event.target.closest('[data-track-id]') : null;
+        const trackId = row?.getAttribute('data-track-id');
+        if (trackId) {
+            selectTrack(trackId);
+        }
+    };
+
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         // Keystrokes typed into an inline editor (track rename) bubble to
         // this container; they must edit text, not navigate or delete —
@@ -344,11 +356,14 @@ export const TrackListView = ({
             >
                 <MiniMasterSpectrum />
             </DawHeaderBand>
+            {/* The handlers sit on this wrapper, not the grid: a focusable grid would take focus from a click on empty space and claim keys meant for the window shortcut layer. */}
             <div
                 ref={scrollRef}
+                role="presentation"
                 className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
                 onKeyDown={handleKeyDown}
+                onClick={handleRowClick}
             >
                 <div role="grid" aria-label="Track list">
                     {visibleTracks.map((track, index) => {
@@ -374,7 +389,7 @@ export const TrackListView = ({
                                     handleDrop(index);
                                 }}
                                 onDragEnd={handleDragEnd}
-                                onClick={() => selectTrack(track.id)}
+                                data-track-id={track.id}
                                 className={
                                     dragOverIndex === index
                                         ? 'border-t-2 border-ring outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70'

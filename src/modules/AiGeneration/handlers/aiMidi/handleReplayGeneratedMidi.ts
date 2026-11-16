@@ -1,7 +1,8 @@
 import { addClip, getTrackStoreState, restoreTrackAtIndex } from '#/modules/Arrangement/useCases';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { isValidMidiNoteSnapshot, setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult';
 

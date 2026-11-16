@@ -20,7 +20,15 @@ export type MetricGoalSource =
           readonly expectationIndex: number;
       }
     | { readonly kind: 'request-number'; readonly candidateId: string; readonly token: string }
-    | { readonly kind: 'policy'; readonly policyId: 'integrated-loudness-match-v1' | 'spectral-centroid-comparison-v1' }
+    | {
+          readonly kind: 'policy';
+          readonly policyId:
+              | 'integrated-loudness-match-v1'
+              | 'spectral-centroid-comparison-v1'
+              | 'integrated-loudness-comparison-v1'
+              | 'side-energy-fraction-comparison-v1'
+              | 'crest-factor-comparison-v1';
+      }
     /** A perceptual constraint the request states, held to its versioned invariant; `clause` is its own words. */
     | { readonly kind: 'constraint'; readonly constraintId: PerceptualConstraintId; readonly clause: string }
     | { readonly kind: 'unsupported' };
@@ -57,8 +65,8 @@ export type MetricRequestAuthority<MetricId extends string> = {
     /**
      * Who admitted the request's meaning: the complete literal parser, the configured joint intake, an
      * admitted workflow, or the user taking up a suggestion an answer offered, which names one recipe on
-     * one track and states no objective of its own, or the user repeating the last commit's recipe on
-     * named tracks, which likewise states no objective, or the application's reader of the request's
+     * one track, or the user repeating the last commit's recipe on named tracks, each stating no
+     * objective of its own beyond the measurable expectations an authored recipe declares, or the application's reader of the request's
      * perceptual constraints, which only restricts the batch and grants nothing, or the vibe-run plan
      * the application built for a whole-project request, whose batch promises its recipes' expectations.
      */
@@ -195,6 +203,18 @@ export type MetricGoalEvaluation = {
         readonly baseline: readonly number[];
         readonly observed: readonly number[];
         readonly reference: readonly number[];
+        /** Per target, the batch's initial reading and its final previewed reading: the pair admission judges the batch across. */
+        readonly initial: readonly number[];
+        readonly final: readonly number[];
+        /**
+         * What admission found for this criterion alone, whether or not an earlier one already blocked the batch:
+         * `met` and `not-met` when it compared compatible figures; `not-evaluated` when it read the criterion
+         * and found no compatible figures to compare; `not-reached` when it refused the batch before reading
+         * any figure, so no cause concerning this criterion's figures was established.
+         */
+        readonly outcome: 'met' | 'not-met' | 'not-evaluated' | 'not-reached';
+        /** The first pair of figures that broke the criterion, and whether it was its own step or the whole batch. */
+        readonly unmet: { readonly scope: 'step' | 'batch'; readonly from: number; readonly to: number } | null;
         readonly unit: string | null;
         readonly source: MetricGoalSource;
         readonly status: 'verified' | 'blocked';

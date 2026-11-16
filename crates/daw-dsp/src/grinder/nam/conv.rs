@@ -102,7 +102,7 @@ impl Conv1d {
             self.history[channel * history_len + self.write_pos] = *value;
         }
 
-        for o in 0..out_channels {
+        for (o, out) in output.iter_mut().enumerate().take(out_channels) {
             let mut sum = self.bias.get(o).copied().unwrap_or(0.0);
             for k in 0..kernel {
                 let delay = (kernel - 1 - k) * dilation;
@@ -112,7 +112,7 @@ impl Conv1d {
                     sum += self.taps[tap_base + i] * self.history[i * history_len + read_pos];
                 }
             }
-            output[o] = sum;
+            *out = sum;
         }
 
         self.write_pos += 1;
@@ -182,13 +182,13 @@ impl Conv1x1 {
 
     #[inline]
     pub(crate) fn process(&self, input: &[f32], output: &mut [f32]) {
-        for o in 0..self.out_channels {
+        for (o, out) in output.iter_mut().enumerate().take(self.out_channels) {
             let row = o * self.in_channels;
             let mut sum = self.bias.get(o).copied().unwrap_or(0.0);
-            for i in 0..self.in_channels {
-                sum += self.weights[row + i] * input[i];
+            for (i, x) in input.iter().enumerate().take(self.in_channels) {
+                sum += self.weights[row + i] * *x;
             }
-            output[o] = sum;
+            *out = sum;
         }
     }
 

@@ -8,7 +8,11 @@
 //! which articulation layer a note actually plays. Keyswitches are baseline
 //! orchestral-sampler behaviour.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::levain::LevainInstance;
 
@@ -28,6 +32,10 @@ fn render_peak(instance: &mut LevainInstance) -> f32 {
         let right_ptr = instance.get_right_ptr();
         // SAFETY: `process` guarantees BLOCK valid f32s in each channel buffer.
         let left = unsafe { std::slice::from_raw_parts(left_ptr, BLOCK) };
+        // SAFETY: `right_ptr` is the instance's right buffer, allocated at
+        // `LEVAIN_BLOCK_FRAMES` (4096) floats in `LevainInstance::new` and never resized;
+        // `process` just filled it, `BLOCK` is 128, and the slice is dropped before the
+        // next `process` call.
         let right = unsafe { std::slice::from_raw_parts(right_ptr, BLOCK) };
         for sample in left.iter().chain(right.iter()) {
             peak = peak.max(sample.abs());

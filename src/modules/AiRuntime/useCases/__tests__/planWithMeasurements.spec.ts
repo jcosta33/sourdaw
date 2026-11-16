@@ -28,6 +28,7 @@ import { agentWorkBudget } from '../agentWorkBudget';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { collectMetricGoalProof } from '../collectMetricGoalProof';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
@@ -104,6 +105,92 @@ afterEach(() => {
     aiBackendPreferenceStore.set('auto');
     resetMetricGoalProject();
 });
+
+const RISK_POLICY_MISMATCH = 'The approved trust mode or risk policy no longer matches.';
+
+/** What the approval card shows as moved for `confirmationId`: the oracle the plan's audible claim must equal. */
+function movedFiguresOnCard(confirmationId: string) {
+    return (getAgentApprovalView({ confirmationId })?.measuredPreview?.targets ?? []).flatMap((target) =>
+        target.metrics.flatMap((metric) => {
+            if (
+                metric.baseline === null ||
+                metric.preview === null ||
+                metric.delta === null ||
+                metric.delta.value === 0
+            ) {
+                return [];
+            }
+            return [
+                {
+                    targetId: target.targetId,
+                    targetKind: target.targetKind,
+                    range: getAgentApprovalView({ confirmationId })?.measuredPreview?.range,
+                    metricId: metric.metricId,
+                    baseline: metric.baseline,
+                    preview: metric.preview,
+                    delta: metric.delta,
+                },
+            ];
+        })
+    );
+}
+
+function planAudible() {
+    return agentRunLifecycle.get(RUN_ID)?.plan?.expectedImpact.audible;
+}
+
+const MODES = [
+    'matched',
+    'contradicted',
+    'render-failed',
+    'two-recipes',
+    'two-recipes-parameter-drift',
+    'two-recipes-order-drift',
+    'stopped-repreview',
+    'project-edited-repreview',
+    'project-saved-repreview',
+    'project-edited-saved-repreview',
+    'configuration-replaced-repreview',
+    'two-recipes-subset',
+] as const;
+type Mode = (typeof MODES)[number];
+
+/** Whether a measurement bound to the card exists for the claim to verify against. */
+const EXPECTED_VERIFICATION = {
+    matched: 'measured',
+    contradicted: 'measured',
+    'render-failed': null,
+    'two-recipes': 'measured',
+    'two-recipes-parameter-drift': 'measured',
+    'two-recipes-order-drift': 'measured',
+    'stopped-repreview': 'measured',
+    'project-edited-repreview': 'measured',
+    'project-saved-repreview': 'measured',
+    'project-edited-saved-repreview': 'measured',
+    'configuration-replaced-repreview': 'measured',
+    'two-recipes-subset': 'measured',
+} as const satisfies Record<Mode, 'measured' | null>;
+
+/**
+ * What the plan lists as observed once the first card is persisted: the figures the card shows as moved
+ * wherever that card carries a bound preview in which a metric moved, and nothing where it carries none,
+ * or one in which nothing moved (the contradicted render changes no figure). The plan's claim itself is
+ * `predicted` in every mode, because the request is perceptual.
+ */
+const EXPECTED_OBSERVED = {
+    matched: 'measured',
+    contradicted: 'not-claimed',
+    'render-failed': 'not-claimed',
+    'two-recipes': 'measured',
+    'two-recipes-parameter-drift': 'measured',
+    'two-recipes-order-drift': 'measured',
+    'stopped-repreview': 'measured',
+    'project-edited-repreview': 'measured',
+    'project-saved-repreview': 'measured',
+    'project-edited-saved-repreview': 'measured',
+    'configuration-replaced-repreview': 'measured',
+    'two-recipes-subset': 'measured',
+} as const satisfies Record<Mode, 'measured' | 'not-claimed'>;
 
 describe('configured mixing plan with actual measurements', () => {
     it.each(['save', 'unflushed edit', 'flushed edit', 'saved edit', 'edit and revert'] as const)(
@@ -335,20 +422,7 @@ describe('configured mixing plan with actual measurements', () => {
         }
     );
 
-    it.each([
-        'matched',
-        'contradicted',
-        'render-failed',
-        'two-recipes',
-        'two-recipes-parameter-drift',
-        'two-recipes-order-drift',
-        'stopped-repreview',
-        'project-edited-repreview',
-        'project-saved-repreview',
-        'project-edited-saved-repreview',
-        'configuration-replaced-repreview',
-        'two-recipes-subset',
-    ] as const)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
+    it.each(MODES)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
         const multipleRecipes = mode.startsWith('two-recipes');
         const lateRepreview = mode.endsWith('repreview');
         const matchedSingle = mode === 'matched' || lateRepreview;
@@ -704,9 +778,18 @@ describe('configured mixing plan with actual measurements', () => {
             throw new Error('The real measured plan must remain available for approval.');
         }
         const compiled = materialized.compiledActionExecution;
-        expect(agentRunLifecycle.get(RUN_ID)?.plan?.expectedImpact.audible.status).toBe('not-claimed');
         expect(agentRunLifecycle.get(RUN_ID)?.plan?.metricGoalState).toBe(compiled.metricGoalState);
         const state = metricGoalStateCodec(compiled.metricGoalState);
+        // Before any card is persisted the plan already states what the frozen goals predict, unverified.
+        const stated = planAudible();
+        if (stated?.status !== 'predicted') {
+            throw new Error(`Expected the perceptual plan to state its predictions, got: ${JSON.stringify(stated)}`);
+        }
+        expect(stated.predictions.map((prediction) => prediction.goalId)).toEqual(
+            state?.authorities.flatMap((authority) => authority.goals.map((goal) => goal.goalId))
+        );
+        expect(stated.verification).toBeNull();
+        expect(stated.predictions.every((prediction) => prediction.outcome === null)).toBe(true);
         if (multipleRecipes) {
             expect(
                 state?.binding?.prefixes,
@@ -792,6 +875,31 @@ describe('configured mixing plan with actual measurements', () => {
         expect(view).not.toBeNull();
         expect(view?.actionLabels).toHaveLength(expectedCommands);
         expect(view?.canConfirm).toBe(matchedSingle);
+        const claim = planAudible();
+        if (claim?.status !== 'predicted') {
+            throw new Error(`Expected the perceptual plan to keep its predictions, got: ${JSON.stringify(claim)}`);
+        }
+        const observed = claim.observed.status === 'listed' ? claim.observed.metrics : [];
+        expect(observed.length > 0 ? 'measured' : 'not-claimed').toBe(EXPECTED_OBSERVED[mode]);
+        expect(observed).toEqual(movedFiguresOnCard(confirmationId));
+        // The claim's verdict is the card's own: a prediction the card refuses is shown as unmet, never as held.
+        expect(claim.verification?.status ?? null).toBe(
+            EXPECTED_VERIFICATION[mode] === null ? null : view?.metricGoals.status
+        );
+        expect(claim.verification?.failure ?? null).toBe(
+            EXPECTED_VERIFICATION[mode] === null ? null : view?.metricGoals.failure
+        );
+        if (mode === 'render-failed') {
+            // Confirm is refused for the missing measurement, not for a policy mismatch.
+            const refused = await confirmPendingChatActions({ confirmationId });
+            expect(refused).toMatchObject({
+                status: 'failed',
+                reason: expect.stringMatching(/measurement/iu),
+            });
+            expect(refused.status === 'failed' ? refused.reason : '').not.toBe(RISK_POLICY_MISMATCH);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoHistoryStore.value).toEqual(before.undo);
+        }
         expect(view?.metricGoals.criteria[0]?.criterionText).toContain('frequency-band energy');
         expect(view?.metricGoals.criteria[0]?.criterionText).toContain('Lead Vocal');
         expect(view?.metricGoals.criteria[0]?.criterionText).not.toContain('recipeDigest');
@@ -837,6 +945,12 @@ describe('configured mixing plan with actual measurements', () => {
                     throw new Error('Expected the re-preview to survive the save.');
                 }
                 expect(getAgentApprovalView({ confirmationId: replaced.confirmationId })?.canConfirm).toBe(true);
+                const replacedClaim = planAudible();
+                if (replacedClaim?.status !== 'predicted' || replacedClaim.observed.status !== 'listed') {
+                    throw new Error('Expected the refreshed measurement to be listed beside the predictions.');
+                }
+                expect(replacedClaim.verification).toMatchObject({ status: 'verified', failure: null });
+                expect(replacedClaim.observed.metrics).toEqual(movedFiguresOnCard(replaced.confirmationId));
                 expect(trackStore.value).toEqual(settledBeforeResume.tracks);
                 expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
                 return;

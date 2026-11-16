@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
-
+import { type TakeReKeyLaneTransitionSnapshot } from '../../../events/arrangementClipAppActions';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { reconcileTransitionBaseGaps } from '../reconcileTakeReKeySources';
 import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';

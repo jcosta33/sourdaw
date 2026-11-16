@@ -165,3 +165,9 @@ impl GranularEngine {
         (out_l * norm, out_r * norm)
     }
 }
+
+impl Default for GranularEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}

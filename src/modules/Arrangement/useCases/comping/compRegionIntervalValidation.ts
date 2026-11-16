@@ -1,7 +1,7 @@
 import { isAudioSourceSnapshot } from '#/utils/audioSourceTime';
-import { type CompSelectionSpanSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { type CompSelectionSpanSnapshot } from '../../events/arrangementTakeAppActions';
 import { isValidCompAudioSourcePromotions } from '../../stores/compAudioSourcePromotions';
 import { type TakeLaneCompRegionPatch as CompRegionIntervalPatch } from '../../stores/takeLaneWriteJournal';
 

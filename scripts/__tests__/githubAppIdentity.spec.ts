@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import {
     chmodSync,
+    copyFileSync,
     existsSync,
     mkdtempSync,
     mkdirSync,
@@ -10,6 +11,7 @@ import {
     realpathSync,
     rmSync,
     statSync,
+    symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -62,6 +64,8 @@ import {
     type GitHubJsonClient,
     spawnRun,
 } from '../githubAppIdentity.ts';
+import { TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from '../prContract.ts';
+import { createIsolatedGitDirectory, releaseIsolatedGitDirectory } from '../tokenBearingChildPlacement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -1564,21 +1568,18 @@ describe('sterile Git child environments', () => {
                 join(root, 'hooks', 'reference-transaction'),
                 `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`
             );
-            const fetch = (env: NodeJS.ProcessEnv) =>
-                spawnCapture(
-                    'git',
-                    gitAuthenticatedArgs('ghs_sentinel', join(root, 'helper'), ['fetch', source, 'main']),
-                    { cwd: repository, env }
-                );
+            // The caller's GH_TOKEN alone makes the child token-bearing; a credential helper would
+            // need a transport-created git directory, which no lane config reaches.
+            const fetchArgs = [`--git-dir=${join(repository, '.git')}`, 'fetch', source, 'main'];
             const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
 
-            fetch(env);
+            spawnCapture('git', fetchArgs, { cwd: repository, env });
             expect(fixtureGit(repository, ['rev-parse', 'FETCH_HEAD'])).toBe(fixtureGit(source, ['rev-parse', 'HEAD']));
             expect(existsSync(leaked)).toBe(false);
 
             // A fetch that moves a ref without the environment overrides runs the hook with the token.
             fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
-            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            spawnSync('git', fetchArgs, { cwd: repository, env: { ...env, GIT_CONFIG_COUNT: '0' } });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1627,7 +1628,7 @@ describe('sterile Git child environments', () => {
 
             // A fetch that has something new to negotiate, without the overrides, runs the command.
             fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
-            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            spawnSync('git', ['fetch', source, 'main'], { cwd: repository, env: { ...env, GIT_CONFIG_COUNT: '0' } });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1658,10 +1659,28 @@ describe('sterile Git child environments', () => {
             expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
                 'repository config defines hook.lane.event'
             );
-            const credentialArgs = ['-c', 'credential.helper=', '-c', 'credential.helper=!true', ...fetchArgs];
-            expect(() =>
-                spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
-            ).toThrow('repository config defines hook.lane.event');
+            // A credential-holding child must run in a transport-created git directory; one whose
+            // config defines a hook still refuses.
+            const isolated = createIsolatedGitDirectory();
+            try {
+                fixtureGit(root, ['init', '-q', '--bare', isolated]);
+                fixtureGit(root, ['--git-dir', isolated, 'config', 'hook.lane.event', 'reference-transaction']);
+                fixtureGit(root, ['--git-dir', isolated, 'config', 'hook.lane.command', program]);
+                const credentialArgs = [
+                    `--git-dir=${isolated}`,
+                    '-c',
+                    'credential.helper=',
+                    '-c',
+                    'credential.helper=!true',
+                    ...fetchArgs,
+                ];
+                expect(() =>
+                    spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
+                ).toThrow('repository config defines hook.lane.event');
+            } finally {
+                releaseIsolatedGitDirectory(isolated);
+                rmSync(isolated, { recursive: true, force: true });
+            }
             expect(existsSync(leaked)).toBe(false);
 
             // The fixed-name overrides alone do not stop a config-defined hook: it runs beside the token.
@@ -1669,6 +1688,55 @@ describe('sterile Git child environments', () => {
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
+
+    it.each(['GITHUB_TOKEN', 'github_token', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'])(
+        'refuses a git child that carries its token only in %s while the repository config defines a hook',
+        (key) => {
+            withScratch('sourdaw-config-hook-token-key-', (root) => {
+                const sentinel = ['ghs', 'token', 'key', 'sentinel'].join('_');
+                const leaked = join(root, 'leaked');
+                const program = join(root, 'hook');
+                const source = join(root, 'source');
+                const repository = join(root, 'repository');
+                for (const path of [source, repository]) {
+                    mkdirSync(path);
+                    fixtureGit(path, ['init', '-q', '-b', 'main']);
+                }
+                fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: source']);
+                writeExecutable(program, `#!/bin/sh\nenv > ${JSON.stringify(leaked)}\n`);
+                fixtureGit(repository, ['config', 'hook.lane.event', 'reference-transaction']);
+                fixtureGit(repository, ['config', 'hook.lane.command', program]);
+                const env = { ...githubAuthorizationGitEnv(), [key]: sentinel };
+                const fetchArgs = ['fetch', source, 'main'];
+
+                expect(() => spawnCapture('git', fetchArgs, { cwd: repository, env })).toThrow(
+                    'refusing a token-bearing git child: repository config defines hook.lane.event'
+                );
+                expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
+                    'repository config defines hook.lane.event'
+                );
+                expect(existsSync(leaked)).toBe(false);
+
+                spawnSync('git', fetchArgs, { cwd: repository, env });
+                expect(readFileSync(leaked, 'utf8')).toContain(sentinel);
+            });
+        }
+    );
+
+    it.each(['GITHUB_TOKEN', 'github_token', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'])(
+        'keeps a token carried in %s from the programs a git child runs',
+        (key) => {
+            withScratch('sourdaw-token-key-strip-', (root) => {
+                const sentinel = ['ghs', 'token', 'key', 'sentinel'].join('_');
+                fixtureGit(root, ['init', '-q', '-b', 'main']);
+                const env = { ...githubAuthorizationGitEnv(), [key]: sentinel };
+                const dumpArgs = ['-c', 'alias.dump=!env', 'dump'];
+
+                expect(spawnCapture('git', dumpArgs, { cwd: root, env })).not.toContain(sentinel);
+                expect(spawnSync('git', dumpArgs, { cwd: root, env, encoding: 'utf8' }).stdout).toContain(sentinel);
+            });
+        }
+    );
 
     it('runs a git child without a token whatever hooks the repository config defines', () => {
         withScratch('sourdaw-config-hook-untokened-', (root) => {
@@ -1698,7 +1766,10 @@ describe('sterile Git child environments', () => {
             expect(existsSync(leaked)).toBe(false);
 
             // Without the environment overrides the rewritten remote runs the proxy with the token.
-            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            spawnSync('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], {
+                cwd: root,
+                env: { ...env, GIT_CONFIG_COUNT: '0' },
+            });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1743,7 +1814,10 @@ describe('sterile Git child environments', () => {
             expect(existsSync(leaked)).toBe(false);
 
             // Without the environment overrides the rewritten remote runs the command with the token.
-            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            spawnSync('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], {
+                cwd: root,
+                env: { ...env, GIT_CONFIG_COUNT: '0' },
+            });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
@@ -1831,5 +1905,407 @@ describe('spawnRun stderr capture', () => {
                 env: { ...process.env },
             })
         ).toThrow(/identity-child-boom/);
+    });
+});
+
+describe('token-bearing gh children start their git outside every repository', () => {
+    // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
+    const sentinel = ['ghs', 'gh', 'child', 'sentinel'].join('_');
+    const repositoryQuery = ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'];
+    const routingKeys = [
+        'GIT_DIR',
+        'GIT_WORK_TREE',
+        'GIT_COMMON_DIR',
+        'GIT_INDEX_FILE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+        'GIT_NAMESPACE',
+        'GIT_CEILING_DIRECTORIES',
+        'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+    ];
+
+    type Observed = { cwd: string; token: string; toplevel: string; marker: string };
+
+    /**
+     * A repository whose config a lane planted, and a stand-in `gh` that records where the git it
+     * starts lands: the directory, the token, the repository git discovers, and the lane's config.
+     */
+    function withGhFixture(
+        body: (fixture: {
+            root: string;
+            repository: string;
+            tokenEnv: NodeJS.ProcessEnv;
+            tokenFreeEnv: NodeJS.ProcessEnv;
+            observed: () => Observed;
+            routing: () => string;
+        }) => void,
+        ghFileName = 'gh'
+    ): void {
+        withScratch('sourdaw-gh-child-', (root) => {
+            const repository = join(root, 'repository');
+            const record = join(root, 'record');
+            const routingRecord = join(root, 'routing');
+            const gh = join(root, 'bin', ghFileName);
+            mkdirSync(repository);
+            mkdirSync(dirname(gh));
+            fixtureGit(repository, ['init', '-q', '-b', 'main']);
+            fixtureGit(repository, ['config', 'lane.marker', 'planted']);
+            writeExecutable(
+                gh,
+                [
+                    '#!/bin/sh',
+                    `{`,
+                    `  printf 'cwd=%s\\n' "$(pwd -P)"`,
+                    `  printf 'token=%s\\n' "$GH_TOKEN"`,
+                    `  printf 'toplevel=%s\\n' "$(git rev-parse --show-toplevel 2>/dev/null)"`,
+                    `  printf 'marker=%s\\n' "$(git config --get lane.marker 2>/dev/null)"`,
+                    `} > ${JSON.stringify(record)}`,
+                    `env | grep -i '^git_' | sort > ${JSON.stringify(routingRecord)}`,
+                    '',
+                ].join('\n')
+            );
+            const trusted = { [TRUSTED_GH_PATH_ENV]: gh };
+            body({
+                root,
+                repository,
+                tokenEnv: { ...githubChildEnv(sentinel, join(root, 'gh-config')), ...trusted },
+                tokenFreeEnv: { ...githubAuthorizationGitEnv(), ...trusted },
+                observed: () => {
+                    const fields = new Map(
+                        readFileSync(record, 'utf8')
+                            .trimEnd()
+                            .split('\n')
+                            .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])
+                    );
+                    return {
+                        cwd: fields.get('cwd') ?? '',
+                        token: fields.get('token') ?? '',
+                        toplevel: fields.get('toplevel') ?? '',
+                        marker: fields.get('marker') ?? '',
+                    };
+                },
+                routing: () => readFileSync(routingRecord, 'utf8'),
+            });
+        });
+    }
+
+    it.each([
+        [
+            'spawnCapture',
+            (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => spawnCapture('gh', args, options),
+        ],
+        [
+            'spawnCaptureBytes',
+            (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) =>
+                spawnCaptureBytes('gh', args, options),
+        ],
+        [
+            'spawnRun',
+            (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => spawnRun('gh', args, options),
+        ],
+    ])('%s runs a token-bearing gh child where its git finds no repository config', (_label, spawn) => {
+        withGhFixture((f) => {
+            spawn(['pr', 'view', '1', '--repo', 'jcosta33/sourdaw', '--json', 'state'], {
+                cwd: f.repository,
+                env: f.tokenEnv,
+            });
+
+            const observed = f.observed();
+            expect(observed.token).toBe(sentinel);
+            expect(observed.toplevel).toBe('');
+            expect(observed.marker).toBe('');
+            expect(observed.cwd).not.toBe(f.repository);
+            expect(existsSync(observed.cwd)).toBe(false);
+        });
+    });
+
+    it.each([...routingKeys, 'git_dir'])('keeps an inherited %s from reaching the gh child', (key) => {
+        withGhFixture((f) => {
+            const planted = `planted-${key}`;
+            spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], {
+                cwd: f.repository,
+                env: { ...f.tokenEnv, [key]: planted },
+            });
+
+            expect(f.observed().token).toBe(sentinel);
+            expect(f.routing()).not.toContain(planted);
+        });
+    });
+
+    it.each([
+        ['a further argument', [...repositoryQuery, '--web']],
+        ['an argument fewer', repositoryQuery.slice(0, -1)],
+    ])('moves a checkout repository query with %s out of the repository', (_label, args) => {
+        withGhFixture((f) => {
+            spawnCapture('gh', args, { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed().toplevel).toBe('');
+            expect(f.observed().cwd).not.toBe(f.repository);
+        });
+    });
+
+    it.each(
+        ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'].flatMap((key) => [
+            key,
+            key.toLowerCase(),
+        ])
+    )('moves a gh child that carries its token only in %s out of the repository', (key) => {
+        withGhFixture((f) => {
+            spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], {
+                cwd: f.repository,
+                env: { ...f.tokenFreeEnv, [key]: sentinel },
+            });
+
+            expect(f.observed().toplevel).toBe('');
+            expect(f.observed().cwd).not.toBe(f.repository);
+        });
+    });
+
+    it('moves a token-bearing gh child out of the repository when the trusted gh is the gh.exe Windows resolves', () => {
+        withGhFixture((f) => {
+            spawnCapture('gh', ['pr', 'view', '1', '--repo', 'jcosta33/sourdaw', '--json', 'state'], {
+                cwd: f.repository,
+                env: f.tokenEnv,
+            });
+
+            const observed = f.observed();
+            expect(observed.token).toBe(sentinel);
+            expect(observed.cwd).not.toBe(f.repository);
+            expect(observed.toplevel).toBe('');
+            expect(observed.marker).toBe('');
+        }, 'gh.exe');
+    });
+
+    it.each([
+        ['the gh command', (_f: { root: string }) => 'gh'],
+        ['its absolute trusted path', (f: { root: string }) => join(f.root, 'bin', 'trusted-cli')],
+    ])(
+        'moves a token-bearing gh child out of the repository when the trusted gh path names a file not called gh, reached through %s',
+        (_label, command) => {
+            withGhFixture((f) => {
+                spawnCapture(command(f), ['api', 'repos/jcosta33/sourdaw'], { cwd: f.repository, env: f.tokenEnv });
+
+                const observed = f.observed();
+                expect(observed.token).toBe(sentinel);
+                expect(observed.cwd).not.toBe(f.repository);
+                expect(observed.toplevel).toBe('');
+                expect(observed.marker).toBe('');
+            }, 'trusted-cli');
+        }
+    );
+
+    it('leaves a token-bearing child that is neither gh nor the trusted gh path in the directory its caller names', () => {
+        withGhFixture((f) => {
+            const other = join(f.root, 'bin', 'other-cli');
+            copyFileSync(join(f.root, 'bin', 'trusted-cli'), other);
+            chmodSync(other, 0o755);
+            spawnCapture(other, ['api', 'repos/jcosta33/sourdaw'], { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed().cwd).toBe(realpathSync(f.repository));
+        }, 'trusted-cli');
+    });
+
+    it('keeps the gh child out of the repository when the temporary directory lies inside it and the caller names its git dir', () => {
+        withGhFixture((f) => {
+            const inside = join(f.repository, 'tmp');
+            mkdirSync(inside);
+            const previous = process.env.TMPDIR;
+            process.env.TMPDIR = inside;
+            try {
+                spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], {
+                    cwd: f.repository,
+                    env: { ...f.tokenEnv, GIT_DIR: join(f.repository, '.git'), GIT_WORK_TREE: f.repository },
+                });
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.TMPDIR;
+                } else {
+                    process.env.TMPDIR = previous;
+                }
+            }
+
+            const observed = f.observed();
+            expect(observed.cwd.startsWith(realpathSync(inside))).toBe(true);
+            expect(observed.toplevel).toBe('');
+            expect(observed.marker).toBe('');
+        });
+    });
+
+    it('runs the checkout repository query in the caller repository, the one token-bearing gh child that needs it', () => {
+        withGhFixture((f) => {
+            spawnCapture('gh', repositoryQuery, { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed()).toEqual({
+                cwd: f.repository,
+                token: sentinel,
+                toplevel: f.repository,
+                marker: 'planted',
+            });
+        });
+    });
+
+    it('moves any other repo view out of the repository', () => {
+        withGhFixture((f) => {
+            spawnCapture('gh', ['repo', 'view', '--json', 'url'], { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed().toplevel).toBe('');
+        });
+    });
+
+    it('leaves a gh child without a token in the caller directory', () => {
+        withGhFixture((f) => {
+            spawnCapture('gh', ['pr', 'view', '1'], { cwd: f.repository, env: f.tokenFreeEnv });
+
+            expect(f.observed()).toEqual({ cwd: f.repository, token: '', toplevel: f.repository, marker: 'planted' });
+        });
+    });
+
+    it('names the real parent of its directory as the ceiling when the temporary directory is a symlink into the repository', () => {
+        withGhFixture((f) => {
+            const real = join(f.repository, 'real-tmp');
+            const link = join(f.root, 'tmp-link');
+            mkdirSync(real);
+            symlinkSync(real, link, 'dir');
+            const previous = process.env.TMPDIR;
+            process.env.TMPDIR = link;
+            try {
+                spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], { cwd: f.repository, env: f.tokenEnv });
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.TMPDIR;
+                } else {
+                    process.env.TMPDIR = previous;
+                }
+            }
+
+            const observed = f.observed();
+            const ceiling = f
+                .routing()
+                .split('\n')
+                .find((line) => line.startsWith('GIT_CEILING_DIRECTORIES='));
+            expect(observed.cwd.startsWith(`${real}/`)).toBe(true);
+            // The child starts in the resolved directory and names its resolved parent, so the
+            // ceiling and the start directory cannot name different places if the link moves.
+            expect(ceiling).toBe(`GIT_CEILING_DIRECTORIES=${dirname(observed.cwd)}`);
+            expect(observed.toplevel).toBe('');
+            expect(observed.marker).toBe('');
+        });
+    });
+});
+
+describe('git children the launcher resolves to git.exe', () => {
+    // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
+    const sentinel = ['ghs', 'git', 'exe', 'sentinel'].join('_');
+    const credentialArgs = (root: string) => [
+        '-c',
+        'credential.helper=',
+        '-c',
+        'credential.helper=!/x/helper',
+        'ls-remote',
+        `file://${join(root, 'missing.git')}`,
+    ];
+    // Git runs a `!` alias through the shell with the child's environment.
+    const tokenProbe = ['-c', `alias.probe=!printf '[%s]' "$GH_TOKEN"`, 'probe'];
+
+    /** A link to the real git under `fileName`, as the launcher hands the trusted path to children. */
+    function withLinkedGit(fileName: string, body: (fixture: { root: string; git: string }) => void): void {
+        withScratch('sourdaw-git-exe-', (root) => {
+            const located = spawnSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+            const git = join(root, 'bin', fileName);
+            mkdirSync(dirname(git));
+            symlinkSync(realpathSync(located), git);
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            body({ root, git });
+        });
+    }
+
+    it.each([
+        ['spawnCapture', (args: string[], env: NodeJS.ProcessEnv) => spawnCapture('git', args, { env })],
+        ['spawnCaptureBytes', (args: string[], env: NodeJS.ProcessEnv) => spawnCaptureBytes('git', args, { env })],
+        ['spawnRun', (args: string[], env: NodeJS.ProcessEnv) => spawnRun('git', args, { env })],
+    ])('%s refuses a credential-holding git.exe child outside an isolated git directory', (_label, spawn) => {
+        withLinkedGit('git.exe', ({ root, git }) => {
+            const env = { ...githubAuthorizationGitEnv(), [TRUSTED_GIT_PATH_ENV]: git };
+
+            expect(() => spawn(credentialArgs(root), env)).toThrow(
+                'refusing a token-bearing git child outside an isolated git directory'
+            );
+        });
+    });
+
+    it.each(['git.exe', 'GIT.EXE', 'git'])('keeps the token from a trusted git child named %s', (fileName) => {
+        withLinkedGit(fileName, ({ root, git }) => {
+            const env = { ...githubChildEnv(sentinel, join(root, 'gh-config')), [TRUSTED_GIT_PATH_ENV]: git };
+
+            expect(spawnCapture('git', tokenProbe, { cwd: root, env })).toBe('[]');
+            // Unguarded, the same child prints the token.
+            expect(spawnSync(git, tokenProbe, { cwd: root, env, encoding: 'utf8' }).stdout).toBe(`[${sentinel}]`);
+        });
+    });
+
+    it('treats the requested git as git whatever name its trusted path resolves to', () => {
+        // Not `git-<name>`: git runs a program named that way as the builtin `<name>`.
+        withLinkedGit('trusted-scm', ({ root, git }) => {
+            const env = { ...githubChildEnv(sentinel, join(root, 'gh-config')), [TRUSTED_GIT_PATH_ENV]: git };
+
+            expect(spawnCapture('git', tokenProbe, { cwd: root, env })).toBe('[]');
+            expect(() =>
+                spawnCapture('git', credentialArgs(root), {
+                    env: { ...githubAuthorizationGitEnv(), [TRUSTED_GIT_PATH_ENV]: git },
+                })
+            ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+        });
+    });
+
+    it.each(['git.exe', 'GIT.EXE'])('treats a %s named by absolute path as git', (fileName) => {
+        withLinkedGit(fileName, ({ root, git }) => {
+            expect(
+                spawnCapture(git, tokenProbe, { cwd: root, env: githubChildEnv(sentinel, join(root, 'gh-config')) })
+            ).toBe('[]');
+            expect(() => spawnCapture(git, credentialArgs(root), { env: githubAuthorizationGitEnv() })).toThrow(
+                'refusing a token-bearing git child outside an isolated git directory'
+            );
+        });
+    });
+
+    it.each([
+        [
+            'spawnCapture',
+            (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+                spawnCapture(command, args, options);
+            },
+        ],
+        [
+            'spawnCaptureBytes',
+            (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+                spawnCaptureBytes(command, args, options);
+            },
+        ],
+        [
+            'spawnRun',
+            (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+                spawnRun(command, args, options);
+            },
+        ],
+    ])('%s treats the absolute trusted git path as git whatever its file name', (_label, spawn) => {
+        // The launcher hands children the real path of the git it found, which need not be named git.
+        withLinkedGit('trusted-scm', ({ root, git }) => {
+            const record = join(root, 'token.record');
+            const recordingProbe = [
+                '-c',
+                `alias.probe=!printf '[%s]' "$GH_TOKEN" > ${JSON.stringify(record)}`,
+                'probe',
+            ];
+            const tokenEnv = { ...githubChildEnv(sentinel, join(root, 'gh-config')), [TRUSTED_GIT_PATH_ENV]: git };
+
+            spawn(git, recordingProbe, { cwd: root, env: tokenEnv });
+            expect(readFileSync(record, 'utf8')).toBe('[]');
+            expect(() =>
+                spawn(git, credentialArgs(root), {
+                    cwd: root,
+                    env: { ...githubAuthorizationGitEnv(), [TRUSTED_GIT_PATH_ENV]: git },
+                })
+            ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+        });
     });
 });

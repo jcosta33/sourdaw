@@ -41,6 +41,38 @@ impl Default for TuningTable {
     }
 }
 
+/// Why a tuning table could not be computed from a scale.
+///
+/// `Display` is the message the frontend receives; the Scala parity fixtures
+/// match its text, so rewording a variant needs the matching TypeScript change.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TuningTableError {
+    /// The root frequency is non-finite, zero, or negative.
+    InvalidRootFrequency { root_freq: f64 },
+    /// The scale maps a MIDI note to a non-finite or non-positive frequency.
+    NonFiniteFrequency { midi_note: usize, frequency: f64 },
+}
+
+impl std::fmt::Display for TuningTableError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidRootFrequency { root_freq } => write!(
+                formatter,
+                "Root frequency must be finite and above zero, got {root_freq}"
+            ),
+            Self::NonFiniteFrequency {
+                midi_note,
+                frequency,
+            } => write!(
+                formatter,
+                "Scale produces a non-finite frequency at MIDI note {midi_note}: {frequency}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TuningTableError {}
+
 impl TuningTable {
     /// Build a 128-entry tuning table from a Scala scale.
     ///
@@ -48,12 +80,13 @@ impl TuningTable {
     /// entry serializes to JSON `null` against a frontend typed `number[]` and
     /// detunes every note to infinity or silence while the parse reports
     /// success, so a table that cannot be computed is an error, never a value.
-    pub fn from_scale(scale: &scala::Scale, root_note: u8, root_freq: f64) -> Result<Self, String> {
+    pub fn from_scale(
+        scale: &scala::Scale,
+        root_note: u8,
+        root_freq: f64,
+    ) -> Result<Self, TuningTableError> {
         if !root_freq.is_finite() || root_freq <= 0.0 {
-            return Err(format!(
-                "Root frequency must be finite and above zero, got {}",
-                root_freq
-            ));
+            return Err(TuningTableError::InvalidRootFrequency { root_freq });
         }
 
         let mut frequencies = [0.0; 128];
@@ -98,10 +131,10 @@ impl TuningTable {
             let freq = root_freq * 2.0_f64.powf(cents_offset / 1200.0);
             let log2_freq = freq.log2();
             if !freq.is_finite() || freq <= 0.0 || !log2_freq.is_finite() {
-                return Err(format!(
-                    "Scale produces a non-finite frequency at MIDI note {}: {}",
-                    i, freq
-                ));
+                return Err(TuningTableError::NonFiniteFrequency {
+                    midi_note: i,
+                    frequency: freq,
+                });
             }
             frequencies[i] = freq;
             log2_frequencies[i] = log2_freq;
@@ -117,7 +150,7 @@ impl TuningTable {
 #[cfg(test)]
 mod tests {
     use super::scala::Scale;
-    use super::TuningTable;
+    use super::{TuningTable, TuningTableError};
 
     /// 12-TET expressed in cents, so the table must reproduce equal temperament
     /// exactly at every root.
@@ -182,10 +215,37 @@ mod tests {
                 .expect_err("a non-positive or non-finite root must be rejected");
 
             assert!(
-                error.starts_with("Root frequency must be finite and above zero"),
-                "unexpected error for root {root_freq}: {error}"
+                matches!(
+                    error,
+                    TuningTableError::InvalidRootFrequency { root_freq: rejected }
+                        if rejected.to_bits() == root_freq.to_bits()
+                ),
+                "unexpected error for root {root_freq}: {error:?}"
             );
         }
+    }
+
+    #[test]
+    fn errors_display_the_messages_the_frontend_receives() {
+        assert_eq!(
+            TuningTableError::InvalidRootFrequency { root_freq: -440.0 }.to_string(),
+            "Root frequency must be finite and above zero, got -440"
+        );
+        assert_eq!(
+            TuningTableError::InvalidRootFrequency {
+                root_freq: f64::NAN
+            }
+            .to_string(),
+            "Root frequency must be finite and above zero, got NaN"
+        );
+        assert_eq!(
+            TuningTableError::NonFiniteFrequency {
+                midi_note: 70,
+                frequency: f64::INFINITY,
+            }
+            .to_string(),
+            "Scale produces a non-finite frequency at MIDI note 70: inf"
+        );
     }
 
     #[test]
@@ -201,8 +261,8 @@ mod tests {
             .expect_err("an infinite table must not be handed back as a value");
 
         assert!(
-            error.starts_with("Scale produces a non-finite frequency"),
-            "unexpected error: {error}"
+            matches!(error, TuningTableError::NonFiniteFrequency { .. }),
+            "unexpected error: {error:?}"
         );
     }
 }

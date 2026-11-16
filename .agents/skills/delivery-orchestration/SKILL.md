@@ -120,10 +120,18 @@ An issue-bound lane claims its issue in the same step: `lane:open` prints the co
 `pnpm issue:claim <issue>` — run from the protected primary checkout — adds the `status:active`
 label, removes every other `status:` label, and moves every board item holding the issue to In
 progress, reading the project's field and option ids live, and reads the label swap back before
-moving any board. The script refuses a closed issue and an issue that already carries
-`status:active`, making an existing claim visible before work starts; the check is
-read-then-write, not atomic, so the survey before `lane:open` remains the guard against two claims
-racing in one window.
+moving any board. It reads and validates every board the issue sits on before its first write, so
+an issue on more boards than one read covers, or on a board whose Status field is unreadable or has
+no In progress option, refuses with nothing written. The script refuses a closed issue and an issue
+that already carries `status:active`, making an existing claim visible before work starts. Two
+claims racing past that check are decided by a claim comment: after its label swap each claim posts
+one comment carrying a fresh token, then reads the issue timeline, and wins only when its token is
+the only such comment the operator wrote since `status:active` was last removed. Only the winner moves the boards; every
+other claim withdraws its own comment and refuses, naming the other claim comments it saw. Two
+exactly simultaneous claims can both refuse, never both win. The winning comment stays on the
+issue as the claim record. A refusal after the label swap leaves `status:active` on the issue; when
+no lane holds it, release the issue by removing the label and claim again. A board move that fails
+after the claim has won leaves the claim standing and names each board to move by hand.
 
 An issueless lane's worktree and PR are the claim: choose a slug that names the change precisely and
 publish early, before the head is final if needed. Work that outlives one lane or session — a
@@ -155,13 +163,17 @@ that model. The author works only in the lane and commits there; it never pushes
       lists stale digests; regenerate with
       `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json --write` and commit the
       rewrite.
-    - **Release tracked sets**: `release/open-source-inventory.json` records digests over the
-      `gitPathspecs` of `GRAND_BOULE_RELEASE_REGISTRY` in `scripts/checkReleaseInventory.ts`, which
-      reach outside the Grand Boule module into Transport MIDI scheduling, AudioEngine runtime and
-      worklet files, and the command handler maps and argument keys. After committing a change to any
-      of those paths, run `pnpm release:restamp:tracked-set`: it refuses uncommitted tracked-set
-      changes, prints `release inventory already current` or each moved digest, and rewrites the
-      inventory for you to commit. PR CI's release inventory check fails on a stale digest.
+    - **Release tracked sets**: the `gitPathspecs` of `GRAND_BOULE_RELEASE_REGISTRY` in
+      `scripts/checkReleaseInventory.ts` reach outside the Grand Boule module into Transport MIDI
+      scheduling, AudioEngine runtime and worklet files, and the command handler maps and argument
+      keys. Two boundaries pin admitted bytes (`pinsAdmittedBytes`): the DSP source under
+      `crates/daw-dsp/src/grand_boule` and ADR 0036. After committing an edit to either, run
+      `pnpm release:restamp:tracked-set`: it refuses uncommitted changes in those boundaries, prints
+      `release inventory already current` or each moved digest, and rewrites the inventory for you to
+      commit. Editing a file in any other boundary needs no inventory edit: the inventory records only
+      `tracked-set:<label>` for it, which moves when a boundary is added, removed, or renamed in
+      `GRAND_BOULE_RELEASE_REGISTRY`. PR CI's release inventory check still refuses a boundary with
+      no tracked, readable files.
 
 ### d. Publish
 
@@ -559,6 +571,17 @@ rules from the launcher's pinned `origin/main` workflow copy; lanes cannot selec
 
 GitHub structural mergeability independently gates base compatibility: delivery retries one
 transient `UNKNOWN`, refusing conflicts or a second `UNKNOWN`.
+
+Delivery refuses a pull request when `main` touched since their merge base a file the pull request
+also touched and a lint ledger (`LINT_LEDGER_FILES` in `scripts/lintLedgerCrossing.ts`) binds that
+file. The ledgers include the six dependency-boundary baselines
+(`.dependency-cruiser-known-violations*.json`), which bind the `from` file of each row. A side touches a file by editing it or by changing what a ledger records for it, so a
+ledger-only edit counts. A ledger that does not parse as JSON, or a boundary baseline that is not an array of rows with a `from` path, refuses delivery. The non-strict
+ruleset's `Gate` never measured the two edits together. The initial check
+refuses with no remote write. A crossing first seen at the final read refuses after the delivery
+receipt is posted and leaves the delivery lock held; recover it with
+`pnpm deliver --recover-lock <pr> --owner <oid>`. Merge current `main` into the lane and publish;
+the fresh `Gate` decides.
 
 For a crashed delivery, repair, confirmation, closure, or review publication, follow the
 operation-specific [lock recovery](references/repair-and-lock-recovery.md); recovery itself does not

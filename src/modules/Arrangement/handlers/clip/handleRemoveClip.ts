@@ -7,14 +7,10 @@ import {
     getCrdtDoc,
     hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { decodeMidiClipDataSnapshots, getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import {
-    type ActionHandler,
-    type AppAction,
-    type HandlerValidationContext,
-    type MidiClipDataActionSnapshot,
-} from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';

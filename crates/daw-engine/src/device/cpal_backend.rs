@@ -3,19 +3,25 @@
 //! seam existed: same device choice, same period negotiation, same error
 //! strings, same f32-only format stance.
 
+use super::InputOpenRefusal;
+#[cfg(not(windows))]
 use super::{
-    accept_input, CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest,
-    NegotiatedInput, NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, OutputTiming,
-    RenderFn, StreamErrorFn,
+    accept_input, CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRequest, NegotiatedInput,
+    NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, OutputTiming, RenderFn, StreamErrorFn,
 };
+#[cfg(not(windows))]
 use crate::audio_thread::effective_buffer_size;
 use crate::capture_clock::{CaptureClockQuality, PresentationTime};
+#[cfg(not(windows))]
 use crate::engine_events::StreamErrorKind;
+#[cfg(not(windows))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::time::{Duration, Instant};
 
+#[cfg(not(windows))]
 pub(crate) struct CpalOutputBackend;
 
+#[cfg(not(windows))]
 pub(crate) struct CpalOpenOutput {
     device: cpal::Device,
     config: cpal::SupportedStreamConfig,
@@ -23,6 +29,7 @@ pub(crate) struct CpalOpenOutput {
     negotiated: NegotiatedOutput,
 }
 
+#[cfg(not(windows))]
 impl OutputBackend for CpalOutputBackend {
     type Open = CpalOpenOutput;
 
@@ -142,6 +149,7 @@ fn presentation_end(
     })
 }
 
+#[cfg(not(windows))]
 impl OpenOutput for CpalOpenOutput {
     type Stream = cpal::Stream;
 
@@ -214,8 +222,10 @@ impl OpenOutput for CpalOpenOutput {
     }
 }
 
+#[cfg(not(windows))]
 pub(crate) struct CpalInputBackend;
 
+#[cfg(not(windows))]
 pub(crate) struct CpalOpenInput {
     device: cpal::Device,
     stream_config: cpal::StreamConfig,
@@ -260,6 +270,7 @@ fn expected_period_frames(
     }
 }
 
+#[cfg(not(windows))]
 impl InputBackend for CpalInputBackend {
     type Open = CpalOpenInput;
 
@@ -307,6 +318,7 @@ impl InputBackend for CpalInputBackend {
     }
 }
 
+#[cfg(not(windows))]
 impl OpenInput for CpalOpenInput {
     type Stream = cpal::Stream;
 

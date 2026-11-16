@@ -1,13 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
-import {
-    type ClipSplitActionSnapshot,
-    type ClipStateSnapshot,
-    type MidiClipDataActionSnapshot,
-    type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
@@ -65,8 +61,15 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
     restoreTakesForClip: vi.fn(),
 }));
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import {
+    type ClipSplitActionSnapshot,
+    type ClipStateSnapshot,
+    type RetiredTakeLaneSnapshot,
+} from '../../../events/arrangementClipStateSnapshots';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../../useCases/clipEditing/clipSplitStateRestorable';
@@ -160,6 +163,7 @@ function makeTakeLaneAction(
 beforeEach(() => {
     vi.clearAllMocks();
     takeLaneStore.set({ lanes: [] });
+    trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     flushAutomergeStorageWrites();
     mockedRestorable.mockReturnValue(true);
     mockedReplaceTrackState.mockReturnValue(true);
@@ -374,6 +378,72 @@ describe('handleRestoreClipSplitState — satellites', () => {
 
         expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
         expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
+    });
+
+    it('validate refuses a split restore after an editTempoMap prefix when a restored take lane owns the minted id', () => {
+        const mintedTake = {
+            id: 'minted-take',
+            clipId: 'c2',
+            name: 'Minted',
+            startBeat: 2,
+            endBeat: 4,
+            selected: false,
+        };
+        const colliding = { ...mintedTake, clipId: 'cr', name: 'Restored owner' };
+        // The restore prefix puts `minted-take` under another clip in a replayed take lane. editTempoMap keeps
+        // clip state, so the replay still sees that lane and the re-key collides, as without the tempo prefix.
+        const restorePrefix: AppAction = {
+            type: 'restoreClip',
+            payload: {
+                clipId: 'cr',
+                trackId: 't9',
+                clipSnapshot: { ...makeClipSnapshot('cr'), trackId: 't9' },
+                ripplePlan: null,
+                midiNotesSnapshot: null,
+                midiCcSnapshot: null,
+                midiPitchBendSnapshot: null,
+                retiredTakeLanes: [
+                    {
+                        laneIndex: 0,
+                        lane: { id: 'lane-r', trackId: 't9', takes: [colliding], activeCompRegions: [] },
+                        retiredTakeIds: [colliding.id],
+                    },
+                ],
+            },
+        };
+        const tempoPrefix: AppAction = {
+            type: 'editTempoMap',
+            payload: { edit: { type: 'add', beat: 0, tempo: 90 } },
+        };
+        trackStore.set({ tracks: [TrackDummy.create({ id: 't9' })], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const base = makeAction(makeSnapshot(), makeSnapshot());
+        const action = {
+            ...base,
+            payload: {
+                ...base.payload,
+                reKeyedTakeLanes: [
+                    {
+                        laneId: 'lane-x',
+                        trackId: 't1',
+                        takesBefore: [],
+                        takesAfter: [mintedTake],
+                        regionsBefore: [],
+                        regionsAfter: [],
+                    },
+                ],
+            },
+        };
+
+        expect(
+            handleRestoreClipSplitState.validate?.(action, {
+                actions: [restorePrefix, tempoPrefix, action],
+                actionIndex: 2,
+            })
+        ).toBe(false);
+        expect(
+            handleRestoreClipSplitState.validate?.(action, { actions: [restorePrefix, action], actionIndex: 1 })
+        ).toBe(false);
     });
 
     it('validate skips the satellite check for a legacy payload', () => {

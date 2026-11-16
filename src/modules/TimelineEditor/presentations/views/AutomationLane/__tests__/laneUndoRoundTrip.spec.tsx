@@ -24,6 +24,8 @@ vi.mock('#/modules/Command/useCases', () => ({
         throw new Error('Unexpected replay-authority reset in this lane fixture');
     },
     getExecutableAppActionEffect: vi.fn(() => null),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
@@ -93,7 +95,7 @@ describe('lane undo round-trips (#4795)', () => {
 
         it('add: undo -> redo -> undo -> redo restores the same point identity', () => {
             renderLane();
-            fireEvent.click(screen.getByRole('group'), CLICK);
+            fireEvent.click(screen.getByRole('toolbar'), CLICK);
 
             const addedId = storedCCs()[0]?.id;
             expect(storedCCs()).toEqual([
@@ -183,7 +185,7 @@ describe('lane undo round-trips (#4795)', () => {
 
         it('a move recorded before a remove still applies after the remove undoes and redoes', () => {
             renderLane();
-            fireEvent.click(screen.getByRole('group'), CLICK);
+            fireEvent.click(screen.getByRole('toolbar'), CLICK);
             const addedId = storedCCs()[0]?.id;
 
             // Move the freshly added point, then double-click it away. Three
@@ -242,7 +244,7 @@ describe('lane undo round-trips (#4795)', () => {
 
         it('add: undo -> redo -> undo -> redo restores the same point identity', () => {
             renderLane();
-            fireEvent.click(screen.getByRole('group'), CLICK);
+            fireEvent.click(screen.getByRole('toolbar'), CLICK);
 
             const addedId = storedPBs()[0]?.id;
             expect(storedPBs()).toEqual([{ id: addedId, value: clickPitchBend, beat: clickBeat, channel: 0 }]);

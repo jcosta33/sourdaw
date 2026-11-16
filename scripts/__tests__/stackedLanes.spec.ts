@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, GITHUB_HTTPS_REMOTE, REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
 import {
     TRUSTED_COMMON_DIR_ENV,
     TRUSTED_GH_PATH_ENV,
@@ -496,11 +496,8 @@ describe('ordinary merge stack synchronization', () => {
                 return git(options?.cwd ?? f.root, ...args);
             },
             run: (_command, args, options) => {
-                if (args.includes('fetch')) {
-                    git(options?.cwd ?? f.root, 'fetch', remote, args.at(-1) ?? '');
-                    return;
-                }
-                git(options?.cwd ?? childLane, ...args);
+                const local = args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg));
+                git(options?.cwd ?? childLane, ...local);
             },
         });
         const result = syncParentLane(f.stack, port);
@@ -534,6 +531,15 @@ describe('ordinary merge stack synchronization', () => {
             localEnv,
             capture: (_command, args) => {
                 reads.push(args);
+                if (args.includes('--git-path')) {
+                    return join(root, 'objects');
+                }
+                if (args.includes('--show-object-format')) {
+                    return 'sha1';
+                }
+                if (args.includes('for-each-ref')) {
+                    return '';
+                }
                 return args.includes('FETCH_HEAD^{commit}') ? fork : main;
             },
             run: (command, args, options) => {
@@ -554,7 +560,14 @@ describe('ordinary merge stack synchronization', () => {
         expect(
             writes.flatMap((call) => call.args).some((arg) => ['push', 'rebase', 'reset', '--force'].includes(arg))
         ).toBe(false);
-        expect(reads).toContainEqual(['rev-parse', '--verify', 'FETCH_HEAD^{commit}']);
+        expect(writes.slice(0, 2).every((call) => call.args[0]?.startsWith('--git-dir='))).toBe(true);
+        expect(
+            reads.some(
+                (args) =>
+                    args[0]?.startsWith('--git-dir=') &&
+                    args.slice(-3).join(' ') === 'rev-parse --verify FETCH_HEAD^{commit}'
+            )
+        ).toBe(true);
     });
 
     it('removes inherited squash changes from the final diff and preserves the old child tip', () => {

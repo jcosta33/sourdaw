@@ -1,12 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type HandlerSessionActionEntry,
-    type HandlerValidationContext,
-    type OriginalMidiBaseRowReplacementPayload,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type OriginalMidiBaseRowReplacementPayload } from '../../events/midiAppActions';
 import { midiStore } from '../../stores/midiStore';
 import { prepareOriginalMidiBaseRowReplacement } from '../../useCases/midiNoteCrud/prepareOriginalMidiBaseRowReplacement';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';

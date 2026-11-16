@@ -1,4 +1,4 @@
-import { type StemImportRole } from '#/utils/handlerContract';
+import { type StemImportRole } from '../../models/StemImportRole';
 
 const MIX_BY_ROLE: Record<StemImportRole, { gain: number; pan: number }> = {
     kick: { gain: 0.8, pan: 0 },

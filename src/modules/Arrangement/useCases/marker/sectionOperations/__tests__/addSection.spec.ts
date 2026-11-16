@@ -51,4 +51,24 @@ describe('addSection', () => {
         expect(changed).toBe(false);
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
+
+    describe('index', () => {
+        const row = (id: string) => ({ id });
+        const insertedIds = (index?: number): string[] => {
+            mocks.markerStoreValue.value = { sections: [row('a'), row('b'), row('c')] };
+            addSection(0, 8, 'New', 'new', undefined, { index });
+            const written = mocks.markerStoreSet.mock.calls[0]![0] as MarkerStoreState;
+            return written.sections.map((section) => section.id);
+        };
+
+        it.each([
+            { index: undefined, expected: ['a', 'b', 'c', 'new'] },
+            { index: 0, expected: ['new', 'a', 'b', 'c'] },
+            { index: 1, expected: ['a', 'new', 'b', 'c'] },
+            { index: 3, expected: ['a', 'b', 'c', 'new'] },
+            { index: 99, expected: ['a', 'b', 'c', 'new'] },
+        ])('inserts at index $index', ({ index, expected }) => {
+            expect(insertedIds(index)).toEqual(expected);
+        });
+    });
 });

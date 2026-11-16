@@ -1,0 +1,18 @@
+{
+    // Type-resolution project for the browser-served fixture. oxlint's type-aware
+    // pass (tsgolint) discovers the nearest `tsconfig.json` per file; without one
+    // the `/@vite/client` import resolves to nothing and every call on it is unsafe.
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "allowJs": true,
+        "checkJs": true,
+        "noEmit": true,
+        "strict": true,
+        "skipLibCheck": true,
+        "paths": { "/@vite/client": ["./viteClient.d.ts"] }
+    },
+    "include": ["*.js", "*.d.ts"]
+}

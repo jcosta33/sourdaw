@@ -24,7 +24,12 @@
 //!    here instead of engaging an engine that renders its dry input and calls
 //!    it reverb.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 
@@ -58,7 +63,18 @@ fn onset_index(instance: &mut ProofChamberInstance, frames: usize) -> Option<usi
         let right = left.clone();
         let ptr = instance.process(&left, &right, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
-        let out: Vec<f32> = (0..BLOCK).map(|i| unsafe { *ptr.add(i) }).collect();
+        let out: Vec<f32> = (0..BLOCK)
+            .map(|i| {
+                // SAFETY: `ptr` is the instance's `out_left`, allocated at
+                // `PROOF_CHAMBER_BLOCK_FRAMES` samples by
+                // `ProofChamberInstance::new` and never resized, and
+                // `i < BLOCK`, which is inside that capacity.
+                let slot = unsafe { ptr.add(i) };
+                // SAFETY: `slot` is in bounds of that initialised buffer, and
+                // nothing writes the instance between `process` and this read.
+                unsafe { *slot }
+            })
+            .collect();
         if let Some(offset) = out.iter().position(|s| s.abs() > 1e-3) {
             return Some(index + offset);
         }
@@ -212,7 +228,13 @@ fn render_wire_value(algorithm: f32) -> (Vec<f32>, Vec<f32>) {
         let ptr = instance.process(&left, &right, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for i in 0..BLOCK {
-            output.push(unsafe { *ptr.add(i) });
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            output.push(unsafe { *slot });
         }
         input.extend_from_slice(&left);
         index += BLOCK;

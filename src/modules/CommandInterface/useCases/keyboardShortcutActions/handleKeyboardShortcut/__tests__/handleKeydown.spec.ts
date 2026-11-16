@@ -42,7 +42,6 @@ import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../
 import { resolveShortcutKey } from '../../../resolveShortcutKey';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
 import { enqueueClipDuplicate } from '../../clipShortcuts/enqueueClipDuplicate';
-import { duplicateTrack } from '../../trackShortcuts/duplicateTrack';
 import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
 
 type MinimalDefinition = { id: string; defaultKeys: string[]; action: ShortcutAction };
@@ -183,7 +182,6 @@ vi.mock('../../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn
 vi.mock('../../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: goToNextMarkerMock }));
 vi.mock('../../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: goToPreviousMarkerMock }));
 vi.mock('../../clipShortcuts/enqueueClipDuplicate', () => ({ enqueueClipDuplicate: vi.fn(() => Promise.resolve()) }));
-vi.mock('../../trackShortcuts/duplicateTrack', () => ({ duplicateTrack: vi.fn() }));
 
 // The refusal test drives the real wrapper over the real admission gate, so it
 // observes what the user gets rather than the mocked dispatch seam.
@@ -1004,18 +1002,21 @@ describe('handleKeydown', () => {
             expect(cycleAutomationVisibility).toHaveBeenCalledTimes(1);
         });
 
-        it('duplicates the selected track, and no-ops when nothing is selected', () => {
+        it('dispatches the duplicateTrack action for the selected track, and no-ops when nothing is selected', () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'test.dup-track', key: 'F1', callbackId: 'duplicateTrack' }),
             ];
 
             const preventWithoutSelection = handleKeydown(descriptor({ key: 'F1' }));
             expect(preventWithoutSelection).toBe(true);
-            expect(duplicateTrack).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
 
             trackStoreMock.value.selectedTrackId = 'track-1';
             handleKeydown(descriptor({ key: 'F1' }));
-            expect(duplicateTrack).toHaveBeenCalledWith('track-1');
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateTrack',
+                payload: { trackId: 'track-1' },
+            });
         });
 
         it('accepts a selected ghost clip on Tab before falling back to the normal mode toggle', () => {

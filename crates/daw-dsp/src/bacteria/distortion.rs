@@ -284,6 +284,12 @@ impl DistortionProcessor {
     }
 }
 
+impl Default for DistortionProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

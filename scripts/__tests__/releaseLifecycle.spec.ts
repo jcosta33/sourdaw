@@ -1,15 +1,11 @@
-import { createHash } from 'node:crypto';
-
 import { describe, expect, it } from 'vitest';
 
 import { cutRelease, type CutReleasePort } from '../cutRelease.ts';
-import { DEPENDENCY_LICENSE_PROOFS_PATH } from '../dependencyLicenseReport.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { proposeRelease, type ProposeReleasePort } from '../proposeRelease.ts';
 import {
     CHANGELOG_PATH,
     CHANGELOG_PREAMBLE,
-    RELEASE_INVENTORY_PATH,
     changelogSectionBody,
     parseSemanticVersion,
     releaseCommitSubject,
@@ -32,11 +28,6 @@ type Repository = {
 };
 
 const manifestFor = (version: string) => `{\n    "name": "sourdaw",\n    "version": "${version}"\n}\n`;
-const proofsFor = (digest: string) => `{\n    "path": "package.json",\n    "sha256": "${digest}"\n}\n`;
-const inventoryFor = (manifestDigest: string, proofsDigest: string) =>
-    `{\n    "digests": ["sha256:${proofsDigest}:${DEPENDENCY_LICENSE_PROOFS_PATH}"],\n    "path": "package.json",\n    "sha256": "${manifestDigest}"\n}\n`;
-
-const sha256 = (contents: string) => createHash('sha256').update(contents, 'utf8').digest('hex');
 const commitOf = (index: number) => String(index).padStart(40, '0');
 const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
 
@@ -52,8 +43,6 @@ function repository(): Repository {
         files: {
             'package.json': manifest,
             [CHANGELOG_PATH]: RELEASED_CHANGELOG,
-            [DEPENDENCY_LICENSE_PROOFS_PATH]: proofsFor(sha256(manifest)),
-            [RELEASE_INVENTORY_PATH]: inventoryFor(sha256(manifest), sha256(proofsFor(sha256(manifest)))),
         },
         tagged: [],
     };
@@ -99,7 +88,6 @@ function proposePort(repo: Repository, today: string): ProposeReleasePort {
         writeWorkspaceFile: (path, contents) => {
             repo.files[path] = contents;
         },
-        digest: sha256,
         today: () => today,
         log: () => undefined,
     };

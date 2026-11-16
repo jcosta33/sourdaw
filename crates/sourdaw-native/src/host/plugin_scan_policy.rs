@@ -1,27 +1,93 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use crate::host::plugin_folder_grants::{self, ForbiddenRoots};
+
 #[derive(Debug, Clone)]
 pub struct PluginScanPolicy {
+    /// The platform's own plugin folders, in priority order.
     allowed_roots: Vec<PathBuf>,
+    /// Folders the user granted through a native folder pick, canonical and
+    /// valid at the moment this policy was built, in grant order. Kept apart
+    /// from `allowed_roots` because they answer to different rules: they rank
+    /// after every platform folder and never take the own-root symlink arm.
+    granted_roots: Vec<PathBuf>,
 }
 
 impl PluginScanPolicy {
+    /// The platform's plugin folders alone: what `get_default_plugin_paths`
+    /// reports, with no user grant.
     pub fn platform_defaults() -> Self {
         Self {
             allowed_roots: default_plugin_scan_roots(),
+            granted_roots: Vec::new(),
+        }
+    }
+
+    /// The policy every scan, hydration and load enforces: the platform's
+    /// plugin folders plus the user's granted folders that are valid now.
+    ///
+    /// The one production route that widens a policy past the defaults. The
+    /// grant store is read fresh on every call, so a grant the main process
+    /// just recorded or revoked is what the scan process enforces next.
+    ///
+    /// A refused runtime scope leaves only the platform defaults: no grant can
+    /// be validated against storage the scope would have located.
+    pub fn production() -> Self {
+        let Ok(forbidden) = ForbiddenRoots::production() else {
+            return Self::platform_defaults();
+        };
+        Self::over_grant_store(
+            default_plugin_scan_roots(),
+            plugin_folder_grants::production_store_location().as_deref(),
+            &forbidden,
+        )
+    }
+
+    /// `allowed_roots` plus the valid grants in the store at `store`, if any.
+    /// Separate from [`Self::production`] so tests can point it at temporary
+    /// folders and a temporary store.
+    pub(crate) fn over_grant_store(
+        allowed_roots: Vec<PathBuf>,
+        store: Option<&Path>,
+        forbidden: &ForbiddenRoots,
+    ) -> Self {
+        let granted_roots = store
+            .map(|store| plugin_folder_grants::valid_grants_at(store, forbidden))
+            .unwrap_or_default();
+        Self {
+            allowed_roots,
+            granted_roots,
         }
     }
 
     /// A policy over an explicit root set, for tests only.
     ///
     /// Test-gated on purpose: the roots are the authority, so production code
-    /// must have exactly one way to obtain a policy — the platform defaults —
-    /// and no way to widen one. Tests need it because the platform defaults are
-    /// the developer's real plugin folders, which no test may write into.
+    /// must obtain a policy only from the platform defaults and the native
+    /// grant store, and have no way to widen one. Tests need it because the
+    /// platform defaults are the developer's real plugin folders, which no test
+    /// may write into.
     #[cfg(test)]
     pub(crate) fn with_allowed_roots(allowed_roots: Vec<PathBuf>) -> Self {
-        Self { allowed_roots }
+        Self {
+            allowed_roots,
+            granted_roots: Vec::new(),
+        }
+    }
+
+    /// A policy over explicit platform and granted roots, for tests only. The
+    /// grants are not validated: it is how a test builds a granted root the
+    /// store would have refused.
+    #[cfg(test)]
+    pub(crate) fn with_granted_roots(
+        allowed_roots: Vec<PathBuf>,
+        granted_roots: Vec<PathBuf>,
+    ) -> Self {
+        Self {
+            allowed_roots,
+            granted_roots,
+        }
     }
 
     pub fn allowed_roots_as_strings(&self) -> Vec<String> {
@@ -37,11 +103,19 @@ impl PluginScanPolicy {
     /// The order of the allowed roots is priority — per-user, then machine-wide,
     /// then network — and this is what carries that order to a caller that was
     /// handed its paths in some other one. The lowest index wins, so a path
-    /// under two nested roots ranks with the more specific of them.
+    /// under two nested roots ranks with the more specific of them. Granted
+    /// roots rank after every platform root, in grant order, so a copy of a
+    /// plugin in a default folder always wins over one in a granted folder.
     pub fn root_rank(&self, path: &Path) -> Option<usize> {
-        self.allowed_roots.iter().position(|allowed_root| {
+        let platform_rank = self.allowed_roots.iter().position(|allowed_root| {
             let allowed_root = resolve_allowed_root(allowed_root);
             path == allowed_root || path.starts_with(&allowed_root)
+        });
+        platform_rank.or_else(|| {
+            self.granted_roots
+                .iter()
+                .position(|granted_root| path.starts_with(granted_root))
+                .map(|grant_rank| self.allowed_roots.len() + grant_rank)
         })
     }
 
@@ -130,16 +204,25 @@ impl PluginScanPolicy {
 
             requested_path == allowed_root || requested_path.starts_with(&allowed_root)
         });
+        // Granted roots are stored canonical and re-validated to resolve to
+        // exactly that path, so they match by that path alone. A request that
+        // reached one through a symlink was refused above: the own-root arm
+        // looks only at the platform's roots.
+        let is_granted = self
+            .granted_roots
+            .iter()
+            .any(|granted_root| requested_path.starts_with(granted_root));
 
-        if is_authorized {
+        if is_authorized || is_granted {
             return Ok(requested_path);
         }
 
         Err(unauthorized_scan_path(&requested_path))
     }
 
-    /// Whether `path` is one of this policy's own allowed roots, compared
-    /// component by component.
+    /// Whether `path` is one of this policy's own platform roots, compared
+    /// component by component. Granted roots never qualify: a granted folder
+    /// later replaced by a symlink must not be followed.
     ///
     /// The platform defines these paths itself, so a symlink component in one
     /// of them — a Linux distribution's `/usr/lib64` pointing at `/usr/lib`
@@ -171,7 +254,7 @@ fn resolve_allowed_root(allowed_root: &Path) -> PathBuf {
 
 fn unauthorized_scan_path(path: &Path) -> String {
     format!(
-        "Unauthorized plugin scan path: {}. Built-in plugin directories are available through get_default_plugin_paths; custom plugin directories must be granted natively or saved as trusted preferences before scanning.",
+        "Unauthorized plugin scan path: {}. It is not inside a default plugin folder or a folder added in plugin settings.",
         path.display()
     )
 }
@@ -184,7 +267,7 @@ fn unauthorized_scan_path(path: &Path) -> String {
 /// machine-wide one has to precede the network share. Both format families
 /// order the same way, which is also the order the VST3 specification lays
 /// down for its own folders.
-fn default_plugin_scan_roots() -> Vec<PathBuf> {
+pub(crate) fn default_plugin_scan_roots() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     #[cfg(target_os = "macos")]
@@ -202,14 +285,10 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
     }
 
     #[cfg(target_os = "windows")]
-    {
-        if let Some(local_app_data) = dirs::data_local_dir() {
-            paths.push(local_app_data.join(r"Programs\Common\VST3"));
-        }
-
-        paths.push(PathBuf::from(r"C:\Program Files\Common Files\VST3"));
-        paths.push(PathBuf::from(r"C:\Program Files\Common Files\CLAP"));
-    }
+    paths.extend(windows_scan_roots(
+        dirs::data_local_dir().as_deref(),
+        windows_known_folders::program_files_common().as_deref(),
+    ));
 
     #[cfg(target_os = "linux")]
     {
@@ -231,7 +310,58 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
     paths
 }
 
-fn normalize_path_lexically(path: &Path) -> PathBuf {
+/// The Windows plugin folders, from the two shell known folders both formats
+/// name them by: `FOLDERID_LocalAppData` for the per-user ones and
+/// `FOLDERID_ProgramFilesCommon` — what `%COMMONPROGRAMFILES%` expands to — for
+/// the machine-wide ones.
+///
+/// Known folders, never a drive literal: Windows need not be installed on `C:`,
+/// and an administrator can relocate Program Files. Never environment variables
+/// either: the process environment is whatever launched Sourdaw, and a scan root
+/// is an authority the native layer owns (see the security policy, section 1).
+/// A folder the shell cannot name is left out rather than guessed.
+///
+/// Pure over the folders it is handed, so the rule is tested on every host and
+/// only the shell query is Windows code.
+#[cfg(any(target_os = "windows", test))]
+fn windows_scan_roots(
+    local_app_data: Option<&Path>,
+    program_files_common: Option<&Path>,
+) -> Vec<PathBuf> {
+    let per_user = local_app_data.map(|folder| folder.join("Programs").join("Common"));
+    [per_user.as_deref(), program_files_common]
+        .into_iter()
+        .flatten()
+        .flat_map(|common| [common.join("VST3"), common.join("CLAP")])
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+mod windows_known_folders {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use std::path::PathBuf;
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{
+        FOLDERID_ProgramFilesCommon, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+    };
+
+    /// `FOLDERID_ProgramFilesCommon`, the folder the VST3 SDK's own Windows
+    /// host module resolves its machine-wide plug-in folder from.
+    pub(super) fn program_files_common() -> Option<PathBuf> {
+        // SAFETY: the out-pointer is shell-allocated on success and released
+        // with `CoTaskMemFree` exactly once, after its contents are copied.
+        unsafe {
+            let folder =
+                SHGetKnownFolderPath(&FOLDERID_ProgramFilesCommon, KF_FLAG_DEFAULT, None).ok()?;
+            let path = PathBuf::from(OsString::from_wide(folder.as_wide()));
+            CoTaskMemFree(Some(folder.as_ptr().cast_const().cast()));
+            Some(path)
+        }
+    }
+}
+
+pub(crate) fn normalize_path_lexically(path: &Path) -> PathBuf {
     let mut normalized_path = PathBuf::new();
 
     for component in path.components() {
@@ -249,11 +379,17 @@ fn normalize_path_lexically(path: &Path) -> PathBuf {
     normalized_path
 }
 
-fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
+pub(crate) fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
     let mut current_path = PathBuf::new();
 
     for component in path.components() {
         current_path.push(component.as_os_str());
+        // A Windows verbatim prefix (`\\?\C:`) alone cannot be lstat'ed, and
+        // neither it nor the root can be a link, so inspection starts at the
+        // first named component.
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
         match fs::symlink_metadata(&current_path) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() {
@@ -331,11 +467,16 @@ mod tests {
         {
             let local_app_data =
                 dirs::data_local_dir().expect("a Windows account should have local app data");
-            let per_user = priority_of(&roots, &local_app_data.join(r"Programs\Common\VST3"));
-            let machine_wide =
-                priority_of(&roots, Path::new(r"C:\Program Files\Common Files\VST3"));
+            let common_files = windows_known_folders::program_files_common()
+                .expect("Windows should name its common program files folder");
+            let per_user_common = local_app_data.join("Programs").join("Common");
+            let per_user_vst3 = priority_of(&roots, &per_user_common.join("VST3"));
+            let per_user_clap = priority_of(&roots, &per_user_common.join("CLAP"));
+            let machine_wide_vst3 = priority_of(&roots, &common_files.join("VST3"));
+            let machine_wide_clap = priority_of(&roots, &common_files.join("CLAP"));
 
-            assert!(per_user < machine_wide);
+            assert!(per_user_vst3 < machine_wide_vst3);
+            assert!(per_user_clap < machine_wide_clap);
         }
 
         #[cfg(target_os = "linux")]
@@ -352,6 +493,56 @@ mod tests {
             assert!(distribution < site);
             assert!(distribution_64 < site_64);
         }
+    }
+
+    /// Both formats define the machine-wide folder as `%COMMONPROGRAMFILES%`,
+    /// so a machine whose Program Files lives on another drive keeps its plugins
+    /// there, and the roots have to follow the folder rather than assume `C:`.
+    #[test]
+    fn windows_machine_wide_roots_follow_the_common_program_files_folder() {
+        let common_files = Path::new(r"D:\Program Files\Common Files");
+
+        let roots = windows_scan_roots(None, Some(common_files));
+
+        assert_eq!(
+            roots,
+            vec![common_files.join("VST3"), common_files.join("CLAP")]
+        );
+    }
+
+    /// CLAP defines `%LOCALAPPDATA%\Programs\Common\CLAP` beside the per-user
+    /// VST3 folder, and both outrank the machine-wide copies.
+    #[test]
+    fn windows_per_user_roots_cover_both_formats_ahead_of_the_machine_wide_ones() {
+        let local_app_data = Path::new(r"E:\Users\musician\AppData\Local");
+        let common_files = Path::new(r"D:\Program Files\Common Files");
+        let per_user_common = local_app_data.join("Programs").join("Common");
+
+        let roots = windows_scan_roots(Some(local_app_data), Some(common_files));
+
+        assert_eq!(
+            roots,
+            vec![
+                per_user_common.join("VST3"),
+                per_user_common.join("CLAP"),
+                common_files.join("VST3"),
+                common_files.join("CLAP"),
+            ]
+        );
+    }
+
+    /// A folder the shell cannot name is absent from the roots, never replaced
+    /// by a guess at where it usually is.
+    #[test]
+    fn a_windows_folder_the_shell_cannot_name_contributes_no_root() {
+        let local_app_data = Path::new(r"E:\Users\musician\AppData\Local");
+        let per_user_common = local_app_data.join("Programs").join("Common");
+
+        assert_eq!(
+            windows_scan_roots(Some(local_app_data), None),
+            vec![per_user_common.join("VST3"), per_user_common.join("CLAP")]
+        );
+        assert!(windows_scan_roots(None, None).is_empty());
     }
 
     #[test]
@@ -441,9 +632,7 @@ mod tests {
         std::os::unix::fs::symlink(&outside_root, &symlink_path)
             .expect("symlink should be created");
 
-        let policy = PluginScanPolicy {
-            allowed_roots: vec![allowed_root],
-        };
+        let policy = PluginScanPolicy::with_allowed_roots(vec![allowed_root]);
         let result = policy.authorize_scan_root(&symlink_path);
         let _ = std::fs::remove_dir_all(&temp_root);
 
@@ -533,9 +722,7 @@ mod tests {
         std::os::unix::fs::symlink(&outside_root, &symlinked_allowed_root)
             .expect("allowed-root symlink should be created");
 
-        let policy = PluginScanPolicy {
-            allowed_roots: vec![symlinked_allowed_root.clone()],
-        };
+        let policy = PluginScanPolicy::with_allowed_roots(vec![symlinked_allowed_root.clone()]);
         let result = policy.authorize_scan_root(&symlinked_allowed_root.join("Vendor"));
         let _ = std::fs::remove_dir_all(&temp_root);
 
@@ -579,5 +766,169 @@ mod tests {
                 .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
             "expected the symlink-then-parent-traversal path to be rejected rather than matched to the allowed root's own spelling, got {result:?}"
         );
+    }
+
+    mod granted_folders {
+        use super::super::*;
+        use crate::host::plugin_folder_grants::test_support::{write, TempTree};
+        use crate::host::plugin_folder_grants::{grant_at, revoke_at, ForbiddenRoots};
+
+        fn forbidden_in(tree: &TempTree) -> ForbiddenRoots {
+            ForbiddenRoots {
+                home: Some(tree.dir("home/musician")),
+                default_roots: vec![tree.dir("defaults/VST3")],
+                app_storage_roots: vec![tree.dir("app-storage")],
+                renderer_writable_grants: Vec::new(),
+            }
+        }
+
+        /// A policy as a fresh process would build it: the default stand-in
+        /// plus whatever the store at `tree` holds now.
+        fn fresh_policy(tree: &TempTree, forbidden: &ForbiddenRoots) -> PluginScanPolicy {
+            PluginScanPolicy::over_grant_store(
+                forbidden.default_roots.clone(),
+                Some(&tree.store()),
+                forbidden,
+            )
+        }
+
+        fn is_unauthorized(result: &Result<PathBuf, String>) -> bool {
+            result
+                .as_ref()
+                .is_err_and(|error| error.contains("Unauthorized plugin scan path"))
+        }
+
+        #[test]
+        fn plugin_scan_policy_authorizes_a_granted_folder_and_its_descendants_after_a_restart() {
+            let tree = TempTree::create("policy-granted");
+            let forbidden = forbidden_in(&tree);
+            let folder = tree.dir("Plugins");
+            let plugin = folder.join("Vendor").join("Synth.clap");
+            write(&plugin, b"plugin");
+            grant_at(&tree.store(), &forbidden, &folder).expect("pick is valid");
+
+            let policy = fresh_policy(&tree, &forbidden);
+
+            assert_eq!(policy.authorize_scan_root(&folder), Ok(folder.clone()));
+            assert_eq!(policy.authorize_scan_root(&plugin), Ok(plugin));
+        }
+
+        #[test]
+        fn plugin_scan_policy_refuses_an_ungranted_folder() {
+            let tree = TempTree::create("policy-ungranted");
+            let forbidden = forbidden_in(&tree);
+            let folder = tree.dir("Plugins");
+
+            let result = fresh_policy(&tree, &forbidden).authorize_scan_root(&folder);
+
+            assert!(is_unauthorized(&result), "unexpected result {result:?}");
+        }
+
+        #[test]
+        fn plugin_scan_policy_refuses_a_revoked_folder_and_the_plugins_under_it() {
+            let tree = TempTree::create("policy-revoked");
+            let forbidden = forbidden_in(&tree);
+            let folder = tree.dir("Plugins");
+            let plugin = folder.join("Synth.clap");
+            write(&plugin, b"plugin");
+            grant_at(&tree.store(), &forbidden, &folder).expect("pick is valid");
+            assert!(fresh_policy(&tree, &forbidden)
+                .authorize_scan_root(&plugin)
+                .is_ok());
+
+            revoke_at(&tree.store(), &folder).expect("revoke succeeds");
+            let policy = fresh_policy(&tree, &forbidden);
+
+            for path in [&folder, &plugin] {
+                let result = policy.authorize_scan_root(path);
+                assert!(
+                    is_unauthorized(&result),
+                    "{}: unexpected result {result:?}",
+                    path.display()
+                );
+            }
+        }
+
+        #[test]
+        fn a_refused_scope_widens_no_scan_policy_past_the_platform_defaults() {
+            crate::host::runtime_scope::RuntimeScope::test_in_refused_process(
+                concat!(
+                    module_path!(),
+                    "::a_refused_scope_widens_no_scan_policy_past_the_platform_defaults"
+                ),
+                || {
+                    let tree = TempTree::create("policy-refused-scope");
+                    let folder = tree.dir("Plugins");
+                    grant_at(&tree.store(), &ForbiddenRoots::default(), &folder)
+                        .expect("pick is valid");
+
+                    let policy = plugin_folder_grants::with_store_location_for_test(
+                        &tree.store(),
+                        PluginScanPolicy::production,
+                    );
+
+                    assert_eq!(policy.allowed_roots, default_plugin_scan_roots());
+                    assert!(policy.granted_roots.is_empty());
+                },
+            );
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn plugin_scan_policy_refuses_a_granted_folder_swapped_for_a_symlink() {
+            let tree = TempTree::create("policy-swapped");
+            let forbidden = forbidden_in(&tree);
+            let folder = tree.dir("Plugins");
+            let outside = tree.dir("Outside");
+            write(&outside.join("Planted.clap"), b"plugin");
+            grant_at(&tree.store(), &forbidden, &folder).expect("pick is valid");
+            fs::rename(&folder, tree.path("Plugins-moved")).expect("folder moved away");
+            std::os::unix::fs::symlink(&outside, &folder).expect("symlink planted");
+
+            let policy = fresh_policy(&tree, &forbidden);
+
+            for path in [folder.clone(), folder.join("Planted.clap")] {
+                let result = policy.authorize_scan_root(&path);
+                assert!(
+                    is_unauthorized(&result),
+                    "{}: unexpected result {result:?}",
+                    path.display()
+                );
+            }
+        }
+
+        /// Even a granted root that is itself a symlink — one the store would
+        /// have excluded — never takes the own-root arm that follows the
+        /// platform's own symlinked folders.
+        #[cfg(unix)]
+        #[test]
+        fn plugin_scan_policy_never_follows_a_granted_root_that_is_a_symlink() {
+            let tree = TempTree::create("policy-own-root-arm");
+            let outside = tree.dir("Outside");
+            let link = tree.path("Plugins");
+            std::os::unix::fs::symlink(&outside, &link).expect("symlink planted");
+
+            let policy = PluginScanPolicy::with_granted_roots(Vec::new(), vec![link.clone()]);
+            let result = policy.authorize_scan_root(&link);
+
+            assert!(is_unauthorized(&result), "unexpected result {result:?}");
+        }
+
+        #[test]
+        fn plugin_scan_policy_ranks_granted_folders_after_every_platform_folder() {
+            let policy = PluginScanPolicy::with_granted_roots(
+                vec![
+                    PathBuf::from("/per-user/VST3"),
+                    PathBuf::from("/machine/VST3"),
+                ],
+                vec![PathBuf::from("/granted/A"), PathBuf::from("/granted/B")],
+            );
+
+            assert_eq!(policy.root_rank(Path::new("/machine/VST3/Vendor")), Some(1));
+            assert_eq!(policy.root_rank(Path::new("/granted/A")), Some(2));
+            assert_eq!(policy.root_rank(Path::new("/granted/B/Vendor")), Some(3));
+            assert_eq!(policy.root_rank(Path::new("/granted/C")), None);
+            assert!(!policy.is_platform_default_root(Path::new("/granted/A")));
+        }
     }
 }

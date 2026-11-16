@@ -232,10 +232,16 @@ impl BuiltinParamName {
         })
     }
 
-    /// The name, spelled as the instrument's own `set_param` takes it.
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.bytes[..self.len as usize])
-            .expect("parse admits ASCII bytes alone, and ASCII is always valid UTF-8")
+    /// The name, spelled as the instrument's own `set_param` takes it, or
+    /// `None` when the carrier does not hold a name.
+    ///
+    /// [`Self::parse`] admits ASCII bytes alone and so never builds a carrier
+    /// that answers `None`; the view is fallible only because the type cannot
+    /// carry that proof without `unsafe`. A caller refuses a `None` exactly as
+    /// it refuses a name no body answers to.
+    pub fn as_str(&self) -> Option<&str> {
+        let bytes = self.bytes.get(..usize::from(self.len))?;
+        std::str::from_utf8(bytes).ok()
     }
 }
 
@@ -1549,13 +1555,24 @@ pub(crate) trait CompensationDevices {
 
 /// What one removal hands back to the retirement channel, so the audio thread
 /// never runs a destructor.
+///
+/// The boxes are held only so their destructor runs on the control-thread
+/// reclaimer, which is why the fields are never read.
 pub(crate) enum RetiredTimelineObject {
-    Track(Box<TimelineTrack>),
-    Bus(Box<TimelineBus>),
-    Clip(Box<TimelineClip>),
+    Track {
+        _track: Box<TimelineTrack>,
+    },
+    Bus {
+        _bus: Box<TimelineBus>,
+    },
+    Clip {
+        _clip: Box<TimelineClip>,
+    },
     /// A compensation delay a refused send, a removed send, or a replaced
     /// device latency gave up. Its ring is heap like any other buffer here.
-    Delay(Box<CompensationDelay>),
+    Delay {
+        _delay: Box<CompensationDelay>,
+    },
 }
 
 /// One strip in the render sequence. Tracks and buses share an order so a
@@ -1593,6 +1610,7 @@ const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
 /// ride `setTargetAtTime(target, now, 0.005)`, and the native gate has to glide
 /// on the same curve: a hard step silences at a block boundary with a click
 /// the web side does not have (issue #2126).
+#[cfg(test)]
 const GATE_TIME_CONSTANT_SEC: f32 = 0.005;
 
 /// The fraction of the remaining distance one frame covers:
@@ -2471,8 +2489,8 @@ impl TimelineGraph {
                 in_degree[dest] += 1;
             });
         }
-        for node in 0..count {
-            if in_degree[node] == 0 {
+        for (node, &degree) in in_degree.iter().enumerate().take(count) {
+            if degree == 0 {
                 ready.push(node);
             }
         }
@@ -2579,8 +2597,8 @@ impl TimelineGraph {
         track_summing_depth[..track_count].fill(0);
 
         let mut master_depth = 0;
-        for order_index in 0..mix_order.len() {
-            let (arrival, output) = match mix_order[order_index] {
+        for node in mix_order.iter() {
+            let (arrival, output) = match *node {
                 MixNode::Track(index) => {
                     // Everything routed into this track's input has already
                     // been visited, so its own chain starts from the deepest of
@@ -2746,8 +2764,8 @@ impl TimelineGraph {
             bus.clear_input(frames);
         }
 
-        for order_index in 0..mix_order.len() {
-            match mix_order[order_index] {
+        for node in mix_order.iter() {
+            match *node {
                 MixNode::Track(index) => {
                     let left = &mut scratch_left[..frames];
                     let right = &mut scratch_right[..frames];
@@ -3011,6 +3029,12 @@ impl TimelineGraph {
             count += 1;
         }
         count
+    }
+}
+
+impl Default for TimelineGraph {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -3738,7 +3762,7 @@ mod tests {
     fn a_builtin_param_name_reads_back_as_the_name_it_was_parsed_from() {
         let parsed = BuiltinParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
 
-        assert_eq!(parsed.as_str(), "cutoff");
+        assert_eq!(parsed.as_str(), Some("cutoff"));
     }
 
     /// The inline name keeps a parameter address inside the size
@@ -3772,7 +3796,7 @@ mod tests {
         let parsed = BuiltinParamName::parse(&longest)
             .expect("a name the length of the buffer fits the buffer");
 
-        assert_eq!(parsed.as_str(), longest);
+        assert_eq!(parsed.as_str(), Some(longest.as_str()));
     }
 
     /// A key that was never shaped like any built-in's name is refused by
@@ -3822,11 +3846,11 @@ mod tests {
     fn a_camel_case_builtin_param_name_parses() {
         let longest_dynamic = BuiltinParamName::parse("neuralCustomConvWeight3_2")
             .expect("a well-shaped camelCase name parses");
-        assert_eq!(longest_dynamic.as_str(), "neuralCustomConvWeight3_2");
+        assert_eq!(longest_dynamic.as_str(), Some("neuralCustomConvWeight3_2"));
 
         let round_tripped =
             BuiltinParamName::parse("inputGain").expect("a well-shaped camelCase name parses");
-        assert_eq!(round_tripped.as_str(), "inputGain");
+        assert_eq!(round_tripped.as_str(), Some("inputGain"));
     }
 
     #[test]

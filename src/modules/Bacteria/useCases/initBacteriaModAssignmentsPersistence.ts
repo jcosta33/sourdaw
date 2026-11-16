@@ -1,9 +1,10 @@
-import { rowsEqual } from '../models/BacteriaModAssignmentsState';
+import { createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
+
 import { type BacteriaModAssignment } from '../models/BacteriaPatch';
 import { bacteriaStore } from '../stores/bacteriaStore';
 
 import { commitBacteriaModAssignments } from './commitBacteriaModAssignments';
-import { hydrateBacteriaModAssignmentsFromProject } from './hydrateBacteriaModAssignmentsFromProject';
+import { isBacteriaModAssignmentsDocumented } from './isBacteriaModAssignmentsDocumented';
 
 /**
  * Mirror every Bacteria modulation-routing edit into project truth.
@@ -34,10 +35,20 @@ import { hydrateBacteriaModAssignmentsFromProject } from './hydrateBacteriaModAs
  */
 export function initBacteriaModAssignmentsPersistence(): () => void {
     const committedTables = new Map<string, BacteriaModAssignment[]>();
+    const episodes = createUserAppActionRefusalEpisodes({
+        onAdmitted: (deviceId) => {
+            const rows = bacteriaStore.value?.[deviceId]?.patch.modAssignments;
+            if (!rows || isBacteriaModAssignmentsDocumented(deviceId, rows)) {
+                return;
+            }
+            commitBacteriaModAssignments(deviceId, episodes);
+        },
+    });
 
     return bacteriaStore.subscribe((instances) => {
         if (!instances) {
             committedTables.clear();
+            episodes.endAll();
             return;
         }
 
@@ -49,12 +60,11 @@ export function initBacteriaModAssignmentsPersistence(): () => void {
                 continue;
             }
 
-            const documented = hydrateBacteriaModAssignmentsFromProject(deviceId) ?? [];
-            if (rowsEqual(state.patch.modAssignments, documented)) {
+            if (isBacteriaModAssignmentsDocumented(deviceId, state.patch.modAssignments)) {
                 continue;
             }
 
-            commitBacteriaModAssignments(deviceId);
+            commitBacteriaModAssignments(deviceId, episodes);
         }
 
         // Drop devices that are gone, so a device id reused by a later load is
@@ -62,6 +72,7 @@ export function initBacteriaModAssignmentsPersistence(): () => void {
         for (const deviceId of committedTables.keys()) {
             if (!(deviceId in instances)) {
                 committedTables.delete(deviceId);
+                episodes.end(deviceId);
             }
         }
     });

@@ -1,3 +1,4 @@
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import {
     captureDurableDocumentWitness,
     captureProjectMutationAuthorization,
@@ -6,15 +7,10 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type HandlerValidationContext,
-    type HandlerCommitValidation,
-    type CommandSourceProof,
-    type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext, type HandlerCommitValidation } from '#/utils/handlerContract';
 
-import { changesTempoByActionType } from '../../models/ChangesTempoByActionType';
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
+import { projectsClipsByTempo } from '../../models/ProjectsClipsByTempoActionType';
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
@@ -97,7 +93,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         })) ?? [];
     let takePriorActions = priorActions;
     let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
-    if (priorActions.some((action) => changesTempoByActionType[action.type])) {
+    if (priorActions.some((action) => projectsClipsByTempo(action.type))) {
         if (!projected.tracks) {
             return false;
         }

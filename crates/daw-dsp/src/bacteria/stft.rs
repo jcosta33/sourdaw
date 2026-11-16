@@ -75,8 +75,7 @@ fn fft(real: &mut [f32], imag: &mut [f32], bit_reverse: &[usize], inverse: bool)
     assert_eq!(bit_reverse.len(), n);
 
     // Bit-reversal permutation
-    for i in 0..n {
-        let j = bit_reverse[i];
+    for (i, &j) in bit_reverse.iter().enumerate() {
         if i < j {
             real.swap(i, j);
             imag.swap(i, j);
@@ -461,6 +460,12 @@ impl BreakdownProcessor {
         self.stft.reset();
         self.remap_mags.fill(0.0);
         self.remap_phases.fill(0.0);
+    }
+}
+
+impl Default for BreakdownProcessor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

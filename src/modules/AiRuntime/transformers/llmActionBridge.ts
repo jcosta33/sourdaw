@@ -1,5 +1,4 @@
-import { resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
+import { toLevelDb } from '#/utils/audioLevelLaw';
 import {
     ADD_NOTES_MAX_NOTES_PER_COMMAND,
     MIDI_NOTE_MIN_DURATION_BEATS,
@@ -49,25 +48,27 @@ import {
     type SidechainRouteDeviceAdmission,
 } from './llmActionBridgeContracts';
 import { bridgeAutomationRangeToolCall } from './llmActionStrategies/automationRangeStrategy';
-import {
-    findClip,
-    findDeviceTarget,
-    findSupportedSidechainDevices,
-    findTrack,
-    hasExactKeys,
-    isFiniteNumber,
-    normalizeMarkerName,
-    rejection,
-} from './llmActionStrategies/bridgeArgumentGuards';
+import { findClip, hasExactKeys, isFiniteNumber, rejection } from './llmActionStrategies/bridgeArgumentGuards';
 import { bridgeClipToolCall } from './llmActionStrategies/clipStrategy';
 import { bridgeCoreAutomationToolCall } from './llmActionStrategies/coreAutomationStrategy';
 import { bridgeDeviceToolCall } from './llmActionStrategies/deviceStrategy';
 import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSectionStrategy';
-import { bridgeMasterVcaToolCall, normalizeVcaGroupName } from './llmActionStrategies/masterVcaStrategy';
+import { bridgeMasterVcaToolCall } from './llmActionStrategies/masterVcaStrategy';
 import { bridgeMidiToolCall } from './llmActionStrategies/midiStrategy';
 import { bridgeRoutingToolCall } from './llmActionStrategies/routingStrategy';
 import { bridgeTrackToolCall } from './llmActionStrategies/trackStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
+import { getAutomationPointLaneId } from './llmAutomationPointLaneId';
+import { getAutomationTransformLaneId } from './llmAutomationTransformLaneId';
+import { getClipDestinationTrackIds } from './llmClipDestinationTrackIds';
+import { getClipLifecycleKind } from './llmClipLifecycleKind';
+import { getClipTargetIds } from './llmClipTargetIds';
+import { getDeviceBatchTarget } from './llmDeviceBatchTarget';
+import { getMovedClipAutomationLaneIds } from './llmMovedClipAutomationLaneIds';
+import { getMutationKeys } from './llmMutationKeys';
+import { applyAcceptedRoutingAction } from './llmRoutingProjection';
+import { hasInvalidatingSidechainLifecycleMutation } from './llmSidechainLifecycle';
+import { getSplitDuplicateSubjects } from './llmSplitDuplicateSubjects';
 import { type ToolCallResult } from './toolCallParser';
 
 export type {
@@ -92,24 +93,6 @@ type ProjectPunchRegion = (input: {
     current: PunchRegion;
     edge: 'in' | 'out';
 }) => Partial<PunchRegion> | null;
-
-function getClipAutomationLaneIds(context: ProjectContext, clipId: string): string[] {
-    return (context.automationLanes ?? []).filter((lane) => lane.clipId === clipId).map((lane) => lane.id);
-}
-
-function getAutomationTransformLaneId(action: RuntimeAction): string | null {
-    if (
-        action.type === 'scaleAutomation' ||
-        action.type === 'stretchAutomation' ||
-        action.type === 'invertAutomation' ||
-        action.type === 'reverseAutomation' ||
-        action.type === 'thinAutomation' ||
-        action.type === 'quantizeAutomation'
-    ) {
-        return action.payload.laneId;
-    }
-    return null;
-}
 
 function serializePromptData(value: unknown): string {
     return JSON.stringify(value).replaceAll('&', '\\u0026').replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
@@ -185,353 +168,6 @@ function bridgeToolCall({
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
 }
 
-function getClipTargetIds(action: RuntimeAction): string[] {
-    if (action.type === 'glueClips') {
-        return [...action.payload.clipIds];
-    }
-    if (action.type === 'crossfadeClips') {
-        return [action.payload.clipAId, action.payload.clipBId];
-    }
-    if (action.type === 'moveClips') {
-        return action.payload.moves.map((move) => move.clipId);
-    }
-    if (
-        action.type === 'duplicateClip' ||
-        action.type === 'duplicateClipToNextBar' ||
-        action.type === 'duplicateClipAt' ||
-        action.type === 'moveClip' ||
-        action.type === 'splitClip' ||
-        action.type === 'removeClip' ||
-        action.type === 'renameClip' ||
-        action.type === 'trimClipStart' ||
-        action.type === 'trimClipEnd' ||
-        action.type === 'nudgeClip' ||
-        action.type === 'slipClipContent' ||
-        action.type === 'setClipGain' ||
-        action.type === 'muteClip' ||
-        action.type === 'setClipColor' ||
-        action.type === 'setClipFade' ||
-        action.type === 'lockClip' ||
-        action.type === 'setClipLoop' ||
-        action.type === 'setClipLoopLength' ||
-        action.type === 'normalizeClip' ||
-        action.type === 'setClipStretchMode' ||
-        action.type === 'setClipStretchRatio' ||
-        action.type === 'fitClipToBeats' ||
-        action.type === 'quantizeNotes' ||
-        action.type === 'transposeNotes' ||
-        action.type === 'invertNotes' ||
-        action.type === 'retrogradeNotes' ||
-        action.type === 'quantizeNoteLengths' ||
-        action.type === 'scaleAllVelocities' ||
-        action.type === 'setAllVelocities'
-    ) {
-        return [action.payload.clipId];
-    }
-    return [];
-}
-
-type DeviceBatchTarget = {
-    deviceId: string | null;
-    trackId: string;
-    kind: 'add' | 'remove' | 'update';
-};
-
-function getDeviceBatchTarget(action: RuntimeAction, context: ProjectContext): DeviceBatchTarget | null {
-    if (action.type === 'addDevice') {
-        return { deviceId: null, trackId: action.payload.trackId, kind: 'add' };
-    }
-    if (action.type !== 'removeDevice' && action.type !== 'setDeviceParameter' && action.type !== 'bypassDevice') {
-        return null;
-    }
-    const target = findDeviceTarget(context, action.payload.deviceId);
-    if (!target) {
-        return null;
-    }
-    return {
-        deviceId: target.device.id,
-        trackId: target.track.id,
-        kind: action.type === 'removeDevice' ? 'remove' : 'update',
-    };
-}
-
-function getExistingVcaMembershipCollectionKeys(context: ProjectContext, trackIds: readonly string[]): string[] {
-    const affectedTrackIds = new Set(trackIds);
-    return (context.vcaGroups ?? [])
-        .filter((group) => group.trackIds.some((trackId) => affectedTrackIds.has(trackId)))
-        .map((group) => `vca-members:${group.id}`);
-}
-
-function getMutationKeys(
-    action: RuntimeAction,
-    context: ProjectContext,
-    sectionSignatures: readonly SectionPlanningSignature[]
-): string[] {
-    if (
-        action.type === 'addTrack' ||
-        action.type === 'createBus' ||
-        action.type === 'duplicateTrack' ||
-        action.type === 'duplicateClip' ||
-        action.type === 'duplicateClipToNextBar' ||
-        action.type === 'duplicateClipAt' ||
-        action.type === 'drawClip'
-    ) {
-        return [];
-    }
-    if (action.type === 'addMarker') {
-        return [`marker:${String(action.payload.beat)}:${normalizeMarkerName(action.payload.name)}`];
-    }
-    if (action.type === 'removeMarker') {
-        return [`marker:${action.payload.markerId}:membership`, `marker:${action.payload.markerId}:color`];
-    }
-    if (action.type === 'setMarkerColor') {
-        return [`marker:${action.payload.markerId}:color`];
-    }
-    if (action.type === 'addSection') {
-        return [
-            `section:${String(action.payload.startBeat)}:${String(action.payload.endBeat)}:${normalizeMarkerName(action.payload.name)}`,
-        ];
-    }
-    if (action.type === 'removeSection') {
-        return [`section:${action.payload.sectionId}:membership`, `section:${action.payload.sectionId}:name`];
-    }
-    if (action.type === 'renameSection') {
-        const section = sectionSignatures.find((candidate) => candidate.sectionId === action.payload.sectionId);
-        const keys = [`section:${action.payload.sectionId}:name`];
-        if (section) {
-            keys.push(
-                `section:${String(section.startBeat)}:${String(section.endBeat)}:${normalizeMarkerName(action.payload.name)}`
-            );
-        }
-        return keys;
-    }
-    if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
-        return [action.type];
-    }
-    if (action.type === 'setPlayback' || action.type === 'stopPlayback') {
-        return ['transport:runtime'];
-    }
-    if (action.type === 'setLoopEnabled') {
-        return ['loop:enabled'];
-    }
-    if (action.type === 'setLoopRegion') {
-        return ['loop:region'];
-    }
-    if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
-        return ['punch:region'];
-    }
-    if (action.type === 'setPunchEnabled') {
-        return ['punch:enabled'];
-    }
-    if (action.type === 'setMetronomeEnabled') {
-        return ['metronome:enabled'];
-    }
-    if (action.type === 'setMetronomeVolume') {
-        return ['metronome:volume'];
-    }
-    if (action.type === 'setMasterGain') {
-        return ['master:gain'];
-    }
-    if (action.type === 'setVcaGain') {
-        return [`vca-gain:${action.payload.vcaGroupId}`];
-    }
-    if (action.type === 'createVcaGroup') {
-        return [
-            'vca-group-rows',
-            `vca-name:${normalizeVcaGroupName(action.payload.name)}`,
-            ...action.payload.trackIds.map((trackId) => `vca-membership:${trackId}`),
-            ...getExistingVcaMembershipCollectionKeys(context, action.payload.trackIds),
-        ];
-    }
-    if (action.type === 'assignToVca') {
-        return [
-            `vca-membership:${action.payload.trackId}`,
-            `vca-members:${action.payload.vcaGroupId}`,
-            ...getExistingVcaMembershipCollectionKeys(context, [action.payload.trackId]),
-        ];
-    }
-    if (action.type === 'removeFromVca') {
-        return [
-            `vca-membership:${action.payload.trackId}`,
-            ...getExistingVcaMembershipCollectionKeys(context, [action.payload.trackId]),
-        ];
-    }
-    if (action.type === 'clearSolos') {
-        return ['solo:all'];
-    }
-    if (action.type === 'addAutomationLane') {
-        return [`automation-target:${action.payload.trackId}:${action.payload.parameterId}`];
-    }
-    if (action.type === 'addAutomationPoint') {
-        return [`automation-lane-point:${action.payload.laneId}:${String(action.payload.beat)}`];
-    }
-    if (action.type === 'setAutomationLaneEnabled') {
-        return [`automation-lane-enabled:${action.payload.laneId}`];
-    }
-    if (
-        action.type === 'scaleAutomation' ||
-        action.type === 'stretchAutomation' ||
-        action.type === 'invertAutomation' ||
-        action.type === 'reverseAutomation' ||
-        action.type === 'thinAutomation' ||
-        action.type === 'quantizeAutomation'
-    ) {
-        return [`automation-lane-points:${action.payload.laneId}`];
-    }
-    if (action.type === 'setDeviceParameter') {
-        return [`${action.type}:${action.payload.deviceId}:${action.payload.paramId}`];
-    }
-    if (action.type === 'bypassDevice') {
-        return [`${action.type}:${action.payload.deviceId}`];
-    }
-    if (action.type === 'setSend' || action.type === 'addSend' || action.type === 'removeSend') {
-        return [`send:${action.payload.trackId}:${action.payload.busId}`];
-    }
-    if (action.type === 'setTrackOutput') {
-        return [`output:${action.payload.trackId}`];
-    }
-    if (action.type === 'addSidechainRoute') {
-        const targetDeviceId = action.payload.targetDeviceId ?? action.payload.targetTrackId;
-        return [`sidechain:${action.payload.sourceTrackId}:${targetDeviceId}`];
-    }
-    if (action.type === 'removeSidechainRoute') {
-        return [`sidechain:${action.payload.sourceTrackId}:${action.payload.targetTrackId}`];
-    }
-    if (action.type === 'removeTrack') {
-        return [`${action.type}:${action.payload.trackId}`, `vca-membership:${action.payload.trackId}`];
-    }
-    if (
-        action.type === 'renameTrack' ||
-        action.type === 'muteTrack' ||
-        action.type === 'soloTrack' ||
-        action.type === 'setSoloSafe' ||
-        action.type === 'armTrack' ||
-        action.type === 'setTrackGain' ||
-        action.type === 'setTrackPan' ||
-        action.type === 'setTrackColor' ||
-        action.type === 'setAutomationMode'
-    ) {
-        return [`${action.type}:${action.payload.trackId}`];
-    }
-    if (action.type === 'removeClip') {
-        return [
-            `clip:${action.payload.clipId}:membership`,
-            `clip:${action.payload.clipId}:name`,
-            `clip:${action.payload.clipId}:geometry`,
-            `clip:${action.payload.clipId}:gain`,
-            `clip:${action.payload.clipId}:muted`,
-            `clip:${action.payload.clipId}:color`,
-            `clip:${action.payload.clipId}:fades`,
-            `clip:${action.payload.clipId}:lock`,
-            `clip:${action.payload.clipId}:loop`,
-            `clip:${action.payload.clipId}:stretch`,
-            `clip:${action.payload.clipId}:notes`,
-        ];
-    }
-    if (action.type === 'glueClips') {
-        return action.payload.clipIds.flatMap((clipId) => [
-            `clip:${clipId}:membership`,
-            `clip:${clipId}:name`,
-            `clip:${clipId}:geometry`,
-            `clip:${clipId}:gain`,
-            `clip:${clipId}:muted`,
-            `clip:${clipId}:color`,
-            `clip:${clipId}:fades`,
-            `clip:${clipId}:lock`,
-            `clip:${clipId}:loop`,
-            `clip:${clipId}:stretch`,
-            `clip:${clipId}:notes`,
-        ]);
-    }
-    if (action.type === 'moveClip') {
-        return [
-            `clip:${action.payload.clipId}:membership`,
-            `clip:${action.payload.clipId}:geometry`,
-            ...getClipAutomationLaneIds(context, action.payload.clipId).map(
-                (laneId) => `automation-lane-points:${laneId}`
-            ),
-        ];
-    }
-    if (action.type === 'splitClip') {
-        return [
-            `clip:${action.payload.clipId}:membership`,
-            `clip:${action.payload.clipId}:name`,
-            `clip:${action.payload.clipId}:geometry`,
-            `clip:${action.payload.clipId}:gain`,
-            `clip:${action.payload.clipId}:muted`,
-            `clip:${action.payload.clipId}:color`,
-            `clip:${action.payload.clipId}:fades`,
-            `clip:${action.payload.clipId}:lock`,
-            `clip:${action.payload.clipId}:loop`,
-            `clip:${action.payload.clipId}:stretch`,
-            `clip:${action.payload.clipId}:notes`,
-        ];
-    }
-    if (action.type === 'renameClip') {
-        return [`clip:${action.payload.clipId}:name`];
-    }
-    if (action.type === 'trimClipStart' || action.type === 'trimClipEnd' || action.type === 'nudgeClip') {
-        return [`clip:${action.payload.clipId}:geometry`];
-    }
-    if (action.type === 'moveClips') {
-        return action.payload.moves.map((move) => `clip:${move.clipId}:geometry`);
-    }
-    if (action.type === 'slipClipContent') {
-        return [`clip:${action.payload.clipId}:offset`];
-    }
-    if (action.type === 'setClipStretchRatio' || action.type === 'fitClipToBeats') {
-        return [`clip:${action.payload.clipId}:geometry`, `clip:${action.payload.clipId}:stretch`];
-    }
-    if (action.type === 'setClipStretchMode') {
-        return [`clip:${action.payload.clipId}:geometry`, `clip:${action.payload.clipId}:stretch`];
-    }
-    if (action.type === 'setClipGain' || action.type === 'normalizeClip') {
-        return [`clip:${action.payload.clipId}:gain`];
-    }
-    if (action.type === 'muteClip') {
-        return [`clip:${action.payload.clipId}:muted`];
-    }
-    if (action.type === 'setClipColor') {
-        return [`clip:${action.payload.clipId}:color`];
-    }
-    if (action.type === 'setClipFade') {
-        return [`clip:${action.payload.clipId}:fades`];
-    }
-    if (action.type === 'crossfadeClips') {
-        return [
-            `clip:${action.payload.clipAId}:geometry`,
-            `clip:${action.payload.clipAId}:fades`,
-            `clip:${action.payload.clipBId}:geometry`,
-            `clip:${action.payload.clipBId}:fades`,
-        ];
-    }
-    if (action.type === 'lockClip') {
-        return [`clip:${action.payload.clipId}:lock`];
-    }
-    if (action.type === 'setClipLoop') {
-        return [`clip:${action.payload.clipId}:loop`];
-    }
-    if (action.type === 'setClipLoopLength') {
-        return [
-            `clip:${action.payload.clipId}:loop`,
-            `clip:${action.payload.clipId}:geometry`,
-            `clip:${action.payload.clipId}:stretch`,
-        ];
-    }
-    if (
-        action.type === 'quantizeNotes' ||
-        action.type === 'transposeNotes' ||
-        action.type === 'invertNotes' ||
-        action.type === 'retrogradeNotes' ||
-        action.type === 'quantizeNoteLengths' ||
-        action.type === 'scaleAllVelocities' ||
-        action.type === 'setAllVelocities'
-    ) {
-        return [`clip:${action.payload.clipId}:notes`];
-    }
-    return [];
-}
-
 function getProspectiveLoopContext(calls: readonly ToolCallResult[], context: ProjectContext): ProjectContext {
     for (const call of calls) {
         const args = call.arguments;
@@ -564,184 +200,6 @@ function canonicalizeLoopActionOrder(actions: RuntimeAction[]): RuntimeAction[] 
     orderedActions[loopEnabledIndex] = loopRegionAction;
     orderedActions[loopRegionIndex] = loopEnabledAction;
     return orderedActions;
-}
-
-type AddSidechainRuntimeAction = Extract<RuntimeAction, { type: 'addSidechainRoute' }>;
-
-function isAddSidechainRuntimeAction(action: RuntimeAction): action is AddSidechainRuntimeAction {
-    return action.type === 'addSidechainRoute';
-}
-
-function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeAction): ProjectContext {
-    if (action.type === 'addSidechainRoute') {
-        const target = findTrack(context, action.payload.targetTrackId);
-        const targetDevice = target
-            ? findSupportedSidechainDevices(target).find(
-                  (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
-              )
-            : undefined;
-        if (!targetDevice) {
-            return context;
-        }
-        return {
-            ...context,
-            sidechainRoutes: [
-                ...(context.sidechainRoutes ?? []),
-                {
-                    id: `provider-batch:${action.payload.sourceTrackId}:${targetDevice.id}`,
-                    sourceTrackId: action.payload.sourceTrackId,
-                    targetTrackId: action.payload.targetTrackId,
-                    targetDeviceId: targetDevice.id,
-                    targetParameterId: 'threshold',
-                    gain: 1,
-                },
-            ],
-        };
-    }
-    if (action.type === 'removeSidechainRoute') {
-        return {
-            ...context,
-            sidechainRoutes: (context.sidechainRoutes ?? []).filter(
-                (route) =>
-                    route.sourceTrackId !== action.payload.sourceTrackId ||
-                    route.targetTrackId !== action.payload.targetTrackId
-            ),
-        };
-    }
-    if (action.type === 'setTrackOutput') {
-        return {
-            ...context,
-            tracks: context.tracks.map((track) => {
-                if (track.id !== action.payload.trackId) {
-                    return track;
-                }
-                return { ...track, outputId: action.payload.outputId };
-            }),
-        };
-    }
-    if (action.type === 'addSend') {
-        // A send being created has no level to measure a relative request
-        // from, so it is measured from the full copy of the signal it taps,
-        // exactly as the handler measures it. A request the send law refuses
-        // never lands, so the projection leaves the context alone rather than
-        // showing a send that cannot exist.
-        const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
-        if (!level.ok) {
-            return context;
-        }
-        return {
-            ...context,
-            tracks: context.tracks.map((track) => {
-                if (track.id !== action.payload.trackId) {
-                    return track;
-                }
-                return {
-                    ...track,
-                    sends: [
-                        ...(track.sends ?? []),
-                        {
-                            busId: action.payload.busId,
-                            level: level.linear,
-                            levelDb: toLevelDb(level.linear),
-                            preFader: false,
-                        },
-                    ],
-                };
-            }),
-        };
-    }
-    if (action.type === 'removeSend') {
-        return {
-            ...context,
-            tracks: context.tracks.map((track) => {
-                if (track.id !== action.payload.trackId) {
-                    return track;
-                }
-                return {
-                    ...track,
-                    sends: (track.sends ?? []).filter((send) => send.busId !== action.payload.busId),
-                };
-            }),
-        };
-    }
-    if (action.type === 'removeDevice') {
-        const target = findDeviceTarget(context, action.payload.deviceId);
-        if (!target) {
-            return context;
-        }
-        return {
-            ...context,
-            tracks: context.tracks.map((track) => {
-                if (track.id !== target.track.id) {
-                    return track;
-                }
-                const devices = track.devices.filter((device) => device.id !== action.payload.deviceId);
-                return { ...track, devices, deviceCount: devices.length };
-            }),
-            sidechainRoutes: (context.sidechainRoutes ?? []).filter(
-                (route) => route.targetDeviceId !== action.payload.deviceId
-            ),
-        };
-    }
-    if (action.type === 'removeTrack') {
-        return {
-            ...context,
-            tracks: context.tracks.filter((track) => track.id !== action.payload.trackId),
-            sidechainRoutes: (context.sidechainRoutes ?? []).filter(
-                (route) =>
-                    route.sourceTrackId !== action.payload.trackId && route.targetTrackId !== action.payload.trackId
-            ),
-        };
-    }
-    return context;
-}
-
-function hasInvalidatingSidechainLifecycleMutation(
-    actions: readonly RuntimeAction[],
-    context: ProjectContext
-): boolean {
-    const allSidechainAdds = actions.filter(isAddSidechainRuntimeAction);
-    const plannedSidechainAdds: AddSidechainRuntimeAction[] = [];
-
-    for (const action of actions) {
-        if (isAddSidechainRuntimeAction(action)) {
-            plannedSidechainAdds.push(action);
-            continue;
-        }
-        if (action.type === 'removeSidechainRoute') {
-            continue;
-        }
-        if (
-            action.type === 'addDevice' &&
-            getSidechainTargetCapability(action.payload.deviceType) !== null &&
-            allSidechainAdds.some((sidechainAction) => sidechainAction.payload.targetTrackId === action.payload.trackId)
-        ) {
-            return true;
-        }
-        if (
-            action.type === 'removeTrack' &&
-            plannedSidechainAdds.some(
-                (sidechainAction) =>
-                    sidechainAction.payload.sourceTrackId === action.payload.trackId ||
-                    sidechainAction.payload.targetTrackId === action.payload.trackId
-            )
-        ) {
-            return true;
-        }
-        if (action.type === 'removeDevice') {
-            const target = findDeviceTarget(context, action.payload.deviceId);
-            if (
-                target !== undefined &&
-                getSidechainTargetCapability(target.device.type) !== null &&
-                plannedSidechainAdds.some(
-                    (sidechainAction) => sidechainAction.payload.targetTrackId === target.track.id
-                )
-            ) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 export function bridgeLlmToolCalls({
@@ -877,25 +335,17 @@ export function bridgeLlmToolCalls({
                         const trackId = findClip(context, clipTargetId)?.track.id;
                         return trackId ? [trackId] : [];
                     }),
-                    ...(result.type === 'moveClip' || result.type === 'addClip' ? [result.payload.trackId] : []),
-                    ...(result.type === 'drawClip' ? [result.payload.trackId] : []),
-                    ...(result.type === 'duplicateClipAt' ? [result.payload.destinationTrackId] : []),
-                    ...(result.type === 'moveClips' ? result.payload.moves.map((move) => move.trackId) : []),
+                    ...getClipDestinationTrackIds(result),
                 ]),
             ];
             const deviceTarget = getDeviceBatchTarget(result, context);
             const mutationKeysForAction = getMutationKeys(result, context, sectionSignatures);
-            const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
+            const clipLifecycleKind = getClipLifecycleKind(result);
+            const consumesClips = clipLifecycleKind === 'remove' || clipLifecycleKind === 'glue';
+            const automationPointLaneId = getAutomationPointLaneId(result);
             const automationTransformLaneId = getAutomationTransformLaneId(result);
             const automationMutationLaneId = automationPointLaneId ?? automationTransformLaneId;
-            let movedAutomationLaneIds: string[] = [];
-            if (result.type === 'moveClip') {
-                movedAutomationLaneIds = getClipAutomationLaneIds(context, result.payload.clipId);
-            } else if (result.type === 'moveClips') {
-                movedAutomationLaneIds = result.payload.moves.flatMap((move) =>
-                    getClipAutomationLaneIds(context, move.clipId)
-                );
-            }
+            const movedAutomationLaneIds = getMovedClipAutomationLaneIds(result, context);
             const hasMoveAutomationConflict =
                 movedAutomationLaneIds.some(
                     (laneId) => automationPointWriteLaneIds.has(laneId) || automationTransformLaneIds.has(laneId)
@@ -905,30 +355,24 @@ export function bridgeLlmToolCalls({
                 (automationPointLaneId !== null && automationTransformLaneIds.has(automationPointLaneId)) ||
                 (automationTransformLaneId !== null && automationPointWriteLaneIds.has(automationTransformLaneId));
             const hasClipLifecycleConflict =
-                ((result.type === 'removeClip' || result.type === 'glueClips') &&
-                    actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
+                (consumesClips && actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
                 actionClipTargetIds.some((clipTargetId) => removedClipIds.has(clipTargetId));
             const hasClipTrackLifecycleConflict = actionClipTrackIds.some((trackId) => removedTrackIds.has(trackId));
             const hasClipLockConflict =
-                (result.type === 'lockClip' &&
+                (clipLifecycleKind === 'lock' &&
                     actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
                 actionClipTargetIds.some((clipTargetId) => lockClipTargetIds.has(clipTargetId));
             const conflictingMutationKey = mutationKeysForAction.find((mutationKey) => mutationKeys.has(mutationKey));
             const hasMutationConflict = conflictingMutationKey !== undefined;
             const hasRippleCouplingConflict =
-                (result.type === 'removeClip' && actionClipTrackIds.some((trackId) => clipTrackIds.has(trackId))) ||
+                (clipLifecycleKind === 'remove' && actionClipTrackIds.some((trackId) => clipTrackIds.has(trackId))) ||
                 actionClipTrackIds.some((trackId) => removedClipTrackIds.has(trackId));
-            const duplicatedClipId =
-                result.type === 'duplicateClip' || result.type === 'duplicateClipToNextBar'
-                    ? result.payload.clipId
-                    : null;
-            const splitClipId = result.type === 'splitClip' ? result.payload.clipId : null;
+            const { addedClipTrackId, duplicatedClipId, duplicatedTrackId, gluedClipId, splitClipId } =
+                getSplitDuplicateSubjects(result);
             const splitClipOwnerTrackId =
                 splitClipId === null ? null : (findClip(context, splitClipId)?.track.id ?? null);
-            const duplicatedTrackId = result.type === 'duplicateTrack' ? result.payload.trackId : null;
             const gluedClipOwnerTrackId =
-                result.type === 'glueClips' ? (findClip(context, result.payload.clipIds[0])?.track.id ?? null) : null;
-            const addedClipTrackId = result.type === 'addClip' ? result.payload.trackId : null;
+                gluedClipId === null ? null : (findClip(context, gluedClipId)?.track.id ?? null);
             const hasSplitDuplicateConflict =
                 (duplicatedClipId !== null && splitClipIds.has(duplicatedClipId)) ||
                 (splitClipId !== null && duplicatedClipSourceIds.has(splitClipId));
@@ -963,8 +407,7 @@ export function bridgeLlmToolCalls({
                     if (!priorAction || conflictingLaneId === null) {
                         continue;
                     }
-                    const priorPointLaneId =
-                        priorAction.type === 'addAutomationPoint' ? priorAction.payload.laneId : null;
+                    const priorPointLaneId = getAutomationPointLaneId(priorAction);
                     const priorTransformKey = getMutationKeys(priorAction, context, sectionSignatures).find((key) =>
                         key.startsWith('automation-lane-points:')
                     );
@@ -1081,16 +524,16 @@ export function bridgeLlmToolCalls({
             }
             for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);
-                if (result.type === 'removeClip' || result.type === 'glueClips') {
+                if (consumesClips) {
                     removedClipIds.add(clipTargetId);
                 }
-                if (result.type === 'lockClip') {
+                if (clipLifecycleKind === 'lock') {
                     lockClipTargetIds.add(clipTargetId);
                 }
             }
             for (const clipTrackId of actionClipTrackIds) {
                 clipTrackIds.add(clipTrackId);
-                if (result.type === 'removeClip') {
+                if (clipLifecycleKind === 'remove') {
                     removedClipTrackIds.add(clipTrackId);
                 }
             }

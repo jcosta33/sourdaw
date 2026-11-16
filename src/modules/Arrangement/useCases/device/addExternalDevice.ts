@@ -6,6 +6,7 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 
 import { EXTERNAL_PLUGIN_DEVICE_TYPE } from './externalPluginDeviceType';
+import { mintExternalInstanceId } from './mintExternalInstanceId';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -29,7 +30,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         return null;
     }
 
-    const instanceId = `${pluginId}-${crypto.randomUUID()}`;
+    const instanceId = mintExternalInstanceId(pluginId);
 
     const device: Device = {
         id: nextDeviceIdStr(),

@@ -1,10 +1,11 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { type ListRestoreSlot, isValidListRestoreSlot } from '../../models/ListRestoreSlot';
 import { addSection } from '../../useCases/marker/sectionOperations/addSection';
 import { getMarkerState } from '../../useCases/timelineQueries';
 
 type AddSectionAction = {
-    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string };
+    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string } & ListRestoreSlot;
 };
 
 // Mirror of handleDuplicateClip's ensureTargetClipId: the inverse needs the
@@ -19,14 +20,28 @@ function ensureSectionId(action: AddSectionAction): string {
     return sectionId;
 }
 
+const MALFORMED_SLOT_REASON = 'Section slot must be a non-negative integer index with string neighbour ids.';
+
 export const handleAddSection = createHandler<'addSection'>({
+    // Singleton keeps addSection out of multi-action batches, as it was before it gained a validator.
+    batchExecution: 'singleton',
+    // executeAppAction (undo/redo replay included) never calls validate, so execute enforces the same rule.
+    validate: (action) => isValidListRestoreSlot(action.payload),
     execute: (action) => {
+        if (!isValidListRestoreSlot(action.payload)) {
+            return { status: 'conflict', reason: MALFORMED_SLOT_REASON };
+        }
         const changed = addSection(
             action.payload.startBeat,
             action.payload.endBeat,
             action.payload.name,
             ensureSectionId(action),
-            action.payload.color
+            action.payload.color,
+            {
+                index: action.payload.index,
+                beforeId: action.payload.beforeId,
+                afterId: action.payload.afterId,
+            }
         );
         if (!changed) {
             return { status: 'no-write' };

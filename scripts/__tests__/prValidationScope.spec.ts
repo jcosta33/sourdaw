@@ -1384,13 +1384,23 @@ describe('required affected verification', () => {
             expect.arrayContaining([
                 ...RESOURCE_GUARD_SPECS,
                 'scripts/resourceGuard.ts',
+                'scripts/resourceGuardProcessTree.ts',
                 'scripts/resourceGuardStorage.ts',
+                'scripts/resourceGuardStorageProcessProof.ts',
                 'scripts/pnpmModulesPreflight.ts',
             ])
         );
         expect(closure.every((path) => path.startsWith('scripts/'))).toBe(true);
         const toolingPaths = closure.filter((path) => selectValidationPlan([path], INVENTORY).profile !== 'broad');
         expect(toolingPaths).toEqual([]);
+        expect(selectValidationPlan(['scripts/resourceGuardProcessTree.ts'], INVENTORY)).toMatchObject({
+            ...BROAD_WITHOUT_BROWSER,
+            codeql: true,
+        });
+        expect(selectValidationPlan(['scripts/resourceGuardStorageProcessProof.ts'], INVENTORY)).toMatchObject({
+            ...BROAD_WITHOUT_BROWSER,
+            codeql: true,
+        });
     });
 
     it.each([
@@ -2374,13 +2384,16 @@ describe('repository tooling selects no browser suite', () => {
         '.prettierrc',
         '.editorconfig',
         '.oxlintrc.json',
+        '.oxlint-plugins.json',
         'eslint.config.mjs',
         'eslint.size-baseline.mjs',
         'eslint.size-baseline.d.mts',
+        'eslint-suppressions.json',
         'oxlint.craft-baseline.mjs',
         'oxlint.craft-baseline.d.mts',
         'knip.json',
         'tsconfig.eslint.json',
+        'tsconfig.eslint-config.json',
     ])('keeps %s on broad non-browser validation', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);

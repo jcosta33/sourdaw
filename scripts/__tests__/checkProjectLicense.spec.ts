@@ -27,6 +27,7 @@ import {
     validateProjectLicense,
     validateServerThirdPartyNotices,
 } from '../checkProjectLicense';
+import { licenceInputDigest } from '../dependencyLicenseInputProjection';
 import {
     assertLicenseExpressionEvidence,
     expectedProofIdentities,
@@ -103,7 +104,7 @@ function restampCargoInventoryFixtureDigests(root: string, manifest: CargoInvent
     }
     inventory.cargoLockSha256 = sha256File(root, 'Cargo.lock');
     for (const input of inventory.sourceInputs) {
-        input.sha256 = sha256File(root, input.path);
+        Object.assign(input, licenceInputDigest(input.path, readFileSync(join(root, input.path))));
     }
     writeCargoInventoryFixtureManifest(root, manifest);
 }
@@ -113,6 +114,7 @@ type CargoInventoryFixtureManifest = {
         cargoLockSha256: string;
         sourceInputs: Array<{
             path: string;
+            projection: string;
             sha256: string;
         }>;
         featureSelection: {
@@ -334,11 +336,11 @@ describe('project license', () => {
             DEPENDENCY_LICENSE_PROOFS_PATH,
             `${JSON.stringify(
                 {
-                    schemaVersion: 4,
+                    schemaVersion: 5,
                     packages: proofs,
                     cargoRuntimeInventory: {
                         cargoLockSha256: '0'.repeat(64),
-                        sourceInputs: [{ path: 'Cargo.lock', sha256: '0'.repeat(64) }],
+                        sourceInputs: [{ path: 'Cargo.lock', projection: 'whole-file', sha256: '0'.repeat(64) }],
                         featureSelection: CARGO_RUNTIME_FEATURE_SELECTION,
                         packages: [
                             {
@@ -465,11 +467,24 @@ describe('project license', () => {
         expect(() => collectCargoDependencyLicenses(root)).toThrow('proof source is not the crates.io registry');
     });
 
+    // Each row edits what the licence generator or `cargo metadata` reads, so the pinned projection moves.
     it.each([
         ['Cargo.toml', 'resolver = "2"', 'resolver = "3"'],
+        ['Cargo.toml', '"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n'],
+        ['Cargo.toml', 'windows = "0.62.2"', 'windows = "0.63.0"'],
         ['crates/sourdaw-native/Cargo.toml', 'napi-addon =', 'napi-addon-renamed ='],
+        ['crates/sourdaw-native/Cargo.toml', 'rtrb = "0.4"', 'rtrb = "0.5"'],
+        ['crates/sourdaw-native/Cargo.toml', 'rtrb = "0.4"\n', 'rtrb = "0.4"\nitoa = "1"\n'],
+        ['crates/sourdaw-native/Cargo.toml', 'license.workspace = true', 'license = "MIT"'],
+        ['electron-builder.yml', "    - '!node_modules/**/*'\n", ''],
+        [
+            'electron-builder.yml',
+            "    - '!node_modules/**/*'\n",
+            "    - '!node_modules/**/*'\n    - 'node_modules/**/*'\n",
+        ],
         ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
-        ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+        ['package.json', '"license": "Apache-2.0"', '"license": "MIT"'],
+        ['package.json', '"build": "vite build"', '"build": "vite build --mode bundled"'],
         ['scripts/buildNativeAddon.ts', "'napi-addon'", "'napi-addon-renamed'"],
     ])('rejects Cargo resolution input drift in %s without invoking Cargo', (path, before, after) => {
         writeCargoInventoryFixture(root);
@@ -480,6 +495,59 @@ describe('project license', () => {
         writeFileSync(inputPath, input.replace(before, after));
 
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    it('rejects a workspace member manifest dropped from the stored source inputs', () => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const manifest = readCargoInventoryFixtureManifest(root);
+        const inputs = manifest.cargoRuntimeInventory!.sourceInputs;
+        expect(inputs.map(({ path }) => path)).toContain('crates/daw-core/Cargo.toml');
+        manifest.cargoRuntimeInventory!.sourceInputs = inputs.filter(
+            ({ path }) => path !== 'crates/daw-core/Cargo.toml'
+        );
+        writeCargoInventoryFixtureManifest(root, manifest);
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    it('rejects a workspace member added with its manifest but without a restamp', () => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const cargoPath = join(root, 'Cargo.toml');
+        const rootManifest = readFileSync(cargoPath, 'utf8');
+        expect(rootManifest).toContain('"crates/sourdaw-native"\n');
+        writeFileSync(
+            cargoPath,
+            rootManifest.replace('"crates/sourdaw-native"\n', '"crates/sourdaw-native",\n    "crates/new-member"\n')
+        );
+        write(root, 'crates/new-member/Cargo.toml', '[package]\nname = "new-member"\n\n[dependencies]\nitoa = "1"\n');
+        // Restamp only the root manifest's own digest, so only the missing member entry can fail the check.
+        const manifest = readCargoInventoryFixtureManifest(root);
+        restampCargoInventoryFixtureDigests(root, manifest);
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    // Each row edits a field neither the licence generator nor `cargo metadata`'s runtime graph reads.
+    it.each([
+        ['Cargo.toml', 'todo = "deny"', 'todo = "warn"'],
+        ['Cargo.toml', 'lto = true', 'lto = false'],
+        ['crates/daw-core/Cargo.toml', '[lints]\nworkspace = true\n', ''],
+        ['crates/sourdaw-native/Cargo.toml', 'version = "0.1.0"', 'version = "0.2.0"'],
+        ['crates/sourdaw-native/Cargo.toml', 'description = "Sourdaw', 'description = "The Sourdaw'],
+        ['crates/sourdaw-native/Cargo.toml', '[dependencies]\n', '[dependencies]\n# Runtime dependencies.\n'],
+        ['crates/sourdaw-native/Cargo.toml', 'serde_json = "1"\ndirs = "7.0"\n', 'dirs = "7.0"\nserde_json = "1"\n'],
+        ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+        ['package.json', '"build": "vite build",', '"build": "vite build",\n        "fixture:extra": "true",'],
+    ])('accepts licence-irrelevant drift in %s without a restamp', (path, before, after) => {
+        writeCargoInventoryFixture(root);
+        const inputPath = join(root, path);
+        const input = readFileSync(inputPath, 'utf8');
+        expect(input).toContain(before);
+        writeFileSync(inputPath, input.replace(before, after));
+
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
     });
 
     it('rejects Cargo source-input symlinks that escape the repository', () => {
@@ -493,7 +561,7 @@ describe('project license', () => {
             const manifest = readCargoInventoryFixtureManifest(root);
             manifest.cargoRuntimeInventory!.sourceInputs.push({
                 path: 'outside-Cargo.toml',
-                sha256: createHash('sha256').update(readFileSync(outsidePath)).digest('hex'),
+                ...licenceInputDigest('outside-Cargo.toml', readFileSync(outsidePath)),
             });
             manifest.cargoRuntimeInventory!.sourceInputs.sort((left, right) => {
                 if (left.path === right.path) {
@@ -690,18 +758,18 @@ describe('project license', () => {
         });
         expect(() => collectNpmLockDependencyLicenses(root)).toThrow('platform-restricted server dependency may ship');
 
-        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.2.tgz';
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.23.0.tgz';
         const revision =
-            'sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==';
+            'sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==';
         lock({
             '': { dependencies: { parent: '1.0.0' } },
             'node_modules/parent': {
                 version: '1.0.0',
                 license: 'MIT',
-                dependencies: { ws: '8.22.2' },
+                dependencies: { ws: '8.23.0' },
             },
             'node_modules/parent/node_modules/ws': {
-                version: '8.22.2',
+                version: '8.23.0',
                 license: 'MIT',
                 resolved: source,
                 integrity: revision,
@@ -709,7 +777,7 @@ describe('project license', () => {
         });
         const nested = collectNpmLockDependencyLicenses(root).find(({ name }) => name === 'ws')!;
         expect(nested.serverLockPath).toBe('node_modules/parent/node_modules/ws');
-        const archivePath = 'release/dependency-license-proofs/ws-8.22.2.tgz';
+        const archivePath = 'release/dependency-license-proofs/ws-8.23.0.tgz';
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
         writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
         expect(
@@ -810,23 +878,23 @@ describe('project license', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
             name: 'ws',
-            version: '8.22.2',
+            version: '8.23.0',
             license: 'MIT',
             legalFiles: [],
             serverLockPath: 'node_modules/ws',
             graphs: ['server/package-lock.json'],
         };
-        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.2.tgz';
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.23.0.tgz';
         const revision =
-            'sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==';
+            'sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==';
         const writeLock = (integrity: string): void =>
             write(
                 root,
                 'server/package-lock.json',
-                JSON.stringify({ packages: { 'node_modules/ws': { version: '8.22.2', resolved: source, integrity } } })
+                JSON.stringify({ packages: { 'node_modules/ws': { version: '8.23.0', resolved: source, integrity } } })
             );
         writeLock(revision);
-        const archivePath = 'release/dependency-license-proofs/ws-8.22.2.tgz';
+        const archivePath = 'release/dependency-license-proofs/ws-8.23.0.tgz';
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
         writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
         const proof: DependencyLicenseProof = {
@@ -869,7 +937,7 @@ describe('project license', () => {
         );
 
         proof.revision = revision;
-        proof.files![0]!.archivePath = 'ws-8.22.2.tgz';
+        proof.files![0]!.archivePath = 'ws-8.23.0.tgz';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined'
         );
@@ -879,20 +947,20 @@ describe('project license', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
             name: 'ws',
-            version: '8.22.2',
+            version: '8.23.0',
             license: 'MIT',
             legalFiles: [],
             serverLockPath: 'node_modules/ws',
             graphs: ['server/package-lock.json'],
         };
-        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.2.tgz';
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.23.0.tgz';
         const revision =
-            'sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==';
+            'sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==';
         write(
             root,
             'server/package-lock.json',
             JSON.stringify({
-                packages: { 'node_modules/ws': { version: '8.22.2', resolved: source, integrity: revision } },
+                packages: { 'node_modules/ws': { version: '8.23.0', resolved: source, integrity: revision } },
             })
         );
         const proof: DependencyLicenseProof = {
@@ -900,7 +968,7 @@ describe('project license', () => {
             revision,
             files: [
                 {
-                    archivePath: 'release/dependency-license-proofs/../ws-8.22.2.tgz',
+                    archivePath: 'release/dependency-license-proofs/../ws-8.23.0.tgz',
                     sourcePath: 'LICENSE',
                     sha256: '2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef',
                 },
@@ -908,24 +976,24 @@ describe('project license', () => {
         };
         write(root, 'release/dependency-license-proofs/placeholder', 'x');
         writeFileSync(
-            join(root, 'release/ws-8.22.2.tgz'),
-            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.22.2.tgz'))
+            join(root, 'release/ws-8.23.0.tgz'),
+            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.23.0.tgz'))
         );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );
 
-        proof.files![0]!.archivePath = 'release/dependency-license-proofs-confused/ws-8.22.2.tgz';
+        proof.files![0]!.archivePath = 'release/dependency-license-proofs-confused/ws-8.23.0.tgz';
         mkdirSync(dirname(join(root, proof.files![0]!.archivePath)), { recursive: true });
         writeFileSync(
             join(root, proof.files![0]!.archivePath),
-            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.22.2.tgz'))
+            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.23.0.tgz'))
         );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );
 
-        proof.files![0]!.archivePath = 'release/dependency-license-proofs/./ws-8.22.2.tgz';
+        proof.files![0]!.archivePath = 'release/dependency-license-proofs/./ws-8.23.0.tgz';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );

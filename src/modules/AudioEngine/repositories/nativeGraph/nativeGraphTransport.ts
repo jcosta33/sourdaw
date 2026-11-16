@@ -100,6 +100,11 @@ export type RenderGraphOfflineInput = Readonly<{
     batch: TimelineGraphWireBatch;
     frames: number;
     sampleRate: number;
+    /**
+     * The id `cancelNativeGraphOfflineRender` names this render by. A render
+     * without one cannot be cancelled.
+     */
+    renderId?: string;
 }>;
 
 export type ApplyGraphCommandsInput = Readonly<{
@@ -202,10 +207,12 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
         async releaseLevainBank({ bankKey }) {
             return desktopInvoke('release_levain_bank', { bankKey });
         },
-        async renderGraphOffline({ batch, frames, sampleRate }) {
+        async renderGraphOffline({ batch, frames, sampleRate, renderId }) {
+            // Explicit `null` for "no id", for the positional reason
+            // `mapGraphBatch` gives below.
             return invokeForBinaryResponse({
                 command: 'render_graph_offline',
-                args: { batch, frames, sampleRate },
+                args: { batch, frames, sampleRate, renderId: renderId ?? null },
             });
         },
         async applyGraphCommands({ batch }) {

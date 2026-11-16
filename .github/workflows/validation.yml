@@ -343,6 +343,9 @@ jobs:
       - name: Campaign fixture freshness
         run: pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2
 
+      - name: Size baseline only shrinks
+        run: node scripts/checkSizeBaselineShrinks.ts
+
       - name: App types
         if: needs.decide.outputs.tooling != 'true'
         run: pnpm typecheck
@@ -600,7 +603,7 @@ jobs:
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
       options: --init --ipc=host
     defaults:
       run:
@@ -633,7 +636,7 @@ jobs:
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
         timeout-minutes: 2
-        run: node scripts/verifyPlaywrightRuntime.ts 1.65.0
+        run: node scripts/verifyPlaywrightRuntime.ts 1.65.1
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
@@ -844,12 +847,12 @@ jobs:
       - name: Lint the native crate
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
-        run: cargo clippy --package sourdaw-native --all-targets
+        run: cargo clippy --package sourdaw-native --all-targets --features napi-addon
 
       - name: Test the native crate
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
-        run: cargo test --package sourdaw-native
+        run: cargo test --package sourdaw-native --features napi-addon
 
       # Reuse only this job's warmed graph. The helper probes the immutable
       # candidate head in a detached tree, then restores its source and tests.
@@ -913,6 +916,12 @@ jobs:
           key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+
+      # sourdaw-native is not linted here: it has no Windows build anywhere (see the `win:` comment in electron-builder.yml).
+      - name: Lint the Windows audio crates
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
+        run: cargo clippy --package daw-engine --package daw-plugin-host --all-targets --all-features
 
       - name: Test the audio crates
         env:

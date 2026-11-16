@@ -1,3 +1,6 @@
+import { automationFallbackScopeByActionType, noFallbackScope } from '../models/AutomationFallbackScopeByActionType';
+import { canonicalControlByActionType } from '../models/CanonicalControlByActionType';
+import { changesLinkedValuesByActionType } from '../models/ChangesLinkedValuesByActionType';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 
@@ -14,20 +17,23 @@ type EffectInput = {
     laneTargetIds: readonly string[];
 };
 
+/** Persisted names reach this unchecked, so a retired or inherited name is no key of the lookups. */
+function hasOwnKey<Key extends string>(record: Readonly<Record<Key, unknown>>, name: string): name is Key {
+    return Object.hasOwn(record, name);
+}
+
 /** Persisted operation names remain readable while equivalent mixer writes compare by one control. */
 function canonicalOperation(operation: string): string {
-    switch (operation) {
-        case 'automateTrackGainRange':
-        case 'setVcaGain':
-            return 'setTrackGain';
-        case 'addSend':
-        case 'removeSend':
-        case 'automateSendRange':
-        case 'automateSendRanges':
-            return 'setSend';
-        default:
-            return operation;
+    if (!hasOwnKey(canonicalControlByActionType, operation)) {
+        return operation;
     }
+    return canonicalControlByActionType[operation] ?? operation;
+}
+
+function readFallbackScope(actionType: string) {
+    return hasOwnKey(automationFallbackScopeByActionType, actionType)
+        ? automationFallbackScopeByActionType[actionType]
+        : noFallbackScope;
 }
 
 function parameterOperation(parameterId: string, fallback: string): string {
@@ -45,7 +51,10 @@ function parameterOperation(parameterId: string, fallback: string): string {
  * Followers read those points independently of the source lane's enabled flag and track automation mode.
  */
 function changesLinkedValues(actionType: string): boolean {
-    return !['addAutomationLane', 'setAutomationLaneEnabled', 'setAutomationMode'].includes(actionType);
+    if (!hasOwnKey(changesLinkedValuesByActionType, actionType)) {
+        return true;
+    }
+    return changesLinkedValuesByActionType[actionType];
 }
 
 function collectParameterRoots(lanes: readonly Lane[], roots: Set<string>, trackId: string, parameterId: string): void {
@@ -79,20 +88,19 @@ function collectAutomationEffects(
             add(trackId, parameterOperation(parameterId, actionType));
             collectParameterRoots(lanes, roots, trackId, parameterId);
         }
-    } else if (
-        actionType === 'automateTrackGainRange' ||
-        actionType === 'automateSendRange' ||
-        actionType === 'automateSendRanges'
-    ) {
-        const parameterId = actionType === 'automateTrackGainRange' ? 'gain' : `send:${String(payload.busId)}`;
-        for (const owner of declaredOwners) {
-            add(owner, canonicalOperation(actionType));
-            collectParameterRoots(lanes, roots, owner, parameterId);
-        }
-    } else if (actionType === 'setAutomationMode') {
-        for (const lane of lanes) {
-            if (declaredOwners.includes(lane.trackId)) {
-                addLane(lane);
+    } else {
+        const scope = readFallbackScope(actionType);
+        if (scope.kind === 'ownerParameter') {
+            const parameterId = scope.parameterId(payload);
+            for (const owner of declaredOwners) {
+                add(owner, canonicalOperation(actionType));
+                collectParameterRoots(lanes, roots, owner, parameterId);
+            }
+        } else if (scope.kind === 'ownerLanes') {
+            for (const lane of lanes) {
+                if (declaredOwners.includes(lane.trackId)) {
+                    addLane(lane);
+                }
             }
         }
     }

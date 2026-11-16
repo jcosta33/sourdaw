@@ -25,7 +25,7 @@ describe('createHandler', () => {
         expect(describe).toHaveBeenCalledWith(action);
     });
 
-    it('forwards the optional abort context without requiring it from existing callers', () => {
+    it('forwards the optional abort context without requiring it from existing callers', async () => {
         const rollback = vi.fn();
         const abort = vi.fn();
         const handler = createHandler<'setTempo'>({
@@ -39,8 +39,8 @@ describe('createHandler', () => {
         });
         const action = { type: 'setTempo' as const, payload: { bpm: 120 } };
         const context = { actions: [action], actionIndex: 0 };
-        handler.prepareAbort?.(action, context)();
-        handler.prepareAbort?.(action)();
+        await handler.prepareAbort?.(action, context)();
+        await handler.prepareAbort?.(action)();
         expect(abort.mock.calls).toEqual([
             [action, context],
             [action, undefined],

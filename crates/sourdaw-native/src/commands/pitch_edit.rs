@@ -347,7 +347,7 @@ mod tests {
         })
         .unwrap();
 
-        let mut reader = WavReader::open(&output.path).unwrap();
+        let reader = WavReader::open(&output.path).unwrap();
         assert_eq!(reader.spec().channels, 1);
         assert_eq!(reader.spec().sample_rate, 44_100);
         assert_eq!(reader.duration(), 100);

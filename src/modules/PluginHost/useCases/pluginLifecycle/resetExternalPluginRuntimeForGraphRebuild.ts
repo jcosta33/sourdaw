@@ -1,8 +1,11 @@
 import { clearLoadedExternalPlugins } from './clearLoadedExternalPlugins';
+import { commitCarriedLiveStates } from './commitCarriedLiveStates';
 import { externalPluginActivationEpoch, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
+import { loadedExternalInstances } from './loadedExternalInstances';
+import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
-import { unloadPlugin } from './unloadPlugin';
+import { unloadEveryPluginKeepingCarries } from './unloadEveryPluginKeepingCarries';
 
 let activeReset: Promise<void> | null = null;
 
@@ -20,7 +23,17 @@ export function resetExternalPluginRuntimeForGraphRebuild(): Promise<void> {
         try {
             await Promise.allSettled(admittedActivations);
             await rebuild.waitForExistingOperations();
-            await unloadPlugin();
+            // The fence holds every lifecycle turn, so the reads run directly.
+            const loadedBeforeUnload = [...loadedExternalInstances];
+            const reads = await readLiveStatesForTeardown(loadedBeforeUnload, 'inside-lifecycle');
+            try {
+                await unloadEveryPluginKeepingCarries();
+            } finally {
+                commitCarriedLiveStates(
+                    reads,
+                    loadedBeforeUnload.filter((instanceId) => !loadedExternalInstances.has(instanceId))
+                );
+            }
             clearLoadedExternalPlugins();
         } finally {
             rebuild.end();

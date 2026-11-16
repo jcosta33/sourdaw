@@ -1,11 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { measuredPreviewAuditionStore } from '../stores/measuredPreviewAuditionStore';
-import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
-import { digestCommandBatchContent } from './digestCommandBatchContent';
-import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { listMeasuredPreviewAuditionTargetIds } from './listMeasuredPreviewAuditionTargetIds';
 import { resolveMeasuredPreviewAudition } from './resolveMeasuredPreviewAudition';
 
 /** Read a musician-facing projection; no buffer, retained address or permit crosses this boundary. */
@@ -13,17 +10,7 @@ export function getMeasuredPreviewAuditionView(input: {
     confirmationId: string;
     selectedIntentGroupIds?: readonly string[];
 }) {
-    const confirmation = getPendingActionConfirmation(input.confirmationId);
-    const batch = confirmation?.approvalSnapshot.commandBatch;
-    const parsed = batch === undefined ? null : parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
-    const hash = parsed?.status === 'valid' ? digestCommandBatchContent(parsed.envelope) : null;
-    const goals = metricGoalStateCodec(confirmation?.approvalSnapshot.metricGoalState);
-    const ids = new Set(
-        (goals?.proofs ?? [])
-            .filter((proof) => proof.preview.batchContentHash === hash)
-            .flatMap((proof) => proof.preview.targets.map((target) => target.targetId))
-    );
-    const targets = Array.from(ids, (targetId) => {
+    const targets = listMeasuredPreviewAuditionTargetIds(input.confirmationId).map((targetId) => {
         const resolved = resolveMeasuredPreviewAudition({ ...input, targetId });
         let targetName = 'Master output';
         if (targetId !== 'master') {

@@ -1,9 +1,9 @@
-import { type AppAction } from '#/utils/handlerContract';
 import {
     projectTempoSourceClock,
     isTempoAudioSourcePromotion,
     tempoSourcePromotionsEqual,
-} from '#/utils/tempoAudioSourcePromotion';
+} from '#/modules/Transport/stores';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { projectTempoAudioSources } from '../../stores/tempoAudioSources';
 import { captureCurrentTempoAudioSources } from '../comping/captureCurrentTempoAudioSources';

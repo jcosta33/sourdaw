@@ -1,5 +1,7 @@
-import { type ClipSnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
+
+import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
+import { type ClipSplitActionSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 /** Resolve only the right fragment's slot; surviving peer clips retain their order. */
 export function resolveClipSplitInsertionIndex(

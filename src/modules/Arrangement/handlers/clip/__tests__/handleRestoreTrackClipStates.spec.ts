@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import {
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
-    type TrackClipStateSnapshot,
-} from '#/utils/handlerContract';
-
-import { ClipDummy } from '../../../__tests__/ClipDummy';
-import { TrackDummy } from '../../../__tests__/TrackDummy';
+} from '../../../events/arrangementClipStateSnapshots';
+import { type TrackClipStateSnapshot } from '../../../events/arrangementTrackSnapshots';
 import { type Clip, type Device, type Track } from '../../../stores/trackStore';
 import { handleRestoreTrackClipStates } from '../handleRestoreTrackClipStates';
 

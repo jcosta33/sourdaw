@@ -46,8 +46,10 @@ use tom_808::{Tom808Engine, TomVariant};
 /// Which synthesis algorithm a pad uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum DrumEngineType {
     // Existing generic engines (unchanged)
+    #[default]
     Kick,
     Snare,
     HiHat,
@@ -119,12 +121,6 @@ impl DrumEngineType {
     }
 }
 
-impl Default for DrumEngineType {
-    fn default() -> Self {
-        Self::Kick
-    }
-}
-
 /// Polymorphic drum synth engine wrapping all engine types.
 pub enum DrumSynthEngine {
     // Existing generic engines
@@ -135,7 +131,7 @@ pub enum DrumSynthEngine {
     Perc(PercEngine),
     Tom(TomEngine),
     Cymbal(CymbalEngine),
-    Modal(ModalEngine),
+    Modal(Box<ModalEngine>),
     FmPerc(FmPercEngine),
     Cowbell(PercEngine),
     Clave(PercEngine),
@@ -172,6 +168,12 @@ impl DrumEngineResources {
     }
 }
 
+impl Default for DrumEngineResources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DrumSynthEngine {
     pub fn new(engine_type: DrumEngineType, sample_rate: f32) -> Self {
         match engine_type {
@@ -183,7 +185,7 @@ impl DrumSynthEngine {
             DrumEngineType::Perc => Self::Perc(PercEngine::new(sample_rate)),
             DrumEngineType::Tom => Self::Tom(TomEngine::new(sample_rate)),
             DrumEngineType::Cymbal => Self::Cymbal(CymbalEngine::new(sample_rate)),
-            DrumEngineType::Modal => Self::Modal(ModalEngine::new(sample_rate)),
+            DrumEngineType::Modal => Self::Modal(Box::new(ModalEngine::new(sample_rate))),
             DrumEngineType::FmPerc => Self::FmPerc(FmPercEngine::new(sample_rate)),
             DrumEngineType::Cowbell => {
                 let mut e = PercEngine::new(sample_rate);

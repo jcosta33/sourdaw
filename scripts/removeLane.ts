@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     AUTHOR_LOCK_REASON,
+    assertRequiredRepository,
     assertTrustedExecutingBlob,
     isAuthorBotNodeId,
     originMainBlob,
@@ -15,6 +16,7 @@ import {
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { laneIsActive } from './laneActivity.ts';
+import { fetchOrAcceptCompletedFetch } from './laneRemovalFetch.ts';
 import { PR_STATE, supersessionReplacement } from './prContract.ts';
 import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
@@ -572,9 +574,16 @@ function validateOwnership(
     if (branch === undefined) {
         refuse('worktree ownership is unknown');
     }
-    const pullRequests = port.pullRequests(branch);
+    const branchPullRequests = port.pullRequests(branch);
+    // A spent remote branch name can be reused, so several pull requests may share it; the lane
+    // belongs to the one whose head is the lane head. A single pull request keeps its own
+    // head-ownership refusal below.
+    let pullRequests = branchPullRequests;
+    if (branchPullRequests.length > 1) {
+        pullRequests = branchPullRequests.filter((candidate) => candidate.headRefOid === expected.head);
+    }
     if (pullRequests.length !== 1) {
-        refuse(`branch ${branch} does not identify one pull request`);
+        refuse(`branch ${branch} does not identify one pull request at head ${expected.head}`);
     }
     const pullRequest = pullRequests[0];
     if (pullRequest === undefined) {
@@ -1017,13 +1026,27 @@ function parseJson<Value>(value: string, label: string): Value {
 
 export function shellPort(shell: ShellRunner = { capture, run }, root?: string): LaneStrandPort {
     let cachedRepository: string | undefined;
+    // gh answers the checkout query from git config any lane can write, where
+    // `remote.<name>.gh-resolved` overrides the remote URL, so the answer is asserted before any
+    // ownership read uses it.
     const repository = () => {
-        cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+        if (cachedRepository === undefined) {
+            const nameWithOwner = shell.capture('gh', [
+                'repo',
+                'view',
+                '--json',
+                'nameWithOwner',
+                '--jq',
+                '.nameWithOwner',
+            ]);
+            assertRequiredRepository(nameWithOwner);
+            cachedRepository = nameWithOwner;
+        }
         return cachedRepository;
     };
     const primaryRoot = root ?? resolvePrimaryRoot();
     return {
-        fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
+        fetch: () => fetchOrAcceptCompletedFetch(shell),
         repository,
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),

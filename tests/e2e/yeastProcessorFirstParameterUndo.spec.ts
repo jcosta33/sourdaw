@@ -102,7 +102,7 @@ test('a first Arpeggiator Rate gesture restores and redoes its canonical project
     await page.getByRole('button', { name: '+ Arpeggiator', exact: true }).click();
     await expect.poll(async () => (await readState(page, trackId, deviceId)).rack.processors.length).toBe(1);
     const before = await readState(page, trackId, deviceId);
-    const processor = before.rack.processors[0];
+    const processor = before.rack.processors.at(0);
     if (!processor || processor.type !== 'arpeggiator') {
         throw new Error('The actual Yeast rack did not add an Arpeggiator');
     }

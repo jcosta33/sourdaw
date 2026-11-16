@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ClipSplitActionSnapshot, type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type ClipSplitActionSnapshot } from '../../../events/arrangementClipStateSnapshots';
 import { clipSplitStateRestorable } from '../clipSplitStateRestorable';
 
 const emptyMidi: MidiClipDataActionSnapshot = {

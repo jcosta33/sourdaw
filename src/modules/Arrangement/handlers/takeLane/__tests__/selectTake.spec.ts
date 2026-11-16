@@ -50,12 +50,12 @@ describe('handleSelectTake', () => {
         expect(updated.takes.find((take) => take.id === 'b')?.selected).toBe(true);
     });
 
-    it('preserves every other lane by reference', () => {
+    it('preserves every other lane by reference', async () => {
         const target: TakeLane = { ...createTakeLaneFixture('track-1'), takes: [createTake('a', true)] };
         const other: TakeLane = { ...createTakeLaneFixture('track-2'), takes: [createTake('z', true)] };
         seedLanes([target, other]);
 
-        handleSelectTake.execute({ type: 'selectTake', payload: { trackId: 'track-1', takeId: 'a' } });
+        await handleSelectTake.execute({ type: 'selectTake', payload: { trackId: 'track-1', takeId: 'a' } });
 
         const next = mocks.takeLaneStoreValue.value!;
         expect(next.lanes).toHaveLength(2);

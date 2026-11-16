@@ -1,6 +1,10 @@
 //! Rendered contract for the Dutch Oven's shipped Infinite space.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use std::collections::BTreeMap;
 
@@ -52,7 +56,21 @@ fn infinite_space_is_still_sounding_twenty_seconds_after_selection() {
             if sample_frame >= SAMPLE_RATE * RENDER_SECONDS {
                 break;
             }
-            let sample = unsafe { (*left.add(offset)).abs().max((*right.add(offset)).abs()) };
+            // SAFETY: `left` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `offset < BLOCK`, which is inside that
+            // capacity.
+            let left_slot = unsafe { left.add(offset) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `right` is the instance's `out_right`, sized and bounded
+            // exactly as `out_left` above.
+            let right_slot = unsafe { right.add(offset) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer,
+            // which nothing writes before this read.
+            let right_sample = unsafe { *right_slot };
+            let sample = left_sample.abs().max(right_sample.abs());
             assert!(
                 sample.is_finite(),
                 "non-finite output at frame {sample_frame}"

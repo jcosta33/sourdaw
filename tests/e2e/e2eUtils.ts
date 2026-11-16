@@ -3,9 +3,10 @@ import { stringify as superjsonStringify } from 'superjson';
 
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
-import type { DirectProjectSetupModule } from './directProjectSetupContract';
 import { expect } from './e2eTest';
 import { attach_first_paint_console, format_first_paint_timeout_diagnosis } from './firstPaintDiagnostics';
+
+import type { DirectProjectSetupModule } from './directProjectSetupContract';
 
 export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
@@ -168,7 +169,7 @@ const DIRECT_SETUP_ENTRY_PATH = '/e2e/direct-project-setup.js';
  */
 export async function launch_new_project(page: Page): Promise<void> {
     const result = await page.evaluate(async (entryPath: string) => {
-        const { newProject }: DirectProjectSetupModule = await import(entryPath);
+        const { newProject } = (await import(entryPath)) as DirectProjectSetupModule;
         return newProject();
     }, DIRECT_SETUP_ENTRY_PATH);
     if (!result) {

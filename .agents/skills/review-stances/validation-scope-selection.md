@@ -73,6 +73,29 @@ does not guard this boundary.
    `scripts/__tests__/healthGatesWorkflow.spec.ts` or `scripts/__tests__/runIsolatedUnitShard.spec.ts`, respectively;
    stale shell fixtures must fail the health-gate script harness.
 
+9. **An advanced event base does not make main-only source a feature edit (#5240, #6745).**
+   PR #5240 introduced the native transport selector comparing the event base directly with the feature head;
+   a newer main-only transport/Cargo change then made an older tooling feature request mutation proof and fail
+   its candidate-to-integration warm-graph check (#6740). The existing immutable-ref fixture verified fetched
+   history using empty commits, leaving this scope-selection failure mode unprobed. In a disposable branched
+   Git fixture, change owning source and the native graph only on main and tooling only on the feature, then
+   invoke the real hosted producer. Require its `not-scheduled` summary and `restored=true` output. Compare the
+   feature head with its unique merge base after binding the immutable event refs; a genuine feature source edit
+   must still require proof and retain warm-graph checks, and absent refs or a missing/ambiguous merge base must
+   fail closed. Restoring endpoint base-to-head comparison must fail
+   `verifyNativeTransportMutations.spec.ts` "does not schedule main-only transport and graph changes for an older
+   tooling feature".
+
+10. **A moved validation step stops observing the files it names (PR #6610).** The plugin lint pass was
+    handed shell globs through `spawnSync`, linted one file and reported success in under a second for
+    months; PR #6610's review lacked a stance asking whether a relocated step still observes its targets.
+    Probe: plant a known violation in a file the step claims to cover and confirm its CI run goes red, and
+    compare its reported file count and duration with a directory run. In full mode the pass must receive
+    directories, never globs, and must fail when it lints fewer files than the tracked, non-ignored sources
+    under its targets, or when a target contributes none: restoring the glob targets must fail
+    `scripts/__tests__/runLint.spec.ts` "hands a full run directories, because a shell-less spawn leaves
+    globs unexpanded" and "lists the tracked files of the same directories it hands the plugin pass".
+
 ## Retired lessons
 
 - Tooling paths missing from the browser selector or validation path filter (#4854, #4902, #4484, #4932, #4933) →

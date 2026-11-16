@@ -8,6 +8,7 @@
 //! not the path to it.
 
 use super::*;
+use crate::allocation_counter::allocation_count;
 use crate::runtime::HostedRuntime;
 use crate::traits::{
     take_pending_process_refusal_signal, PluginHostRequest, PROCESS_REFUSAL_HINT_TEST_LOCK,
@@ -50,6 +51,9 @@ const SIX_CHANNELS: SpeakerArrangement = 0b111111;
 /// allocation inside `process`.
 const OBSERVED_BUS_CAPACITY: usize = 8;
 
+/// A process mode no host ever stated.
+const MODE_NEVER_STATED: int32 = -1;
+
 /// Everything a test can observe about what the host did to the plugin.
 #[derive(Default)]
 struct FakeState {
@@ -80,6 +84,11 @@ struct FakeState {
     event_input_buses: AtomicI32,
     max_block: AtomicI32,
     sample_rate: AtomicU64,
+    /// The `processMode` of the last `setupProcessing` and of the last
+    /// `ProcessData`. Start at [`MODE_NEVER_STATED`], because `kRealtime` is
+    /// zero and a default-initialised field would read as a realtime host.
+    setup_process_mode: AtomicI32,
+    block_process_mode: AtomicI32,
     saw_process_context: AtomicBool,
     saw_tempo: AtomicU64,
 
@@ -136,6 +145,12 @@ impl FakeState {
 
     fn with_buses(inputs: Vec<FakeBus>, outputs: Vec<FakeBus>) -> Arc<Self> {
         let state = Arc::new(Self::default());
+        state
+            .setup_process_mode
+            .store(MODE_NEVER_STATED, Ordering::Release);
+        state
+            .block_process_mode
+            .store(MODE_NEVER_STATED, Ordering::Release);
         state
             .processor_gain
             .store(1.0f64.to_bits(), Ordering::Release);
@@ -198,7 +213,9 @@ impl FakeState {
     /// # Safety
     /// `context` is the pointer the host passed to `initialize`.
     unsafe fn remember_host(&self, context: *mut FUnknown) {
-        let Some(context) = ComRef::from_raw(context) else {
+        // SAFETY: per this fn's contract `context` is null or the live host
+        // object the host passed to `initialize`; `from_raw` maps null to `None`.
+        let Some(context) = (unsafe { ComRef::from_raw(context) }) else {
             return;
         };
         let Some(application) = context.cast::<IHostApplication>() else {
@@ -230,14 +247,14 @@ impl FakeState {
         let mut object: *mut std::ffi::c_void = ptr::null_mut();
         // SAFETY: the application is live, and both ids are valid out-parameters
         // of exactly the declared size.
-        let message = unsafe {
-            if application.createInstance(&mut class_id, &mut interface_id, &mut object)
-                != kResultOk
-            {
-                return None;
-            }
-            ComPtr::<IMessage>::from_raw(object as *mut IMessage)?
-        };
+        let created =
+            unsafe { application.createInstance(&mut class_id, &mut interface_id, &mut object) };
+        if created != kResultOk {
+            return None;
+        }
+        // SAFETY: on `kResultOk` the host wrote an owned `IMessage` pointer (or
+        // null, which `from_raw` maps to `None`) into `object`; ownership moves to the `ComPtr`.
+        let message = unsafe { ComPtr::<IMessage>::from_raw(object as *mut IMessage) }?;
         let id = CString::new(message_id).expect("a test id has no null byte");
         // SAFETY: the message is live and the id outlives the call, which copies it.
         unsafe { message.setMessageID(id.as_ptr()) };
@@ -264,11 +281,11 @@ impl FakeState {
             panic!("the host never gave the plugin a component handler");
         };
         // SAFETY: the handler is live for as long as the wrapper is.
-        unsafe {
-            handler.beginEdit(param_id);
-            handler.performEdit(param_id, value);
-            handler.endEdit(param_id);
-        }
+        unsafe { handler.beginEdit(param_id) };
+        // SAFETY: as above; the handler is still held by the locked slot.
+        unsafe { handler.performEdit(param_id, value) };
+        // SAFETY: as above.
+        unsafe { handler.endEdit(param_id) };
     }
 
     /// The plugin declaring a new latency, the way a real one does.
@@ -427,6 +444,9 @@ fn audio_bus_at(state: &FakeState, direction: int32, index: int32) -> Option<Fak
         .copied()
 }
 
+/// # Safety
+/// `bus` is null or points to a `BusInfo` the caller owns and nothing else
+/// accesses for the duration of the call (the host's `getBusInfo` out-parameter).
 unsafe fn component_bus_info(
     state: &FakeState,
     media: int32,
@@ -438,16 +458,20 @@ unsafe fn component_bus_info(
         let Some(declared) = audio_bus_at(state, direction, index) else {
             return kInvalidArgument;
         };
-        write_bus_info(bus, media, direction, declared.channels(), declared.is_main);
+        // SAFETY: `bus` meets this fn's contract, which `write_bus_info` shares.
+        unsafe { write_bus_info(bus, media, direction, declared.channels(), declared.is_main) };
         return kResultOk;
     }
     if index != 0 || component_bus_count(state, media, direction) == 0 {
         return kInvalidArgument;
     }
-    write_bus_info(bus, media, direction, 0, true);
+    // SAFETY: `bus` meets this fn's contract, which `write_bus_info` shares.
+    unsafe { write_bus_info(bus, media, direction, 0, true) };
     kResultOk
 }
 
+/// # Safety
+/// `bus` is null or points to a writable `BusInfo` no one else accesses during the call.
 unsafe fn write_bus_info(
     bus: *mut BusInfo,
     media: int32,
@@ -458,15 +482,22 @@ unsafe fn write_bus_info(
     if bus.is_null() {
         return;
     }
-    (*bus).mediaType = media;
-    (*bus).direction = direction;
-    (*bus).channelCount = channels;
-    (*bus).busType = if is_main {
-        BusTypes_::kMain as int32
-    } else {
-        BusTypes_::kAux as int32
+    // SAFETY: `bus` is non-null (checked above) and writable per this fn's contract.
+    unsafe { (*bus).mediaType = media };
+    // SAFETY: as above.
+    unsafe { (*bus).direction = direction };
+    // SAFETY: as above.
+    unsafe { (*bus).channelCount = channels };
+    // SAFETY: as above.
+    unsafe {
+        (*bus).busType = if is_main {
+            BusTypes_::kMain as int32
+        } else {
+            BusTypes_::kAux as int32
+        }
     };
-    (*bus).flags = 0;
+    // SAFETY: as above.
+    unsafe { (*bus).flags = 0 };
 }
 
 /// The plugin's answer to the arrangement the host states.
@@ -474,6 +505,10 @@ unsafe fn write_bus_info(
 /// A real plugin either takes the host's width or keeps its own, and
 /// `getBusArrangement` afterwards is the only thing that says which happened —
 /// so the fake stores what it accepted and reports it back.
+///
+/// # Safety
+/// `inputs` and `outputs` are each null or address at least `num_ins` / `num_outs`
+/// readable arrangements, as VST3's `setBusArrangements` requires of the host.
 unsafe fn fake_set_bus_arrangements(
     state: &FakeState,
     inputs: *mut SpeakerArrangement,
@@ -491,22 +526,31 @@ unsafe fn fake_set_bus_arrangements(
     {
         return kResultFalse;
     }
-    accept_arrangements(&mut buses.inputs, inputs);
-    accept_arrangements(&mut buses.outputs, outputs);
+    // SAFETY: the count check above makes `num_ins` equal `buses.inputs.len()`, and
+    // this fn's contract says `inputs` addresses that many arrangements.
+    unsafe { accept_arrangements(&mut buses.inputs, inputs) };
+    // SAFETY: likewise `num_outs` equals `buses.outputs.len()` for `outputs`.
+    unsafe { accept_arrangements(&mut buses.outputs, outputs) };
     kResultOk
 }
 
 /// # Safety
-/// `requested` addresses at least `buses.len()` arrangements.
+/// `requested` is null or addresses at least `buses.len()` readable arrangements.
 unsafe fn accept_arrangements(buses: &mut [FakeBus], requested: *mut SpeakerArrangement) {
     if requested.is_null() {
         return;
     }
     for (index, bus) in buses.iter_mut().enumerate() {
-        bus.arrangement = *requested.add(index);
+        // SAFETY: `requested` is non-null and `index < buses.len()`, within the
+        // readable range this fn's contract gives it.
+        let slot = unsafe { requested.add(index) };
+        // SAFETY: `slot` is that in-range, readable element.
+        bus.arrangement = unsafe { *slot };
     }
 }
 
+/// # Safety
+/// `arrangement` is null or points to a writable `SpeakerArrangement`.
 unsafe fn fake_get_bus_arrangement(
     state: &FakeState,
     direction: int32,
@@ -519,61 +563,85 @@ unsafe fn fake_get_bus_arrangement(
     let Some(bus) = audio_bus_at(state, direction, index) else {
         return kInvalidArgument;
     };
-    *arrangement = bus.arrangement;
+    // SAFETY: `arrangement` is non-null (checked above) and writable per this fn's contract.
+    unsafe { *arrangement = bus.arrangement };
     kResultOk
 }
 
+/// # Safety
+/// `stream` is null or a live `IBStream` the host keeps alive for the call.
 unsafe fn component_set_state(state: &FakeState, stream: *mut IBStream) -> tresult {
     if state.refuses_set_state.load(Ordering::Acquire) {
         return kResultFalse;
     }
-    let Some(stream) = ComRef::from_raw(stream) else {
+    // SAFETY: `stream` is null or live per this fn's contract; `from_raw` maps null to `None`.
+    let Some(stream) = (unsafe { ComRef::from_raw(stream) }) else {
         return kInvalidArgument;
     };
-    *state.component_chunk.lock().expect("chunk mutex") = read_all(stream);
+    // SAFETY: `stream` is the live stream just wrapped, valid for the whole call.
+    let bytes = unsafe { read_all(stream) };
+    *state.component_chunk.lock().expect("chunk mutex") = bytes;
     kResultOk
 }
 
+/// # Safety
+/// `stream` is null or a live `IBStream` the host keeps alive for the call.
 unsafe fn component_get_state(state: &FakeState, stream: *mut IBStream) -> tresult {
     if state.fails_get_state.load(Ordering::Acquire) {
         return kResultFalse;
     }
-    let Some(stream) = ComRef::from_raw(stream) else {
+    // SAFETY: `stream` is null or live per this fn's contract; `from_raw` maps null to `None`.
+    let Some(stream) = (unsafe { ComRef::from_raw(stream) }) else {
         return kInvalidArgument;
     };
-    write_all(stream, &state.component_chunk.lock().expect("chunk mutex"))
+    // SAFETY: `stream` is the live stream just wrapped, valid for the whole call.
+    unsafe { write_all(stream, &state.component_chunk.lock().expect("chunk mutex")) }
 }
 
 /// What a half was told, and on which thread — the whole reason a message is
 /// routed through the host instead of straight to the peer.
+///
+/// # Safety
+/// `message` is null or a live `IMessage` the host keeps alive for the call.
 unsafe fn record_notification(
     log: &Mutex<Vec<(String, ThreadId)>>,
     message: *mut IMessage,
 ) -> tresult {
-    let Some(message) = ComRef::from_raw(message) else {
+    // SAFETY: `message` is null or live per this fn's contract; `from_raw` maps null to `None`.
+    let Some(message) = (unsafe { ComRef::from_raw(message) }) else {
         return kInvalidArgument;
     };
-    let id = message.getMessageID();
+    // SAFETY: `message` is live for the call.
+    let id = unsafe { message.getMessageID() };
     if id.is_null() {
         return kInvalidArgument;
     }
+    // SAFETY: `id` is non-null and, per `IMessage::getMessageID`, a NUL-terminated
+    // string owned by the live message, which outlives this call.
+    let id = unsafe { CStr::from_ptr(id) };
     log.lock().expect("notification mutex").push((
-        CStr::from_ptr(id).to_string_lossy().into_owned(),
+        id.to_string_lossy().into_owned(),
         std::thread::current().id(),
     ));
     kResultOk
 }
 
+/// # Safety
+/// `stream` is a live `IBStream` whose `read` is callable on this thread.
 unsafe fn read_all(stream: ComRef<'_, IBStream>) -> Vec<u8> {
     let mut collected = Vec::new();
     let mut buffer = [0u8; 64];
     loop {
         let mut read = 0;
-        if stream.read(
-            buffer.as_mut_ptr() as *mut std::ffi::c_void,
-            buffer.len() as int32,
-            &mut read,
-        ) != kResultOk
+        // SAFETY: `stream` is live per this fn's contract; `buffer` is a local array
+        // of `buffer.len()` writable bytes and `read` a local out-parameter.
+        if unsafe {
+            stream.read(
+                buffer.as_mut_ptr() as *mut std::ffi::c_void,
+                buffer.len() as int32,
+                &mut read,
+            )
+        } != kResultOk
             || read == 0
         {
             return collected;
@@ -582,63 +650,99 @@ unsafe fn read_all(stream: ComRef<'_, IBStream>) -> Vec<u8> {
     }
 }
 
+/// # Safety
+/// `stream` is a live `IBStream` whose `write` is callable on this thread.
 unsafe fn write_all(stream: ComRef<'_, IBStream>, bytes: &[u8]) -> tresult {
     let mut written = 0;
-    stream.write(
-        bytes.as_ptr() as *mut std::ffi::c_void,
-        bytes.len() as int32,
-        &mut written,
-    )
+    // SAFETY: `stream` is live per this fn's contract; `bytes` is a readable
+    // slice of `bytes.len()` bytes (the cast to `*mut` is never written through
+    // by a stream's `write`) and `written` a local out-parameter.
+    unsafe {
+        stream.write(
+            bytes.as_ptr() as *mut std::ffi::c_void,
+            bytes.len() as int32,
+            &mut written,
+        )
+    }
 }
 
 /// Apply whatever the host put in `inputParameterChanges`, then scale the block.
 ///
 /// Reading the queue is the point: a host that never fills it leaves the gain at
 /// its previous value and every gain assertion in this file fails.
+///
+/// # Safety
+/// `data` is null or points to a `ProcessData` valid for the call, as VST3's
+/// `process` requires of the host: nothing else accesses it during the call;
+/// its `inputs`/`outputs` hold `numInputs`/`numOutputs` buses, each with
+/// `numChannels` channel pointers of `numSamples` floats; `processContext`,
+/// `inputParameterChanges` and `inputEvents` are null or live.
 unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
     if data.is_null() {
         return kInvalidArgument;
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
+    // SAFETY: `data` is non-null (checked above) and, by this fn's contract, the
+    // host's live `ProcessData` for this call.
+    let process_mode = unsafe { (*data).processMode };
+    state
+        .block_process_mode
+        .store(process_mode, Ordering::Release);
     if state.refuses_process.load(Ordering::Acquire) {
         // Before touching a buffer: a processor that answers a failure has told
         // the host its output means nothing, and one that wrote first would let
         // a host reading that output pass the test anyway.
         return kResultFalse;
     }
-    let data = &mut *data;
+    // SAFETY: `data` is non-null (checked above) and valid and unaliased per this fn's contract.
+    let data = unsafe { &mut *data };
 
-    record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs);
-    record_bus_shape(&state.observed_outputs, data.outputs, data.numOutputs);
+    // SAFETY: `data.inputs` and `data.numInputs` are the host's matching pair per the contract.
+    unsafe { record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs) };
+    // SAFETY: `data.outputs` and `data.numOutputs` are the host's matching pair per the contract.
+    unsafe { record_bus_shape(&state.observed_outputs, data.outputs, data.numOutputs) };
 
     state
         .saw_process_context
         .store(!data.processContext.is_null(), Ordering::Release);
     if !data.processContext.is_null() {
-        state
-            .saw_tempo
-            .store((*data.processContext).tempo.to_bits(), Ordering::Release);
+        // SAFETY: `processContext` is non-null (checked above) and live for the call.
+        state.saw_tempo.store(
+            unsafe { (*data.processContext).tempo }.to_bits(),
+            Ordering::Release,
+        );
     }
 
     state.parameter_queues_seen.store(0, Ordering::Release);
-    if let Some(changes) = ComRef::from_raw(data.inputParameterChanges) {
+    // SAFETY: `inputParameterChanges` is null or live for the call; `from_raw` maps null to `None`.
+    if let Some(changes) = unsafe { ComRef::from_raw(data.inputParameterChanges) } {
+        // SAFETY: `changes` is live for the call.
+        let queue_count = unsafe { changes.getParameterCount() };
         state
             .parameter_queues_seen
-            .store(changes.getParameterCount(), Ordering::Release);
-        for index in 0..changes.getParameterCount() {
-            let Some(queue) = ComRef::from_raw(changes.getParameterData(index)) else {
+            .store(queue_count, Ordering::Release);
+        // SAFETY: `changes` is live for the call.
+        for index in 0..unsafe { changes.getParameterCount() } {
+            // SAFETY: `changes` is live and `index` is below its parameter count.
+            let queue_ptr = unsafe { changes.getParameterData(index) };
+            // SAFETY: `queue_ptr` is null or a queue owned by `changes`, live for the call.
+            let Some(queue) = (unsafe { ComRef::from_raw(queue_ptr) }) else {
                 continue;
             };
-            if queue.getParameterId() != GAIN_PARAM {
+            // SAFETY: `queue` is live for the call.
+            if unsafe { queue.getParameterId() } != GAIN_PARAM {
                 continue;
             }
-            let points = queue.getPointCount();
+            // SAFETY: `queue` is live for the call.
+            let points = unsafe { queue.getPointCount() };
             if points == 0 {
                 continue;
             }
             let mut offset = 0;
             let mut value = 0.0;
-            if queue.getPoint(points - 1, &mut offset, &mut value) == kResultOk {
+            // SAFETY: `queue` is live, `points - 1` is its last point, and the
+            // out-parameters are local.
+            if unsafe { queue.getPoint(points - 1, &mut offset, &mut value) } == kResultOk {
                 state
                     .processor_gain
                     .store(value.to_bits(), Ordering::Release);
@@ -646,20 +750,31 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         }
     }
 
-    if let Some(events) = ComRef::from_raw(data.inputEvents) {
+    // SAFETY: `inputEvents` is null or live for the call; `from_raw` maps null to `None`.
+    if let Some(events) = unsafe { ComRef::from_raw(data.inputEvents) } {
         let mut notes = state.notes.lock().expect("notes mutex");
-        for index in 0..events.getEventCount() {
-            let mut event: Event = std::mem::zeroed();
-            if events.getEvent(index, &mut event) != kResultOk {
+        // SAFETY: `events` is live for the call.
+        for index in 0..unsafe { events.getEventCount() } {
+            // SAFETY: `Event` is a plain-data bindgen struct and union of integers
+            // and floats, for which all-zero bytes are a valid value.
+            let mut event: Event = unsafe { std::mem::zeroed() };
+            // SAFETY: `events` is live, `index` is below its count, and `event` is a local out-parameter.
+            if unsafe { events.getEvent(index, &mut event) } != kResultOk {
                 continue;
             }
             let is_on = event.r#type == EventTypes_::kNoteOnEvent as u16;
             let note = if is_on {
-                event.__field0.noteOn
+                // SAFETY: the union holds only plain integers and floats, all
+                // initialised (zeroed, then filled by `getEvent`), and the type tag
+                // says a note-on was written, so `noteOn` is the active variant.
+                unsafe { event.__field0.noteOn }
             } else {
                 NoteOnEvent {
-                    channel: event.__field0.noteOff.channel,
-                    pitch: event.__field0.noteOff.pitch,
+                    // SAFETY: every union variant is plain initialised data, so
+                    // reading `noteOff` yields a valid value whatever was written.
+                    channel: unsafe { event.__field0.noteOff.channel },
+                    // SAFETY: as for `channel`.
+                    pitch: unsafe { event.__field0.noteOff.pitch },
                     tuning: 0.0,
                     velocity: 0.0,
                     length: 0,
@@ -676,19 +791,40 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
     }
     let gain = state.processor_gain() as f32;
     // Bus zero is the main bus this fake declares, in both directions.
-    let input = &*data.inputs;
-    let output = &*data.outputs;
-    let in_buffers = input.__field0.channelBuffers32;
-    let out_buffers = output.__field0.channelBuffers32;
+    // SAFETY: `data.inputs` is non-null (checked above) with `numInputs >= 1`
+    // buses, so bus zero is readable.
+    let input = unsafe { &*data.inputs };
+    // SAFETY: `data.outputs` is non-null (checked above) with `numOutputs >= 1` buses.
+    let output = unsafe { &*data.outputs };
+    // SAFETY: this fake only accepts `kSample32` (`canProcessSampleSize`), so the
+    // host fills the `channelBuffers32` variant; a pointer union read is always initialised.
+    let in_buffers = unsafe { input.__field0.channelBuffers32 };
+    // SAFETY: as above, for the output bus.
+    let out_buffers = unsafe { output.__field0.channelBuffers32 };
     if in_buffers.is_null() || out_buffers.is_null() {
         return kResultOk;
     }
     let channels = input.numChannels.min(output.numChannels).max(0) as usize;
     for channel in 0..channels {
-        let source = *in_buffers.add(channel);
-        let target = *out_buffers.add(channel);
+        // SAFETY: `in_buffers` is non-null and `channel < input.numChannels`
+        // pointers, so the slot is in range.
+        let source_slot = unsafe { in_buffers.add(channel) };
+        // SAFETY: the slot is in range and holds an initialised channel pointer.
+        let source = unsafe { *source_slot };
+        // SAFETY: `out_buffers` is non-null and `channel < output.numChannels`.
+        let target_slot = unsafe { out_buffers.add(channel) };
+        // SAFETY: the slot is in range and holds an initialised channel pointer.
+        let target = unsafe { *target_slot };
         for sample in 0..data.numSamples as usize {
-            *target.add(sample) = *source.add(sample) * gain;
+            // SAFETY: each channel buffer holds `numSamples` floats per the contract.
+            let source_sample = unsafe { source.add(sample) };
+            // SAFETY: as above, for the output channel.
+            let target_sample = unsafe { target.add(sample) };
+            // SAFETY: `source_sample` is in range and initialised.
+            let scaled = unsafe { *source_sample } * gain;
+            // SAFETY: `target_sample` is in range and writable; only raw pointers are
+            // used, so an in-place buffer shared with the input creates no aliasing reference.
+            unsafe { *target_sample = scaled };
         }
     }
     kResultOk
@@ -699,6 +835,9 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
 /// The vectors were reserved at construction because `process` is measured for
 /// allocation, and a fake that grew one here would be indistinguishable from a
 /// host that allocated on the audio thread.
+///
+/// # Safety
+/// `buses` is null or addresses `count` readable `AudioBusBuffers`.
 unsafe fn record_bus_shape(
     into: &Mutex<Vec<ObservedBus>>,
     buses: *mut AudioBusBuffers,
@@ -710,11 +849,17 @@ unsafe fn record_bus_shape(
         return;
     }
     for index in 0..count.max(0) as usize {
-        let bus = &*buses.add(index);
+        // SAFETY: `buses` is non-null and `index < count`, in range per this fn's contract.
+        let bus_ptr = unsafe { buses.add(index) };
+        // SAFETY: that element is readable and not mutated during the call.
+        let bus = unsafe { &*bus_ptr };
+        // SAFETY: reading the pointer union is always initialised; the null test
+        // is all this does with it.
+        let has_buffers = !unsafe { bus.__field0.channelBuffers32 }.is_null();
         observed.push(ObservedBus {
             channels: bus.numChannels,
             silence_flags: bus.silenceFlags,
-            has_buffers: !bus.__field0.channelBuffers32.is_null(),
+            has_buffers,
         });
     }
 }
@@ -724,7 +869,8 @@ macro_rules! fake_component_impls {
         impl IPluginBaseTrait for $type {
             unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
                 self.state.initialize_calls.fetch_add(1, Ordering::AcqRel);
-                self.state.remember_host(context);
+                // SAFETY: `context` is the pointer the host passed to `initialize`, as `remember_host` requires.
+                unsafe { self.state.remember_host(context) };
                 kResultOk
             }
 
@@ -736,7 +882,8 @@ macro_rules! fake_component_impls {
 
         impl IComponentTrait for $type {
             unsafe fn getControllerClassId(&self, class_id: *mut TUID) -> tresult {
-                Self::write_controller_class_id(class_id)
+                // SAFETY: `class_id` is the host's out-parameter from `getControllerClassId`, as the callee requires.
+                unsafe { Self::write_controller_class_id(class_id) }
             }
 
             unsafe fn setIoMode(&self, _mode: int32) -> tresult {
@@ -754,7 +901,8 @@ macro_rules! fake_component_impls {
                 index: int32,
                 bus: *mut BusInfo,
             ) -> tresult {
-                component_bus_info(&self.state, r#type, dir, index, bus)
+                // SAFETY: `bus` is the host's `getBusInfo` out-parameter: null or writable.
+                unsafe { component_bus_info(&self.state, r#type, dir, index, bus) }
             }
 
             unsafe fn getRoutingInfo(
@@ -782,11 +930,13 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn setState(&self, state: *mut IBStream) -> tresult {
-                component_set_state(&self.state, state)
+                // SAFETY: `state` is the host's stream for this `setState` call: null or live.
+                unsafe { component_set_state(&self.state, state) }
             }
 
             unsafe fn getState(&self, state: *mut IBStream) -> tresult {
-                component_get_state(&self.state, state)
+                // SAFETY: `state` is the host's stream for this `getState` call: null or live.
+                unsafe { component_get_state(&self.state, state) }
             }
         }
 
@@ -798,11 +948,16 @@ macro_rules! fake_component_impls {
                 outputs: *mut u64,
                 num_outs: int32,
             ) -> tresult {
-                fake_set_bus_arrangements(&self.state, inputs, num_ins, outputs, num_outs)
+                // SAFETY: VST3's `setBusArrangements` has the host pass arrays of
+                // `num_ins` / `num_outs` arrangements, which is this callee's contract.
+                unsafe {
+                    fake_set_bus_arrangements(&self.state, inputs, num_ins, outputs, num_outs)
+                }
             }
 
             unsafe fn getBusArrangement(&self, dir: int32, index: int32, arr: *mut u64) -> tresult {
-                fake_get_bus_arrangement(&self.state, dir, index, arr)
+                // SAFETY: `arr` is the host's out-parameter for `getBusArrangement`: null or writable.
+                unsafe { fake_get_bus_arrangement(&self.state, dir, index, arr) }
             }
 
             unsafe fn canProcessSampleSize(&self, symbolic_sample_size: int32) -> tresult {
@@ -822,12 +977,19 @@ macro_rules! fake_component_impls {
                     return kInvalidArgument;
                 }
                 self.state.setup_calls.fetch_add(1, Ordering::AcqRel);
-                self.state
-                    .max_block
-                    .store((*setup).maxSamplesPerBlock, Ordering::Release);
+                // SAFETY: `setup` is non-null (checked above) and the host's live `ProcessSetup` for this call.
+                let max_block = unsafe { (*setup).maxSamplesPerBlock };
+                self.state.max_block.store(max_block, Ordering::Release);
+                // SAFETY: as above.
+                let sample_rate = unsafe { (*setup).sampleRate };
                 self.state
                     .sample_rate
-                    .store((*setup).sampleRate.to_bits(), Ordering::Release);
+                    .store(sample_rate.to_bits(), Ordering::Release);
+                // SAFETY: as above.
+                let process_mode = unsafe { (*setup).processMode };
+                self.state
+                    .setup_process_mode
+                    .store(process_mode, Ordering::Release);
                 kResultOk
             }
 
@@ -840,7 +1002,8 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn process(&self, data: *mut ProcessData) -> tresult {
-                fake_process(&self.state, data)
+                // SAFETY: `data` is the host's `ProcessData` for this `process` call, which is `fake_process`'s contract.
+                unsafe { fake_process(&self.state, data) }
             }
 
             unsafe fn getTailSamples(&self) -> uint32 {
@@ -855,17 +1018,23 @@ fake_component_impls!(FakeSplitComponent);
 
 impl FakeCombined {
     /// A combined class has no separate controller to name.
+    ///
+    /// # Safety
+    /// `_class_id` is never dereferenced, so any value is sound.
     unsafe fn write_controller_class_id(_class_id: *mut TUID) -> tresult {
         kNotImplemented
     }
 }
 
 impl FakeSplitComponent {
+    /// # Safety
+    /// `class_id` is null or points to a writable `TUID`.
     unsafe fn write_controller_class_id(class_id: *mut TUID) -> tresult {
         if class_id.is_null() {
             return kInvalidArgument;
         }
-        *class_id = SPLIT_CONTROLLER_CID;
+        // SAFETY: `class_id` is non-null (checked above) and writable per this fn's contract.
+        unsafe { *class_id = SPLIT_CONTROLLER_CID };
         kResultOk
     }
 }
@@ -883,6 +1052,8 @@ fn write_tchar(target: &mut [TChar], value: &str) {
     }
 }
 
+/// # Safety
+/// `info` is null or points to a writable `ParameterInfo` no one else accesses during the call.
 unsafe fn controller_parameter_info(index: int32, info: *mut ParameterInfo) -> tresult {
     if info.is_null() {
         return kInvalidArgument;
@@ -896,14 +1067,22 @@ unsafe fn controller_parameter_info(index: int32, info: *mut ParameterInfo) -> t
         ),
         _ => return kInvalidArgument,
     };
-    (*info).id = id;
-    (*info).stepCount = 0;
-    (*info).defaultNormalizedValue = 1.0;
-    (*info).unitId = 0;
-    (*info).flags = flags;
-    write_tchar(&mut (*info).title, title);
-    write_tchar(&mut (*info).shortTitle, title);
-    write_tchar(&mut (*info).units, "dB");
+    // SAFETY: `info` is non-null (checked above) and writable per this fn's contract.
+    unsafe { (*info).id = id };
+    // SAFETY: as above.
+    unsafe { (*info).stepCount = 0 };
+    // SAFETY: as above.
+    unsafe { (*info).defaultNormalizedValue = 1.0 };
+    // SAFETY: as above.
+    unsafe { (*info).unitId = 0 };
+    // SAFETY: as above.
+    unsafe { (*info).flags = flags };
+    // SAFETY: as above; the borrow ends when `write_tchar` returns.
+    write_tchar(unsafe { &mut (*info).title }, title);
+    // SAFETY: as above.
+    write_tchar(unsafe { &mut (*info).shortTitle }, title);
+    // SAFETY: as above.
+    write_tchar(unsafe { &mut (*info).units }, "dB");
     kResultOk
 }
 
@@ -911,33 +1090,43 @@ macro_rules! fake_controller_impls {
     ($type:ty) => {
         impl IEditControllerTrait for $type {
             unsafe fn setComponentState(&self, state: *mut IBStream) -> tresult {
-                let Some(stream) = ComRef::from_raw(state) else {
+                // SAFETY: `state` is the host's stream for this call: null or live; `from_raw` maps null to `None`.
+                let Some(stream) = (unsafe { ComRef::from_raw(state) }) else {
                     return kInvalidArgument;
                 };
+                // SAFETY: `stream` is the live stream just wrapped, valid for the whole call.
+                let bytes = unsafe { read_all(stream) };
                 *self
                     .state
                     .controller_saw_component_chunk
                     .lock()
-                    .expect("chunk mutex") = read_all(stream);
+                    .expect("chunk mutex") = bytes;
                 kResultOk
             }
 
             unsafe fn setState(&self, state: *mut IBStream) -> tresult {
-                let Some(stream) = ComRef::from_raw(state) else {
+                // SAFETY: `state` is the host's stream for this call: null or live; `from_raw` maps null to `None`.
+                let Some(stream) = (unsafe { ComRef::from_raw(state) }) else {
                     return kInvalidArgument;
                 };
-                *self.state.controller_chunk.lock().expect("chunk mutex") = read_all(stream);
+                // SAFETY: `stream` is the live stream just wrapped, valid for the whole call.
+                let bytes = unsafe { read_all(stream) };
+                *self.state.controller_chunk.lock().expect("chunk mutex") = bytes;
                 kResultOk
             }
 
             unsafe fn getState(&self, state: *mut IBStream) -> tresult {
-                let Some(stream) = ComRef::from_raw(state) else {
+                // SAFETY: `state` is the host's stream for this call: null or live; `from_raw` maps null to `None`.
+                let Some(stream) = (unsafe { ComRef::from_raw(state) }) else {
                     return kInvalidArgument;
                 };
-                write_all(
-                    stream,
-                    &self.state.controller_chunk.lock().expect("chunk mutex"),
-                )
+                // SAFETY: `stream` is the live stream just wrapped, valid for the whole call.
+                unsafe {
+                    write_all(
+                        stream,
+                        &self.state.controller_chunk.lock().expect("chunk mutex"),
+                    )
+                }
             }
 
             unsafe fn getParameterCount(&self) -> int32 {
@@ -949,7 +1138,8 @@ macro_rules! fake_controller_impls {
                 param_index: int32,
                 info: *mut ParameterInfo,
             ) -> tresult {
-                controller_parameter_info(param_index, info)
+                // SAFETY: `info` is the host's `getParameterInfo` out-parameter: null or writable.
+                unsafe { controller_parameter_info(param_index, info) }
             }
 
             unsafe fn getParamStringByValue(
@@ -1001,7 +1191,9 @@ macro_rules! fake_controller_impls {
 
             unsafe fn setComponentHandler(&self, handler: *mut IComponentHandler) -> tresult {
                 let mut slot = self.state.handler.lock().expect("handler mutex");
-                *slot = ComRef::from_raw(handler).map(|handler| handler.to_com_ptr());
+                // SAFETY: `handler` is null or the host's live handler for this call; `from_raw` maps
+                // null to `None`, and `to_com_ptr` takes the reference that keeps it alive.
+                *slot = unsafe { ComRef::from_raw(handler) }.map(|handler| handler.to_com_ptr());
                 kResultOk
             }
 
@@ -1009,7 +1201,8 @@ macro_rules! fake_controller_impls {
                 let Some(editor) = self.state.editor.lock().expect("editor mutex").clone() else {
                     return ptr::null_mut();
                 };
-                editor.record_create_view(name);
+                // SAFETY: `name` is the host's `createView` argument: null or a NUL-terminated string live for the call.
+                unsafe { editor.record_create_view(name) };
                 new_fake_view(editor)
             }
         }
@@ -1022,7 +1215,8 @@ fake_controller_impls!(FakeController);
 impl IPluginBaseTrait for FakeController {
     unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
         self.state.initialize_calls.fetch_add(1, Ordering::AcqRel);
-        self.state.remember_host(context);
+        // SAFETY: `context` is the pointer the host passed to `initialize`, as `remember_host` requires.
+        unsafe { self.state.remember_host(context) };
         kResultOk
     }
 
@@ -1034,7 +1228,9 @@ impl IPluginBaseTrait for FakeController {
 
 impl IConnectionPointTrait for FakeSplitComponent {
     unsafe fn connect(&self, other: *mut IConnectionPoint) -> tresult {
-        let Some(peer) = ComRef::from_raw(other) else {
+        // SAFETY: `other` is the host's connection point for this `connect` call: null or live;
+        // `from_raw` maps null to `None`.
+        let Some(peer) = (unsafe { ComRef::from_raw(other) }) else {
             return kInvalidArgument;
         };
         self.state.component_connects.fetch_add(1, Ordering::AcqRel);
@@ -1049,7 +1245,8 @@ impl IConnectionPointTrait for FakeSplitComponent {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
-        record_notification(&self.state.component_notifications, message)
+        // SAFETY: `message` is the host's message for this `notify` call: null or live.
+        unsafe { record_notification(&self.state.component_notifications, message) }
     }
 }
 
@@ -1072,7 +1269,8 @@ impl IConnectionPointTrait for FakeController {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
-        record_notification(&self.state.controller_notifications, message)
+        // SAFETY: `message` is the host's message for this `notify` call: null or live.
+        unsafe { record_notification(&self.state.controller_notifications, message) }
     }
 }
 
@@ -1220,23 +1418,30 @@ impl FakeEditor {
             .expect("create-view thread log")
             .push(std::thread::current().id());
         if !name.is_null() {
+            // SAFETY: `name` is non-null (checked above) and, per this fn's contract, a live C string.
+            let name = unsafe { CStr::from_ptr(name) };
             self.platform_types
                 .lock()
                 .expect("platform type mutex")
-                .push(format!("view:{}", CStr::from_ptr(name).to_string_lossy()));
+                .push(format!("view:{}", name.to_string_lossy()));
         }
     }
 
     /// # Safety
-    /// `value` is a `FIDString` the host passed.
+    /// `value` is a `FIDString` the host passed, so it is null or a live C string.
     unsafe fn record_platform_type(&self, value: FIDString) {
         if value.is_null() {
             return;
         }
+        // SAFETY: `value` is non-null (checked above) and, per this fn's contract, a live C string.
         self.platform_types
             .lock()
             .expect("platform type mutex")
-            .push(CStr::from_ptr(value).to_string_lossy().into_owned());
+            .push(
+                unsafe { CStr::from_ptr(value) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
     }
 
     fn content_scales(&self) -> Vec<f32> {
@@ -1274,7 +1479,9 @@ impl FakeEditor {
             right: left + size.0 as int32,
             bottom: top + size.1 as int32,
         };
-        frame.resizeView(self.view.load(Ordering::Acquire), &mut rect)
+        // SAFETY: `frame` is the host frame this editor holds a reference to, and `view`
+        // is this editor's live view (both per this fn's contract); `rect` is local.
+        unsafe { frame.resizeView(self.view.load(Ordering::Acquire), &mut rect) }
     }
 }
 
@@ -1332,7 +1539,8 @@ fn new_fake_view(editor: Arc<FakeEditor>) -> *mut IPlugView {
 impl IPlugViewTrait for FakeView {
     unsafe fn isPlatformTypeSupported(&self, r#type: FIDString) -> tresult {
         self.editor.record("isPlatformTypeSupported");
-        self.editor.record_platform_type(r#type);
+        // SAFETY: `type` is the host's `FIDString` argument: null or a live C string.
+        unsafe { self.editor.record_platform_type(r#type) };
         if self.editor.refuses_platform.load(Ordering::Acquire) {
             return kResultFalse;
         }
@@ -1341,7 +1549,8 @@ impl IPlugViewTrait for FakeView {
 
     unsafe fn attached(&self, parent: *mut std::ffi::c_void, r#type: FIDString) -> tresult {
         self.editor.record("attached");
-        self.editor.record_platform_type(r#type);
+        // SAFETY: `type` is the host's `FIDString` argument: null or a live C string.
+        unsafe { self.editor.record_platform_type(r#type) };
         self.editor.attached_to.store(parent, Ordering::Release);
         self.editor.attached_yet.store(true, Ordering::Release);
 
@@ -1353,7 +1562,9 @@ impl IPlugViewTrait for FakeView {
             .take();
         if let Some(size) = requested {
             let before = self.editor.call_count();
-            let answer = self.editor.ask_host_for_size(size);
+            // SAFETY: running inside the host's `attached` call on this view, so the
+            // frame and view are live.
+            let answer = unsafe { self.editor.ask_host_for_size(size) };
             self.editor
                 .attach_resize_result
                 .store(answer, Ordering::Release);
@@ -1394,11 +1605,14 @@ impl IPlugViewTrait for FakeView {
         } else {
             *self.editor.size.lock().expect("size mutex")
         };
-        *size = ViewRect {
-            left: 0,
-            top: 0,
-            right: width as int32,
-            bottom: height as int32,
+        // SAFETY: `size` is non-null (checked above) and the host's writable out-parameter.
+        unsafe {
+            *size = ViewRect {
+                left: 0,
+                top: 0,
+                right: width as int32,
+                bottom: height as int32,
+            }
         };
         kResultOk
     }
@@ -1407,10 +1621,15 @@ impl IPlugViewTrait for FakeView {
         if new_size.is_null() {
             return kInvalidArgument;
         }
-        let size = (
-            ((*new_size).right - (*new_size).left) as u32,
-            ((*new_size).bottom - (*new_size).top) as u32,
-        );
+        // SAFETY: `new_size` is non-null (checked above) and the host's live rect for this call.
+        let right = unsafe { (*new_size).right };
+        // SAFETY: as above.
+        let left = unsafe { (*new_size).left };
+        // SAFETY: as above.
+        let bottom = unsafe { (*new_size).bottom };
+        // SAFETY: as above.
+        let top = unsafe { (*new_size).top };
+        let size = ((right - left) as u32, (bottom - top) as u32);
         self.editor.record("onSize");
         *self
             .editor
@@ -1421,8 +1640,11 @@ impl IPlugViewTrait for FakeView {
             .host_window_size
             .lock()
             .expect("window size mutex");
-        *self.editor.on_size_origin.lock().expect("size mutex") =
-            Some(((*new_size).left, (*new_size).top));
+        // SAFETY: `new_size` is still the host's live rect for this call.
+        let origin_left = unsafe { (*new_size).left };
+        // SAFETY: as above.
+        let origin_top = unsafe { (*new_size).top };
+        *self.editor.on_size_origin.lock().expect("size mutex") = Some((origin_left, origin_top));
         if self.editor.refuses_on_size.load(Ordering::Acquire) {
             return kResultFalse;
         }
@@ -1436,7 +1658,9 @@ impl IPlugViewTrait for FakeView {
             .expect("resize mutex")
             .take();
         if let Some(nested) = nested {
-            let answer = self.editor.ask_host_for_size(nested);
+            // SAFETY: running inside the host's `onSize` call on this view, so the
+            // frame and view are live.
+            let answer = unsafe { self.editor.ask_host_for_size(nested) };
             self.editor
                 .nested_resize_result
                 .store(answer, Ordering::Release);
@@ -1455,8 +1679,10 @@ impl IPlugViewTrait for FakeView {
             return kResultOk;
         }
         self.editor.record("setFrame");
+        // SAFETY: `frame` is non-null (checked above) and the host's live frame; `to_com_ptr`
+        // takes the reference that keeps it alive.
         *self.editor.frame.lock().expect("frame mutex") =
-            ComRef::from_raw(frame).map(|frame| frame.to_com_ptr());
+            unsafe { ComRef::from_raw(frame) }.map(|frame| frame.to_com_ptr());
         kResultOk
     }
 
@@ -1476,10 +1702,14 @@ impl IPlugViewTrait for FakeView {
             return kResultFalse;
         }
         if let Some((width, height)) = *self.editor.constrained_to.lock().expect("size mutex") {
-            (*rect).left = 0;
-            (*rect).top = 0;
-            (*rect).right = width as int32;
-            (*rect).bottom = height as int32;
+            // SAFETY: `rect` is non-null (checked above) and the host's writable rect for this call.
+            unsafe { (*rect).left = 0 };
+            // SAFETY: as above.
+            unsafe { (*rect).top = 0 };
+            // SAFETY: as above.
+            unsafe { (*rect).right = width as int32 };
+            // SAFETY: as above.
+            unsafe { (*rect).bottom = height as int32 };
         }
         kResultTrue
     }
@@ -1495,12 +1725,16 @@ impl Class for FakeFactory {
     type Interfaces = (IPluginFactory3,);
 }
 
+/// # Safety
+/// `value` is null or points to at least 16 readable bytes (a class id).
 unsafe fn tuid_from_fid(value: FIDString) -> Option<TUID> {
     if value.is_null() {
         return None;
     }
     let mut id: TUID = [0; 16];
-    ptr::copy_nonoverlapping(value, id.as_mut_ptr(), 16);
+    // SAFETY: `value` is non-null with 16 readable bytes per this fn's contract, and
+    // `id` is a local 16-element array, so the regions are valid and cannot overlap.
+    unsafe { ptr::copy_nonoverlapping(value, id.as_mut_ptr(), 16) };
     Some(id)
 }
 
@@ -1513,7 +1747,8 @@ impl IPluginFactoryTrait for FakeFactory {
         if info.is_null() {
             return kInvalidArgument;
         }
-        write_char8(&mut (*info).vendor, "Fake Audio");
+        // SAFETY: `info` is non-null (checked above) and the host's writable `PFactoryInfo` for this call.
+        write_char8(unsafe { &mut (*info).vendor }, "Fake Audio");
         kResultOk
     }
 
@@ -1528,10 +1763,14 @@ impl IPluginFactoryTrait for FakeFactory {
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = entry.cid;
-        (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, entry.category);
-        write_char8(&mut (*info).name, entry.name);
+        // SAFETY: `info` is non-null (checked above) and the host's writable `PClassInfo` for this call.
+        unsafe { (*info).cid = entry.cid };
+        // SAFETY: as above.
+        unsafe { (*info).cardinality = 0x7FFF_FFFF };
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).category }, entry.category);
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).name }, entry.name);
         kResultOk
     }
 
@@ -1541,7 +1780,8 @@ impl IPluginFactoryTrait for FakeFactory {
         _iid: FIDString,
         obj: *mut *mut std::ffi::c_void,
     ) -> tresult {
-        let Some(cid) = tuid_from_fid(cid) else {
+        // SAFETY: `cid` is the host's class-id argument: null or a pointer to 16 bytes.
+        let Some(cid) = (unsafe { tuid_from_fid(cid) }) else {
             return kInvalidArgument;
         };
         if obj.is_null() {
@@ -1568,7 +1808,8 @@ impl IPluginFactoryTrait for FakeFactory {
         let Some(pointer) = pointer else {
             return kNoInterface;
         };
-        *obj = pointer;
+        // SAFETY: `obj` is non-null (checked above) and the host's writable out-parameter.
+        unsafe { *obj = pointer };
         kResultOk
     }
 }
@@ -1581,13 +1822,20 @@ impl IPluginFactory2Trait for FakeFactory {
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = entry.cid;
-        (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, entry.category);
-        write_char8(&mut (*info).name, entry.name);
-        write_char8(&mut (*info).vendor, "Fake Audio");
-        write_char8(&mut (*info).version, "3.2.1");
-        write_char8(&mut (*info).subCategories, entry.sub_categories);
+        // SAFETY: `info` is non-null (checked above) and the host's writable `PClassInfo2` for this call.
+        unsafe { (*info).cid = entry.cid };
+        // SAFETY: as above.
+        unsafe { (*info).cardinality = 0x7FFF_FFFF };
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).category }, entry.category);
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).name }, entry.name);
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).vendor }, "Fake Audio");
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).version }, "3.2.1");
+        // SAFETY: as above.
+        write_char8(unsafe { &mut (*info).subCategories }, entry.sub_categories);
         kResultOk
     }
 }
@@ -1681,6 +1929,11 @@ fn try_load(state: &Arc<FakeState>, class_id: TUID) -> Result<Vst3Wrapper, Strin
     Vst3Wrapper::activated(instantiate(state, class_id), class_id, 48_000.0)
 }
 
+fn load_in_mode(state: &Arc<FakeState>, class_id: TUID, mode: ProcessMode) -> Vst3Wrapper {
+    Vst3Wrapper::activated_with_mode(instantiate(state, class_id), class_id, 48_000.0, mode)
+        .expect("the fake plugin activates")
+}
+
 /// A plugin that offers the given editor. Without one, `createView` answers
 /// null, which is how VST3 says "no editor".
 fn state_with_editor(editor: &Arc<FakeEditor>) -> Arc<FakeState> {
@@ -1689,11 +1942,12 @@ fn state_with_editor(editor: &Arc<FakeEditor>) -> Arc<FakeState> {
     state
 }
 
+/// The `(width, height)` sizes a recording window was told, in order.
+type WindowSizes = Arc<Mutex<Vec<(u32, u32)>>>;
+
 /// The host's native-window resizer, recording every size it was told into the
 /// editor's own call log so the order of the handshake is observable.
-fn recording_window(
-    editor: &Arc<FakeEditor>,
-) -> (EditorWindowResizer, Arc<Mutex<Vec<(u32, u32)>>>) {
+fn recording_window(editor: &Arc<FakeEditor>) -> (EditorWindowResizer, WindowSizes) {
     let sizes = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&sizes);
     let editor = Arc::clone(editor);
@@ -1846,6 +2100,51 @@ fn the_plugin_is_set_up_with_the_hosts_real_block_and_rate() {
     assert_eq!(
         f64::from_bits(state.sample_rate.load(Ordering::Acquire)),
         48_000.0
+    );
+}
+
+/// The mode an instance is built in is the one the plugin is set up in and the
+/// one every block states; a setup that says offline over blocks that say
+/// realtime leaves the plugin on whichever answer it happens to read.
+#[test]
+fn an_offline_instance_states_offline_to_setup_and_to_every_block() {
+    let state = FakeState::new();
+    let mut wrapper = load_in_mode(&state, COMBINED_CID, ProcessMode::Offline);
+    render(&mut wrapper, 1.0, 8);
+
+    let offline = ProcessModes_::kOffline as int32;
+    assert_eq!(state.setup_process_mode.load(Ordering::Acquire), offline);
+    assert_eq!(state.block_process_mode.load(Ordering::Acquire), offline);
+}
+
+#[test]
+fn a_realtime_instance_states_realtime_to_setup_and_to_every_block() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    render(&mut wrapper, 1.0, 8);
+
+    let realtime = ProcessModes_::kRealtime as int32;
+    assert_eq!(state.setup_process_mode.load(Ordering::Acquire), realtime);
+    assert_eq!(state.block_process_mode.load(Ordering::Acquire), realtime);
+}
+
+/// A latency change re-runs `setupProcessing`, and the re-setup must restate
+/// the mode the instance was built in rather than fall back to realtime.
+#[test]
+fn a_latency_reactivation_restates_the_offline_mode() {
+    let state = FakeState::new();
+    let mut wrapper = load_in_mode(&state, COMBINED_CID, ProcessMode::Offline);
+    state
+        .setup_process_mode
+        .store(MODE_NEVER_STATED, Ordering::Release);
+
+    wrapper
+        .reactivate_for_latency()
+        .expect("the fake re-activates");
+
+    assert_eq!(
+        state.setup_process_mode.load(Ordering::Acquire),
+        ProcessModes_::kOffline as int32
     );
 }
 
@@ -2710,13 +3009,21 @@ fn a_plugin_that_refuses_every_arrangement_the_host_can_feed_is_refused_at_load(
 
 /// Every argument these take crosses the COM boundary from a plugin, where a
 /// Rust panic is undefined behaviour rather than an unwind.
+///
+/// # Safety
+/// Nothing beyond `HostStream::write`'s own contract, which `bytes` and the local
+/// out-parameter below meet; the signature is `unsafe` only because it wraps that call.
 unsafe fn write_bytes(stream: &HostStream, bytes: &[u8]) -> tresult {
     let mut written = 0;
-    stream.write(
-        bytes.as_ptr() as *mut std::ffi::c_void,
-        bytes.len() as int32,
-        &mut written,
-    )
+    // SAFETY: `bytes` is a readable slice of `bytes.len()` bytes (`write` only
+    // reads through the `*mut` cast) and `written` a live local out-parameter.
+    unsafe {
+        stream.write(
+            bytes.as_ptr() as *mut std::ffi::c_void,
+            bytes.len() as int32,
+            &mut written,
+        )
+    }
 }
 
 /// A plugin may seek anywhere. Parking the cursor where it asked turns the next
@@ -2726,6 +3033,7 @@ fn a_seek_past_the_end_parks_the_cursor_at_the_end() {
     let stream = HostStream::over(b"1234");
     let mut landed = -1;
 
+    // SAFETY: `landed` is a live local out-parameter.
     let sought = unsafe {
         stream.seek(
             1_000_000,
@@ -2733,6 +3041,7 @@ fn a_seek_past_the_end_parks_the_cursor_at_the_end() {
             &mut landed,
         )
     };
+    // SAFETY: `write_bytes` passes a valid slice and a local out-parameter.
     let written = unsafe { write_bytes(&stream, b"56") };
 
     assert_eq!(sought, kResultOk);
@@ -2747,10 +3056,12 @@ fn a_seek_past_the_end_parks_the_cursor_at_the_end() {
 fn a_read_at_the_end_of_the_stream_returns_no_bytes() {
     let stream = HostStream::over(b"1234");
     let mut landed = -1;
+    // SAFETY: `landed` is a live local out-parameter.
     unsafe { stream.seek(0, IStreamSeekMode_::kIBSeekEnd as int32, &mut landed) };
 
     let mut buffer = [0u8; 8];
     let mut read = -1;
+    // SAFETY: `buffer` is a local array of `buffer.len()` writable bytes and `read` a live local.
     let result = unsafe {
         stream.read(
             buffer.as_mut_ptr() as *mut std::ffi::c_void,
@@ -2771,6 +3082,7 @@ fn a_seek_from_the_end_by_a_huge_offset_does_not_overflow() {
     let stream = HostStream::over(b"1234");
     let mut landed = -1;
 
+    // SAFETY: `landed` is a live local out-parameter.
     let sought = unsafe {
         stream.seek(
             int64::MAX,
@@ -2778,6 +3090,7 @@ fn a_seek_from_the_end_by_a_huge_offset_does_not_overflow() {
             &mut landed,
         )
     };
+    // SAFETY: `write_bytes` passes a valid slice and a local out-parameter.
     let written = unsafe { write_bytes(&stream, b"5") };
 
     assert_eq!(sought, kResultOk);
@@ -2794,6 +3107,8 @@ fn a_write_larger_than_the_stream_ceiling_is_refused() {
     let byte = [0u8; 1];
     let mut written = -1;
 
+    // SAFETY: `byte` is a readable local; the stream refuses `int32::MAX` bytes
+    // before reading any of them, so the claimed length is never dereferenced.
     let result = unsafe {
         stream.write(
             byte.as_ptr() as *mut std::ffi::c_void,
@@ -2818,33 +3133,37 @@ fn no_stream_call_panics_on_an_argument_a_plugin_supplied() {
     let mut byte = [0u8; 1];
     let scratch = byte.as_mut_ptr() as *mut std::ffi::c_void;
 
-    // SAFETY: this is the abuse the methods exist to survive.
-    unsafe {
-        assert_eq!(
-            stream.read(ptr::null_mut(), 1, ptr::null_mut()),
-            kInvalidArgument
-        );
-        assert_eq!(stream.read(scratch, -1, ptr::null_mut()), kInvalidArgument);
-        assert_eq!(
-            stream.write(ptr::null_mut(), 1, ptr::null_mut()),
-            kInvalidArgument
-        );
-        assert_eq!(stream.write(scratch, -1, ptr::null_mut()), kInvalidArgument);
-        assert_eq!(
-            stream.seek(-1, IStreamSeekMode_::kIBSeekSet as int32, ptr::null_mut()),
-            kInvalidArgument
-        );
-        assert_eq!(
-            stream.seek(
-                int64::MIN,
-                IStreamSeekMode_::kIBSeekCur as int32,
-                ptr::null_mut()
-            ),
-            kInvalidArgument
-        );
-        assert_eq!(stream.seek(0, 99, ptr::null_mut()), kInvalidArgument);
-        assert_eq!(stream.tell(ptr::null_mut()), kResultOk);
-    }
+    // SAFETY: this is the abuse the methods exist to survive: a null buffer is
+    // refused before any access, and a null out-parameter is skipped.
+    let result = unsafe { stream.read(ptr::null_mut(), 1, ptr::null_mut()) };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: a negative length is refused before the buffer or out-parameter is touched.
+    let result = unsafe { stream.read(scratch, -1, ptr::null_mut()) };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: a null buffer is refused before any access.
+    let result = unsafe { stream.write(ptr::null_mut(), 1, ptr::null_mut()) };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: a negative length is refused before the buffer or out-parameter is touched.
+    let result = unsafe { stream.write(scratch, -1, ptr::null_mut()) };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: a seek before the start is refused; the null out-parameter is never written.
+    let result = unsafe { stream.seek(-1, IStreamSeekMode_::kIBSeekSet as int32, ptr::null_mut()) };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: a seek before the start is refused; the null out-parameter is never written.
+    let result = unsafe {
+        stream.seek(
+            int64::MIN,
+            IStreamSeekMode_::kIBSeekCur as int32,
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: an unknown seek mode is refused; the null out-parameter is never written.
+    let result = unsafe { stream.seek(0, 99, ptr::null_mut()) };
+    assert_eq!(result, kInvalidArgument);
+    // SAFETY: `tell` skips a null out-parameter.
+    let result = unsafe { stream.tell(ptr::null_mut()) };
+    assert_eq!(result, kResultOk);
     assert_eq!(stream.snapshot(), b"1234".to_vec());
 }
 
@@ -3832,7 +4151,9 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
             // Drained, as a real editor drains its connection: leaving the byte
             // there would keep the descriptor readable and spin the service.
             let mut byte = 0u8;
-            libc::read(fd, std::ptr::addr_of_mut!(byte).cast(), 1);
+            // SAFETY: `fd` is the descriptor the host reports readable, which this
+            // test keeps open until after unregistering; `byte` is a local one-byte buffer.
+            unsafe { libc::read(fd, std::ptr::addr_of_mut!(byte).cast(), 1) };
             self.wakes.fetch_add(1, Ordering::AcqRel);
         }
     }
@@ -3889,12 +4210,15 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
         "a readable descriptor must reach its handler"
     );
 
-    // SAFETY: the same live handler, then two descriptors this test owns.
-    unsafe {
-        assert_eq!(run_loop.unregisterEventHandler(raw), kResultOk);
-        libc::close(write_end);
-        libc::close(read_end);
-    }
+    // SAFETY: `raw` still borrows the live handler `handler` owns, registered above.
+    let unregistered = unsafe { run_loop.unregisterEventHandler(raw) };
+    assert_eq!(unregistered, kResultOk);
+    // SAFETY: `write_end` is the pipe's write descriptor this test opened and
+    // has not closed; nothing uses it after this.
+    unsafe { libc::close(write_end) };
+    // SAFETY: `read_end` is the pipe's read descriptor this test opened, no
+    // longer registered with the run loop; nothing uses it after this.
+    unsafe { libc::close(read_end) };
 }
 
 /// Poll for a condition rather than sleeping a fixed time. Nothing services
@@ -3996,52 +4320,3 @@ fn a_render_block_performs_no_heap_allocation() {
         after - before
     );
 }
-
-/// A counting allocator that counts *per thread*.
-///
-/// Per thread rather than per process because `cargo test` runs these tests
-/// concurrently: a global counter would pick up every other test's allocations
-/// and fail this one for reasons that have nothing to do with the render path.
-///
-/// The counter is a `Cell` behind a `const`-initialised thread local, so reading
-/// or incrementing it allocates nothing itself and cannot recurse into the
-/// allocator.
-struct CountingAllocator;
-
-thread_local! {
-    static ALLOCATIONS: Cell<u64> = const { Cell::new(0) };
-}
-
-fn allocation_count() -> u64 {
-    ALLOCATIONS.with(Cell::get)
-}
-
-unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
-        count_allocation();
-        std::alloc::System.alloc(layout)
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
-        std::alloc::System.dealloc(pointer, layout)
-    }
-
-    unsafe fn realloc(
-        &self,
-        pointer: *mut u8,
-        layout: std::alloc::Layout,
-        new_size: usize,
-    ) -> *mut u8 {
-        count_allocation();
-        std::alloc::System.realloc(pointer, layout, new_size)
-    }
-}
-
-/// `try_with` rather than `with`: an allocation during thread teardown finds the
-/// thread local already destroyed, and panicking there would abort the process.
-fn count_allocation() {
-    let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
-}
-
-#[global_allocator]
-static COUNTING_ALLOCATOR: CountingAllocator = CountingAllocator;

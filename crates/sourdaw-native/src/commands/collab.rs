@@ -25,7 +25,7 @@ impl Default for CollabState {
 
 fn get_or_create_discovery(guard: &mut Option<LanDiscovery>) -> Result<&mut LanDiscovery, String> {
     if guard.is_none() {
-        *guard = Some(LanDiscovery::new()?);
+        *guard = Some(LanDiscovery::new().map_err(|error| error.to_string())?);
     }
 
     guard
@@ -46,7 +46,8 @@ pub fn collab_create_project(
     name: String,
     sample_rate: u32,
 ) -> Result<bool, String> {
-    let store = DocumentStore::create_project(&name, sample_rate)?;
+    let store =
+        DocumentStore::create_project(&name, sample_rate).map_err(|error| error.to_string())?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     *guard = Some(store);
     Ok(true)
@@ -61,7 +62,7 @@ pub fn collab_save_bundle(state: &CollabState, path: String) -> Result<bool, Str
         "sdaw",
         "Collaboration bundle",
     )?;
-    daw_collab::save_sdaw_bundle(&bundle, &bundle_path)?;
+    daw_collab::save_sdaw_bundle(&bundle, &bundle_path).map_err(|error| error.to_string())?;
     Ok(true)
 }
 
@@ -74,8 +75,8 @@ pub fn collab_load_bundle(
         "sdaw",
         "Collaboration bundle",
     )?;
-    let bundle = daw_collab::load_sdaw_bundle(&bundle_path)?;
-    let store = DocumentStore::load_all(bundle.clone())?;
+    let bundle = daw_collab::load_sdaw_bundle(&bundle_path).map_err(|error| error.to_string())?;
+    let store = DocumentStore::load_all(bundle.clone()).map_err(|error| error.to_string())?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     *guard = Some(store);
     Ok(bundle)
@@ -87,7 +88,9 @@ pub fn collab_get_document_state(
 ) -> Result<serde_json::Value, String> {
     let guard = state.store.lock().map_err(|e| e.to_string())?;
     let store = guard.as_ref().ok_or("No CRDT project loaded")?;
-    store.export_doc_json(&doc_id)
+    store
+        .export_doc_json(&doc_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn collab_merge_bundle(
@@ -99,10 +102,12 @@ pub fn collab_merge_bundle(
         "sdaw",
         "Collaboration bundle",
     )?;
-    let bundle = daw_collab::load_sdaw_bundle(&bundle_path)?;
+    let bundle = daw_collab::load_sdaw_bundle(&bundle_path).map_err(|error| error.to_string())?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
-    let result = store.merge_bundle(bundle)?;
+    let result = store
+        .merge_bundle(bundle)
+        .map_err(|error| error.to_string())?;
     Ok(MergeResultResponse {
         merged_doc_ids: result.merged_doc_ids,
         new_doc_ids: result.new_doc_ids,
@@ -118,7 +123,9 @@ pub fn collab_apply_change(
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
     let change = daw_collab::automerge::Change::from_bytes(change_bytes)
         .map_err(|e| format!("Invalid change data: {}", e))?;
-    store.apply_change(&doc_id, change)?;
+    store
+        .apply_change(&doc_id, change)
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
@@ -134,20 +141,24 @@ pub fn collab_start_advertising(
 ) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
     let discovery = get_or_create_discovery(&mut guard)?;
-    discovery.advertise(
-        &session_id,
-        &host_name,
-        &project_name,
-        port,
-        approval_required,
-    )?;
+    discovery
+        .advertise(
+            &session_id,
+            &host_name,
+            &project_name,
+            port,
+            approval_required,
+        )
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
 pub fn collab_stop_advertising(state: &CollabState) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
     if let Some(discovery) = guard.as_mut() {
-        discovery.stop_advertising()?;
+        discovery
+            .stop_advertising()
+            .map_err(|error| error.to_string())?;
     }
     Ok(true)
 }
@@ -155,14 +166,18 @@ pub fn collab_stop_advertising(state: &CollabState) -> Result<bool, String> {
 pub fn collab_start_browsing(state: &CollabState) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
     let discovery = get_or_create_discovery(&mut guard)?;
-    discovery.start_browsing()?;
+    discovery
+        .start_browsing()
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
 pub fn collab_stop_browsing(state: &CollabState) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
     if let Some(discovery) = guard.as_mut() {
-        discovery.stop_browsing()?;
+        discovery
+            .stop_browsing()
+            .map_err(|error| error.to_string())?;
     }
     Ok(true)
 }

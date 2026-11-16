@@ -1,12 +1,9 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import { decodeMidiClipDataSnapshots, isExactMidiClipDataActionSnapshot } from '#/modules/MIDI/useCases';
-import {
-    type AppAction,
-    type HandlerSessionActionEntry,
-    type TakeReKeyLaneTransitionSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { clipSplitSource } from '../../useCases/clipEditing/clipSplitSource';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';

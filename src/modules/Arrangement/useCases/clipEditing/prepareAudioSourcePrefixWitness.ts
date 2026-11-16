@@ -1,16 +1,17 @@
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { type AppAction, type HandlerCommitValidation, type HandlerValidationContext } from '#/utils/handlerContract';
-import { isRecord } from '#/utils/structuralEquality';
-import { getTempoAudioSourceRequirements } from '#/utils/tempoAudioSourceCoverage';
 import {
     captureTempoSourceOwnerValue,
+    getTempoAudioSourceRequirements,
     projectTempoSourceClock,
+    tempoMapStore,
     tempoSourceOwnerWitnessMatches,
+    transportStore,
     type TempoScalarTransition,
     type TempoSourceClock,
     type TempoSourceOwnerWitness,
-} from '#/utils/tempoAudioSourcePromotion';
+} from '#/modules/Transport/stores';
+import { type AppAction, type HandlerCommitValidation, type HandlerValidationContext } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { projectAudioSourcePrefixTracks } from '../../stores/projectAudioSourcePrefixTracks';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';

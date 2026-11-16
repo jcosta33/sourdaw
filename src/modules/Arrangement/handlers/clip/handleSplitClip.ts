@@ -1,16 +1,16 @@
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
     type AppAction,
-    type CommandSourceProof,
     type HandlerMaterializationContext,
     type HandlerValidationContext,
-    type RetiredTakeLaneSnapshot,
-    type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { captureClipSplitSource } from '../../useCases/clipEditing/captureClipSplitSource';

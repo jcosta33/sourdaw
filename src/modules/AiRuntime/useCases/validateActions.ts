@@ -11,6 +11,7 @@ import {
     type RuntimeAction,
     type RuntimeActionType,
 } from '../models/RuntimeAction';
+import { unawaitedAiActionByActionType } from '../models/UnawaitedAiActionByActionType';
 
 import { type BatchLocalActionIdentity } from './agentReference/BatchLocalActionIdentity';
 import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
@@ -20,7 +21,7 @@ const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTIO
 type RuntimePayloadOverrideType = keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
 
 function isRuntimePayloadOverrideType(actionType: RuntimeActionType): actionType is RuntimePayloadOverrideType {
-    return actionType in RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
+    return Object.hasOwn(RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS, actionType);
 }
 
 function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {
@@ -98,38 +99,305 @@ function addressesGainLaneForDecibels(
     return createdLane !== undefined && createdLane.actionIndex < actionIndex && createdLane.parameterId === 'gain';
 }
 
-const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([
-    'exportProject',
-    'importAudioFile',
-    'importMidiFile',
-    'leaveCollabSession',
-    'newProject',
-    'saveProject',
-]);
+type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
+type VcaTargetLookup = { readonly [Type in RuntimeActionType]: (action: ActionOf<Type>) => boolean };
 
-function hasAvailableVcaTargets(action: RuntimeAction): boolean {
+function noVcaTargets(): boolean {
+    return true;
+}
+
+function allTracksExist(action: ActionOf<'createVcaGroup'>): boolean {
+    const tracks = trackStore.value?.tracks ?? [];
+    return action.payload.trackIds.every((trackId) => tracks.some((track) => track.id === trackId));
+}
+
+function trackAndGroupExist(action: ActionOf<'assignToVca'>): boolean {
     const tracks = trackStore.value?.tracks ?? [];
     const groups = vcaGroupStore.value?.groups ?? [];
+    const trackExists = tracks.some((track) => track.id === action.payload.trackId);
+    const groupExists = groups.some((group) => group.id === action.payload.vcaGroupId);
+    return trackExists && groupExists;
+}
 
-    if (action.type === 'createVcaGroup') {
-        return action.payload.trackIds.every((trackId) => tracks.some((track) => track.id === trackId));
-    }
+function trackExists(action: ActionOf<'removeFromVca'>): boolean {
+    const tracks = trackStore.value?.tracks ?? [];
+    return tracks.some((track) => track.id === action.payload.trackId);
+}
 
-    if (action.type === 'assignToVca') {
-        const trackExists = tracks.some((track) => track.id === action.payload.trackId);
-        const groupExists = groups.some((group) => group.id === action.payload.vcaGroupId);
-        return trackExists && groupExists;
-    }
+function groupExists(action: ActionOf<'setVcaGain'>): boolean {
+    const groups = vcaGroupStore.value?.groups ?? [];
+    return groups.some((group) => group.id === action.payload.vcaGroupId);
+}
 
-    if (action.type === 'removeFromVca') {
-        return tracks.some((track) => track.id === action.payload.trackId);
-    }
+/** Every runtime action type answers, so a new action does not compile until its VCA targets are decided. */
+const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
+    importStemSet: noVcaTargets,
+    addTrack: noVcaTargets,
+    removeTrack: noVcaTargets,
+    removeAllTracks: noVcaTargets,
+    renameTrack: noVcaTargets,
+    selectTrack: noVcaTargets,
+    muteTrack: noVcaTargets,
+    soloTrack: noVcaTargets,
+    selectTake: noVcaTargets,
+    setSoloSafe: noVcaTargets,
+    toggleSoloSafe: noVcaTargets,
+    armTrack: noVcaTargets,
+    freezeTrack: noVcaTargets,
+    unfreezeTrack: noVcaTargets,
+    flattenTrack: noVcaTargets,
+    bounceInPlace: noVcaTargets,
+    duplicateTrack: noVcaTargets,
+    reorderTrack: noVcaTargets,
+    setTrackGain: noVcaTargets,
+    setTrackPan: noVcaTargets,
+    setTrackColor: noVcaTargets,
+    setTempo: noVcaTargets,
+    setTimeSignature: noVcaTargets,
+    setProductionBrief: noVcaTargets,
+    setPlayback: noVcaTargets,
+    togglePlayback: noVcaTargets,
+    stopPlayback: noVcaTargets,
+    toggleRecording: noVcaTargets,
+    setMasterGain: noVcaTargets,
+    toggleLoop: noVcaTargets,
+    toggleMetronome: noVcaTargets,
+    setMetronomeVolume: noVcaTargets,
+    setLoopRegion: noVcaTargets,
+    setLoopEnabled: noVcaTargets,
+    setMetronomeEnabled: noVcaTargets,
+    restoreLoopRegion: noVcaTargets,
+    addClip: noVcaTargets,
+    drawClip: noVcaTargets,
+    duplicateClipAt: noVcaTargets,
+    moveClips: noVcaTargets,
+    moveClip: noVcaTargets,
+    duplicateClip: noVcaTargets,
+    duplicateClipToNextBar: noVcaTargets,
+    removeClip: noVcaTargets,
+    splitClip: noVcaTargets,
+    trimClipStart: noVcaTargets,
+    trimClipEnd: noVcaTargets,
+    setClipFade: noVcaTargets,
+    copyClip: noVcaTargets,
+    cutClip: noVcaTargets,
+    pasteClip: noVcaTargets,
+    addDevice: noVcaTargets,
+    bypassDevice: noVcaTargets,
+    removeDevice: noVcaTargets,
+    setDeviceParameter: noVcaTargets,
+    createBus: noVcaTargets,
+    createFolder: noVcaTargets,
+    setSend: noVcaTargets,
+    setWorkspaceMode: noVcaTargets,
+    openPreferencesDialog: noVcaTargets,
+    openMixer: noVcaTargets,
+    closeMixer: noVcaTargets,
+    toggleSidebar: noVcaTargets,
+    toggleInspector: noVcaTargets,
+    toggleChatPanel: noVcaTargets,
+    setEditingTool: noVcaTargets,
+    setMarqueeSelection: noVcaTargets,
+    addMarker: noVcaTargets,
+    removeMarker: noVcaTargets,
+    setMarkerColor: noVcaTargets,
+    addSection: noVcaTargets,
+    removeSection: noVcaTargets,
+    renameSection: noVcaTargets,
+    addAutomationLane: noVcaTargets,
+    automateSendRange: noVcaTargets,
+    automateSendRanges: noVcaTargets,
+    automateTrackGainRange: noVcaTargets,
+    automateParameterRange: noVcaTargets,
+    renderProjectSections: noVcaTargets,
+    addAutomationPoint: noVcaTargets,
+    setAutomationLaneEnabled: noVcaTargets,
+    quantizeNotes: noVcaTargets,
+    removeShortMidiOverlaps: noVcaTargets,
+    createDrumPreviewBranches: noVcaTargets,
+    copyMidiArticulations: noVcaTargets,
+    quantizeNoteLengths: noVcaTargets,
+    transposeNotes: noVcaTargets,
+    humanizeNotes: noVcaTargets,
+    invertNotes: noVcaTargets,
+    retrogradeNotes: noVcaTargets,
+    scaleVelocities: noVcaTargets,
+    scaleAllVelocities: noVcaTargets,
+    setAllVelocities: noVcaTargets,
+    importMidiFile: noVcaTargets,
+    normalizeClip: noVcaTargets,
+    reverseClip: noVcaTargets,
+    glueClips: noVcaTargets,
+    nudgeClip: noVcaTargets,
+    slipClipContent: noVcaTargets,
+    crossfadeClips: noVcaTargets,
+    setClipGain: noVcaTargets,
+    setClipColor: noVcaTargets,
+    lockClip: noVcaTargets,
+    renameClip: noVcaTargets,
+    consolidateSelection: noVcaTargets,
+    bounceSelection: noVcaTargets,
+    seekPlayhead: noVcaTargets,
+    setPunchIn: noVcaTargets,
+    setPunchOut: noVcaTargets,
+    setPunchEnabled: noVcaTargets,
+    toggleCountIn: noVcaTargets,
+    setCountInBars: noVcaTargets,
+    togglePreRoll: noVcaTargets,
+    setPreRollBars: noVcaTargets,
+    addTimeSignatureChange: noVcaTargets,
+    removeTimeSignatureChange: noVcaTargets,
+    setTrackOutput: noVcaTargets,
+    addSend: noVcaTargets,
+    removeSend: noVcaTargets,
+    removeAutomationPoint: noVcaTargets,
+    setAutomationMode: noVcaTargets,
+    hideTrack: noVcaTargets,
+    disableTrack: noVcaTargets,
+    setTrackHeight: noVcaTargets,
+    setSnapValue: noVcaTargets,
+    zoomToFit: noVcaTargets,
+    zoomToSelection: noVcaTargets,
+    exportProject: noVcaTargets,
+    saveProject: noVcaTargets,
+    newProject: noVcaTargets,
+    importAudioFile: noVcaTargets,
+    exportMidi: noVcaTargets,
+    foldTrack: noVcaTargets,
+    groupTracks: noVcaTargets,
+    ungroupTracks: noVcaTargets,
+    scaleAutomation: noVcaTargets,
+    stretchAutomation: noVcaTargets,
+    invertAutomation: noVcaTargets,
+    reverseAutomation: noVcaTargets,
+    thinAutomation: noVcaTargets,
+    quantizeAutomation: noVcaTargets,
+    loadPreset: noVcaTargets,
+    savePreset: noVcaTargets,
+    generateDrumPattern: noVcaTargets,
+    generateMelody: noVcaTargets,
+    generateChordProgression: noVcaTargets,
+    setClipLoop: noVcaTargets,
+    setClipLoopLength: noVcaTargets,
+    extractGroove: noVcaTargets,
+    applyGroove: noVcaTargets,
+    setClipStretchMode: noVcaTargets,
+    setClipStretchRatio: noVcaTargets,
+    fitClipToBeats: noVcaTargets,
+    analyzeMix: noVcaTargets,
+    autoFixMix: noVcaTargets,
+    enableMpe: noVcaTargets,
+    disableMpe: noVcaTargets,
+    getLatencyReport: noVcaTargets,
+    createCollabSession: noVcaTargets,
+    joinCollabSession: noVcaTargets,
+    leaveCollabSession: noVcaTargets,
+    scanPlugins: noVcaTargets,
+    loadExternalPlugin: noVcaTargets,
+    audioToMidi: noVcaTargets,
+    muteClip: noVcaTargets,
+    clearSolos: noVcaTargets,
+    setTrackNotes: noVcaTargets,
+    setTrackInput: noVcaTargets,
+    zoomTracksVertical: noVcaTargets,
+    deleteTime: noVcaTargets,
+    insertTime: noVcaTargets,
+    duplicateTimeRange: noVcaTargets,
+    stripSilence: noVcaTargets,
+    detectTempo: noVcaTargets,
+    detectKey: noVcaTargets,
+    consolidateAllTracks: noVcaTargets,
+    arpeggiate: noVcaTargets,
+    addSidechainRoute: noVcaTargets,
+    removeSidechainRoute: noVcaTargets,
+    bounceToNewTrack: noVcaTargets,
+    createTrackAlternative: noVcaTargets,
+    switchTrackAlternative: noVcaTargets,
+    renameTrackAlternative: noVcaTargets,
+    deleteTrackAlternative: noVcaTargets,
+    addChordEvent: noVcaTargets,
+    addCvOutput: noVcaTargets,
+    addNotes: noVcaTargets,
+    addYeastProcessor: noVcaTargets,
+    assignToVca: trackAndGroupExist,
+    autoOrganizeProject: noVcaTargets,
+    captureScratchPad: noVcaTargets,
+    clearAllMidiMappings: noVcaTargets,
+    clearChordTrack: noVcaTargets,
+    clearMidiOutput: noVcaTargets,
+    clearScratchPad: noVcaTargets,
+    commitScratchPad: noVcaTargets,
+    compareToReference: noVcaTargets,
+    completeMidi: noVcaTargets,
+    connectPush: noVcaTargets,
+    createAdjustmentLayer: noVcaTargets,
+    addAdjustmentRegion: noVcaTargets,
+    createCompGroup: noVcaTargets,
+    createPatternInstance: noVcaTargets,
+    createProjectVersion: noVcaTargets,
+    createVcaGroup: allTracksExist,
+    createVersionBranch: noVcaTargets,
+    deleteMacro: noVcaTargets,
+    deleteTrackTemplate: noVcaTargets,
+    detachPatternInstance: noVcaTargets,
+    detectSongStructure: noVcaTargets,
+    detectTransients: noVcaTargets,
+    disconnectPush: noVcaTargets,
+    enableWarping: noVcaTargets,
+    exportDawProject: noVcaTargets,
+    generateAllTransitions: noVcaTargets,
+    generateBassline: noVcaTargets,
+    generateFill: noVcaTargets,
+    getMentorTips: noVcaTargets,
+    labelUndoBranch: noVcaTargets,
+    loadRaveModel: noVcaTargets,
+    loadTrackTemplate: noVcaTargets,
+    nextSetlistItem: noVcaTargets,
+    playMacro: noVcaTargets,
+    previousSetlistItem: noVcaTargets,
+    quantizeTransients: noVcaTargets,
+    redo: noVcaTargets,
+    removeChordEvent: noVcaTargets,
+    removeFromVca: trackExists,
+    removeYeastProcessor: noVcaTargets,
+    reorderYeastProcessor: noVcaTargets,
+    restoreAutomationLanePoints: noVcaTargets,
+    restoreClip: noVcaTargets,
+    restoreProjectVersion: noVcaTargets,
+    restoreTrack: noVcaTargets,
+    saveTrackTemplate: noVcaTargets,
+    searchSamples: noVcaTargets,
+    setControlSurface: noVcaTargets,
+    setMidiOutput: noVcaTargets,
+    setRaveBlend: noVcaTargets,
+    setVcaGain: groupExists,
+    setWarpAlgorithm: noVcaTargets,
+    setWarpPitchShift: noVcaTargets,
+    setYeastArpPattern: noVcaTargets,
+    setYeastProcessorBypass: noVcaTargets,
+    setYeastProcessorParam: noVcaTargets,
+    startMacroRecording: noVcaTargets,
+    stopMacroRecording: noVcaTargets,
+    switchMonitor: noVcaTargets,
+    toggleChordTrack: noVcaTargets,
+    toggleControlRoomDim: noVcaTargets,
+    toggleControlRoomMono: noVcaTargets,
+    toggleLoopRecord: noVcaTargets,
+    toggleNodeView: noVcaTargets,
+    togglePunchRecording: noVcaTargets,
+    toggleScratchPad: noVcaTargets,
+    toggleUndoTree: noVcaTargets,
+    triggerScene: noVcaTargets,
+    undo: noVcaTargets,
+    variationMidi: noVcaTargets,
+};
 
-    if (action.type === 'setVcaGain') {
-        return groups.some((group) => group.id === action.payload.vcaGroupId);
-    }
+function lookupVcaTargetAvailability<Type extends RuntimeActionType>(action: ActionOf<Type>): boolean {
+    return vcaTargetAvailabilityByActionType[action.type](action);
+}
 
-    return true;
+function hasAvailableVcaTargets(action: RuntimeAction): boolean {
+    return lookupVcaTargetAvailability(action);
 }
 
 export const validateActions = inject({ logger })(
@@ -145,7 +413,7 @@ export const validateActions = inject({ logger })(
                     return false;
                 }
 
-                if (UNAWAITED_AI_ACTION_TYPES.has(action.type)) {
+                if (unawaitedAiActionByActionType[action.type]) {
                     logger.warn(`Unawaited AI action rejected: ${action.type}`);
                     return false;
                 }

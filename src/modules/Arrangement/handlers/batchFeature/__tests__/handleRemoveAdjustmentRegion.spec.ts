@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type AdjustmentLayerSnapshot, type AppAction } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type AdjustmentLayerSnapshot } from '../../../events/arrangementClipSnapshots';
 import { adjustmentLayerHandlers } from '../adjustmentLayerHandlers';
 import { handleAddAdjustmentRegion } from '../handleAddAdjustmentRegion';
 import { handleRemoveAdjustmentRegion } from '../handleRemoveAdjustmentRegion';
@@ -147,8 +148,8 @@ describe('handleRemoveAdjustmentRegion', () => {
         trackState = { tracks: [{ id: 'track-bass', frozen: false }] };
     });
 
-    it('forwards both ids', () => {
-        handleRemoveAdjustmentRegion.execute({
+    it('forwards both ids', async () => {
+        await handleRemoveAdjustmentRegion.execute({
             type: 'removeAdjustmentRegion',
             payload: { layerId: 'L', regionId: 'R' },
         });

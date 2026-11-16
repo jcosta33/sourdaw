@@ -574,6 +574,12 @@ impl SamplePlayback {
     }
 }
 
+impl Default for SamplePlayback {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Levain voice
 // ---------------------------------------------------------------------------
@@ -610,6 +616,24 @@ impl SamplePlayback {
 pub(super) fn crossfade_rate_for(crossfade_time_secs: f32, sample_rate: f32) -> f32 {
     let samples = (crossfade_time_secs * sample_rate).max(1.0);
     (1.0 / samples).max(f32::EPSILON)
+}
+
+/// The MIDI note-on a voice is triggered with.
+#[derive(Debug, Clone, Copy)]
+pub struct NoteOnEvent {
+    pub note: u8,
+    pub channel: u8,
+    pub velocity: u8,
+}
+
+impl NoteOnEvent {
+    pub const fn new(note: u8, channel: u8, velocity: u8) -> Self {
+        Self {
+            note,
+            channel,
+            velocity,
+        }
+    }
 }
 
 /// One note's zone on every loaded mic position.
@@ -854,14 +878,17 @@ impl LevainVoice {
     /// Resolves end=0 to actual sample length.
     pub fn trigger(
         &mut self,
-        note: u8,
-        channel: u8,
-        velocity: u8,
+        event: NoteOnEvent,
         zones: &NoteZones,
         articulation: ArticulationId,
         gain: f32,
         pool: &SamplePool,
     ) {
+        let NoteOnEvent {
+            note,
+            channel,
+            velocity,
+        } = event;
         // Replacing an unheard incoming attack must not cut the earlier
         // recording whose de-click fade still occupies the outgoing streams.
         let keep_stolen_tail = self.steal_crossfading && self.delayed_attack_is_pending();
@@ -1370,10 +1397,10 @@ impl LevainVoice {
         // velocity-adjacent zone attached by `set_dynamic_layer`, weighted by
         // this block's equal-power layer gains.
         if self.layer_active {
-            for mic in 0..mics {
+            for (mic, mic_sample) in sample.iter_mut().enumerate().take(mics) {
                 if self.layer_attached[mic] {
                     let layer_sample = self.layer_secondary[mic].read_sample(pool);
-                    sample[mic] = sample[mic] * self.layer_gain_primary
+                    *mic_sample = *mic_sample * self.layer_gain_primary
                         + layer_sample * self.layer_gain_secondary;
                 }
             }
@@ -1706,7 +1733,13 @@ mod tests {
         };
         for output_rate in [44_100.0, 48_000.0, 96_000.0] {
             let mut voice = LevainVoice::new(output_rate);
-            voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+            voice.trigger(
+                NoteOnEvent::new(60, 0, 100),
+                &NoteZones::single(zone),
+                0,
+                1.0,
+                &pool,
+            );
             voice.apply_note_humanization(&humanize, output_rate, &pool);
             assert_eq!(
                 voice.playback[0].position,
@@ -1750,7 +1783,13 @@ mod tests {
 
         let (pool, zone) = silent_headed_sample(HEAD_FRAMES, BODY_FRAMES);
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(60, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
 
         let mut heard_while_held = 0.0_f32;
         for _ in 0..HELD_FRAMES {
@@ -1846,7 +1885,13 @@ mod tests {
 
         // Voice 0: quiet sustaining note (velocity 20, sustain 1.0, rendered for 5000 samples)
         let mut quiet_sustaining = LevainVoice::new(SAMPLE_RATE);
-        quiet_sustaining.trigger(60, 0, 20, &NoteZones::single(zone), 0, 1.0, &pool);
+        quiet_sustaining.trigger(
+            NoteOnEvent::new(60, 0, 20),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..5000 {
             quiet_sustaining.tick(&pool);
         }
@@ -1854,7 +1899,13 @@ mod tests {
         // Voice 1: loud newly-struck note (velocity 100, sustain 1.0, rendered for only 5 samples)
         // In the old energy-based score, its energy was 0.0 so it was chosen as victim.
         let mut loud_newly_struck = LevainVoice::new(SAMPLE_RATE);
-        loud_newly_struck.trigger(64, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        loud_newly_struck.trigger(
+            NoteOnEvent::new(64, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..5 {
             loud_newly_struck.tick(&pool);
         }
@@ -1879,14 +1930,26 @@ mod tests {
 
         // Voice 0: loud held sustaining note (velocity 100, sustain 1.0)
         let mut held_voice = LevainVoice::new(SAMPLE_RATE);
-        held_voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        held_voice.trigger(
+            NoteOnEvent::new(60, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..1000 {
             held_voice.tick(&pool);
         }
 
         // Voice 1: loud releasing note (velocity 100, but released)
         let mut releasing_voice = LevainVoice::new(SAMPLE_RATE);
-        releasing_voice.trigger(64, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        releasing_voice.trigger(
+            NoteOnEvent::new(64, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..1000 {
             releasing_voice.tick(&pool);
         }
@@ -1915,14 +1978,26 @@ mod tests {
         // Both voices have identical velocity and envelope level (both sustaining at full level)
         // Voice 0 is older: age 30,000 samples (> 208 ms / 10,000 samples)
         let mut older_voice = LevainVoice::new(SAMPLE_RATE);
-        older_voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        older_voice.trigger(
+            NoteOnEvent::new(60, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..30000 {
             older_voice.tick(&pool);
         }
 
         // Voice 1 is younger: age 15,000 samples (also > 10,000 samples)
         let mut younger_voice = LevainVoice::new(SAMPLE_RATE);
-        younger_voice.trigger(64, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        younger_voice.trigger(
+            NoteOnEvent::new(64, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..15000 {
             younger_voice.tick(&pool);
         }
@@ -1982,7 +2057,13 @@ mod tests {
         };
 
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(60, 0, 127),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
 
         // Render until voice is stably outputting ~0.8
         let mut last_sample = 0.0;
@@ -1995,7 +2076,13 @@ mod tests {
         );
 
         // Now steal the sounding voice with another note (e.g. note 67)
-        voice.trigger(67, 0, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(67, 0, 127),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
 
         // Verify the very first sample rendered after the steal does NOT jump to 0.0 (no single-sample click)
         let first_sample_after_steal = voice.tick(&pool)[0];
@@ -2025,12 +2112,24 @@ mod tests {
         for stolen_tail in [false, true] {
             let mut voice = LevainVoice::new(SAMPLE_RATE);
             if stolen_tail {
-                voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+                voice.trigger(
+                    NoteOnEvent::new(60, 2, 127),
+                    &NoteZones::single(zone),
+                    0,
+                    1.0,
+                    &pool,
+                );
                 for _ in 0..500 {
                     voice.tick(&pool);
                 }
             }
-            voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+            voice.trigger(
+                NoteOnEvent::new(67, 3, 100),
+                &NoteZones::single(zone),
+                0,
+                0.8,
+                &pool,
+            );
             voice.defer_realism_attack();
             assert!(voice.attack_is_pending());
             assert!(!voice.delayed_attack_is_pending());
@@ -2056,11 +2155,23 @@ mod tests {
     fn replacing_an_unheard_attack_keeps_its_stolen_predecessors_fade() {
         fn prepared(pool: &SamplePool, zone: Zone) -> LevainVoice {
             let mut voice = LevainVoice::new(SAMPLE_RATE);
-            voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, pool);
+            voice.trigger(
+                NoteOnEvent::new(60, 2, 127),
+                &NoteZones::single(zone),
+                0,
+                1.0,
+                pool,
+            );
             for _ in 0..500 {
                 voice.tick(pool);
             }
-            voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, pool);
+            voice.trigger(
+                NoteOnEvent::new(67, 3, 100),
+                &NoteZones::single(zone),
+                0,
+                0.8,
+                pool,
+            );
             voice.delay_onset(128);
             voice.defer_realism_attack();
             for _ in 0..8 {
@@ -2072,7 +2183,13 @@ mod tests {
         let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
         let mut reference = prepared(&pool, zone);
         let mut replaced = prepared(&pool, zone);
-        replaced.trigger(69, 4, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+        replaced.trigger(
+            NoteOnEvent::new(69, 4, 100),
+            &NoteZones::single(zone),
+            0,
+            0.8,
+            &pool,
+        );
         replaced.delay_onset(128);
         replaced.defer_realism_attack();
         let mut peak = 0.0_f32;
@@ -2095,11 +2212,23 @@ mod tests {
     fn a_delayed_stolen_attack_freezes_incoming_clocks_while_the_old_voice_fades() {
         let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(60, 2, 127),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..500 {
             voice.tick(&pool);
         }
-        voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+        voice.trigger(
+            NoteOnEvent::new(67, 3, 100),
+            &NoteZones::single(zone),
+            0,
+            0.8,
+            &pool,
+        );
         voice.apply_note_humanization(
             &NoteHumanization {
                 timing_offset: 0.002,
@@ -2139,11 +2268,23 @@ mod tests {
     fn cancelling_at_the_onset_boundary_keeps_the_outgoing_steal_fade() {
         let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(60, 2, 127),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         for _ in 0..500 {
             voice.tick(&pool);
         }
-        voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+        voice.trigger(
+            NoteOnEvent::new(67, 3, 100),
+            &NoteZones::single(zone),
+            0,
+            0.8,
+            &pool,
+        );
         voice.delay_onset(1);
         voice.defer_realism_attack();
         let incoming_position = voice.playback[0].position;
@@ -2169,7 +2310,13 @@ mod tests {
     fn pending_realism_markers_do_not_survive_release_reset_or_retrigger() {
         let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(60, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         voice.delay_onset(88);
         voice.defer_realism_attack();
         voice.release();
@@ -2177,7 +2324,13 @@ mod tests {
             assert!(!voice.take_realism_attack());
             assert_eq!(voice.tick(&pool)[0], 0.0);
         }
-        voice.trigger(67, 1, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(67, 1, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         assert!(!voice.attack_is_pending());
         assert!(!voice.take_realism_attack());
         voice.defer_realism_attack();
@@ -2287,7 +2440,13 @@ mod tests {
         ] {
             let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
             let mut voice = LevainVoice::new(output_rate);
-            voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+            voice.trigger(
+                NoteOnEvent::new(69, 0, 100),
+                &NoteZones::single(zone),
+                0,
+                1.0,
+                &pool,
+            );
 
             let rendered = render_until_playback_spent(&mut voice, &pool, expected_frames * 2);
             // One frame of slack: the playhead crosses `end` mid-frame, and the
@@ -2315,9 +2474,15 @@ mod tests {
         let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
         let output_rate = 48_000.0;
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(72, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(72, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
 
-        let expected_speed = 2.0_f64.powf(3.0 / 12.0) * f64::from(44_100.0 / 48_000.0);
+        let expected_speed = 2.0_f64.powf(3.0 / 12.0) * (44_100.0 / 48_000.0);
         assert!(
             (voice.playback[0].base_speed - expected_speed).abs() < 1e-9,
             "base speed {} must be the transposition times the rate ratio {expected_speed}",
@@ -2346,9 +2511,15 @@ mod tests {
         zone.sample.loop_end = 22_050;
         let output_rate = 48_000.0;
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(69, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
 
-        let ratio = f64::from(44_100.0) / f64::from(48_000.0);
+        let ratio = 44_100.0 / 48_000.0;
         // Halfway through one loop pass: 12,000 output frames have consumed
         // exactly 11,025 source frames.
         for _ in 0..12_000 {
@@ -2379,11 +2550,17 @@ mod tests {
         let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
         let (_pool_alt, zone_alt) = tonal_sample(44_100.0, 0.5, 440.0, 71);
         let output_rate = 48_000.0;
-        let ratio = f64::from(44_100.0) / f64::from(48_000.0);
+        let ratio = 44_100.0 / 48_000.0;
 
         // Crossfade legato: the incoming primary reconfigures against the pool.
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(69, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         voice.start_crossfade(&NoteZones::single(zone_alt), 71, 0.05, output_rate, &pool);
         // zone_alt's root is 71 and the slur targets note 71: pitch-neutral, so
         // the ratio is the whole base speed.
@@ -2396,7 +2573,13 @@ mod tests {
 
         // True-legato transition sample in the secondary stream.
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(69, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         voice.start_legato_transition(&zone_alt.sample, 71, 0.05, output_rate, &pool);
         assert!(
             (voice.crossfade_playback[0].base_speed - expected).abs() < 1e-9,
@@ -2406,7 +2589,13 @@ mod tests {
 
         // CC1 dynamic layer stream.
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(69, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
         voice.set_dynamic_layer(0, &zone_alt, 71, &pool);
         assert!(
             (voice.layer_secondary[0].base_speed - expected).abs() < 1e-9,
@@ -2572,7 +2761,13 @@ mod tests {
             release: 0.2,
         };
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.trigger(
+            NoteOnEvent::new(60, 0, 100),
+            &NoteZones::single(zone),
+            0,
+            1.0,
+            &pool,
+        );
 
         // Instant attack; drive the envelope alone into mid-Decay so the
         // reading is the envelope's own state, not the rendered gain.

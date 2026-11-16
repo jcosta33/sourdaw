@@ -7,10 +7,12 @@ import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { isNoAiBackendError } from '../errors/NoAiBackendError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { ANSWER_INTERPRETATION_TOOL_NAME, createAnswerInterpretationToolSchema } from '../models/AnswerInterpretation';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type BriefReadingOffer } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
@@ -24,7 +26,7 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type LastCommitContinuationLiteral, type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
-import { type AnswerSuggestion, type PlanningOutcome } from '../models/PlanningOutcome';
+import { type AnswerSuggestion, type ChatHandOffReason, type PlanningOutcome } from '../models/PlanningOutcome';
 import {
     type PlanningProfile,
     READONLY_ANSWER_MAX_OUTPUT_TOKENS,
@@ -97,9 +99,11 @@ import { resolveRawPresetActions } from './aiRuntimeQueries/resolveRawPresetActi
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
+import { compileAdoptedRecipeMetricAuthority } from './compileAdoptedRecipeMetricAuthority';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
+import { describeNoAiBackendRemedy } from './describeNoAiBackendRemedy';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeBriefCompile } from './executeBriefCompile';
@@ -111,8 +115,8 @@ import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
+import { isBriefWritingRequest } from './isBriefWritingRequest';
 import { type ContinuedFigure } from './lastCommitContinuation/lastCommitOutcome';
-import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import {
     generateToolPlanningOutcome,
     type ProviderAttemptAdmission,
@@ -136,7 +140,9 @@ import { readBriefMixIntent } from './readBriefMixIntent';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
-import { planVibeRunSchedule } from './vibeRun/planVibeRunSchedule';
+import { buildBriefReadings } from './vibeRun/buildBriefReadings';
+import { describeBriefReadings } from './vibeRun/describeBriefReadings';
+import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
 
 type ParsePromptToActionsInput = {
     prompt: string;
@@ -161,6 +167,12 @@ type ParsePromptToActionsInput = {
     thread?: ThreadContext | null;
     /** A suggestion an earlier answer offered, which the user asked to see proposed; the prompt is not read. */
     suggestion?: AnswerSuggestion;
+    /**
+     * Set only by the Prompt Bar's provider route: a request that plans a production brief or a list
+     * needing more than one batch ends in a `chat-hand-off` outcome, materializing nothing, so the
+     * Prompt Bar can run it in the agent chat instead.
+     */
+    chatHandOff?: true;
 };
 
 type CreateFastPathResultInput = {
@@ -585,6 +597,7 @@ function createLastCommitContinuationResult(
                 grounded: continuation.grounded,
                 creativeAuthority: continuation.creativeAuthority,
                 adoptedRecipes: continuation.adoptedRecipes,
+                compilations: continuation.compilations,
                 origin: 'last-commit-recipe',
                 prompt,
                 context,
@@ -658,6 +671,7 @@ function createAnswerSuggestionResult(input: {
         grounded: planned.grounded,
         creativeAuthority: planned.creativeAuthority,
         adoptedRecipes: [planned.adoptedRecipe],
+        compilations: planned.compilations,
         origin: 'answer-suggestion',
         prompt: input.prompt,
         context: input.context,
@@ -668,39 +682,40 @@ function createAnswerSuggestionResult(input: {
  * The proposal of recipes the application expanded itself on tracks the user named: an answer's
  * suggestion taken up, or the last commit's recipe repeated on other tracks. It always goes to
  * confirmation and carries the recipes it adopted as its provenance; no provider is asked anything.
+ * The user chose the recipes, as they choose a preset, so the proposal states no objective of its own;
+ * what an authored recipe's own metric expectations promise is frozen as its goals, which the preview
+ * measures and Confirm waits for. A batch of presets only is a literal request with nothing to verify.
  */
 function createAdoptedRecipeResult(input: {
     grounded: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['grounded'];
     creativeAuthority: CreativeRequestAuthority;
     adoptedRecipes: NonNullable<IntentResult['adoptedRecipes']>;
+    compilations: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['compilations'];
     origin: 'answer-suggestion' | 'last-commit-recipe';
     prompt: string;
     context: ProjectContext;
 }): IntentResult {
     const { grounded, creativeAuthority } = input;
-    // The user chose a named recipe on named tracks, as they choose a preset: a literal request with
-    // no objective to verify, the recipe being attributed knowledge, never a measured claim about the
-    // project.
-    const literalAuthority: MetricRequestAuthority = {
-        schemaVersion: 1,
-        authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
+    const adopted = compileAdoptedRecipeMetricAuthority({
         origin: input.origin,
-        callId: null,
-        turn: null,
-        catalogId: creativeAuthority.catalogId,
-        requestDigest: creativeAuthority.requestDigest,
-        revision: creativeAuthority.revision,
-        projectId: captureProjectIdentity(),
-        selection: getCreativeSelectionSnapshot(input.context),
-        kind: 'literal',
-        goals: [],
+        compilations: input.compilations,
+        context: input.context,
+        prompt: input.prompt,
         creativeAuthority,
-    };
+    });
+    if (adopted.status === 'refused') {
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: `The recipe's expectations could not be prepared for verification: ${adopted.reason}.`,
+        };
+    }
     const result: IntentResult = {
         metricGoalState: serializePromptMetricState({
             actions: grounded.actions,
-            steps: [],
-            authorities: [literalAuthority],
+            steps: adopted.steps,
+            authorities: [adopted.authority],
             metricProofs: [],
             inheritedMetricState: null,
             nativeLiteralUses: [],
@@ -748,6 +763,7 @@ const planPromptIntent = inject({ logger })(
             thread,
             profile,
             suggestion,
+            chatHandOff,
         }: ParsePromptToActionsInput): Promise<IntentResult> {
             const readonly = profile === 'readonly-answer';
             const normalized = prompt.toLowerCase().trim();
@@ -923,7 +939,14 @@ const planPromptIntent = inject({ logger })(
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
                 const workflowMetricScopes = prepareWorkflowMetricScopes({ sidechain: sidechainRoutingScope });
-                const offersBrief = !readonly && isBriefWritingRequest(thread, streamIdentity?.runId, projectRevision);
+                const offersBrief =
+                    !readonly &&
+                    isBriefWritingRequest({
+                        thread,
+                        runId: streamIdentity?.runId,
+                        projectRevision,
+                        chatHandOff: chatHandOff === true,
+                    });
                 const creativeCatalog = readonly
                     ? undefined
                     : prepareCreativeInterpretationCatalog({
@@ -1465,7 +1488,13 @@ const planPromptIntent = inject({ logger })(
                                     ? { messageDataCategories: REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES }
                                     : {}),
                             },
-                            planningContext.localMessage
+                            planningContext.localMessage,
+                            {
+                                keptCapabilityIds: planningContext.localWorkflowCapabilityIds,
+                                ...(admittedWorkflow === undefined
+                                    ? {}
+                                    : { admittedCapabilityId: admittedWorkflow.capabilityId }),
+                            }
                         );
                         // Admit the complete turn before the loop can dispatch even its first safe read.
                         if (turn.status === 'complete' && (readonly || phase !== 'planning')) {
@@ -1713,6 +1742,10 @@ const planPromptIntent = inject({ logger })(
                     creativeAuthority?.mode === 'brief' ||
                     selectedCompilations.some((compiled) => compiled.kind === 'brief')
                 ) {
+                    // Nothing is admitted or measured here: the chat plans the request again in its thread.
+                    if (chatHandOff === true) {
+                        return createChatHandOffResult(prompt, 'brief');
+                    }
                     const brief = admitBriefProposal({
                         authorityMode: creativeAuthority?.mode,
                         terminalCalls: planningOutcome.toolCalls,
@@ -1730,9 +1763,9 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
                     const selectedBrief = selectedCompilations[0];
-                    const mixIntent =
-                        selectedBrief?.kind === 'brief' ? readBriefMixIntent(selectedBrief.mixIntent) : null;
-                    if (mixIntent === null) {
+                    const briefCompilation = selectedBrief?.kind === 'brief' ? selectedBrief : null;
+                    const mixIntent = briefCompilation === null ? null : readBriefMixIntent(briefCompilation.mixIntent);
+                    if (briefCompilation === null || mixIntent === null) {
                         return {
                             actions: [],
                             rawText: prompt,
@@ -1753,10 +1786,40 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: UNREADABLE_VERIFICATION_RECORD,
                         };
                     }
+                    // A request that reads more than one way plans and measures nothing: choosing a
+                    // reading on the card plans exactly that one.
+                    const readings = buildBriefReadings(briefCompilation.mixAlternatives ?? []);
+                    if (readings.length > 0) {
+                        const briefReadings: BriefReadingOffer = {
+                            catalogId: mixIntent.catalogId,
+                            metricGoalState: briefMetricGoalState,
+                            readings,
+                            brief: briefCompilation.brief,
+                        };
+                        if (providerProposal !== null) {
+                            briefReadings.providerProposal = providerProposal;
+                        }
+                        if (applicationToolReceiptFields.terminalMeasurementSettlement !== undefined) {
+                            briefReadings.terminalMeasurementSettlement =
+                                applicationToolReceiptFields.terminalMeasurementSettlement;
+                        }
+                        return {
+                            metricGoalState: briefMetricGoalState,
+                            actions: [brief.action],
+                            rawText: prompt,
+                            requiresConfirmation: true,
+                            providerKnownTargetIds: [],
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            ...(providerProposal === null ? {} : { providerProposal }),
+                            plannedRunLines: describeBriefReadings(readings),
+                            briefReadings,
+                        };
+                    }
                     const vibeRun = await planBriefVibeRun({
                         prompt,
                         context,
-                        compilations: selectedCompilations,
+                        brief: briefCompilation.brief,
                         mixIntent,
                         runId: streamIdentity?.runId,
                         sourceRevision: projectRevision,
@@ -1836,6 +1899,10 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 const { firstBatch, batchSchedule } = scheduled;
+                // Handed off before the first slice is grounded, so no slice work runs twice.
+                if (batchSchedule !== undefined && chatHandOff === true) {
+                    return createChatHandOffResult(prompt, 'scheduled-batches');
+                }
                 const transformCommands = materializeTransformToolCalls(selectedCompilations);
                 const transformTargetIds = getCompiledTransformTargetIds(transformCommands, context);
                 const combinedProposalCalls = firstBatch.calls.map((call) => {
@@ -2275,6 +2342,15 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                     };
                 }
+                if (isNoAiBackendError(error)) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        planningOutcome: { kind: 'denied', reason: describeNoAiBackendRemedy() },
+                    };
+                }
                 const reason = error instanceof Error ? error.message : String(error);
                 logger.warn(`[AI] Provider tool planning failed: ${reason}`);
                 return {
@@ -2288,95 +2364,14 @@ const planPromptIntent = inject({ logger })(
         }
 );
 
-/**
- * Only a hosted chat request may write the production brief. WebLLM, Explain, the Prompt Bar (which
- * passes no thread) and a decision resume keep the tools and interpretation modes they had, so no
- * profile is offered a mode its tools cannot complete.
- */
-/**
- * The vibe run a brief carries: planned from the brief the user is about to confirm, with no provider
- * call, and scheduled behind it only when it fits the run. A request that plans no batch adds nothing,
- * so its brief result is exactly what it was before runs were planned.
- */
-async function planBriefVibeRun(input: {
-    prompt: string;
-    context: ProjectContext;
-    compilations: readonly RetainedCompilation[];
-    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
-    runId: string | undefined;
-    sourceRevision: string | undefined;
-    signal: AbortSignal | undefined;
-    admit: MeasurementAdmitter | undefined;
-    priorReceipts: readonly ApplicationToolReceipt[];
-    onProgress: ((progress: MeasurementUnitProgress) => void) | undefined;
-}): Promise<
-    Pick<IntentResult, 'batchSchedule' | 'plannedRunLines' | 'applicationToolReceipts' | 'initialBaselineRefusal'>
-> {
-    const compiled = input.compilations.find(
-        (compilation): compilation is Extract<RetainedCompilation, { kind: 'brief' }> => compilation.kind === 'brief'
-    );
-    if (compiled === undefined) {
-        return {};
-    }
-    if (
-        input.runId === undefined ||
-        input.sourceRevision === undefined ||
-        input.signal === undefined ||
-        input.admit === undefined
-    ) {
-        return {
-            plannedRunLines: [
-                'No batches were scheduled after the brief: initial measurements require a live run, original revision, cancellation signal and budget admission.',
-            ],
-        };
-    }
-    const run = agentRunLifecycle.get(input.runId);
-    if (run === null) {
-        return {};
-    }
-    const planned = await planVibeRunSchedule({
-        prompt: input.prompt,
-        context: input.context,
-        brief: compiled.brief,
-        mixIntent: input.mixIntent,
-        budgets: run.budgets,
-        runId: input.runId,
-        sourceRevision: input.sourceRevision,
-        signal: input.signal,
-        admit: input.admit,
-        priorReceipts: input.priorReceipts,
-        onProgress: input.onProgress,
-    });
-    if (planned.status === 'none') {
-        return {};
-    }
-    if (planned.status === 'unscheduled') {
-        return {
-            plannedRunLines: planned.lines,
-            applicationToolReceipts: [...input.priorReceipts, ...(planned.receipts ?? [])],
-            initialBaselineRefusal: planned.refusal,
-        };
-    }
+/** A request the Prompt Bar runs in the agent chat instead; it carries no batch. */
+function createChatHandOffResult(prompt: string, reason: ChatHandOffReason): IntentResult {
     return {
-        batchSchedule: planned.schedule,
-        plannedRunLines: planned.lines,
-        applicationToolReceipts: [...input.priorReceipts, ...planned.receipts],
+        actions: [],
+        rawText: prompt,
+        requiresConfirmation: false,
+        planningOutcome: { kind: 'chat-hand-off', reason },
     };
-}
-
-function isBriefWritingRequest(
-    thread: ThreadContext | null | undefined,
-    runId: string | undefined,
-    projectRevision: string | undefined
-): boolean {
-    if (thread === undefined || projectRevision === undefined || projectRevision === '') {
-        return false;
-    }
-    if (runId !== undefined && (agentRunLifecycle.get(runId)?.resume ?? null) !== null) {
-        return false;
-    }
-    const chain = getBackendChain();
-    return chain.length > 0 && chain.every((backend) => backend === 'cloud');
 }
 
 /**

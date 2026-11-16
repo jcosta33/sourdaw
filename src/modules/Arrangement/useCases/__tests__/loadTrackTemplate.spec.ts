@@ -197,7 +197,7 @@ describe('loadTrackTemplate', () => {
         expect(appliedTrack.color).toBe('#00ffaa');
     });
 
-    it('starts a template native plugin dormant while carrying its saved state chunk', () => {
+    it('gives a template native plugin its own instance id while carrying its saved state chunk', () => {
         const nativeDevice = {
             id: 'source-native',
             name: 'Reverb',
@@ -215,7 +215,15 @@ describe('loadTrackTemplate', () => {
             devices: [],
             sends: [],
         });
-        const template = createTemplate({ devices: [nativeDevice] });
+        const builtinDevice = {
+            id: 'source-builtin',
+            name: 'EQ',
+            type: 'builtin-eq',
+            bypassed: false,
+            parameterValues: {},
+            externalInstanceId: 'stale-instance',
+        };
+        const template = createTemplate({ devices: [nativeDevice, builtinDevice] });
 
         trackTemplateCache.templates = [template];
         vi.mocked(createTrack).mockReturnValue(createdTrack);
@@ -233,8 +241,11 @@ describe('loadTrackTemplate', () => {
             throw new Error('Expected applied template device');
         }
 
-        // Must NOT reuse the template's live host instance id.
-        expect(appliedDevice.externalInstanceId).toBeUndefined();
+        // Must NOT reuse the template's (legacy, stale) host instance id.
+        expect(appliedDevice.externalInstanceId).toMatch(/^plugin-abc-.+/);
+        expect(appliedDevice.externalInstanceId).not.toBe('plugin-abc-live');
+        // A device that hosts no plugin never carries an instance id.
+        expect(nextState.tracks[0]?.devices[1]?.externalInstanceId).toBeUndefined();
         // But it inherits the plugin binding and the saved state chunk (the sound).
         expect(appliedDevice.externalPluginId).toBe('plugin-abc');
         expect(appliedDevice.externalStateChunk).toBe('c2F2ZWQ=');

@@ -31,7 +31,12 @@
 //! position and correct — the sweep is what records that the implementations
 //! agree, and what would catch the next one that does not.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::ProofChamberInstance;
 
@@ -250,8 +255,19 @@ fn render(sample_rate: f32, algorithm: f32, settings: &[(&str, f32)], frames: us
         assert!(!left_ptr.is_null(), "process returned a null buffer");
         let right_ptr = instance.get_right_ptr();
         for i in 0..BLOCK {
-            left.push(unsafe { *left_ptr.add(i) });
-            right.push(unsafe { *right_ptr.add(i) });
+            // SAFETY: `left_ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let left_slot = unsafe { left_ptr.add(i) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            left.push(unsafe { *left_slot });
+            // SAFETY: `right_ptr` is the instance's `out_right`, sized and
+            // bounded exactly as `out_left` above.
+            let right_slot = unsafe { right_ptr.add(i) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer,
+            // which nothing writes before this read.
+            right.push(unsafe { *right_slot });
         }
         index += BLOCK;
     }

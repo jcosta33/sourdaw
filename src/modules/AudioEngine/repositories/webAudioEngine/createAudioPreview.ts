@@ -121,10 +121,16 @@ function playPreviewTone(
         ended: false,
         started: false,
     };
-    const finish = (stopSource: boolean) => finishTone(tone, stopSource, stop);
-    const stop = () => finish(true);
+    function finish(stopSource: boolean): void {
+        finishTone(tone, stopSource, stop);
+    }
+    function stop(): void {
+        finish(true);
+    }
+    function start(): void {
+        startTone(tone, durationSeconds);
+    }
     wireTone(tone, frequency, stop, finish);
-    const start = () => startTone(tone, durationSeconds);
     try {
         if (intent.ready === undefined) {
             start();
@@ -190,11 +196,11 @@ export function createAudioPreview({
      */
     function holdRestoration(held: Promise<void>): void {
         restoration = held;
-        const release = () => {
+        function release(): void {
             if (restoration === held) {
                 restoration = null;
             }
-        };
+        }
         void held.then(release, release);
     }
 

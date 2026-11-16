@@ -75,7 +75,11 @@ fn fill(left: &mut [f32; BLOCK], right: &mut [f32; BLOCK], offset: usize) {
     for i in 0..BLOCK {
         let frame = offset + i;
         let t = frame as f32 / SAMPLE_RATE;
-        let click = if frame % 4_096 == 0 { 0.9 } else { 0.0 };
+        let click = if frame.is_multiple_of(4_096) {
+            0.9
+        } else {
+            0.0
+        };
         left[i] = (t * 330.0 * std::f32::consts::TAU).sin() * 0.4 + click;
         right[i] = (t * 337.0 * std::f32::consts::TAU).sin() * 0.4 + click;
     }

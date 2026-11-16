@@ -1,9 +1,6 @@
-import {
-    type AutomationPointSnapshot,
-    type ClipAutomationLaneActionSnapshot,
-    type ClipAutomationLaneSnapshot,
-} from '#/utils/handlerContract';
+import { type ClipAutomationLaneActionSnapshot, type ClipAutomationLaneSnapshot } from '#/modules/Arrangement/events';
 
+import { type AutomationPointSnapshot } from '../../events/automationSnapshots';
 import { automationStore } from '../../stores/automationStore';
 
 function controlPointsMatch(

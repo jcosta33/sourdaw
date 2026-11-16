@@ -38,14 +38,17 @@ function readRequest(value: unknown): ScriptedToolRequest {
         ) {
             throw new Error('Invalid provider tool schema.');
         }
-        return {
-            type: 'function' as const,
+        const readTool: ScriptedToolRequest['tools'][number] = {
+            type: 'function',
             function: {
                 name: tool.function.name,
-                ...(typeof tool.function.description === 'string' ? { description: tool.function.description } : {}),
                 parameters: { ...tool.function.parameters, properties: tool.function.parameters.properties },
             },
         };
+        if (typeof tool.function.description === 'string') {
+            readTool.function.description = tool.function.description;
+        }
+        return readTool;
     });
     const messages = value.messages.map((message) => {
         if (
@@ -55,11 +58,14 @@ function readRequest(value: unknown): ScriptedToolRequest {
         ) {
             throw new Error('Invalid provider message.');
         }
-        return {
+        const readMessage: ScriptedToolRequest['messages'][number] = {
             role: message.role,
             content: message.content,
-            ...(typeof message.tool_call_id === 'string' ? { tool_call_id: message.tool_call_id } : {}),
         };
+        if (typeof message.tool_call_id === 'string') {
+            readMessage.tool_call_id = message.tool_call_id;
+        }
+        return readMessage;
     });
     return { model: value.model, stream: false, tools, messages };
 }
@@ -69,7 +75,7 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
     let size = 0;
     for await (const chunk of request) {
         if (!Buffer.isBuffer(chunk)) {
-            throw new Error('Expected a binary request chunk.');
+            throw new TypeError('Expected a binary request chunk.');
         }
         size += chunk.byteLength;
         if (size > 1_048_576) {
@@ -135,8 +141,9 @@ export async function startScriptedToolProvider(
             send(response, 404, { error: { message: 'Unsupported scripted provider request.' } });
             return;
         }
-        void readBody(request)
-            .then((value) => {
+        const answer = async (): Promise<void> => {
+            try {
+                const value = await readBody(request);
                 const parsed = readRequest(value);
                 if (parsed.model !== model) {
                     throw new Error('Unexpected provider model.');
@@ -166,12 +173,13 @@ export async function startScriptedToolProvider(
                     ],
                     usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
                 });
-            })
-            .catch((error: unknown) => {
+            } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : String(error);
                 failures.push(message);
                 send(response, 400, { error: { message } });
-            });
+            }
+        };
+        void answer();
     });
     const port = await new Promise<number>((resolve, reject) => {
         server.once('error', reject);

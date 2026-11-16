@@ -245,9 +245,9 @@ impl LofiProcessor {
             if codec_amount > 0.3 {
                 let skip_rate = ((codec_amount - 0.3) * 0.3) as usize;
                 state.frame_counter += 1;
-                for i in 0..work.len() {
-                    if (i + state.frame_counter) % (skip_rate.max(1) + 3) == 0 {
-                        work[i] = 0.0;
+                for (i, coeff) in work.iter_mut().enumerate() {
+                    if (i + state.frame_counter).is_multiple_of(skip_rate.max(1) + 3) {
+                        *coeff = 0.0;
                     }
                 }
             }
@@ -270,6 +270,12 @@ impl LofiProcessor {
         self.sr_counter = 0;
         self.sr_hold_l = 0.0;
         self.sr_hold_r = 0.0;
+    }
+}
+
+impl Default for LofiProcessor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

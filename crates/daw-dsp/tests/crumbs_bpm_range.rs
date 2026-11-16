@@ -13,7 +13,12 @@
 //! periodicity precisely on the excluded lag and a weaker competitor at half
 //! it.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use daw_dsp::crumbs::analysis::bpm::estimate_bpm;
 

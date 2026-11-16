@@ -153,7 +153,13 @@
 //! counted drop.
 
 use crate::commands::crumbs::{self, CrumbsState};
+use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
 use crate::commands::levain::LevainBankStore;
+use crate::commands::offline_plugins::{
+    build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
+    OfflinePluginSeams,
+};
+use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_dsp::grinder::nam::native_admission::{
     next_native_nam_request, NativeGrinderModelRequest, NativeNamLease, NativeNamPlan,
@@ -239,6 +245,11 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// material it accepts, so an unbounded payload is an unbounded allocation
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
+
+/// The sample rates an offline render accepts, in Hz. A plugin is activated at
+/// the export rate, so a rate no plugin supports is refused before any state is
+/// read or any instance is built, rather than handed to the plugin.
+pub(crate) const OFFLINE_RENDER_SAMPLE_RATES: std::ops::RangeInclusive<f64> = 8_000.0..=384_000.0;
 
 /// Create-*-strip plus set-track-output, then the per-strip send, device, and
 /// clip slots a maximal topology batch fills.
@@ -722,7 +733,7 @@ pub struct StripStatePayload {
 /// backend and ignored. A device naming an `externalInstanceId` the engine
 /// already owns is spliced onto the strip by that instance's own effect id
 /// ([`map_device`]); one naming a plugin the engine does not hold has no
-/// native body and follows the degradation law in [`no_native_body`].
+/// native body and follows the degradation law in [`native_body`].
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevicePayload {
@@ -2269,16 +2280,7 @@ impl QueueBudgets {
             queued.retain(|pending| pending.lands_at < start);
         }
         if queued.len() == AUTOMATION_QUEUE_CAPACITY {
-            return Err(format!(
-                "automation-queue-capacity — this parameter's native queue is full: \
-                 {AUTOMATION_QUEUE_CAPACITY} unlanded writes are pending, counting this \
-                 batch and every earlier accepted one; the engine would drop further \
-                 writes silently, so the batch refuses whole. These slots release when \
-                 the engine's progress echo proves earlier writes landed (playback \
-                 passing their stamps frees them for the next batch), when a replace or \
-                 hold cancels the stale writes, or when a locate behind their stamps \
-                 drops them"
-            ));
+            return Err(QueueCapacityRefusal::Automation.to_string());
         }
         queued.push(PendingStamp {
             at_frame: start,
@@ -2303,14 +2305,7 @@ impl QueueBudgets {
     ) -> Result<(), String> {
         let queued = self.device_params.entry(effect_id).or_default();
         if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
-            return Err(format!(
-                "device-param-queue-capacity — this device's pending window is full: \
-                 {DEVICE_PARAM_QUEUE_CAPACITY} changes are charged, counting this batch \
-                 and every earlier accepted one; the engine would drop the writes \
-                 silently, so the batch refuses whole instead. The window frees as the \
-                 engine's progress echo proves earlier changes landed — playback passing \
-                 their stamps releases them for the next batch"
-            ));
+            return Err(QueueCapacityRefusal::DeviceParam.to_string());
         }
         queued.push(DeviceParamStamp {
             param,
@@ -2527,7 +2522,7 @@ fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
         return Err("gain is negative".to_string());
     }
     let folded = stored as f32 * vca_multiplier;
-    if !(folded > 0.0) {
+    if folded.is_nan() || folded <= 0.0 {
         return Ok(0.0);
     }
     Ok(folded.min(fader_max_gain()))
@@ -2570,8 +2565,8 @@ fn push_automation(
     Ok(())
 }
 
-/// Why this device has no body the scheduler can build, or `None` when it has
-/// one.
+/// The built-in body the scheduler can build for this device, or why it has
+/// none.
 ///
 /// Both answers are the same fact — nothing native to install — and they are
 /// stated together so they reach the one degradation law that governs it. An
@@ -2588,20 +2583,19 @@ fn push_automation(
 /// reaches here either, for the same shape of reason: the sampler is an
 /// engine-owned instance the mapper splices rather than a body it builds, so
 /// [`map_device`] answers it ahead of this.
-fn no_native_body(device: &DevicePayload) -> Option<String> {
+fn native_body(device: &DevicePayload) -> Result<BuiltinEffectType, String> {
     if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
-        return Some(format!(
+        return Err(format!(
             "device '{}' is an externally hosted plugin with no engine-owned instance to bind",
             device.id
         ));
     }
-    if builtin_device_type(&device.device_type).is_none() {
-        return Some(format!(
+    builtin_device_type(&device.device_type).ok_or_else(|| {
+        format!(
             "device '{}' of type '{}' has no native realisation",
             device.id, device.device_type
-        ));
-    }
-    None
+        )
+    })
 }
 
 /// The built-in body a project device type names, or `None` when the scheduler
@@ -2729,11 +2723,16 @@ fn proof_parameter_writes(
                     ));
                 }
                 if parameter.route == ParameterRoute::Order {
-                    let slot = key
+                    let Some(slot) = key
                         .strip_prefix("chain_order_")
                         .and_then(|slot| slot.parse::<usize>().ok())
-                        .expect("canonical order slot");
-                    order[slot] = Some(value as u8);
+                        .and_then(|slot| order.get_mut(slot))
+                    else {
+                        return Err(format!(
+                            "device '{device_id}' refuses Proof parameter '{key}' or its value"
+                        ));
+                    };
+                    *slot = Some(value as u8);
                 }
                 resolved.push((builtin_named_parameter(key, device_id)?, value));
             }
@@ -2747,8 +2746,8 @@ fn proof_parameter_writes(
     }
     if order.iter().all(Option::is_some) {
         let mut seen = [false; 5];
-        for slot in order {
-            let module = slot.expect("complete order") as usize;
+        for &module in order.iter().flatten() {
+            let module = module as usize;
             if seen[module] {
                 return Err(format!(
                     "device '{device_id}' carries a duplicate Proof module order"
@@ -2822,12 +2821,11 @@ fn builtin_parameter(
 /// comparison the layer-routing law makes.
 ///
 /// An address the engine names itself belongs to no instrument's vocabulary,
-/// and [`BuiltinParamName::parse`] admits no empty name, so the empty string
-/// can never be read as a routing key.
-fn addressed_parameter_name(param: &DeviceParam) -> &str {
+/// so it spells no name and can never be read as a routing key.
+fn addressed_parameter_name(param: &DeviceParam) -> Option<&str> {
     match param {
         DeviceParam::BuiltinNamed(name) => name.as_str(),
-        _ => "",
+        _ => None,
     }
 }
 
@@ -2885,9 +2883,173 @@ fn immediate_device_parameters(
 /// lookup only ever needs a snapshot of the two numbers, never the instance
 /// itself.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct EngineOwnedDevice {
-    engine_plugin_id: usize,
-    chain_kind: DeviceKind,
+pub(crate) struct EngineOwnedDevice {
+    pub(crate) engine_plugin_id: usize,
+    pub(crate) chain_kind: DeviceKind,
+}
+
+/// Which graph a batch's hosted devices are bound into, which decides what a
+/// device naming an attached instance becomes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum HostedBindingLaw {
+    /// The live engine's graph: a device splices the very instance the engine
+    /// holds, wherever it sits, because that instance runs whether or not a
+    /// strip sounds.
+    #[default]
+    Engine,
+    /// An offline render's graph: a device on a sounding strip gets an
+    /// independent offline instance of the effect the live one is, built for
+    /// this render alone, under the live instance's own engine plugin id
+    /// (`commands::offline_plugins`). A device on a strip that contributes
+    /// nothing is omitted, so no instance is built for silence, and an
+    /// instrument refuses by name, because no offline instance of a hosted
+    /// instrument is built yet.
+    Offline,
+}
+
+/// The hosted plugin instances a batch's devices may bind to, under one
+/// [`HostedBindingLaw`], and — offline — the ones the batch bound.
+///
+/// The one decision for both offline seams: `render_graph_offline` builds
+/// instances for exactly what [`Self::bound`] answers after mapping, and
+/// `map_graph_batch` maps against the same selection and discards the ops, so
+/// the probe admits and refuses exactly what the render does.
+#[derive(Debug, Default)]
+pub(crate) struct HostedInstances {
+    law: HostedBindingLaw,
+    instances: HashMap<String, HostedInstance>,
+    /// Instance id → the first device that bound it. Offline only.
+    bound: BTreeMap<String, String>,
+}
+
+/// One instance a device may bind to: where it splices, and the plugin's name
+/// for the refusals that are about it.
+#[derive(Clone, Debug)]
+struct HostedInstance {
+    device: EngineOwnedDevice,
+    plugin_name: String,
+}
+
+/// One instance an offline render bound, as the render builds it, with the
+/// identity it was mapped under: the build refuses a live record that no longer
+/// carries it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BoundHostedInstance {
+    pub(crate) instance_id: String,
+    /// The first device that named it, for refusals.
+    pub(crate) device_id: String,
+    pub(crate) plugin_name: String,
+    pub(crate) engine_plugin_id: usize,
+    pub(crate) chain_kind: DeviceKind,
+}
+
+impl HostedInstances {
+    /// The live engine's own instances.
+    fn engine(instances: HashMap<String, EngineOwnedDevice>) -> Self {
+        Self {
+            law: HostedBindingLaw::Engine,
+            instances: instances
+                .into_iter()
+                .map(|(instance_id, device)| {
+                    (
+                        instance_id,
+                        HostedInstance {
+                            device,
+                            plugin_name: String::new(),
+                        },
+                    )
+                })
+                .collect(),
+            bound: BTreeMap::new(),
+        }
+    }
+
+    /// The instances attached to the engine, as an offline render rebinds
+    /// them. Read off `engine_plugins` once, before the batch maps.
+    pub(crate) fn offline(state: &AppState) -> Result<Self, String> {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
+        Ok(Self {
+            law: HostedBindingLaw::Offline,
+            instances: engine_plugins
+                .iter()
+                .map(|(instance_id, instance)| {
+                    (
+                        instance_id.clone(),
+                        HostedInstance {
+                            device: EngineOwnedDevice {
+                                engine_plugin_id: instance.engine_plugin_id,
+                                chain_kind: instance.chain_kind,
+                            },
+                            plugin_name: instance.name.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            bound: BTreeMap::new(),
+        })
+    }
+
+    /// What a device naming `instance_id` splices as, or `None` when it is
+    /// omitted from its chain.
+    ///
+    /// A miss refuses a sounding strip and omits the device from a silent one
+    /// under either law: a strip built only to keep the routing graph faithful
+    /// contributes silence, and the device's absence is what its report says.
+    fn bind(
+        &mut self,
+        device_id: &str,
+        instance_id: &str,
+        contributes_audio: bool,
+    ) -> Result<Option<EngineOwnedDevice>, String> {
+        let Some(instance) = self.instances.get(instance_id) else {
+            if contributes_audio {
+                return Err(format!(
+                    "device '{device_id}' names hosted plugin instance '{instance_id}', which is \
+                     not attached to the engine"
+                ));
+            }
+            return Ok(None);
+        };
+        match self.law {
+            HostedBindingLaw::Engine => Ok(Some(instance.device)),
+            HostedBindingLaw::Offline => {
+                if !contributes_audio {
+                    return Ok(None);
+                }
+                if instance.device.chain_kind != DeviceKind::Effect {
+                    return Err(format!(
+                        "device '{device_id}' hosts the plugin '{}', an instrument: hosted \
+                         instruments do not render offline yet",
+                        instance.plugin_name
+                    ));
+                }
+                self.bound
+                    .entry(instance_id.to_string())
+                    .or_insert_with(|| device_id.to_string());
+                Ok(Some(instance.device))
+            }
+        }
+    }
+
+    /// Every instance an offline mapping bound, in instance-id order.
+    pub(crate) fn bound(&self) -> Vec<BoundHostedInstance> {
+        self.bound
+            .iter()
+            .filter_map(|(instance_id, device_id)| {
+                let instance = self.instances.get(instance_id)?;
+                Some(BoundHostedInstance {
+                    instance_id: instance_id.clone(),
+                    device_id: device_id.clone(),
+                    plugin_name: instance.plugin_name.clone(),
+                    engine_plugin_id: instance.device.engine_plugin_id,
+                    chain_kind: instance.device.chain_kind,
+                })
+            })
+            .collect()
+    }
 }
 
 /// The project's device type for the Crumbs sampler.
@@ -2940,16 +3102,30 @@ struct MappedDevice {
     scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
+/// What mapping a device reads from the batch around it and what it extends:
+/// the stream's rate, the ids the engine already owns, the Crumbs and Levain
+/// banks the batch attaches, and the ops the batch is building.
+struct MapEnv<'a> {
+    sample_rate: f32,
+    hosted: &'a mut HostedInstances,
+    attached_crumbs: &'a mut AttachedCrumbs,
+    levain_banks: &'a mut LevainBankStore,
+    ops: &'a mut Vec<GraphCommand>,
+}
+
 fn map_device(
     device: &DevicePayload,
     registry: &mut GraphRegistry,
     contributes_audio: bool,
-    sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &mut AttachedCrumbs,
-    levain_banks: &mut LevainBankStore,
-    ops: &mut Vec<GraphCommand>,
+    env: MapEnv<'_>,
 ) -> Result<Option<MappedDevice>, String> {
+    let MapEnv {
+        sample_rate,
+        hosted,
+        attached_crumbs,
+        levain_banks,
+        ops,
+    } = env;
     if registry.devices.contains_key(&device.id) {
         return Err(format!("device id '{}' is already in a chain", device.id));
     }
@@ -2980,23 +3156,11 @@ fn map_device(
     }
 
     if let Some(instance_id) = device.external_instance_id.as_deref() {
-        let Some(&EngineOwnedDevice {
+        let Some(EngineOwnedDevice {
             engine_plugin_id: effect_id,
             chain_kind,
-        }) = engine_owned_devices.get(instance_id)
+        }) = hosted.bind(&device.id, instance_id, contributes_audio)?
         else {
-            let reason = format!(
-                "device '{}' names hosted plugin instance '{instance_id}', which is not attached \
-                 to the engine",
-                device.id
-            );
-            if contributes_audio {
-                return Err(reason);
-            }
-            // Same degradation law as any device with no body: a strip built
-            // only to keep the routing graph faithful contributes silence, so
-            // the device is omitted and its absence is what the strip report
-            // says.
             return Ok(None);
         };
         charge_chain_slot(registry, &device.id)?;
@@ -3076,19 +3240,15 @@ fn map_device(
         }));
     }
 
-    if let Some(reason) = no_native_body(device) {
-        if contributes_audio {
-            return Err(reason);
-        }
+    let builtin = match native_body(device) {
+        Ok(builtin) => builtin,
+        Err(reason) if contributes_audio => return Err(reason),
         // A strip built only to keep the routing graph faithful contributes
         // silence by construction, so a device it cannot build degrades:
         // omitted from the chain, and therefore absent from the strip report —
         // the observation the contract says a caller must read.
-        return Ok(None);
-    }
-
-    let builtin = builtin_device_type(&device.device_type)
-        .expect("no_native_body refused every type with no built-in body");
+        Err(_) => return Ok(None),
+    };
 
     // Only a plain built-in bacteria device reaches here still carrying a
     // modulation-assignment table: every other device type already refused at
@@ -3258,11 +3418,11 @@ fn map_device(
             builtin_parameter(builtin, key, &device.id)?;
             builtin_named_parameter(key, &device.id)
         })
-        .map(|patch| {
-            (
-                PluginCore::transient_shaper_with_patch(sample_rate, &patch),
+        .and_then(|patch| {
+            Ok((
+                PluginCore::transient_shaper_with_patch(sample_rate, &patch)?,
                 Vec::new(),
-            )
+            ))
         }),
         BuiltinEffectType::Scoring => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -3313,7 +3473,7 @@ fn map_device(
         },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
-                .map(|writes| (PluginCore::builtin(builtin, sample_rate), writes))
+                .and_then(|writes| Ok((PluginCore::builtin(builtin, sample_rate)?, writes)))
         }
     };
     let Some((core, param_writes)) = refuse_or_degrade(resolved, contributes_audio)? else {
@@ -3382,7 +3542,7 @@ fn map_device(
 }
 
 /// A device the mapper could not resolve, answered under the one law
-/// [`no_native_body`] already sets: refused by name where the strip
+/// [`native_body`] already sets: refused by name where the strip
 /// contributes audio, and omitted where it contributes silence by
 /// construction.
 ///
@@ -3530,22 +3690,22 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 pub(crate) fn strip_reports(
     registry: &GraphRegistry,
     strip_ids: &[String],
-) -> Vec<StripReportPayload> {
+) -> Result<Vec<StripReportPayload>, String> {
     strip_ids
         .iter()
         .map(|strip_id| {
             let entry = registry
                 .strips
                 .get(strip_id)
-                .expect("a touched strip exists in the registry");
-            StripReportPayload {
+                .ok_or_else(|| format!("strip report: unknown strip '{strip_id}'"))?;
+            Ok(StripReportPayload {
                 kind: match entry.kind {
                     StripKind::Track => "track",
                     StripKind::Bus => "bus",
                 },
                 id: strip_id.clone(),
                 device_ids: entry.device_ids.clone(),
-            }
+            })
         })
         .collect()
 }
@@ -3554,25 +3714,24 @@ pub(crate) fn strip_reports(
 /// nothing built here may be applied and the clone is discarded — including
 /// the queue ledger, which is written back onto the clone only on success.
 ///
-/// `engine_owned_devices` is instance id → engine plugin id and chain splice
-/// kind for every hosted plugin the engine owns, read once on the control
-/// thread before the batch is mapped. It is empty for every offline path:
-/// those render with no live engine, so no instance exists for a device to
-/// bind to and an external device on a sounding strip refuses there exactly
-/// as it did before binding existed.
+/// `hosted` is the hosted plugin instances a device may bind to, read once on
+/// the control thread before the batch is mapped, under the law of the graph
+/// the batch is for ([`HostedInstances`]): the live engine's own instances, or
+/// the attached effects an offline render rebuilds. It comes back carrying the
+/// instances an offline mapping bound.
 ///
 /// `attached_crumbs` is the Crumbs instances the engine holds, and it comes
 /// back carrying the ones this batch named ([`AttachedCrumbs`]). Kept apart
-/// from `engine_owned_devices` rather than merged into it: the two are
+/// from `hosted` rather than merged into it: the two are
 /// different id spaces — a hosted plugin's instance id against a Crumbs
 /// device's own id — and a miss in each carries its own reason. It is empty for
-/// every offline path, for the same reason the hosted lookup is.
+/// every offline path: an offline render builds no Crumbs instance.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    hosted: &mut HostedInstances,
     attached_crumbs: &mut AttachedCrumbs,
     levain_banks: &mut LevainBankStore,
 ) -> Result<MappedBatch, String> {
@@ -3627,12 +3786,14 @@ fn map_batch(
             registry,
             samples,
             batch.timeline_lease.as_deref(),
-            sample_rate,
-            engine_owned_devices,
-            &mut *attached_crumbs,
-            levain_banks,
+            MapEnv {
+                sample_rate,
+                hosted: &mut *hosted,
+                attached_crumbs: &mut *attached_crumbs,
+                levain_banks: &mut *levain_banks,
+                ops: &mut ops,
+            },
             &mut budgets,
-            &mut ops,
             &mut touched,
         ) {
             refusals.push(format!("commands[{index}]: {reason}"));
@@ -3655,7 +3816,7 @@ fn map_batch(
     // The reports are a final pass over the post-batch registry: what each
     // touched strip's chain really holds after everything applied, never an
     // echo of any one command's request.
-    let reports = strip_reports(registry, &touched);
+    let reports = strip_reports(registry, &touched)?;
     Ok(MappedBatch { ops, reports })
 }
 
@@ -3694,14 +3855,17 @@ fn map_command(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     timeline_lease: Option<&str>,
-    sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &mut AttachedCrumbs,
-    levain_banks: &mut LevainBankStore,
+    env: MapEnv<'_>,
     budgets: &mut QueueBudgets,
-    ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
 ) -> Result<(), String> {
+    let MapEnv {
+        sample_rate,
+        hosted,
+        attached_crumbs,
+        levain_banks,
+        ops,
+    } = env;
     match command {
         GraphCommandPayload::CreateTrackStrip {
             track_id,
@@ -3758,11 +3922,13 @@ fn map_command(
                     device,
                     registry,
                     *contributes_audio,
-                    sample_rate,
-                    engine_owned_devices,
-                    &mut *attached_crumbs,
-                    levain_banks,
-                    ops,
+                    MapEnv {
+                        sample_rate,
+                        hosted: &mut *hosted,
+                        attached_crumbs: &mut *attached_crumbs,
+                        levain_banks: &mut *levain_banks,
+                        ops: &mut *ops,
+                    },
                 )?
                 else {
                     continue;
@@ -3867,11 +4033,13 @@ fn map_command(
                     device,
                     registry,
                     *contributes_audio,
-                    sample_rate,
-                    engine_owned_devices,
-                    &mut *attached_crumbs,
-                    levain_banks,
-                    ops,
+                    MapEnv {
+                        sample_rate,
+                        hosted: &mut *hosted,
+                        attached_crumbs: &mut *attached_crumbs,
+                        levain_banks: &mut *levain_banks,
+                        ops: &mut *ops,
+                    },
                 )?
                 else {
                     continue;
@@ -3941,7 +4109,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("set-track-output: unknown strip '{track_id}'"))?
                 .output = output;
             Ok(())
         }
@@ -4013,7 +4181,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("add-send: unknown strip '{track_id}'"))?
                 .send_bus_ids
                 .push(bus_id.clone());
             Ok(())
@@ -4046,7 +4214,7 @@ fn map_command(
             let source = registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above");
+                .ok_or_else(|| format!("remove-send: unknown strip '{track_id}'"))?;
             source.send_bus_ids.retain(|id| id != bus_id);
             Ok(())
         }
@@ -4075,11 +4243,13 @@ fn map_command(
                 device,
                 registry,
                 strip.contributes_audio,
-                sample_rate,
-                engine_owned_devices,
-                &mut *attached_crumbs,
-                levain_banks,
-                ops,
+                MapEnv {
+                    sample_rate,
+                    hosted: &mut *hosted,
+                    attached_crumbs: &mut *attached_crumbs,
+                    levain_banks: &mut *levain_banks,
+                    ops: &mut *ops,
+                },
             )?
             else {
                 return Ok(());
@@ -4106,7 +4276,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("insert-device: unknown strip '{track_id}'"))?
                 .device_ids
                 .insert(insert_at, device.id.clone());
             Ok(())
@@ -4155,7 +4325,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("remove-device: unknown strip '{track_id}'"))?
                 .device_ids
                 .retain(|id| id != device_id);
             Ok(())
@@ -4311,12 +4481,14 @@ fn map_command(
                 registry,
                 samples,
                 timeline_lease,
-                sample_rate,
-                engine_owned_devices,
-                attached_crumbs,
-                levain_banks,
+                MapEnv {
+                    sample_rate,
+                    hosted: &mut *hosted,
+                    attached_crumbs: &mut *attached_crumbs,
+                    levain_banks: &mut *levain_banks,
+                    ops: &mut *ops,
+                },
                 budgets,
-                ops,
                 touched,
             )?;
             let request = next_native_nam_request()?;
@@ -4714,79 +4886,75 @@ fn map_parameter_write(
         }
     };
 
-    match target {
-        StripParameterTargetPayload::TrackMuteGate { track_id } => {
-            let strip = strip_for(track_id)?;
-            let closed = gate_step("track-mute-gate")?;
-            match strip.kind {
-                StripKind::Track => ops.push(GraphCommand::SetTrackMute(strip.native_id, closed)),
-                StripKind::Bus => ops.push(GraphCommand::SetBusMute(strip.native_id, closed)),
-            }
-            return Ok(());
-        }
-        StripParameterTargetPayload::TrackSoloGate { track_id } => {
-            let strip = strip_for(track_id)?;
-            let closed = gate_step("track-solo-gate")?;
-            match strip.kind {
-                StripKind::Track => {
-                    ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed))
+    type ValueLaw = fn(f64, &StripEntry) -> Result<f32, String>;
+    let (strip, automation_target, value_law): (&StripEntry, AutomationTarget, ValueLaw) =
+        match target {
+            StripParameterTargetPayload::TrackMuteGate { track_id } => {
+                let strip = strip_for(track_id)?;
+                let closed = gate_step("track-mute-gate")?;
+                match strip.kind {
+                    StripKind::Track => {
+                        ops.push(GraphCommand::SetTrackMute(strip.native_id, closed))
+                    }
+                    StripKind::Bus => ops.push(GraphCommand::SetBusMute(strip.native_id, closed)),
                 }
-                StripKind::Bus => ops.push(GraphCommand::SetBusSoloGate(strip.native_id, closed)),
+                return Ok(());
             }
-            return Ok(());
-        }
-        _ => {}
-    }
-
-    let (strip, automation_target, value_law): (
-        &StripEntry,
-        AutomationTarget,
-        fn(f64, &StripEntry) -> Result<f32, String>,
-    ) = match target {
-        StripParameterTargetPayload::TrackFader { track_id } => {
-            let strip = strip_for(track_id)?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
-                StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
-            };
-            (strip, target, |value, strip| {
-                fader_gain(value, strip.vca_multiplier)
-            })
-        }
-        StripParameterTargetPayload::TrackPan { track_id } => {
-            let strip = strip_for(track_id)?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
-                StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
-            };
-            (strip, target, |value, _| pan_position(value))
-        }
-        StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
-            let strip = strip_for(track_id)?;
-            if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
-                return Err(format!(
-                    "write-parameter: '{track_id}' has no send to '{bus_id}'"
-                ));
+            StripParameterTargetPayload::TrackSoloGate { track_id } => {
+                let strip = strip_for(track_id)?;
+                let closed = gate_step("track-solo-gate")?;
+                match strip.kind {
+                    StripKind::Track => {
+                        ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed))
+                    }
+                    StripKind::Bus => {
+                        ops.push(GraphCommand::SetBusSoloGate(strip.native_id, closed))
+                    }
+                }
+                return Ok(());
             }
-            let destination = registry
-                .strips
-                .get(bus_id)
-                .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackSendLevel {
-                    track_id: strip.native_id,
-                    bus_id: destination.native_id,
-                },
-                StripKind::Bus => AutomationTarget::BusSendLevel {
-                    source_bus_id: strip.native_id,
-                    bus_id: destination.native_id,
-                },
-            };
-            (strip, target, |value, _| send_level(value))
-        }
-        StripParameterTargetPayload::TrackMuteGate { .. }
-        | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
-    };
+            StripParameterTargetPayload::TrackFader { track_id } => {
+                let strip = strip_for(track_id)?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
+                    StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
+                };
+                (strip, target, |value, strip| {
+                    fader_gain(value, strip.vca_multiplier)
+                })
+            }
+            StripParameterTargetPayload::TrackPan { track_id } => {
+                let strip = strip_for(track_id)?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
+                    StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
+                };
+                (strip, target, |value, _| pan_position(value))
+            }
+            StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
+                let strip = strip_for(track_id)?;
+                if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
+                    return Err(format!(
+                        "write-parameter: '{track_id}' has no send to '{bus_id}'"
+                    ));
+                }
+                let destination = registry
+                    .strips
+                    .get(bus_id)
+                    .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackSendLevel {
+                        track_id: strip.native_id,
+                        bus_id: destination.native_id,
+                    },
+                    StripKind::Bus => AutomationTarget::BusSendLevel {
+                        source_bus_id: strip.native_id,
+                        bus_id: destination.native_id,
+                    },
+                };
+                (strip, target, |value, _| send_level(value))
+            }
+        };
 
     let automation_write = match write {
         ParameterWritePayload::RampTo {
@@ -4972,7 +5140,7 @@ fn map_schedule_clip(
     registry
         .strips
         .get_mut(&playback.track_id)
-        .expect("strip fetched above")
+        .ok_or_else(|| format!("schedule-clip: unknown strip '{}'", playback.track_id))?
         .clip_count += 1;
     Ok(())
 }
@@ -4994,7 +5162,7 @@ fn map_schedule_clip(
 /// the same one the renderer holds, applied per channel.
 pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
     let bytes_per_frame = 4 * channels;
-    if pcm_len % bytes_per_frame != 0 {
+    if !pcm_len.is_multiple_of(bytes_per_frame) {
         return Err(format!(
             "PCM byte length {pcm_len} is not a whole number of {channels}-channel f32 frames"
         ));
@@ -5292,10 +5460,9 @@ pub async fn apply_graph_commands(
                     Some(kind) => format!(" after reporting {kind:?}"),
                     None => String::new(),
                 };
-                return result_json(&GraphApplyResultPayload::rejected(format!(
-                    "engine-not-rendering: the output stream stopped calling back{fault}; the \
-                     engine renders nothing until the stream resumes or it is restarted"
-                )));
+                return result_json(&GraphApplyResultPayload::rejected(
+                    EngineNotRendering::StreamStalled { fault }.to_string(),
+                ));
             }
         }
         // `None` here falls through to the later `engine_guard` below, whose
@@ -5347,21 +5514,23 @@ pub async fn apply_graph_commands(
     // lookup and binds on the *next* batch instead. That one-batch lag is the
     // cost of never reporting an engine-owned plugin on a rejected result, and
     // the producer resends its topology on every play.
-    let engine_owned_devices: HashMap<String, EngineOwnedDevice> = state
-        .engine_plugins
-        .lock()
-        .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
-        .iter()
-        .map(|(instance_id, instance)| {
-            (
-                instance_id.clone(),
-                EngineOwnedDevice {
-                    engine_plugin_id: instance.engine_plugin_id,
-                    chain_kind: instance.chain_kind,
-                },
-            )
-        })
-        .collect();
+    let mut hosted = HostedInstances::engine(
+        state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
+            .iter()
+            .map(|(instance_id, instance)| {
+                (
+                    instance_id.clone(),
+                    EngineOwnedDevice {
+                        engine_plugin_id: instance.engine_plugin_id,
+                        chain_kind: instance.chain_kind,
+                    },
+                )
+            })
+            .collect(),
+    );
 
     // The Crumbs instances a device may be spliced onto, read here for the
     // same reason. Unlike hosted plugins, the attach that can add to this
@@ -5396,7 +5565,7 @@ pub async fn apply_graph_commands(
     // Lock order, here and in `map_graph_batch` and `render_graph_offline`:
     // timeline samples first, then levain banks. All three sites take both, and
     // a site that took them the other way round would deadlock against these.
-    let mut samples = state
+    let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
@@ -5421,7 +5590,7 @@ pub async fn apply_graph_commands(
         &mut working,
         &samples,
         engine.sample_rate(),
-        &engine_owned_devices,
+        &mut hosted,
         &mut attached_crumbs,
         &mut levain_banks,
     ) {
@@ -5659,23 +5828,6 @@ pub async fn apply_graph_commands(
     result_json(&applied)
 }
 
-/// The wire's fault marker for a `prior` that no longer replays: the stable
-/// prefix of [`map_graph_batch`]'s transport error, and the only thing that
-/// distinguishes a broken seam invariant from an ordinary batch refusal once
-/// both have crossed as an error. `createNativeOfflineGraphBackend.ts` matches
-/// this exact text to rethrow rather than answer `rejected`, so it is part of
-/// the seam contract — never reword one side alone.
-const PRIOR_FAULT_PREFIX: &str = "previously applied commands no longer map";
-
-/// The wire's fault marker for a mapping session this process no longer holds:
-/// the stable prefix of the transport error [`map_graph_batch`] raises when a
-/// caller asks to resume a session that is absent or held at a different
-/// revision. `createNativeOfflineGraphBackend.ts` matches this exact text to
-/// retry once with its full committed history (which re-establishes the
-/// session), so it is a seam contract like [`PRIOR_FAULT_PREFIX`] — never
-/// reword one side alone.
-const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
-
 /// How many offline mapping sessions this process keeps alive at once.
 ///
 /// A session is one backend's probe registry kept across applies so `prior`
@@ -5683,7 +5835,7 @@ const SESSION_FAULT_PREFIX: &str = "mapping session unknown";
 /// stateless path pays). Renders are serialized behind the app's render lock,
 /// so one is the working set; the headroom covers a disposed backend whose
 /// session has not been evicted yet. Eviction is least-recently-used and is
-/// never a fault by itself: an evicted caller gets [`SESSION_FAULT_PREFIX`]
+/// never a fault by itself: an evicted caller gets [`MappingFault::SessionUnknown`]
 /// and re-establishes with its full prior, landing exactly where the
 /// stateless path always was.
 const MAX_MAPPING_SESSIONS: usize = 4;
@@ -5771,6 +5923,7 @@ fn replay_prior_commands(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
+    hosted: &mut HostedInstances,
     levain_banks: &mut LevainBankStore,
 ) -> Result<(), String> {
     while !commands.is_empty() {
@@ -5791,11 +5944,11 @@ fn replay_prior_commands(
             registry,
             samples,
             sample_rate,
-            &HashMap::new(),
+            &mut *hosted,
             &mut AttachedCrumbs::default(),
             levain_banks,
         )
-        .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        .map_err(|reason| MappingFault::PriorNoLongerMaps { reason }.to_string())?;
         commands = rest;
     }
     Ok(())
@@ -5822,7 +5975,7 @@ fn replay_prior_commands(
 /// accepted once, so a registry that no longer takes them is a broken seam
 /// invariant, and reporting it as a refusal of the *incoming* batch would
 /// blame the wrong commands. The wire has one error channel for both, so
-/// [`PRIOR_FAULT_PREFIX`] is what tells them apart on the far side: it is a
+/// [`MappingFault::PriorNoLongerMaps`] is what tells them apart on the far side: it is a
 /// seam contract, not a message, and the TS consumer
 /// (`createNativeOfflineGraphBackend.ts`) matches on it to rethrow instead of
 /// shaping a batch refusal. Change it on both sides or not at all.
@@ -5836,7 +5989,7 @@ fn replay_prior_commands(
 /// session is not held at the stated revision, the call either
 /// *re-establishes* it — `revision == prior.len()`, so the prior *is* the
 /// history and replays exactly as the stateless path — or faults with
-/// [`SESSION_FAULT_PREFIX`], which tells the caller to resend its full prior.
+/// [`MappingFault::SessionUnknown`], which tells the caller to resend its full prior.
 /// No `session` is the stateless behaviour, unchanged.
 pub async fn map_graph_batch(
     prior: Value,
@@ -5885,16 +6038,22 @@ pub async fn map_graph_batch(
                 // Not held, and the prior cannot re-establish it: replaying
                 // `prior` would build a different history than the one
                 // `revision` names. The caller resends its full prior.
-                return Err(format!(
-                    "{SESSION_FAULT_PREFIX}: '{}' is not held at revision {} — resend the full \
-                     prior to re-establish it",
-                    key.session_id, key.revision
-                ));
+                return Err(MappingFault::SessionUnknown {
+                    session_id: key.session_id.clone(),
+                    revision: key.revision,
+                }
+                .to_string());
             }
             resumed
         }
         None => None,
     };
+
+    // The same selection the render binds against, so the probe admits and
+    // refuses exactly the hosted devices the render will. Its engine plugin
+    // ids reach no engine: the ops this maps are discarded. Read before the
+    // sample locks and released at once, the order the render takes them in.
+    let mut hosted = HostedInstances::offline(state)?;
 
     // Lock order, here and in `apply_graph_commands` and
     // `render_graph_offline`: timeline samples first, then levain banks. All
@@ -5920,6 +6079,7 @@ pub async fn map_graph_batch(
                     &mut registry,
                     &samples,
                     sample_rate as f32,
+                    &mut hosted,
                     &mut levain_banks,
                 )?;
             }
@@ -5935,14 +6095,12 @@ pub async fn map_graph_batch(
     let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
-    // No live engine on this seam, so no instance can be bound: the same
-    // empty lookup `render_graph_offline` maps against.
     let mapped = map_batch(
         &batch,
         &mut registry,
         &samples,
         sample_rate as f32,
-        &HashMap::new(),
+        &mut hosted,
         &mut AttachedCrumbs::default(),
         &mut levain_banks,
     );
@@ -5978,29 +6136,34 @@ pub async fn map_graph_batch(
 }
 
 /// Map one self-contained batch for an offline render: fresh registry, no
-/// live engine.
+/// live engine, and `hosted` carrying back the instances it bound.
 ///
 /// The caller holds the sample-pool and bank-store locks only across this call
 /// — mapping clones the material each clip plays into its command and builds
 /// each sampler's instance here, so the render itself runs without either lock.
+///
+/// A bound hosted device keeps the live instance's engine plugin id, and the
+/// render registers its offline instance under that id. Those ids come from
+/// the engine's plugin allocator, which starts far below the graph's own
+/// (`FIRST_GRAPH_EFFECT_ID`), so they cannot collide with the built-ins this
+/// fresh registry allocates — the same disjointness the live table relies on.
 fn map_offline_batch(
     batch: &GraphBatchPayload,
     samples: &TimelineSamplePool,
     levain_banks: &mut LevainBankStore,
     sample_rate: f32,
+    hosted: &mut HostedInstances,
 ) -> Result<Vec<GraphCommand>, String> {
     if batch.schema_version == 2 || !native_grinder_inputs(batch)?.is_empty() {
         return Err("Imported native NAM is live-only; offline NAM remains gated".into());
     }
     let mut registry = GraphRegistry::default();
-    // An offline render has no engine and therefore no hosted plugin instances:
-    // an external device on a sounding strip refuses here, as it always has.
     Ok(map_batch(
         batch,
         &mut registry,
         samples,
         sample_rate,
-        &HashMap::new(),
+        hosted,
         &mut AttachedCrumbs::default(),
         levain_banks,
     )?
@@ -6008,33 +6171,65 @@ fn map_offline_batch(
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
-/// the engine did not take whole.
+/// the engine did not take whole, one a hosted instance missed a block of, or
+/// one cancelled before its last block.
+///
+/// The renderer is built and dropped inside this call, so it — and with it the
+/// scheduler's clone of every hosted slot — is gone before the caller's
+/// `plugins` releases the instances, on every path out, an unwinding panic
+/// included.
 fn render_offline_ops(
     ops: Vec<GraphCommand>,
     frames: usize,
     sample_rate: f32,
+    plugins: Option<&OfflinePluginInstances<'_>>,
+    render: &InFlightRender<'_>,
 ) -> Result<(Vec<f32>, Vec<f32>), String> {
+    let plugin_commands = plugins.map_or(0, OfflinePluginInstances::command_count);
     // A render is playback by construction: the transport rolls from frame 0
     // unless the batch itself says otherwise (its own set-transport commands
     // are mapped after this preamble and override it).
-    let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1);
+    let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1 + plugin_commands);
     renderer.push(GraphCommand::SetTransportPlayback {
         is_playing: true,
         song_pos_seconds: 0.0,
     })?;
+    // Ahead of the batch: its splices name these ids, and the graph refuses an
+    // id its table does not hold yet.
+    if let Some(plugins) = plugins {
+        plugins.register(&mut renderer)?;
+    }
     for op in ops {
         renderer.push(op)?;
     }
 
-    let rendered = renderer.render(frames);
+    // This thread processes every block, so it is every instance's audio
+    // thread, and the one that leaves their processing state — taken before
+    // the first block so no way out of the loop can skip it.
+    let leaving_processing = leaves_processing_on_drop(plugins);
+    let rendered = renderer.render_controlled(frames, render.control());
+    drop(leaving_processing);
+    let Ok(rendered) = rendered else {
+        return Err(render.cancelled());
+    };
+    if let Some(plugins) = plugins {
+        plugins.ensure_every_block_processed()?;
+    }
 
     // Belt and braces under refuse-don't-drop: `map_batch` refuses anything
     // the graph's fixed capacities could not take, so these counters stay
     // zero — but a nonzero counter means the engine dropped part of the
     // admitted batch, and success here would launder that drop into a clean
-    // render.
+    // render. `pdc_max_arrival_frames` is the one field that is no refusal:
+    // it states the deepest latency the graph compensates, which a render
+    // carrying a latent hosted effect has. A clamped route still refuses,
+    // because that print would sound misaligned.
     let diagnostics = renderer.timeline_diagnostics();
-    if diagnostics != TimelineRtDiagnosticsSnapshot::default() {
+    let refusals = TimelineRtDiagnosticsSnapshot {
+        pdc_max_arrival_frames: 0,
+        ..diagnostics
+    };
+    if refusals != TimelineRtDiagnosticsSnapshot::default() {
         return Err(format!(
             "offline-render-dropped-commands: the engine refused part of the batch after \
              admission ({diagnostics:?}); the output is not the batch and is discarded"
@@ -6055,8 +6250,20 @@ fn render_offline_batch(
     frames: usize,
     sample_rate: f32,
 ) -> Result<Vec<f32>, String> {
-    let ops = map_offline_batch(batch, samples, levain_banks, sample_rate)?;
-    let (left, right) = render_offline_ops(ops, frames, sample_rate)?;
+    let ops = map_offline_batch(
+        batch,
+        samples,
+        levain_banks,
+        sample_rate,
+        &mut HostedInstances::default(),
+    )?;
+    let (left, right) = render_offline_ops(
+        ops,
+        frames,
+        sample_rate,
+        None,
+        &InFlightRender::uncancellable(),
+    )?;
     let mut interleaved = Vec::with_capacity(frames * 2);
     for index in 0..frames {
         interleaved.push(left[index]);
@@ -6072,15 +6279,53 @@ fn render_offline_batch(
 /// little-endian bytes; a refused batch is an error carrying the same
 /// per-command reasons `apply_graph_commands` reports, and nothing is
 /// rendered from it.
+///
+/// Every engine-attached hosted effect a sounding strip names renders through
+/// an offline instance of its own (`commands::offline_plugins`), built on
+/// `ui` and released there however the render ends.
+///
+/// `render_id` names the render so `cancel_graph_offline` can stop it between
+/// blocks; a cancelled render answers an error starting
+/// `offline-render-cancelled`. It runs on the calling worker, never on `ui`,
+/// which is only ever asked to build and tear down instances.
 pub async fn render_graph_offline(
     batch: Value,
     frames: u32,
     sample_rate: f64,
+    render_id: Option<String>,
+    ui: &dyn UiThread,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
+    render_graph_offline_with(
+        batch,
+        frames,
+        sample_rate,
+        render_id,
+        ui,
+        state,
+        &OfflinePluginSeams::production(),
+    )
+    .await
+}
+
+/// [`render_graph_offline`] over chosen plugin seams.
+pub(crate) async fn render_graph_offline_with(
+    batch: Value,
+    frames: u32,
+    sample_rate: f64,
+    render_id: Option<String>,
+    ui: &dyn UiThread,
+    state: &AppState,
+    seams: &OfflinePluginSeams,
+) -> Result<Vec<u8>, String> {
     let batch = parse_batch(batch)?;
-    if !(sample_rate.is_finite() && sample_rate > 0.0) {
-        return Err("Sample rate must be a positive, finite number".to_string());
+    if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
+        return Err(format!(
+            "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
+             {} to {} Hz",
+            OFFLINE_RENDER_SAMPLE_RATES.start(),
+            OFFLINE_RENDER_SAMPLE_RATES.end()
+        ));
     }
     let frames = frames as usize;
     if frames == 0 {
@@ -6091,6 +6336,9 @@ pub async fn render_graph_offline(
             "Frame count {frames} exceeds the offline render ceiling of {MAX_OFFLINE_RENDER_FRAMES}"
         ));
     }
+
+    let render = InFlightRender::begin(state, render_id)?;
+    let mut hosted = HostedInstances::offline(state)?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
     // into its clip command there and every sampler's instance is built there,
@@ -6109,9 +6357,26 @@ pub async fn render_graph_offline(
             .levain_banks
             .lock()
             .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
-        map_offline_batch(&batch, &samples, &mut levain_banks, sample_rate as f32)?
+        map_offline_batch(
+            &batch,
+            &samples,
+            &mut levain_banks,
+            sample_rate as f32,
+            &mut hosted,
+        )?
     };
-    let (left, right) = render_offline_ops(ops, frames, sample_rate as f32)?;
+    // A render cancelled before it starts builds no plugin instance.
+    if render.control().is_cancelled() {
+        return Err(render.cancelled());
+    }
+    #[cfg(test)]
+    if let Some(after_mapping) = &seams.after_mapping {
+        after_mapping(state);
+    }
+    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams).await?;
+    let (left, right) =
+        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
+    drop(plugins);
 
     // Interleave straight into the byte payload; the render's planar pair is
     // the only f32 copy of the output this function holds.
@@ -6128,6 +6393,7 @@ mod tests {
     use super::*;
     use crate::block_on_test;
     use crate::commands::plugins::serialize_against_exclusive_gate_holds;
+    use crate::host::plugin_window::NoWindowHost;
     use serde_json::json;
 
     #[test]
@@ -6253,7 +6519,7 @@ mod tests {
         for change in ["retired-incoming", "released-incoming", "retired-unrelated"] {
             let state = Arc::new(AppState::default());
             let (engine, mut commands_rx, _adoption) =
-                daw_engine::engine_handle_for_command_capture(128);
+                daw_engine::engine_handle_for_command_capture(128).unwrap();
             let engine_id = engine.instance_id();
             *state.engine.lock().unwrap() = Some(engine);
             let standing =
@@ -6495,7 +6761,7 @@ mod tests {
             registry,
             samples,
             sample_rate,
-            engine_owned_devices,
+            &mut HostedInstances::engine(engine_owned_devices.clone()),
             &mut AttachedCrumbs::default(),
             &mut LevainBankStore::default(),
         )
@@ -6516,7 +6782,7 @@ mod tests {
             registry,
             samples,
             sample_rate,
-            &HashMap::new(),
+            &mut HostedInstances::default(),
             &mut AttachedCrumbs::new(attached_crumbs.clone()),
             &mut LevainBankStore::default(),
         )
@@ -7333,7 +7599,7 @@ mod tests {
         assert_eq!(scheduled, 8);
         // The pool's own handle plus one per scheduled clip. A copy would leave
         // the pool holding its material alone.
-        let material = &samples["source-a"];
+        let material = samples.get("source-a").unwrap();
         assert_eq!(Arc::strong_count(&material.left), 9);
         assert_eq!(Arc::strong_count(&material.right), 9);
     }
@@ -8166,7 +8432,7 @@ mod tests {
         )
         .unwrap();
         let mut overflow = vec![hold.clone()];
-        overflow.extend(std::iter::repeat(step.clone()).take(33));
+        overflow.extend(std::iter::repeat_n(step.clone(), 33));
         let before = registry.batches_sent;
         assert!(admit_and_send(
             &mut registry,
@@ -9074,7 +9340,7 @@ mod tests {
     fn an_applied_batch_reports_the_fence_it_published() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         // Filling the slot first is what makes this a capture engine: the
         // lazy bootstrap in `apply_graph_commands` starts one only into an
         // empty slot, so it reuses this handle rather than opening a device.
@@ -9140,7 +9406,7 @@ mod tests {
         const FRAMES: usize = 4096;
         let state = AppState::default();
         let (engine, mut command_rx, _adoption) =
-            daw_engine::engine_handle_for_command_capture(128);
+            daw_engine::engine_handle_for_command_capture(128).unwrap();
         let engine_id = engine.instance_id();
         *state.engine.lock().unwrap() = Some(engine);
         let material: Vec<f32> = (0..FRAMES)
@@ -9294,6 +9560,8 @@ mod tests {
             json!({"schemaVersion":2,"commands":commands}),
             64,
             48_000.0,
+            None,
+            &NoWindowHost,
             &state
         ))
         .is_err());
@@ -9315,7 +9583,7 @@ mod tests {
     fn a_batch_for_a_stalled_engine_is_refused_before_anything_is_pushed() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         engine.mark_render_stalled(Some(
             daw_engine::engine_events::StreamErrorKind::DeviceChanged,
         ));
@@ -9399,7 +9667,7 @@ mod tests {
         // as the lazy bootstrap's own tests do: the batch reuses this handle
         // rather than opening a device.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9449,7 +9717,7 @@ mod tests {
         // as the lazy bootstrap's own tests do: the batch reuses this handle
         // rather than opening a device.
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9539,6 +9807,7 @@ mod tests {
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
                     parameter_events,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
         }
@@ -9557,7 +9826,7 @@ mod tests {
         park_dormant_plugin(&state, "attached-on-first-play");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9611,7 +9880,7 @@ mod tests {
         park_dormant_plugin(&state, "bound-on-the-second-batch");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // A silent strip, so the unbound first batch degrades the device rather
@@ -9676,7 +9945,7 @@ mod tests {
         park_dormant_plugin(&state, "refused-on-first-play");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9718,7 +9987,7 @@ mod tests {
         park_dormant_plugin(&state, "attached-after-a-refused-batch");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // Refused by the mapping, with the engine already running: the batch
@@ -9794,7 +10063,7 @@ mod tests {
         // Smaller than the batch below, so that batch is the one that sizes the
         // ring it then fills.
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let commands: Vec<Value> = (0..64)
@@ -9842,7 +10111,7 @@ mod tests {
     fn a_batch_with_nothing_parked_publishes_onto_the_ring_it_was_given() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let commands: Vec<Value> = (0..8)
@@ -9897,7 +10166,7 @@ mod tests {
         park_unactivated_dormant_plugin(&state, "reparked-on-first-play");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -10065,7 +10334,10 @@ mod tests {
         .expect_err("a prior that no longer maps is a transport fault");
         // Leading, not merely present: the TS consumer keys its rethrow off
         // the prefix, so the marker has to open the message.
-        assert!(fault.starts_with(PRIOR_FAULT_PREFIX), "got: {fault}");
+        assert!(
+            fault.starts_with("previously applied commands no longer map"),
+            "got: {fault}"
+        );
     }
 
     fn session_key(session_id: &str, revision: u64) -> Option<Value> {
@@ -10150,7 +10422,7 @@ mod tests {
             &state,
         ))
         .expect_err("a revision the session never reached is not resumable");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let resumed = block_on_test(map_graph_batch(
             json!([]),
@@ -10179,7 +10451,7 @@ mod tests {
             &state,
         ))
         .expect_err("an unheld session at a nonzero revision faults");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let reestablished = block_on_test(map_graph_batch(
             json!([track_strip("t1")]),
@@ -10228,7 +10500,7 @@ mod tests {
             &state,
         ))
         .expect_err("the least-recently-used session was evicted");
-        assert!(fault.starts_with(SESSION_FAULT_PREFIX), "got: {fault}");
+        assert!(fault.starts_with("mapping session unknown"), "got: {fault}");
 
         let survivor = block_on_test(map_graph_batch(
             json!([]),
@@ -13915,7 +14187,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -13978,7 +14250,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // Refused by the mapping, which runs after the attach: the batch names
@@ -14027,7 +14299,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let attaching = block_on_test(apply_graph_commands(
@@ -14087,7 +14359,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let attaching = block_on_test(apply_graph_commands(
@@ -14151,22 +14423,153 @@ mod tests {
         );
     }
 
-    /// An offline render has no engine, so it has no instances: the binding
-    /// path cannot open there, and an external device on a sounding strip
-    /// refuses exactly as it did before binding existed.
-    #[test]
-    fn an_offline_render_still_refuses_a_hosted_plugin_on_a_sounding_strip() {
-        let Err(refusal) = map_offline_batch(
-            &batch(hosted_plugin_strip(true, false)),
+    /// A state whose engine holds one hosted instance, as a load records it.
+    fn state_attaching(instance_id: &str, engine_plugin_id: usize, kind: DeviceKind) -> AppState {
+        let state = AppState::default();
+        let runtime: daw_plugin_host::HostedRuntime =
+            daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                "Pro-Q Fixture",
+                vec![],
+                false,
+            )
+            .into();
+        state.engine_plugins.lock().unwrap().insert(
+            instance_id.to_string(),
+            crate::state::EnginePluginInstanceData {
+                engine_plugin_id,
+                runtime: Arc::new(crate::host::native_bridge::SharedHostedPlugin::new(runtime)),
+                name: "Pro-Q Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                chain_kind: kind,
+                parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
+            },
+        );
+        state
+    }
+
+    fn map_offline_against(
+        batch: &GraphBatchPayload,
+        state: &AppState,
+    ) -> Result<(Vec<GraphCommand>, Vec<BoundHostedInstance>), String> {
+        let mut hosted = HostedInstances::offline(state)?;
+        let ops = map_offline_batch(
+            batch,
             &sample_pool(),
             &mut LevainBankStore::default(),
             48_000.0,
+            &mut hosted,
+        )?;
+        Ok((ops, hosted.bound()))
+    }
+
+    /// The offline law's refusal side: an instance the engine does not hold
+    /// still refuses a sounding strip, and an attached instrument refuses by
+    /// device and plugin name, because no offline instance of one is built.
+    #[test]
+    fn an_offline_render_refuses_an_unattached_instance_and_a_hosted_instrument_by_name() {
+        let Err(unattached) = map_offline_against(
+            &batch(hosted_plugin_strip(true, false)),
+            &AppState::default(),
         ) else {
-            panic!("an offline render holds no plugin instance to bind");
+            panic!("an instance the engine does not hold has nothing to rebuild");
         };
         assert!(
-            refusal.contains("not attached to the engine"),
-            "the offline refusal is the unbound one, got: {refusal}"
+            unattached.contains("'d-plugin'") && unattached.contains("not attached to the engine"),
+            "{unattached}"
+        );
+
+        let Err(instrument) = map_offline_against(
+            &batch(hosted_plugin_strip(true, false)),
+            &state_attaching("inst-1", 1_007, DeviceKind::Generator),
+        ) else {
+            panic!("a hosted instrument must not render offline yet");
+        };
+        assert!(
+            instrument.contains("'d-plugin'")
+                && instrument.contains("'Pro-Q Fixture'")
+                && instrument.contains("hosted instruments do not render offline yet"),
+            "{instrument}"
+        );
+    }
+
+    /// The offline law's admission side: an attached effect on a sounding
+    /// strip is spliced under the live instance's own engine plugin id and
+    /// reported bound; the same device on a silent strip is omitted, and
+    /// nothing is bound for it, so no instance is built for silence.
+    #[test]
+    fn an_offline_render_binds_an_attached_effect_on_a_sounding_strip_only() {
+        let state = state_attaching("inst-1", 1_007, DeviceKind::Effect);
+
+        let Ok((ops, bound)) =
+            map_offline_against(&batch(hosted_plugin_strip(true, false)), &state)
+        else {
+            panic!("an attached effect on a sounding strip is admitted");
+        };
+        assert_eq!(inserted_effect_ids(&ops), vec![1_007]);
+        assert_eq!(
+            bound,
+            vec![BoundHostedInstance {
+                instance_id: "inst-1".to_string(),
+                device_id: "d-plugin".to_string(),
+                plugin_name: "Pro-Q Fixture".to_string(),
+                engine_plugin_id: 1_007,
+                chain_kind: DeviceKind::Effect,
+            }]
+        );
+
+        let Ok((ops, bound)) =
+            map_offline_against(&batch(hosted_plugin_strip(false, false)), &state)
+        else {
+            panic!("a silent strip omits the device");
+        };
+        assert!(inserted_effect_ids(&ops).is_empty());
+        assert!(bound.is_empty(), "no instance is built for a silent strip");
+    }
+
+    /// One decision for both offline seams: the probe `map_graph_batch`
+    /// admits and refuses exactly the hosted devices the render's mapping
+    /// does, with the same reason. Mutation: map the probe against an empty
+    /// lookup again — the attached-effect rows diverge.
+    #[test]
+    fn the_offline_probe_admits_and_refuses_exactly_what_the_render_maps() {
+        let cases = [
+            (hosted_plugin_strip(true, false), AppState::default()),
+            (
+                hosted_plugin_strip(true, false),
+                state_attaching("inst-1", 1_007, DeviceKind::Effect),
+            ),
+            (
+                hosted_plugin_strip(false, false),
+                state_attaching("inst-1", 1_007, DeviceKind::Effect),
+            ),
+            (
+                hosted_plugin_strip(true, false),
+                state_attaching("inst-1", 1_007, DeviceKind::Generator),
+            ),
+        ];
+        let mut admitted = 0;
+        for (commands, state) in cases {
+            let render = map_offline_against(&batch(commands.clone()), &state).map(|_| ());
+            let probe = block_on_test(map_graph_batch(
+                json!([]),
+                json!({ "schemaVersion": 1, "commands": commands }),
+                48_000.0,
+                None,
+                &state,
+            ))
+            .expect("the probe answers");
+            let probe = match probe["acceptance"].as_str() {
+                Some("accepted") => Ok(()),
+                _ => Err(probe["reason"].as_str().unwrap_or_default().to_string()),
+            };
+            assert_eq!(probe, render, "the probe and the render decide alike");
+            admitted += usize::from(probe.is_ok());
+        }
+        assert_eq!(
+            admitted, 2,
+            "both the attached effect and its silent strip map"
         );
     }
 
@@ -14692,7 +15095,7 @@ mod tests {
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
-            &HashMap::new(),
+            &mut HostedInstances::default(),
             &mut AttachedCrumbs::default(),
             &mut banks,
         )
@@ -14800,6 +15203,7 @@ mod tests {
             &sample_pool(),
             &mut LevainBankStore::default(),
             SAMPLE_RATE,
+            &mut HostedInstances::default(),
         ) else {
             panic!("a store holding no bank must refuse the device");
         };
@@ -14810,7 +15214,14 @@ mod tests {
 
         let mut banks = state.levain_banks.lock().expect("the bank lock opens");
         assert!(
-            map_offline_batch(&sounding, &sample_pool(), &mut banks, SAMPLE_RATE).is_ok(),
+            map_offline_batch(
+                &sounding,
+                &sample_pool(),
+                &mut banks,
+                SAMPLE_RATE,
+                &mut HostedInstances::default()
+            )
+            .is_ok(),
             "the committed bank this process holds must build the device"
         );
 
@@ -16415,11 +16826,13 @@ mod tests {
             &device,
             &mut GraphRegistry::default(),
             true,
-            48_000.0,
-            &HashMap::new(),
-            &mut AttachedCrumbs::default(),
-            &mut LevainBankStore::default(),
-            &mut ops,
+            MapEnv {
+                sample_rate: 48_000.0,
+                hosted: &mut HostedInstances::default(),
+                attached_crumbs: &mut AttachedCrumbs::default(),
+                levain_banks: &mut LevainBankStore::default(),
+                ops: &mut ops,
+            },
         )
         .expect_err("a non-finite mod-assignment amount must refuse");
 
@@ -17427,7 +17840,7 @@ mod tests {
             assert_eq!(
                 record
                     .iter()
-                    .map(|(name, value)| (name.as_str(), *value))
+                    .map(|(name, value)| (name.as_str().unwrap(), *value))
                     .collect::<Vec<_>>(),
                 vec![
                     ("dither_bits", expected),
@@ -17482,7 +17895,7 @@ mod tests {
         let live =
             immediate_device_parameters(BuiltinEffectType::Proof, &values, "d-proof").unwrap();
         assert_eq!(live.len(), 1, "only runtime A/B is a live DSP target");
-        assert_eq!(addressed_parameter_name(&live[0].0), "ab_bypass");
+        assert_eq!(addressed_parameter_name(&live[0].0), Some("ab_bypass"));
         for bad in [
             json!({"eq_band0Xfreq":400}),
             json!({"dither_mode":0.25}),
@@ -18232,11 +18645,13 @@ mod tests {
         }
         let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": commands});
         // Exercise the public production render body before holding a real mapped reader.
-        let output = render_graph_offline(wire.clone(), 200, 48000.0, &state)
+        let output = render_graph_offline(wire.clone(), 200, 48000.0, None, &NoWindowHost, &state)
             .await
             .unwrap();
         let decoded: Vec<_> = output
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
             .collect();
         assert!(decoded.iter().all(|value| value.is_finite()));
@@ -18244,8 +18659,14 @@ mod tests {
         let batch = parse_batch(wire).unwrap();
         let ops = {
             let samples = state.timeline_samples.lock().unwrap();
-            let ops = map_offline_batch(&batch, &samples, &mut LevainBankStore::default(), 48000.0)
-                .unwrap();
+            let ops = map_offline_batch(
+                &batch,
+                &samples,
+                &mut LevainBankStore::default(),
+                48000.0,
+                &mut HostedInstances::default(),
+            )
+            .unwrap();
             let sample = samples
                 .resolve_timeline_sample(Some(lease), "take", Some("v1"))
                 .unwrap();
@@ -18265,6 +18686,8 @@ mod tests {
             json!({"schemaVersion": 1, "timelineLease": lease, "commands": []}),
             1,
             48000.0,
+            None,
+            &NoWindowHost,
             &state
         )
         .await
@@ -18279,7 +18702,8 @@ mod tests {
             .unwrap_err()
             .contains("budget"));
         // These are the actual mapped clips, consumed by the existing scheduler.
-        let (left, right) = render_offline_ops(ops, 200, 48000.0).unwrap();
+        let (left, right) =
+            render_offline_ops(ops, 200, 48000.0, None, &InFlightRender::uncancellable()).unwrap();
         assert!(left.iter().chain(&right).all(|value| value.is_finite()));
         let complete =
             timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
@@ -18352,7 +18776,7 @@ mod tests {
             {"kind": "schedule-clip", "playback": {"trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v2"},
                 "startTime": 4.0 / 48000.0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}}}
         ]});
-        let output = render_graph_offline(wire, 8, 48000.0, &state)
+        let output = render_graph_offline(wire, 8, 48000.0, None, &NoWindowHost, &state)
             .await
             .unwrap();
         let first = f32::from_le_bytes(output[0..4].try_into().unwrap());
@@ -18469,7 +18893,12 @@ mod tests {
         let mut oracle = daw_dsp::toaster::transient::TransientShaper::new(48_000.0);
         oracle.set_attack(1.5);
         oracle.set_sustain(0.25);
-        for (dry, frame) in unity.chunks_exact(2).zip(shaped.chunks_exact(2)) {
+        for (dry, frame) in unity
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(shaped.as_chunks::<2>().0.iter())
+        {
             assert_eq!(dry, &[0.5, 0.5]);
             let expected = oracle.process(0.5);
             assert_eq!(frame, &[expected, expected]);
@@ -18560,7 +18989,7 @@ mod tests {
         .unwrap();
         let mut scalar = daw_dsp::toaster::transient::TransientShaper::new(48000.0);
         scalar.set_sustain(0.25);
-        for (frame, pair) in rendered.chunks_exact(2).enumerate() {
+        for (frame, pair) in rendered.as_chunks::<2>().0.iter().enumerate() {
             scalar.set_attack(if frame < 512 { 1.5 } else { 2.0 });
             let expected = scalar.process(0.5);
             assert_eq!(

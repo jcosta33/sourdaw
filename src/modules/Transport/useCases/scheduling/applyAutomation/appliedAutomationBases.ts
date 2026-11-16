@@ -36,3 +36,13 @@ export function clearAppliedAutomationBases(): void {
         byParameter.clear();
     }
 }
+
+/**
+ * The sequence of the latest scheduler write to each device parameter, indexed `deviceId → parameterId`.
+ * `applyAutomation` takes a fresh number from one counter every time it writes (or, for a device the
+ * native session carries, stamps) a parameter, even when the value is unchanged, which happens on Play
+ * start, a seek, a loop wrap and lane entry. A display that reads at its own cadence compares sequences
+ * to learn that automation wrote, since an equal value cannot say so. Unlike the bases, it is not
+ * cleared per tick: a reader that skips a tick must still see the write.
+ */
+export const appliedAutomationWriteSequences = new Map<string, Map<string, number>>();

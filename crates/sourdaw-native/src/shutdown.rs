@@ -134,8 +134,10 @@ fn shutdown_with_wait(
     // runs here, on the only thread there is.
     let editor_thread = windows.unwrap_or(&NoWindowHost);
 
-    let mut report = ShutdownReport::default();
-    report.closed_midi_input = closed_midi_input;
+    let mut report = ShutdownReport {
+        closed_midi_input,
+        ..ShutdownReport::default()
+    };
     match close_every_plugin_gui(windows, app_state) {
         Ok(gui_report) => {
             report.closed_editors = gui_report.closed_instance_ids;
@@ -146,7 +148,7 @@ fn shutdown_with_wait(
 
     // Deliberately after the close pass and outside the match: a close that
     // could not run is exactly the case where reclamation still matters.
-    app_state.sweep_retired_engine_plugins();
+    app_state.sweep_retired_engine_plugins(editor_thread);
 
     destroy_live_plugin_instances(app_state, editor_thread, &mut report, &mut wait);
 
@@ -199,7 +201,7 @@ fn destroy_live_plugin_instances(
 
     let runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
     let retired = retire_for_reclamation(app_state, runtimes);
-    reclaim_until_waiting_budget_is_spent(app_state, wait);
+    reclaim_until_waiting_budget_is_spent(app_state, editor_thread, wait);
     record_reclamation(app_state, retired, report);
 }
 
@@ -289,12 +291,13 @@ fn retire_for_reclamation(
 /// plugins themselves and by the shell's force-exit behind them.
 fn reclaim_until_waiting_budget_is_spent(
     app_state: &AppState,
+    editor_thread: &dyn PluginWindowHost,
     wait: &mut impl FnMut(Duration) -> Duration,
 ) {
     let mut remaining_budget = SCHEDULER_RELEASE_BUDGET;
 
     loop {
-        app_state.sweep_retired_engine_plugins();
+        app_state.sweep_retired_engine_plugins(editor_thread);
 
         // The whole vec, not just this pass's own entries: waiting on those
         // alone would stop watching the retirement an unload left behind
@@ -457,6 +460,7 @@ mod tests {
                     has_gui: true,
                     chain_kind: DeviceKind::Effect,
                     parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
         processing

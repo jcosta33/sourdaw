@@ -1,9 +1,9 @@
 import { getObjectId } from '@automerge/automerge';
 
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { type TempoSourceClock } from '#/modules/Transport/stores';
 import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';

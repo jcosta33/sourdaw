@@ -1,4 +1,4 @@
-/// Wavetable and Virtual Analog oscillators with anti-aliasing.
+//! Wavetable and Virtual Analog oscillators with anti-aliasing.
 
 const TABLE_SIZE: usize = 2048;
 const NUM_TABLES: usize = 10; // Mip-map levels for band-limiting
@@ -26,9 +26,9 @@ impl Wavetable {
                 if amp.abs() < 1e-8 {
                     continue;
                 }
-                for i in 0..TABLE_SIZE {
+                for (i, slot) in table.iter_mut().enumerate() {
                     let phase = std::f32::consts::TAU * (i as f32 / TABLE_SIZE as f32) * h as f32;
-                    table[i] += amp * phase.sin();
+                    *slot += amp * phase.sin();
                 }
             }
 
@@ -135,6 +135,12 @@ impl WavetableOsc {
 
     pub fn reset_phase(&mut self) {
         self.phase = 0.0;
+    }
+}
+
+impl Default for WavetableOsc {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -289,6 +295,12 @@ impl PolyBlepOsc {
 
     pub fn reset_phase(&mut self) {
         self.phase = 0.0;
+    }
+}
+
+impl Default for PolyBlepOsc {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -460,6 +472,12 @@ impl UnisonOsc {
     }
 }
 
+impl Default for UnisonOsc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Distance in samples from the sample at `phase` to the corner at `corner`,
 /// measured the short way around the phase circle and returned unsigned.
 ///
@@ -508,7 +526,7 @@ fn corner_distance(phase: f32, corner: f32, inc: f32) -> f32 {
 #[inline]
 fn poly_blamp(t: f32) -> f32 {
     let t = t.abs();
-    if !(t < 2.0) {
+    if t.is_nan() || t >= 2.0 {
         return 0.0;
     }
     if t > 1.0 {

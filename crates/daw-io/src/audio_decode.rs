@@ -67,6 +67,87 @@ impl InterleavedAudio {
     }
 }
 
+/// Why an audio file could not be decoded.
+///
+/// `Display` is the message the native command and the wasm decoder hand to
+/// TypeScript, so rewording a variant changes what the renderer receives.
+#[derive(Debug)]
+pub enum AudioDecodeError {
+    /// The file on disk could not be opened.
+    OpenFailed(std::io::Error),
+    /// No container format recognised the bytes.
+    ProbeFailed(SymphoniaError),
+    /// The container holds no audio track.
+    NoAudioTrack,
+    /// The audio track carries no audio codec parameters.
+    MissingAudioCodecParameters,
+    /// The audio track declares no sample rate.
+    UnknownSampleRate,
+    /// The audio track declares a sample rate of zero.
+    ZeroSampleRate,
+    /// The audio track declares zero channels.
+    ZeroTrackChannels,
+    /// No decoder could be built for the track's codec.
+    DecoderCreationFailed(SymphoniaError),
+    /// The container failed while reading the next packet.
+    ReadFailed(SymphoniaError),
+    /// A packet failed to decode with an error that is not recoverable.
+    DecodeFailed(SymphoniaError),
+    /// More packets failed recoverably than the decode budget allows.
+    TooManyRecoverablePacketErrors,
+    /// A decoded packet declares zero channels.
+    ZeroPacketChannels,
+    /// A decoded packet disagrees with the channel count established earlier.
+    ChannelCountChanged { established: u32, found: u32 },
+    /// A FLAC stream's decoded audio fails its declared MD5 checksum.
+    FlacChecksumMismatch,
+    /// The stream decoded to no frames and no packet was skipped.
+    NoDecodableFrames,
+    /// The stream decoded to no frames after `skipped` corrupt packets were discarded.
+    NoDecodableFramesAfterCorruption { skipped: u64 },
+}
+
+impl std::fmt::Display for AudioDecodeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OpenFailed(error) => write!(formatter, "Failed to open file: {error}"),
+            Self::ProbeFailed(error) => write!(formatter, "Failed to probe audio format: {error}"),
+            Self::NoAudioTrack => formatter.write_str("No audio track found"),
+            Self::MissingAudioCodecParameters => {
+                formatter.write_str("Audio track has no audio codec parameters")
+            }
+            Self::UnknownSampleRate => formatter.write_str("Unknown sample rate"),
+            Self::ZeroSampleRate => formatter.write_str("Audio track declares zero sample rate"),
+            Self::ZeroTrackChannels => formatter.write_str("Audio track declares zero channels"),
+            Self::DecoderCreationFailed(error) => {
+                write!(formatter, "Failed to create decoder: {error}")
+            }
+            Self::ReadFailed(error) => write!(formatter, "Read error: {error}"),
+            Self::DecodeFailed(error) => write!(formatter, "Decode error: {error}"),
+            Self::TooManyRecoverablePacketErrors => write!(
+                formatter,
+                "Audio decode aborted after {MAX_RECOVERABLE_PACKET_ERRORS} recoverable packet errors"
+            ),
+            Self::ZeroPacketChannels => formatter.write_str("Decoded packet declares zero channels"),
+            Self::ChannelCountChanged { established, found } => write!(
+                formatter,
+                "Audio stream changes channel count mid-file: {established} then {found}"
+            ),
+            Self::FlacChecksumMismatch => formatter.write_str(
+                "FLAC stream failed MD5 verification: the decoded audio does not match the \
+                 checksum declared in the file",
+            ),
+            Self::NoDecodableFrames => formatter.write_str("Audio file contains no decodable frames"),
+            Self::NoDecodableFramesAfterCorruption { skipped } => write!(
+                formatter,
+                "Audio file contains no decodable frames after skipping {skipped} corrupt packets"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for AudioDecodeError {}
+
 #[derive(Default)]
 struct DecodeDiagnostics {
     warning_count: u64,
@@ -86,8 +167,8 @@ impl DecodeDiagnostics {
 /// Supports WAV, FLAC, MP3, OGG/Vorbis, AAC, ALAC, and more.
 /// Prefer this over `decode_audio_file_bytes` when the file is on disk — avoids reading
 /// the entire file into memory before passing it over the desktop IPC boundary.
-pub fn decode_audio_file(path: &str) -> Result<DecodedAudio, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+pub fn decode_audio_file(path: &str) -> Result<DecodedAudio, AudioDecodeError> {
+    let file = std::fs::File::open(path).map_err(AudioDecodeError::OpenFailed)?;
     build_planar_audio(decode_from_stream(MediaSourceStream::new(
         Box::new(file),
         Default::default(),
@@ -96,7 +177,7 @@ pub fn decode_audio_file(path: &str) -> Result<DecodedAudio, String> {
 
 /// Decode audio from an in-memory byte buffer.
 /// Use this when bytes are already loaded (e.g. from a network fetch or embedded archive).
-pub fn decode_audio_file_bytes(file_bytes: Vec<u8>) -> Result<DecodedAudio, String> {
+pub fn decode_audio_file_bytes(file_bytes: Vec<u8>) -> Result<DecodedAudio, AudioDecodeError> {
     build_planar_audio(decode_from_stream(MediaSourceStream::new(
         Box::new(Cursor::new(file_bytes)),
         Default::default(),
@@ -111,7 +192,7 @@ pub fn decode_audio_file_bytes(file_bytes: Vec<u8>) -> Result<DecodedAudio, Stri
 /// decoder produced, with no per-frame scatter into lanes.
 pub fn decode_audio_file_bytes_interleaved(
     file_bytes: Vec<u8>,
-) -> Result<InterleavedAudio, String> {
+) -> Result<InterleavedAudio, AudioDecodeError> {
     build_interleaved_audio(decode_from_stream(MediaSourceStream::new(
         Box::new(Cursor::new(file_bytes)),
         Default::default(),
@@ -128,28 +209,30 @@ struct DecodedStream<A> {
 
 fn decode_from_stream<A: PacketAccumulator>(
     mss: MediaSourceStream,
-) -> Result<DecodedStream<A>, String> {
+) -> Result<DecodedStream<A>, AudioDecodeError> {
     let hint = Hint::new();
     let format_opts = FormatOptions::default();
     let metadata_opts = MetadataOptions::default();
 
     let mut format_reader = symphonia::default::get_probe()
         .probe(&hint, mss, format_opts, metadata_opts)
-        .map_err(|e| format!("Failed to probe audio format: {e}"))?;
+        .map_err(AudioDecodeError::ProbeFailed)?;
 
     let track = format_reader
         .default_track(TrackType::Audio)
-        .ok_or("No audio track found")?;
+        .ok_or(AudioDecodeError::NoAudioTrack)?;
 
     let audio_params = match &track.codec_params {
         Some(CodecParameters::Audio(params)) => params,
-        _ => return Err("Audio track has no audio codec parameters".to_string()),
+        _ => return Err(AudioDecodeError::MissingAudioCodecParameters),
     };
 
     let codec_name = audio_params.codec.to_string();
-    let sample_rate = audio_params.sample_rate.ok_or("Unknown sample rate")?;
+    let sample_rate = audio_params
+        .sample_rate
+        .ok_or(AudioDecodeError::UnknownSampleRate)?;
     if sample_rate == 0 {
-        return Err("Audio track declares zero sample rate".to_string());
+        return Err(AudioDecodeError::ZeroSampleRate);
     }
     // The container's declaration is validated here (a zero-channel track is
     // rejected before any decode work) but it never lays out samples: symphonia
@@ -183,7 +266,7 @@ fn decode_from_stream<A: PacketAccumulator>(
 
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(audio_params, &decoder_opts)
-        .map_err(|e| format!("Failed to create decoder: {e}"))?;
+        .map_err(AudioDecodeError::DecoderCreationFailed)?;
 
     let mut accumulator = A::default();
     let mut diagnostics = DecodeDiagnostics::default();
@@ -192,7 +275,7 @@ fn decode_from_stream<A: PacketAccumulator>(
         let packet = match format_reader.next_packet() {
             Ok(Some(p)) => p,
             Ok(None) => break,
-            Err(e) => return Err(format!("Read error: {e}")),
+            Err(error) => return Err(AudioDecodeError::ReadFailed(error)),
         };
 
         if packet.track_id != track_id {
@@ -218,11 +301,7 @@ fn decode_from_stream<A: PacketAccumulator>(
     // matching the other stream-contradicts-itself failures above.
     let finalization = decoder.finalize();
     if is_flac && finalization.verify_ok == Some(false) {
-        return Err(
-            "FLAC stream failed MD5 verification: the decoded audio does not match the \
-             checksum declared in the file"
-                .to_string(),
-        );
+        return Err(AudioDecodeError::FlacChecksumMismatch);
     }
 
     Ok(DecodedStream {
@@ -257,18 +336,18 @@ impl ChannelLayout {
     fn whole_frames<'packet>(
         &mut self,
         packet: &'packet DecodedPacket,
-    ) -> Result<&'packet [f32], String> {
+    ) -> Result<&'packet [f32], AudioDecodeError> {
         if packet.channels == 0 {
-            return Err("Decoded packet declares zero channels".to_string());
+            return Err(AudioDecodeError::ZeroPacketChannels);
         }
 
         match self.channels {
             None => self.channels = Some(packet.channels),
             Some(established) if established != packet.channels => {
-                return Err(format!(
-                    "Audio stream changes channel count mid-file: {} then {}",
-                    established, packet.channels
-                ));
+                return Err(AudioDecodeError::ChannelCountChanged {
+                    established,
+                    found: packet.channels,
+                });
             }
             Some(_) => {}
         }
@@ -290,7 +369,7 @@ impl ChannelLayout {
 /// Each layout accumulates in its own final shape as packets arrive, so a
 /// decode never materializes the file's PCM twice.
 trait PacketAccumulator: Default {
-    fn append(&mut self, packet: DecodedPacket) -> Result<(), String>;
+    fn append(&mut self, packet: DecodedPacket) -> Result<(), AudioDecodeError>;
 }
 
 /// Accumulates decoded packets as one interleaved buffer.
@@ -301,7 +380,7 @@ struct InterleavedAccumulator {
 }
 
 impl PacketAccumulator for InterleavedAccumulator {
-    fn append(&mut self, packet: DecodedPacket) -> Result<(), String> {
+    fn append(&mut self, packet: DecodedPacket) -> Result<(), AudioDecodeError> {
         let frames = self.layout.whole_frames(&packet)?;
         self.samples.extend_from_slice(frames);
 
@@ -322,7 +401,7 @@ struct PlanarAccumulator {
 }
 
 impl PacketAccumulator for PlanarAccumulator {
-    fn append(&mut self, packet: DecodedPacket) -> Result<(), String> {
+    fn append(&mut self, packet: DecodedPacket) -> Result<(), AudioDecodeError> {
         let frames = self.layout.whole_frames(&packet)?;
         let frame_size = packet.channels as usize;
 
@@ -345,15 +424,14 @@ fn decoded_duration(
     total_frames: usize,
     sample_rate: u32,
     diagnostics: &DecodeDiagnostics,
-) -> Result<f64, String> {
+) -> Result<f64, AudioDecodeError> {
     if total_frames == 0 {
         if diagnostics.warning_count > 0 {
-            return Err(format!(
-                "Audio file contains no decodable frames after skipping {} corrupt packets",
-                diagnostics.warning_count
-            ));
+            return Err(AudioDecodeError::NoDecodableFramesAfterCorruption {
+                skipped: diagnostics.warning_count,
+            });
         }
-        return Err("Audio file contains no decodable frames".to_string());
+        return Err(AudioDecodeError::NoDecodableFrames);
     }
 
     Ok(total_frames as f64 / sample_rate as f64)
@@ -361,7 +439,7 @@ fn decoded_duration(
 
 fn build_interleaved_audio(
     stream: DecodedStream<InterleavedAccumulator>,
-) -> Result<InterleavedAudio, String> {
+) -> Result<InterleavedAudio, AudioDecodeError> {
     let channels = stream.accumulator.layout.channel_count();
     let total_frames = if channels == 0 {
         0
@@ -381,7 +459,9 @@ fn build_interleaved_audio(
     })
 }
 
-fn build_planar_audio(stream: DecodedStream<PlanarAccumulator>) -> Result<DecodedAudio, String> {
+fn build_planar_audio(
+    stream: DecodedStream<PlanarAccumulator>,
+) -> Result<DecodedAudio, AudioDecodeError> {
     let channels = stream.accumulator.layout.channel_count();
     let total_frames = stream.accumulator.lanes.first().map_or(0, Vec::len);
     let duration_seconds = decoded_duration(total_frames, stream.sample_rate, &stream.diagnostics)?;
@@ -399,14 +479,14 @@ fn build_planar_audio(stream: DecodedStream<PlanarAccumulator>) -> Result<Decode
 
 fn channel_count(
     audio_params: &symphonia::core::codecs::audio::AudioCodecParameters,
-) -> Result<u32, String> {
+) -> Result<u32, AudioDecodeError> {
     let channels = audio_params
         .channels
         .as_ref()
         .map(|channels| channels.count() as u32)
         .unwrap_or(2);
     if channels == 0 {
-        return Err("Audio track declares zero channels".to_string());
+        return Err(AudioDecodeError::ZeroTrackChannels);
     }
 
     Ok(channels)
@@ -416,19 +496,17 @@ fn append_decoded_packet<A: PacketAccumulator>(
     decoded: Result<DecodedPacket, SymphoniaError>,
     accumulator: &mut A,
     diagnostics: &mut DecodeDiagnostics,
-) -> Result<(), String> {
+) -> Result<(), AudioDecodeError> {
     let packet = match decoded {
         Ok(packet) => packet,
         Err(error @ SymphoniaError::DecodeError(_)) | Err(error @ SymphoniaError::IoError(_)) => {
             if diagnostics.warning_count >= MAX_RECOVERABLE_PACKET_ERRORS {
-                return Err(format!(
-                    "Audio decode aborted after {MAX_RECOVERABLE_PACKET_ERRORS} recoverable packet errors"
-                ));
+                return Err(AudioDecodeError::TooManyRecoverablePacketErrors);
             }
             diagnostics.record(&error);
             return Ok(());
         }
-        Err(error) => return Err(format!("Decode error: {error}")),
+        Err(error) => return Err(AudioDecodeError::DecodeFailed(error)),
     };
 
     accumulator.append(packet)
@@ -587,7 +665,11 @@ mod tests {
         let error = decode_audio_file_bytes(pcm_wav_with_sample_rate(0))
             .expect_err("zero sample rate must be rejected");
 
-        assert_eq!(error, "Audio track declares zero sample rate");
+        assert!(
+            matches!(error, AudioDecodeError::ZeroSampleRate),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "Audio track declares zero sample rate");
     }
 
     #[test]
@@ -597,7 +679,11 @@ mod tests {
 
         let error = channel_count(&params).expect_err("zero channels must be rejected");
 
-        assert_eq!(error, "Audio track declares zero channels");
+        assert!(
+            matches!(error, AudioDecodeError::ZeroTrackChannels),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "Audio track declares zero channels");
     }
 
     fn packet(channels: u32, interleaved: Vec<f32>) -> Result<DecodedPacket, SymphoniaError> {
@@ -695,8 +781,18 @@ mod tests {
         let error = append_decoded_packet(packet(1, vec![0.2]), &mut accumulator, &mut diagnostics)
             .expect_err("a mid-stream channel-count change must not be absorbed silently");
 
+        assert!(
+            matches!(
+                error,
+                AudioDecodeError::ChannelCountChanged {
+                    established: 2,
+                    found: 1
+                }
+            ),
+            "{error:?}"
+        );
         assert_eq!(
-            error,
+            error.to_string(),
             "Audio stream changes channel count mid-file: 2 then 1"
         );
     }
@@ -759,8 +855,12 @@ mod tests {
         )
         .expect_err("the first packet beyond the recovery budget must abort");
 
+        assert!(
+            matches!(error, AudioDecodeError::TooManyRecoverablePacketErrors),
+            "{error:?}"
+        );
         assert_eq!(
-            error,
+            error.to_string(),
             "Audio decode aborted after 256 recoverable packet errors"
         );
     }
@@ -779,9 +879,49 @@ mod tests {
             },
         ));
 
+        let error = result.expect_err("an all-corrupt file must fail");
+        assert!(
+            matches!(
+                error,
+                AudioDecodeError::NoDecodableFramesAfterCorruption { skipped: 2 }
+            ),
+            "{error:?}"
+        );
         assert_eq!(
-            result.expect_err("an all-corrupt file must fail"),
+            error.to_string(),
             "Audio file contains no decodable frames after skipping 2 corrupt packets"
+        );
+    }
+
+    #[test]
+    fn decode_fails_when_the_stream_holds_no_frames_at_all() {
+        let error = build_interleaved_audio(stream(
+            48_000,
+            InterleavedAccumulator::default(),
+            DecodeDiagnostics::default(),
+        ))
+        .expect_err("an empty stream must fail");
+
+        assert!(
+            matches!(error, AudioDecodeError::NoDecodableFrames),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "Audio file contains no decodable frames");
+    }
+
+    #[test]
+    fn source_carrying_errors_display_the_wrapped_cause_after_their_prefix() {
+        assert_eq!(
+            AudioDecodeError::OpenFailed(IoError::new(ErrorKind::NotFound, "missing")).to_string(),
+            "Failed to open file: missing"
+        );
+        assert_eq!(
+            AudioDecodeError::ReadFailed(SymphoniaError::ResetRequired).to_string(),
+            "Read error: decoder needs to be reset"
+        );
+        assert_eq!(
+            AudioDecodeError::NoAudioTrack.to_string(),
+            "No audio track found"
         );
     }
 
@@ -797,7 +937,14 @@ mod tests {
         )
         .expect_err("reset-required is not a recoverable packet error");
 
-        assert_eq!(error, "Decode error: decoder needs to be reset");
+        assert!(
+            matches!(
+                error,
+                AudioDecodeError::DecodeFailed(SymphoniaError::ResetRequired)
+            ),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "Decode error: decoder needs to be reset");
         assert_eq!(diagnostics.warning_count, 0);
         assert!(diagnostics.warnings.is_empty());
     }
@@ -1158,8 +1305,18 @@ mod tests {
             "the surplus plane decodes Ok while carrying the previous packet's right channel"
         );
 
-        let first_right: Vec<f32> = first.chunks_exact(2).map(|frame| frame[1]).collect();
-        let second_right: Vec<f32> = second.chunks_exact(2).map(|frame| frame[1]).collect();
+        let first_right: Vec<f32> = first
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|frame| frame[1])
+            .collect();
+        let second_right: Vec<f32> = second
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|frame| frame[1])
+            .collect();
         assert_eq!(
             second_right, first_right,
             "the right lane of the second packet equals the right lane of the first"
@@ -1263,8 +1420,12 @@ mod tests {
         ))
         .expect_err("a stream that fails its declared MD5 must be rejected");
 
+        assert!(
+            matches!(error, AudioDecodeError::FlacChecksumMismatch),
+            "{error:?}"
+        );
         assert_eq!(
-            error,
+            error.to_string(),
             "FLAC stream failed MD5 verification: the decoded audio does not match the \
              checksum declared in the file"
         );
@@ -1381,8 +1542,15 @@ mod peak_allocation {
 
     pub struct PeakTracking;
 
+    // SAFETY: every method forwards its arguments unchanged to `System`,
+    // which upholds the `GlobalAlloc` contract, and returns `System`'s result
+    // unchanged; the bookkeeping beside it touches only const-initialised
+    // thread-local `Cell`s, which neither allocate nor unwind.
     unsafe impl GlobalAlloc for PeakTracking {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            // SAFETY: `layout` arrives under `GlobalAlloc::alloc`'s caller
+            // contract (non-zero size), which is exactly what `System.alloc`
+            // requires.
             let ptr = unsafe { System.alloc(layout) };
             if !ptr.is_null() {
                 record(layout.size() as isize);
@@ -1391,11 +1559,18 @@ mod peak_allocation {
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: under `GlobalAlloc::dealloc`'s caller contract `ptr` was
+            // allocated by this allocator with `layout`, and every such block
+            // came from `System` with that same layout.
             unsafe { System.dealloc(ptr, layout) };
             record(-(layout.size() as isize));
         }
 
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            // SAFETY: under `GlobalAlloc::realloc`'s caller contract `ptr` was
+            // allocated by this allocator (so by `System`) with `layout`, and
+            // `new_size` is non-zero and does not overflow when rounded to
+            // `layout.align()` — exactly `System.realloc`'s requirements.
             let next = unsafe { System.realloc(ptr, layout, new_size) };
             if !next.is_null() {
                 record(new_size as isize - layout.size() as isize);

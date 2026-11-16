@@ -33,9 +33,8 @@ import {
     linuxFilePorts,
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
-    startTimeExcuseSupervisor,
-    storageRecoveryPorts,
 } from '../resourceGuard';
+import { type ProcessRow } from '../resourceGuardProcessTree';
 import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
@@ -52,9 +51,25 @@ import {
     type StorageProcessIdentity,
     type StorageRecoveryPorts,
 } from '../resourceGuardStorage';
+import {
+    startTimeExcuseSupervisor,
+    storageRecoveryPorts,
+    storageIdentityState,
+} from '../resourceGuardStorageProcessProof';
 
 const roots: string[] = [];
-const childPids = new Set<number>();
+// Each process a case started, by PID, with the start time it had when registered. A PID can be
+// reused once its process exits, so cleanup and fixtures signal only a PID whose start still matches.
+const childStarts = new Map<number, string>();
+const childPids = {
+    add: (pid: number): void => {
+        const start = processStart(pid);
+        if (start !== undefined) {
+            childStarts.set(pid, start);
+        }
+    },
+    delete: (pid: number): boolean => childStarts.delete(pid),
+};
 const abundantMemoryBytes = 128 * 1024 ** 3;
 const linuxCensusObservationLimit = 32;
 const guardPath = resolve('scripts/resourceGuard.ts');
@@ -89,50 +104,58 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<
     }
 }
 
-async function kill(pid: number): Promise<void> {
-    if (isAlive(pid)) {
-        process.kill(pid, 'SIGKILL');
-        await waitUntil(() => !isAlive(pid));
-    }
+// The absolute path keeps a case's fake `ps` on PATH from answering for the real one.
+function processStart(pid: number): string | undefined {
+    const sample = spawnSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' });
+    const start = sample.stdout.trim();
+    return sample.status === 0 && start !== '' ? start : undefined;
 }
 
-async function waitForStorageAbandonment(tempDirectories: string[], deadline: number): Promise<void> {
+// Kills a registered process at most once, and never a later process that reused its PID.
+async function kill(pid: number): Promise<void> {
+    const registered = childStarts.get(pid);
+    childStarts.delete(pid);
+    if (registered === undefined || processStart(pid) !== registered) {
+        return;
+    }
+    process.kill(pid, 'SIGKILL');
+    await waitUntil(() => !isAlive(pid));
+}
+
+// Each census bounds itself at five seconds, so a loaded host may need several before one
+// concludes. The barrier is a census returning dead; the bound only ends a wait that never does.
+const ABANDONMENT_PROOF_TIMEOUT_MS = 30_000;
+
+async function waitForStorageAbandonment(
+    tempDirectories: string[],
+    timeoutMs = ABANDONMENT_PROOF_TIMEOUT_MS
+): Promise<void> {
     let lastState = 'unknown';
     let lastReason = 'not sampled';
     try {
-        await waitUntil(
-            () => {
-                if (Date.now() > deadline) {
-                    return false;
-                }
-                lastReason = 'no diagnostic';
-                // This test process supervised every fixture run whose storage is checked.
-                lastState = storageFileState(
-                    tempDirectories,
-                    [],
-                    (reason) => {
-                        lastReason = reason;
-                    },
-                    process.pid
-                );
-                if (Date.now() > deadline) {
-                    return false;
-                }
-                return lastState === 'dead';
-            },
-            Math.max(0, deadline - Date.now())
-        );
+        // A census that concluded dead is the proof even when it finished past the bound.
+        await waitUntil(() => {
+            lastReason = 'no diagnostic';
+            // This test process supervised every fixture run whose storage is checked.
+            lastState = storageFileState(
+                tempDirectories,
+                [],
+                (reason) => {
+                    lastReason = reason;
+                },
+                process.pid
+            );
+            return lastState === 'dead';
+        }, timeoutMs);
     } catch (error) {
-        const outcome = Date.now() > deadline ? 'timed out' : 'failed';
-        throw new Error(`storage fixture abandonment proof ${outcome}: ${lastState}: ${lastReason}`, { cause: error });
+        throw new Error(`storage fixture abandonment proof timed out: ${lastState}: ${lastReason}`, { cause: error });
     }
 }
 
 afterEach(async () => {
-    for (const pid of childPids) {
+    for (const pid of [...childStarts.keys()]) {
         await kill(pid);
     }
-    childPids.clear();
     for (const root of roots) {
         rmSync(root, { recursive: true, force: true });
     }
@@ -273,7 +296,90 @@ function claimPayloads(root: string): string[] {
     );
 }
 
-async function runMarkedGuard(root: string): Promise<{
+// A run's storage is its own directory or the payload a reclaimer moved under a claim.
+function runStoragePaths(storageRoot: string, token: string): string[] {
+    const claims = join(storageRoot, '.claims');
+    const claimed = existsSync(claims) ? readdirSync(claims).map((claim) => join(claims, claim, token)) : [];
+    return [join(storageRoot, token), ...claimed].filter((path) => existsSync(path));
+}
+
+const recordedRecoveryPath = resolve('scripts/__tests__/fixtures/recordedStorageRecovery.ts');
+// Each recovery census bounds itself at five seconds, so on a loaded host one can end unproved.
+// Retention of dead storage is then correct, and only a later start's census can reclaim it.
+const RECOVERY_ATTEMPTS = 4;
+
+type RecordedRecovery = {
+    code: number | null;
+    reason: string | undefined;
+    output: string;
+    censuses: { verdict: 'alive' | 'dead' | 'unknown'; reasons: string[] }[];
+};
+
+async function recordedRecovery(root: string, watched: string[], attempt: number): Promise<RecordedRecovery> {
+    const resultPath = join(root, `recovery-${attempt}.json`);
+    // The watched paths reach the recovery by file: on its command line, the process census would
+    // read them as a live reference to the storage it is meant to reclaim.
+    const watchedPath = join(root, `recovery-${attempt}-watched.json`);
+    writeFileSync(watchedPath, JSON.stringify(watched));
+    const options = {
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        profile: 'focused',
+        availableMemoryBytes: abundantMemoryBytes,
+        maxRssBytes: 512 * 1024 ** 2,
+        admissionRoot: root,
+        storageRoot: join(root, 'storage'),
+        diskReserveBytes: 1,
+    };
+    const recovery = spawn(process.execPath, [recordedRecoveryPath, JSON.stringify(options), watchedPath, resultPath], {
+        stdio: 'ignore',
+    });
+    if (recovery.pid === undefined) {
+        throw new Error('recorded storage recovery did not start');
+    }
+    childPids.add(recovery.pid);
+    const exitCode = await new Promise<number | null>((resolve) => recovery.once('exit', resolve));
+    childPids.delete(recovery.pid);
+    expect(exitCode).toBe(0);
+    return JSON.parse(readFileSync(resultPath, 'utf8'));
+}
+
+// Starts guards until one reclaims the dead run's storage. A start may keep it only when its last
+// census of that storage could not finish. Keeping it after a census proved it free, without
+// any census, or after any census found it in use fails the case.
+async function expectRecoveryReclaims(root: string, watched: string[], token: string): Promise<void> {
+    const storageRoot = join(root, 'storage');
+    for (let attempt = 1; ; attempt++) {
+        const recovery = await recordedRecovery(root, watched, attempt);
+        const evidence = JSON.stringify({
+            attempt,
+            reason: recovery.reason ?? 'none',
+            censuses: recovery.censuses,
+            storage: recovery.output
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage'))
+                .slice(-4),
+        });
+        expect(recovery.code, evidence).toBe(0);
+        const retained = runStoragePaths(storageRoot, token);
+        if (retained.length === 0) {
+            return;
+        }
+        const last = recovery.censuses.at(-1);
+        const unfinished = last?.verdict === 'unknown' && areTransientProofReasons(last.reasons);
+        const inUse = recovery.censuses.some((census) => census.verdict === 'alive');
+        expect({ retained, unfinished, inUse }, evidence).toEqual({ retained, unfinished: true, inUse: false });
+        expect(attempt, evidence).toBeLessThan(RECOVERY_ATTEMPTS);
+    }
+}
+
+// `provedFileState` gives the child supervisor a file census that proves every storage free, for
+// cases whose subject is the process-list reference check: a real census cannot converge while
+// other work keeps starting short-lived processes.
+async function runMarkedGuard(
+    root: string,
+    census: 'host' | 'provedFileState' = 'host'
+): Promise<{
     result: Awaited<ReturnType<typeof runGuardedCommand>>;
     tempDirectory: string;
     token: string;
@@ -303,7 +409,7 @@ async function runMarkedGuard(root: string): Promise<{
         [
             '--input-type=module',
             '-e',
-            `const {writeFileSync,renameSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(preparedResult)},JSON.stringify(result));renameSync(${JSON.stringify(preparedResult)},${JSON.stringify(resultPath)});`,
+            `const {writeFileSync,renameSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const options=${JSON.stringify(options)};${census === 'provedFileState' ? "options.storageHost={fileState:()=>'dead'};" : ''}const result=await runGuardedCommand(options);writeFileSync(${JSON.stringify(preparedResult)},JSON.stringify(result));renameSync(${JSON.stringify(preparedResult)},${JSON.stringify(resultPath)});`,
         ],
         { stdio: 'ignore' }
     );
@@ -421,7 +527,9 @@ function expectMarkedRecovery(
         expect(fresh.result.output).not.toContain('guard storage retained:');
     } else if (fresh.result.reason === undefined) {
         // A transient lost census proof warns instead of failing; the storage stays for a later start.
-        expect(diagnostics).toHaveLength(1);
+        // The guard prints file-use diagnostics only for a leak, so the reason rides the record.
+        expect(diagnostics).toEqual([]);
+        expect(areTransientProofReasons(fresh.result.retainedStorage?.reason.split('; ') ?? [])).toBe(true);
         expect(fresh.result.retainedStorage?.path).toBe(dirname(fresh.tempDirectory));
         expect(freshRetained).toBe(true);
     } else {
@@ -435,14 +543,15 @@ function expectMarkedRecovery(
     }
     if (originalStillLive) {
         expect(retained.direct).toContain(prior[0]?.token);
-    } else if (diagnostics.length === 0) {
+    } else if (diagnostics.length === 0 && fresh.result.retainedStorage === undefined) {
         expect(fresh.result.reason).toBeUndefined();
-        expect(fresh.result.retainedStorage).toBeUndefined();
         expect(retained.direct).toEqual([]);
         expect(retained.claims).toEqual([]);
     }
 }
 
+// Cases here that run the real file census need a host without heavy process churn: that census is
+// fail-closed by contract, so while short-lived processes keep starting it returns unknown, not dead.
 describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('defaults to the canonical Git primary or the non-Git command volume', () => {
         const commonDirectory = execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
@@ -748,6 +857,9 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                     sampled.push(path);
                     return unavailable ? undefined : 99;
                 },
+                // The released refusal is the subject. Real file censuses cannot converge while other
+                // work keeps starting short-lived processes, and would retain the storage instead.
+                storageHost: { fileState: () => 'dead' },
             });
             expect(result.reason).toBe(unavailable ? 'monitor' : 'pressure');
             expect(result.output).toMatch(unavailable ? /disk space could not be measured/ : /disk space below/);
@@ -957,7 +1069,6 @@ setInterval(() => {}, 1000);
     );
 
     it('preserves a killed supervisors storage while descendants live and reclaims it on a later start', async () => {
-        const deadline = Date.now() + 30_000;
         const root = fixture();
         const marker = join(root, 'started.json');
         const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);`;
@@ -1001,7 +1112,7 @@ setInterval(() => {}, 1000);
         expect(existsSync(started.tmp)).toBe(true);
         await kill(rootPid);
         await kill(started.pid);
-        await waitForStorageAbandonment([started.tmp], deadline);
+        await waitForStorageAbandonment([started.tmp]);
         const recovery = await guarded(root);
         expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
         expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
@@ -1015,7 +1126,6 @@ setInterval(() => {}, 1000);
     ] as const)(
         'retains storage for a detached descendant that replaces its environment: $scenario ($program)',
         async ({ scenario, program }) => {
-            const deadline = Date.now() + 15_000;
             const root = fixture();
             const marker = join(root, 'escaped.json');
             const rootMarker = join(root, 'root.pid');
@@ -1112,7 +1222,7 @@ setInterval(() => {}, 1000);
                 if (scenario === 'parent exit') {
                     expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
                 }
-                const interim = await runMarkedGuard(root);
+                const interim = await runMarkedGuard(root, 'provedFileState');
                 expectMarkedRecovery(root, prior, interim, true);
                 prior.push({
                     tempDirectory: interim.tempDirectory,
@@ -1123,13 +1233,18 @@ setInterval(() => {}, 1000);
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
-            await waitForStorageAbandonment([started.tmp], deadline);
-            const recovery = await runMarkedGuard(root);
+            const recovery = await runMarkedGuard(root, 'provedFileState');
             expect(isAlive(started.pid)).toBe(false);
             expectMarkedRecovery(root, prior, recovery);
         },
         15_000
     );
+
+    // Every step waits on its own completion barrier: the hidden user's marker, the supervisor's
+    // exit, a heartbeat, a dead census, a recovery's exit. Under host load each step takes several
+    // times its idle cost, so the bounds only end a step that never completes.
+    const HIDDEN_USER_STEP_TIMEOUT_MS = 30_000;
+    const HIDDEN_USER_CASE_TIMEOUT_MS = 180_000;
 
     it.each([
         { consumer: 'cwd', scenario: 'parent exit' },
@@ -1141,7 +1256,6 @@ setInterval(() => {}, 1000);
     ] as const)(
         'retains hidden temp users: $consumer after $scenario',
         async ({ consumer, scenario }) => {
-            const deadline = Date.now() + 20_000;
             const root = fixture();
             const marker = join(root, 'hidden.json');
             const heartbeat = join(root, 'heartbeat');
@@ -1217,14 +1331,14 @@ setInterval(() => {}, 1000);
                 throw new Error('hidden temp supervisor did not start');
             }
             childPids.add(supervisorPid);
-            await waitUntil(() => existsSync(marker));
+            await waitUntil(() => existsSync(marker), HIDDEN_USER_STEP_TIMEOUT_MS);
             const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             childPids.add(started.pid);
             const rootPid = Number(readFileSync(rootMarker, 'utf8'));
             childPids.add(rootPid);
             const owner = scenario === 'parent exit' ? undefined : readOwner(started.tmp);
             if (scenario === 'parent exit') {
-                await waitUntil(() => existsSync(resultPath) && !isAlive(supervisorPid));
+                await waitUntil(() => existsSync(resultPath) && !isAlive(supervisorPid), HIDDEN_USER_STEP_TIMEOUT_MS);
             } else {
                 await kill(supervisorPid);
                 await kill(rootPid);
@@ -1247,7 +1361,10 @@ setInterval(() => {}, 1000);
                 expect(payloads).toHaveLength(1);
                 currentTemp = join(payloads[0] ?? '', 'tmp');
             }
-            await waitUntil(() => existsSync(heartbeat) && Number(readFileSync(heartbeat, 'utf8')) >= 2);
+            await waitUntil(
+                () => existsSync(heartbeat) && Number(readFileSync(heartbeat, 'utf8')) >= 2,
+                HIDDEN_USER_STEP_TIMEOUT_MS
+            );
             expect(isAlive(started.pid)).toBe(true);
             const tick = Number(readFileSync(heartbeat, 'utf8'));
             console.log(
@@ -1264,24 +1381,12 @@ setInterval(() => {}, 1000);
             expect((await guarded(root)).code).toBe(0);
             expect(isAlive(started.pid)).toBe(true);
             expect(existsSync(currentTemp)).toBe(true);
-            await waitUntil(() => Number(readFileSync(heartbeat, 'utf8')) > tick);
+            await waitUntil(() => Number(readFileSync(heartbeat, 'utf8')) > tick, HIDDEN_USER_STEP_TIMEOUT_MS);
             await kill(started.pid);
-            await waitForStorageAbandonment([started.tmp, currentTemp], deadline);
-            const recovery = await guarded(root);
-            expect(recovery.code).toBe(0);
-            if (existsSync(currentTemp)) {
-                console.log(
-                    JSON.stringify({
-                        retainedAfterExit: true,
-                        consumer,
-                        scenario,
-                        evidence: recovery.output.slice(-512),
-                    })
-                );
-            }
-            expect(existsSync(currentTemp), proofDiagnostic(recovery)).toBe(false);
+            await waitForStorageAbandonment([started.tmp, currentTemp]);
+            await expectRecoveryReclaims(root, [started.tmp, currentTemp], basename(dirname(started.tmp)));
         },
-        20_000
+        HIDDEN_USER_CASE_TIMEOUT_MS
     );
 
     function emptyProcessCensusFixture(holdPreparedRecord: boolean) {
@@ -1429,7 +1534,6 @@ cp.execFileSync=(file,args,options)=>{
     });
 
     async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
-        const deadline = Date.now() + 20_000;
         const {
             root,
             marker,
@@ -1559,7 +1663,7 @@ ready();
         await kill(admission.rootPid);
         expect(isAlive(supervisor.pid)).toBe(false);
         expect(isAlive(admission.rootPid)).toBe(false);
-        await waitForStorageAbandonment([started.tmp], deadline);
+        await waitForStorageAbandonment([started.tmp]);
         const recovery = await runMarkedGuard(root);
         expectMarkedRecovery(root, [{ tempDirectory: started.tmp, token: originalToken }], recovery);
     }
@@ -2314,7 +2418,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 if (table.some((entry) => entry.pid === identity.pid && entry.startedAt === identity.startedAt)) {
                     return 'alive';
                 }
-                return table.some((entry) => entry.pid === identity.pid) ? 'unknown' : 'dead';
+                return table.some((entry) => entry.pid === identity.pid) ? 'replaced' : 'dead';
             };
             expect(startTimeExcuseSupervisor(owner, supervisorIdentity.pid, host, identityState)).toBe(bound);
         }
@@ -3799,20 +3903,35 @@ if(process.argv[2]==='-axo'){
         writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
         writeFileSync(
             join(bin, 'fixture.json'),
-            JSON.stringify({ ...values, runner: process.pid, calls: join(root, 'ps-calls'), log, events }),
+            JSON.stringify({
+                starts: Object.fromEntries(childStarts),
+                ...values,
+                runner: process.pid,
+                calls: join(root, 'ps-calls'),
+                log,
+                events,
+            }),
             { mode: 0o600 }
         );
+        // The fake tools run on every census invocation, so a process they signal may have exited
+        // and its PID been reused. `signalOnce` signals a PID at most once per fixture, after a
+        // marker records the request, and only while its start still matches `fixture.starts`
+        // (each registered process's start, see childPids); otherwise it exits 4 without signalling.
         // `forkAndExit` signals a forking holder (see startForkingHolder) and waits until it has
         // recorded its child and exited; `forkAndZombie` waits until an unreaped holder has recorded
         // its child and become a zombie; `handOff` waits until a live holder has recorded its heir.
         const prologue = `const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));
-const forkAndExit=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
+const signalOnce=(pid,signal)=>{const marker=require('node:path').join(__dirname,'signalled-'+pid+'-'+signal);if(fs.existsSync(marker))return;
+ const sample=require('node:child_process').spawnSync('/bin/ps',['-o','lstart=','-p',String(pid)],{encoding:'utf8'});
+ if(sample.status!==0||sample.stdout.trim()!==fixture.starts[pid]){process.stderr.write('fixture-signal-refused:pid='+pid+':start-mismatch\\n');process.exit(4)}
+ fs.writeFileSync(marker,signal,{flag:'wx'});process.kill(pid,signal);};
+const forkAndExit=()=>{signalOnce(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
  while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!gone)process.exit(3);};
-const forkAndZombie=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let zombie=false;
+const forkAndZombie=()=>{signalOnce(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let zombie=false;
  while(Date.now()<deadline&&!zombie){zombie=fs.existsSync(fixture.childPath)&&/^\\s*Z/.test(require('node:child_process').execFileSync('/bin/ps',['-o','stat=','-p',String(fixture.holder)],{encoding:'utf8'}));if(!zombie)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!zombie)process.exit(3);fs.appendFileSync(fixture.events,'zombie\\n');};
-const handOff=(signal)=>{process.kill(fixture.holder,signal);const deadline=Date.now()+3000;let ready=false;
+const handOff=(signal)=>{signalOnce(fixture.holder,signal);const deadline=Date.now()+3000;let ready=false;
  while(Date.now()<deadline&&!ready){ready=fs.existsSync(fixture.childPath)&&(signal!=='SIGHUP'||require('node:child_process').execFileSync('/bin/ps',['-o','ppid=','-p',fs.readFileSync(fixture.childPath,'utf8')],{encoding:'utf8'}).trim()==='1');if(!ready)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!ready)process.exit(3);};`;
         writeFileSync(
@@ -4086,6 +4205,53 @@ process.stdout.write(catalog);
         20_000
     );
 
+    it.skipIf(process.platform !== 'darwin').each([
+        { identity: 'a reused PID', start: 'Thu Jan  1 00:00:00 1970', statuses: [4, 4], received: [] },
+        { identity: 'the registered holder', start: undefined, statuses: [3, 3], received: ['SIGUSR1'] },
+    ])(
+        'signals a fixture holder at most once and never $identity',
+        async ({ start, statuses, received }) => {
+            const root = fixture();
+            const log = join(root, 'sentinel-signals');
+            const ready = join(root, 'sentinel.ready');
+            // The sentinel stands in for whatever process holds the holder's PID; it records every
+            // SIGUSR1 it receives and never exits, so each forkAndExit waits out its deadline.
+            const sentinel = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    "const fs=require('node:fs');const [log,ready]=process.argv.slice(1);for(const signal of ['SIGUSR1','SIGUSR2'])process.on(signal,()=>fs.appendFileSync(log,signal+'\\n'));fs.writeFileSync(ready,'ready');setInterval(()=>{},1000)",
+                    log,
+                    ready,
+                ],
+                { stdio: 'ignore' }
+            );
+            if (sentinel.pid === undefined) {
+                throw new Error('signal sentinel did not start');
+            }
+            const sentinelPid = sentinel.pid;
+            childPids.add(sentinelPid);
+            await waitUntil(() => existsSync(ready));
+            const values: Record<string, unknown> = { holder: sentinelPid, childPath: join(root, 'child.pid') };
+            if (start !== undefined) {
+                values.starts = { [sentinelPid]: start };
+            }
+            const { bin } = darwinCensusFixture(root, values, { listed: '[]', lsof: 'if(scoped)forkAndExit();' });
+            const invocations = [1, 2].map(() =>
+                spawnSync(join(bin, 'lsof'), ['-p', String(sentinelPid)], { encoding: 'utf8' })
+            );
+            // SIGUSR2 is a barrier: once it is recorded, every earlier fixture signal has been too.
+            process.kill(sentinelPid, 'SIGUSR2');
+            await waitUntil(() => existsSync(log) && readFileSync(log, 'utf8').includes('SIGUSR2'));
+            expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual([...received, 'SIGUSR2']);
+            expect(invocations.map((invocation) => invocation.status)).toEqual(statuses);
+            if (start !== undefined) {
+                expect(invocations[1]?.stderr).toBe(`fixture-signal-refused:pid=${sentinelPid}:start-mismatch\n`);
+            }
+        },
+        20_000
+    );
+
     // Starts a detached holder with its cwd in `temp`. Its launcher exits, so launchd reaps the
     // holder once it exits; an `unreaped` launcher instead blocks without reaping, so the exited
     // holder stays a zombie until the launcher is killed. On SIGUSR1 the holder forks a child into
@@ -4257,8 +4423,8 @@ process.stdout.write(catalog);
                     listed: "[fixture.holder,fixture.spawner,...(fs.existsSync(fixture.userPath)?[Number(fs.readFileSync(fixture.userPath,'utf8'))]:[])]",
                     lsof: `if(scoped){if(!fs.existsSync(fixture.userPath)){
  const deadline=Date.now()+3000;const pause=()=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
- process.kill(fixture.spawner,'SIGUSR2');while(!fs.existsSync(fixture.userPath)&&Date.now()<deadline)pause();
- process.kill(fixture.holder,'SIGKILL');let gone=false;
+ signalOnce(fixture.spawner,'SIGUSR2');while(!fs.existsSync(fixture.userPath)&&Date.now()<deadline)pause();
+ signalOnce(fixture.holder,'SIGKILL');let gone=false;
  while(!gone&&Date.now()<deadline){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'}if(!gone)pause()}
  if(!gone||!fs.existsSync(fixture.userPath))process.exit(3);
 }}else{catalog+=entry(fixture.spawner,fixture.outside);if(fs.existsSync(fixture.userPath))catalog+=entry(Number(fs.readFileSync(fixture.userPath,'utf8')),fixture.temp)}`,
@@ -4473,7 +4639,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                 {
                     listed: '[fixture.resident]',
                     afterListing: `if(call===1){
- process.kill(fixture.resident,'SIGKILL');
+ signalOnce(fixture.resident,'SIGKILL');
  const deadline=Date.now()+3000;let gone=false;
  while(!gone&&Date.now()<deadline){try{process.kill(fixture.resident,0)}catch(error){gone=error.code==='ESRCH'}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!gone)process.exit(3);
@@ -4512,7 +4678,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                 {
                     listed,
                     sample: `if(args[0]==='-p'&&args[1]===String(fixture.resident)){
- process.kill(fixture.resident,'SIGKILL');
+ signalOnce(fixture.resident,'SIGKILL');
  const deadline=Date.now()+3000;
  while(Date.now()<deadline){try{process.kill(fixture.resident,0)}catch(error){if(error.code==='ESRCH')process.exit(1)}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  process.exit(2);
@@ -4863,7 +5029,10 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                 })
             ).not.toBe(0);
             expect(existsSync(started.tmp)).toBe(true);
-            const recovery = await guarded(root);
+            // Only the retained payload's ownership is the subject here. A real file census cannot
+            // converge while other work keeps starting short-lived processes, and recovery would
+            // silently keep the payload.
+            const recovery = await guarded(root, { storageHost: { fileState: () => 'dead' } });
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
             expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
         },
@@ -5089,6 +5258,55 @@ describe('disk reserve contract', () => {
 });
 
 describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
+    it.each([
+        { status: 'reused', current: 'replacement-private-start', errno: undefined, verdict: 'replaced', reads: 1 },
+        { status: 'start-unavailable', current: undefined, errno: undefined, verdict: 'unknown', reads: 1 },
+        {
+            status: 'probe-unavailable',
+            current: 'matching-private-start',
+            errno: 'EPERM',
+            verdict: 'unknown',
+            reads: 1,
+        },
+        {
+            status: 'probe-unavailable',
+            current: 'matching-private-start',
+            errno: 'EACCES',
+            verdict: 'unknown',
+            reads: 1,
+        },
+        { status: 'matching', current: 'matching-private-start', errno: undefined, verdict: 'alive', reads: 1 },
+        { status: 'absent', current: 'matching-private-start', errno: 'ESRCH', verdict: 'dead', reads: 0 },
+    ] as const)('captures the original storage identity observation for $status $errno', (item) => {
+        const reports: string[] = [];
+        let reads = 0;
+        const verdict = storageIdentityState(
+            { pid: 200, startedAt: 'matching-private-start' },
+            (reason) => reports.push(reason),
+            {
+                kill: (_pid, signal) => {
+                    expect(signal).toBe(0);
+                    if (item.errno !== undefined) {
+                        throw Object.assign(new Error('private syscall message'), { code: item.errno });
+                    }
+                    return true;
+                },
+                processStartedAt: () => {
+                    reads += 1;
+                    return item.current;
+                },
+            }
+        );
+        expect(verdict).toBe(item.verdict);
+        expect(reads).toBe(item.reads);
+        const expectedReports: string[] = [];
+        if (item.verdict === 'unknown') {
+            expectedReports.push(
+                `session-identity-unknown:pid=200:status=${item.status}${item.errno === undefined ? '' : `:errno=${item.errno}`}`
+            );
+        }
+        expect(reports).toEqual(expectedReports);
+    });
     type CensusHost = NonNullable<Parameters<typeof runGuardedCommand>[0]['storageHost']>;
     const censusReporting = (verdict: 'alive' | 'dead' | 'unknown', ...reasons: string[]): CensusHost => ({
         fileState: (_tempDirectories, _ownedPids, report) => {
@@ -5183,6 +5401,345 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             }
         }
     }
+
+    function proofOutput(result: Awaited<ReturnType<typeof runGuardedCommand>> | undefined): string {
+        if (result === undefined) {
+            throw new Error('guarded command did not return a result');
+        }
+        return result.output;
+    }
+
+    function proofObservation(output: string) {
+        const line = output.split('\n').find((value) => value.startsWith('guard storage diagnostic: '));
+        expect(line, output).toBeDefined();
+        if (line === undefined) {
+            throw new Error(output);
+        }
+        return JSON.parse(line.slice('guard storage diagnostic: '.length));
+    }
+
+    it.each([
+        { route: 'process census', predicate: 'session-process-census-unavailable' },
+        { route: 'reference evidence', predicate: 'session-reference-unavailable' },
+        { route: 'identity', predicate: 'session-identity-unknown:pid=200:status=unclassified' },
+    ])('reports the original storage proof predicate for unavailable $route', async ({ route, predicate }) => {
+        const root = fixture();
+        let fileCensuses = 0;
+        const { code, result } = await runCli(root, {
+            args: ['-e', 'process.stdout.write("child-output")'],
+            storageHost: {
+                processCensus: () => {
+                    if (route === 'process census') {
+                        return undefined;
+                    }
+                    if (route === 'reference evidence') {
+                        return { rows: [] };
+                    }
+                    return { rows: [], rawOutput: 'unrelated' };
+                },
+                identityState: (identity) => (identity.pid === 200 ? 'unknown' : 'dead'),
+                fileState: () => {
+                    fileCensuses += 1;
+                    return 'dead';
+                },
+            },
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: (stopped) => {
+                        storage.recordProcesses(undefined, new Map([[200, 'private-start-must-not-appear']]));
+                        return storage.release(stopped);
+                    },
+                };
+            },
+        });
+        expect(code).toBe(1);
+        expect(result?.reason).toBe('leak');
+        expect(fileCensuses).toBe(0);
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: { verdict: 'unknown', predicate },
+            finalObservation: { verdict: 'unknown', predicate },
+        });
+        expect(proofOutput(result)).not.toContain('private-start-must-not-appear');
+    });
+
+    it.each([
+        { status: 'start-unavailable', current: undefined, errno: undefined },
+        { status: 'probe-unavailable', current: 'private-start', errno: 'EPERM' },
+    ] as const)('reports the original storage identity status $status in final guard output', async (item) => {
+        const root = fixture();
+        const predicate = `session-identity-unknown:pid=200:status=${item.status}${item.errno === undefined ? '' : `:errno=${item.errno}`}`;
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: {
+                processCensus: () => ({ rows: [], rawOutput: 'unrelated' }),
+                identityState: (identity, report) => {
+                    if (identity.pid !== 200) {
+                        return 'dead';
+                    }
+                    return storageIdentityState(identity, report, {
+                        kill: () => {
+                            if (item.errno !== undefined) {
+                                throw Object.assign(new Error('private syscall message'), { code: item.errno });
+                            }
+                            return true;
+                        },
+                        processStartedAt: () => item.current,
+                    });
+                },
+                fileState: () => {
+                    throw new Error('uncertain identity must not reach file census');
+                },
+            },
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: (stopped) => {
+                        storage.recordProcesses(undefined, new Map([[200, 'private-start']]));
+                        return storage.release(stopped);
+                    },
+                };
+            },
+        });
+        expect(result?.reason).toBe('leak');
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: { verdict: 'unknown', predicate },
+            finalObservation: { verdict: 'unknown', predicate },
+        });
+        expect(proofOutput(result)).not.toContain('private-start');
+        expect(proofOutput(result)).not.toContain('private syscall');
+    });
+
+    it('keeps nonblocking supervisor identity uncertainty out of transient storage proof', async () => {
+        const root = fixture();
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.stdout.write("child-output")'],
+            storageHost: {
+                platform: () => 'linux',
+                currentPid: process.pid,
+                processCensus: () => ({ rows: [], rawOutput: 'unrelated' }),
+                identityState: (identity, report) => {
+                    if (identity.pid !== process.pid) {
+                        return 'dead';
+                    }
+                    return storageIdentityState(identity, report, {
+                        kill: () => {
+                            throw Object.assign(new Error('private supervisor read'), { code: 'EPERM' });
+                        },
+                        processStartedAt: () => {
+                            return identity.startedAt;
+                        },
+                    });
+                },
+                fileState: (_paths, _pids, report) => {
+                    report('file-census-time-bound');
+                    return 'unknown';
+                },
+            },
+        });
+        expect(result?.reason).toBeUndefined();
+        expect(result?.retainedStorage?.reason).toBe('file-census-time-bound');
+        expect(proofOutput(result)).toBe('child-output');
+    });
+
+    it('reports unsupported Windows recovery census without inspecting processes', () => {
+        const root = fixture();
+        const reports: string[] = [];
+        const ports = storageRecoveryPorts((reason) => reports.push(reason), {
+            platform: () => 'win32',
+            currentPid: process.pid,
+            identityState: () => 'dead',
+            processCensus: () => {
+                throw new Error('unsupported proof cannot inspect processes');
+            },
+            fileState: () => {
+                throw new Error('unsupported proof cannot inspect files');
+            },
+        });
+        const storage = createGuardStorage({ root, token: randomUUID(), owner: fakeOwner, ports });
+        storage.markSpawning();
+        expect(ports.sessionState(readOwner(storage.tempDirectory), storage.tempDirectory)).toBe('unknown');
+        expect(reports).toEqual(['session-platform-unsupported']);
+    });
+
+    it('redacts non-errno release fields in final guard diagnostics', async () => {
+        const root = fixture();
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: async () => {
+                        throw Object.assign(new Error('private message'), {
+                            code: 'EACCES /private/path',
+                            syscall: 'rename /private/path',
+                        });
+                    },
+                };
+            },
+        });
+        expect(result?.reason).toBe('leak');
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: null,
+            finalObservation: { verdict: 'unobserved' },
+            releaseFailure: { errno: 'unknown', syscall: 'unknown', census: 'unobserved' },
+        });
+        expect(proofOutput(result)).not.toContain('private');
+    });
+
+    it.each(['before', 'after'] as const)('reports a safe storage release exception %s the census', async (when) => {
+        const root = fixture();
+        const error = Object.assign(new Error('private message /private/path must not appear'), {
+            code: 'EACCES',
+            syscall: 'rename',
+            path: '/private/path',
+        });
+        const { code, result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: censusReporting('dead'),
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: async () => {
+                        if (when === 'after') {
+                            const owner = readOwner(storage.tempDirectory);
+                            input.ports.sessionState(owner, storage.tempDirectory);
+                        }
+                        throw error;
+                    },
+                };
+            },
+        });
+        expect(code).toBe(1);
+        expect(result?.reason).toBe('leak');
+        const verdict = when === 'before' ? 'unobserved' : 'dead';
+        expect(result?.census).toBe(verdict);
+        expect(
+            proofOutput(result)
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage final census: '))
+        ).toEqual([`guard storage final census: ${verdict}`]);
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: null,
+            finalObservation: { verdict },
+            releaseFailure: { errno: 'EACCES', syscall: 'rename', census: verdict },
+        });
+        expect(proofOutput(result)).not.toContain('private message');
+        expect(proofOutput(result)).not.toContain('/private/path');
+    });
+
+    it.each(['reference-unknown', 'throw-before-census'] as const)(
+        'keeps the first storage obstruction when the final attempt is %s',
+        async (when) => {
+            const root = fixture();
+            let attempts = 0;
+            const { result } = await runCli(root, {
+                args: ['-e', 'process.exitCode=0'],
+                storageHost: {
+                    processCensus: () => (attempts === 1 ? undefined : { rows: [] }),
+                    identityState: () => 'dead',
+                    fileState: () => 'dead',
+                },
+                storageFactory: (input) => {
+                    const storage = createGuardStorage(input);
+                    return {
+                        ...storage,
+                        release: async () => {
+                            attempts += 1;
+                            if (attempts > 1 && when === 'throw-before-census') {
+                                throw Object.assign(new Error('private release detail'), {
+                                    code: 'EIO',
+                                    syscall: 'lstat',
+                                });
+                            }
+                            input.ports.sessionState(readOwner(storage.tempDirectory), storage.tempDirectory);
+                            return false;
+                        },
+                    };
+                },
+            });
+            expect(result?.reason).toBe('leak');
+            expect(attempts).toBe(2);
+            expect(result?.census).toBe('unknown session-process-census-unavailable');
+            const receipt = JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8'));
+            expect(receipt.census).toBe('unknown session-process-census-unavailable');
+            const observation = proofObservation(proofOutput(result));
+            expect(observation.firstObstruction).toEqual({
+                verdict: 'unknown',
+                predicate: 'session-process-census-unavailable',
+            });
+            if (when === 'reference-unknown') {
+                expect(
+                    proofOutput(result)
+                        .split('\n')
+                        .filter((line) => line.startsWith('guard storage final census: '))
+                ).toEqual(['guard storage final census: unknown session-reference-unavailable']);
+                expect(observation.finalObservation).toEqual({
+                    verdict: 'unknown',
+                    predicate: 'session-reference-unavailable',
+                });
+                expect(observation.releaseFailure).toBeUndefined();
+            } else {
+                expect(
+                    proofOutput(result)
+                        .split('\n')
+                        .filter((line) => line.startsWith('guard storage final census: '))
+                ).toEqual(['guard storage final census: unobserved']);
+                expect(observation.finalObservation).toEqual({ verdict: 'unobserved' });
+                expect(observation.releaseFailure).toEqual({ errno: 'EIO', syscall: 'lstat', census: 'unobserved' });
+            }
+        }
+    );
+
+    it('keeps the first storage obstruction distinct from the final census and release exception', async () => {
+        const root = fixture();
+        let attempts = 0;
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: {
+                processCensus: () => (attempts === 1 ? undefined : { rows: [], rawOutput: 'unrelated' }),
+                identityState: () => 'dead',
+                fileState: () => 'dead',
+            },
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: async () => {
+                        attempts += 1;
+                        const owner = readOwner(storage.tempDirectory);
+                        input.ports.sessionState(owner, storage.tempDirectory);
+                        if (attempts > 1) {
+                            throw Object.assign(new Error('private release detail'), {
+                                code: 'ENOENT',
+                                syscall: 'lstat',
+                            });
+                        }
+                        return false;
+                    },
+                };
+            },
+        });
+        expect(result?.reason).toBe('leak');
+        expect(attempts).toBe(2);
+        expect(result?.census).toBe('unknown session-process-census-unavailable');
+        const receipt = JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8'));
+        expect(receipt.census).toBe('unknown session-process-census-unavailable');
+        expect(
+            proofOutput(result)
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage final census: '))
+        ).toEqual(['guard storage final census: dead']);
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: { verdict: 'unknown', predicate: 'session-process-census-unavailable' },
+            finalObservation: { verdict: 'dead' },
+            releaseFailure: { errno: 'ENOENT', syscall: 'lstat', census: 'dead' },
+        });
+    });
 
     it.each([
         { status: 0, expectedCode: 0 },
@@ -5383,37 +5940,73 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(readdirSync(join(root, 'storage')).filter((name) => name !== '.claims')).toEqual([]);
     });
 
-    it('still reports leak and records a receipt when a process survives forced cleanup', async () => {
-        const root = fixture();
-        const pidPath = join(root, 'survivor.pid');
-        const realKill = process.kill.bind(process);
-        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-            if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-                return true;
-            }
-            return realKill(pid, signal);
-        });
-        let survivor: number | undefined;
-        try {
-            const { code, lines, result } = await runCli(root, {
-                args: [
-                    '-e',
-                    `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(c.pid))`,
-                ],
+    it.each(['available', 'unavailable'] as const)(
+        'still reports leak and records a receipt when a process survives forced cleanup with %s snapshot metadata',
+        async (snapshotStatus) => {
+            const root = fixture();
+            const pidPath = join(root, 'survivor.pid');
+            const realKill = process.kill.bind(process);
+            const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+                if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+                    throw Object.assign(new Error('fixture signal denial message'), { code: 'EPERM' });
+                }
+                return realKill(pid, signal);
             });
-            survivor = Number(readFileSync(pidPath, 'utf8'));
-            expect(result?.reason).toBe('leak');
-            expect(result?.retainedStorage).toBeUndefined();
-            expect(code).toBe(1);
-            expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
-            expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
-        } finally {
-            killSpy.mockRestore();
-            if (survivor !== undefined) {
-                childPids.add(survivor);
+            let survivor: number | undefined;
+            const metadataSnapshot = {
+                status: 'available' as const,
+                rows: [{ pid: 501, parentPid: 502, processGroupId: 503, uid: 504, state: 'S', start: 'fixture start' }],
+                truncated: false,
+            };
+            try {
+                const { code, lines, result } = await runCli(root, {
+                    args: [
+                        '-e',
+                        `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(process.argv[1],String(c.pid))`,
+                        pidPath,
+                    ],
+                    processSnapshot: () =>
+                        snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' },
+                });
+                survivor = Number(readFileSync(pidPath, 'utf8'));
+                expect(isAlive(survivor)).toBe(true);
+                expect(result?.reason).toBe('leak');
+                expect(result?.retainedStorage).toBeUndefined();
+                expect(code).toBe(1);
+                expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
+                expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe(
+                    'leak'
+                );
+                const diagnosticLine = result?.output
+                    .split('\n')
+                    .find((line) => line.startsWith('guard cleanup diagnostic: '));
+                expect(diagnosticLine).toBeDefined();
+                if (diagnosticLine === undefined) {
+                    throw new Error('guard cleanup diagnostic missing');
+                }
+                const diagnostic = JSON.parse(diagnosticLine.slice('guard cleanup diagnostic: '.length));
+                expect(diagnostic.treeExitProved).toBe(false);
+                expect(diagnostic.lastObservation.census).toBe('available');
+                expect(diagnostic.lastObservation.blockedBy).toBe('process-group');
+                expect(diagnostic.lastObservation.processGroupProbe.state).toBe('present');
+                expect(diagnostic.signalFailures).toContainEqual(
+                    expect.objectContaining({ pid: survivor, signal: 'SIGTERM', errno: 'EPERM' })
+                );
+                expect(diagnostic.signalFailures.length).toBeLessThanOrEqual(16);
+                expect(diagnostic.metadataAtReport.processGroup).toEqual(
+                    snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' }
+                );
+                expect(diagnosticLine).not.toContain('SOURDAW_PROCESS_SESSION=');
+                expect(diagnosticLine).not.toContain('fixture signal denial message');
+            } finally {
+                killSpy.mockRestore();
+                if (survivor !== undefined) {
+                    childPids.add(survivor);
+                }
             }
-        }
-    }, 30_000);
+        },
+        30_000
+    );
 
     it('reclaims retained storage on a later guarded run once provable and keeps what it cannot prove free', async () => {
         const root = fixture();
@@ -5437,5 +6030,503 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(result.code).toBe(0);
         expect(existsSync(provable.tempDirectory)).toBe(false);
         expect(existsSync(unprovable.tempDirectory)).toBe(true);
+    });
+});
+
+describe('storage identity replacement', () => {
+    const oldStart = 'stored-old-start';
+    const newStart = 'current-new-start';
+    function proofFixture() {
+        const state: {
+            starts: Map<number, string | undefined>;
+            errors: Map<number, string>;
+            rows: ProcessRow[];
+            fileVerdict: 'alive' | 'dead' | 'unknown';
+            fileCalls: number[][];
+            reports: string[];
+        } = {
+            starts: new Map(),
+            errors: new Map(),
+            rows: [],
+            fileVerdict: 'dead',
+            fileCalls: [],
+            reports: [],
+        };
+        const host: Parameters<typeof storageRecoveryPorts>[1] = {
+            platform: () => 'darwin',
+            currentPid: process.pid,
+            identityState: (identity, report) =>
+                storageIdentityState(identity, report, {
+                    kill: (pid, signal) => {
+                        expect(signal).toBe(0);
+                        const errno = state.errors.get(pid);
+                        if (errno !== undefined) {
+                            throw Object.assign(new Error('private probe detail'), { code: errno });
+                        }
+                        if (!state.starts.has(pid)) {
+                            throw Object.assign(new Error('exited'), { code: 'ESRCH' });
+                        }
+                        return true;
+                    },
+                    processStartedAt: (pid) => state.starts.get(pid),
+                }),
+            processCensus: () => ({ rows: state.rows, rawOutput: 'unrelated process output' }),
+            fileState: (_paths, owned) => {
+                state.fileCalls.push(owned);
+                return state.fileVerdict;
+            },
+        };
+        return { state, host, ports: storageRecoveryPorts((reason) => state.reports.push(reason), host) };
+    }
+    function groupRow(pid: number, pgid: number, sessionOwned = false): ProcessRow {
+        return { pid, parentPid: 1, processGroupId: pgid, rssBytes: 0, sessionOwned, command: 'unrelated' };
+    }
+
+    it.each([
+        { member: 'tracked', matching: true },
+        { member: 'tracked', matching: false },
+        { member: 'child', matching: true },
+        { member: 'child', matching: false },
+    ])(
+        'retains a current $member binding with matching=$matching and no numeric group row',
+        async ({ member, matching }) => {
+            const ctx = proofFixture();
+            let start: string | undefined;
+            if (matching) {
+                start = oldStart;
+            }
+            ctx.state.starts.set(200, start);
+            const storage = ownedStorage(fixture(), ctx.ports);
+            if (member === 'child') {
+                storage.recordProcesses({ pid: 200, startedAt: oldStart }, new Map());
+            } else {
+                storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            }
+            expect(await storage.release(true)).toBe(false);
+            expect(existsSync(storage.payloadPath())).toBe(true);
+            expect(ctx.state.fileCalls).toEqual([]);
+        }
+    );
+
+    it.each(['dead', 'alive', 'unknown'] as const)(
+        'requires complete file proof after a replaced tracked identity: %s',
+        async (verdict) => {
+            const ctx = proofFixture();
+            ctx.state.starts.set(200, newStart);
+            ctx.state.fileVerdict = verdict;
+            const storage = ownedStorage(fixture(), ctx.ports);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            const removed = await storage.release(true);
+            expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(200))).toBe(true);
+            expect(removed).toBe(verdict === 'dead');
+            expect(existsSync(storage.payloadPath())).toBe(verdict !== 'dead');
+        }
+    );
+
+    it.each([
+        { uid: 501, borrower: true, removed: false },
+        { uid: 501, borrower: false, removed: true },
+        { uid: 777, borrower: false, removed: true },
+    ])(
+        'uses fresh complete user/file proof for replacement UID $uid, borrower $borrower',
+        async ({ uid, borrower, removed }) => {
+            const ctx = proofFixture();
+            ctx.state.starts.set(200, newStart);
+            if (uid !== 501) {
+                ctx.state.errors.set(200, 'EPERM');
+            }
+            const inspected: number[] = [];
+            let userReads = 0;
+            ctx.host.fileState = (paths, owned, report) => {
+                ctx.state.fileCalls.push(owned);
+                const users = () => {
+                    userReads += 1;
+                    return sameUserProcessIds(`${process.pid} 501\n200 ${uid}\n`, 501, process.pid, owned);
+                };
+                const pids = users();
+                if (pids === undefined) {
+                    return 'unknown';
+                }
+                return linuxStorageFileCensus(pids, 501, paths, 100, report, {
+                    readProcessUsers: () => users() ?? 'process-users-unusable',
+                    isGone: () => false,
+                    now: () => 0,
+                    files: {
+                        inspectUid: () => 501,
+                        readCwd: (pid) => {
+                            inspected.push(pid);
+                            if (pid === 200 && borrower) {
+                                const currentPath = paths[1];
+                                if (currentPath === undefined) {
+                                    throw new Error('complete proof must include the current payload path');
+                                }
+                                return currentPath;
+                            }
+                            return '/unrelated';
+                        },
+                        listDescriptors: () => [],
+                        readDescriptor: () => undefined,
+                        readStatus: () => '',
+                        isGone: () => false,
+                        now: () => 0,
+                    },
+                });
+            };
+            const storage = ownedStorage(fixture(), ctx.ports);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            const actual = await storage.release(true);
+            expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(200))).toBe(true);
+            expect(userReads).toBeGreaterThan(0);
+            expect(inspected.includes(200)).toBe(uid === 501);
+            expect(actual).toBe(removed);
+            expect(existsSync(storage.payloadPath())).toBe(!removed);
+        }
+    );
+
+    it.each([
+        { kind: 'replaced', start: newStart, present: true, removed: true },
+        { kind: 'absent leader with live original group', start: undefined, present: false, removed: false },
+        { kind: 'unreadable leader', start: undefined, present: true, removed: false },
+        { kind: 'matching leader', start: oldStart, present: true, removed: false },
+    ])('distinguishes root PGID authority for $kind', async ({ start, present, removed }) => {
+        const ctx = proofFixture();
+        if (present) {
+            ctx.state.starts.set(200, start);
+        }
+        ctx.state.rows = [groupRow(201, 200)];
+        const storage = ownedStorage(fixture(), ctx.ports);
+        storage.recordProcesses({ pid: 200, startedAt: oldStart }, new Map());
+        expect(await storage.release(true)).toBe(removed);
+        expect(existsSync(storage.payloadPath())).toBe(!removed);
+        expect(ctx.state.fileCalls.length > 0).toBe(removed);
+    });
+
+    it.each(['token', 'raw-reference'] as const)('retains a replaced identity borrower proved by %s', async (proof) => {
+        const ctx = proofFixture();
+        ctx.state.starts.set(200, newStart);
+        const storage = ownedStorage(fixture(), ctx.ports);
+        storage.recordProcesses({ pid: 200, startedAt: oldStart }, new Map());
+        if (proof === 'token') {
+            ctx.state.rows = [groupRow(201, 200, true)];
+        } else {
+            ctx.host.processCensus = () => ({ rows: [], rawOutput: storage.tempDirectory });
+        }
+        expect(await storage.release(true)).toBe(false);
+        expect(existsSync(storage.payloadPath())).toBe(true);
+        expect(ctx.state.fileCalls).toEqual([]);
+    });
+
+    it.each(['absent', 'replaced'] as const)(
+        'recovers an original payload with %s owner and replaced tracked identity',
+        (ownerState) => {
+            const ctx = proofFixture();
+            const root = fixture();
+            const storage = ownedStorage(root, deadPorts);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            ctx.state.starts.set(200, newStart);
+            if (ownerState === 'replaced') {
+                ctx.state.starts.set(fakeOwner.pid, newStart);
+            }
+            recoverGuardStorage(root, ctx.ports, fakeReclaimer);
+            expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+            expect(existsSync(storage.tempDirectory)).toBe(false);
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(200))).toBe(true);
+            if (ownerState === 'replaced') {
+                expect(ctx.state.fileCalls.every((owned) => !owned.includes(fakeOwner.pid))).toBe(true);
+            }
+        }
+    );
+
+    it.each(['replaced', 'unknown'] as const)(
+        'recovers a moved claim only with independent proof and %s reclaimer',
+        (reclaimer) => {
+            const root = fixture();
+            const storage = ownedStorage(root, deadPorts);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            let inspections = 0;
+            expect(
+                reclaimGuardStorage({
+                    root,
+                    owner: readOwner(storage.tempDirectory),
+                    reclaimer: fakeReclaimer,
+                    canRemove: () => {
+                        inspections += 1;
+                        return inspections === 1;
+                    },
+                })
+            ).toBe(false);
+            const payloads = claimPayloads(root);
+            expect(payloads).toHaveLength(1);
+            const payload = payloads[0];
+            if (payload === undefined) {
+                throw new Error('claim payload missing');
+            }
+            const ctx = proofFixture();
+            ctx.state.starts.set(200, newStart);
+            ctx.state.starts.set(fakeOwner.pid, newStart);
+            ctx.state.starts.set(fakeReclaimer.pid, undefined);
+            if (reclaimer === 'replaced') {
+                ctx.state.starts.set(fakeReclaimer.pid, newStart);
+            }
+            recoverGuardStorage(root, ctx.ports, { pid: 999992, startedAt: 'current-reclaimer' });
+            expect(existsSync(payload)).toBe(reclaimer !== 'replaced');
+            expect(ctx.state.fileCalls.length > 0).toBe(reclaimer === 'replaced');
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(fakeOwner.pid) && !owned.includes(200))).toBe(
+                true
+            );
+        }
+    );
+
+    it('remembers only the exact replaced binding within one proof controller', async () => {
+        const root = fixture();
+        const ctx = proofFixture();
+        ctx.state.starts.set(200, newStart);
+        ctx.state.fileVerdict = 'unknown';
+        const storage = ownedStorage(root, ctx.ports);
+        storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+        expect(await storage.release(true)).toBe(false);
+        expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+        ctx.state.starts.set(200, undefined);
+        ctx.state.fileVerdict = 'dead';
+        const independent = storageRecoveryPorts((reason) => ctx.state.reports.push(reason), ctx.host);
+        recoverGuardStorage(root, independent, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        expect(ctx.ports.identityState({ pid: 200, startedAt: newStart })).toBe('unknown');
+        expect(await storage.release(true)).toBe(true);
+        expect(existsSync(storage.payloadPath())).toBe(false);
+    });
+
+    it.each(['EPERM', 'EACCES'] as const)(
+        'retires denied replacement %s while retaining matching and unreadable bindings',
+        (errno) => {
+            const ctx = proofFixture();
+            ctx.state.errors.set(200, errno);
+            ctx.state.starts.set(200, newStart);
+            expect(ctx.ports.identityState({ pid: 200, startedAt: oldStart })).toBe('dead');
+            expect(ctx.ports.identityState({ pid: 200, startedAt: newStart })).toBe('unknown');
+            ctx.state.starts.set(200, undefined);
+            expect(ctx.ports.identityState({ pid: 200, startedAt: 'another-binding' })).toBe('unknown');
+            expect(ctx.ports.identityState({ pid: 200, startedAt: oldStart })).toBe('dead');
+        }
+    );
+});
+
+describe('storage payload references after claim', () => {
+    function proofPorts(raw: () => string, fileState: Parameters<typeof storageRecoveryPorts>[1]['fileState']) {
+        return storageRecoveryPorts(() => {}, {
+            platform: () => 'darwin',
+            currentPid: process.pid,
+            identityState: () => 'dead',
+            processCensus: () => ({ rows: [], rawOutput: raw() }),
+            fileState,
+        });
+    }
+    function currentAlias(storage: ReturnType<typeof createGuardStorage> | undefined): string {
+        if (storage === undefined) {
+            throw new Error('storage not created');
+        }
+        return join(storage.payloadPath(), 'tmp');
+    }
+
+    it('retains local release when only the real post-rename alias is a raw reference', async () => {
+        const root = fixture();
+        let storage: ReturnType<typeof createGuardStorage> | undefined;
+        const censuses: { current: string; raw: string }[] = [];
+        const fileAliases: string[] = [];
+        const ports = proofPorts(
+            () => {
+                const current = currentAlias(storage);
+                let raw = 'unrelated process output';
+                if (storage !== undefined && current !== storage.tempDirectory) {
+                    raw = current;
+                }
+                censuses.push({ current, raw });
+                return raw;
+            },
+            (paths) => {
+                const current = paths[1];
+                if (current === undefined) {
+                    throw new Error('current proof path missing');
+                }
+                fileAliases.push(current);
+                return 'dead';
+            }
+        );
+        storage = ownedStorage(root, ports);
+        const original = storage.tempDirectory;
+        const removed = await storage.release(true);
+        const current = currentAlias(storage);
+        const observed = {
+            removed,
+            payloadExists: existsSync(storage.payloadPath()),
+            originalExists: existsSync(dirname(original)),
+            distinctAlias: current !== original,
+            censuses,
+            fileAliases,
+        };
+        expect(observed).toEqual({
+            removed: false,
+            payloadExists: true,
+            originalExists: false,
+            distinctAlias: true,
+            censuses: [
+                { current: original, raw: 'unrelated process output' },
+                { current, raw: current },
+            ],
+            fileAliases: [original],
+        });
+    });
+
+    it('retains recovery of a moved claim referenced only by its actual current alias', async () => {
+        const root = fixture();
+        let setupProofs = 0;
+        const storage = ownedStorage(
+            root,
+            proofPorts(
+                () => 'unrelated process output',
+                () => {
+                    setupProofs += 1;
+                    if (setupProofs === 1) {
+                        return 'dead';
+                    }
+                    return 'unknown';
+                }
+            )
+        );
+        const setupRemoved = await storage.release(true);
+        const payload = storage.payloadPath();
+        const original = storage.tempDirectory;
+        const current = currentAlias(storage);
+        const censuses: string[] = [];
+        let fileProofs = 0;
+        const ports = proofPorts(
+            () => {
+                const payloads = claimPayloads(root);
+                const actual = payloads[0];
+                if (payloads.length !== 1 || actual === undefined) {
+                    throw new Error('one current claimed payload required');
+                }
+                const raw = join(actual, 'tmp');
+                censuses.push(raw);
+                return raw;
+            },
+            () => {
+                fileProofs += 1;
+                return 'dead';
+            }
+        );
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        const observed = {
+            setupRemoved,
+            setupProofs,
+            distinctAlias: current !== original,
+            payloadExists: existsSync(payload),
+            remaining: claimPayloads(root),
+            censuses,
+            fileProofs,
+        };
+        expect(observed).toEqual({
+            setupRemoved: false,
+            setupProofs: 2,
+            distinctAlias: true,
+            payloadExists: true,
+            remaining: [payload],
+            censuses: [current],
+            fileProofs: 0,
+        });
+    });
+
+    it.each(['original', 'free'] as const)('preserves the %s raw-reference control', async (reference) => {
+        const root = fixture();
+        let storage: ReturnType<typeof createGuardStorage> | undefined;
+        let scans = 0;
+        let fileProofs = 0;
+        const ports = proofPorts(
+            () => {
+                scans += 1;
+                if (storage === undefined) {
+                    throw new Error('storage not created');
+                }
+                if (reference === 'original') {
+                    return storage.tempDirectory;
+                }
+                return 'unrelated process output';
+            },
+            () => {
+                fileProofs += 1;
+                return 'dead';
+            }
+        );
+        storage = ownedStorage(root, ports);
+        const removed = await storage.release(true);
+        const observed = { removed, payloadExists: existsSync(storage.payloadPath()), scans, fileProofs };
+        let expected = { removed: true, payloadExists: false, scans: 2, fileProofs: 2 };
+        if (reference === 'original') {
+            expected = { removed: false, payloadExists: true, scans: 1, fileProofs: 0 };
+        }
+        expect(observed).toEqual(expected);
+    });
+
+    it('retains a file borrower of the real current alias only after the atomic rename', async () => {
+        const root = fixture();
+        let storage: ReturnType<typeof createGuardStorage> | undefined;
+        const fileProofs: { paths: string[]; verdict: string }[] = [];
+        const borrowerAliases: string[] = [];
+        const ports = proofPorts(
+            () => 'unrelated process output',
+            (paths, _owned, report) => {
+                const actual = currentAlias(storage);
+                if (storage === undefined) {
+                    throw new Error('storage not created');
+                }
+                const moved = actual !== storage.tempDirectory;
+                const pids = [process.pid, 200];
+                const verdict = linuxStorageFileCensus(pids, 501, paths, 100, report, {
+                    readProcessUsers: () => pids,
+                    isGone: () => false,
+                    now: () => 0,
+                    files: {
+                        inspectUid: () => 501,
+                        readCwd: (pid) => {
+                            if (pid === 200 && moved) {
+                                borrowerAliases.push(actual);
+                                return actual;
+                            }
+                            return '/unrelated';
+                        },
+                        listDescriptors: () => [],
+                        readDescriptor: () => undefined,
+                        readStatus: () => '',
+                        isGone: () => false,
+                        now: () => 0,
+                    },
+                });
+                fileProofs.push({ paths: Array.from(paths), verdict });
+                return verdict;
+            }
+        );
+        storage = ownedStorage(root, ports);
+        const original = storage.tempDirectory;
+        const removed = await storage.release(true);
+        const current = currentAlias(storage);
+        const observed = {
+            removed,
+            payloadExists: existsSync(storage.payloadPath()),
+            distinctAlias: current !== original,
+            fileProofs,
+            borrowerAliases,
+        };
+        expect(observed).toEqual({
+            removed: false,
+            payloadExists: true,
+            distinctAlias: true,
+            fileProofs: [
+                { paths: [original, original], verdict: 'dead' },
+                { paths: [original, current], verdict: 'alive' },
+            ],
+            borrowerAliases: [current],
+        });
     });
 });

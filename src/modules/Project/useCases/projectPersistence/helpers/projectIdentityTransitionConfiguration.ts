@@ -8,9 +8,8 @@ export type ProjectIdentityTransitionDependencies = {
     }) => Promise<void>;
 };
 
-const unconfiguredLeave = async (): Promise<void> => {
-    throw new Error('Project identity transition dependencies are not configured');
-};
+const unconfiguredLeave = (): Promise<void> =>
+    Promise.reject(new Error('Project identity transition dependencies are not configured'));
 
 type ConfiguredBarrier = {
     promise: Promise<void>;

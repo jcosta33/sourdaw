@@ -91,6 +91,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.repairState,
     actionHistoryStore: mocks.actionHistory,
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
+    captureProjectRootIdentity: vi.fn(() => 'project-root-identity'),
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
 }));

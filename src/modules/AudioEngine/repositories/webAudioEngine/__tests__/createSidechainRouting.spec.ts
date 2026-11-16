@@ -211,6 +211,44 @@ describe('createSidechainRouting', () => {
         expect(routing.connectionCount()).toBe(0);
     });
 
+    it('forgets queued routes sourced from or targeting the removed track and keeps an unrelated one', () => {
+        const { routing, setFallback } = createFixture();
+        setFallback(true);
+        routing.wireRoute('gone', 'b', 'd1');
+        routing.wireRoute('a', 'gone', 'd2');
+        routing.wireRoute('a', 'b', 'd3');
+
+        routing.forgetPendingRoutesOf('gone', new Set());
+
+        expect(Array.from(routing.pendingRoutes.keys())).toEqual(['a→d3']);
+    });
+
+    it('removes a live route sourced from the removed track', () => {
+        const { routing, gains, delays, sourceTap } = createFixture();
+        routing.wireRoute('src', 'dst', 'sc');
+
+        routing.removeConnectionsOf('src', new Set());
+
+        expect(routing.connectionCount()).toBe(0);
+        expect(sourceTap.disconnect).toHaveBeenCalledExactlyOnceWith(delays[0]);
+        expect(gains[0]?.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-attaches only the keys the rebuilt track feeds', () => {
+        const { routing, delays, sourceTap, strips } = createFixture();
+        const other = createStrip();
+        strips.set('src2', other.strip);
+        routing.wireRoute('src', 'dst', 'sc');
+        routing.wireRoute('src2', 'dst', 'sc');
+        const rebuilt = createStrip();
+
+        routing.reconnectTrack('src', rebuilt.strip);
+
+        expect(sourceTap.disconnect).toHaveBeenCalledExactlyOnceWith(delays[0]);
+        expect(rebuilt.analyserNode.connect).toHaveBeenCalledExactlyOnceWith(delays[0]);
+        expect(other.analyserNode.disconnect).not.toHaveBeenCalled();
+    });
+
     it('returns three disconnect effects per live route and clears both maps', () => {
         const { routing, gains, delays, setFallback } = createFixture();
         routing.wireRoute('src', 'dst', 'sc');

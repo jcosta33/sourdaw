@@ -149,20 +149,31 @@ function recipeCriterionMatches(goal: MetricGoal, catalog: ReturnType<typeof get
     );
 }
 
+const ORDERING_POLICY_METRICS = {
+    'spectral-centroid-comparison-v1': 'spectralCentroid',
+    'integrated-loudness-comparison-v1': 'integratedLoudness',
+    'side-energy-fraction-comparison-v1': 'sideEnergyFraction',
+    'crest-factor-comparison-v1': 'crestFactor',
+} as const;
+
 function policyCriterionMatches(goal: MetricGoal): boolean {
     if (goal.source.kind !== 'policy') {
         return true;
     }
-    return !(
-        (goal.source.policyId === 'integrated-loudness-match-v1' &&
-            (goal.metricId !== 'integratedLoudness' ||
-                goal.relation !== 'match-current' ||
-                goal.tolerance !== 0.1 ||
-                goal.band !== null)) ||
-        (goal.source.policyId === 'spectral-centroid-comparison-v1' &&
-            (goal.metricId !== 'spectralCentroid' ||
-                !['greater-than-current', 'less-than-current'].includes(goal.relation) ||
-                goal.tolerance !== 0))
+    const { policyId } = goal.source;
+    if (policyId === 'integrated-loudness-match-v1') {
+        return (
+            goal.metricId === 'integratedLoudness' &&
+            goal.relation === 'match-current' &&
+            goal.tolerance === 0.1 &&
+            goal.band === null
+        );
+    }
+    return (
+        goal.metricId === ORDERING_POLICY_METRICS[policyId] &&
+        (goal.relation === 'greater-than-current' || goal.relation === 'less-than-current') &&
+        goal.tolerance === 0 &&
+        goal.band === null
     );
 }
 
@@ -307,7 +318,7 @@ function movedWithin(from: number, to: number, tolerance: number): boolean {
     return to - from <= tolerance + rounding;
 }
 
-function satisfies(goal: MetricGoal, before: number, after: number, reference: number | undefined): boolean {
+function satisfies(goal: MetricGoal, before: number, after: number, references: readonly number[]): boolean {
     if (goal.relation === 'increase') {
         return after > before;
     }
@@ -330,17 +341,21 @@ function satisfies(goal: MetricGoal, before: number, after: number, reference: n
             movedWithin(after, goal.targetValue, goal.tolerance)
         );
     }
-    if (reference === undefined) {
+    if (references.length === 0) {
         return false;
     }
+    // A subject handed several references clears each of them; the pairing is decided before this.
     if (goal.relation === 'match-current') {
-        return movedWithin(reference, after, goal.tolerance) && movedWithin(after, reference, goal.tolerance);
+        return references.every(
+            (reference) =>
+                movedWithin(reference, after, goal.tolerance) && movedWithin(after, reference, goal.tolerance)
+        );
     }
     if (goal.relation === 'greater-than-current') {
-        return after > reference;
+        return references.every((reference) => after > reference);
     }
     if (goal.relation === 'less-than-current') {
-        return after < reference;
+        return references.every((reference) => after < reference);
     }
     return false;
 }
@@ -360,6 +375,7 @@ function goalReferences(
         reference.push(figure.value);
     }
     if (
+        goal.relation === 'match-current' &&
         goal.referenceTargetIds.length > 0 &&
         goal.referenceTargetIds.length !== 1 &&
         goal.referenceTargetIds.length !== goal.targetIds.length
@@ -367,6 +383,20 @@ function goalReferences(
         failure = 'incomparable';
     }
     return { reference, failure };
+}
+
+/**
+ * The reference figures one target is held to. A match pairs by index (one reference serves every subject).
+ * An ordering does too when subjects and references are equal in number, as on main; one reference serves
+ * every subject; otherwise each subject clears every reference ("brighter than the guitars").
+ */
+function referencesFor(goal: MetricGoal, reference: number[], index: number): number[] {
+    const pairs = reference.length === goal.targetIds.length;
+    if (goal.relation !== 'match-current' && !pairs) {
+        return reference;
+    }
+    const paired = reference.length === 1 ? reference[0] : reference[index];
+    return paired === undefined ? [] : [paired];
 }
 
 function targetComparison(
@@ -401,6 +431,8 @@ function criterionTargets(
 ) {
     const baseline: number[] = [];
     const observed: number[] = [];
+    const initialFigures: number[] = [];
+    let unmet: Criterion['unmet'] = null;
     let unit: string | null = null;
     let failure = initialFailure;
     let violation: HoldViolation | null = null;
@@ -413,51 +445,78 @@ function criterionTargets(
         const { initial, before, after, final } = figures;
         baseline.push(before.value);
         observed.push(final.value);
+        initialFigures.push(initial.value);
         unit = final.unit;
-        const referenceValue = reference.length === 1 ? reference[0] : reference[index];
-        if (failure === null && !satisfies(goal, before.value, after.value, referenceValue)) {
+        const referenceValues = referencesFor(goal, reference, index);
+        if (failure === null && !satisfies(goal, before.value, after.value, referenceValues)) {
             failure = 'out-of-tolerance';
             violation = { targetId: id, from: before.value, to: after.value };
+            unmet = { scope: 'step', from: before.value, to: after.value };
         }
-        if (failure === null && !satisfies(goal, initial.value, final.value, referenceValue)) {
+        if (failure === null && !satisfies(goal, initial.value, final.value, referenceValues)) {
             failure = 'out-of-tolerance';
             violation = { targetId: id, from: initial.value, to: final.value };
+            unmet = { scope: 'batch', from: initial.value, to: final.value };
         }
     }
-    return { baseline, observed, reference, unit, failure, violation };
+    return {
+        baseline,
+        observed,
+        initial: initialFigures,
+        final: [...observed],
+        reference,
+        unit,
+        failure,
+        violation,
+        unmet,
+    };
+}
+
+type CriterionFigures = ReturnType<typeof criterionTargets>;
+
+const UNEVALUATED_FIGURES: CriterionFigures = {
+    baseline: [],
+    observed: [],
+    initial: [],
+    final: [],
+    reference: [],
+    unit: null,
+    failure: null,
+    violation: null,
+    unmet: null,
+};
+
+function readCriterionOutcome(failure: Failure | null): Criterion['outcome'] {
+    if (failure === null) {
+        return 'met';
+    }
+    return failure === 'out-of-tolerance' ? 'not-met' : 'not-evaluated';
+}
+
+function readCriterionFigures(goal: MetricGoal, context: ObservationContext): CriterionFigures {
+    if (goal.metricId === null || goal.relation === 'unsupported' || goal.range === null) {
+        return { ...UNEVALUATED_FIGURES, failure: 'incomparable' };
+    }
+    const prefix = readGoalPrefix(goal, context.binding);
+    if (prefix === undefined) {
+        return { ...UNEVALUATED_FIGURES, failure: 'missing' };
+    }
+    const { reference, failure } = goalReferences(goal, context);
+    return criterionTargets(goal, prefix, context, reference, failure);
 }
 
 function evaluateCriterion(
     goal: MetricGoal,
     context: ObservationContext
 ): { criterion: Criterion; failure: Failure | null; violation: HoldViolation | null } {
-    const prefix = readGoalPrefix(goal, context.binding);
-    let values: {
-        baseline: number[];
-        observed: number[];
-        reference: number[];
-        unit: string | null;
-        failure: Failure | null;
-        violation: HoldViolation | null;
-    } = {
-        baseline: [],
-        observed: [],
-        reference: [],
-        unit: null,
-        failure: null,
-        violation: null,
-    };
-    if (goal.metricId === null || goal.relation === 'unsupported' || goal.range === null) {
-        values.failure = 'incomparable';
-    } else if (prefix === undefined) {
-        values.failure = 'missing';
-    } else {
-        const { reference, failure } = goalReferences(goal, context);
-        values = criterionTargets(goal, prefix, context, reference, failure);
-    }
-    const { failure, violation, ...figures } = values;
+    const { failure, violation, ...figures } = readCriterionFigures(goal, context);
     return {
-        criterion: { ...goal, ...figures, status: failure === null ? 'verified' : 'blocked' },
+        criterion: {
+            ...goal,
+            ...figures,
+            outcome: readCriterionOutcome(failure),
+            status: failure === null ? 'verified' : 'blocked',
+        },
         failure,
         violation,
     };
@@ -500,6 +559,10 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
             baseline: [],
             observed: [],
             reference: [],
+            initial: [],
+            final: [],
+            outcome: 'not-reached',
+            unmet: null,
             unit: null,
             status: 'blocked',
         }))
@@ -551,12 +614,17 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
             reason: 'The frozen objective criteria contradict each other on the same subjects and range.',
         });
     }
+    // Every criterion is read, so a blocked batch's card shows each one's own figures; the first to fail names the refusal.
+    let refusal: Refusal | null = null;
     for (const [goalIndex, goal] of goals.entries()) {
         const { criterion, failure, violation } = evaluateCriterion(goal, { state, binding });
         criteria[goalIndex] = criterion;
-        if (failure !== null) {
-            return blocked(criteria, { failure, reason: criterionFailureReason({ criterion, failure, violation }) });
+        if (failure !== null && refusal === null) {
+            refusal = { failure, reason: criterionFailureReason({ criterion, failure, violation }) };
         }
+    }
+    if (refusal !== null) {
+        return blocked(criteria, refusal);
     }
     return {
         status: 'verified',

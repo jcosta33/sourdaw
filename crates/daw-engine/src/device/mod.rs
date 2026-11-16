@@ -180,6 +180,7 @@ impl InputOpenRefusal {
 /// The rate check lives on the seam rather than inside a backend so every
 /// backend answers a mismatch identically, and so the refusal is provable
 /// without a device attached.
+#[cfg(any(not(windows), test))]
 pub(crate) fn accept_input(
     device: NegotiatedInput,
     request: InputOpenRequest,

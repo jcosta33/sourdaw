@@ -33,7 +33,10 @@ test.describe('Crust metering layout', () => {
         await expect(integrated).toBeVisible();
         const line = integrated.locator('..');
         await line.evaluate((element) => {
-            const [value, unit, delta] = [...element.querySelectorAll('span')];
+            const spans = [...element.querySelectorAll('span')];
+            const value = spans.at(0);
+            const unit = spans.at(1);
+            const delta = spans.at(2);
             if (!value || !unit || !delta) {
                 throw new Error('Expected integrated value, unit and target delta');
             }
@@ -48,7 +51,7 @@ test.describe('Crust metering layout', () => {
             }
             const cardStyle = getComputedStyle(card);
             const contentRight = card.getBoundingClientRect().right - Number.parseFloat(cardStyle.paddingRight);
-            const children = [...element.querySelectorAll('span')].map((child) => {
+            const children = Array.from(element.querySelectorAll('span'), (child) => {
                 const rect = child.getBoundingClientRect();
                 return { left: rect.left, right: rect.right };
             });
