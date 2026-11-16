@@ -146,12 +146,15 @@ function storageSessionState(
         return 'unknown';
     }
     if (host.platform() !== 'win32') {
-        const references = storageReferenceState(census.rawOutput, tempDirectory);
-        if (references !== 'dead') {
-            if (references === 'unknown') {
-                report('session-reference-unavailable');
-            }
-            return references;
+        const rawOutput = census.rawOutput;
+        const originalReference = storageReferenceState(rawOutput, tempDirectory);
+        const currentReference = storageReferenceState(rawOutput, currentTempDirectory);
+        if (originalReference === 'alive' || currentReference === 'alive') {
+            return 'alive';
+        }
+        if (originalReference === 'unknown' || currentReference === 'unknown') {
+            report('session-reference-unavailable');
+            return 'unknown';
         }
     }
     if (census.rows.some((row) => row.sessionOwned) || hasOriginalChildGroup(owner, census.rows, identities)) {

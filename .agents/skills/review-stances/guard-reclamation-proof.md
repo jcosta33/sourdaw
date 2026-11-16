@@ -110,6 +110,9 @@ evidence out of the child output unless it explains retention`, where startup, s
     complete current-user/file proof across local release and original/moved-claim recovery. Drive same-UID borrowers,
     foreign-UID replacements, denied/unreadable reads and weaker later observations; independent bindings/controllers
     retain their own authority. Mapping replacement back to unknown, bypassing file proof or caching only PID must fail.
+    The original-only raw check from #5274 must cover the current claimed alias too, using one captured census.
+    `storage payload references after claim` must retain real post-rename raw and file borrowers; removing the
+    current-alias veto or repeating the original file-proof argument must fail.
 11. **Process-group inspection EPERM is not a foreign UID (#5240).** XNU's group signal traversal
     ([`bsd/kern/kern_sig.c`][xnu-sig]) excludes zombies, so an existing all-zombie group may return EPERM until
     reap ([`bsd/kern/kern_exit.c`][xnu-exit]) removes its membership; current kernel source is not an

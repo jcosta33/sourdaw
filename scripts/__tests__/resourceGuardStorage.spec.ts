@@ -6131,3 +6131,221 @@ describe('storage identity replacement', () => {
         }
     );
 });
+
+describe('storage payload references after claim', () => {
+    function proofPorts(raw: () => string, fileState: Parameters<typeof storageRecoveryPorts>[1]['fileState']) {
+        return storageRecoveryPorts(() => {}, {
+            platform: () => 'darwin',
+            currentPid: process.pid,
+            identityState: () => 'dead',
+            processCensus: () => ({ rows: [], rawOutput: raw() }),
+            fileState,
+        });
+    }
+    function currentAlias(storage: ReturnType<typeof createGuardStorage> | undefined): string {
+        if (storage === undefined) {
+            throw new Error('storage not created');
+        }
+        return join(storage.payloadPath(), 'tmp');
+    }
+
+    it('retains local release when only the real post-rename alias is a raw reference', async () => {
+        const root = fixture();
+        let storage: ReturnType<typeof createGuardStorage> | undefined;
+        const censuses: { current: string; raw: string }[] = [];
+        const fileAliases: string[] = [];
+        const ports = proofPorts(
+            () => {
+                const current = currentAlias(storage);
+                let raw = 'unrelated process output';
+                if (storage !== undefined && current !== storage.tempDirectory) {
+                    raw = current;
+                }
+                censuses.push({ current, raw });
+                return raw;
+            },
+            (paths) => {
+                const current = paths[1];
+                if (current === undefined) {
+                    throw new Error('current proof path missing');
+                }
+                fileAliases.push(current);
+                return 'dead';
+            }
+        );
+        storage = ownedStorage(root, ports);
+        const original = storage.tempDirectory;
+        const removed = await storage.release(true);
+        const current = currentAlias(storage);
+        const observed = {
+            removed,
+            payloadExists: existsSync(storage.payloadPath()),
+            originalExists: existsSync(dirname(original)),
+            distinctAlias: current !== original,
+            censuses,
+            fileAliases,
+        };
+        expect(observed).toEqual({
+            removed: false,
+            payloadExists: true,
+            originalExists: false,
+            distinctAlias: true,
+            censuses: [
+                { current: original, raw: 'unrelated process output' },
+                { current, raw: current },
+            ],
+            fileAliases: [original],
+        });
+    });
+
+    it('retains recovery of a moved claim referenced only by its actual current alias', async () => {
+        const root = fixture();
+        let setupProofs = 0;
+        const storage = ownedStorage(
+            root,
+            proofPorts(
+                () => 'unrelated process output',
+                () => {
+                    setupProofs += 1;
+                    if (setupProofs === 1) {
+                        return 'dead';
+                    }
+                    return 'unknown';
+                }
+            )
+        );
+        const setupRemoved = await storage.release(true);
+        const payload = storage.payloadPath();
+        const original = storage.tempDirectory;
+        const current = currentAlias(storage);
+        const censuses: string[] = [];
+        let fileProofs = 0;
+        const ports = proofPorts(
+            () => {
+                const payloads = claimPayloads(root);
+                const actual = payloads[0];
+                if (payloads.length !== 1 || actual === undefined) {
+                    throw new Error('one current claimed payload required');
+                }
+                const raw = join(actual, 'tmp');
+                censuses.push(raw);
+                return raw;
+            },
+            () => {
+                fileProofs += 1;
+                return 'dead';
+            }
+        );
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        const observed = {
+            setupRemoved,
+            setupProofs,
+            distinctAlias: current !== original,
+            payloadExists: existsSync(payload),
+            remaining: claimPayloads(root),
+            censuses,
+            fileProofs,
+        };
+        expect(observed).toEqual({
+            setupRemoved: false,
+            setupProofs: 2,
+            distinctAlias: true,
+            payloadExists: true,
+            remaining: [payload],
+            censuses: [current],
+            fileProofs: 0,
+        });
+    });
+
+    it.each(['original', 'free'] as const)('preserves the %s raw-reference control', async (reference) => {
+        const root = fixture();
+        let storage: ReturnType<typeof createGuardStorage> | undefined;
+        let scans = 0;
+        let fileProofs = 0;
+        const ports = proofPorts(
+            () => {
+                scans += 1;
+                if (storage === undefined) {
+                    throw new Error('storage not created');
+                }
+                if (reference === 'original') {
+                    return storage.tempDirectory;
+                }
+                return 'unrelated process output';
+            },
+            () => {
+                fileProofs += 1;
+                return 'dead';
+            }
+        );
+        storage = ownedStorage(root, ports);
+        const removed = await storage.release(true);
+        const observed = { removed, payloadExists: existsSync(storage.payloadPath()), scans, fileProofs };
+        let expected = { removed: true, payloadExists: false, scans: 2, fileProofs: 2 };
+        if (reference === 'original') {
+            expected = { removed: false, payloadExists: true, scans: 1, fileProofs: 0 };
+        }
+        expect(observed).toEqual(expected);
+    });
+
+    it('retains a file borrower of the real current alias only after the atomic rename', async () => {
+        const root = fixture();
+        let storage: ReturnType<typeof createGuardStorage> | undefined;
+        const fileProofs: { paths: string[]; verdict: string }[] = [];
+        const borrowerAliases: string[] = [];
+        const ports = proofPorts(
+            () => 'unrelated process output',
+            (paths, _owned, report) => {
+                const actual = currentAlias(storage);
+                if (storage === undefined) {
+                    throw new Error('storage not created');
+                }
+                const moved = actual !== storage.tempDirectory;
+                const pids = [process.pid, 200];
+                const verdict = linuxStorageFileCensus(pids, 501, paths, 100, report, {
+                    readProcessUsers: () => pids,
+                    isGone: () => false,
+                    now: () => 0,
+                    files: {
+                        inspectUid: () => 501,
+                        readCwd: (pid) => {
+                            if (pid === 200 && moved) {
+                                borrowerAliases.push(actual);
+                                return actual;
+                            }
+                            return '/unrelated';
+                        },
+                        listDescriptors: () => [],
+                        readDescriptor: () => undefined,
+                        readStatus: () => '',
+                        isGone: () => false,
+                        now: () => 0,
+                    },
+                });
+                fileProofs.push({ paths: Array.from(paths), verdict });
+                return verdict;
+            }
+        );
+        storage = ownedStorage(root, ports);
+        const original = storage.tempDirectory;
+        const removed = await storage.release(true);
+        const current = currentAlias(storage);
+        const observed = {
+            removed,
+            payloadExists: existsSync(storage.payloadPath()),
+            distinctAlias: current !== original,
+            fileProofs,
+            borrowerAliases,
+        };
+        expect(observed).toEqual({
+            removed: false,
+            payloadExists: true,
+            distinctAlias: true,
+            fileProofs: [
+                { paths: [original, original], verdict: 'dead' },
+                { paths: [original, current], verdict: 'alive' },
+            ],
+            borrowerAliases: [current],
+        });
+    });
+});
