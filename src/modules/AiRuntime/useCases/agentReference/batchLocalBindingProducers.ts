@@ -35,6 +35,14 @@ export const CREATED_OBJECT_NOUNS: Readonly<Record<BatchLocalBindingProducerName
     createBus: /\bbus(?:es)?\b/u,
 };
 
+/** Any noun of an object the plan-created object route can make, as one pattern. */
+export const CREATED_OBJECT_NOUN = new RegExp(
+    Object.values(CREATED_OBJECT_NOUNS)
+        .map((noun) => noun.source)
+        .join('|'),
+    'u'
+);
+
 /**
  * The only commands the plan-created object route may admit. Membership is about what a command
  * changes, not what it targets: every effect of these lands inside the object being created.
