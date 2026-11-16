@@ -103,11 +103,10 @@ describe('recorded controller take', () => {
         // An overdub pass lands through its app action; run the real handler's write so the
         // specs read the rows the store would hold once the dispatch settles.
         mocks.executeAppAction.mockReset();
-        mocks.executeAppAction.mockImplementation((action) => {
+        mocks.executeAppAction.mockImplementation(async (action) => {
             if (action.type === 'appendOverdubControllers') {
-                handleAppendOverdubControllers.execute(action);
+                await handleAppendOverdubControllers.execute(action);
             }
-            return Promise.resolve();
         });
         vi.mocked(midiStore.set).mockClear();
         mocks.midi.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };

@@ -63,7 +63,9 @@ test('source halos, transient drag preview and stored eligibility follow live mo
     const second = initial.find((modulator) => modulator.name === 'Second LFO');
     expect(first).toBeDefined();
     expect(second).toBeDefined();
-    if (!first || !second) throw new Error('Both created modulators must exist');
+    if (!first || !second) {
+        throw new Error('Both created modulators must exist');
+    }
     expect(first.mappings).toHaveLength(0);
     expect(second.mappings).toHaveLength(0);
     const firstHandle = matrix.getByRole('button', { name: 'Drag modulator First LFO to a parameter' });
@@ -118,8 +120,9 @@ test('source halos, transient drag preview and stored eligibility follow live mo
             );
             const device = track?.devices.find((candidate) => candidate.type === 'builtin-phaser');
             const source = snapshot?.data.modulation?.modulators.find((modulator) => modulator.id === sourceId);
-            if (!snapshot || !track || !device || !source)
+            if (!snapshot || !track || !device || !source) {
                 throw new Error('Legacy fixture requires the real project, Phaser and LFO');
+            }
             const mapping = {
                 targetTrackId: track.id,
                 targetDeviceId: device.id,

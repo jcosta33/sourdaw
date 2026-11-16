@@ -11,3 +11,10 @@
  * Ephemeral runtime state, not project truth.
  */
 export const loadedExternalInstances = new Set<string>();
+
+/**
+ * The plugin each loaded instance is, kept in lockstep with
+ * `loadedExternalInstances`: a teardown that carries an instance's live state
+ * records which plugin produced it, and names that plugin when the read fails.
+ */
+export const loadedExternalInstancePluginIds = new Map<string, string>();

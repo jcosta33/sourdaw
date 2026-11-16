@@ -71,7 +71,7 @@ describe('stopRecording', () => {
         recordingPassTiming.retire('c1');
     });
 
-    it('updates clip endBeat and clears active recording ref', () => {
+    it('updates clip endBeat and clears active recording ref', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -84,7 +84,7 @@ describe('stopRecording', () => {
         mocks.takeLaneStoreValue.value = null;
         recordingPassTiming.begin('c1', 4);
 
-        stopRecording();
+        await stopRecording();
 
         expect(mocks.activeRecordingRef.current).toHaveLength(0);
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
@@ -95,7 +95,7 @@ describe('stopRecording', () => {
     // Mid-playback the store's playheadPosition is still the beat playback
     // started at, which would close the take at (or before) its own start. The
     // caller names the end beat instead.
-    it('closes clips and takes at an explicit beat, not the store playhead', () => {
+    it('closes clips and takes at an explicit beat, not the store playhead', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -110,7 +110,7 @@ describe('stopRecording', () => {
         } as unknown as TakeLaneStoreState;
         recordingPassTiming.begin('c1', 4);
 
-        stopRecording(12);
+        await stopRecording(12);
 
         const trackState = mocks.setTrackState.mock.calls[0]![0];
         expect(trackState.tracks[0]!.clips[0]!.endBeat).toBe(12);
@@ -118,13 +118,13 @@ describe('stopRecording', () => {
         expect(laneState.lanes[0]!.takes[0]!.endBeat).toBe(12);
     });
 
-    it('enforces minimum 1 beat for MIDI clips', () => {
+    it('enforces minimum 1 beat for MIDI clips', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],
         } as unknown as TrackState);
         mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 4.1 };
 
-        stopRecording();
+        await stopRecording();
 
         const newState = mocks.setTrackState.mock.calls[0]![0];
         expect(newState.tracks[0]!.clips[0]!.endBeat).toBe(5); // 4 + 1
@@ -134,7 +134,7 @@ describe('stopRecording', () => {
     // clip and its take agreeing on the end: both honour the one-beat
     // minimum, so the take never names timeline the clip does not cover
     // (#4994). Loop [2, 6], record from beat 1, stop at 1.5.
-    it('closes an audio clip stopped mid-run-up to the same end as its take', () => {
+    it('closes an audio clip stopped mid-run-up to the same end as its take', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', startBeat: 1, endBeat: 1 }] }],
         } as unknown as TrackState);
@@ -144,7 +144,7 @@ describe('stopRecording', () => {
         } as unknown as TakeLaneStoreState;
         recordingPassTiming.begin('c1', 1);
 
-        stopRecording(1.5);
+        await stopRecording(1.5);
 
         const trackState = mocks.setTrackState.mock.calls[0]![0];
         const clipEnd = trackState.tracks[0]!.clips[0]!.endBeat;
@@ -154,7 +154,7 @@ describe('stopRecording', () => {
         expect(takeEnd).toBe(clipEnd);
     });
 
-    it('updates take lanes', () => {
+    it('updates take lanes', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 0 }] }],
         } as unknown as TrackState);
@@ -164,7 +164,7 @@ describe('stopRecording', () => {
         } as unknown as TakeLaneStoreState;
         recordingPassTiming.begin('c1', 0);
 
-        stopRecording();
+        await stopRecording();
 
         expect(mocks.takeLaneStoreSet).toHaveBeenCalled();
         const newState = mocks.takeLaneStoreSet.mock.calls[0]![0];
@@ -174,28 +174,28 @@ describe('stopRecording', () => {
         expect(newState.lanes[0]!.takes[0]!.endBeat).toBe(10);
     });
 
-    it('returns immediately when no clips are actively recording', () => {
+    it('returns immediately when no clips are actively recording', async () => {
         mocks.activeRecordingRef.current = [];
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
         mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 8 };
 
-        stopRecording();
+        await stopRecording();
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.takeLaneStoreSet).not.toHaveBeenCalled();
     });
 
-    it('returns without writing when the transport store has no state', () => {
+    it('returns without writing when the transport store has no state', async () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
         mocks.transportStoreValue = null;
 
-        stopRecording();
+        await stopRecording();
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.takeLaneStoreSet).not.toHaveBeenCalled();
     });
 
-    it('leaves non-recording clips and takes untouched while finalising recording ones', () => {
+    it('leaves non-recording clips and takes untouched while finalising recording ones', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -220,7 +220,7 @@ describe('stopRecording', () => {
         } as unknown as TakeLaneStoreState;
         recordingPassTiming.begin('c1', 0);
 
-        stopRecording();
+        await stopRecording();
 
         const trackState = mocks.setTrackState.mock.calls[0]![0];
         // Recording clip is finalised; the sibling clip keeps its end beat.
@@ -233,7 +233,7 @@ describe('stopRecording', () => {
         expect(laneState.lanes[0]!.takes[1]!.endBeat).toBe(1);
     });
 
-    it('refuses audio finalisation without a current capture witness', () => {
+    it('refuses audio finalisation without a current capture witness', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 0 }] }],
         } as unknown as TrackState);
@@ -242,7 +242,7 @@ describe('stopRecording', () => {
             lanes: [{ id: 'l1', trackId: 't1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
         } as unknown as TakeLaneStoreState;
 
-        stopRecording();
+        await stopRecording();
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.takeLaneStoreSet).not.toHaveBeenCalled();

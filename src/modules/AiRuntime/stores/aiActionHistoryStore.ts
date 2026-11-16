@@ -147,7 +147,7 @@ export function pushAiActionGroup(group: AiActionGroup, now: number = Date.now()
         return;
     }
     const groups = retainAiActionGroups([...state.groups, group], now);
-    aiActionHistoryStore.trySet({ ...state, groups, panelOpen: true });
+    aiActionHistoryStore.trySet({ ...state, groups });
 }
 
 export function markGroupReverted(groupId: string): void {

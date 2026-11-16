@@ -7,8 +7,7 @@ import { type PerceptualConstraintReading } from '../../models/PerceptualConstra
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RetainedCompilation } from '../../models/RetainedCompilation';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
-import { compilePreviewMeasurementProposal } from '../compilePreviewMeasurementProposal';
-import { digestCommandBatchContent } from '../digestCommandBatchContent';
+import { compileRecipeBatchSteps } from '../compileRecipeBatchSteps';
 import { type MetricGoalState, type MetricRequestAuthority } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { readArrangementRange } from '../readArrangementRange';
@@ -45,38 +44,20 @@ export function compileVibeBatchMetricState(input: {
     if (read.status === 'refused') {
         return read;
     }
-    const steps: MetricGoalState['steps'][number][] = [];
-    for (const [index, compilation] of input.compilations.entries()) {
-        const pair = read.pairs[index];
-        if (
-            pair === undefined ||
-            pair.stepId !== `recipe:${compilation.recipe.recipeId}:${compilation.recipe.targetId}`
-        ) {
-            return { status: 'refused', reason: 'its recipe expansions no longer match its plan' };
-        }
-        const prefix = compilePreviewMeasurementProposal({
-            callId: compilation.callId,
-            source: { retained: input.compilations.slice(0, index + 1) },
-            context: input.context,
-            prompt: input.prompt,
-            revision: input.revision,
-            runId: input.runId,
-            creativeAuthority: input.creativeAuthority,
-            recordedConstraints: input.recordedConstraints,
-        });
-        if (prefix.status !== 'compiled') {
-            return { status: 'refused', reason: prefix.reason };
-        }
-        steps.push({
-            stepId: pair.stepId,
-            commandCount: compilation.commands.length,
-            operationTypes: compilation.commands.map((command) => command.operation),
-            recipePrefixHash: digestCommandBatchContent(prefix.envelope),
-        });
+    const compiledSteps = compileRecipeBatchSteps({
+        stepIds: read.pairs.map((pair) => pair.stepId),
+        compilations: input.compilations,
+        context: input.context,
+        prompt: input.prompt,
+        revision: input.revision,
+        runId: input.runId,
+        creativeAuthority: input.creativeAuthority,
+        recordedConstraints: input.recordedConstraints,
+    });
+    if (compiledSteps.status === 'refused') {
+        return compiledSteps;
     }
-    if (steps.length !== read.pairs.length) {
-        return { status: 'refused', reason: 'its recipe expansions no longer match its plan' };
-    }
+    const { steps } = compiledSteps;
     const authority: MetricRequestAuthority = {
         schemaVersion: 1,
         authorityId: `vibe-run-plan-${digest({ requestDigest: input.creativeAuthority.requestDigest, batchId: input.batch.id, revision: input.revision })}`,

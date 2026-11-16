@@ -2,26 +2,17 @@ import { projectStore } from '#/modules/Project/stores';
 import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/modules/Project/useCases';
 
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-import { type BriefMixIntent } from '../models/BriefMixIntent';
+import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
-import { readBriefMixIntent } from './readBriefMixIntent';
+import { type CatalogBriefMixAlternative, readBriefMixIntentWithAlternatives } from './readBriefMixAlternatives';
+import { countVibeRunCandidateBatches } from './vibeRun/countVibeRunCandidateBatches';
 
 type BriefUpdate = Parameters<typeof composeProductionBriefUpdate>[0]['update'];
 type BriefStatement = NonNullable<BriefUpdate['preferences']>[number];
-
-type BriefCompileResult = {
-    receipt: ApplicationToolReceipt;
-    commands: readonly RetainedCommand[] | null;
-    briefChangeLines: readonly string[] | null;
-    /** The whole next brief the command writes, typed, for the planner that reads it before Confirm. */
-    composedBrief: ProjectContextProductionBrief | null;
-    mixIntent: BriefMixIntent | null;
-};
 
 type Parsed = { status: 'parsed'; update: BriefUpdate } | { status: 'invalid'; reason: string };
 
@@ -162,6 +153,27 @@ function readRequestHardConstraints(prompt: string, context: ProjectContext): Br
     });
 }
 
+/**
+ * The refusal for the first reading no authored recipe plans on this project, judged by the same
+ * candidate step a vibe run begins with and before anything is measured, or `null` when every one does.
+ */
+function describeUnservedReading(
+    alternatives: readonly CatalogBriefMixAlternative[],
+    prompt: string,
+    context: ProjectContext,
+    brief: ProjectContextProductionBrief
+): string | null {
+    const unserved = alternatives.find(
+        (alternative) =>
+            countVibeRunCandidateBatches({ prompt, context, brief, descriptors: alternative.requestedDescriptors }) ===
+            0
+    );
+    if (unserved === undefined) {
+        return null;
+    }
+    return `mixIntent.alternatives: "${unserved.name}" (${unserved.requestedDescriptors.join(', ')}) has no authored recipe that plans on this project's tracks; offer readings the project can take.`;
+}
+
 /** A refused `brief.compile`: no command, and a failure receipt naming what the provider can correct. */
 function refuseBriefCompile(
     call: { callId: string; turn: number; revision: string },
@@ -228,14 +240,11 @@ export function executeBriefCompile(input: {
         );
     }
     const { mixIntent: providedIntent, ...update } = input.call.arguments;
-    const mixIntent = readBriefMixIntent(providedIntent);
-    if (mixIntent === null) {
-        return failure(
-            'invalid-tool-arguments',
-            'mixIntent: provide a valid selection from the current catalog.',
-            true
-        );
+    const readIntent = readBriefMixIntentWithAlternatives(providedIntent);
+    if (readIntent.status === 'invalid') {
+        return failure('invalid-tool-arguments', readIntent.reason, true);
     }
+    const { mixIntent, alternatives } = readIntent;
     const parsed = parseBriefUpdate(update);
     if (parsed.status === 'invalid') {
         return failure('invalid-tool-arguments', parsed.reason, true);
@@ -254,6 +263,10 @@ export function executeBriefCompile(input: {
     });
     if (composed.status === 'refused') {
         return failure('invalid-tool-arguments', `${composed.field}: ${composed.reason}`, true);
+    }
+    const unserved = describeUnservedReading(alternatives, input.prompt, input.context, composed.brief);
+    if (unserved !== null) {
+        return failure('invalid-tool-arguments', unserved, true);
     }
     const changeLines = describeProductionBriefChange({
         before,
@@ -274,7 +287,7 @@ export function executeBriefCompile(input: {
         binding: null,
         dependencyKeys: [],
     };
-    return {
+    const result: BriefCompileResult = {
         commands: [command],
         briefChangeLines: changeLines,
         composedBrief: composed.brief,
@@ -293,4 +306,8 @@ export function executeBriefCompile(input: {
             error: null,
         },
     };
+    if (alternatives.length > 0) {
+        result.mixAlternatives = alternatives;
+    }
+    return result;
 }

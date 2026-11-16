@@ -577,6 +577,79 @@ describe('track-state guarded undo integration', () => {
             expect(takesAfterRedo).toEqual([]);
         });
 
+        it("flatten: leaves a clip moved to another track alone though the active alternative's stale copy names it (#6665)", async () => {
+            const heldClip = ClipDummy.create({
+                id: 'clip-held',
+                trackId: 'track-2',
+                type: 'midi',
+                startBeat: 0,
+                endBeat: 4,
+            });
+            const movedClip = ClipDummy.create({
+                id: 'clip-x',
+                trackId: 'track-2',
+                type: 'midi',
+                startBeat: 4,
+                endBeat: 8,
+            });
+            // Creating the alternative stored both clips in its copy; nothing refreshes
+            // that copy when `clip-x` moves off the track below.
+            divergeTrack('track-2', {
+                clips: [heldClip, movedClip],
+                frozen: true,
+                frozenBufferId: 'buffer-1',
+                freezeState: { status: 'frozen', freezeId: 'freeze-1', frozenBufferId: 'buffer-1' },
+                activeAlternativeId: 'alt-1',
+                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [heldClip, movedClip] }],
+            });
+            const movedNotes = [{ id: 'note-x', pitch: 64, startBeat: 0, duration: 1, velocity: 100 }];
+            midiStore.set({
+                probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+                notesByClipId: {
+                    'clip-held': [{ id: 'note-held', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+                    'clip-x': movedNotes,
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            const movedTakeLane = {
+                id: 'lane-x',
+                trackId: 'track-2',
+                takes: [{ id: 'take-x', clipId: 'clip-x', name: 'X', startBeat: 4, endBeat: 8, selected: true }],
+                activeCompRegions: [],
+            };
+            takeLaneStore.set({ lanes: [movedTakeLane] });
+            notifyUserMock.mockClear();
+
+            await run({ type: 'moveClip', payload: { clipId: 'clip-x', trackId: 'track-3', startBeat: 4 } });
+            expect(track('track-3')?.clips.map((clip) => clip.id)).toEqual(['clip-x']);
+            expect(track('track-2')?.alternatives[0]?.clips.map((clip) => clip.id)).toContain('clip-x');
+
+            function expectMovedClipIntact(): void {
+                expect(track('track-3')?.clips.map((clip) => clip.id)).toEqual(['clip-x']);
+                expect(midiStore.value?.notesByClipId['clip-x']).toEqual(movedNotes);
+                const takes = (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes);
+                expect(takes.map((take) => take.id)).toEqual(['take-x']);
+            }
+
+            await run({ type: 'flattenTrack', payload: { trackId: 'track-2' } });
+            expect(track('track-2')?.kind).toBe('audio');
+            expectMovedClipIntact();
+
+            await undo();
+            expect(track('track-2')?.clips.map((clip) => clip.id)).toEqual(['clip-held']);
+            expectMovedClipIntact();
+
+            await redo();
+            expect(track('track-2')?.kind).toBe('audio');
+            expectMovedClipIntact();
+
+            await undo();
+            expect(track('track-2')?.clips.map((clip) => clip.id)).toEqual(['clip-held']);
+            expectMovedClipIntact();
+            expect(notifyUserMock).not.toHaveBeenCalled();
+        });
+
         it('consolidate: redo re-retires the replaced clip takes the undo restored (#4518)', async () => {
             const activeClip = ClipDummy.create({ id: 'clip-b', trackId: 'track-1', startBeat: 0, endBeat: 4 });
             const hiddenClip = ClipDummy.create({ id: 'clip-a', trackId: 'track-1', startBeat: 0, endBeat: 4 });

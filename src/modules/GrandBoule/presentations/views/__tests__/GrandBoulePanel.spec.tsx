@@ -97,6 +97,9 @@ const executeUserAppAction = executeAppAction;
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction,
     executeUserAppAction: executeAppAction,
+    describeAppActionRefusal: vi.fn(() => ''),
+    isAppActionAdmissionRefusal: vi.fn(() => false),
+    isAppActionConflictError: vi.fn(() => false),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),

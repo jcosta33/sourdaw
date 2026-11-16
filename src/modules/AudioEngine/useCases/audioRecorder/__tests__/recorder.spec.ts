@@ -31,8 +31,8 @@ describe('AudioRecorder Use Cases', () => {
         expect(mocks.startAudioRecordingRepo).toHaveBeenCalledWith('t1', onTerminal, 'in1');
     });
 
-    it('stopAudioRecording delegates to repository', () => {
-        stopAudioRecording();
+    it('stopAudioRecording delegates to repository', async () => {
+        await stopAudioRecording();
         expect(mocks.stopAudioRecordingRepo).toHaveBeenCalledTimes(1);
     });
 

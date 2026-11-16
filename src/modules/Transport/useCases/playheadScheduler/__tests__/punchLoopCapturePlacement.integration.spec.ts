@@ -492,7 +492,7 @@ async function tick(seconds = TICK_SECONDS): Promise<void> {
                 generation: schedulerSession.generation,
                 sequence: ++sequence,
                 scheduledAtMs: received - 2,
-                sentAtMs: received - 1,
+                sentAtMs: received,
             },
         })
     );
@@ -1285,6 +1285,9 @@ describe('punch audio capture loop placement', () => {
         expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
         const handlers = getTransportHandlers();
         const setTempoHandler = handlers.setTempo;
+        if (setTempoHandler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected synchronous project tempo write');
+        }
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap({

@@ -16,6 +16,7 @@ const richArguments = {
     plan: { replacement: { clips: [{ id: 'clip-b' }], clipAutomationLanes: [{ id: 'lane-b' }] } },
     addedNotes: [{ id: 'note-a' }],
     targetNoteIds: ['note-b'],
+    sectionIds: ['pad-a'],
 };
 
 const actionTypesWithHandlerMintedIds = [
@@ -26,6 +27,7 @@ const actionTypesWithHandlerMintedIds = [
     'arpeggiate',
     'duplicateClipAt',
     'splitClip',
+    'captureScratchPad',
 ];
 
 describe('readHandlerMintedApplicationIds', () => {
@@ -61,6 +63,9 @@ describe('readHandlerMintedApplicationIds', () => {
         ]);
         expect(readHandlerMintedApplicationIds('splitClip', richArguments)).toEqual([
             { argument: 'targetNoteIds[0]', value: 'note-b' },
+        ]);
+        expect(readHandlerMintedApplicationIds('captureScratchPad', richArguments)).toEqual([
+            { argument: 'sectionIds[0]', value: 'pad-a' },
         ]);
     });
 

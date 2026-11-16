@@ -68,6 +68,7 @@ vi.mock('../../../useCases/cancelPendingChatActions', () => ({
 }));
 vi.mock('../../../useCases/reproposePendingChatActions', () => ({ reproposePendingChatActions: vi.fn() }));
 vi.mock('../../../useCases/skipPendingVibeBatch', () => ({ skipPendingVibeBatch: vi.fn() }));
+vi.mock('../../../useCases/chooseVibeBriefReading', () => ({ chooseVibeBriefReading: vi.fn() }));
 vi.mock('../../../useCases/revertVibeRun', () => ({ revertVibeRun: vi.fn() }));
 vi.mock('../../../useCases/aiPanelActions/proposeAnswerSuggestion', () => ({
     proposeAnswerSuggestion: vi.fn(async () => 'requested'),
@@ -200,6 +201,7 @@ const { confirmPendingChatActions } = await import('../../../useCases/confirmPen
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { agentRunCancellation } = await import('../../../useCases/cancelAgentRun');
 const { skipPendingVibeBatch } = await import('../../../useCases/skipPendingVibeBatch');
+const { chooseVibeBriefReading } = await import('../../../useCases/chooseVibeBriefReading');
 const { revertVibeRun } = await import('../../../useCases/revertVibeRun');
 const { proposeAnswerSuggestion } = await import('../../../useCases/aiPanelActions/proposeAnswerSuggestion');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
@@ -788,6 +790,80 @@ describe('ChatPanel', () => {
         expect(screen.getByRole('button', { name: 'Cancel pending actions' })).toHaveTextContent('Cancel');
         expect(screen.queryByRole('button', { name: 'Skip batch' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Stop run' })).not.toBeInTheDocument();
+    });
+
+    it('offers one button per reading on an ambiguous brief card, planning the chosen one on activation', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'brief-card',
+                    role: 'assistant',
+                    content: 'This request reads more than one way',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'brief-confirmation',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+        metricApprovalMock.mockReturnValue({
+            canConfirm: true,
+            metricGoals: { status: 'not-required', reason: null, criteria: [] },
+            rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+            skip: { available: false, reason: null },
+            readings: [
+                { id: 'reading-1', name: 'Darker top end', descriptors: ['dark'] },
+                { id: 'reading-2', name: 'More low-mid body', descriptors: ['warm', 'vintage'] },
+            ],
+        });
+
+        render(<ChatPanel />);
+
+        const darker = screen.getByRole('button', { name: 'Plan reading: Darker top end' });
+        expect(darker.textContent).toBe('Darker top end dark');
+        expect(screen.getByRole('button', { name: 'Plan reading: More low-mid body' }).textContent).toBe(
+            'More low-mid body warm, vintage'
+        );
+        expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Plan reading: More low-mid body' }));
+        expect(chooseVibeBriefReading).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'brief-confirmation',
+            readingId: 'reading-2',
+        });
+    });
+
+    it('offers no reading button on a card that offers no readings', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'plain-brief-card',
+                    role: 'assistant',
+                    content: 'This prompt requires confirmation',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'plain-brief-confirmation',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+        metricApprovalMock.mockReturnValue({
+            canConfirm: true,
+            metricGoals: { status: 'not-required', reason: null, criteria: [] },
+            rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+            skip: { available: false, reason: null },
+            readings: [],
+        });
+
+        render(<ChatPanel />);
+
+        expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Plan reading:/u })).not.toBeInTheDocument();
     });
 
     it('offers Revert run on a vibe run summary and reverts that run on activation', () => {

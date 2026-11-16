@@ -15,6 +15,7 @@ vi.mock('../../../useCases/adjustmentLayer/commitAdjustmentLayerMutation', () =>
     }),
 }));
 
+import { commitAdjustmentLayerMutation } from '../../../useCases/adjustmentLayer/commitAdjustmentLayerMutation';
 import { adjustmentLayerHandlers } from '../adjustmentLayerHandlers';
 
 let mockValue: { layers: unknown[] } | null = null;
@@ -60,17 +61,16 @@ describe('adjustmentLayerHandlers — describe creates inverse via store snapsho
         expect(payload.layers).toEqual([]);
     });
 
-    it('describe stores inverse in pendingInverseActions for execute', () => {
+    it('describe stores inverse in pendingInverseActions for execute', async () => {
         const action = { type: 'createAdjustmentLayer', payload: { name: 'Test', insertionIndex: 0 } } as never;
-        adjustmentLayerHandlers.createAdjustmentLayer.describe(action);
-        // Execute should not throw (pendingInverseActions has the snapshot)
-        expect(() => {
-            try {
-                adjustmentLayerHandlers.createAdjustmentLayer.execute(action);
-            } catch {
-                // Some sub-handlers may throw on invalid state, that's ok — we're testing the wrapper
-            }
-        }).not.toThrow();
+        const { inverseAction } = adjustmentLayerHandlers.createAdjustmentLayer.describe(action);
+        // Only the wrapper is under test, so the sub-handler's mutation is not run.
+        vi.mocked(commitAdjustmentLayerMutation).mockImplementationOnce(() => true);
+
+        await adjustmentLayerHandlers.createAdjustmentLayer.execute(action);
+
+        const committed = vi.mocked(commitAdjustmentLayerMutation).mock.calls[0]?.[0];
+        expect(committed?.inverseAction).toBe(inverseAction);
     });
 });
 
