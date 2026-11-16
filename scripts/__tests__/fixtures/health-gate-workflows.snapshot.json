@@ -1248,7 +1248,7 @@
             "env": {
               "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
-            "run": "cargo clippy --package daw-engine --package daw-plugin-host --all-targets --all-features"
+            "run": "cargo clippy --package daw-engine --package daw-plugin-host --package sourdaw-harness-fx --all-targets --all-features"
           },
           {
             "name": "Test the audio crates",
