@@ -171,8 +171,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:3cf59e8f920d5cabb9c7469d8599d16309cfdd163757f12893d11eda15615b4f:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:b962f6aac4cfd37169bede08edfcf107f4402dc8bfc698863cbd11cd35b8ced1:release/dependency-license-proofs.json"
+                "sha256:7f9dd20648c3a30a2c146084238fe452e75184d9285bc66bafbdc6753a5aa798:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4cbff9ffeba39063edfd71f6ccf2d768e07ee7d3af6e59b8be7a6b7714615f03:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -372,7 +372,7 @@
                 "sha256:c4e4e5ba9ceb16f7da586195bbc498d4235fefaae49f068f934234bf5fbb723b:src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
                 "sha256:7e5f06c67a7824cf43f307d7e1c92d8de1c1396759c52f43d7564f05c17a8848:src/modules/BrowserAi/services/computeDdspSessionKey.ts",
                 "sha256:79825048a714b52c3da3ef8059f9d5ae8bbd956e9a5429b4f6cd835b9d4b34cb:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
-                "sha256:5f1f9ff20d903c3bec83dc38cd49956da251b5743c5c805cbf02b8efe8a464de:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
+                "sha256:1b6fe44a6e8a6a2e284bbc5ffd046f351ffb133a10d99d9821663067ddd22d85:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
@@ -424,7 +424,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:267aeca90ab2ac0c6e7fb61918f46e1e366d301a71624613623efa954e66cdb4",
+                "sha256:776a7a8d8a0d62cc5c7f1f0042079ab9ab91e5e6e5f65d60712220390e821656",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -842,7 +842,7 @@
                 "sha256:556d1e1b766aba32aa3ef0cadbbf45e6dabb321b2178b59988d60862a339cdf7:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
                 "sha256:2eda85bf62b8b8b63bef3a86f7b10009ab0e4c6a1e17cac7e1897943d3ca1ca0:src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
                 "sha256:6c7d4d4b94518787ed0d28ccaef0e60019cd71c0305cc513e344fe049fc8a9b2:src/modules/BrowserAi/workers/modelStorageWorker.ts",
-                "sha256:0dbd7b59f74ffaf300cb13539e275c563ae811c8c983778ec0a18a8d6f828e4e:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "sha256:c4f9201285fcf2d327bee859dc47f2c0a3a4e7001cfbec33029adfa37246779c:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
@@ -1199,6 +1199,7 @@
                 "src/modules/AudioEngine/models/AudioEngineState.ts",
                 "src/modules/AudioEngine/models/GrandBouleRingProtocol.ts",
                 "src/modules/AudioEngine/repositories/createWebAudioEngine.ts",
+                "src/modules/AudioEngine/repositories/webAudioEngine/**",
                 "src/modules/AudioEngine/workers/grandBouleEngineWorker.ts",
                 "src/modules/AudioEngine/worklets/grandBoule*.ts",
                 "src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts",
@@ -1398,13 +1399,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:8bfc182f6b55483b169f0ce703bcb89e2df30b561f14948c93bf10b8c8f6d5be",
-                "daw-wasm-decoder sha256:bf124a7d7fe022259f398fff9ac0b31b8173fea259d28278119665f219c739a9",
-                "proof-chamber sha256:117a4259878c1a4e1c303c0ad32eb1f40b1ec9628da1ec97842534721e26a774",
-                "scoring sha256:5bbc3b74edd0be399a4ac681b5b474ce1a81cba65635dc629a61fabe3e25f867"
+                "daw-dsp sha256:98bf444ba662e2ec155b4c623844adf04425d36f3647ced6b42eddd3d0fbdaba",
+                "daw-wasm-decoder sha256:79f8fddfa46d63b9143d54b0c7e6d74a3f0274d4f3acb3e267b5e2c72dae6479",
+                "proof-chamber sha256:ace5bea07e7b4aa03fbbc1ad71765bdb4e32270ef114c8f2c99e48f1bf3b04b9",
+                "scoring sha256:c5ab364d143ac65396c34872a9b85d575cc3bde7d8464349448a8d3fa1658735"
             ],
             "digests": [
-                "sha256:33ff1c3ec00d4427e6ca6279a3cf1e48f04f2630c9091851f7eeed6cae8fa326:public/wasm/manifest.json"
+                "sha256:3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1926,11 +1927,11 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "acec56def2686b5e9925b1afecb5de895597b99d35597dad172cfaa6d135c14e"
+            "sha256": "e0d41dbefe296c435d78563b6c1578f4ceeedf7d83d02a6ea689449992986c37"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "267aeca90ab2ac0c6e7fb61918f46e1e366d301a71624613623efa954e66cdb4"
+            "sha256": "776a7a8d8a0d62cc5c7f1f0042079ab9ab91e5e6e5f65d60712220390e821656"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1938,7 +1939,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "33ff1c3ec00d4427e6ca6279a3cf1e48f04f2630c9091851f7eeed6cae8fa326"
+            "sha256": "3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109"
         }
     ],
     "externalReferences": [

@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ReadableStore } from '#/infra/store/types';
+
 import { type UndoEntry } from '../../../models/UndoEntry';
 import { undoStore } from '../../../stores/undoStore';
 import { UndoHistoryPanel } from '../UndoHistoryPanel';
@@ -14,6 +16,15 @@ vi.mock('#/infra/store/useStore', () => ({
         return defaultValue;
     }),
 }));
+
+// The panel gates on a selector over the open flag; read it through the spec's useStore fixture.
+vi.mock('#/infra/store/useStoreSelector', async () => {
+    const { useStore } = await import('#/infra/store/useStore');
+    return {
+        useStoreSelector: (store: ReadableStore<unknown>, selector: (state: unknown) => unknown) =>
+            selector(useStore(store)),
+    };
+});
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: { name: 'workspaceStore' },

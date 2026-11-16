@@ -14,7 +14,7 @@ export type ModelInfo = {
     downloadSize: string;
     /** The picker's memory text, always derived from `memoryGb`. */
     ramUsage: string;
-    /** Memory the model needs, in decimal gigabytes, rounded up to a tenth. A machine clears it when both its total memory and its GPU memory budget reach this figure. */
+    /** Memory the model needs, in decimal gigabytes, rounded up to a tenth. A reading with a GPU memory budget clears it when both total memory and that budget reach this figure; a reading with no budget clears it on total memory alone, for tiers up to Pro; with no reading, every tier up to Pro is offered. Large always needs a budget. */
     memoryGb: number;
     tier: LocalModelTier;
     parameterCount: string;

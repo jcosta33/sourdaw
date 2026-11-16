@@ -6,7 +6,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type AudioEngine } from '../../models/AudioEngineState';
 import { type AudioGraphApplyResult, type AudioGraphBackend } from '../../models/AudioGraphBackend';
 import { stoppedEngineTransportPosition } from '../../models/EngineTransportPosition';
-import { createAudioEngine } from '../../repositories/createWebAudioEngine';
+import { composeWebAudioEngine } from '../../repositories/createWebAudioEngine';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
 import { type createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { abandonNativeLiveGraphSession } from '../livePlayback/abandonNativeLiveGraphSession';
@@ -172,7 +172,7 @@ function contextFixture() {
     };
     // Same structural context boundary as the existing listening-path model;
     // no hardware readiness is supplied by this cast or asserted by these tests.
-    const engine = createAudioEngine(context as unknown as AudioContext);
+    const engine = composeWebAudioEngine(context as unknown as AudioContext).engine;
     fixture.engine = engine;
     const gate = analysers[0]?.connections[0];
     if (gate === undefined) {

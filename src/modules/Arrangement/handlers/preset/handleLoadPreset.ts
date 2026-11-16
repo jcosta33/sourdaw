@@ -7,13 +7,10 @@ import {
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
-import {
-    type AppAction,
-    type DeviceChainTopologySnapshot,
-    type DeviceSnapshot,
-    type HandlerValidationContext,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type DeviceChainTopologySnapshot } from '../../events/arrangementTrackSnapshots';
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Track } from '../../stores/trackStore';
 import { compileTrackStripInitializationSnapshot } from '../../useCases/compileTrackStripInitializationSnapshot';
@@ -29,6 +26,11 @@ import { matchesMaterializedPresetDevices } from '../../useCases/preset/matchesM
 import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
 import { updateTrack } from '../../useCases/updateTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+import {
+    forgettingDiscardedPluginStates,
+    overlayDiscardedDevicePluginStates,
+    recordDiscardedDevicePluginStates,
+} from '../track/discardedPluginStateCarry';
 
 import { toPresetProjectDevices } from './toPresetProjectDevices';
 
@@ -337,20 +339,23 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
         );
     },
     execute: (action, context) => {
-        if (
-            !hasPresetDevices(action) ||
-            resolveReplacement(
-                {
-                    trackId: action.payload.trackId,
-                    expectedBefore: action.payload.expectedBefore,
-                    expectedFrozen: action.payload.expectedFrozen,
-                    devices: action.payload.devices,
-                    expectedProjectRevision: action.payload.expectedProjectRevision,
-                },
-                undefined
-            ) === null
-        ) {
+        const replacedTrack = resolveReplacement(
+            {
+                trackId: action.payload.trackId,
+                expectedBefore: action.payload.expectedBefore,
+                expectedFrozen: action.payload.expectedFrozen,
+                devices: action.payload.devices,
+                expectedProjectRevision: action.payload.expectedProjectRevision,
+            },
+            undefined
+        );
+        if (!hasPresetDevices(action) || replacedTrack === null) {
             return { status: 'conflict' };
+        }
+        // A redo replays this load with the first run's chain snapshot; a save since
+        // the undo moved the replaced plugins' state past it.
+        if (context?.undoEntryId !== undefined) {
+            recordDiscardedDevicePluginStates(context.undoEntryId, replacedTrack.devices);
         }
         // The first application consumes the collaboration revision proof. The
         // guarded inverse and redo retain their exact topology fingerprints.
@@ -372,6 +377,15 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
 });
 
 export const handleRestorePresetDeviceChain = createHandler<'restorePresetDeviceChain'>({
+    // The load this undoes recorded the plugin state a save captured after the snapshot was taken.
+    materializeCommandArguments: (action, context) => {
+        if (context?.undoEntryId !== undefined) {
+            action.payload.replacementDevices = overlayDiscardedDevicePluginStates(
+                context.undoEntryId,
+                action.payload.replacementDevices
+            );
+        }
+    },
     validate: (action, context) =>
         resolveReplacement(
             {
@@ -382,8 +396,8 @@ export const handleRestorePresetDeviceChain = createHandler<'restorePresetDevice
             },
             context
         ) !== null,
-    execute: (action, context) =>
-        executeReplacement(
+    execute: (action, context) => {
+        const result = executeReplacement(
             {
                 trackId: action.payload.trackId,
                 expectedBefore: action.payload.expectedBefore,
@@ -391,7 +405,12 @@ export const handleRestorePresetDeviceChain = createHandler<'restorePresetDevice
                 replacementDevices: action.payload.replacementDevices,
             },
             context
-        ),
+        );
+        if (result.status === 'conflict') {
+            return result;
+        }
+        return { ...result, afterCommit: forgettingDiscardedPluginStates(context?.undoEntryId, result.afterCommit) };
+    },
     describe: () => ({ label: 'Restore preset device chain' }),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

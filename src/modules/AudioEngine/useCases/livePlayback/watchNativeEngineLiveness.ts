@@ -84,11 +84,11 @@ async function pollOnce(): Promise<void> {
             if (reading.running) {
                 return;
             }
-            void queueOnNativeLiveGraphSession(async () => {
-                if (nativeLiveGraphSession.backend !== observed) {
-                    return;
+            void queueOnNativeLiveGraphSession(() => {
+                if (nativeLiveGraphSession.backend === observed) {
+                    abandonNativeLiveGraphSession(describeStall(reading.outputStreamFault));
                 }
-                abandonNativeLiveGraphSession(describeStall(reading.outputStreamFault));
+                return Promise.resolve();
             });
             return;
         }

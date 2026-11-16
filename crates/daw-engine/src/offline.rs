@@ -18,14 +18,54 @@ use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::scheduler::{
     graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
     GraphCommand, GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
+    EFFECT_TABLE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// The block size an offline render advances by, matching the period the live
 /// engine prefers so block-boundary behaviour (device-parameter landings,
 /// block-constant fast paths) is exercised on the same grain.
 pub const OFFLINE_BLOCK_FRAMES: usize = 512;
+
+/// The control side's hold on one offline render: the request to stop it, and
+/// how far it has got.
+///
+/// Shared between the thread rendering and whoever may cancel it. Both fields
+/// are atomics read and written between blocks, never inside one, so a cancel
+/// costs the render loop one load per block and a progress read costs the
+/// reader nothing it could wait on.
+#[derive(Debug, Default)]
+pub struct OfflineRenderControl {
+    cancelled: AtomicBool,
+    rendered_frames: AtomicUsize,
+}
+
+impl OfflineRenderControl {
+    /// Ask the render to stop at its next block boundary. Idempotent, and
+    /// effective even before the render starts.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Frames rendered so far, published after each whole block.
+    pub fn rendered_frames(&self) -> usize {
+        self.rendered_frames.load(Ordering::Acquire)
+    }
+}
+
+/// A render that stopped because it was cancelled, with the frames it had
+/// rendered whole by then. The partial output is discarded with it: a print
+/// cut short is not the batch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OfflineRenderCancelled {
+    pub rendered_frames: usize,
+}
 
 /// The scheduler, a command ring, and a render loop — and no audio stream.
 ///
@@ -40,6 +80,11 @@ pub struct OfflineRenderer {
     scheduler: AudioScheduler,
     retired_rx: Consumer<RetiredGraphObjects>,
     sample_rate: f32,
+    /// Effect-table entries the pushed commands register, net of the ones
+    /// they retire: the offline counterpart of the live engine's ledger, so a
+    /// registration past the table is refused at the push rather than dropped
+    /// and counted by the callback.
+    effect_registrations: usize,
 }
 
 impl OfflineRenderer {
@@ -83,6 +128,7 @@ impl OfflineRenderer {
             scheduler,
             retired_rx,
             sample_rate,
+            effect_registrations: 0,
         }
     }
 
@@ -96,10 +142,31 @@ impl OfflineRenderer {
     }
 
     /// Queue one command. It reaches the graph at the next block boundary.
+    ///
+    /// Admitted against the effect table first, in push order, exactly as the
+    /// live engine admits a batch: the callback can only count a registration
+    /// it has no room for, and a render that dropped a device is not the batch.
     pub fn push(&mut self, command: GraphCommand) -> Result<(), String> {
+        let registrations = match command.effect_table_delta() {
+            delta if delta > 0 => {
+                let admitted = self.effect_registrations + delta.unsigned_abs();
+                if admitted > EFFECT_TABLE_CAPACITY {
+                    return Err(format!(
+                        "effect-table-full: the offline render already holds its maximum of \
+                         {EFFECT_TABLE_CAPACITY} native devices and plugins"
+                    ));
+                }
+                admitted
+            }
+            delta => self
+                .effect_registrations
+                .saturating_sub(delta.unsigned_abs()),
+        };
         self.command_tx
             .push(command)
-            .map_err(|_| "Offline command queue full".to_string())
+            .map_err(|_| "Offline command queue full".to_string())?;
+        self.effect_registrations = registrations;
+        Ok(())
     }
 
     /// The graph's refusal counters, for callers proving a batch was taken
@@ -132,14 +199,51 @@ impl OfflineRenderer {
     /// this thread is both the command side and the render side, so freeing is
     /// safe and keeps the retirement ring from stalling the graph.
     pub fn render(&mut self, frames: usize) -> (Vec<f32>, Vec<f32>) {
+        let mut left = vec![0.0f32; frames];
+        let mut right = vec![0.0f32; frames];
+        self.render_blocks(&mut left, &mut right, None);
+        (left, right)
+    }
+
+    /// [`Self::render`], stopping between blocks once `control` is cancelled.
+    ///
+    /// The cancel is read before every block, the first included, so a render
+    /// cancelled before it starts renders nothing. It is never read inside a
+    /// block: a block is the scheduler's unit of work, and the live callback
+    /// cannot stop halfway through one either.
+    pub fn render_controlled(
+        &mut self,
+        frames: usize,
+        control: &OfflineRenderControl,
+    ) -> Result<(Vec<f32>, Vec<f32>), OfflineRenderCancelled> {
+        let mut left = vec![0.0f32; frames];
+        let mut right = vec![0.0f32; frames];
+        match self.render_blocks(&mut left, &mut right, Some(control)) {
+            Some(cancelled) => Err(cancelled),
+            None => Ok((left, right)),
+        }
+    }
+
+    /// The one render loop. Answers the cancellation that stopped it, or
+    /// `None` when every frame rendered.
+    fn render_blocks(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        control: Option<&OfflineRenderControl>,
+    ) -> Option<OfflineRenderCancelled> {
         // The same float mode the live callback renders under, so a subnormal
         // tail is flushed identically offline and live.
         let _flush_denormals = FlushDenormals::engage();
-        let mut left = vec![0.0f32; frames];
-        let mut right = vec![0.0f32; frames];
+        let frames = left.len();
 
         let mut rendered = 0usize;
         while rendered < frames {
+            if control.is_some_and(OfflineRenderControl::is_cancelled) {
+                return Some(OfflineRenderCancelled {
+                    rendered_frames: rendered,
+                });
+            }
             let block = (frames - rendered).min(OFFLINE_BLOCK_FRAMES);
             self.scheduler.update_graph();
             self.scheduler.process_block(
@@ -149,9 +253,12 @@ impl OfflineRenderer {
             );
             while self.retired_rx.pop().is_ok() {}
             rendered += block;
+            if let Some(control) = control {
+                control.rendered_frames.store(rendered, Ordering::Release);
+            }
         }
 
-        (left, right)
+        None
     }
 }
 
@@ -310,7 +417,7 @@ mod tests {
     }
 
     /// Mutation: remove the `FlushDenormals` guard at the top of
-    /// `OfflineRenderer::render` — the reading inside the plugin loses the
+    /// `OfflineRenderer::render_blocks` — the reading inside the plugin loses the
     /// bits.
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[test]
@@ -348,6 +455,165 @@ mod tests {
         );
         drop(renderer);
         write(original);
+    }
+
+    /// A plugin that tells the test it has processed a block, then waits for
+    /// the test's word before it returns — so a cancel set by another thread
+    /// lands at a block the test can name.
+    struct HandshakePlugin {
+        processed: std::sync::mpsc::SyncSender<()>,
+        resume: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl crate::plugin_slot::NativePlugin for HandshakePlugin {
+        fn process_audio(&mut self, left: &mut [f32], _right: &mut [f32], _num_samples: usize) {
+            left.fill(1.0);
+            if self.processed.send(()).is_ok() {
+                let _ = self.resume.recv();
+            }
+        }
+
+        fn name(&self) -> &str {
+            "handshake"
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// Mutation: drop the cancel read at the top of `render_blocks`'s loop —
+    /// the render runs every block and answers `Ok`.
+    #[test]
+    fn a_cancel_set_from_another_thread_mid_render_stops_at_the_next_block_boundary() {
+        let (processed_tx, processed_rx) = std::sync::mpsc::sync_channel(0);
+        let (resume_tx, resume_rx) = std::sync::mpsc::sync_channel(0);
+        let control = OfflineRenderControl::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 4);
+        renderer
+            .push(GraphCommand::AddPlugin(
+                3,
+                Box::new(HandshakePlugin {
+                    processed: processed_tx,
+                    resume: resume_rx,
+                }),
+                None,
+            ))
+            .expect("the batch should fit");
+        renderer
+            .push(GraphCommand::SetTransport(playing_transport()))
+            .expect("the batch should fit");
+
+        let outcome = std::thread::scope(|scope| {
+            let rendering =
+                scope.spawn(|| renderer.render_controlled(OFFLINE_BLOCK_FRAMES * 8, &control));
+            processed_rx
+                .recv()
+                .expect("the render processes its first block");
+            control.cancel();
+            resume_tx
+                .send(())
+                .expect("the plugin waits inside block one");
+            rendering.join().expect("the render thread returns")
+        });
+
+        assert_eq!(
+            outcome.map(|_| ()),
+            Err(OfflineRenderCancelled {
+                rendered_frames: OFFLINE_BLOCK_FRAMES
+            }),
+            "the block in flight finishes, and none after it starts"
+        );
+        assert_eq!(control.rendered_frames(), OFFLINE_BLOCK_FRAMES);
+    }
+
+    #[test]
+    fn a_render_cancelled_before_it_starts_renders_nothing() {
+        let control = OfflineRenderControl::default();
+        control.cancel();
+        let mut renderer = OfflineRenderer::new(48_000.0, 4);
+
+        let outcome = renderer.render_controlled(OFFLINE_BLOCK_FRAMES, &control);
+
+        assert_eq!(
+            outcome.map(|_| ()),
+            Err(OfflineRenderCancelled { rendered_frames: 0 })
+        );
+    }
+
+    #[test]
+    fn an_uncancelled_controlled_render_is_the_plain_render_and_reports_every_frame() {
+        let control = OfflineRenderControl::default();
+        let render = |controlled: bool| {
+            let mut renderer = OfflineRenderer::new(48_000.0, 16);
+            for command in clip_and_gain_commands() {
+                renderer.push(command).expect("the batch should fit");
+            }
+            if controlled {
+                renderer
+                    .render_controlled(1500, &control)
+                    .expect("nothing cancelled it")
+            } else {
+                renderer.render(1500)
+            }
+        };
+
+        assert_eq!(render(true), render(false));
+        assert_eq!(control.rendered_frames(), 1500);
+    }
+
+    struct PassThrough;
+
+    impl crate::plugin_slot::NativePlugin for PassThrough {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn name(&self) -> &str {
+            "pass-through"
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// Mutation: drop the admission in `push` — the registration past the
+    /// table is accepted and the callback drops it.
+    #[test]
+    fn a_registration_past_the_effect_table_is_refused_at_the_push() {
+        let mut renderer = OfflineRenderer::new(48_000.0, EFFECT_TABLE_CAPACITY + 2);
+        for id in 0..EFFECT_TABLE_CAPACITY {
+            renderer
+                .push(GraphCommand::AddPlugin(id, Box::new(PassThrough), None))
+                .expect("the table holds its capacity");
+        }
+
+        let refusal = renderer
+            .push(GraphCommand::AddPlugin(
+                EFFECT_TABLE_CAPACITY,
+                Box::new(PassThrough),
+                None,
+            ))
+            .expect_err("one past the table must refuse");
+
+        assert!(refusal.starts_with("effect-table-full"), "{refusal}");
+        renderer
+            .push(GraphCommand::RemovePlugin(0))
+            .expect("a removal frees a slot");
+        renderer
+            .push(GraphCommand::AddPlugin(
+                EFFECT_TABLE_CAPACITY,
+                Box::new(PassThrough),
+                None,
+            ))
+            .expect("the freed slot admits one more");
     }
 
     #[test]
