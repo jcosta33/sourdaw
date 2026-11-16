@@ -2,6 +2,7 @@ import { type VibeBatchDefaultsReason } from './chooseVibeBatchValues';
 
 const DEFAULTS_REASON_PHRASES: Readonly<Record<VibeBatchDefaultsReason, string>> = {
     'local-backend': 'the run is on a local backend, which does not choose values',
+    'planned-local': 'the run was planned without hosted value calls, so its card disclosed none',
     declined: 'the hosted provider declined to choose values',
     failed: 'the hosted value request failed',
     'correction-exhausted': 'the hosted reply was refused, and so was its correction',

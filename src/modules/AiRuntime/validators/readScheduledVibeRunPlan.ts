@@ -10,6 +10,7 @@ import {
     type VibeRunSilentRange,
     type VibeRunSilentTarget,
     type VibeRunVerificationRange,
+    type MeasuredScheduledVibeRunPlan,
     type ScheduledVibeRunPlan,
     type VibeRunBatchTarget,
     type VibeRunExpectedDelta,
@@ -591,7 +592,11 @@ function parseScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | n
     ) {
         return null;
     }
-    return {
+    const tier = value.valueChoiceTier;
+    if (tier !== undefined && tier !== 'hosted' && tier !== 'local') {
+        return null;
+    }
+    const plan: MeasuredScheduledVibeRunPlan = {
         schemaVersion: 2,
         briefRevision: value.briefRevision,
         batches,
@@ -599,4 +604,8 @@ function parseScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | n
         initialDigest: value.initialDigest,
         planDigest: value.planDigest,
     };
+    if (tier === undefined) {
+        return plan;
+    }
+    return { ...plan, valueChoiceTier: tier };
 }

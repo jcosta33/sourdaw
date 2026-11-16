@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
+import { type VibeRunValueChoiceTier } from '../../models/VibeRunPlan';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -12,11 +13,12 @@ import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { buildVibeBatchCorrectionMessage } from './buildVibeBatchCorrectionMessage';
 import { type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
-import { isHostedValueChoiceChain } from './isHostedValueChoiceChain';
+import { readPlannedValueChoiceDefaults } from './readPlannedValueChoiceDefaults';
 import { type VibeBatchPairValues, readVibeBatchValueReply } from './readVibeBatchValueReply';
 
 /** Why a batch expands at its catalogue defaults rather than at values the provider chose. */
-export type VibeBatchDefaultsReason = 'local-backend' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
+export type VibeBatchDefaultsReason =
+    'local-backend' | 'planned-local' | 'declined' | 'failed' | 'correction-exhausted' | 'budget';
 
 export type VibeBatchValueChoice =
     | { readonly source: 'measurements'; readonly pairs: readonly VibeBatchPairValues[] }
@@ -173,8 +175,9 @@ async function chooseThroughProvider(input: {
 }
 
 /**
- * Chooses a vibe batch's recipe parameter values from its targets' measured baselines, on a hosted
- * chain only. A local chain, a declined, failed or twice-refused reply, or a run with no budget left
+ * Chooses a vibe batch's recipe parameter values from its targets' measured baselines, only for a run
+ * planned hosted whose live chain is still hosted. Any other pairing of planned tier and live chain,
+ * a declined, failed or twice-refused reply, or a run with no budget left
  * for the request leaves every value at its catalogue default — the expansion with no values. The
  * request is bound to the run's Stop: a Stop aborts it and is returned as a stop, never as defaults.
  * `onBegin` runs only when a provider request is about to be made.
@@ -182,10 +185,12 @@ async function chooseThroughProvider(input: {
 export async function chooseVibeBatchValues(input: {
     runId: string;
     request: VibeBatchValueRequest;
+    plannedTier: VibeRunValueChoiceTier;
     onBegin?: () => void;
 }): Promise<VibeBatchValueChoiceOutcome> {
-    if (!isHostedValueChoiceChain()) {
-        return defaults('local-backend', 'the run is not on a hosted backend');
+    const kept = readPlannedValueChoiceDefaults(input.plannedTier);
+    if (kept !== null) {
+        return defaults(kept.reason, kept.detail);
     }
     const workId = `vibe-batch-values-${crypto.randomUUID()}`;
     const claimed = agentRunWorkLease.claim({

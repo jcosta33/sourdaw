@@ -210,10 +210,18 @@ export type VibeRunInitialEvidence = {
     readonly silentTargets?: readonly VibeRunSilentTarget[];
 };
 
+/**
+ * The value-choice tier a run was planned and disclosed under: `hosted` when the chain was all hosted,
+ * the brief card disclosed the value calls and the whole-run hosted token fit passed; `local` otherwise.
+ */
+export type VibeRunValueChoiceTier = 'hosted' | 'local';
+
 export type MeasuredScheduledVibeRunPlan = {
     readonly schemaVersion: 2;
     readonly briefRevision: number;
     readonly batches: readonly ScheduledVibeRunBatch[];
+    /** Absent on a plan stored before the tier was recorded, which reads as `local`; outside the plan digest. */
+    readonly valueChoiceTier?: VibeRunValueChoiceTier;
     readonly initial: VibeRunInitialEvidence;
     readonly initialDigest: string;
     readonly planDigest: string;

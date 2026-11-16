@@ -443,7 +443,7 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
-    const schedule = buildSchedule(plan, input.reading);
+    const schedule = buildSchedule({ ...plan, valueChoiceTier: valueChoice.tier }, input.reading);
     return {
         status: 'scheduled',
         receipts: input.collected.receipts,
