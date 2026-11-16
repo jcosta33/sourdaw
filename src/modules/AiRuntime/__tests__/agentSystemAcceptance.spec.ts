@@ -31,7 +31,12 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { getProjectHandlers, parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
+import {
+    getCanonicalTrackRole,
+    getProjectHandlers,
+    parseSemanticProjectQueryInput,
+    querySemanticProject,
+} from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -3102,6 +3107,28 @@ describe('agent acceptance corpora', () => {
     it('pins the frozen thresholds table to AGENT_ACCEPTANCE_THRESHOLDS', () => {
         const doc = readFileSync(resolve(REPOSITORY_ROOT, THRESHOLDS_DOC_PATH), 'utf8');
         expect(parseFrozenThresholds(doc)).toEqual(AGENT_ACCEPTANCE_THRESHOLDS);
+    });
+
+    it('gives every fixture track the canonical role the app derives for it', () => {
+        const derived = context.tracks.map((track) => ({
+            id: track.id,
+            canonicalRole: getCanonicalTrackRole({
+                track: {
+                    id: track.id,
+                    name: track.name,
+                    kind: track.kind,
+                    clips: track.clips.map((clip) => ({ id: clip.id, type: clip.type })),
+                    devices: track.devices.map((device) => ({
+                        type: device.type,
+                        parameterValues: Object.fromEntries(
+                            (device.parameters ?? []).map((parameter) => [parameter.id, parameter.value])
+                        ),
+                    })),
+                },
+            }),
+        }));
+
+        expect(context.tracks.map((track) => ({ id: track.id, canonicalRole: track.canonicalRole }))).toEqual(derived);
     });
 
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus schema', (corpusName) => {

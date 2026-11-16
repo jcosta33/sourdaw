@@ -586,7 +586,12 @@
                         }
                     ]
                 }
-            ]
+            ],
+            "canonicalRole": {
+                "role": "bass",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-lead-vocal",
@@ -669,7 +674,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "guitar",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-keys",
@@ -686,7 +696,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "keys",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-drum-bus",
@@ -703,7 +718,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "bus",
+                "source": "name-tags",
+                "evidence": "structural-kind"
+            }
         },
         {
             "id": "track-reverb-bus",
@@ -720,7 +740,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "bus",
+                "source": "name-tags",
+                "evidence": "structural-kind"
+            }
         }
     ],
     "selectedTrackId": null,
