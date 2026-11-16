@@ -16,13 +16,15 @@ type CapturedLoad = ReturnType<TrackNode['capturePendingDeviceLoads']>[number] &
 };
 
 type LoadStage = ReturnType<CapturedLoad['observation']['read']>['stage'];
+/** Last stage each load reported, keyed by its token id. */
+type LoadStages = Map<CapturedLoad['token']['tokenId'], LoadStage>;
 
 type LoadDeadlines = { expired: Set<Promise<unknown>>; nextDeadline: number };
 
 /** Each load's deadline restarts on its own last progress, so a slow load that keeps reporting is never cut off. */
 function readLoadDeadlines(
     pending: readonly CapturedLoad[],
-    lastKnownStage: Map<string, LoadStage>,
+    lastKnownStage: LoadStages,
     waitStartedAtMs: number,
     timeoutMs: number,
     now: number
@@ -67,7 +69,7 @@ async function raceUntil(allSettled: Promise<boolean>, delayMs: number): Promise
 
 function summarizeLoads(
     capturedLoads: readonly CapturedLoad[],
-    lastKnownStage: ReadonlyMap<string, LoadStage>
+    lastKnownStage: ReadonlyMap<CapturedLoad['token']['tokenId'], LoadStage>
 ): AudioDeviceWaitResult {
     const devices = capturedLoads.map(({ token, observation }) => {
         const state = observation.read();
