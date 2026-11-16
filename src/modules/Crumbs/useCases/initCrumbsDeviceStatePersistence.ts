@@ -5,6 +5,7 @@ import { hasUnsettledCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 
 import { commitCrumbsDeviceState } from './commitCrumbsDeviceState';
 import { liveCrumbsMirrorPass } from './crumbsDeviceStateMirror';
+import { isCrumbsDeviceStateDocumented } from './isCrumbsDeviceStateDocumented';
 
 /** A baseline no `playbackKey` can equal, so the next unheld pass for the device commits. */
 const UNCOMMITTED_BASELINE = '';
@@ -42,6 +43,11 @@ export function initCrumbsDeviceStatePersistence(): () => void {
                 // baseline instead of writing: no playback key equals it, so the pair's release
                 // replay of `mirrorPass` sees a change and commits the settled state.
                 committed.set(deviceId, UNCOMMITTED_BASELINE);
+                return;
+            }
+            const state = crumbsStore.value?.[deviceId];
+            // A peer's sample reconciled in while the project was locked is already the document's.
+            if (!state || isCrumbsDeviceStateDocumented(deviceId, state)) {
                 return;
             }
             commitCrumbsDeviceState(deviceId, episodes);

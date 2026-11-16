@@ -1,7 +1,7 @@
-import type { Frame } from '@playwright/test';
 import { expect } from '../e2eTest';
 
 import type { AppAction } from '../../../src/utils/handlerContract';
+import type { Frame } from '@playwright/test';
 
 type Clip = {
     id: string;

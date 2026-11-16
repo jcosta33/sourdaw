@@ -1,4 +1,8 @@
-import { commandBatchEffectByActionType } from '../models/CommandBatchActionEffect';
+import {
+    type CommandBatchActionEffect,
+    type CommandBatchCountReader,
+    commandBatchEffectByActionType,
+} from '../models/CommandBatchActionEffect';
 import { type CommandBatchDynamicEffects } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
@@ -17,10 +21,6 @@ export type VersionedCommandBatchEffects = {
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function arrayLength(value: unknown): number {
-    return Array.isArray(value) ? value.length : 0;
 }
 
 function addReferencedIds(
@@ -42,67 +42,20 @@ function addReferencedIds(
     }
 }
 
-function getCreatedTrackCount(command: VersionedCommandEnvelope): number {
-    if (command.operation === 'importStemSet') {
-        return arrayLength(command.arguments.stems) + 1;
-    }
-    if (
-        command.operation === 'addTrack' ||
-        command.operation === 'createBus' ||
-        command.operation === 'duplicateTrack'
-    ) {
-        return 1;
-    }
-    return 0;
-}
-
-function getAutomationPointCount(command: VersionedCommandEnvelope): number {
-    if (command.operation === 'addAutomationPoint') {
-        return 1;
-    }
-    if (command.operation === 'automateSendRange' || command.operation === 'automateTrackGainRange') {
-        return arrayLength(command.arguments.trackIds) * 2;
-    }
-    if (command.operation === 'automateSendRanges') {
-        return arrayLength(command.arguments.trackIds) * arrayLength(command.arguments.sectionIds) * 2;
-    }
-    if (command.operation === 'automateParameterRange') {
-        // At most: the opening point, the start value a ramp leaves from, the two ends of the held
-        // target, and the closing point.
-        return 5;
-    }
-    return 0;
+function readCount(
+    command: VersionedCommandEnvelope,
+    select: (effect: CommandBatchActionEffect) => CommandBatchCountReader | undefined
+): number {
+    const reader = select(commandBatchEffectByActionType[command.operation]);
+    return reader === undefined ? 0 : reader(command.arguments);
 }
 
 function getDeletedObjectCount(command: VersionedCommandEnvelope): number {
-    if (command.operation === 'removeTrack') {
-        return (
-            1 +
-            arrayLength(command.arguments.expectedClipIds) +
-            arrayLength(command.arguments.expectedAlternativeClipIds)
-        );
+    const effect = commandBatchEffectByActionType[command.operation];
+    if (effect.deletedObjects !== undefined) {
+        return effect.deletedObjects(command.arguments);
     }
-    if (command.operation === 'glueClips') {
-        return Math.max(1, arrayLength(command.arguments.clipIds));
-    }
-    if (command.operation === 'thinAutomation') {
-        return 0;
-    }
-    return commandBatchEffectByActionType[command.operation].delete ? 1 : 0;
-}
-
-function getRenderJobCount(command: VersionedCommandEnvelope): number {
-    if (command.operation !== 'renderProjectSections') {
-        return 0;
-    }
-    return arrayLength(command.arguments.sectionIds);
-}
-
-function getImportedAssetCount(command: VersionedCommandEnvelope): number {
-    if (command.operation !== 'importStemSet') {
-        return 0;
-    }
-    return arrayLength(command.arguments.stems);
+    return effect.delete ? 1 : 0;
 }
 
 function addRequiredGrants(command: VersionedCommandEnvelope, requiredGrants: Set<CommandGrant>): void {
@@ -145,11 +98,11 @@ export function getVersionedCommandBatchEffects(
     for (const command of commands) {
         addRequiredGrants(command, requiredGrants);
         addReferencedIds(command, affectedTrackIds, affectedClipIds);
-        createdTracks += getCreatedTrackCount(command);
+        createdTracks += readCount(command, (effect) => effect.createdTracks);
         deletedObjects += getDeletedObjectCount(command);
-        automationPoints += getAutomationPointCount(command);
-        importedAssets += getImportedAssetCount(command);
-        renderJobs += getRenderJobCount(command);
+        automationPoints += readCount(command, (effect) => effect.automationPoints);
+        importedAssets += readCount(command, (effect) => effect.importedAssets);
+        renderJobs += readCount(command, (effect) => effect.renderJobs);
         if (command.operation === 'importStemSet' && isRecord(command.arguments)) {
             for (const stem of Array.isArray(command.arguments.stems) ? command.arguments.stems : []) {
                 if (isRecord(stem) && typeof stem.trackId === 'string') {

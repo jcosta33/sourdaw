@@ -1,6 +1,7 @@
 import { type ActionCommandGraph } from './ActionCommandGraph';
 import { type AgentRunProviderProposal, type PlannedAgentRunBatchSchedule } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
+import { type BriefReadingOffer } from './BriefReading';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type MeasuredPreview } from './MeasuredPreview';
@@ -70,6 +71,11 @@ export type IntentResult = {
      * scheduled. The planned run itself rides `batchSchedule`.
      */
     plannedRunLines?: string[];
+    /**
+     * Present when a brief request admits more than one reading of its characters: nothing is measured
+     * or scheduled, and the card offers each reading, whose choice plans exactly that one.
+     */
+    briefReadings?: BriefReadingOffer;
     /**
      * The confirmation id of the thread's pending proposal this batch replaces, admitted against the
      * thread the request was planned in. Present only on a refinement, which always asks for

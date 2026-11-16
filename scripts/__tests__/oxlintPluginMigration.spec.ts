@@ -4,13 +4,22 @@ import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 
 import { clearCaches } from '@typescript-eslint/parser';
-import { ESLint } from 'eslint';
+import { ESLint, type Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
+import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
 
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
-import { lintMigratedRules, runProductionLint, withLintFixture } from './helpers/lintMigratedRules.ts';
+import {
+    lintBaselineMigratedRules,
+    lintLegacyCoreRule,
+    lintMigratedFile,
+    lintMigratedRules,
+    lintNativeCoreRule,
+    runProductionLint,
+    withLintFixture,
+} from './helpers/lintMigratedRules.ts';
 import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -175,10 +184,371 @@ const cases = [
     },
 ] as const;
 
+type CoreMigrationCase = {
+    rule: string;
+    setting: Linter.RuleEntry;
+    invalid: string;
+    valid: string;
+};
+
+// These settings freeze the old contract rather than reading the migrated config.
+const coreMigrationCases: CoreMigrationCase[] = [
+    {
+        rule: 'preserve-caught-error',
+        setting: 'error',
+        invalid: "try { work(); } catch (error) { throw new Error('failed'); }",
+        valid: "try { work(); } catch (error) { throw new Error('failed', { cause: error }); }",
+    },
+    {
+        rule: 'preserve-caught-error',
+        setting: 'error',
+        invalid: "try { work(); } catch (error) { throw new AggregateError([], 'failed', { cause: other }); }",
+        valid: "try { work(); } catch (error) { function nested() { throw new Error('failed'); } }",
+    },
+    {
+        rule: 'preserve-caught-error',
+        setting: 'error',
+        invalid:
+            "try { work(); } catch (error) { { const error = other; throw new Error('failed', { cause: error }); } }",
+        valid: "try { work(); } catch { throw new Error('failed'); }",
+    },
+    {
+        rule: 'no-useless-computed-key',
+        setting: 'error',
+        invalid: "export const value = { ['key']: 1 };",
+        valid: "export const value = { ['__proto__']: 1, [key]: 2 };",
+    },
+    {
+        rule: 'no-useless-computed-key',
+        setting: 'error',
+        invalid: "class Value { ['key']() {} ['field'] = 1; }",
+        valid: "class Value { ['constructor']() {} static ['prototype']() {} }",
+    },
+    {
+        rule: 'max-lines',
+        setting: ['error', { max: 600, skipBlankLines: true, skipComments: true }],
+        invalid: Array.from({ length: 601 }, (_, index) => `export const value${index} = ${index};`).join('\n'),
+        valid: Array.from({ length: 600 }, (_, index) => `// comment\nexport const value${index} = ${index};\n`).join(
+            '\n'
+        ),
+    },
+    {
+        rule: 'max-lines-per-function',
+        setting: ['error', { max: 100, skipBlankLines: true, skipComments: true, IIFEs: true }],
+        invalid: `export function example() {\n${'    work();\n'.repeat(99)}}`,
+        valid: `export function example() {\n${'    // comment\n\n    work();\n'.repeat(98)}}`,
+    },
+    {
+        rule: 'max-lines-per-function',
+        setting: ['error', { max: 100, skipBlankLines: true, skipComments: true, IIFEs: true }],
+        invalid: `(function() {\n${'    work();\n'.repeat(99)}})();`,
+        valid: `(function() {\n${'    work();\n'.repeat(98)}})();`,
+    },
+    {
+        rule: 'max-depth',
+        setting: ['error', 4],
+        invalid: 'function example() { if (a) { if (b) { if (c) { if (d) { if (e) { work(); } } } } } }',
+        valid: 'function example() { if (a) { if (b) { if (c) { if (d) { work(); } } } } }',
+    },
+    {
+        rule: 'complexity',
+        setting: ['error', 20],
+        invalid: `function example() { ${'if (ready) { work(); } '.repeat(20)}}`,
+        valid: `function example() { ${'if (ready) { work(); } '.repeat(19)}}`,
+    },
+];
+
 // Keep real lint processes and their temporary workspace files in this one
 // sequential suite. A native TS program can enumerate another worker's fixture
 // before that worker deletes it, then fail when opening the missing file.
 describe('production Oxlint public-plugin migration', () => {
+    it.each(coreMigrationCases)(
+        'preserves the frozen ESLint $rule contract in the production Oxlint config',
+        ({ rule, setting, invalid, valid }) => {
+            expect(lintLegacyCoreRule(invalid, rule, setting)).not.toEqual([]);
+            expect(lintLegacyCoreRule(valid, rule, setting)).toEqual([]);
+            const rejected = lintMigratedRules(invalid);
+            expect(rejected.status, rejected.output).toBe(1);
+            expect(
+                rejected.messages.filter((message) => message.ruleId === `eslint/${rule}`),
+                rejected.output
+            ).not.toEqual([]);
+            const accepted = lintMigratedRules(valid);
+            expect(
+                accepted.messages.filter((message) => message.ruleId === `eslint/${rule}`),
+                accepted.output
+            ).toEqual([]);
+        },
+        120_000
+    );
+
+    it('keeps the native size warning baseline identical to the canonical burn-down list', () => {
+        const config: unknown = JSON.parse(readFileSync('.oxlint-plugins.json', 'utf8'));
+        if (!isRecord(config) || !Array.isArray(config.overrides)) {
+            throw new Error('The public Oxlint config has no overrides');
+        }
+        const baselines = config.overrides.filter((entry: unknown) => {
+            if (!isRecord(entry) || !isRecord(entry.rules)) {
+                return false;
+            }
+            const setting = entry.rules['max-lines'];
+            return (Array.isArray(setting) ? setting[0] : setting) === 'warn';
+        });
+        expect(baselines).toHaveLength(1);
+        const baseline = baselines[0];
+        if (!isRecord(baseline) || !isRecord(baseline.rules)) {
+            throw new Error('The native size warning baseline is missing');
+        }
+        expect(baseline.files).toEqual(sizeBaselineFiles);
+        expect(baseline.rules).toEqual({
+            'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
+            'max-lines-per-function': ['warn', { max: 100, skipBlankLines: true, skipComments: true, IIFEs: true }],
+            'max-depth': ['warn', 4],
+            complexity: ['warn', 20],
+        });
+    });
+
+    it.each(
+        coreMigrationCases
+            .map((fixture, index) => ({ ...fixture, index }))
+            .filter(({ rule }) => ['max-lines', 'max-lines-per-function', 'max-depth', 'complexity'].includes(rule))
+    )(
+        'preserves baseline warning boundary for $rule (frozen case $index)',
+        ({ rule, invalid, valid }) => {
+            expect(sizeBaselineFiles).toContain('scripts/resourceGuard.ts');
+            const rejected = lintBaselineMigratedRules(invalid);
+            const warnings = rejected.messages.filter((message) => message.ruleId === `eslint/${rule}`);
+            expect(warnings, rejected.output).not.toEqual([]);
+            expect(
+                warnings.map((message) => message.severity),
+                rejected.output
+            ).toEqual(warnings.map(() => 'warning'));
+            expect(rejected.status, rejected.output).toBe(0);
+            const accepted = lintBaselineMigratedRules(valid);
+            expect(
+                accepted.messages.filter((message) => message.ruleId === `eslint/${rule}`),
+                accepted.output
+            ).toEqual([]);
+            expect(accepted.status, accepted.output).toBe(0);
+        },
+        120_000
+    );
+
+    it.each(coreMigrationCases)(
+        'honors the original explicit disable ID for $rule',
+        ({ rule, invalid }) => {
+            const result = lintMigratedRules(`/* eslint-disable ${rule} */\n${invalid}`);
+            expect(
+                result.messages.filter((message) => message.ruleId === `eslint/${rule}`),
+                result.output
+            ).toEqual([]);
+        },
+        60_000
+    );
+
+    it.each([
+        'src/modules/Example/example.spec.ts',
+        'src/modules/Example/example.test.ts',
+        'src/modules/Example/setupTests.ts',
+        'src/modules/Example/example.mock.ts',
+        'src/modules/Example/__tests__/helper.ts',
+        'src/modules/Example/testing/helper.ts',
+        'tests/e2e/example.ts',
+        'scripts/example.mjs',
+    ])(
+        'keeps all size and complexity exemptions for %s',
+        (filename) => {
+            const invalid = coreMigrationCases.filter(({ rule }) =>
+                ['max-lines', 'max-lines-per-function', 'max-depth', 'complexity'].includes(rule)
+            );
+            for (const fixture of invalid) {
+                const result = lintMigratedRules(fixture.invalid, filename);
+                expect(
+                    result.messages.filter((message) => message.ruleId === `eslint/${fixture.rule}`),
+                    result.output
+                ).toEqual([]);
+            }
+        },
+        120_000
+    );
+
+    it('preserves warnings on an actual baseline file rather than disabling its checks', () => {
+        const result = lintMigratedFile('scripts/resourceGuard.ts');
+        const messages = result.messages.filter((message) =>
+            ['eslint/max-lines', 'eslint/max-lines-per-function', 'eslint/max-depth', 'eslint/complexity'].includes(
+                message.ruleId
+            )
+        );
+        expect(messages, result.output).not.toEqual([]);
+        expect(
+            messages.map((message) => message.severity),
+            result.output
+        ).toEqual(messages.map(() => 'warning'));
+        expect(result.status, result.output).toBe(0);
+    }, 60_000);
+
+    it.each([
+        ['preserve-caught-error', "try { JSON.parse('bad'); } catch (error) { throw new Error(String(error)); }\n"],
+        ['no-useless-computed-key', "export const value = { ['key']: 1 };\n"],
+        [
+            'max-lines',
+            `${Array.from({ length: 601 }, (_, index) => `export const value${index} = ${index};`).join('\n')}\n`,
+        ],
+        ['max-lines-per-function', `export function example() {\n${'    Math.random();\n'.repeat(99)}}\n`],
+        [
+            'max-depth',
+            'export function example(a: boolean, b: boolean, c: boolean, d: boolean, e: boolean) { if (a) { if (b) { if (c) { if (d) { if (e) { Math.random(); } } } } } }\n',
+        ],
+        ['complexity', `export function example(ready: boolean) { ${'if (ready) { Math.random(); } '.repeat(20)}}\n`],
+    ])(
+        'fails the actual production route on %s before ESLint starts',
+        (rule, invalid) => {
+            const filename = ['preserve-caught-error', 'no-useless-computed-key'].includes(rule)
+                ? 'scripts/example.js'
+                : 'scripts/example.ts';
+            const rejected = runProductionLint(invalid, filename);
+            expect(rejected.status, rejected.output).toBe(1);
+            expect(rejected.output).toContain(`eslint(${rule})`);
+            expect(rejected.output).toContain('lint: oxlint-plugins failed');
+            expect(rejected.output).not.toContain('lint: eslint started');
+        },
+        180_000
+    );
+
+    it('converges computed-key fixes with final formatting and rechecks unchanged bytes', () => {
+        const fixed = runProductionLint("export const value={['key']:1}\n", 'scripts/example.js', true);
+        expect(fixed.status, fixed.output).toBe(0);
+        expect(fixed.text).toBe('export const value = { key: 1 };\n');
+        const repeated = runProductionLint(fixed.text, 'scripts/example.js', true);
+        expect(repeated.status, repeated.output).toBe(0);
+        expect(repeated.text).toBe(fixed.text);
+        const checked = runProductionLint(fixed.text, 'scripts/example.js');
+        expect(checked.status, checked.output).toBe(0);
+    }, 180_000);
+
+    it('fixes computed keys exposed beyond their next-line directive by formatting', () => {
+        const input =
+            '// eslint-disable-next-line no-useless-computed-key -- Controlled suppression scope probe.\n' +
+            "export function example() { return { ['key']: 1 }; }\n";
+        const fixed = runProductionLint(input, 'scripts/example.js', true);
+        expect(fixed.status, fixed.output).toBe(0);
+        expect(fixed.text).toContain('    return { key: 1 };');
+        expect(fixed.text).not.toContain("['key']");
+        const checked = runProductionLint(fixed.text, 'scripts/example.js');
+        expect(checked.status, checked.output).toBe(0);
+    }, 180_000);
+
+    it('reports caught-error loss on final formatted bytes beyond a next-line directive', () => {
+        const input =
+            '// eslint-disable-next-line preserve-caught-error -- Controlled suppression scope probe.\n' +
+            "try { JSON.parse('bad'); } catch (error) { throw new Error(String(error)); }\n";
+        const fixed = runProductionLint(input, 'scripts/example.js', true);
+        expect(fixed.text).toContain('    throw new Error(String(error));');
+        expect(fixed.status, fixed.output).toBe(1);
+        expect(fixed.output).toContain('preserve-caught-error');
+    }, 180_000);
+
+    it('preserves allowed computed TypeScript type members', () => {
+        const code = "export type Value = { ['key']: number }; export interface Other { ['field']: number }";
+        expect(lintLegacyCoreRule(code, 'no-useless-computed-key', 'error')).toEqual([]);
+        const result = lintMigratedRules(code);
+        expect(
+            result.messages.filter((message) => message.ruleId === 'eslint/no-useless-computed-key'),
+            result.output
+        ).toEqual([]);
+    }, 120_000);
+
+    it('retains id-length because the native candidate rejects an allowed TypeScript alias', () => {
+        const code = 'export type o = string;';
+        // o is absent from the existing exception list; core ESLint ignores type aliases.
+        const setting: Linter.RuleEntry = ['error', { min: 2, properties: 'never' }];
+        expect(lintLegacyCoreRule(code, 'id-length', setting)).toEqual([]);
+        const candidate = lintNativeCoreRule(code, 'id-length', setting);
+        expect(candidate.status, candidate.output).toBe(1);
+        expect(candidate.messages.map((message) => message.ruleId)).toContain('eslint/id-length');
+    }, 120_000);
+
+    it('retains consistent-return because the typed candidate exempts void-valued returns', () => {
+        const rejected = lintNativeCoreRule(
+            'export function example(ready: boolean) { if (ready) { return 1; } }',
+            'typescript/consistent-return',
+            'error',
+            true
+        );
+        expect(rejected.status, rejected.output).toBe(1);
+        expect(
+            rejected.messages.some((message) => message.ruleId.endsWith('/consistent-return')),
+            rejected.output
+        ).toBe(true);
+        const code =
+            'function stop(): void {} export function example(ready: boolean) { if (ready) { return stop(); } }';
+        expect(lintLegacyCoreRule(code, 'consistent-return', 'error')).not.toEqual([]);
+        const candidate = lintNativeCoreRule(code, 'typescript/consistent-return', 'error', true);
+        expect(candidate.status, candidate.output).toBe(0);
+        expect(candidate.messages, candidate.output).toEqual([]);
+    }, 120_000);
+
+    it('retains ESLint budgets because native fixes prune stale counts and allow a missing file', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'lint-native-suppression-gap-'));
+        const suppression = join(directory, 'oxlint-suppressions.json');
+        const fixture = join(directory, 'fixture.js');
+        const run = (fix: boolean) => {
+            const args = ['--config=.oxlintrc.json', '--threads=2', '--format=json'];
+            if (fix) {
+                args.push('--fix');
+            }
+            args.push('fixture.js');
+            return spawnSync(resolve('node_modules/.bin/oxlint'), args, {
+                cwd: directory,
+                encoding: 'utf8',
+                timeout: 60_000,
+            });
+        };
+        try {
+            writeFileSync(
+                join(directory, '.oxlintrc.json'),
+                JSON.stringify({
+                    categories: {
+                        correctness: 'off',
+                        suspicious: 'off',
+                        pedantic: 'off',
+                        perf: 'off',
+                        style: 'off',
+                        restriction: 'off',
+                        nursery: 'off',
+                    },
+                    rules: { 'no-void': ['error', { allowAsStatement: true }] },
+                })
+            );
+            writeFileSync(fixture, 'export const value = void 0;\n');
+            writeFileSync(join(directory, 'other.js'), 'export const other = void 1;\n');
+            const budget = JSON.stringify({
+                'fixture.js': { 'no-void': { count: 2 } },
+                'other.js': { 'no-void': { count: 1 } },
+            });
+            writeFileSync(suppression, budget);
+            const checked = run(false);
+            expect(checked.error).toBeUndefined();
+            expect(checked.status, checked.stdout + checked.stderr).toBe(1);
+            expect(checked.stdout).toContain('suppressions that do not occur anymore');
+            expect(readFileSync(suppression, 'utf8')).toBe(budget);
+            const fixed = run(true);
+            expect(fixed.error).toBeUndefined();
+            expect(fixed.status, fixed.stdout + fixed.stderr).toBe(0);
+            expect(JSON.parse(readFileSync(suppression, 'utf8'))).toEqual({
+                'fixture.js': { 'no-void': { count: 1 } },
+                'other.js': { 'no-void': { count: 1 } },
+            });
+            unlinkSync(suppression);
+            writeFileSync(fixture, 'export const value = 1;\n');
+            const missing = run(false);
+            expect(missing.error).toBeUndefined();
+            expect(missing.status, missing.stdout + missing.stderr).toBe(0);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    }, 120_000);
+
     it.each([false, true])(
         'enforces retained bulk suppression budgets through the production ESLint CLI (fix=%s)',
         (fix) => {
@@ -212,6 +582,18 @@ describe('production Oxlint public-plugin migration', () => {
                     return { status: result.status, output: result.stdout + result.stderr };
                 };
                 try {
+                    const missingArgv = buildEslintArgv({ fix, full: false }, [fixture]);
+                    const location = missingArgv.indexOf('--suppressions-location');
+                    missingArgv[location + 1] = suppressionsFile;
+                    const missing = spawnSync('pnpm', missingArgv, {
+                        cwd: process.cwd(),
+                        encoding: 'utf8',
+                        timeout: 120_000,
+                        env: eslintEnvironment(process.env, fix),
+                    });
+                    expect(missing.error).toBeUndefined();
+                    expect(missing.status, missing.stdout + missing.stderr).toBe(2);
+                    expect(missing.stdout + missing.stderr).toContain('The suppressions file does not exist');
                     writeFileSync(suppressionsFile, budget);
                     const accepted = run(oneViolation);
                     expect(accepted.status, accepted.output).toBe(0);
@@ -400,7 +782,7 @@ describe('production Oxlint public-plugin migration', () => {
         expect(verified.status, verified.output).toBe(0);
     }, 180_000);
 
-    it('runs migrated rules in Oxlint and retains service gaps, bulk budgets and core rules in ESLint', async () => {
+    it('runs supported rules only in Oxlint checks and retains the demonstrated ESLint gaps', async () => {
         const eslint = new ESLint();
         const config = await eslint.calculateConfigForFile(resolve('src/app/App.tsx'));
         if (!config) {
@@ -434,19 +816,13 @@ describe('production Oxlint public-plugin migration', () => {
                 '@tanstack/query/no-rest-destructuring',
                 '@tanstack/query/no-void-query-fn',
                 '@typescript-eslint/naming-convention',
-                'complexity',
                 'consistent-return',
                 'id-length',
                 'import-x/order',
-                'max-depth',
-                'max-lines',
-                'max-lines-per-function',
                 'no-invalid-this',
                 'no-octal',
                 'no-restricted-syntax',
-                'no-useless-computed-key',
                 'no-void',
-                'preserve-caught-error',
                 'prettier/prettier',
             ].sort()
         );
@@ -590,7 +966,6 @@ describe('production Oxlint public-plugin migration', () => {
                 '@tanstack/query/no-void-query-fn',
                 '@typescript-eslint/naming-convention',
                 'import-x/order',
-                'max-lines',
                 'prettier/prettier',
             ]) {
                 expect(fix[target].rules[rule], `${target}: ${rule}`).toEqual(check[target].rules[rule]);
@@ -601,6 +976,31 @@ describe('production Oxlint public-plugin migration', () => {
                 expect(fix[target].rules['@stylistic/spaced-comment'], target).toEqual([2, ...commentSetting.slice(1)]);
             }
             expect(check[target].rules['@stylistic/spaced-comment']).toBeUndefined();
+        }
+        for (const rule of [
+            'preserve-caught-error',
+            'no-useless-computed-key',
+            'max-lines',
+            'max-lines-per-function',
+            'max-depth',
+            'complexity',
+        ]) {
+            expect(check.app.rules[rule], rule).toBeUndefined();
+            const setting = fix.app.rules[rule];
+            if (!Array.isArray(setting)) {
+                throw new TypeError(`Missing cofix setting for ${rule}`);
+            }
+            expect(setting[0], rule).toBe(2);
+        }
+        for (const target of ['spec', 'e2e']) {
+            for (const rule of ['max-lines', 'max-lines-per-function', 'max-depth', 'complexity']) {
+                const config = target === 'spec' ? fix.spec : fix.e2e;
+                const setting = config.rules[rule];
+                if (!Array.isArray(setting)) {
+                    throw new TypeError(`Missing disabled cofix setting for ${target}: ${rule}`);
+                }
+                expect(setting[0], `${target}: ${rule}`).toBe(0);
+            }
         }
         expect(fix.app.rules['sourdaw/no-type-assertion-escape']).toEqual([2]);
         expect(fix.spec.rules['sourdaw/no-type-assertion-escape']).toEqual([0]);

@@ -286,7 +286,7 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
 function onlyClip(snapshot: Snapshot): SourceClip {
     expect(snapshot.raw).toEqual(snapshot.projected);
     expect(snapshot.raw.clips).toHaveLength(1);
-    const clip = snapshot.raw.clips[0];
+    const clip = snapshot.raw.clips.at(0);
     if (!clip) {
         throw new Error('The one imported audio clip is absent');
     }
@@ -894,7 +894,7 @@ function expectRelativeStamps(
     pcm: ReturnType<typeof pcm24Wav>,
     stamps: { outputFrame: number; encoded: number }[]
 ): void {
-    const reference = stamps[0];
+    const reference = stamps.at(0);
     if (!reference) {
         throw new Error('The independent PCM stamp oracle is empty');
     }
@@ -1152,7 +1152,9 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(2);
         state = await readSnapshot(page);
         expect(state.raw).toEqual(state.projected);
-        const [left, right] = [...state.raw.clips].sort((a, b) => a.startBeat - b.startBeat);
+        const fragments = [...state.raw.clips].sort((a, b) => a.startBeat - b.startBeat);
+        const left = fragments.at(0);
+        const right = fragments.at(1);
         if (!left || !right) {
             throw new Error('Actual split fragments are absent');
         }
@@ -1459,8 +1461,8 @@ test('snaps real menu splits to source-frame zero crossings through interior tem
         const before = state;
         state = await splitAtPointer(page, onlyClip(state), control.proposedBeat);
         const parts = [...state.raw.clips].sort((a, b) => a.startBeat - b.startBeat);
-        const left = parts[0];
-        const right = parts[1];
+        const left = parts.at(0);
+        const right = parts.at(1);
         if (!left || !right) {
             throw new Error('The admitted split did not produce both owners');
         }
@@ -1759,10 +1761,9 @@ test('retains stereo-only Strip Silence islands through menu export and saved Un
             for (let frame = 0; frame < pcm.frames; frame += 1) {
                 const sample = pcm.at(frame, channel);
                 body.writeIntLE(sample, frame * 6 + channel * 3, 3);
-                const sounding =
-                    channel === 0
-                        ? frame < 48_000 || (frame >= 192_000 && frame < 240_000)
-                        : frame >= 96_000 && frame < 144_000;
+                const inLeftIsland = frame < 48_000 || (frame >= 192_000 && frame < 240_000);
+                const inRightIsland = frame >= 96_000 && frame < 144_000;
+                const sounding = channel === 0 ? inLeftIsland : inRightIsland;
                 // Leave 10ms at each segment edge for the shipped anti-click envelope.
                 // Interior PCM must sound on its original channel; every silent frame stays zero.
                 const interior = frame % 48_000 >= 480 && frame % 48_000 < 47_520;
@@ -2078,7 +2079,7 @@ async function expectedRenderHash(page: Page, reversed: boolean, frames = SAMPLE
 async function selectAdmissionClip(page: Page): Promise<void> {
     const snapshot = await readSnapshot(page);
     expect(snapshot.raw).toEqual(snapshot.projected);
-    const clip = snapshot.raw.clips[0];
+    const clip = snapshot.raw.clips.at(0);
     if (!clip) {
         throw new Error('Keyboard focus requires an actual visible audio clip');
     }

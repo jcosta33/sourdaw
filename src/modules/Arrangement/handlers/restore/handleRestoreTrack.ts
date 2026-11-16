@@ -234,6 +234,7 @@ function decodeRestoredRows(
         !describesRow(payload, track) ||
         !keysOnlyOwnClips(payload, ownClipIds) ||
         payload.automationLaneSnapshots.some((lane) => lane.trackId !== payload.trackId) ||
+        !modulationBelongsToTrack(payload) ||
         !takeLanes ||
         takeLanes.some((lane) => lane.trackId !== payload.trackId)
     ) {
@@ -259,6 +260,19 @@ function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<
         ...Object.keys(payload.midiPitchBendByClipId),
         ...payload.clipSatellites.map((entry) => entry.clipId),
     ].every((clipId) => ownClipIds.has(clipId));
+}
+
+// The capture takes the modulators the track owns, whose own mappings may
+// target any track, and only the mappings other tracks' modulators aim at the
+// track. Restoring appends each mapping to the live modulator it names and
+// adds each owned modulator under the payload's track, so a mapping aimed
+// elsewhere or a modulator owned elsewhere would write into another track's
+// modulation.
+function modulationBelongsToTrack(payload: RestoreTrackPayload): boolean {
+    return (
+        payload.ownedModulatorSnapshots.every((modulator) => modulator.trackId === payload.trackId) &&
+        payload.incomingModulationMappingSnapshots.every((entry) => entry.mapping.targetTrackId === payload.trackId)
+    );
 }
 
 function collectLiveHeldClipIds(liveTracks: readonly Track[]): ReadonlySet<string> {

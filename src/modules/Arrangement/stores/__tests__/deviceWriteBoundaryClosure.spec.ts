@@ -892,10 +892,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and the one call that seals the next scheduled batch's approval
         // snapshot. Immutable approval metadata only; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts': 3,
-        // Count provenance: new file entry, measured 1 — the single
-        // `providerProtocol.compileRequest` call, extracted from
-        // sendChatMessage (#2975). Provider-request compilation only.
-        'src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts': 1,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
         // Count provenance: measured 3 — the exported batch compiler's
         // declaration, plus the declaration and one call of

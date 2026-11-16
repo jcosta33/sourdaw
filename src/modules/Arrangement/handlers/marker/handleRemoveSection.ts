@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { readListRestoreSlot } from '../../models/ListRestoreSlot';
 import { removeSection } from '../../useCases/marker/sectionOperations/removeSection';
 import { getMarkerState } from '../../useCases/timelineQueries';
 
@@ -21,7 +22,7 @@ export const handleRemoveSection = createHandler<'removeSection'>({
         }
         return {
             label,
-            // Undo restores the exact section — same id, range, name, and color.
+            // Undo restores the exact section — same id, range, name, color, and place between its neighbours.
             inverseAction: prev
                 ? {
                       type: 'addSection',
@@ -31,7 +32,7 @@ export const handleRemoveSection = createHandler<'removeSection'>({
                           name: prev.name,
                           sectionId: prev.id,
                           color: prev.color,
-                          index,
+                          ...readListRestoreSlot(sections, index),
                       },
                   }
                 : null,

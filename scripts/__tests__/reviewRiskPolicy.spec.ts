@@ -280,6 +280,10 @@ describe('planReviewRisk', () => {
             const result = reviewPlan([handwritten(path, 1, 1)]);
             expect(result.riskClasses, path).toContain('native-security');
         }
+        expect(closurePaths).toContain('scripts/resourceGuardStorageProcessProof.ts');
+        expect(reviewPlan([handwritten('scripts/resourceGuardStorageProcessProof.ts', 1, 1)]).riskClasses).toEqual([
+            'native-security',
+        ]);
     });
 
     /**

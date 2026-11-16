@@ -408,8 +408,11 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            afterId: 1,
             beat: 0,
+            beforeId: 1,
             color: 1,
+            index: 0,
             markerId: 1,
             name: 1,
         },
@@ -556,6 +559,8 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            afterId: 1,
+            beforeId: 1,
             color: 1,
             endBeat: 0,
             index: 0,

@@ -3,6 +3,7 @@ import {
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
 import {
+    clearExternalPluginParameterReadState,
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
@@ -15,7 +16,7 @@ import {
 } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
-import { loadedExternalInstances } from './loadedExternalInstances';
+import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 
 /**
  * Drop every live-instance activation guard. Called when the audio graph is torn
@@ -29,6 +30,7 @@ import { loadedExternalInstances } from './loadedExternalInstances';
 export function clearLoadedExternalPlugins(): void {
     externalPluginStateCaptureAuthority.invalidateAll();
     loadedExternalInstances.clear();
+    loadedExternalInstancePluginIds.clear();
     externalLatencyReporters.clear();
     externalPluginActivationEpoch.current += 1;
     externalPluginActivationTasks.clear();
@@ -39,4 +41,5 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationStore.set(defaultExternalPluginActivationState);
     // The parameter snapshots belong to the outgoing generation's instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    clearExternalPluginParameterReadState();
 }
