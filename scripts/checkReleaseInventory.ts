@@ -1663,6 +1663,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/AudioEngine/models/AudioEngineState.ts',
                 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
                 'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/repositories/webAudioEngine/**',
                 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
                 'src/modules/AudioEngine/worklets/grandBoule*.ts',
                 'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
@@ -1673,6 +1674,9 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/AudioEngine/models/AudioEngineState.ts',
                 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
                 'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                // The engine's concern units hash with the composer; their specs reach no artifact.
+                'src/modules/AudioEngine/repositories/webAudioEngine',
+                ':(exclude,glob)src/modules/AudioEngine/repositories/webAudioEngine/**/__tests__/**',
                 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
                 ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
                 'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',

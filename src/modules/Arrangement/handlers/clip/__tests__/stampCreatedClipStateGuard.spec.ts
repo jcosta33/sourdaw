@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
-
+import { type GeneratedMidiStateGuard } from '../../../events/arrangementClipSnapshots';
 import { stampCreatedClipStateGuard } from '../stampCreatedClipStateGuard';
 
 const mocks = vi.hoisted(() => ({

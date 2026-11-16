@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AdjustmentLayerSnapshot, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type AdjustmentLayerSnapshot } from '../../events/arrangementClipSnapshots';
 import { adjustmentLayerStore, getNextRegionId, type AdjustmentLayer } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
 import { addAdjustmentRegion, DEFAULT_REGION_FADE_BEATS } from '../../useCases/adjustmentLayer/addAdjustmentRegion';
