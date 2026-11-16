@@ -1014,7 +1014,7 @@ describe('production Oxlint public-plugin migration', () => {
         expect(fix.app.rules['react-hooks-js/purity']).toEqual([2]);
         expect(fix.app.rules['react-hooks-js/refs']).toBeUndefined();
         expect(fix.app.rules['react-hooks/refs']).toEqual([2]);
-        expect(fix.server.project).toBe('./server/tsconfig.json');
+        expect(fix.server.project).toEqual(['./server/tsconfig.json', './server/__tests__/tsconfig.json']);
         expect(fix.e2e.project).toBe('./tsconfig.e2e.json');
         expect(fix.tool.project).toBe(false);
     }, 130_000);
