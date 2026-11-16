@@ -3938,7 +3938,7 @@
             "id": "AC067-DEV-COMPARE-4",
             "promptClass": "comparative-by-measurement",
             "class": "execute-exact",
-            "prompt": "make the drums punchier than the bass in the chorus",
+            "prompt": "make the drums punchier than the bass in the verse",
             "providerTurns": [
                 {
                     "kind": "intake",
@@ -3950,14 +3950,14 @@
                             "relation": "greater-than-current",
                             "targetName": "Kick",
                             "referenceName": "Bass DI",
-                            "rangeName": "Chorus"
+                            "rangeName": "Verse"
                         },
                         {
                             "policyId": "crest-factor-comparison-v1",
                             "relation": "greater-than-current",
                             "targetName": "Snare",
                             "referenceName": "Bass DI",
-                            "rangeName": "Chorus"
+                            "rangeName": "Verse"
                         }
                     ]
                 },
@@ -3965,7 +3965,7 @@
                     "kind": "measure-preview",
                     "id": "preview",
                     "targets": ["Kick", "Snare", "Bass DI"],
-                    "rangeName": "Chorus",
+                    "rangeName": "Verse",
                     "metrics": ["crestFactor"],
                     "items": [
                         {
