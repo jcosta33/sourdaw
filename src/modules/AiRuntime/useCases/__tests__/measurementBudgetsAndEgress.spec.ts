@@ -1,7 +1,3 @@
-import dns from 'node:dns';
-import net from 'node:net';
-import tls from 'node:tls';
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
@@ -1458,8 +1454,7 @@ async function buildWireBodies(history: HostedTurnHistory): Promise<WireBodies> 
     requestOpenAiResponses.mockImplementation(reply);
     vi.stubGlobal(
         'fetch',
-        vi.fn<typeof fetch>().mockImplementation((url, init) => {
-            diagLog(`mock fetch answered url=${String(url)} body=${String(init?.body?.length)} at=${diagNow()}`);
+        vi.fn<typeof fetch>().mockImplementation((_url, init) => {
             if (typeof init?.body !== 'string') {
                 throw new TypeError('Expected a JSON request body.');
             }
@@ -1719,7 +1714,6 @@ type StreamBodies = { anthropic: unknown; openAiResponses: unknown; openAiCompat
 async function buildStreamBodies(userContent: string): Promise<StreamBodies> {
     const sent: string[] = [];
     const reply = (wire: { body: string; onBodyChunk: (chunk: Uint8Array) => void }) => {
-        diagLog(`mock transport answered body=${String(wire.body.length)} at=${diagNow()}`);
         sent.push(wire.body);
         wire.onBodyChunk(new TextEncoder().encode(''));
         return Promise.resolve({ status: 200, contentType: 'text/event-stream' });
@@ -1813,65 +1807,6 @@ const HOSTED_DIALECTS = {
 type HostedDialect = keyof typeof HOSTED_DIALECTS;
 const ALL_HOSTED_DIALECTS = ['anthropic', 'openAiResponses', 'openAiCompatible'] as const;
 
-const diagNow = (): string => performance.now().toFixed(1);
-const diagMs = (start: number): string => (performance.now() - start).toFixed(1);
-const diagLog = (line: string): void => {
-    console.log(`[6930-diag] ${line}`);
-};
-const DIAG_NUMBER = String.raw`-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?`;
-const DIAG_NUMBER_TOKEN = String.raw`(?<![\w.])${DIAG_NUMBER}(?![\w.])`;
-const DIAG_REGEXES: Readonly<Record<string, RegExp>> = {
-    EMBEDDED_NUMBER_SERIES: new RegExp(
-        String.raw`\[(?:\s*${DIAG_NUMBER}\s*,){${String(MAX_BAND_VALUES)},}\s*${DIAG_NUMBER}\s*\]`,
-        'u'
-    ),
-    EMBEDDED_BASE64_BLOB: /[A-Za-z0-9+/]{256,}={0,2}/u,
-    EMBEDDED_NUMBER_LIST: new RegExp(
-        String.raw`(?:${DIAG_NUMBER_TOKEN}[\s,]+){${String(MAX_BAND_VALUES)},}${DIAG_NUMBER_TOKEN}`,
-        'u'
-    ),
-};
-
-function diagStrings(value: unknown, into: string[] = []): string[] {
-    if (typeof value === 'string') {
-        into.push(value);
-    } else if (typeof value === 'object' && value !== null) {
-        for (const entry of Object.values(value)) {
-            diagStrings(entry, into);
-        }
-    }
-    return into;
-}
-
-function diagTimeRegexes(label: string, body: unknown): void {
-    const largest = diagStrings(body).sort((a, b) => b.length - a.length)[0] ?? '';
-    for (const [name, regex] of Object.entries(DIAG_REGEXES)) {
-        const start = performance.now();
-        const hit = regex.test(largest);
-        diagLog(`${label} regex ${name} len=${String(largest.length)} hit=${String(hit)} ${diagMs(start)}ms`);
-    }
-}
-
-/** Reports anything that reaches dns or a socket while a diagnostic row runs. */
-function diagWatchNetwork(): void {
-    const watch = (name: string, target: Record<string, unknown>, key: string): void => {
-        try {
-            const original = target[key] as (...args: unknown[]) => unknown;
-            vi.spyOn(target as Record<string, never>, key as never).mockImplementation(((...args: unknown[]) => {
-                diagLog(
-                    `NETWORK ${name}.${key} args=${JSON.stringify(args.map((arg) => (typeof arg === 'object' ? '[object]' : arg)))}`
-                );
-                return original(...args);
-            }) as never);
-        } catch (error) {
-            diagLog(`cannot spy ${name}.${key}: ${String(error)}`);
-        }
-    };
-    watch('dns', dns as unknown as Record<string, unknown>, 'lookup');
-    watch('net', net as unknown as Record<string, unknown>, 'connect');
-    watch('tls', tls as unknown as Record<string, unknown>, 'connect');
-}
-
 /** Every body a hosted request puts on the wire while `action` runs, whichever transport carries it. */
 async function recordHostedBodies(action: () => Promise<unknown>): Promise<unknown[]> {
     const sent: string[] = [];
@@ -1894,23 +1829,12 @@ async function recordHostedBodies(action: () => Promise<unknown>): Promise<unkno
             );
         })
     );
-    const actionStart = performance.now();
     await action().catch(() => undefined);
-    diagLog(`recordHostedBodies action=${diagMs(actionStart)}ms bodies=${String(sent.length)}`);
     return sent.map((body) => JSON.parse(body) as unknown);
 }
 
 /** Routes the real hosted chain to one dialect: only the transports below the adapters are doubled. */
 async function selectHostedDialect(dialect: HostedDialect): Promise<void> {
-    const selectStart = performance.now();
-    try {
-        await selectHostedDialectUntimed(dialect);
-    } finally {
-        diagLog(`${dialect} selectHostedDialect=${diagMs(selectStart)}ms`);
-    }
-}
-
-async function selectHostedDialectUntimed(dialect: HostedDialect): Promise<void> {
     hostedRuntime.current = HOSTED_DIALECTS[dialect].runtime;
     backend.chain.value = ['cloud'];
     backend.getCloudProviderInfo.mockReturnValue(HOSTED_DIALECTS[dialect].info);
@@ -1943,8 +1867,15 @@ function textFor(injection: Injection, clean: string): string {
  * asserts the body the transport received; the red case feeds a 1024-sample series through the same
  * entry and expects the detector to flag the body.
  */
+/**
+ * The slowest builder measured about 0.5 s on a CI unit shard and each row awaits only mocked
+ * transports, so the default 5 s left no room for the multi-second runner stalls seen in loaded
+ * shards: a 1 ms row timed out inside one.
+ */
+const EGRESS_ROW_TIMEOUT_MS = 20_000;
+
 function describeNoSampleData(title: string, builders: Readonly<Record<string, ComposedBodyBuilder>>): void {
-    describe(title, () => {
+    describe(title, { timeout: EGRESS_ROW_TIMEOUT_MS }, () => {
         const named = Object.entries(builders);
         const injectable = named.filter(([, builder]) => builder.injectable !== false);
 
@@ -1971,24 +1902,12 @@ function describeNoSampleData(title: string, builders: Readonly<Record<string, C
         )(
             'flags %s on the %s dialect once a 1024-sample array rides in on its input',
             async (_name, dialect, builder) => {
-                diagWatchNetwork();
-                const label = `${dialect} | ${_name}`;
                 createRun();
-                const buildStart = performance.now();
                 const bodies = await builder.build(dialect, { kind: 'samples', json: JSON.stringify(SAMPLE_SERIES) });
-                diagLog(`${label} build(total incl. selectHostedDialect)=${diagMs(buildStart)}ms`);
 
                 expect(bodies.length).toBeGreaterThan(0);
-                for (const body of bodies) {
-                    diagLog(`${label} body json length=${String(JSON.stringify(body).length)}`);
-                    diagTimeRegexes(label, body);
-                    const detectStart = performance.now();
-                    const flagged = containsSampleData(body);
-                    diagLog(`${label} containsSampleData=${String(flagged)} ${diagMs(detectStart)}ms`);
-                }
                 expect(bodies.some(containsSampleData)).toBe(true);
-            },
-            30_000
+            }
         );
     });
 }
