@@ -403,6 +403,7 @@ type GrowthCase = {
     name: string;
     base: { files: string[]; ceilings: Record<string, number> };
     head: { files: string[]; ceilings: Record<string, number> };
+    headExempt?: string[];
     expected: ReturnType<typeof findSizeBaselineGrowth>;
 };
 
@@ -457,6 +458,20 @@ const growthCases: GrowthCase[] = [
         expected: { addedPaths: [], addedCeilingKeys: [], removedCeilingKeys: ['a.ts', 'b.ts'], raisedCeilings: [] },
     },
     {
+        name: 'a ceiling key dropped for a path the head exempts',
+        base: { files: ['a.ts', 'gen.ts'], ceilings: { 'a.ts': 700, 'gen.ts': 800 } },
+        head: { files: ['a.ts', 'gen.ts'], ceilings: { 'a.ts': 700 } },
+        headExempt: ['gen.ts'],
+        expected: noGrowth,
+    },
+    {
+        name: 'a ceiling key dropped for a baselined path the head does not exempt, beside an exempt one',
+        base: { files: ['a.ts', 'gen.ts'], ceilings: { 'a.ts': 700, 'gen.ts': 800 } },
+        head: { files: ['a.ts', 'gen.ts'], ceilings: {} },
+        headExempt: ['gen.ts'],
+        expected: { addedPaths: [], addedCeilingKeys: [], removedCeilingKeys: ['a.ts'], raisedCeilings: [] },
+    },
+    {
         name: 'a moved file, which is a removal plus an addition',
         base: { files: ['old.ts'], ceilings: { 'old.ts': 700 } },
         head: { files: ['new.ts'], ceilings: { 'new.ts': 700 } },
@@ -465,10 +480,11 @@ const growthCases: GrowthCase[] = [
 ];
 
 describe('size baseline growth', () => {
-    it.each(growthCases)('should report exactly the growth for $name', ({ base, head, expected }) => {
+    it.each(growthCases)('should report exactly the growth for $name', ({ base, head, headExempt, expected }) => {
         const growth = findSizeBaselineGrowth(
             { baselineFiles: base.files, ceilings: base.ceilings },
-            { baselineFiles: head.files, ceilings: head.ceilings }
+            { baselineFiles: head.files, ceilings: head.ceilings },
+            headExempt ?? []
         );
         expect(growth).toEqual(expected);
     });

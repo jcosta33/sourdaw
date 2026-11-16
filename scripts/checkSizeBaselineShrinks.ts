@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
     describeSizeBaselineGrowth,
     findSizeBaselineGrowth,
+    GENERATED_SIZE_EXEMPTIONS,
     parseSizeBaselineFilesText,
     parseSizeCeilingsText,
     SIZE_CEILINGS_PATH,
@@ -76,7 +77,9 @@ export async function checkSizeBaselineShrinks(root: string, load: ModuleLoader 
     const headFiles = await readHeadBaselineFiles(root, load);
     const growth = findSizeBaselineGrowth(
         { baselineFiles: baseFiles, ceilings: readBaseCeilings(root, mergeBase) },
-        { baselineFiles: headFiles, ceilings: readHeadCeilings(root) }
+        { baselineFiles: headFiles, ceilings: readHeadCeilings(root) },
+        // CI runs the head's own script, so its declared exemptions are the head tree's.
+        GENERATED_SIZE_EXEMPTIONS.map((exemption) => exemption.path)
     );
     return describeSizeBaselineGrowth(growth);
 }

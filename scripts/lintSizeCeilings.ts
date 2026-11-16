@@ -193,16 +193,22 @@ export type SizeBaselineSnapshot = {
 };
 
 /** Everything the head added to the size baseline or raised, relative to the base; paths and ceilings may only leave or go down. */
-export function findSizeBaselineGrowth(base: SizeBaselineSnapshot, head: SizeBaselineSnapshot): SizeBaselineGrowth {
+export function findSizeBaselineGrowth(
+    base: SizeBaselineSnapshot,
+    head: SizeBaselineSnapshot,
+    headExemptPaths: readonly string[]
+): SizeBaselineGrowth {
+    const headExempt = new Set(headExemptPaths);
     const basePaths = new Set(base.baselineFiles);
     const headCeilingKeys = Object.keys(head.ceilings);
     const headPaths = new Set(head.baselineFiles);
     return {
         addedPaths: head.baselineFiles.filter((path) => !basePaths.has(path)),
         addedCeilingKeys: headCeilingKeys.filter((path) => !Object.hasOwn(base.ceilings, path)),
-        // A key may leave with its path (a burn-down); dropping it while the path stays exempts the file from every limit.
+        // A key may leave with its path (a burn-down) or because the head exempts a generated file; dropping it
+        // while the path stays baselined and unexempt frees the file from every limit.
         removedCeilingKeys: Object.keys(base.ceilings).filter(
-            (path) => headPaths.has(path) && !Object.hasOwn(head.ceilings, path)
+            (path) => headPaths.has(path) && !headExempt.has(path) && !Object.hasOwn(head.ceilings, path)
         ),
         raisedCeilings: headCeilingKeys.flatMap((path) => {
             if (!Object.hasOwn(base.ceilings, path)) {
