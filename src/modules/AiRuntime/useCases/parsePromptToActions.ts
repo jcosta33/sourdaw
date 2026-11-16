@@ -132,7 +132,7 @@ import { planAnswerSuggestion } from './planAnswerSuggestion';
 import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
-import { prepareMetricIntentCatalog } from './prepareMetricIntentCatalog';
+import { preparePlanningMetricIntentCatalog } from './preparePlanningMetricIntentCatalog';
 import { prepareWorkflowMetricScopes } from './prepareWorkflowMetricScopes';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
@@ -1051,7 +1051,7 @@ const planPromptIntent = inject({ logger })(
                             'Provider planning rejected: relevant production authority exceeds the bounded context limit.',
                     };
                 }
-                const metricCatalog = prepareMetricIntentCatalog({ prompt, answer: answerCatalog });
+                const metricCatalog = preparePlanningMetricIntentCatalog({ prompt, answer: answerCatalog });
                 // The loop is told only whether a call was admitted. The record itself stays here, so a
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
