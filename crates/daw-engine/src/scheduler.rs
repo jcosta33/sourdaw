@@ -1422,7 +1422,8 @@ impl PluginCore {
         patch: &[(BuiltinParamName, f32)],
     ) -> Result<Self, String> {
         let mut body = TransientShaperBody {
-            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)?,
+            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)
+                .map_err(|error| error.to_string())?,
             attack_gain: 1.0,
             sustain_gain: 1.0,
         };
