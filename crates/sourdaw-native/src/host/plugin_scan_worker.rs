@@ -370,6 +370,28 @@ impl ResponseDirectory {
         probe.sync_all()
     }
 
+    /// Bytes an unprivileged writer can still use on the pinned directory's
+    /// volume, or `None` when that cannot be read.
+    #[cfg(unix)]
+    fn available_bytes(&self) -> Option<u64> {
+        use std::os::fd::AsRawFd;
+        let pin = self.pin.as_ref()?;
+        let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        // SAFETY: the pinned descriptor is open for as long as `self`, and
+        // `stats` is writable storage for exactly one `statvfs`.
+        if unsafe { libc::fstatvfs(pin.as_raw_fd(), stats.as_mut_ptr()) } != 0 {
+            return None;
+        }
+        // SAFETY: `fstatvfs` returned 0, so it filled `stats`.
+        let stats = unsafe { stats.assume_init() };
+        Some(widened(stats.f_bavail).saturating_mul(widened(stats.f_frsize)))
+    }
+
+    #[cfg(not(unix))]
+    fn available_bytes(&self) -> Option<u64> {
+        None
+    }
+
     #[cfg(unix)]
     fn create_probe(&self, name: &str) -> std::io::Result<fs::File> {
         use std::os::fd::{AsRawFd, FromRawFd};
@@ -404,6 +426,14 @@ impl ResponseDirectory {
             .create_new(true)
             .open(self.path.join(name))
     }
+}
+
+/// A `statvfs` count as `u64`. The field widths differ by platform — macOS
+/// counts blocks in 32 bits, Linux in 64 — so a direct conversion is a no-op
+/// on one of them and a lint there.
+#[cfg(unix)]
+fn widened(count: impl Into<u64>) -> u64 {
+    count.into()
 }
 
 #[cfg(unix)]
@@ -923,21 +953,50 @@ pub fn scan_instance_metadata(
 /// so a directory that refuses it now was changed by a process of this user,
 /// and the plugin is one.
 ///
+/// A full disk is the one storage fault a plugin can make true, by writing
+/// until the volume runs out (#6936), so it is the helper's own doing when
+/// `room_before_spawn` — the volume's free space read before the helper
+/// started — had room for a whole response and headroom. Only a volume that
+/// was already short, or whose space could not be read, keeps the refusal.
+///
 /// The probe runs only for exit 3, after the helper is gone, so a storage
 /// fault that clears in between reads as a process failure; a full rescan
 /// clears that quarantine.
 fn process_failure(
     path: &Path,
     status: &ExitStatus,
+    room_before_spawn: Option<u64>,
     probe_write: impl FnOnce() -> std::io::Result<()>,
 ) -> ScanFailure {
     let path = path.to_path_buf();
     if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE)
-        && probe_write().is_err_and(|error| is_storage_fault(&error))
+        && probe_write().is_err_and(|error| {
+            is_storage_fault(&error) && !helper_filled_the_volume(&error, room_before_spawn)
+        })
     {
         return ScanFailure::ResponseWriteRefused { path };
     }
     ScanFailure::ExitedUnsuccessfully { path }
+}
+
+/// The free space a volume needs before the helper starts for a full disk
+/// afterwards to be the helper's doing: one maximal response plus 1 GiB.
+const ROOM_FOR_HELPER_ATTRIBUTION: u64 = MAX_RESPONSE_BYTES + 1024 * 1024 * 1024;
+
+/// Whether the probe's full disk is one the helper made: the volume had
+/// [`ROOM_FOR_HELPER_ATTRIBUTION`] before the spawn and none after it.
+///
+/// Another process filling more than the headroom inside the helper's
+/// deadline would wrongly quarantine a good plugin. That cost is bounded: the
+/// quarantine is persisted with its reason, named in every scan response, and
+/// cleared by the user's retry-quarantined rescan. A plugin that instead
+/// escapes needs a volume already within the headroom of full, where filling
+/// it costs the user little more. Only `StorageFull` is attributed:
+/// `statvfs` cannot see a user quota, and a plugin cannot make a filesystem
+/// read-only or a device fail.
+fn helper_filled_the_volume(error: &std::io::Error, room_before_spawn: Option<u64>) -> bool {
+    error.kind() == std::io::ErrorKind::StorageFull
+        && room_before_spawn.is_some_and(|room| room >= ROOM_FOR_HELPER_ATTRIBUTION)
 }
 
 /// Whether a write failed because of the storage itself rather than anything
@@ -1030,9 +1089,10 @@ fn scan_worker_with<T: DeserializeOwned>(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    let room_before_spawn = response_directory.available_bytes();
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
-        return Err(process_failure(path, &status, || {
+        return Err(process_failure(path, &status, room_before_spawn, || {
             response_directory.probe_write()
         }));
     }
@@ -2493,6 +2553,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             let failure = process_failure(
                 Path::new("/plugins/Wedged.clap"),
                 &exit_status_for_code(code),
+                SHORT_VOLUME,
                 storage_full_probe,
             );
             assert!(failure.is_process_failure(), "exit {code}: {failure}");
@@ -2944,13 +3005,113 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("read-only filesystem", libc::EROFS),
             ("failing disk", libc::EIO),
         ] {
-            let message = process_failure(path, &status, || {
+            let message = process_failure(path, &status, SHORT_VOLUME, || {
                 Err(std::io::Error::from_raw_os_error(errno))
             });
 
             assert_eq!(message, write_refused("/plugins/Innocent.clap"), "{fault}");
             assert!(!message.is_process_failure(), "{fault}: {message}");
         }
+    }
+
+    /// Free space below [`ROOM_FOR_HELPER_ATTRIBUTION`] by one byte: a volume
+    /// already short before the helper started.
+    #[cfg(unix)]
+    const SHORT_VOLUME: Option<u64> = Some(ROOM_FOR_HELPER_ATTRIBUTION - 1);
+
+    /// Exactly [`ROOM_FOR_HELPER_ATTRIBUTION`] free: the least room for which
+    /// a full disk afterwards is the helper's doing.
+    #[cfg(unix)]
+    const ROOMY_VOLUME: Option<u64> = Some(ROOM_FOR_HELPER_ATTRIBUTION);
+
+    /// #6936: a plugin can fill the volume and then exit 3, so a full disk
+    /// after a spawn onto a volume with room is the helper's own doing and
+    /// quarantines. Mutation this catches: dropping the free-space
+    /// attribution, or comparing with `>` so the boundary admits the plugin.
+    #[cfg(unix)]
+    #[test]
+    fn an_exit_3_that_filled_a_volume_with_room_quarantines() {
+        let path = Path::new("/plugins/Filler.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        for (volume, room) in [
+            ("room exactly at the bound", ROOMY_VOLUME),
+            ("ample room", Some(u64::MAX)),
+        ] {
+            let message = process_failure(path, &status, room, storage_full_probe);
+
+            assert_eq!(
+                message,
+                exited_unsuccessfully("/plugins/Filler.clap"),
+                "{volume}"
+            );
+            assert!(message.is_process_failure(), "{volume}: {message}");
+        }
+    }
+
+    /// The other side of #6936: a good plugin whose response meets a volume
+    /// that was already short before its helper started, or whose free space
+    /// could not be read, keeps the non-quarantining refusal. Mutation this
+    /// catches: attributing every full disk to the helper, or treating an
+    /// unreadable volume as one with room.
+    #[cfg(unix)]
+    #[test]
+    fn an_exit_3_on_a_volume_already_short_keeps_the_refusal() {
+        let path = Path::new("/plugins/Innocent.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        for (volume, room) in [
+            ("one byte short", SHORT_VOLUME),
+            ("no room at all", Some(0)),
+            ("unreadable free space", None),
+        ] {
+            let message = process_failure(path, &status, room, storage_full_probe);
+
+            assert_eq!(message, write_refused("/plugins/Innocent.clap"), "{volume}");
+            assert!(!message.is_process_failure(), "{volume}: {message}");
+        }
+    }
+
+    /// The storage faults a plugin cannot produce, or that the free-space
+    /// reading cannot see, keep the refusal however much room the volume
+    /// had. Mutation this catches: attributing by free space for every
+    /// storage fault rather than for a full disk alone.
+    #[cfg(unix)]
+    #[test]
+    fn an_exit_3_storage_fault_free_space_cannot_explain_keeps_the_refusal_on_a_roomy_volume() {
+        let path = Path::new("/plugins/Innocent.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        for (fault, errno) in [
+            ("exhausted quota", libc::EDQUOT),
+            ("read-only filesystem", libc::EROFS),
+            ("failing disk", libc::EIO),
+        ] {
+            let message = process_failure(path, &status, ROOMY_VOLUME, || {
+                Err(std::io::Error::from_raw_os_error(errno))
+            });
+
+            assert_eq!(message, write_refused("/plugins/Innocent.clap"), "{fault}");
+            assert!(!message.is_process_failure(), "{fault}: {message}");
+        }
+    }
+
+    /// The supervisor reads real free space through its pinned handle: a
+    /// fresh response directory on a live volume reports a reading.
+    #[cfg(unix)]
+    #[test]
+    fn a_pinned_response_directory_reads_its_volumes_free_space() {
+        crate::host::runtime_scope::RuntimeScope::test_in_process(
+            concat!(
+                module_path!(),
+                "::a_pinned_response_directory_reads_its_volumes_free_space"
+            ),
+            |_root| {
+                let directory = ResponseDirectory::create().unwrap();
+
+                assert!(directory.available_bytes().is_some());
+            },
+        );
     }
 
     /// Which probe errors keep the non-quarantining refusal. Systemic storage
@@ -2996,29 +3157,26 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Hostile.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        for (probe, outcome) in [
-            ("writable", Ok(())),
-            (
-                "permission denied",
-                Err(std::io::Error::from_raw_os_error(libc::EACCES)),
-            ),
-            (
-                "operation not permitted",
-                Err(std::io::Error::from_raw_os_error(libc::EPERM)),
-            ),
-            (
-                "probe already present",
-                Err(std::io::Error::from_raw_os_error(libc::EEXIST)),
-            ),
+        for (probe, errno) in [
+            ("writable", None),
+            ("permission denied", Some(libc::EACCES)),
+            ("operation not permitted", Some(libc::EPERM)),
+            ("probe already present", Some(libc::EEXIST)),
         ] {
-            let message = process_failure(path, &status, || outcome);
+            for room in [SHORT_VOLUME, ROOMY_VOLUME] {
+                let message = process_failure(path, &status, room, || {
+                    errno.map_or(Ok(()), |errno| {
+                        Err(std::io::Error::from_raw_os_error(errno))
+                    })
+                });
 
-            assert_eq!(
-                message,
-                exited_unsuccessfully("/plugins/Hostile.clap"),
-                "{probe}"
-            );
-            assert!(message.is_process_failure(), "{probe}: {message}");
+                assert_eq!(
+                    message,
+                    exited_unsuccessfully("/plugins/Hostile.clap"),
+                    "{probe} on {room:?}"
+                );
+                assert!(message.is_process_failure(), "{probe}: {message}");
+            }
         }
     }
 
@@ -3031,7 +3189,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Hostile.clap");
         let status = exit_status_for_code(2);
 
-        let message = process_failure(path, &status, storage_full_probe);
+        let message = process_failure(path, &status, SHORT_VOLUME, storage_full_probe);
 
         assert!(
             message.is_process_failure(),
@@ -3174,7 +3332,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure(path, &status, storage_full_probe);
+        let message = process_failure(path, &status, SHORT_VOLUME, storage_full_probe);
 
         assert!(
             message
