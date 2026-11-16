@@ -19,6 +19,7 @@ export type LastCommitContinuation =
           status: 'recipe';
           grounded: GroundedRecipeBatch['grounded'];
           adoptedRecipes: AdoptedRecipe[];
+          compilations: GroundedRecipeBatch['compilations'];
           creativeAuthority: GroundedRecipeBatch['creativeAuthority'];
       }
     | { status: 'revert'; runId: string; revertGroupId: string }
