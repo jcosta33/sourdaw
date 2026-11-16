@@ -552,14 +552,20 @@ function readTargetTrackIds(
     return targets;
 }
 
-/** What a bound track name protects: the whole track, or only the operations its controls name. */
+/**
+ * What a bound track name protects: the whole track, or only the operations its controls name. A role
+ * family beside a track the request names as its target means the rest of that family ("brighten the
+ * Overheads but leave the drums alone"), and an `otherwise` clause exempts every member's targets.
+ */
 function protectBoundMembers(
     bound: readonly BoundMember[],
     found: Accumulator,
-    exemptTrackIds: ReadonlySet<string>
+    targetTrackIds: ReadonlySet<string>,
+    otherwise: boolean
 ): void {
     for (const member of bound) {
-        for (const trackId of member.trackIds.filter((id) => !exemptTrackIds.has(id))) {
+        const exemptsTargets = otherwise || !member.byName;
+        for (const trackId of member.trackIds.filter((id) => !exemptsTargets || !targetTrackIds.has(id))) {
             protectControls(found, trackId, member.controls);
             if (member.controls.length === 0 && member.byName) {
                 found.namedTrackIds.add(trackId);
@@ -659,8 +665,7 @@ export function readExplicitProtections(
         if (!slot.exempts) {
             if (slot.strict) {
                 // "Leave the Drums alone otherwise" keeps everything but the request's own targets.
-                const exempt = slot.otherwise ? targetTrackIds : new Set<string>();
-                protectBoundMembers(reading.bound, found, exempt);
+                protectBoundMembers(reading.bound, found, targetTrackIds, slot.otherwise);
                 for (const trackId of readVcaMemberTracks(references, slot, vcaGroups, reading.unreadContinuations)) {
                     found.wholeTrackIds.add(trackId);
                 }

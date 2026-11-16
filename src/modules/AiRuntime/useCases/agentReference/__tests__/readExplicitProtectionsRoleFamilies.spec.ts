@@ -157,6 +157,29 @@ describe('readExplicitProtections over a role family', () => {
         });
     });
 
+    it.each([
+        ['brighten the Overheads but leave the drums alone', [kick.id, snare.id, hiHat.id]],
+        ['make the Snare punchier, leave the drums alone', [kick.id, hiHat.id, overheads.id]],
+        ['brighten the Lead Vox but leave the drums alone', DRUM_IDS],
+    ])('"%s" protects the rest of the family beside the request\'s own target', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context)).toEqual({ ...NOTHING, protectedTrackIds });
+    });
+
+    it('still protects a target the request names inside a named protection', () => {
+        expect(readExplicitProtections('brighten the Snare but leave the Snare alone', context)).toEqual({
+            ...NOTHING,
+            protectedTrackIds: [snare.id],
+            namedTrackIds: [snare.id],
+        });
+    });
+
+    it('reads no family protection when a content word follows the kind noun', () => {
+        const reading = readExplicitProtections("make the mix warmer, but don't touch the drum tracks mix", context);
+
+        expect(reading.protectedTrackIds).toEqual([]);
+        expect(reading.protectedControls).toEqual([]);
+    });
+
     it('leaves a request pointing at the selection to the selection', () => {
         const selected: ProjectContext = { ...context, selectedTrackId: bass.id };
 
