@@ -123,6 +123,16 @@ describe('captureTrackRemovalSnapshot', () => {
         );
     });
 
+    it('fails preflight when the take-lane store is empty and a prior comp removal cannot be projected', () => {
+        const track = TrackDummy.create({ id: 't1' });
+        const removal = { type: 'removeCompRegion', payload: { trackId: 't1', startBeat: 2 } } satisfies AppAction;
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        expect(() => captureTrackRemovalSnapshot('t1', { actions: [removal], actionIndex: 1 })).toThrow(
+            'Could not project prior take-lane actions for track removal snapshot'
+        );
+    });
+
     it('captures selection and comp state produced by the ordered action prefix', () => {
         const track = TrackDummy.create({ id: 't1' });
         const lane = {
