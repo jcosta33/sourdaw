@@ -10,6 +10,7 @@
 
 export type RecipeDiscoveryInput = {
     descriptors: readonly string[];
+    presetTerms: readonly string[];
     targetId: string | null;
     role: string | null;
     limit: number;
@@ -18,14 +19,14 @@ export type RecipeDiscoveryInput = {
 type ParsedRecipeDiscoveryInput =
     { status: 'valid'; input: RecipeDiscoveryInput } | { status: 'invalid'; reason: string };
 
-const MIN_DESCRIPTORS = 1;
-const MAX_DESCRIPTORS = 4;
-const MAX_DESCRIPTOR_LENGTH = 48;
+const MIN_TERMS = 1;
+const MAX_TERMS = 4;
+const MAX_TERM_LENGTH = 48;
 const MAX_TARGET_ID_LENGTH = 256;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 8;
 const DEFAULT_LIMIT = 4;
-const ALLOWED_KEYS = ['descriptors', 'targetId', 'role', 'limit'] as const;
+const ALLOWED_KEYS = ['descriptors', 'presetTerms', 'targetId', 'role', 'limit'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -39,18 +40,31 @@ function isAllowedKey(key: string): key is (typeof ALLOWED_KEYS)[number] {
     return ALLOWED_KEYS.some((candidate) => candidate === key);
 }
 
-function parseDescriptors(value: unknown): readonly string[] | null {
-    if (!Array.isArray(value) || value.length < MIN_DESCRIPTORS || value.length > MAX_DESCRIPTORS) {
+/** Null when the value is not an array of 1 to 4 bounded strings. */
+function parseTerms(value: unknown): readonly string[] | null {
+    if (!Array.isArray(value) || value.length < MIN_TERMS || value.length > MAX_TERMS) {
         return null;
     }
-    const descriptors: string[] = [];
+    const terms: string[] = [];
     for (const entry of value) {
-        if (!isBoundedString(entry, MAX_DESCRIPTOR_LENGTH)) {
+        if (!isBoundedString(entry, MAX_TERM_LENGTH)) {
             return null;
         }
-        descriptors.push(entry);
+        terms.push(entry);
     }
-    return descriptors;
+    return terms;
+}
+
+/** An absent list is an empty one; a present list must satisfy the term bounds. */
+function parseOptionalTerms(value: unknown): readonly string[] | null {
+    return value === undefined ? [] : parseTerms(value);
+}
+
+function isOptionalLimit(value: unknown): boolean {
+    return (
+        value === undefined ||
+        (typeof value === 'number' && Number.isInteger(value) && value >= MIN_LIMIT && value <= MAX_LIMIT)
+    );
 }
 
 export function parseRecipeDiscoveryInput(
@@ -60,11 +74,18 @@ export function parseRecipeDiscoveryInput(
     if (!isRecord(argumentsValue) || Object.keys(argumentsValue).some((key) => !isAllowedKey(key))) {
         return { status: 'invalid', reason: 'recipe.discover arguments do not match the strict discovery contract' };
     }
-    const descriptors = parseDescriptors(argumentsValue.descriptors);
-    if (!descriptors) {
+    const descriptors = parseOptionalTerms(argumentsValue.descriptors);
+    if (descriptors === null) {
         return {
             status: 'invalid',
-            reason: `recipe.discover requires ${String(MIN_DESCRIPTORS)} to ${String(MAX_DESCRIPTORS)} bounded descriptor terms`,
+            reason: `recipe.discover descriptors must be ${String(MIN_TERMS)} to ${String(MAX_TERMS)} bounded terms`,
+        };
+    }
+    const presetTerms = parseOptionalTerms(argumentsValue.presetTerms);
+    if (presetTerms === null) {
+        return {
+            status: 'invalid',
+            reason: `recipe.discover presetTerms must be ${String(MIN_TERMS)} to ${String(MAX_TERMS)} bounded terms`,
         };
     }
     if (argumentsValue.targetId !== undefined && !isBoundedString(argumentsValue.targetId, MAX_TARGET_ID_LENGTH)) {
@@ -76,13 +97,7 @@ export function parseRecipeDiscoveryInput(
     ) {
         return { status: 'invalid', reason: 'recipe.discover role must be one of the catalog roles' };
     }
-    if (
-        argumentsValue.limit !== undefined &&
-        (typeof argumentsValue.limit !== 'number' ||
-            !Number.isInteger(argumentsValue.limit) ||
-            argumentsValue.limit < MIN_LIMIT ||
-            argumentsValue.limit > MAX_LIMIT)
-    ) {
+    if (!isOptionalLimit(argumentsValue.limit)) {
         return {
             status: 'invalid',
             reason: `recipe.discover limit must be an integer from ${String(MIN_LIMIT)} to ${String(MAX_LIMIT)}`,
@@ -92,6 +107,7 @@ export function parseRecipeDiscoveryInput(
         status: 'valid',
         input: {
             descriptors,
+            presetTerms,
             targetId: typeof argumentsValue.targetId === 'string' ? argumentsValue.targetId : null,
             role: typeof argumentsValue.role === 'string' ? argumentsValue.role : null,
             limit: typeof argumentsValue.limit === 'number' ? argumentsValue.limit : DEFAULT_LIMIT,
