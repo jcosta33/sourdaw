@@ -51,8 +51,14 @@ TypeScript and Node resolver functions. Core rules retain their ESLint implement
 for the remaining gaps. Native `id-length` rejects a lowercase one-character TypeScript
 type alias that ESLint's core rule accepts. Native `typescript/consistent-return` exempts
 void-valued returns that the configured core rule treats as value returns, even with
-type-aware checking enabled. Native `no-invalid-this`, `no-octal`, and the configured
+type-aware checking enabled. Native `no-invalid-this` and the configured
 selector-based `no-restricted-syntax` have no equivalent in the installed rule schema.
+The redundant `no-octal` rule is omitted: the configured module parser rejects legacy
+numeric octals before rules run for every extension in its former glob
+(`js`, `jsx`, `ts`, `tsx`, `mts`, `cts`), while accepting modern `0o` literals.
+The integration proof uses that production parser and a fixture-owned type-aware
+project admitting all six extensions; project-membership errors do not count as syntax proof.
+String octal escapes are a separate parser restriction. Neither `mjs` nor `cjs` was in the rule's glob.
 The configured naming rule is syntactic (PascalCase type parameters of at least two
 characters), but the unchanged plugin still requires parser node maps; it is not moved
 through a locally rewritten compatibility rule.

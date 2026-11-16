@@ -221,7 +221,6 @@ export default tseslint.config(
         rules: {
             'consistent-return': 'error',
             'no-invalid-this': 'error',
-            'no-octal': 'error',
             'no-void': [
                 'error',
                 {

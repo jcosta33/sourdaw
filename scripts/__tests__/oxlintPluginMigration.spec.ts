@@ -20,6 +20,7 @@ import {
     runProductionLint,
     withLintFixture,
 } from './helpers/lintMigratedRules.ts';
+import { lintOctalSyntax } from './helpers/lintOctalSyntax.ts';
 import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -262,6 +263,37 @@ const coreMigrationCases: CoreMigrationCase[] = [
 // sequential suite. A native TS program can enumerate another worker's fixture
 // before that worker deletes it, then fail when opening the missing file.
 describe('production Oxlint public-plugin migration', () => {
+    it('drops redundant no-octal only while the configured module parser rejects legacy numeric syntax', async () => {
+        const { snapshots, outside } = await lintOctalSyntax();
+        expect(snapshots.map((snapshot) => snapshot.extension)).toEqual(['js', 'jsx', 'ts', 'tsx', 'mts', 'cts']);
+        for (const snapshot of snapshots) {
+            expect(snapshot.sourceType, snapshot.extension).toBe('module');
+            expect(snapshot.legacyOn, snapshot.extension).toEqual(snapshot.legacyOff);
+            expect(snapshot.legacyOff, snapshot.extension).toEqual([
+                expect.objectContaining({
+                    fatal: true,
+                    ruleId: null,
+                    message: "Parsing error: Octal literals are not allowed. Use the syntax '0o12'.",
+                }),
+            ]);
+            expect(snapshot.modernOn, snapshot.extension).toEqual([]);
+            expect(snapshot.modernOff, snapshot.extension).toEqual([]);
+            // Numeric literals and string escapes are different parser restrictions.
+            expect(snapshot.escapeOff, snapshot.extension).toEqual([
+                expect.objectContaining({
+                    fatal: true,
+                    ruleId: null,
+                    message: expect.stringContaining('Octal escape'),
+                }),
+            ]);
+        }
+        expect(snapshots.map((snapshot) => snapshot.activeRule)).toEqual(Array(6).fill(undefined));
+        expect(outside).toEqual([
+            { extension: 'mjs', activeRule: undefined },
+            { extension: 'cjs', activeRule: undefined },
+        ]);
+    }, 120_000);
+
     it.each(coreMigrationCases)(
         'preserves the frozen ESLint $rule contract in the production Oxlint config',
         ({ rule, setting, invalid, valid }) => {
@@ -820,7 +852,6 @@ describe('production Oxlint public-plugin migration', () => {
                 'id-length',
                 'import-x/order',
                 'no-invalid-this',
-                'no-octal',
                 'no-restricted-syntax',
                 'no-void',
                 'prettier/prettier',
