@@ -229,7 +229,7 @@ async function schedulerTick(seconds: number): Promise<void> {
             generation: scheduler.generation,
             sequence: ++scheduler.sequence,
             scheduledAtMs: received - 2,
-            sentAtMs: received - 1,
+            sentAtMs: received,
         },
     });
     await vi.waitFor(() => expect(getSchedulerTimingDiagnostics().ticksSettled).toBe(settled + 1), { interval: 1 });

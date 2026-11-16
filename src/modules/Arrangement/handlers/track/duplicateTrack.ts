@@ -1,8 +1,10 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
+import { type Track } from '../../stores/trackStore';
+import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
 import { activateCreatedTrackHostedPlugins } from '../../useCases/device/activateCreatedTrackHostedPlugins';
 import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
@@ -21,10 +23,44 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
     return targetTrackId;
 }
 
-// Guards for duplicates this handler creates, keyed by action so the
-// describe-time inverse is finalized with the created entity once execute
-// lands — the handleAddTrack/handleCreateBus pattern.
-const pendingDuplicateGuards = new WeakMap<object, GeneratedMidiStateGuard>();
+type PendingDuplicateDescription = {
+    readonly guard: GeneratedMidiStateGuard;
+    readonly result: { label: string; inverseAction: AppAction | null; redoAction?: AppAction };
+};
+
+// Describe results for duplicates this handler creates, keyed by action so the
+// describe-time inverse and redo are finalized with the created entity once
+// execute lands — the handleAddTrack/handleLoadTrackTemplate pattern.
+const pendingDuplicateDescriptions = new WeakMap<object, PendingDuplicateDescription>();
+
+/**
+ * Finalizes the discard guard from the committed store track: the use case's
+ * return value predates its own step that copies devices, sends, and clips,
+ * and isGeneratedMidiStateCurrent compares the guard against the store shape.
+ * Satellite state copied from the source (clip-scoped automation lanes) makes
+ * the comparison fail unless the guard expects exactly what the duplication
+ * cloned onto the copies' new clip ids — requiring absence would make the
+ * duplicate's own undo conflict on what it itself created.
+ *
+ * Redo restores this exact copy rather than duplicating again: a fresh
+ * duplication re-mints every device, clip and alternative id, so the guard
+ * would no longer name what redo made, and would re-copy the source's plugin
+ * state over the copy's own. Inverse and redo are emitted together or not at
+ * all, as in handleLoadTrackTemplate.
+ */
+function finalizeDuplicateDescription(pending: PendingDuplicateDescription, committed: Track | undefined): void {
+    const restore = committed ? captureTrackRemovalSnapshot(committed.id) : null;
+    if (!committed || !restore) {
+        pending.result.inverseAction = null;
+        pending.result.redoAction = undefined;
+        return;
+    }
+    const clipIds = collectTrackClipIds(committed);
+    pending.guard.entityJson = JSON.stringify(committed);
+    pending.guard.midiByClipIdJson = serializeMidiStateForClips(clipIds);
+    pending.guard.clipAutomationLanesJson = serializeClipScopedAutomationLanes(clipIds);
+    pending.result.redoAction = { type: 'restoreTracks', payload: { restores: [restore] } };
+}
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
     materializeCommandArguments: (action) => {
@@ -49,24 +85,11 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         if (!track) {
             return { status: 'conflict' };
         }
-        const guard = pendingDuplicateGuards.get(action);
         // The use case's return value predates its own device copy; the store holds the committed track.
         const committed = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
-        if (guard) {
-            // Finalize from the committed store track: the use case's return
-            // value predates its own step that copies devices, sends, and
-            // clips, and isGeneratedMidiStateCurrent compares the guard
-            // against the store shape. Satellite state copied from the source
-            // (clip-scoped automation lanes) makes the comparison fail unless
-            // the guard expects exactly what the duplication cloned onto the
-            // copies' new clip ids — requiring absence would make the
-            // duplicate's own undo conflict on what it itself created.
-            if (committed) {
-                const clipIds = collectTrackClipIds(committed);
-                guard.entityJson = JSON.stringify(committed);
-                guard.midiByClipIdJson = serializeMidiStateForClips(clipIds);
-                guard.clipAutomationLanesJson = serializeClipScopedAutomationLanes(clipIds);
-            }
+        const pending = pendingDuplicateDescriptions.get(action);
+        if (pending) {
+            finalizeDuplicateDescription(pending, committed);
         }
         if (!committed || collectHostedPluginInstances(committed).length === 0) {
             return { status: 'written' };
@@ -91,14 +114,15 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
             entityJson: '',
             midiByClipIdJson: JSON.stringify({}),
         };
-        pendingDuplicateGuards.set(action, generatedMidiStateGuard);
-        return {
+        const result: PendingDuplicateDescription['result'] = {
             label: 'Duplicate track',
             inverseAction: {
                 type: 'discardCreatedTrack',
                 payload: { trackId: targetTrackId, generatedMidiStateGuard },
             },
         };
+        pendingDuplicateDescriptions.set(action, { guard: generatedMidiStateGuard, result });
+        return result;
     },
     isNoop: (action) => {
         const tracks = getTrackStoreState()?.tracks;

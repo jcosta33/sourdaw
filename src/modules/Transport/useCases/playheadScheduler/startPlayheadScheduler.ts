@@ -421,6 +421,11 @@ export function startPlayheadScheduler(
     let previousFrozenMidiOwners = new Map<string, string>();
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
+    // When this session's last tick settled, on the clock the Worker stamps
+    // `sentAtMs` with, and whether that tick ran longer than the grain. Scoped
+    // to the session so a restart never inherits them.
+    let lastTickSettledAtMs = Number.NEGATIVE_INFINITY;
+    let lastTickOverran = false;
 
     async function tick(initial = false): Promise<void> {
         // Second line of defence, not the primary filter: `worker.onmessage`
@@ -452,7 +457,10 @@ export function startPlayheadScheduler(
             await runTick(initial);
         } finally {
             if (schedulerSession.generation === schedulerGeneration) {
-                schedulerTimingDiagnostics.recordTickSettled(highResolutionEpochMs() - tickStartedAtMs);
+                lastTickSettledAtMs = highResolutionEpochMs();
+                const tickDurationMs = lastTickSettledAtMs - tickStartedAtMs;
+                lastTickOverran = tickDurationMs > grainMs;
+                schedulerTimingDiagnostics.recordTickSettled(tickDurationMs);
                 schedulerSession.tickInFlight = false;
             }
         }
@@ -2079,6 +2087,19 @@ export function startPlayheadScheduler(
                 message.sentAtMs,
                 receivedAtMs
             );
+            // After a tick that ran longer than the grain, every message the
+            // Worker sent before that tick settled was queued behind it, and is
+            // dropped: running a full tick for each, back to back, never lets
+            // the main thread back to the event loop once per-tick work exceeds
+            // the grain (#6823). The cost under overload is that the catch-up
+            // tick starts at the first Worker message after settlement, up to
+            // one grain later than running a queued message at once; that idle
+            // gap is what returns the thread to the event loop. After a tick
+            // inside the grain, every message is admitted.
+            if (lastTickOverran && message.sentAtMs < lastTickSettledAtMs) {
+                schedulerTimingDiagnostics.recordTickSkippedBehindOverrun();
+                return;
+            }
             tick().catch((error: unknown) => {
                 logger.error(new Error('Transport scheduler tick failed', { cause: error }));
             });

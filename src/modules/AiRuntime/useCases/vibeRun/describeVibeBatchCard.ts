@@ -28,9 +28,49 @@ function describeTolerance(criterion: Criterion): string {
     return `${String(criterion.tolerance)} ${unit === 'hertz' ? 'Hz' : unit}`;
 }
 
+const REQUIRED_MOVEMENT_WORDS: Readonly<Record<Criterion['relation'], string>> = {
+    increase: 'expected to rise',
+    decrease: 'expected to fall',
+    hold: 'expected to hold',
+    'no-increase': 'expected not to rise',
+    'no-decrease': 'expected not to fall',
+    'match-current': 'expected to match',
+    'greater-than-current': 'expected to exceed its reference',
+    'less-than-current': 'expected to stay under its reference',
+    target: 'expected to reach its target',
+    unsupported: 'unsupported',
+};
+
+/** A step that broke its criterion on figures other than the batch pair the line shows names its own pair. */
+function describeOwnStep(criterion: Criterion): string {
+    const { unmet } = criterion;
+    if (unmet === null || unmet.scope !== 'step') {
+        return '';
+    }
+    if (unmet.from === criterion.initial[0] && unmet.to === criterion.final[0]) {
+        return '';
+    }
+    return `; within its own step it went ${formatVibeFigure(unmet.from, criterion.unit)} → ${formatVibeFigure(unmet.to, criterion.unit)}`;
+}
+
+/** What admission found for one criterion: the figures it compared and whether they met the criterion. */
+function describeCriterionFigures(criterion: Criterion): string {
+    if (criterion.outcome === 'not-reached') {
+        return 'not evaluated (blocked)';
+    }
+    if (criterion.outcome === 'not-evaluated') {
+        return 'not evaluated: admission read no compatible baseline and preview figures for it (blocked)';
+    }
+    const figures = `${formatVibeFigure(criterion.initial[0], criterion.unit)} → ${formatVibeFigure(criterion.final[0], criterion.unit)}`;
+    if (criterion.outcome === 'met') {
+        return `${figures} (${criterion.status})`;
+    }
+    return `${figures} (blocked): not met, ${REQUIRED_MOVEMENT_WORDS[criterion.relation]}${describeOwnStep(criterion)}`;
+}
+
 /**
  * The card lines of one planned batch: its objective, what its recipes promise on each target, and
- * each recipe criterion's measured baseline and preview figures as the preview read them.
+ * each recipe criterion's initial baseline and final previewed figures, the pair admission judged it across.
  */
 export function describeVibeBatchCard(input: {
     batch: ScheduledVibeRunBatch;
@@ -61,7 +101,7 @@ export function describeVibeBatchCard(input: {
         const target = criterion.targetIds.map((id) => readVibeTargetName(input.context, id)).join(', ');
         const held = criterion.relation === 'hold' ? ` held within ${describeTolerance(criterion)}` : '';
         lines.push(
-            `Fresh approval preview on ${target}, ${criterion.range?.sectionId ?? 'arrangement'} [${String(criterion.range?.startBeat)}, ${String(criterion.range?.endBeat)}]: ${readVibeMetricLabel(criterion.metricId, criterion.band)}${held} ${formatVibeFigure(criterion.baseline[0], criterion.unit)} → ${formatVibeFigure(criterion.observed[0], criterion.unit)} (${criterion.status}).`
+            `Fresh approval preview on ${target}, ${criterion.range?.sectionId ?? 'arrangement'} [${String(criterion.range?.startBeat)}, ${String(criterion.range?.endBeat)}]: ${readVibeMetricLabel(criterion.metricId, criterion.band)}${held} ${describeCriterionFigures(criterion)}.`
         );
     }
     return lines;

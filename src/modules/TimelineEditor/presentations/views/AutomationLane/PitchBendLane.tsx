@@ -10,6 +10,8 @@ import { clampPitchBend, PITCH_BEND_CENTER } from '#/utils/midiData';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
+import { handleClipLaneInsertKeyDown, readLaneValueAtBeat } from '../../helpers/clipLaneKeyboardInsert';
+import { readClipPlayheadBeat } from '../../helpers/clipPlayheadBeat';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type PitchBendLaneProps = {
@@ -23,6 +25,17 @@ type PitchBendLaneStoreState = {
     ccByClipId: Record<string, unknown[]>;
     pitchBendByClipId: Record<string, MidiPitchBend[]>;
 };
+
+function addPitchBendPointWithUndo(clipId: string, beat: number, value: number): void {
+    const pb = addPitchBend(clipId, value, beat);
+    pushUndoEntry(
+        'Add pitch bend point',
+        () => removePitchBend(clipId, pb.id),
+        // Redo must re-create the point under the SAME id: a fresh id would
+        // leave the undo side removing an id the store no longer holds.
+        () => addPitchBend(clipId, pb.value, pb.beat, pb.channel, pb.id)
+    );
+}
 
 export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -67,15 +80,20 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
 
         const beat = Math.max(0, (x - 8) / beatWidth);
         const value = yToValue(y, height);
+        addPitchBendPointWithUndo(clipId, beat, value);
+    };
 
-        const pb = addPitchBend(clipId, value, beat);
-        pushUndoEntry(
-            'Add pitch bend point',
-            () => removePitchBend(clipId, pb.id),
-            // Redo must re-create the point under the SAME id: a fresh id would
-            // leave the undo side removing an id the store no longer holds.
-            () => addPitchBend(clipId, pb.value, pb.beat, pb.channel, pb.id)
-        );
+    const insertPointAtPlayhead = (): void => {
+        if (!clipId) {
+            return;
+        }
+        const beat = readClipPlayheadBeat(clipId);
+        if (beat === undefined) {
+            return;
+        }
+        // An empty lane has no line to follow; the centre is no bend.
+        const value = clampPitchBend(Math.round(readLaneValueAtBeat(points, beat) ?? 0)) || 0;
+        addPitchBendPointWithUndo(clipId, beat, value);
     };
 
     const handlePointPointerDown = (pbId: string, event: PointerEvent<HTMLDivElement>) => {
@@ -187,11 +205,14 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     return (
         <div
             ref={containerRef}
-            className="relative h-full w-full cursor-crosshair overflow-hidden"
+            className="relative h-full w-full cursor-crosshair overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
             style={{ touchAction: 'none' }}
             onClick={handleContainerClick}
-            role="group"
+            onKeyDown={(event) => handleClipLaneInsertKeyDown(event, insertPointAtPlayhead)}
+            role="toolbar"
+            tabIndex={0}
             aria-label="Pitch bend automation lane"
+            aria-keyshortcuts="Enter"
             {...dragHandlers}
         >
             <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">

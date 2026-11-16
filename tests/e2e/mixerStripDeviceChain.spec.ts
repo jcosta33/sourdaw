@@ -51,7 +51,7 @@ test.describe('Mixer strip device chain', () => {
     });
 
     test('device shows on its strip; bypass flips, remove drops, undo restores', async ({ page }) => {
-        const audio = page.getByRole('group', { name: 'Audio 1 channel' });
+        const audio = page.getByRole('row', { name: 'Audio 1 channel' });
         // Device rows are named "≡<Device>" (drag handle glyph + name); the
         // double-click action lives in the title attribute.
         const deviceRow = audio.getByRole('button', { name: /^≡/ }).first();

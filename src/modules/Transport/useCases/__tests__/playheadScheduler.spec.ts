@@ -316,7 +316,7 @@ function emitSchedulerTick(worker: FakeWorker): void {
             generation: schedulerSession.generation,
             sequence: schedulerTickSequence,
             scheduledAtMs: receivedAtMs - 2,
-            sentAtMs: receivedAtMs - 1,
+            sentAtMs: receivedAtMs,
         },
     } as MessageEvent<unknown>);
 }
