@@ -1,6 +1,6 @@
 import { change, getHeads, init, load, loadIncremental, merge, save } from '@automerge/automerge';
 
-import { type EncodedIncremental } from '../../models/NativeIncrementalEncoding';
+import { type EncodedIncremental, type IncrementalEncodingInput } from '../../models/NativeIncrementalEncoding';
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
 import { encodeNativeIncrementals } from '../encodeNativeIncrementals';
 
@@ -42,7 +42,7 @@ export type InspectCheckpointRootMediaRequest = {
 export type EncodeIncrementalsRequest = {
     id: number;
     type: 'encodeIncrementals';
-    documents: { id: string; seed: Uint8Array; heads: string[]; frontier: string[] }[];
+    documents: IncrementalEncodingInput[];
 };
 
 export type WorkerRequest =
@@ -164,7 +164,12 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
             ) {
                 throw new TypeError('Expected captured incremental documents');
             }
-            documents.push({ id: entry.id, seed: entry.seed, heads: entry.heads, frontier: entry.frontier });
+            documents.push({
+                id: entry.id,
+                seed: Uint8Array.from(entry.seed),
+                heads: entry.heads,
+                frontier: entry.frontier,
+            });
         }
         return { id: value.id, type: value.type, documents };
     }
