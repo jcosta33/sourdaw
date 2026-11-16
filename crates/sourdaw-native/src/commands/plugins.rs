@@ -564,8 +564,8 @@ fn bounded_scan_error_text(text: &str) -> String {
     format!("{kept}{TRUNCATED_SCAN_ERROR_MARKER}")
 }
 
-/// The candidate failures one scan reports: each one's text bounded, the
-/// first [`MAX_REPORTED_CANDIDATE_ERRORS`] by name and the rest counted.
+/// The folder-walk and candidate failures one scan reports: each candidate's
+/// text bounded, the first [`MAX_REPORTED_CANDIDATE_ERRORS`] by name and the rest counted.
 #[derive(Default)]
 struct CandidateErrors {
     reported: Vec<String>,
@@ -592,6 +592,12 @@ impl CandidateErrors {
                 path.display()
             )
         });
+    }
+
+    /// A row the folder walk produced, already worded. It shares the candidate
+    /// cap so the user's one list has one limit and one closing summary.
+    fn record_walk_row(&mut self, row: String) {
+        self.push(|| row);
     }
 
     /// The row is built only when it will be reported.
@@ -754,15 +760,20 @@ async fn scan_plugins_with_backend(
             let mut candidates = Vec::new();
             let mut notices = Vec::new();
             let mut scan_complete = true;
+            let mut reported_errors = CandidateErrors::default();
             for path in scan_roots {
                 let root_begins_at = candidates.len();
+                let mut walk_errors = Vec::new();
                 let root_completed = scanner::scan_directory_bounded(
                     &path,
                     &mut candidates,
-                    &mut scan_errors,
+                    &mut walk_errors,
                     &mut notices,
                     (MAX_SCAN_CANDIDATES, deadline),
                 );
+                for row in walk_errors {
+                    reported_errors.record_walk_row(row);
+                }
                 // Sorted within the root and never across roots. Directory order
                 // is whatever the filesystem hands back, so a root has to be
                 // sorted to scan the same way twice; the roots themselves are
@@ -792,7 +803,6 @@ async fn scan_plugins_with_backend(
             let mut plugins = Vec::new();
             let mut fingerprints = ScanFingerprints::new();
             let mut scanned_paths = Vec::new();
-            let mut candidate_errors = CandidateErrors::default();
             for candidate in candidates {
                 if !covers_a_whole_candidate(deadline, budget) {
                     scan_errors.push("Plugin scan time limit exceeded".to_string());
@@ -885,16 +895,16 @@ async fn scan_plugins_with_backend(
                             }
                             // Not quarantined: nothing about the helper
                             // failed, and the next scan reads the file afresh.
-                            None => candidate_errors.record_changed_file(&candidate.path),
+                            None => reported_errors.record_changed_file(&candidate.path),
                         }
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
-                        candidate_errors.record(&candidate.path, &error);
+                        reported_errors.record(&candidate.path, &error);
                     }
                 }
             }
-            scan_errors.extend(candidate_errors.into_entries());
+            scan_errors.extend(reported_errors.into_entries());
             retain_first_plugin_per_identity(&mut plugins);
             // Deliberately not `publish_scan_results_in_registry`'s predicate:
             // that one drops every registry entry under a scanned root and
@@ -8728,6 +8738,102 @@ mod tests {
         assert!(listed
             .iter()
             .any(|entry| entry.contains("Plugin scan helper exited unsuccessfully")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("8 more plugin scan errors were not listed")
+        );
+    }
+
+    /// A scan over a root holding `unreadable` subdirectories the walk cannot
+    /// open and `failing` candidates whose descriptor pass fails.
+    #[cfg(unix)]
+    fn scan_root_with_unreadable_directories(
+        test_name: &str,
+        unreadable: usize,
+        failing: usize,
+    ) -> ScanResult {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        let locked: Vec<PathBuf> = (0..unreadable)
+            .map(|index| root.join(format!("Locked{index:03}")))
+            .collect();
+        for dir in &locked {
+            std::fs::create_dir(dir).expect("fixture directory created");
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o000))
+                .expect("fixture directory locked");
+        }
+        for index in 0..failing {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            |_format, _path, _timeout| Err(ScanFailure::Refused("bad".to_string())),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan over unreadable folders still answers");
+        for dir in &locked {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755))
+                .expect("fixture directory unlocked");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// #6937: the folder walk's rows count under the one cap, with one
+    /// closing summary. Mutation this catches: pushing the walk's rows
+    /// straight into `scan_errors`.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_directory_rows_are_capped_with_one_summary() {
+        let scan = scan_root_with_unreadable_directories(
+            "scan-many-unreadable",
+            MAX_REPORTED_CANDIDATE_ERRORS + 5,
+            0,
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.starts_with("Cannot read ")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("5 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Walk rows and candidate failures draw on the same cap and close with
+    /// one summary counting both.
+    #[cfg(unix)]
+    #[test]
+    fn walk_rows_and_candidate_failures_share_one_cap() {
+        let scan = scan_root_with_unreadable_directories("scan-mixed-walk-and-candidates", 20, 20);
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        let listed = &scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS];
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.starts_with("Cannot read "))
+                .count(),
+            20
+        );
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.ends_with(": bad"))
+                .count(),
+            MAX_REPORTED_CANDIDATE_ERRORS - 20
+        );
         assert_eq!(
             scan.errors.last().map(String::as_str),
             Some("8 more plugin scan errors were not listed")
