@@ -3889,6 +3889,397 @@
             }
         },
         {
+            "id": "AC067-HO-COMPARE-4",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the Lead Vocal louder than the backing vocals in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Lead Vocal"],
+                    "objectives": [
+                        {
+                            "policyId": "integrated-loudness-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Lead Vocal",
+                            "referenceName": "Backing Vocals L",
+                            "rangeName": "Chorus"
+                        },
+                        {
+                            "policyId": "integrated-loudness-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Lead Vocal",
+                            "referenceName": "Backing Vocals R",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Lead Vocal", "Backing Vocals L", "Backing Vocals R"],
+                    "rangeName": "Chorus",
+                    "metrics": ["integratedLoudness"],
+                    "items": [
+                        {
+                            "id": "insert",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-gain",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Lead Vocal"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-0",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "gain-level",
+                                "value": 6
+                            },
+                            "dependsOn": ["insert"]
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Lead Vocal"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "deviceType": "builtin-gain"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "gain-level",
+                            "value": 6
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "integratedLoudness",
+                        "relation": "greater-than-current",
+                        "target": "Lead Vocal",
+                        "reference": "Backing Vocals L"
+                    },
+                    {
+                        "metric": "integratedLoudness",
+                        "relation": "greater-than-current",
+                        "target": "Lead Vocal",
+                        "reference": "Backing Vocals R"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC067-HO-COMPARE-5",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make Backing Vocals L brighter than the Snare in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Backing Vocals L"],
+                    "objectives": [
+                        {
+                            "policyId": "spectral-centroid-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Backing Vocals L",
+                            "referenceName": "Snare",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Backing Vocals L", "Snare"],
+                    "rangeName": "Chorus",
+                    "metrics": ["spectralCentroid"],
+                    "items": [
+                        {
+                            "id": "insert",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-eq",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Backing Vocals L"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-0",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-low-freq",
+                                "value": 200
+                            },
+                            "dependsOn": ["insert"]
+                        },
+                        {
+                            "id": "set-1",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-low-gain",
+                                "value": -4
+                            },
+                            "dependsOn": ["insert"]
+                        },
+                        {
+                            "id": "set-2",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-mid-freq",
+                                "value": 3000
+                            },
+                            "dependsOn": ["insert"]
+                        },
+                        {
+                            "id": "set-3",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-mid-gain",
+                                "value": 5
+                            },
+                            "dependsOn": ["insert"]
+                        },
+                        {
+                            "id": "set-4",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-high-freq",
+                                "value": 8000
+                            },
+                            "dependsOn": ["insert"]
+                        },
+                        {
+                            "id": "set-5",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-high-gain",
+                                "value": 5
+                            },
+                            "dependsOn": ["insert"]
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Backing Vocals L"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 200
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": -4
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-freq",
+                            "value": 3000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-mid-gain",
+                            "value": 5
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 8000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": 5
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "greater-than-current",
+                        "target": "Backing Vocals L",
+                        "reference": "Snare"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC067-HO-COMPARE-6",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make Backing Vocals R wider than the Bass DI in the intro",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Backing Vocals R"],
+                    "objectives": [
+                        {
+                            "policyId": "side-energy-fraction-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Backing Vocals R",
+                            "referenceName": "Bass DI",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Backing Vocals R", "Bass DI"],
+                    "rangeName": "Intro",
+                    "metrics": ["sideEnergyFraction"],
+                    "items": [
+                        {
+                            "id": "insert",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-stereo-widener",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Backing Vocals R"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-0",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "width-amount",
+                                "value": 2
+                            },
+                            "dependsOn": ["insert"]
+                        },
+                        {
+                            "id": "set-1",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "width-side",
+                                "value": 4
+                            },
+                            "dependsOn": ["insert"]
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Backing Vocals R"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "deviceType": "builtin-stereo-widener"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "width-amount",
+                            "value": 2
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "width-side",
+                            "value": 4
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "sideEnergyFraction",
+                        "relation": "greater-than-current",
+                        "target": "Backing Vocals R",
+                        "reference": "Bass DI"
+                    }
+                ]
+            }
+        },
+        {
             "id": "AC067-HO-PERCEPTUAL-1",
             "promptClass": "perceptual-single-target",
             "class": "execute-exact",
