@@ -290,12 +290,29 @@ describe('CRDT persistence across independent queue contexts', () => {
         expect(transaction.writes.some((write) => write.key.startsWith('root:incremental:'))).toBe(true);
         transaction.complete();
         // An ordinary project load supersedes the in-flight generation without
-        // pending a replacement: the live documents already are the durable
-        // project, so this load only re-adopts its authority.
-        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async () => ({
-            loaded: true,
-            snapshot: await context.snapshot.loadPersistenceSnapshotFromIdb(),
-        }));
+        // pending a replacement, installing the durable bytes and their frontier.
+        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
+            const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+            if (!shouldCommit()) {
+                return { loaded: false, snapshot: null };
+            }
+            if (!snapshot?.bundle) {
+                return { loaded: false, snapshot };
+            }
+
+            const installed: { headsByDoc?: Map<string, string[]> } = {};
+            const committed = await context.repository.automergeRepository.loadAll({
+                bundle: snapshot.bundle,
+                shouldCommit,
+                onInstalled: (headsByDoc) => {
+                    installed.headsByDoc = headsByDoc;
+                },
+            });
+            if (!committed || !shouldCommit()) {
+                return { loaded: false, snapshot: null };
+            }
+            return { loaded: true, snapshot, durableHeadsByDoc: installed.headsByDoc };
+        });
 
         await expect(superseded).resolves.toMatchObject({
             status: 'superseded',
@@ -312,10 +329,23 @@ describe('CRDT persistence across independent queue contexts', () => {
             committedBeforeReset: true,
         });
 
-        const noop = await context.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+        const readwriteCount = persistence.getTransactions('readwrite').length;
+        const noop = context.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
             await persistCurrentProject();
         });
-        expect(noop).toMatchObject({ status: 'settled', mode: 'ordinary', durable: { write: 'noop' } });
+        const noopOutcome = await Promise.race([
+            noop.then(() => ({ kind: 'settled' as const })),
+            persistence.waitForTransaction('readwrite', readwriteCount + 1).then((transaction) => ({
+                kind: 'unexpected-write' as const,
+                transaction,
+            })),
+        ]);
+        if (noopOutcome.kind === 'unexpected-write') {
+            noopOutcome.transaction.abort();
+            await noop;
+        }
+        expect(persistence.getTransactions('readwrite')).toHaveLength(readwriteCount);
+        await expect(noop).resolves.toMatchObject({ status: 'settled', mode: 'ordinary', durable: { write: 'noop' } });
 
         const declined = await context.queue.runCrdtPersistenceBarrier(async () => undefined);
         expect(declined).toEqual({

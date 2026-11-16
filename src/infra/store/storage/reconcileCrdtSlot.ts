@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 type MutableContainer = { [key: string]: unknown };
 
 type UnknownRecord = Record<string, unknown>;
@@ -240,6 +242,18 @@ function readChild(container: MutableContainer | unknown[], field: string | numb
 
 function reconcileChild(input: ReconcileChildInput): void {
     const { container, field, fieldName, base, desired, identityByField, presence } = input;
+    const unchanged = isSameValue(base, desired);
+    // A captured node equal to the base cannot contain a cache-only seed.
+    // Its unchanged writer has nothing to publish, including over newer peer truth.
+    // Structural proof retains scalar and own-key distinctions hidden by composite JSON.
+    if (
+        unchanged &&
+        presence !== uncapturedDocumentPresence &&
+        valuesEqual(base, desired) &&
+        valuesEqual(presence, base)
+    ) {
+        return;
+    }
     const current = readChild(container, field);
 
     // A desired value identical to this write's base is not this writer's
@@ -262,7 +276,7 @@ function reconcileChild(input: ReconcileChildInput): void {
     // no document ever held it, and skipping would strand it outside the
     // document for the next projection to erase. Without a snapshot the
     // absence stays undecided and the deletion-respecting behavior stands.
-    if (isSameValue(base, desired)) {
+    if (unchanged) {
         if (current === undefined) {
             if (desired !== undefined && presence === undefined) {
                 writeChild(container, field, desired);

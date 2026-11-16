@@ -3,6 +3,32 @@ import {
     type ProspectiveMutationWorkerResult,
 } from '../models/ProspectiveMutationWorkerProtocol';
 
+function isOwnedChangeArray(value: unknown): value is Uint8Array<ArrayBuffer>[] {
+    if (!Array.isArray(value) || value.length > 1) {
+        return false;
+    }
+    const entries: unknown[] = Array.from(value);
+    return entries.every(
+        (bytes) =>
+            bytes instanceof Uint8Array &&
+            bytes.buffer instanceof ArrayBuffer &&
+            bytes.byteLength > 0 &&
+            bytes.byteOffset === 0 &&
+            bytes.byteLength === bytes.buffer.byteLength
+    );
+}
+
+function isNativeHeadArray(value: unknown): value is string[] {
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    const entries: unknown[] = Array.from(value);
+    return (
+        entries.every((head) => typeof head === 'string' && /^[a-f0-9]{64}$/.test(head)) &&
+        new Set(entries).size === entries.length
+    );
+}
+
 /** Each private job owns its transferable seed, callbacks, deadline and Worker. */
 export function requestProspectiveMutation(
     request: ProspectiveMutationWorkerRequest,
@@ -49,21 +75,13 @@ export function requestProspectiveMutation(
             }
             if (
                 data.status === 'complete' &&
-                'bytes' in data &&
-                data.bytes instanceof Uint8Array &&
-                data.bytes.buffer instanceof ArrayBuffer &&
-                data.bytes.byteLength > 0 &&
-                data.bytes.byteOffset === 0 &&
-                data.bytes.byteLength === data.bytes.buffer.byteLength &&
+                'changes' in data &&
+                isOwnedChangeArray(data.changes) &&
                 'heads' in data &&
-                Array.isArray(data.heads) &&
-                data.heads.every(
-                    (head: unknown): head is string => typeof head === 'string' && /^[a-f0-9]{64}$/.test(head)
-                ) &&
-                new Set(data.heads).size === data.heads.length
+                isNativeHeadArray(data.heads)
             ) {
                 finish({
-                    bytes: new Uint8Array(data.bytes.buffer),
+                    changes: data.changes.map((bytes) => new Uint8Array(bytes.buffer)),
                     heads: data.heads,
                 });
                 return;

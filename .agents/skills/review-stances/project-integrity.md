@@ -30,6 +30,14 @@ Split out (a stance matching one carries that file, not this one): replay agains
    import/Save/clear/restore case; collector protection also covers finalized recovery storage. The serializer's
    revision travels with its data and the build is rejected if it changes across a serializer await; repeat the
    retained-buffer case with a held success.
+   Private-handle adoption (#5843, #6514) must not restart incremental export from its captured baseline. Drive
+   the real queue after a full baseline, an unsaved edit and Worker adoption: its payload alone requires the known
+   baseline dependencies, while baseline plus payload restores exact truth and heads. Restoring native-cursor
+   capture must fail `persistCrdtProject.spec.ts`'s omission check even when reconstruction stays green. Worker and
+   fallback capture heads describe their own bytes while live heads advance. Two IDB aborts retry identical bytes;
+   discarding an obsolete failed full bundle after membership returns to its original shape still retains the root
+   edit, and the next edit exports once. Generation/HMR fences invalidate discarded progress; descendant or foreign
+   frontiers outside active history cannot suppress output. Redundant history proves excess export, not data loss.
 2. **Cold-cache consumers rebuild every durable reference and report owner results (#187, #4496).** Failure:
    export, mixdown, stems or recovery use a warm cache or a mocked owner, miss a buffer or swallow a failure.
    Probe: cold project with an ordinary clip and an active frozen print whose PCM has its own ID; both IDs reach

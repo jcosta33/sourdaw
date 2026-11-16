@@ -11,7 +11,6 @@ import {
     wait_for_console_marker,
     wait_for_console_marker_after,
 } from './firstPaintDiagnostics';
-
 /**
  * The 60 Hz frame budget (16.667 ms) remains the design target, recorded per task
  * in the JSON attachment; the hard gate is the jank ceiling the criterion itself
@@ -21,7 +20,6 @@ import {
  * Frame delivery stays strictly gated by the gap and long-task assertions below.
  */
 const JANK_TASK_CEILING_MS = 50;
-
 /**
  * Frame-gap hard gate. A single 33.3 ms gap is one dropped frame under shared-runner
  * preemption (the shard-11 rerun tripped exactly 2x the 60 Hz interval with zero long
@@ -29,7 +27,6 @@ const JANK_TASK_CEILING_MS = 50;
  * The 25 ms / 60 Hz budget stays recorded per gap in the JSON attachment.
  */
 const FRAME_GAP_FREEZE_MS = 100;
-
 /**
  * Click-to-completion wall-span hard gate. The 1 s budget is the design target and
  * stays recorded as elapsedMs in the JSON attachment; the shard-11 rerun tripped it
@@ -37,7 +34,6 @@ const FRAME_GAP_FREEZE_MS = 100;
  * — Worker stall, recomputed prepared write — is an order of magnitude, not 10%.
  */
 const DETECT_WALL_HANG_MS = 5000;
-
 type TaskAttribution = {
     name: string;
     containerType: string;
@@ -51,8 +47,23 @@ type CapturedLongTask = {
     name: string;
     attribution: TaskAttribution[];
 };
-type AttributedPerformanceEntry = PerformanceEntry & { attribution?: readonly TaskAttribution[] };
-type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]> };
+type AttributedPerformanceEntry = PerformanceEntry & {
+    attribution?: readonly TaskAttribution[];
+};
+type MainThreadTask = {
+    startFromInputMs: number;
+    durationMs: number;
+};
+type ElasticTaskTrace = {
+    stop(): Promise<void>;
+    attach(): Promise<string[]>;
+    tasks(): MainThreadTask[];
+};
+type PreparationMeasure = {
+    name: string;
+    duration: number;
+    startTime: number;
+};
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
@@ -62,17 +73,18 @@ const TRACE_CATEGORIES = [
     'disabled-by-default-v8.cpu_profiler',
     'disabled-by-default-devtools.timeline',
 ];
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
-
-type TraceInterval = { pid: number; tid: number; startUs: number; endUs: number };
-
+type TraceInterval = {
+    pid: number;
+    tid: number;
+    startUs: number;
+    endUs: number;
+};
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
-
 function readElasticTraceInterval(events: readonly Record<string, unknown>[]): TraceInterval | null {
     const input = events.find((event) => event.name === 'elastic-detect-input-start');
     if (!input || !isFiniteNumber(input.pid) || !isFiniteNumber(input.tid) || !isFiniteNumber(input.ts)) {
@@ -86,10 +98,12 @@ function readElasticTraceInterval(events: readonly Record<string, unknown>[]): T
     }
     return { pid: input.pid, tid: input.tid, startUs: input.ts, endUs: completion.ts };
 }
-
-function countElasticIntervalTasks(events: readonly Record<string, unknown>[], interval: TraceInterval): number {
-    return events.filter(
-        (event) =>
+function readElasticIntervalTasks(
+    events: readonly Record<string, unknown>[],
+    interval: TraceInterval
+): MainThreadTask[] {
+    return events.flatMap((event) => {
+        if (
             event.name === 'RunTask' &&
             event.pid === interval.pid &&
             event.tid === interval.tid &&
@@ -98,9 +112,34 @@ function countElasticIntervalTasks(events: readonly Record<string, unknown>[], i
             event.dur > 0 &&
             event.ts < interval.endUs &&
             event.ts + event.dur > interval.startUs
-    ).length;
+        ) {
+            return [{ startFromInputMs: (event.ts - interval.startUs) / 1000, durationMs: event.dur / 1000 }];
+        }
+        return [];
+    });
 }
-
+function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart: number, tasks: MainThreadTask[]) {
+    return [
+        'automerge-prospective-response-task',
+        'automerge-prospective-apply-task',
+        'automerge-prospective-authority-task',
+        'elastic-transient-change-task',
+    ].map((name) => {
+        const phases = measures.filter((measure) => measure.name === name);
+        expect(phases, `Missing or repeated native phase: ${name}`).toHaveLength(1);
+        const phase = phases[0];
+        const start = phase.startTime - inputMarkStart;
+        const end = start + phase.duration;
+        // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
+        const task = tasks.find(
+            (candidate) =>
+                candidate.startFromInputMs <= start + 0.002 &&
+                candidate.startFromInputMs + candidate.durationMs >= end - 0.002
+        );
+        expect(task, `Native phase has no complete enclosing RunTask: ${name}`).toBeDefined();
+        return { ...phase, enclosingTask: task };
+    });
+}
 function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
     const visited = new Set<number>();
     let nodeId: number | undefined = sample;
@@ -117,7 +156,6 @@ function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record
     }
     return false;
 }
-
 function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>[], interval: TraceInterval): number {
     const profiles = events.filter(
         (event) =>
@@ -131,7 +169,10 @@ function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>
         if (!isRecord(profile.args) || !isRecord(profile.args.data) || !isFiniteNumber(profile.args.data.startTime)) {
             continue;
         }
-        const chunks: { time: number; data: Record<string, unknown> }[] = [];
+        const chunks: {
+            time: number;
+            data: Record<string, unknown>;
+        }[] = [];
         const nodes = new Map<number, Record<string, unknown>>();
         for (const event of events) {
             if (
@@ -189,7 +230,6 @@ function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>
     }
     return count;
 }
-
 async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string): Promise<ElasticTaskTrace> {
     const session = await page.context().newCDPSession(page);
     const failures: string[] = [];
@@ -199,13 +239,20 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
     let dataLossOccurred = false;
     let interval: TraceInterval | null = null;
     let taskCount = 0;
+    let mainThreadTasks: MainThreadTask[] = [];
     let cpuSampleCount = 0;
     let started = false;
     let stopping: Promise<void> | undefined;
-    const completion = new Promise<{ stream?: string; dataLossOccurred?: boolean }>((resolve) => {
+    const completion = new Promise<{
+        stream?: string;
+        dataLossOccurred?: boolean;
+    }>((resolve) => {
         session.once('Tracing.tracingComplete', resolve);
     });
     const capture = {
+        tasks(): MainThreadTask[] {
+            return mainThreadTasks;
+        },
         stop(): Promise<void> {
             stopping ??= (async () => {
                 try {
@@ -250,7 +297,8 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     if (!interval) {
                         throw new Error('Elastic trace omitted a complete same-page measured interval');
                     }
-                    taskCount = countElasticIntervalTasks(records, interval);
+                    mainThreadTasks = readElasticIntervalTasks(records, interval);
+                    taskCount = mainThreadTasks.length;
                     cpuSampleCount = countElasticIntervalCpuSamples(records, interval);
                     if (dataLossOccurred || taskCount === 0 || cpuSampleCount === 0) {
                         throw new Error('Elastic trace lost events or omitted measured-interval task/CPU attribution');
@@ -320,7 +368,6 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
     }
     return capture;
 }
-
 test.afterEach(async ({ page: _page }, info) => {
     const failures: string[] = [];
     for (const capture of elasticTaskTraces.get(info) ?? []) {
@@ -336,11 +383,9 @@ test.afterEach(async ({ page: _page }, info) => {
         throw new Error(`Elastic task attribution failed: ${failures.join('; ')}`);
     }
 });
-
-const RATE = 48_000;
+const RATE = 48000;
 const SECONDS = 120;
 const ATTACKS = Array.from({ length: 120 }, (_, index) => index + 0.25);
-
 function percussiveStereoWav(): Buffer {
     const frames = RATE * SECONDS;
     const bytes = frames * 4;
@@ -362,7 +407,7 @@ function percussiveStereoWav(): Buffer {
         const start = Math.round(attack * RATE);
         for (let frame = 0; frame < 2400; frame++) {
             const sample = Math.round(
-                14_000 * Math.sin((2 * Math.PI * 1000 * frame) / RATE) * Math.exp((-6 * frame) / 2400)
+                14000 * Math.sin((2 * Math.PI * 1000 * frame) / RATE) * Math.exp((-6 * frame) / 2400)
             );
             wav.writeInt16LE(sample, 44 + (start + frame) * 4);
             wav.writeInt16LE(Math.round(sample * 0.75), 46 + (start + frame) * 4);
@@ -370,7 +415,6 @@ function percussiveStereoWav(): Buffer {
     }
     return wav;
 }
-
 async function sourceState(page: Page, last = false) {
     return page.evaluate(async (last) => {
         const { trackStore, getWarpState } = await import('/src/modules/Arrangement/stores/index.ts');
@@ -390,7 +434,16 @@ async function sourceState(page: Page, last = false) {
             }
         }
         const projected = clip ? getWarpState(clip.id).markers : [];
-        const raw = getCrdtDoc<{ warpStates?: { states: Record<string, { markers: unknown[] }> } }>('root');
+        const raw = getCrdtDoc<{
+            warpStates?: {
+                states: Record<
+                    string,
+                    {
+                        markers: unknown[];
+                    }
+                >;
+            };
+        }>('root');
         return {
             clipId: clip?.id,
             ready: Boolean(source),
@@ -403,316 +456,488 @@ async function sourceState(page: Page, last = false) {
         };
     }, last);
 }
-
-test('120-second stereo Detect includes cold Worker, copy and atomic commit within responsive UI budget', async ({
-    page,
-}, info) => {
-    test.setTimeout(120_000);
-    await setupWorkspace(page);
-    await launch_new_project(page);
-    // Global shortcuts stay silent while projectStore.loading !== false; wait
-    // for the app's own gate before pressing, the same as importPreferenceClip.
-    await expect
-        .poll(
-            async () =>
-                page.evaluate(async () => {
-                    const { projectStore } = await import('/src/modules/Project/stores/projectStore.ts');
-                    return projectStore.value?.loading === false;
-                }),
-            { timeout: 30_000 }
-        )
-        .toBe(true);
-    const modifier = await page.evaluate(() => (navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control'));
-    await page.keyboard.press(`${modifier}+K`);
-    const palette = page.getByRole('dialog', { name: /Command Palette/i });
-    // The shortcut is armed at boot, but the dialog's first mount on a fresh or
-    // reloaded page re-fetches its chunk through the dev server; under shard
-    // load that exceeds the 5s default. The assertion is unchanged — only the
-    // wait bound.
-    await expect(palette).toBeVisible({ timeout: 30_000 });
-    await palette.getByPlaceholder(/Type a command/i).fill('Add Audio Track');
-    await palette.getByRole('option', { name: /Add Audio Track/i }).click();
-    const row = page
-        .getByRole('grid', { name: /Track list/i })
-        .first()
-        .getByRole('row')
-        .first();
-    await expect(row).toBeVisible();
-    await row.click({ button: 'right' });
-    const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('menuitem', { name: /Import Audio/i }).click();
-    await (
-        await chooser
-    ).setFiles({ name: '120s-48k-stereo-attacks.wav', mimeType: 'audio/wav', buffer: percussiveStereoWav() });
-    await expect.poll(async () => (await sourceState(page)).ready).toBe(true);
-    const before = await sourceState(page);
-    expect(before.sampleRate).toBe(RATE);
-    expect(before.frames).toBe(RATE * SECONDS);
-    expect(before.channels).toBe(2);
-    expect(before.projected).toEqual([]);
-    await page.getByLabel('Timeline editor surface').click({ position: { x: 30, y: 20 } });
-    const dock = page.getByTestId('toggle-bottom-dock');
-    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
-        await dock.click();
-    }
-    await page.locator('#bottom-dock-tab-elastic').click();
-    const panel = page.getByTestId('elastic-editor-panel');
-    await expect(panel).toBeVisible();
-    await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
-    const workers: string[] = [];
-    page.on('worker', (worker) => workers.push(worker.url()));
-    const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
-    await page.evaluate(async () => {
-        type Metrics = {
-            start: number;
-            end: number;
-            frames: number[];
-            observedFrames: number[];
-            tasks: CapturedLongTask[];
-            measures: { name: string; duration: number; startTime: number }[];
-        };
-        const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
-        const target = window as Window & { elasticMeasurement?: Promise<Metrics> };
-        const button = document.querySelector('[data-testid="elastic-detect-button"]');
-        const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
-        if (!button || !status) {
-            throw new Error('Required Detect entry and completion status must be mounted');
-        }
-        let stop = false;
-        const frame = (time: number): void => {
-            metrics.frames.push(time);
-            metrics.observedFrames.push(performance.now());
-            if (!stop) {
-                requestAnimationFrame(frame);
+async function projectScalePreservedState(page: Page, targetClipId: string) {
+    return page.evaluate(async (targetClipId) => {
+        const entryPath = '/tests/e2e/elasticProjectScaleFixture.ts';
+        const fixture: typeof import('./elasticProjectScaleFixture') = await import(entryPath);
+        return fixture.captureElasticProjectScalePreservedState(targetClipId);
+    }, targetClipId);
+}
+async function seedProjectScaleFixture(page: Page, info: TestInfo) {
+    const diagnostics: {
+        progress: {
+            timestamp: number;
+            text: string;
+        }[];
+        maximumDepthErrors: {
+            timestamp: number;
+            text: string;
+            stackTrace: string | null;
+        }[];
+        progressCount: number;
+        maximumDepthErrorCount: number;
+        detachFailure: string | null;
+    } = {
+        progress: [],
+        maximumDepthErrors: [],
+        progressCount: 0,
+        maximumDepthErrorCount: 0,
+        detachFailure: null,
+    };
+    const session = await page.context().newCDPSession(page);
+    session.on(
+        'Runtime.consoleAPICalled',
+        (event: {
+            type: string;
+            args: {
+                value?: unknown;
+            }[];
+            timestamp: number;
+            stackTrace?: unknown;
+        }) => {
+            const text = event.args
+                .flatMap((argument) => (typeof argument.value === 'string' ? [argument.value] : []))
+                .join(' ');
+            if (text.startsWith('[elastic-project-scale-setup]')) {
+                diagnostics.progressCount++;
+                if (diagnostics.progress.length < 64) {
+                    diagnostics.progress.push({ timestamp: event.timestamp, text: text.slice(0, 2048) });
+                }
             }
-        };
-        requestAnimationFrame(frame);
-        const tasks = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) {
-                metrics.tasks.push({
-                    start: entry.startTime,
-                    duration: entry.duration,
-                    name: entry.name,
-                    attribution: Array.from((entry as AttributedPerformanceEntry).attribution ?? [], (value) => ({
-                        name: value.name,
-                        containerType: value.containerType,
-                        containerSrc: value.containerSrc,
-                        containerId: value.containerId,
-                        containerName: value.containerName,
-                    })),
+            if (event.type === 'error' && text.startsWith('Maximum update depth exceeded.')) {
+                diagnostics.maximumDepthErrorCount++;
+                if (diagnostics.maximumDepthErrors.length < 32) {
+                    let stackTrace: string | null = null;
+                    if (event.stackTrace !== undefined) {
+                        stackTrace = JSON.stringify(event.stackTrace).slice(0, 32768);
+                    }
+                    diagnostics.maximumDepthErrors.push({
+                        timestamp: event.timestamp,
+                        text: text.slice(0, 2048),
+                        stackTrace,
+                    });
+                }
+            }
+        }
+    );
+    let fixture: Awaited<ReturnType<typeof import('./elasticProjectScaleFixture').seedElasticProjectScale>>;
+    try {
+        await session.send('Runtime.enable');
+        fixture = await page.evaluate(async () => {
+            const entryPath = '/tests/e2e/elasticProjectScaleFixture.ts';
+            const fixture: typeof import('./elasticProjectScaleFixture') = await import(entryPath);
+            return fixture.seedElasticProjectScale();
+        });
+    } finally {
+        try {
+            await session.detach();
+        } catch (error) {
+            diagnostics.detachFailure = String(error);
+        }
+        await info.attach('elastic-project-scale-setup-diagnostics.json', {
+            body: JSON.stringify(diagnostics, null, 2),
+            contentType: 'application/json',
+        });
+    }
+    expect(diagnostics.maximumDepthErrorCount, 'Project-scale setup logged a React update-depth error').toBe(0);
+    expect(diagnostics.detachFailure, 'Project-scale setup observer must stop before measuring Detect').toBeNull();
+    return fixture;
+}
+for (const projectScale of [false, true]) {
+    test(
+        projectScale
+            ? '32-track long-history project-scale Detect preserves responsive atomic editing'
+            : '120-second stereo Detect includes cold Worker, copy and atomic commit within responsive UI budget',
+        async ({ page }, info) => {
+            test.setTimeout(projectScale ? 600000 : 120000);
+            await setupWorkspace(page);
+            await launch_new_project(page);
+            // Global shortcuts stay silent while projectStore.loading !== false; wait
+            // for the app's own gate before pressing, the same as importPreferenceClip.
+            await expect
+                .poll(
+                    async () =>
+                        page.evaluate(async () => {
+                            const { projectStore } = await import('/src/modules/Project/stores/projectStore.ts');
+                            return projectStore.value?.loading === false;
+                        }),
+                    { timeout: 30000 }
+                )
+                .toBe(true);
+            const modifier = await page.evaluate(() =>
+                navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control'
+            );
+            await page.keyboard.press(`${modifier}+K`);
+            const palette = page.getByRole('dialog', { name: /Command Palette/i });
+            // The shortcut is armed at boot, but the dialog's first mount on a fresh or
+            // reloaded page re-fetches its chunk through the dev server; under shard
+            // load that exceeds the 5s default. The assertion is unchanged — only the
+            // wait bound.
+            await expect(palette).toBeVisible({ timeout: 30000 });
+            await palette.getByPlaceholder(/Type a command/i).fill('Add Audio Track');
+            await palette.getByRole('option', { name: /Add Audio Track/i }).click();
+            const row = page
+                .getByRole('grid', { name: /Track list/i })
+                .first()
+                .getByRole('row')
+                .first();
+            await expect(row).toBeVisible();
+            await row.click({ button: 'right' });
+            const chooser = page.waitForEvent('filechooser');
+            await page.getByRole('menuitem', { name: /Import Audio/i }).click();
+            await (
+                await chooser
+            ).setFiles({ name: '120s-48k-stereo-attacks.wav', mimeType: 'audio/wav', buffer: percussiveStereoWav() });
+            await expect.poll(async () => (await sourceState(page)).ready).toBe(true);
+            const before = await sourceState(page);
+            expect(before.sampleRate).toBe(RATE);
+            expect(before.frames).toBe(RATE * SECONDS);
+            expect(before.channels).toBe(2);
+            expect(before.projected).toEqual([]);
+            if (!before.clipId) {
+                throw new Error('Imported Detect source is missing');
+            }
+            if (projectScale) {
+                const fixture = await seedProjectScaleFixture(page, info);
+                await info.attach('elastic-project-scale-before-detect.json', {
+                    body: JSON.stringify(fixture, null, 2),
+                    contentType: 'application/json',
+                });
+                expect(fixture.audioTracks).toBe(16);
+                expect(fixture.midiTracks).toBe(16);
+                expect(fixture.clips).toBe(256);
+                expect(fixture.notes).toBe(8192);
+                expect(fixture.elasticClips).toHaveLength(8);
+                expect(fixture.elasticClips.every((clip) => clip.markers === ATTACKS.length)).toBe(true);
+                expect(fixture.historyEditChanges).toBeGreaterThanOrEqual(2048);
+                expect(fixture.historyRetained).toBe(true);
+                expect(fixture.rootSlotValueJsonBytes).toBeGreaterThan(0);
+                expect(fixture.targetClipId).toBe(before.clipId);
+            }
+            const targetClipId = before.clipId;
+            const preserved = projectScale ? await projectScalePreservedState(page, targetClipId) : undefined;
+            if (projectScale) {
+                await info.attach('elastic-project-scale-preserved-state-before-detect.json', {
+                    body: JSON.stringify(preserved),
+                    contentType: 'application/json',
                 });
             }
-        });
-        tasks.observe({ type: 'longtask', buffered: false });
-        const measures = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) {
-                if (
-                    entry.name.startsWith('elastic-transient-') ||
-                    entry.name === 'automerge-storage-prepared-publication' ||
-                    entry.name === 'automerge-storage-materialization-handoff-task'
-                ) {
-                    metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
+            const assertPreserved = async (): Promise<void> => {
+                if (projectScale) {
+                    expect(await projectScalePreservedState(page, targetClipId)).toEqual(preserved);
                 }
+            };
+            await page.getByLabel('Timeline editor surface').click({ position: { x: 30, y: 20 } });
+            const dock = page.getByTestId('toggle-bottom-dock');
+            if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+                await dock.click();
             }
-        });
-        measures.observe({ type: 'measure', buffered: false });
-        target.elasticMeasurement = new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                stop = true;
-                observer.disconnect();
-                tasks.disconnect();
-                measures.disconnect();
-                reject(new Error('Real Detect did not complete'));
-            }, 10_000);
-            const observer = new MutationObserver(() => {
-                if (status.textContent !== 'Detection complete') {
-                    return;
+            await page.locator('#bottom-dock-tab-elastic').click();
+            const panel = page.getByTestId('elastic-editor-panel');
+            await expect(panel).toBeVisible();
+            await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
+            const workers: string[] = [];
+            page.on('worker', (worker) => workers.push(worker.url()));
+            const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
+            await page.evaluate(async () => {
+                type Metrics = {
+                    start: number;
+                    end: number;
+                    frames: number[];
+                    observedFrames: number[];
+                    tasks: CapturedLongTask[];
+                    measures: {
+                        name: string;
+                        duration: number;
+                        startTime: number;
+                    }[];
+                };
+                const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
+                const target = window as Window & {
+                    elasticMeasurement?: Promise<Metrics>;
+                };
+                const button = document.querySelector('[data-testid="elastic-detect-button"]');
+                const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
+                if (!button || !status) {
+                    throw new Error('Required Detect entry and completion status must be mounted');
                 }
-                metrics.end = performance.now();
-                performance.mark('elastic-detect-dom-complete');
-                observer.disconnect();
-                requestAnimationFrame((time) => {
+                let stop = false;
+                const frame = (time: number): void => {
                     metrics.frames.push(time);
                     metrics.observedFrames.push(performance.now());
-                    requestAnimationFrame((tailTime) => {
-                        metrics.frames.push(tailTime);
-                        metrics.observedFrames.push(performance.now());
+                    if (!stop) {
+                        requestAnimationFrame(frame);
+                    }
+                };
+                requestAnimationFrame(frame);
+                const tasks = new PerformanceObserver((list) => {
+                    for (const entry of list.getEntries()) {
+                        metrics.tasks.push({
+                            start: entry.startTime,
+                            duration: entry.duration,
+                            name: entry.name,
+                            attribution: Array.from(
+                                (entry as AttributedPerformanceEntry).attribution ?? [],
+                                (value) => ({
+                                    name: value.name,
+                                    containerType: value.containerType,
+                                    containerSrc: value.containerSrc,
+                                    containerId: value.containerId,
+                                    containerName: value.containerName,
+                                })
+                            ),
+                        });
+                    }
+                });
+                tasks.observe({ type: 'longtask', buffered: false });
+                const measures = new PerformanceObserver((list) => {
+                    for (const entry of list.getEntries()) {
+                        if (
+                            entry.name.startsWith('elastic-transient-') ||
+                            entry.name === 'automerge-storage-prepared-publication' ||
+                            entry.name === 'automerge-storage-materialization-handoff-task' ||
+                            entry.name.startsWith('automerge-prospective-')
+                        ) {
+                            metrics.measures.push({
+                                name: entry.name,
+                                duration: entry.duration,
+                                startTime: entry.startTime,
+                            });
+                        }
+                    }
+                });
+                measures.observe({ type: 'measure', buffered: false });
+                target.elasticMeasurement = new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
                         stop = true;
+                        observer.disconnect();
                         tasks.disconnect();
                         measures.disconnect();
-                        clearTimeout(timeout);
-                        resolve(metrics);
+                        reject(new Error('Real Detect did not complete'));
+                    }, 10000);
+                    const observer = new MutationObserver(() => {
+                        if (status.textContent !== 'Detection complete') {
+                            return;
+                        }
+                        metrics.end = performance.now();
+                        performance.mark('elastic-detect-dom-complete');
+                        observer.disconnect();
+                        requestAnimationFrame((time) => {
+                            metrics.frames.push(time);
+                            metrics.observedFrames.push(performance.now());
+                            requestAnimationFrame((tailTime) => {
+                                metrics.frames.push(tailTime);
+                                metrics.observedFrames.push(performance.now());
+                                stop = true;
+                                tasks.disconnect();
+                                measures.disconnect();
+                                clearTimeout(timeout);
+                                resolve(metrics);
+                            });
+                        });
                     });
+                    observer.observe(status, { childList: true, subtree: true, characterData: true });
+                    button.addEventListener(
+                        'click',
+                        () => {
+                            metrics.start = performance.now();
+                            performance.mark('elastic-detect-input-start');
+                        },
+                        { once: true, capture: true }
+                    );
                 });
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
             });
-            observer.observe(status, { childList: true, subtree: true, characterData: true });
-            button.addEventListener(
-                'click',
-                () => {
-                    metrics.start = performance.now();
-                    performance.mark('elastic-detect-input-start');
-                },
-                { once: true, capture: true }
+            await panel.getByTestId('elastic-detect-button').click();
+            const measured = await page.evaluate(async () => {
+                const target = window as Window & {
+                    elasticMeasurement?: Promise<{
+                        start: number;
+                        end: number;
+                        frames: number[];
+                        observedFrames: number[];
+                        tasks: CapturedLongTask[];
+                        measures: {
+                            name: string;
+                            duration: number;
+                            startTime: number;
+                        }[];
+                    }>;
+                };
+                if (!target.elasticMeasurement) {
+                    throw new Error('Measurement was not installed');
+                }
+                const measurement = await target.elasticMeasurement;
+                const inputMark = performance.getEntriesByName('elastic-detect-input-start').at(-1);
+                if (!inputMark) {
+                    throw new Error('Measured Detect omitted its input clock mark');
+                }
+                return { ...measurement, inputMarkStart: inputMark.startTime };
+            });
+            await coldTrace.stop();
+            await assertPreserved();
+            const after = await sourceState(page);
+            const gaps = measured.frames.slice(1).flatMap((time, index) => {
+                const previous = measured.frames[index];
+                return time >= measured.start ? [time - previous] : [];
+            });
+            const observedGaps = measured.observedFrames
+                .slice(1)
+                .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
+            const commit = measured.measures.filter((entry) => entry.name === 'elastic-transient-commit');
+            const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
+            const commitTasks = measured.measures.filter(
+                (entry) =>
+                    entry.name === 'elastic-transient-preparation-task' ||
+                    entry.name === 'elastic-transient-storage-commit-task'
             );
-        });
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    });
-    await panel.getByTestId('elastic-detect-button').click();
-    const measured = await page.evaluate(async () => {
-        const target = window as Window & {
-            elasticMeasurement?: Promise<{
-                start: number;
-                end: number;
-                frames: number[];
-                observedFrames: number[];
-                tasks: CapturedLongTask[];
-                measures: { name: string; duration: number; startTime: number }[];
-            }>;
-        };
-        if (!target.elasticMeasurement) {
-            throw new Error('Measurement was not installed');
+            const longTasks = measured.tasks.filter(
+                (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
+            );
+            const preparationTasks = measured.measures.filter((entry) =>
+                [
+                    'elastic-transient-plan-task',
+                    'elastic-transient-clone-task',
+                    'elastic-transient-change-task',
+                    'automerge-prospective-response-task',
+                    'automerge-prospective-apply-task',
+                    'automerge-prospective-authority-task',
+                    'automerge-storage-materialization-handoff-task',
+                ].includes(entry.name)
+            );
+            const preparedPublications = measured.measures.filter(
+                (entry) => entry.name === 'automerge-storage-prepared-publication'
+            );
+            const result = {
+                ...measured,
+                preparationTasks,
+                mainThreadTasks: coldTrace.tasks(),
+                nativePhases: materializationTaskSpans(measured.measures, measured.inputMarkStart, coldTrace.tasks()),
+                workerMaterializationWall: measured.measures.filter(
+                    (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
+                ),
+                preparedPublications,
+                elapsedMs: measured.end - measured.start,
+                gaps,
+                observedGaps,
+                maxObservedGapMs: Math.max(...observedGaps),
+                maxGapMs: Math.max(...gaps),
+                commit,
+                copy,
+                longTasks,
+                workers,
+                machine: {
+                    cpu: cpus()[0]?.model,
+                    platform: platform(),
+                    release: release(),
+                    browserVersion: page.context().browser()?.version(),
+                },
+                commitTasks,
+                browser: await page.evaluate(() => navigator.userAgent),
+                criterion:
+                    'Hard gates: no >=50 ms main-thread task and no >=100 ms frame gap during the click-to-UI-completion interval. ' +
+                    'Recorded per task and per gap: 60 Hz budgets (task <= 16.667 ms, rAF gap <= 25 ms) and the capture-to-afterCommit wall span.',
+            };
+            await info.attach('elastic-120-second-performance.json', {
+                body: JSON.stringify(result, null, 2),
+                contentType: 'application/json',
+            });
+            expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(1);
+            expect(after.pcm).toEqual(before.pcm);
+            expect(after.raw).toEqual(after.projected);
+            expect(after.projected).toHaveLength(ATTACKS.length);
+            for (const [index, marker] of after.projected.entries()) {
+                expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
+            }
+            expect(commit).toHaveLength(1);
+            expect(copy.length).toBeGreaterThan(1);
+            expect(gaps.length).toBeGreaterThan(1);
+            expect(preparedPublications).toHaveLength(1);
+            expect(result.workerMaterializationWall).toHaveLength(1);
+            expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+            expect(
+                preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
+            ).toHaveLength(1);
+            // 60 Hz design budget per task is recorded above; the hard gate is the
+            // jank ceiling — see JANK_TASK_CEILING_MS.
+            expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(
+                JANK_TASK_CEILING_MS
+            );
+            expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
+            expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+            expect(commitTasks).toHaveLength(2);
+            expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+            expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+            expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+            expect(longTasks).toEqual([]);
+            expect(result.mainThreadTasks.length).toBeGreaterThan(0);
+            expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(
+                JANK_TASK_CEILING_MS
+            );
+            await page.keyboard.press(`${modifier}+z`);
+            await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
+            await assertPreserved();
+            await page.keyboard.press(`${modifier}+Shift+z`);
+            await expect.poll(async () => (await sourceState(page)).projected.length).toBe(ATTACKS.length);
+            await assertPreserved();
+            expect((await sourceState(page)).pcm).toEqual(before.pcm);
+            const canvas = panel.getByTestId('elastic-waveform-canvas');
+            const firstMarker = after.projected.at(0);
+            if (!firstMarker) {
+                throw new Error('Expected first detected onset');
+            }
+            await panel.getByTestId('elastic-tool-lock-marker').click();
+            await canvas.click({ position: { x: firstMarker.warpedBeat * 40, y: 30 } });
+            await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 locked');
+            await panel.getByTestId('elastic-tool-add-marker').click();
+            await canvas.click({ position: { x: 0.9 * 40, y: 30 } });
+            await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 user');
+            await panel.getByTestId('elastic-tool-select').click();
+            const populated = await sourceState(page);
+            await expect.poll(async () => (await sourceState(page)).raw).toEqual(populated.projected);
+            expect(populated.projected).toHaveLength(ATTACKS.length + 1);
+            const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
+            expect(retained).toHaveLength(2);
+            const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
+            await armPopulatedMeasurement(page, 'click');
+            await panel.getByTestId('elastic-detect-button').click();
+            await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained, repeatedTrace);
+            await assertPreserved();
+            expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
+            const redetected = await sourceState(page);
+            await page.keyboard.press(`${modifier}+z`);
+            await expect.poll(async () => (await sourceState(page)).projected).toEqual(populated.projected);
+            await assertPreserved();
+            await page.keyboard.press(`${modifier}+Shift+z`);
+            await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+            await assertPreserved();
+            const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
+            await armPopulatedMeasurement(page, 'sensitivity');
+            await panel.getByRole('slider', { name: 'Transient detection sensitivity' }).press('End');
+            await assertPopulatedMeasurement(
+                page,
+                info,
+                'sensitivity-populated',
+                populated,
+                retained,
+                sensitivityTrace
+            );
+            expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
+            const sensitive = await sourceState(page);
+            await assertPreserved();
+            await page.keyboard.press(`${modifier}+z`);
+            await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+            await assertPreserved();
+            await page.keyboard.press(`${modifier}+Shift+z`);
+            await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
+            await assertPreserved();
+            expect((await sourceState(page)).pcm).toEqual(before.pcm);
         }
-        return target.elasticMeasurement;
-    });
-    await coldTrace.stop();
-    const after = await sourceState(page);
-    const gaps = measured.frames.slice(1).flatMap((time, index) => {
-        const previous = measured.frames[index];
-        return time >= measured.start ? [time - previous] : [];
-    });
-    const observedGaps = measured.observedFrames
-        .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
-    const commit = measured.measures.filter((entry) => entry.name === 'elastic-transient-commit');
-    const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
-    const commitTasks = measured.measures.filter(
-        (entry) =>
-            entry.name === 'elastic-transient-preparation-task' ||
-            entry.name === 'elastic-transient-storage-commit-task'
     );
-    const longTasks = measured.tasks.filter(
-        (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
-    );
-    const preparationTasks = measured.measures.filter((entry) =>
-        [
-            'elastic-transient-plan-task',
-            'elastic-transient-clone-task',
-            'elastic-transient-change-task',
-            'automerge-storage-materialization-handoff-task',
-        ].includes(entry.name)
-    );
-    const preparedPublications = measured.measures.filter(
-        (entry) => entry.name === 'automerge-storage-prepared-publication'
-    );
-    const result = {
-        ...measured,
-        preparationTasks,
-        workerMaterializationWall: measured.measures.filter(
-            (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
-        ),
-        preparedPublications,
-        elapsedMs: measured.end - measured.start,
-        gaps,
-        observedGaps,
-        maxObservedGapMs: Math.max(...observedGaps),
-        maxGapMs: Math.max(...gaps),
-        commit,
-        copy,
-        longTasks,
-        workers,
-        machine: {
-            cpu: cpus()[0]?.model,
-            platform: platform(),
-            release: release(),
-            browserVersion: page.context().browser()?.version(),
-        },
-        commitTasks,
-        browser: await page.evaluate(() => navigator.userAgent),
-        criterion:
-            'Hard gates: no >=50 ms main-thread task and no >=100 ms frame gap during the click-to-UI-completion interval. ' +
-            'Recorded per task and per gap: 60 Hz budgets (task <= 16.667 ms, rAF gap <= 25 ms) and the capture-to-afterCommit wall span.',
-    };
-    await info.attach('elastic-120-second-performance.json', {
-        body: JSON.stringify(result, null, 2),
-        contentType: 'application/json',
-    });
-    expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(1);
-    expect(after.pcm).toEqual(before.pcm);
-    expect(after.raw).toEqual(after.projected);
-    expect(after.projected).toHaveLength(ATTACKS.length);
-    for (const [index, marker] of after.projected.entries()) {
-        expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
-    }
-    expect(commit).toHaveLength(1);
-    expect(copy.length).toBeGreaterThan(1);
-    expect(gaps.length).toBeGreaterThan(1);
-    expect(preparedPublications).toHaveLength(1);
-    expect(result.workerMaterializationWall).toHaveLength(1);
-    expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-    expect(
-        preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
-    ).toHaveLength(1);
-    // 60 Hz design budget per task is recorded above; the hard gate is the
-    // jank ceiling — see JANK_TASK_CEILING_MS.
-    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
-    expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(commitTasks).toHaveLength(2);
-    expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(longTasks).toEqual([]);
-    await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
-    await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected.length).toBe(ATTACKS.length);
-    expect((await sourceState(page)).pcm).toEqual(before.pcm);
-
-    const canvas = panel.getByTestId('elastic-waveform-canvas');
-    const firstMarker = after.projected.at(0);
-    if (!firstMarker) {
-        throw new Error('Expected first detected onset');
-    }
-    await panel.getByTestId('elastic-tool-lock-marker').click();
-    await canvas.click({ position: { x: firstMarker.warpedBeat * 40, y: 30 } });
-    await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 locked');
-    await panel.getByTestId('elastic-tool-add-marker').click();
-    await canvas.click({ position: { x: 0.9 * 40, y: 30 } });
-    await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 user');
-    await panel.getByTestId('elastic-tool-select').click();
-    const populated = await sourceState(page);
-    await expect.poll(async () => (await sourceState(page)).raw).toEqual(populated.projected);
-    expect(populated.projected).toHaveLength(ATTACKS.length + 1);
-    const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
-    expect(retained).toHaveLength(2);
-
-    const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
-    await armPopulatedMeasurement(page, 'click');
-    await panel.getByTestId('elastic-detect-button').click();
-    await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained, repeatedTrace);
-    expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
-    const redetected = await sourceState(page);
-    await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(populated.projected);
-    await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
-
-    const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
-    await armPopulatedMeasurement(page, 'sensitivity');
-    await panel.getByRole('slider', { name: 'Transient detection sensitivity' }).press('End');
-    await assertPopulatedMeasurement(page, info, 'sensitivity-populated', populated, retained, sensitivityTrace);
-    expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
-    const sensitive = await sourceState(page);
-    await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
-    await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
-    expect((await sourceState(page)).pcm).toEqual(before.pcm);
-});
-
+}
 /** Same five-amplitude pulse fixture as the accepted Elastic sensitivity integration. */
 function preferencePulseWav(): Buffer {
-    const rate = 44_100;
+    const rate = 44100;
     const frames = rate * 3;
     const wav = Buffer.alloc(44 + frames * 2);
     wav.write('RIFF', 0);
@@ -739,7 +964,6 @@ function preferencePulseWav(): Buffer {
     }
     return wav;
 }
-
 async function importPreferenceClip(page: Page, name: string): Promise<string> {
     // The global shortcut layer stays silent while projectStore.loading !== false
     // (keyboardShortcutsContract deliberately gates on it), and a restore on a
@@ -753,7 +977,7 @@ async function importPreferenceClip(page: Page, name: string): Promise<string> {
                     const { projectStore } = await import('/src/modules/Project/stores/projectStore.ts');
                     return projectStore.value?.loading === false;
                 }),
-            { timeout: 30_000 }
+            { timeout: 30000 }
         )
         .toBe(true);
     const modifier = await page.evaluate(() => (navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control'));
@@ -763,7 +987,7 @@ async function importPreferenceClip(page: Page, name: string): Promise<string> {
     // reloaded page re-fetches its chunk through the dev server; under shard
     // load that exceeds the 5s default. The assertion is unchanged — only the
     // wait bound.
-    await expect(palette).toBeVisible({ timeout: 30_000 });
+    await expect(palette).toBeVisible({ timeout: 30000 });
     await palette.getByPlaceholder(/Type a command/i).fill('Add Audio Track');
     await palette.getByRole('option', { name: /Add Audio Track/i }).click();
     const row = page
@@ -804,11 +1028,10 @@ async function importPreferenceClip(page: Page, name: string): Promise<string> {
     await expect(page.getByTestId('elastic-editor-panel')).toBeVisible();
     return state.clipId;
 }
-
 test('saved 82 sensitivity seeds first Worker Detect on a new clip after completed reload, and Reset uses 50', async ({
     page,
 }, info) => {
-    test.setTimeout(120_000);
+    test.setTimeout(120000);
     await setupWorkspace(page);
     await launch_new_project(page);
     const firstClip = await importPreferenceClip(page, 'preference-original.wav');
@@ -838,10 +1061,10 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
     // lost no matter how long the palette's visibility bound waits afterwards.
     // Loaded runners stretch that gap past the 5s default — wait for the boot
     // probe, not just the painted chrome.
-    await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30_000);
+    await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30000);
     await wait_for_workspace_ready(reloaded);
     // Capture the boundary before reload so a marker emitted during navigation is retained.
-    await wait_for_console_marker_after(boot, CAPABILITIES_MARKER, 30_000, () => reloaded.reload());
+    await wait_for_console_marker_after(boot, CAPABILITIES_MARKER, 30000, () => reloaded.reload());
     await wait_for_workspace_ready(reloaded);
     const newClip = await importPreferenceClip(reloaded, 'preference-new-after-reload.wav');
     expect(newClip).not.toBe(firstClip);
@@ -902,7 +1125,6 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
     });
     await reloaded.close();
 });
-
 // Repeat routes retain the cold case's fixture, thresholds, observation clocks and full completion boundary.
 async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity'): Promise<void> {
     await page.evaluate(async (route) => {
@@ -912,10 +1134,16 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
             frames: number[];
             observedFrames: number[];
             tasks: CapturedLongTask[];
-            measures: { name: string; duration: number; startTime: number }[];
+            measures: {
+                name: string;
+                duration: number;
+                startTime: number;
+            }[];
         };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
-        const target = window as Window & { populatedElasticMeasurement?: Promise<Metrics> };
+        const target = window as Window & {
+            populatedElasticMeasurement?: Promise<Metrics>;
+        };
         const control = document.querySelector(
             route === 'click'
                 ? '[data-testid="elastic-detect-button"]'
@@ -957,7 +1185,8 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                 if (
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
-                    entry.name === 'automerge-storage-materialization-handoff-task'
+                    entry.name === 'automerge-storage-materialization-handoff-task' ||
+                    entry.name.startsWith('automerge-prospective-')
                 ) {
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
                 }
@@ -971,7 +1200,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                 tasks.disconnect();
                 measures.disconnect();
                 reject(new Error('Populated real Detect did not complete'));
-            }, 10_000);
+            }, 10000);
             const observer = new MutationObserver(() => {
                 if (status.textContent === 'Detecting…') {
                     sawPending = true;
@@ -1013,7 +1242,6 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }, route);
 }
-
 async function assertPopulatedMeasurement(
     page: Page,
     info: TestInfo,
@@ -1030,13 +1258,22 @@ async function assertPopulatedMeasurement(
                 frames: number[];
                 observedFrames: number[];
                 tasks: CapturedLongTask[];
-                measures: { name: string; duration: number; startTime: number }[];
+                measures: {
+                    name: string;
+                    duration: number;
+                    startTime: number;
+                }[];
             }>;
         };
         if (!target.populatedElasticMeasurement) {
             throw new Error('Measurement is missing');
         }
-        return target.populatedElasticMeasurement;
+        const measurement = await target.populatedElasticMeasurement;
+        const inputMark = performance.getEntriesByName('elastic-detect-input-start').at(-1);
+        if (!inputMark) {
+            throw new Error('Measured Detect omitted its input clock mark');
+        }
+        return { ...measurement, inputMarkStart: inputMark.startTime };
     });
     await trace.stop();
     const gaps = measured.frames
@@ -1059,6 +1296,9 @@ async function assertPopulatedMeasurement(
             'elastic-transient-plan-task',
             'elastic-transient-clone-task',
             'elastic-transient-change-task',
+            'automerge-prospective-response-task',
+            'automerge-prospective-apply-task',
+            'automerge-prospective-authority-task',
             'automerge-storage-materialization-handoff-task',
         ].includes(entry.name)
     );
@@ -1068,6 +1308,8 @@ async function assertPopulatedMeasurement(
     const result = {
         ...measured,
         preparationTasks,
+        mainThreadTasks: trace.tasks(),
+        nativePhases: materializationTaskSpans(measured.measures, measured.inputMarkStart, trace.tasks()),
         workerMaterializationWall: measured.measures.filter(
             (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
         ),
@@ -1111,4 +1353,6 @@ async function assertPopulatedMeasurement(
     expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
     expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
     expect(longTasks).toEqual([]);
+    expect(result.mainThreadTasks.length).toBeGreaterThan(0);
+    expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
 }

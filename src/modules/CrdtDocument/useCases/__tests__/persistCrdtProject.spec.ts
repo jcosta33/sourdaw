@@ -1,21 +1,38 @@
+import {
+    change,
+    free,
+    getChangesSince,
+    getHeads,
+    getMissingDeps,
+    init,
+    load,
+    loadIncremental,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
+import { loadPersistenceSnapshotFromIdb } from '../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import {
     EMPTY_PERSISTENCE_AUTHORITY,
     PERSISTENCE_AUTHORITY_KEY,
 } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
+import * as prospectiveWorker from '../../repositories/prospectiveMutationWorkerClient';
+import { branchStore, createDefaultBranchStoreState } from '../../stores/branchStore';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { beginPersistenceReplacement } from '../beginPersistenceReplacement';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
+import { loadCrdtProject } from '../loadCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
+import { prepareExternalProjectDocument } from '../prepareExternalProjectDocument';
 import { runCrdtPersistenceLoad } from '../runCrdtPersistenceLoad';
+import { encodeSdawFile } from '../sdawFileFormat/encodeSdawFile';
 
 type VersionedQueueState = {
     version: number;
@@ -200,6 +217,7 @@ describe('persistCrdtProject', () => {
         persistence = new TransactionalPersistence();
         mocks.openDatabase.mockResolvedValue(persistence.database);
         automergeRepository.reset();
+        branchStore.set(createDefaultBranchStoreState());
         await loadRootOnlyProject();
         crdtProjectCompactionState.incrementalSaveCount = 0;
     });
@@ -208,8 +226,245 @@ describe('persistCrdtProject', () => {
         vi.restoreAllMocks();
     });
 
+    it('omits reopened root and child baselines while retaining publication edits, retry bytes and later deltas', async () => {
+        automergeRepository.createProject('project');
+        automergeRepository.createChildDoc('child-1');
+        const baselineHeads = new Map<string, string[]>();
+        for (const id of ['root', 'child-1']) {
+            automergeRepository.changeDoc(id, (doc: Record<string, unknown>) => {
+                doc.baseline = `durable-${id}`;
+            });
+            const heads = automergeRepository.getHeads(id);
+            if (!heads) {
+                throw new Error('Expected baseline heads');
+            }
+            baselineHeads.set(id, heads);
+        }
+        const compact = compactProject();
+        (await persistence.waitForTransaction('readwrite', 1)).complete();
+        await compact;
+        automergeRepository.reset();
+        const unsubscribe = automergeRepository.onRootInstallation(() => {
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.duringPublication = 'retained';
+            });
+        });
+        const originalLoad = automergeRepository.loadAll.bind(automergeRepository);
+        vi.spyOn(automergeRepository, 'loadAll').mockImplementationOnce(async (input) => {
+            const loaded = await originalLoad(input);
+            automergeRepository.changeDoc('child-1', (doc: Record<string, unknown>) => {
+                doc.beforeAdoption = 'retained';
+            });
+            return loaded;
+        });
+        const reopening = loadCrdtProject();
+        (await persistence.waitForTransaction('readonly', 1)).complete();
+        try {
+            expect(await reopening).toBe(true);
+        } finally {
+            unsubscribe();
+        }
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.firstEdit = 'saved';
+        });
+        const expectedHeads = new Map(['root', 'child-1'].map((id) => [id, automergeRepository.getHeads(id)]));
+        const firstAttempt = persistCrdtProject();
+        const firstTransaction = await persistence.waitForTransaction('readwrite', 2);
+        const firstChunks = firstTransaction.writes.filter((write) => write.kind === 'add');
+        firstTransaction.abort();
+        await expect(firstAttempt).rejects.toThrow('IDB transaction aborted');
+        expect(firstChunks.map((chunk) => chunk.key.split(':incremental:')[0])).toEqual(['child-1', 'root']);
+        for (const chunk of firstChunks) {
+            const id = chunk.key.split(':incremental:')[0];
+            if (!id) {
+                throw new Error('Expected an incremental document ID');
+            }
+            const heads = baselineHeads.get(id);
+            if (!heads) {
+                throw new Error('Expected the matching durable baseline');
+            }
+            const standalone = loadIncremental(init<Record<string, unknown>>(), chunk.value);
+            try {
+                expect(getMissingDeps(standalone, heads)).toEqual(heads);
+                expect(standalone.baseline).toBeUndefined();
+            } finally {
+                free(standalone);
+            }
+        }
+        const retry = persistCrdtProject();
+        const retryTransaction = await persistence.waitForTransaction('readwrite', 3);
+        const retryChunks = retryTransaction.writes.filter((write) => write.kind === 'add');
+        expect(retryChunks.map((chunk) => chunk.key.split(':incremental:')[0])).toEqual(['child-1', 'root']);
+        expect(retryChunks.map((chunk) => chunk.value)).toEqual(firstChunks.map((chunk) => chunk.value));
+        retryTransaction.complete();
+        await retry;
+        await persistCrdtProject();
+        expect(persistence.getTransactions('readwrite')).toHaveLength(3);
+
+        const bundle = await readCurrentBundle(persistence);
+        if (!bundle) {
+            throw new Error('Expected a durable bundle');
+        }
+        automergeRepository.reset();
+        expect(await automergeRepository.loadAll({ bundle })).toBe(true);
+        for (const [id, heads] of expectedHeads) {
+            expect(automergeRepository.getHeads(id)).toEqual(heads);
+            expect(automergeRepository.getDoc(id)).toMatchObject({ baseline: `durable-${id}` });
+        }
+        expect(automergeRepository.getDoc('root')).toMatchObject({ duringPublication: 'retained', firstEdit: 'saved' });
+        expect(automergeRepository.getDoc('child-1')).toMatchObject({ beforeAdoption: 'retained' });
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.nextEdit = 'saved';
+        });
+        const finalHeads = automergeRepository.getHeads('root');
+        const nextSave = persistCrdtProject();
+        const nextTransaction = await persistence.waitForTransaction('readwrite', 4);
+        expect(nextTransaction.writes.filter((write) => write.kind === 'add')).toHaveLength(1);
+        nextTransaction.complete();
+        await nextSave;
+        const finalBundle = await readCurrentBundle(persistence);
+        if (!finalBundle) {
+            throw new Error('Expected the subsequent saved delta');
+        }
+        automergeRepository.reset();
+        expect(await automergeRepository.loadAll({ bundle: finalBundle })).toBe(true);
+        expect(automergeRepository.getHeads('root')).toEqual(finalHeads);
+        expect(automergeRepository.getDoc('root')).toMatchObject({ firstEdit: 'saved', nextEdit: 'saved' });
+    });
+
+    it('exports an unrelated active branch restored after durable load instead of treating its heads as persisted', async () => {
+        automergeRepository.createProject('project');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.durableRoot = true;
+        });
+        automergeRepository.createChildDoc('branch_other');
+        automergeRepository.changeDoc('branch_other', (doc: Record<string, unknown>) => {
+            doc.branchOnly = true;
+        });
+        const branchHeads = automergeRepository.getHeads('branch_other');
+        const compact = compactProject();
+        (await persistence.waitForTransaction('readwrite', 1)).complete();
+        await compact;
+        automergeRepository.reset();
+        branchStore.set({
+            activeBranchId: 'other',
+            branches: [
+                {
+                    branchId: 'other',
+                    name: 'Other',
+                    rootDocId: 'branch_other',
+                    sourceBranchId: null,
+                    createdAt: 1,
+                    createdFromHeads: [],
+                    note: '',
+                },
+            ],
+        });
+        const reopening = loadCrdtProject();
+        (await persistence.waitForTransaction('readonly', 1)).complete();
+        expect(await reopening).toBe(true);
+        expect(automergeRepository.getHeads('root')).toEqual(branchHeads);
+        const saving = persistCrdtProject();
+        const transaction = await persistence.waitForTransaction('readwrite', 2);
+        const chunk = transaction.writes.find((write) => write.kind === 'add');
+        if (!chunk) {
+            throw new Error('Expected the restored root to be exported');
+        }
+        const standalone = loadIncremental(init<Record<string, unknown>>(), chunk.value);
+        try {
+            expect(getMissingDeps(standalone, [])).toEqual([]);
+            expect(getHeads(standalone)).toEqual(branchHeads);
+            expect(standalone.branchOnly).toBe(true);
+        } finally {
+            free(standalone);
+        }
+        transaction.complete();
+        await saving;
+    });
+
+    it('does not seed a canceled durable load into the successor generation', async () => {
+        automergeRepository.createProject('project');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.baseline = 'durable';
+        });
+        const compact = compactProject();
+        (await persistence.waitForTransaction('readwrite', 1)).complete();
+        await compact;
+        automergeRepository.reset();
+        const installed = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const originalLoad = automergeRepository.loadAll.bind(automergeRepository);
+        vi.spyOn(automergeRepository, 'loadAll').mockImplementationOnce(async (input) => {
+            const loaded = await originalLoad(input);
+            installed.resolve();
+            await release.promise;
+            return loaded;
+        });
+        const reopening = loadCrdtProject();
+        (await persistence.waitForTransaction('readonly', 1)).complete();
+        await installed.promise;
+        const successor = runCrdtPersistenceLoad(async () => ({
+            loaded: true,
+            snapshot: await loadPersistenceSnapshotFromIdb(),
+        }));
+        release.resolve();
+        expect(await reopening).toBe(false);
+        (await persistence.waitForTransaction('readonly', 2)).complete();
+        await successor;
+        const saving = persistCrdtProject();
+        const transaction = await persistence.waitForTransaction('readwrite', 2);
+        const chunk = transaction.writes.find((write) => write.kind === 'add');
+        if (!chunk) {
+            throw new Error('Expected conservative export after canceled load');
+        }
+        const standalone = loadIncremental(init<Record<string, unknown>>(), chunk.value);
+        try {
+            expect(getHeads(standalone)).toEqual(automergeRepository.getHeads('root'));
+        } finally {
+            free(standalone);
+        }
+        transaction.complete();
+        await saving;
+    });
+
+    it('exports the full external file baseline because its incoming heads are not yet durable', async () => {
+        const projectId = '00000000-0000-4000-8000-000000000001';
+        automergeRepository.createProject('external');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.projectMeta = { projectId };
+            doc.imported = 'must be saved';
+        });
+        const expectedHeads = automergeRepository.getHeads('root');
+        const prepared = await prepareExternalProjectDocument(encodeSdawFile(automergeRepository.saveAll()), projectId);
+        automergeRepository.reset();
+        const commit = prepared.commit(() => true);
+        (await persistence.waitForTransaction('readonly', 1)).complete();
+        expect(await commit).toBe(true);
+        const saving = persistCrdtProject();
+        const transaction = await persistence.waitForTransaction('readwrite', 1);
+        const chunk = transaction.writes.find((write) => write.kind === 'add');
+        if (!chunk) {
+            throw new Error('Expected the imported baseline to be exported');
+        }
+        const standalone = loadIncremental(init<Record<string, unknown>>(), chunk.value);
+        try {
+            expect(getMissingDeps(standalone, [])).toEqual([]);
+            expect(getHeads(standalone)).toEqual(expectedHeads);
+            expect(standalone.imported).toBe('must be saved');
+        } finally {
+            free(standalone);
+        }
+        transaction.complete();
+        await saving;
+    });
+
     it('retains exact Automerge bytes across repeated aborts, reloads them, and persists the next delta once', async () => {
         automergeRepository.createProject('project');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.baseline = 'already captured';
+        });
+        const baselineHeads = automergeRepository.getHeads('root')!;
+        expect(baselineHeads).toHaveLength(1);
 
         const baseCompaction = compactProject();
         const baseSave = await persistence.waitForTransaction('readwrite', 1);
@@ -219,7 +474,45 @@ describe('persistCrdtProject', () => {
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.firstEdit = 'retained';
         });
-        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'saveDocIncremental');
+        vi.spyOn(prospectiveWorker, 'requestProspectiveMutation').mockImplementation(async (request) => {
+            const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+            const candidate = change(seed, { message: request.message }, (draft) =>
+                applyCanonicalStorageSlotMutation(draft, request.mutation)
+            );
+            try {
+                return {
+                    changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
+                    heads: getHeads(candidate),
+                };
+            } finally {
+                free(candidate);
+            }
+        });
+        const mutation = {
+            kind: 'canonical-json-slot-v1' as const,
+            key: 'firstEdit',
+            baseValue: 'retained',
+            value: 'retained-after-worker',
+            documentPresence: { slot: 'retained' },
+        };
+        const preparation = automergeRepository.cloneProspectiveMutation(
+            'root',
+            (draft) => applyCanonicalStorageSlotMutation(draft, mutation),
+            'Detect',
+            undefined,
+            ['firstEdit'],
+            mutation
+        );
+        await preparation.requestMaterialization!(new AbortController().signal);
+        automergeRepository.changeDoc('root', () => undefined, 'Detect', undefined, ['firstEdit'], {
+            preparedCandidate: preparation.materialize(),
+            validateDocument: () => undefined,
+            beforePublication: () => undefined,
+            onPublished: () => undefined,
+        });
+        const expectedDocument = automergeRepository.getDoc('root')!;
+        const expectedHeads = getHeads(expectedDocument);
+        const saveIncrementalSpy = vi.spyOn(automergeRepository, 'captureDocIncremental');
 
         const firstAttempt = persistCrdtProject();
         const firstTransaction = await persistence.waitForTransaction('readwrite', 2);
@@ -227,13 +520,29 @@ describe('persistCrdtProject', () => {
         expect(firstChunk).toBeDefined();
         firstTransaction.abort();
         await expect(firstAttempt).rejects.toThrow('IDB transaction aborted');
+        if (!firstChunk) {
+            throw new Error('Expected the real queue to retain its captured incremental');
+        }
+        const withoutBaseline = loadIncremental(init<Record<string, unknown>>(), firstChunk.value);
+        try {
+            // Replay alone also accepts a redundant full history. This chunk must require its durable baseline.
+            expect(getMissingDeps(withoutBaseline, []).length).toBeGreaterThan(0);
+            expect(getMissingDeps(withoutBaseline, baselineHeads)).toEqual(baselineHeads);
+            expect(withoutBaseline.firstEdit).toBeUndefined();
+            console.info('Queue incremental omitted captured baseline:', {
+                baselineHeads,
+                capturedHeads: expectedHeads,
+            });
+        } finally {
+            free(withoutBaseline);
+        }
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(0);
         expect(saveIncrementalSpy).toHaveBeenCalledOnce();
 
         const secondAttempt = persistCrdtProject();
         const secondTransaction = await persistence.waitForTransaction('readwrite', 3);
         const secondChunk = secondTransaction.writes.find((write) => write.kind === 'add');
-        expect(secondChunk?.value).toEqual(firstChunk?.value);
+        expect(secondChunk?.value).toEqual(firstChunk.value);
         secondTransaction.abort();
         await expect(secondAttempt).rejects.toThrow('IDB transaction aborted');
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(0);
@@ -242,7 +551,7 @@ describe('persistCrdtProject', () => {
         const successfulRetry = persistCrdtProject();
         const retryTransaction = await persistence.waitForTransaction('readwrite', 4);
         const retryChunk = retryTransaction.writes.find((write) => write.kind === 'add');
-        expect(retryChunk?.value).toEqual(firstChunk?.value);
+        expect(retryChunk?.value).toEqual(firstChunk.value);
         retryTransaction.complete();
         await successfulRetry;
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(1);
@@ -261,8 +570,10 @@ describe('persistCrdtProject', () => {
         await expect(automergeRepository.loadAll({ bundle: firstBundle, shouldCommit: () => true })).resolves.toBe(
             true
         );
+        expect(automergeRepository.getDoc('root')).toEqual(expectedDocument);
+        expect(automergeRepository.getHeads('root')).toEqual(expectedHeads);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
-            firstEdit: 'retained',
+            firstEdit: 'retained-after-worker',
         });
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -286,7 +597,7 @@ describe('persistCrdtProject', () => {
             true
         );
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
-            firstEdit: 'retained',
+            firstEdit: 'retained-after-worker',
             secondEdit: 'survives-once',
         });
     });
@@ -539,6 +850,36 @@ describe('persistCrdtProject', () => {
 
         expect(persistence.getTransactions('readwrite')).toHaveLength(3);
         expect(getPersistedDocumentKeys(persistence)).toEqual(['root']);
+    });
+
+    it('retains a root edit when an abandoned failed full bundle returns to the durable root-only membership', async () => {
+        automergeRepository.createProject('project');
+        const baseline = compactProject();
+        (await persistence.waitForTransaction('readwrite', 1)).complete();
+        await baseline;
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.mustSurvive = true;
+        });
+        automergeRepository.createChildDoc('temporary');
+        const failed = persistCrdtProject();
+        const full = await persistence.waitForTransaction('readwrite', 2);
+        expect(full.writes.some((write) => write.key === 'temporary')).toBe(true);
+        full.abort();
+        await expect(failed).rejects.toThrow('IDB transaction aborted');
+        automergeRepository.removeDoc('temporary');
+        const saving = persistCrdtProject();
+        const next = await persistence.waitForTransaction('readwrite', 3);
+        expect(next.writes.every((write) => !write.key.startsWith('temporary'))).toBe(true);
+        next.complete();
+        await saving;
+        const bundle = await readCurrentBundle(persistence);
+        if (!bundle) {
+            throw new Error('Expected the root-only durable bundle');
+        }
+        expect(bundle.has('temporary')).toBe(false);
+        automergeRepository.reset();
+        await automergeRepository.loadAll({ bundle });
+        expect(automergeRepository.getDoc('root')).toMatchObject({ mustSurvive: true });
     });
 
     it('does not let an old-generation incremental completion overwrite a new project', async () => {
