@@ -107,6 +107,10 @@ use crate::state::PluginRegistryEntry;
 /// activation rescans that one file once and persists a row with the identity.
 /// A bump would instead have discarded every last known location, and every
 /// saved project's plugins would refuse until the user scanned by hand.
+///
+/// Not bumped when the document gained `scan_room` either: a version-6
+/// document without the column has simply recorded no pre-scan readings, so
+/// it defaults to empty, which is what a fresh install has.
 const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 6;
 
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -176,6 +180,10 @@ pub struct PersistedScanRegistry {
     /// Binaries a scan helper crashed or timed out on, keyed by path. Ordered
     /// for the same byte-stability reason as `entries`.
     pub quarantine: BTreeMap<String, PersistedQuarantineEntry>,
+    /// The largest recent free-space reading taken before a scan helper ran
+    /// for each binary, keyed by path; see [`PersistedScanRoom`].
+    #[serde(default)]
+    pub scan_room: BTreeMap<String, PersistedScanRoom>,
 }
 
 /// The document as it is written: the same columns as
@@ -193,16 +201,17 @@ struct PersistedScanRegistryRef<'a> {
     schema_version: u32,
     entries: &'a BTreeMap<String, PersistedPluginEntry>,
     quarantine: &'a BTreeMap<String, PersistedQuarantineEntry>,
+    scan_room: &'a BTreeMap<String, PersistedScanRoom>,
 }
 
-/// The quarantine column alone, out of a document at this build's own schema
-/// whose `entries` this build may not be able to read.
+/// The keyed columns — `quarantine` and `scan_room` — out of a document at
+/// this build's own schema whose `entries` this build may not be able to read.
 ///
-/// Every field but `schema_version` and `quarantine` is ignored rather than
+/// Every field but `schema_version` and the keyed columns is ignored rather than
 /// validated: the column survives an unreadable *row* in a sibling column of
 /// a same-schema document. It does not survive a document from another
 /// schema at all — `schema_version` carries no default, so a document that
-/// predates it already fails to deserialize, and [`read_quarantine_column`]
+/// predates it already fails to deserialize, and [`read_keyed_columns`]
 /// additionally refuses a parsed value whose version does not match
 /// [`SCAN_REGISTRY_SCHEMA_VERSION`]. That is the same whole-document rule
 /// [`SCAN_REGISTRY_SCHEMA_VERSION`] states for `entries`: a schema mismatch
@@ -214,12 +223,15 @@ struct PersistedScanRegistryRef<'a> {
 /// version [`SCAN_REGISTRY_SCHEMA_VERSION`], so that document cannot
 /// reach here. The default instead covers a same-schema file that was
 /// hand-edited or truncated before the key was written: it reads as "nothing
-/// quarantined" rather than as unreadable.
-#[derive(Deserialize)]
-struct QuarantineColumn {
+/// quarantined" rather than as unreadable. `scan_room` defaults for that
+/// reason and because a version-6 document may predate it.
+#[derive(Default, Deserialize)]
+struct KeyedColumns {
     schema_version: u32,
     #[serde(default)]
     quarantine: BTreeMap<String, PersistedQuarantineEntry>,
+    #[serde(default)]
+    scan_room: BTreeMap<String, PersistedScanRoom>,
 }
 
 /// One persisted quarantine row: a binary a scan will not spawn a helper for
@@ -231,6 +243,42 @@ pub struct PersistedQuarantineEntry {
     /// scan helper — see `ScanFailure::is_process_failure`.
     pub reason: String,
     pub quarantined_at_ms: u64,
+}
+
+/// How long a pre-scan free-space reading keeps attributing a later full disk
+/// to the binary it was taken for: seven days.
+///
+/// A plugin that fills most of the volume on one scan and the rest on a later
+/// one must find its earlier reading still recorded (#6943), and a user whose
+/// disk fills by their own hand must not have a stale reading blame a good
+/// plugin for it. A patient plugin can wait the window out, but only by
+/// leaving the volume within a gigabyte of full for a week, which the user
+/// sees and the operating system warns about long before. A disk that shrinks
+/// over months outlives every reading. The wrongful quarantine a shorter fill
+/// inside the window causes is cleared by the user's retry-quarantined rescan.
+pub const SCAN_ROOM_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+/// The largest free space read before a scan helper ran for one binary, and
+/// when it was read.
+///
+/// One value per binary rather than a history: a larger reading replaces it,
+/// a smaller one inside [`SCAN_ROOM_WINDOW_MS`] leaves it, and once the window
+/// has passed the next reading replaces it whatever its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedScanRoom {
+    pub room_bytes: u64,
+    pub observed_at_ms: u64,
+}
+
+impl PersistedScanRoom {
+    /// Whether this reading was taken inside the window ending at `now_ms`. A
+    /// reading stamped in the future is not: the clock moved back, and the
+    /// window cannot be measured from it.
+    fn is_recent(&self, now_ms: u64) -> bool {
+        now_ms
+            .checked_sub(self.observed_at_ms)
+            .is_some_and(|age| age <= SCAN_ROOM_WINDOW_MS)
+    }
 }
 
 /// One scanned plugin, every registry key it answers to, and the fingerprint
@@ -394,6 +442,12 @@ struct StoredRegistry {
     /// in this set from `quarantine` — a key this process never touched
     /// defers entirely to whatever is on disk.
     quarantine_touched: BTreeSet<String>,
+    /// Each binary's largest recent pre-scan reading, keyed by path. Loaded on
+    /// hydration and mutated by [`PluginRegistryStore::record_scan_room`].
+    scan_room: BTreeMap<String, PersistedScanRoom>,
+    /// The `scan_room` keys this process recorded or expired, overlaid on the
+    /// file's column at persist the way `quarantine_touched` is.
+    scan_room_touched: BTreeSet<String>,
 }
 
 /// The verdict on a caller's request to run the targeted rescan a registry key
@@ -567,6 +621,7 @@ impl PluginRegistryStore {
         };
         stored.entries = document.entries;
         stored.quarantine = document.quarantine;
+        stored.scan_room = document.scan_room;
 
         let unchanged_entries: Vec<(String, PluginRegistryEntry)> = stored
             .entries
@@ -701,6 +756,51 @@ impl PluginRegistryStore {
     /// Every currently quarantined binary, for the scan response.
     pub fn quarantined_snapshot(&self) -> Vec<PersistedQuarantineEntry> {
         self.lock_stored().quarantine.values().cloned().collect()
+    }
+
+    /// The largest free space recorded before a recent scan of `path`, or
+    /// `None` when no reading inside [`SCAN_ROOM_WINDOW_MS`] of `now_ms` is.
+    pub fn recent_scan_room(&self, path: &Path, now_ms: u64) -> Option<u64> {
+        self.lock_stored()
+            .scan_room
+            .get(&path.display().to_string())
+            .filter(|reading| reading.is_recent(now_ms))
+            .map(|reading| reading.room_bytes)
+    }
+
+    /// Remember `room_bytes`, read before a scan helper ran for `path` at
+    /// `now_ms`, if it is the largest recent reading for that binary.
+    ///
+    /// Every expired reading is dropped on the way, so the column holds only
+    /// binaries scanned inside the window.
+    pub fn record_scan_room(&self, path: &Path, room_bytes: u64, now_ms: u64) {
+        let key = path.display().to_string();
+        let mut stored = self.lock_stored();
+        let expired: Vec<String> = stored
+            .scan_room
+            .iter()
+            .filter(|(_, reading)| !reading.is_recent(now_ms))
+            .map(|(key, _)| key.clone())
+            .collect();
+        for expired_key in expired {
+            stored.scan_room.remove(&expired_key);
+            stored.scan_room_touched.insert(expired_key);
+        }
+        let earlier_had_more = stored
+            .scan_room
+            .get(&key)
+            .is_some_and(|earlier| earlier.room_bytes >= room_bytes);
+        if earlier_had_more {
+            return;
+        }
+        stored.scan_room.insert(
+            key.clone(),
+            PersistedScanRoom {
+                room_bytes,
+                observed_at_ms: now_ms,
+            },
+        );
+        stored.scan_room_touched.insert(key);
     }
 
     /// Drop quarantine records this scan proves gone from disk.
@@ -876,17 +976,18 @@ impl PluginRegistryStore {
         // (`quarantine_touched`) — every other key defers entirely to the
         // fresh disk read, which is how a sibling process's own quarantine or
         // clear survives a persist from this one.
-        let mut quarantine = read_quarantine_column(location);
-        for key in &stored.quarantine_touched {
-            match stored.quarantine.get(key) {
-                Some(entry) => {
-                    quarantine.insert(key.clone(), entry.clone());
-                }
-                None => {
-                    quarantine.remove(key);
-                }
-            }
-        }
+        // `scan_room` is keyed the same way and merged the same way.
+        let KeyedColumns {
+            mut quarantine,
+            mut scan_room,
+            ..
+        } = read_keyed_columns(location);
+        overlay_touched_keys(
+            &mut quarantine,
+            &stored.quarantine,
+            &stored.quarantine_touched,
+        );
+        overlay_touched_keys(&mut scan_room, &stored.scan_room, &stored.scan_room_touched);
 
         // The union is already in `stored.entries`, so a failed write leaves
         // memory ahead of disk rather than behind it. That is the recoverable
@@ -899,10 +1000,14 @@ impl PluginRegistryStore {
                 schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
                 entries: &stored.entries,
                 quarantine: &quarantine,
+                scan_room: &scan_room,
             },
         );
         match written {
-            Ok(()) => stored.quarantine = quarantine,
+            Ok(()) => {
+                stored.quarantine = quarantine;
+                stored.scan_room = scan_room;
+            }
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
     }
@@ -1333,8 +1438,8 @@ fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T>
     }
 }
 
-/// The quarantine column of whatever is on disk now, at this build's own
-/// schema, whether or not the rest of the document parses.
+/// The keyed columns of whatever is on disk now, at this build's own schema,
+/// whether or not the rest of the document parses.
 ///
 /// [`PluginRegistryStore::persist`] needs this column and nothing else, and it
 /// needs it from a file another writer owns half of. Deserializing the whole
@@ -1347,11 +1452,30 @@ fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T>
 /// `persist` copy them verbatim into the schema-[`SCAN_REGISTRY_SCHEMA_VERSION`]
 /// document it writes next — resurrecting quarantine state a whole-document
 /// schema check would otherwise have discarded outright.
-fn read_quarantine_column(location: &Path) -> BTreeMap<String, PersistedQuarantineEntry> {
-    read_bounded_registry_file::<QuarantineColumn>(location)
-        .filter(|column| column.schema_version == SCAN_REGISTRY_SCHEMA_VERSION)
-        .map(|column| column.quarantine)
+fn read_keyed_columns(location: &Path) -> KeyedColumns {
+    read_bounded_registry_file::<KeyedColumns>(location)
+        .filter(|columns| columns.schema_version == SCAN_REGISTRY_SCHEMA_VERSION)
         .unwrap_or_default()
+}
+
+/// Replace `on_disk`'s value for every key in `touched` with this process's
+/// decision about it — the value in `ours`, or its absence — and leave every
+/// other key as the file has it.
+fn overlay_touched_keys<V: Clone>(
+    on_disk: &mut BTreeMap<String, V>,
+    ours: &BTreeMap<String, V>,
+    touched: &BTreeSet<String>,
+) {
+    for key in touched {
+        match ours.get(key) {
+            Some(value) => {
+                on_disk.insert(key.clone(), value.clone());
+            }
+            None => {
+                on_disk.remove(key);
+            }
+        }
+    }
 }
 
 /// Read the registry document, or nothing.
@@ -2215,6 +2339,7 @@ mod tests {
                 schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
                 entries,
                 quarantine: BTreeMap::new(),
+                scan_room: BTreeMap::new(),
             })
             .expect("the oversized registry should serialize"),
         )
@@ -2623,7 +2748,7 @@ mod tests {
 
     /// A document from another schema must not donate its quarantine rows
     /// into this build's file, even though those rows deserialize cleanly on
-    /// their own shape. `read_quarantine_column` reads only the column, so
+    /// their own shape. `read_keyed_columns` reads only the keyed columns, so
     /// without its own schema gate a mismatched `schema_version` on the whole
     /// document would still leave a readable `quarantine` map — and a persist
     /// from a store that never touched the key would copy that map, verbatim,
@@ -2632,7 +2757,7 @@ mod tests {
     /// would otherwise have discarded.
     ///
     /// Mutation this catches: dropping the `schema_version == SCAN_REGISTRY_SCHEMA_VERSION`
-    /// filter in `read_quarantine_column`.
+    /// filter in `read_keyed_columns`.
     #[test]
     fn a_persist_reads_no_quarantine_out_of_a_document_from_another_schema() {
         let test_root = TestRegistryRoot::create("registry-quarantine-other-schema");
@@ -2830,5 +2955,100 @@ mod tests {
 
         assert!(registry.lock().expect("registry lock").is_empty());
         assert!(store.last_known_entry("aaaa1111").is_none());
+    }
+
+    /// A moment well clear of the epoch, so a window measured back from it
+    /// never underflows.
+    const SCAN_ROOM_NOW_MS: u64 = 1_800_000_000_000;
+
+    /// #6943: the pre-scan reading one launch records is the reading the
+    /// next launch attributes against. Mutation this catches: dropping the
+    /// column from the persisted document or from hydration.
+    #[test]
+    fn a_recorded_pre_scan_room_survives_a_persist_and_the_next_hydration() {
+        let test_root = TestRegistryRoot::create("registry-scan-room-round-trip");
+        let plugin_path = test_root.write_plugin_file("Filler.clap", b"clap-bytes");
+
+        let writer = test_root.store();
+        writer.record_scan_room(&plugin_path, 64 << 30, SCAN_ROOM_NOW_MS);
+        writer.record_scan_room(&plugin_path, 1 << 20, SCAN_ROOM_NOW_MS + 1);
+        writer.persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        assert_eq!(
+            next_launch.recent_scan_room(&plugin_path, SCAN_ROOM_NOW_MS + 2),
+            Some(64 << 30),
+            "the largest recent reading, not the latest, is the one kept"
+        );
+    }
+
+    /// A registry written before the column existed hydrates with no
+    /// readings rather than reading as unreadable. Mutation this catches:
+    /// dropping the column's serde default, which discards the whole
+    /// document and every last known plugin location with it.
+    #[test]
+    fn a_registry_without_the_scan_room_column_hydrates_with_no_readings() {
+        let test_root = TestRegistryRoot::create("registry-scan-room-absent");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&fs::read(&location).expect("registry should be readable"))
+                .expect("registry should parse");
+        document
+            .as_object_mut()
+            .expect("the registry is an object")
+            .remove("scan_room")
+            .expect("the fixture must carry the column it removes");
+        fs::write(
+            &location,
+            serde_json::to_vec(&document).expect("registry should serialize"),
+        )
+        .expect("registry should be rewritten");
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        assert!(next_launch.last_known_entry("aaaa1111").is_some());
+        assert_eq!(
+            next_launch.recent_scan_room(&plugin_path, SCAN_ROOM_NOW_MS),
+            None
+        );
+    }
+
+    /// A reading older than the window no longer attributes, and the next
+    /// reading replaces it however small, so a disk that shrinks over time
+    /// blames nothing. A reading stamped after now is not trusted either.
+    /// Mutation this catches: dropping the window from either the lookup or
+    /// the replacement rule.
+    #[test]
+    fn a_pre_scan_room_older_than_the_window_no_longer_attributes() {
+        let store = PluginRegistryStore::in_memory_only();
+        let plugin_path = Path::new("/plugins/Filler.clap");
+        store.record_scan_room(plugin_path, 64 << 30, SCAN_ROOM_NOW_MS);
+
+        let last_recent_ms = SCAN_ROOM_NOW_MS + SCAN_ROOM_WINDOW_MS;
+        assert_eq!(
+            store.recent_scan_room(plugin_path, last_recent_ms),
+            Some(64 << 30)
+        );
+        assert_eq!(
+            store.recent_scan_room(plugin_path, last_recent_ms + 1),
+            None
+        );
+        assert_eq!(
+            store.recent_scan_room(plugin_path, SCAN_ROOM_NOW_MS - 1),
+            None
+        );
+
+        store.record_scan_room(plugin_path, 1 << 20, last_recent_ms + 1);
+        assert_eq!(
+            store.recent_scan_room(plugin_path, last_recent_ms + 2),
+            Some(1 << 20)
+        );
     }
 }

@@ -8,7 +8,7 @@ use crate::host::plugin_registry_store::{
     RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
-use crate::host::plugin_scan_worker::{self, ScanFailure};
+use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
@@ -695,16 +695,56 @@ async fn scan_plugins_with_policy(
     scan_policy: PluginScanPolicy,
     state: &AppState,
 ) -> Result<ScanResult, String> {
+    let descriptor_store = Arc::clone(&state.plugin_registry_store);
+    let instance_store = Arc::clone(&state.plugin_registry_store);
     scan_plugins_with_backend(
         paths,
         retry_quarantined,
         scan_policy,
         PRODUCTION_SCAN_BUDGET,
         state,
-        plugin_scan_worker::scan_descriptor_metadata,
-        plugin_scan_worker::scan_instance_metadata,
+        move |format, path, timeout| {
+            remembering_scan_room(&descriptor_store, path, |recorded_room| {
+                plugin_scan_worker::scan_descriptor_metadata(format, path, timeout, recorded_room)
+            })
+        },
+        move |format, path, plugin_id, timeout| {
+            remembering_scan_room(&instance_store, path, |recorded_room| {
+                plugin_scan_worker::scan_instance_metadata(
+                    format,
+                    path,
+                    plugin_id,
+                    timeout,
+                    recorded_room,
+                )
+            })
+        },
     )
     .await
+}
+
+/// Run one scan helper for the binary at `path` with the largest free space
+/// recently read before an earlier scan of it, and remember this run's own
+/// pre-spawn reading against it.
+///
+/// The helper attributes a full disk after an exit 3 to the plugin when any
+/// recent scan of the binary saw room (#6943), so a plugin cannot fill most of
+/// the volume on one scan that exits 0 and the rest on the next. The reading is
+/// recorded before the next helper of the same scan runs, so the descriptor
+/// pass's reading covers the instance passes after it. A process-lifetime
+/// cache would lose it on restart and let the plugin escape on the first scan
+/// after every launch, so it lives in the registry file.
+fn remembering_scan_room<T>(
+    registry_store: &PluginRegistryStore,
+    path: &Path,
+    scan: impl FnOnce(Option<u64>) -> ScanAttempt<T>,
+) -> Result<T, ScanFailure> {
+    let now_ms = quarantine_timestamp_ms();
+    let attempt = scan(registry_store.recent_scan_room(path, now_ms));
+    if let Some(room) = attempt.room_before_spawn {
+        registry_store.record_scan_room(path, room, now_ms);
+    }
+    attempt.result
 }
 
 /// `budget` and `scan_descriptor`/`scan_instance` are parameters so a test can
@@ -1621,6 +1661,7 @@ fn lock_registry(
 /// user was actually using, and that row is returned; guessing the bundle's
 /// first plugin would load a different plugin and hand it the sibling's state.
 fn rescan_plugin_file(
+    registry_store: &PluginRegistryStore,
     format: &str,
     path: &Path,
     plugin_id: &str,
@@ -1631,8 +1672,17 @@ fn rescan_plugin_file(
     // would let a rename decide which extractor loads the file.
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| RescanFailure::Verdict(format!("Unknown plugin format: {format}")))?;
-    let bundle =
-        plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
+    // A targeted rescan never quarantines, but its helper runs the plugin like
+    // any other, so its reading joins the binary's history: a fill begun here
+    // is still attributed on the next full scan.
+    let bundle = remembering_scan_room(registry_store, path, |recorded_room| {
+        plugin_scan_worker::scan_descriptor_metadata(
+            format,
+            path,
+            TARGETED_RESCAN_TIMEOUT,
+            recorded_room,
+        )
+    })?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -1994,13 +2044,16 @@ pub async fn load_plugin(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
+    let registry_store = Arc::clone(&state.plugin_registry_store);
     load_plugin_with_backend(
         plugin_id,
         instance_id,
         windows_host,
         state,
         PluginScanPolicy::production(),
-        rescan_plugin_file,
+        move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            rescan_plugin_file(&registry_store, format, path, plugin_id, descriptor_id)
+        },
         create_hosted_runtime,
     )
     .await
@@ -12068,5 +12121,43 @@ mod tests {
             parameter_metadata_reason: None,
             capabilities: None,
         }
+    }
+
+    /// #6943: the reading one helper run takes before it spawns reaches the
+    /// next run for the same binary, and only that binary. Mutation this
+    /// catches: not recording the reading, or not handing it to the next
+    /// helper.
+    #[test]
+    fn a_pre_scan_reading_reaches_the_next_helper_run_for_the_same_binary() {
+        let store = PluginRegistryStore::in_memory_only();
+        let filler = Path::new("/plugins/Filler.clap");
+        let roomy = 64_u64 << 30;
+        let ran = |room_before_spawn| ScanAttempt {
+            result: Ok(()),
+            room_before_spawn,
+        };
+
+        let mut first_recorded = Some(0);
+        remembering_scan_room(&store, filler, |recorded_room| {
+            first_recorded = recorded_room;
+            ran(Some(roomy))
+        })
+        .expect("the stand-in run succeeds");
+        let mut next_recorded = None;
+        remembering_scan_room(&store, filler, |recorded_room| {
+            next_recorded = recorded_room;
+            ran(Some(0))
+        })
+        .expect("the stand-in run succeeds");
+        let mut other_recorded = Some(0);
+        remembering_scan_room(&store, Path::new("/plugins/Other.clap"), |recorded_room| {
+            other_recorded = recorded_room;
+            ran(None)
+        })
+        .expect("the stand-in run succeeds");
+
+        assert_eq!(first_recorded, None);
+        assert_eq!(next_recorded, Some(roomy));
+        assert_eq!(other_recorded, None);
     }
 }
