@@ -238,6 +238,30 @@ C:\\dir\\
         );
     });
 
+    it('closes a literal multi-line string at the delimiter even when its body ends in a backslash', () => {
+        const manifest = `[workspace.package]
+x = '''
+a\\'''
+serde = "1"
+`;
+
+        expect(workspaceManifestFingerprintInput(manifest, new Set())).toBe(
+            `[workspace.package]\nx = '''\na\\'''\n[workspace.package]\nserde = "1"\n`
+        );
+    });
+
+    it.each(['""""', '"""""'])('ends a multi-line basic string at the last three of a %s closer', (closer) => {
+        const manifest = `[workspace.package]
+x = """
+a${closer}  # comment
+serde = "1"
+`;
+
+        expect(workspaceManifestFingerprintInput(manifest, new Set())).toBe(
+            `[workspace.package]\nx = """\na${closer}\n[workspace.package]\nserde = "1"\n`
+        );
+    });
+
     it('throws naming the start line when a multi-line string is never closed', () => {
         const manifest = `[workspace.dependencies]
 serde = "1"
