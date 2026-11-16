@@ -2,7 +2,11 @@ import { from } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
 import { type TempoAudioSourcePromotionSnapshot } from '../../events/tempoAudioSourceSnapshots';
-import { captureTempoSourceOwnerValue, isTempoAudioSourcePromotion } from '../tempoAudioSourcePromotion';
+import {
+    captureTempoSourceOwnerValue,
+    isTempoAudioSourcePromotion,
+    tempoSourcePromotionsEqual,
+} from '../tempoAudioSourcePromotion';
 
 function plan(): TempoAudioSourcePromotionSnapshot {
     return {
@@ -279,6 +283,79 @@ describe('tempo source-promotion value decoder', () => {
                     },
                 ],
             })
+        ).toBe(false);
+    });
+});
+
+describe('tempoSourcePromotionsEqual', () => {
+    it('treats two separately built structurally equal promotions as the same', () => {
+        expect(tempoSourcePromotionsEqual(plan(), plan())).toBe(true);
+    });
+
+    it.each([
+        [
+            'clips',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                clips: [{ ...promotion.clips[0]!, after: { ...promotion.clips[0]!.after, audioOffsetSeconds: 7.25 } }],
+            }),
+        ],
+        [
+            'takes',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                takes: [{ ...promotion.takes[0]!, after: { sourceOffsetSeconds: 3.75 } }],
+            }),
+        ],
+        [
+            'regions',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                regions: [{ ...promotion.regions[0]!, endBeat: 9.5 }],
+            }),
+        ],
+        [
+            'gaps',
+            (promotion: TempoAudioSourcePromotionSnapshot) => ({
+                ...promotion,
+                gaps: [{ ...promotion.gaps[0]!, clipId: 'other-source' }],
+            }),
+        ],
+    ])('is unequal in both directions when only %s differ', (_field, change) => {
+        const changed = change(plan());
+
+        expect(tempoSourcePromotionsEqual(plan(), changed)).toBe(false);
+        expect(tempoSourcePromotionsEqual(changed, plan())).toBe(false);
+    });
+
+    it.each(['clips', 'takes', 'regions', 'gaps'] as const)('is unequal when %s gain a row', (field) => {
+        const base = plan();
+        const grown = { ...plan(), [field]: [...base[field], ...base[field]] };
+
+        expect(tempoSourcePromotionsEqual(base, grown)).toBe(false);
+        expect(tempoSourcePromotionsEqual(grown, base)).toBe(false);
+    });
+
+    it('ignores row order within a collection', () => {
+        const base = plan();
+        const second = { ...base.clips[0]!, clipId: 'second', trackId: 'audio-2' };
+        const forward = { ...base, clips: [base.clips[0]!, second] };
+        const reversed = { ...base, clips: [second, base.clips[0]!] };
+
+        expect(tempoSourcePromotionsEqual(forward, reversed)).toBe(true);
+        expect(tempoSourcePromotionsEqual(reversed, forward)).toBe(true);
+    });
+
+    it('still tells a reordered pair from one whose second row differs', () => {
+        const base = plan();
+        const second = { ...base.clips[0]!, clipId: 'second' };
+        const third = { ...base.clips[0]!, clipId: 'third' };
+
+        expect(
+            tempoSourcePromotionsEqual(
+                { ...base, clips: [base.clips[0]!, second] },
+                { ...base, clips: [third, base.clips[0]!] }
+            )
         ).toBe(false);
     });
 });
