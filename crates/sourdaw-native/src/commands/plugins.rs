@@ -2752,7 +2752,7 @@ fn register_runtime_with_engine(
     // thread's own refusal is a counter it cannot return to the user, leaving a
     // plugin in the rack that passes dry audio forever.
     if let Err(reason) = engine.ensure_effect_table_headroom(1) {
-        return Err(RegistrationRefusal::parked(reason, runtime));
+        return Err(RegistrationRefusal::parked(reason.to_string(), runtime));
     }
 
     let id = engine.reserve_plugin_id();
@@ -2818,7 +2818,11 @@ fn register_runtime_with_engine(
                 ));
             }
         }
-        return Err(RegistrationRefusal::recovered(error, shared_plugin, state));
+        return Err(RegistrationRefusal::recovered(
+            error.to_string(),
+            shared_plugin,
+            state,
+        ));
     }
 
     // Past the registration, on the same control-thread visit that read the
@@ -3251,7 +3255,9 @@ fn release_then_retire_engine_plugin(
         }
     }
 
-    engine.remove_plugin(engine_plugin_id)?;
+    engine
+        .remove_plugin(engine_plugin_id)
+        .map_err(|error| error.to_string())?;
     Ok(reports)
 }
 
@@ -3648,22 +3654,24 @@ pub async fn send_plugin_midi(
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
-    engine.send_midi_note(
-        engine_plugin_id,
-        MidiNoteEvent {
-            note,
-            velocity,
-            channel,
-            is_note_on,
-            probability_cutoff: daw_engine::midi_fx::PROBABILITY_CUTOFF_RANGE,
-            project_probability_seed: 0,
-            clip_id_hash: 0,
-            event_id_hash: 0,
-            absolute_occurrence_index: 0,
-            frame_offset: 0,
-            articulation_id: None,
-        },
-    )
+    engine
+        .send_midi_note(
+            engine_plugin_id,
+            MidiNoteEvent {
+                note,
+                velocity,
+                channel,
+                is_note_on,
+                probability_cutoff: daw_engine::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+                articulation_id: None,
+            },
+        )
+        .map_err(|error| error.to_string())
 }
 
 /// Resolve the engine plugin id an instance was registered under.
@@ -3704,7 +3712,9 @@ pub async fn set_plugin_bypass(
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
-    engine.set_bypass(engine_plugin_id, bypassed)
+    engine
+        .set_bypass(engine_plugin_id, bypassed)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

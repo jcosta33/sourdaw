@@ -3426,7 +3426,8 @@ fn map_device(
         })
         .and_then(|patch| {
             Ok((
-                PluginCore::transient_shaper_with_patch(sample_rate, &patch)?,
+                PluginCore::transient_shaper_with_patch(sample_rate, &patch)
+                    .map_err(|error| error.to_string())?,
                 Vec::new(),
             ))
         }),
@@ -3479,7 +3480,11 @@ fn map_device(
         },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
-                .and_then(|writes| Ok((PluginCore::builtin(builtin, sample_rate)?, writes)))
+                .and_then(|writes| {
+                    let core = PluginCore::builtin(builtin, sample_rate)
+                        .map_err(|error| error.to_string())?;
+                    Ok((core, writes))
+                })
         }
     };
     let Some((core, param_writes)) = refuse_or_degrade(resolved, contributes_audio)? else {
@@ -5719,7 +5724,7 @@ pub async fn apply_graph_commands(
             // rejection. The attach's own registration went onto the ring
             // ahead of it, so the report still belongs to this answer.
             return result_json(
-                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                &GraphApplyResultPayload::rejected(reason.to_string()).reporting_attached_crumbs(
                     attached_crumbs.named_with(&attached_crumbs_this_batch),
                 ),
             );
@@ -6200,17 +6205,19 @@ fn render_offline_ops(
     // unless the batch itself says otherwise (its own set-transport commands
     // are mapped after this preamble and override it).
     let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1 + plugin_commands);
-    renderer.push(GraphCommand::SetTransportPlayback {
-        is_playing: true,
-        song_pos_seconds: 0.0,
-    })?;
+    renderer
+        .push(GraphCommand::SetTransportPlayback {
+            is_playing: true,
+            song_pos_seconds: 0.0,
+        })
+        .map_err(|error| error.to_string())?;
     // Ahead of the batch: its splices name these ids, and the graph refuses an
     // id its table does not hold yet.
     if let Some(plugins) = plugins {
         plugins.register(&mut renderer)?;
     }
     for op in ops {
-        renderer.push(op)?;
+        renderer.push(op).map_err(|error| error.to_string())?;
     }
 
     // This thread processes every block, so it is every instance's audio
