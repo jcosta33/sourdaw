@@ -189,6 +189,8 @@ describe('positive whole-request metric intent', () => {
         ['Loosen the drums', 'Loosen'],
         ['Use a brighter recipe on the vocal', 'brighter'],
         ['Add a track named Pad and make it brighter', 'brighter'],
+        ['Rename Drums to Kit and Make It Brighter', 'brighter'],
+        ['Add a track named Pad and Brighter is better', 'brighter'],
     ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
@@ -220,8 +222,11 @@ describe('positive whole-request metric intent', () => {
         'Rename Drums to Warm Pad',
         'Add an audio track named Dark Room',
         'Add a marker called Bright Chorus',
-        'Add a track named Warm Pad and Bright Keys',
-        'Add a track named Warm Pad & Bright Keys and Dark Room',
+        "Add a track named 'Warm Pad and Bright Keys'",
+        'Apply the lofi recipe',
+        'Apply the glue recipe',
+        'Apply the punch recipe',
+        'Apply the air recipe',
         'Set the volume of the three vocal tracks to -4 dB.',
         'Set the volume of Bass to -6 dB',
         'Set the level of the Bass to -3 dB',

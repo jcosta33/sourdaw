@@ -111,22 +111,36 @@ function blankPunchTransportTerms(clause: string): string {
     );
 }
 
+function joinWords(words: readonly string[]): string {
+    return words.map(escapeRegExp).join(String.raw`[\s-]+`);
+}
+
+// A comparative or "more/less" term asks for a change, so "a brighter recipe" stays the request's own claim; the
+// remaining terms only name the character a recipe has.
+function readNamingTerms(terms: readonly string[]): string[][] {
+    return terms
+        .filter((term) => !/^(?:more|less)\s/iu.test(term) && !/^\p{L}+er$/iu.test(term))
+        .map((term) => term.split(/[\s-]+/u));
+}
+
 // A published recipe id ("drums-tight-transient") and the descriptor words of one with its role removed ("the tight
 // transient recipe") pick a catalog entry, so a descriptor inside either is the recipe's name, not a quality the
 // request claims. Any other word before "recipe" ("a brighter recipe") is the request's own.
-function buildRecipeNamePattern(recipes: MixRecipeCatalog['recipes']): RegExp | null {
+function buildRecipeNamePattern(
+    recipes: MixRecipeCatalog['recipes'],
+    descriptorTerms: MixRecipeCatalog['descriptorTerms']
+): RegExp | null {
     const recipeSuffix = String.raw`(?=\s+recipes?(?![\p{L}\p{N}]))`;
     const alternatives = recipes.flatMap((recipe) => {
         const fullId = String.raw`${escapeRegExp(recipe.id)}(?![\p{L}\p{N}-])`;
+        const aliases =
+            recipe.descriptor === null ? [] : readNamingTerms(descriptorTerms[recipe.descriptor]).map(joinWords);
         const role = recipe.roles.find((candidate) => recipe.id.startsWith(`${candidate}-`));
         if (role === undefined) {
-            return [fullId];
+            return [fullId, ...aliases.map((alias) => alias + recipeSuffix)];
         }
-        const descriptorWords = recipe.id
-            .slice(role.length + 1)
-            .split('-')
-            .map(escapeRegExp);
-        return [fullId, descriptorWords.join(String.raw`[\s-]+`) + recipeSuffix];
+        const idWords = joinWords(recipe.id.slice(role.length + 1).split('-'));
+        return [fullId, ...[idWords, ...aliases].map((words) => words + recipeSuffix)];
     });
     if (alternatives.length === 0) {
         return null;
@@ -152,34 +166,6 @@ function blankSuppliedName(clause: string): string {
     return blank(clause, match.index + match[0].length - name.length, clause.length);
 }
 
-const NAME_JOINER = new Set(['and', '&']);
-const STARTS_UPPERCASE = /^\s*\p{Lu}/u;
-
-/**
- * A supplied name continues across "and" or "&" only when the next word is capitalised ("named Warm Pad and
- * Bright Keys"); a lowercase word after the joiner opens a new clause ("named Pad and make it brighter").
- * The joiner and the continuation are blanked before the text is split into clauses.
- */
-function blankSuppliedNamesAcrossJoiners(text: string): string {
-    const separators = [...text.matchAll(new RegExp(CLAUSE_SEPARATOR.source, 'gu'))];
-    let result = text;
-    let clauseStart = 0;
-    let holdsName = false;
-    let joiner: RegExpExecArray | null = null;
-    for (const next of [...separators, null]) {
-        const clauseEnd = next?.index ?? text.length;
-        const clause = text.slice(clauseStart, clauseEnd);
-        if (holdsName && joiner !== null && NAME_JOINER.has(joiner[0]) && STARTS_UPPERCASE.test(clause)) {
-            result = blank(result, joiner.index, clauseEnd);
-        } else {
-            holdsName = SUPPLIED_NAME.test(clause);
-        }
-        joiner = next;
-        clauseStart = clauseEnd + (next?.[0].length ?? 0);
-    }
-    return result;
-}
-
 /**
  * The first quality word a request states that no figure of its own accounts for, or null when it states
  * none. A track name, the name of another object the project or its catalog holds, a device parameter
@@ -196,8 +182,9 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
     // An unclosed apostrophe leaves the quoting unknown, so then every word is the request's own.
     const tracked = scanPromptQuotedText(prompt).complete ? maskTrackReferences(prompt, context, ' ') : prompt;
     const named = maskProjectObjectNames(tracked, context, CLAUSE_SEPARATOR);
-    const masked = blankSuppliedNamesAcrossJoiners(
-        blankRecipeReferences(blankConstraintClauses(named, prompt, context), buildRecipeNamePattern(catalog.recipes))
+    const masked = blankRecipeReferences(
+        blankConstraintClauses(named, prompt, context),
+        buildRecipeNamePattern(catalog.recipes, catalog.descriptorTerms)
     );
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
         if (!HAS_LETTER.test(clause)) {
