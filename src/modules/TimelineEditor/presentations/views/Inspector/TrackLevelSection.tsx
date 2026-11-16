@@ -153,7 +153,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                 <SurfaceCard className="w-full p-3">
                     <Row gap={3} className="w-full">
                         <Stack justify="center" grow gap={1.5} className="min-w-0 overflow-hidden">
-                            <label className="text-[10px] font-medium text-foreground truncate w-full">Pan</label>
+                            <span className="text-[10px] font-medium text-foreground truncate w-full">Pan</span>
                             <span className="text-[10px] font-mono text-muted-foreground">{formatPan(activePan)}</span>
                             <Row gap={1.5} className="mt-0.5">
                                 <MidiLearnButton targetType="trackPan" trackId={track.id} />

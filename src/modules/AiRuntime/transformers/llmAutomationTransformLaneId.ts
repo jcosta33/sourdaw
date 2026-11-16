@@ -283,6 +283,9 @@ const automationTransformLaneIdByActionType: AutomationLaneLookup = {
 };
 
 function lookupAutomationTransformLaneId<Type extends RuntimeActionType>(action: ActionOf<Type>): string | null {
+    if (!Object.hasOwn(automationTransformLaneIdByActionType, action.type)) {
+        return noAutomationLane();
+    }
     return automationTransformLaneIdByActionType[action.type](action);
 }
 

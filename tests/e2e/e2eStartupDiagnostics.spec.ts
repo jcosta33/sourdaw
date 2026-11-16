@@ -22,7 +22,7 @@ test('applies the persisted Light theme before the real entry module paints', as
                 document.open();
                 document.write(sourceHtml);
                 document.close();
-                const modules = [...document.querySelectorAll('script[type="module" i][src]')].filter(
+                const modules = Array.from(document.querySelectorAll('script[type="module" i][src]')).filter(
                     (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
                 );
                 const developmentEntries = modules.filter((script) => script.id === 'sourdaw-entry');

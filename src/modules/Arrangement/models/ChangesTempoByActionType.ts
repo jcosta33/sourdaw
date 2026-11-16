@@ -1,6 +1,6 @@
 import { type AppActionType } from '#/utils/handlerContract';
 
-/** Whether an action edits the tempo map. Every action type answers, so a new action does not compile until it does. */
+/** Whether an action rewrites the tempo map, which moves every beat-to-time placement a plan computed. Every action type answers, so a new action does not compile until it does. */
 export const changesTempoByActionType: { readonly [Type in AppActionType]: boolean } = {
     importStemSet: false,
     discardImportedStemSet: false,
@@ -34,8 +34,8 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     reorderTrack: false,
     setTempo: true,
     restoreTempoEdit: true,
-    editTempoMap: false,
-    restoreTempoMapEdit: false,
+    editTempoMap: true,
+    restoreTempoMapEdit: true,
     setTimeSignature: false,
     setPlayback: false,
     togglePlayback: false,
@@ -253,10 +253,10 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     clearSolos: false,
     restoreTrackSoloStates: false,
     setTrackNotes: false,
-    deleteTime: false,
-    insertTime: false,
-    duplicateTimeRange: false,
-    restoreTimeOperationState: false,
+    deleteTime: true,
+    insertTime: true,
+    duplicateTimeRange: true,
+    restoreTimeOperationState: true,
     restoreTrackHeights: false,
     restoreTrackGroupMemberships: false,
     restoreTracks: false,
@@ -390,3 +390,11 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     appendOverdubControllers: false,
     removeOverdubControllers: false,
 };
+
+function isActionType(type: string): type is AppActionType {
+    return Object.hasOwn(changesTempoByActionType, type);
+}
+
+export function changesTempo(type: string): boolean {
+    return isActionType(type) && changesTempoByActionType[type];
+}

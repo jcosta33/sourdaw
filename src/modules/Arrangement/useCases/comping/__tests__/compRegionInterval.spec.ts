@@ -392,4 +392,61 @@ describe('compRegionInterval', () => {
             )
         ).toBeNull();
     });
+
+    describe('capturing an audio comp interval after a prefix', () => {
+        const input = { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'b' };
+        const setCompRegion: AppAction = { type: 'setCompRegion', payload: input };
+
+        beforeEach(() => {
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: 'track-1',
+                        kind: 'audio',
+                        clips: takes.map((take) =>
+                            ClipDummy.create({
+                                id: take.clipId,
+                                trackId: 'track-1',
+                                type: 'audio',
+                                startBeat: 0,
+                                endBeat: 12,
+                            })
+                        ),
+                    }),
+                ],
+                selectedTrackId: null,
+            });
+            seed([{ startBeat: 0, endBeat: 12, takeId: 'a' }]);
+        });
+
+        it('admits a capture with no prefix', () => {
+            expect(compRegionInterval.capturePatchAfterPrefix(input, undefined)).not.toBeNull();
+        });
+
+        it.each([
+            {
+                name: 'editTempoMap',
+                prefix: { type: 'editTempoMap', payload: { edit: { type: 'add', beat: 0, tempo: 240 } } },
+            },
+            {
+                name: 'duplicateTimeRange',
+                prefix: { type: 'duplicateTimeRange', payload: { startBeat: 0, endBeat: 4 } },
+            },
+            { name: 'setTempo', prefix: { type: 'setTempo', payload: { bpm: 60 } } },
+        ] satisfies Array<{ name: string; prefix: AppAction }>)(
+            'refuses a capture after $name rewrote the clock',
+            ({ prefix }) => {
+                const actions = [prefix, setCompRegion];
+
+                expect(compRegionInterval.capturePatchAfterPrefix(input, { actions, actionIndex: 1 })).toBeNull();
+            }
+        );
+
+        it('still captures after detectTempo, which only reads audio and writes no tempo', () => {
+            const detectTempo: AppAction = { type: 'detectTempo', payload: { clipId: 'not-a-track-clip' } };
+            const actions = [detectTempo, setCompRegion];
+
+            expect(compRegionInterval.capturePatchAfterPrefix(input, { actions, actionIndex: 1 })).not.toBeNull();
+        });
+    });
 });

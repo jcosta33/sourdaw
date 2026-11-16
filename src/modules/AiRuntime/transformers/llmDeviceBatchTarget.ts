@@ -297,6 +297,9 @@ function lookupDeviceBatchTarget<Type extends RuntimeActionType>(
     action: ActionOf<Type>,
     context: ProjectContext
 ): DeviceBatchTarget | null {
+    if (!Object.hasOwn(deviceBatchTargetByActionType, action.type)) {
+        return noDeviceBatchTarget();
+    }
     return deviceBatchTargetByActionType[action.type](action, context);
 }
 

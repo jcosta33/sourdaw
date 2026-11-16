@@ -63,8 +63,8 @@ async function observePlayback(page: Page, endBeat: number) {
             const play = document.querySelector('[data-testid="transport-play"]');
             const out = Array.from(
                 document.querySelectorAll('footer[aria-label="Application status"] [aria-hidden="true"]')
-            ).find((element) => /^Out\b/.test(element.textContent?.trim() ?? ''));
-            if (!analyser || !master || !hold || !meter || !playhead || !play || !out) {
+            ).find((element) => /^Out\b/.test(element.textContent.trim()));
+            if (!master || !hold || !meter || !playhead || !play || !out) {
                 throw new Error('Required live meter, cursor or status surface is missing');
             }
             const samples: {
@@ -78,9 +78,7 @@ async function observePlayback(page: Page, endBeat: number) {
             const deadline = performance.now() + 20_000;
             return new Promise<typeof samples>((resolve, reject) => {
                 const tick = (): void => {
-                    const position = /^Bars\s*(\d+)\s*\.\s*(\d+)\s*\.\s*(\d+)$/.exec(
-                        playhead.textContent?.trim() ?? ''
-                    );
+                    const position = /^Bars\s*(\d+)\s*\.\s*(\d+)\s*\.\s*(\d+)$/.exec(playhead.textContent.trim());
                     if (!position) {
                         reject(new Error('Musical cursor is unavailable'));
                         return;
@@ -101,9 +99,9 @@ async function observePlayback(page: Page, endBeat: number) {
                         beat,
                         playing: play.getAttribute('aria-label') === 'Pause',
                         analyser: peak,
-                        hold: hold.textContent?.trim() ?? '',
+                        hold: hold.textContent.trim(),
                         meter: Number(meterValue),
-                        out: out.textContent?.trim() ?? '',
+                        out: out.textContent.trim(),
                     });
                     if (beat > endBeat + 1) {
                         resolve(samples);

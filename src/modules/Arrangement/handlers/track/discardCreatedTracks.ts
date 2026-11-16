@@ -6,9 +6,10 @@ import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrack
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 import { handleDiscardCreatedTrack } from './discardCreatedTrack';
+import { recordDiscardedPluginStates } from './discardedPluginStateCarry';
 
 export const handleDiscardCreatedTracks = createHandler<'discardCreatedTracks'>({
-    execute: (action) => {
+    execute: (action, context) => {
         // Someone may have already removed one of the named tracks (e.g. a manual
         // `removeTrack` after the creating command ran). Silently succeeding would leave
         // the inverse's guarantee — remove exactly what was created — unverifiable, so a
@@ -17,6 +18,12 @@ export const handleDiscardCreatedTracks = createHandler<'discardCreatedTracks'>(
         const hasMissingTrack = action.payload.trackIds.some((trackId) => !liveTrackIds.has(trackId));
         if (hasMissingTrack) {
             return { status: 'conflict' };
+        }
+
+        if (context?.undoEntryId !== undefined) {
+            const trackIds = new Set(action.payload.trackIds);
+            const discarded = getTrackStoreState()?.tracks.filter((track) => trackIds.has(track.id)) ?? [];
+            recordDiscardedPluginStates(context.undoEntryId, discarded);
         }
 
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();

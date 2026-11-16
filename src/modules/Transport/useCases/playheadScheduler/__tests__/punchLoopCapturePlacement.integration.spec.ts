@@ -492,7 +492,7 @@ async function tick(seconds = TICK_SECONDS): Promise<void> {
                 generation: schedulerSession.generation,
                 sequence: ++sequence,
                 scheduledAtMs: received - 2,
-                sentAtMs: received - 1,
+                sentAtMs: received,
             },
         })
     );
