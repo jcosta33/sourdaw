@@ -15,7 +15,7 @@
  *   the `license`/`license-file` keys of `[package]` and `[workspace.package]`, workspace-inherited
  *   and underscore-separated forms included, rendered as canonical JSON. Parsing rather than line
  *   matching means quoting, escapes, comments and multi-line strings mean what Cargo reads them as.
- *   Any other key ending in `dependencies` outside `package.metadata` and `workspace.metadata` fails closed, so a table spelling
+ *   Any other key ending in `dependencies` outside `package.metadata`, `workspace.metadata`, `lints` and `workspace.lints` (where `unused_crate_dependencies` is a lint, not a table) fails closed, so a table spelling
  *   the selection does not know cannot reach the graph unpinned, and an unparseable manifest fails
  *   closed too. Members are the roots the runtime graph walks from, so a new member brings its
  *   dependencies into the proof. Dev-dependencies stay because `cargo metadata` unifies features
@@ -74,6 +74,7 @@ const CARGO_LICENCE_GRAPH_SELECTION: CargoSelection = {
     replace: 'keep',
     target: { '*': CARGO_DEPENDENCY_TABLES },
     package: { license: 'keep', 'license-file': 'keep', resolver: 'keep', metadata: 'ignore' },
+    lints: 'ignore',
     workspace: {
         members: 'keep',
         exclude: 'keep',
@@ -82,6 +83,7 @@ const CARGO_LICENCE_GRAPH_SELECTION: CargoSelection = {
         dependencies: 'keep',
         package: { license: 'keep', 'license-file': 'keep' },
         metadata: 'ignore',
+        lints: 'ignore',
     },
 };
 
@@ -90,6 +92,7 @@ const PACKAGING_SCRIPT_ROOTS = ['build', 'desktop:build'] as const;
 
 /** The scripts npm and pnpm run on their own during install, pack and publish. */
 const NPM_LIFECYCLE_SCRIPTS = [
+    'pnpm:devPreinstall',
     'preinstall',
     'install',
     'postinstall',
@@ -246,30 +249,18 @@ function isJsonObject(value: JsonValue | undefined): value is { [key: string]: J
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** The script names a command runs through `pnpm <name>`, `pnpm run <name>` or `npm run <name>`. */
-function invokedScriptNames(command: string): string[] {
-    const tokens = command.split(/[\s;&|()'"`]+/u).filter((token) => token.length > 0);
-    const names: string[] = [];
-    for (const [index, token] of tokens.entries()) {
-        if (token !== 'pnpm' && token !== 'npm') {
-            continue;
-        }
-        const operands = tokens.slice(index + 1).filter((operand) => !operand.startsWith('-'));
-        const [first, second] = operands;
-        if (first === 'run' || first === 'run-script') {
-            if (second !== undefined) {
-                names.push(second);
-            }
-        } else if (token === 'pnpm' && first !== undefined) {
-            names.push(first);
-        }
-    }
-    return names;
+/**
+ * Every word of a command, split on whitespace and shell punctuation. A script whose name is any
+ * word counts as run: parsing runner argv (`pnpm --filter . run`, `pnpm -C . <name>`, `node --run`)
+ * would miss the next runner or flag form, while a spurious match costs only a restamp.
+ */
+function commandWords(command: string): string[] {
+    return command.split(/[\s;&|()<>'"`=]+/u).filter((word) => word.length > 0);
 }
 
 /**
- * The scripts the packaging and release path can run: the roots, every npm lifecycle hook, the
- * `pre`/`post` hook of each kept script, and every script a kept script invokes by name.
+ * The scripts the packaging and release path can run: the roots, every lifecycle hook, the
+ * `pre`/`post` hook of each kept script, and every script a kept script names.
  */
 function packagingScripts(scripts: { [key: string]: JsonValue }): { [key: string]: JsonValue } {
     const pending: string[] = [...PACKAGING_SCRIPT_ROOTS, ...NPM_LIFECYCLE_SCRIPTS];
@@ -282,7 +273,7 @@ function packagingScripts(scripts: { [key: string]: JsonValue }): { [key: string
         kept.add(name);
         pending.push(`pre${name}`, `post${name}`);
         if (typeof command === 'string') {
-            pending.push(...invokedScriptNames(command));
+            pending.push(...commandWords(command));
         }
     }
     return Object.fromEntries(Object.entries(scripts).filter(([name]) => kept.has(name)));

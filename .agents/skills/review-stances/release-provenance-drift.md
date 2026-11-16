@@ -26,8 +26,10 @@ limitation, never as passed.
    proof's `sourceInputs` and the inventory's `package.json` and `Cargo.toml` snapshots pin each manifest by
    the projection `scripts/dependencyLicenseInputProjection.ts` names: every Cargo dependency table,
    `[features]`, `[patch*]`, `[replace]`, `[workspace]` members/exclude/default-members/resolver and the
-   licence keys; every `package.json` key but `version`, with `scripts` cut to the packaging closure (`build`,
-   `desktop:build`, npm lifecycle hooks, their `pre`/`post` hooks, and every script they run by name), because
+   licence keys, with any other `*dependencies` key failing closed outside `metadata` and `lints` tables (a
+   `unused_crate_dependencies` lint must project, not throw); every `package.json` key but `version`, with `scripts` cut to the packaging closure (`build`,
+   `desktop:build`, npm and pnpm lifecycle hooks including `pnpm:devPreinstall`, their `pre`/`post` hooks, and
+   every script whose name is any word of a kept command, so no runner or flag form can hide one), because
    electron-builder and npm read `build`, `main`, `files` and dependencies too; every other input,
    `electron-builder.yml` included (its ordered `files` patterns can re-include `node_modules` after the
    exclusion), is pinned whole. An edit to any of those must move the restamp artifacts under `release/` in the same diff

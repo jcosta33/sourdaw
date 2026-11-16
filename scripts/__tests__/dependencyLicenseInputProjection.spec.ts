@@ -310,6 +310,16 @@ nix = "0.29"
         expect(
             cargoManifestLicenceGraphProjection('[workspace.metadata.x]\nignored-dependencies = []\n', 'Cargo.toml')
         ).toBe('{"workspace":{}}\n');
+        expect(() =>
+            cargoManifestLicenceGraphProjection('[workspace.package]\nextra_dependencies = []\n', 'Cargo.toml')
+        ).toThrow('unrecognised dependency table key workspace.package.extra_dependencies');
+    });
+
+    it.each([
+        ['a workspace root', '[workspace.lints.rust]\nunused_crate_dependencies = "warn"\n', '{"workspace":{}}\n'],
+        ['a member manifest', '[lints.rust]\nunused_crate_dependencies = "warn"\n', '{}\n'],
+    ])('ignores the unused_crate_dependencies lint in %s', (_manifest, text, projection) => {
+        expect(cargoManifestLicenceGraphProjection(text, 'Cargo.toml')).toBe(projection);
     });
 
     // The parse reads strings, escapes and comments as Cargo does, so text inside them can neither
@@ -457,12 +467,27 @@ serde = "1"
         }
     );
 
-    it('keeps a script a packaging script names without run, and drops an unrelated one', () => {
-        const manifest = (scripts: Record<string, string>): string =>
-            JSON.stringify({ license: 'MIT', scripts: { 'desktop:build': 'pnpm --silent pack:app', ...scripts } });
-        const kept = packageJsonPackagingProjection(manifest({ 'pack:app': 'a', lint: 'x' }), 'package.json');
-        expect(kept).not.toBe(packageJsonPackagingProjection(manifest({ 'pack:app': 'b', lint: 'x' }), 'package.json'));
-        expect(kept).toBe(packageJsonPackagingProjection(manifest({ 'pack:app': 'a', lint: 'y' }), 'package.json'));
+    it.each([
+        ['pnpm with a flag', { 'desktop:build': 'pnpm --silent prep' }],
+        ['pnpm --filter . run', { build: 'vite build && pnpm --filter . run prep' }],
+        ['pnpm -C .', { build: 'vite build && pnpm -C . prep' }],
+        ['node --run', { build: 'vite build && node --run prep' }],
+        ['npm run --script-shell=sh', { build: 'npm run --script-shell=sh prep' }],
+        ['a pnpm:devPreinstall hook', { 'pnpm:devPreinstall': 'pnpm prep' }],
+    ])('keeps a script packaging reaches through %s, and drops an unrelated one', (_form, roots) => {
+        const manifest = (prep: string, lint: string): string =>
+            JSON.stringify({ license: 'MIT', scripts: { ...roots, prep, lint } });
+        const kept = packageJsonPackagingProjection(manifest('a', 'x'), 'package.json');
+        expect(kept).not.toBe(packageJsonPackagingProjection(manifest('b', 'x'), 'package.json'));
+        expect(kept).toBe(packageJsonPackagingProjection(manifest('a', 'y'), 'package.json'));
+    });
+
+    it('moves the package.json projection on a pnpm:devPreinstall edit', () => {
+        const manifest = (hook: string): string =>
+            JSON.stringify({ license: 'MIT', scripts: { build: 'vite build', 'pnpm:devPreinstall': hook } });
+        expect(packageJsonPackagingProjection(manifest('node a.js'), 'package.json')).not.toBe(
+            packageJsonPackagingProjection(manifest('node b.js'), 'package.json')
+        );
     });
 
     it('rejects a package.json with duplicate keys', () => {
