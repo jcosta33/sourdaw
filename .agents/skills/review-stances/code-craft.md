@@ -86,3 +86,11 @@ findings without a concrete break ("I'd prefer if") are discarded.
    added source and current enforcing configuration. Refresh that witness when either relevant
    source or enforcing configuration changes. An older `--quiet` warning pass proves neither
    combined compliance nor a missing rule visitor.
+10. **A lint pass that lints almost nothing stays green (PR #6610).** The full-tree public-plugin pass
+    was handed shell globs through `spawnSync` with no shell, so oxlint linted one file in about a second
+    while seven violations of error-level plugin rules merged behind it. PR #6610's review had no stance
+    asking whether a moved lint step still observes its files. Input: plant a known violation of an
+    error-level plugin rule in a file the step claims to cover and confirm that step's CI run goes red;
+    compare the step's reported file count and duration with a directory run of the same config. A step
+    whose count is a small fraction of the tracked sources must fail `scripts/__tests__/runLint.spec.ts`
+    "fails a pass that linted far fewer files than its targets track".

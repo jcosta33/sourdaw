@@ -6,7 +6,9 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+    assertPluginCoverage,
     buildEslintArgv,
+    buildPublicPluginsArgv,
     ensureServerDependencies,
     ESLINT_SUPPRESSIONS_FILE,
     eslintEnvironment,
@@ -15,6 +17,8 @@ import {
     lintConcurrency,
     lintThreads,
     parseArgs,
+    parseLintedFileCount,
+    publicPluginTargets,
 } from '../runLint.ts';
 
 function cacheStrategy(argv: string[]): string | undefined {
@@ -44,6 +48,44 @@ describe('full-run lint targets', () => {
         expect(FULL_ESLINT_TARGETS).toContain('scripts/**/*.ts');
         expect(FULL_ESLINT_TARGETS).toContain('electron/**/*.ts');
         expect(FULL_ESLINT_TARGETS).toContain('scripts/lint/sourdaw.mjs');
+    });
+});
+
+describe('public plugin pass coverage', () => {
+    it('hands a full run directories, because a shell-less spawn leaves globs unexpanded', () => {
+        const targets = publicPluginTargets({ files: [], full: true });
+
+        expect(targets.filter((target) => /[*?{}[\]]/.test(target))).toEqual([]);
+        expect(targets).toEqual(expect.arrayContaining(['src', 'scripts', 'electron', 'scripts/lint/sourdaw.mjs']));
+        expect(buildPublicPluginsArgv(targets).filter((argument) => argument.includes('*'))).toEqual([]);
+    });
+
+    it('lints the named files in a focused run', () => {
+        expect(publicPluginTargets({ files: ['src/a.ts', 'scripts/b.ts'], full: false })).toEqual([
+            'src/a.ts',
+            'scripts/b.ts',
+        ]);
+    });
+
+    it('reads the linted file count from the oxlint summary', () => {
+        const summary =
+            'Found 0 warnings and 0 errors.\nFinished in 1.2s on 12481 files with 102 rules using 12 threads.';
+
+        expect(parseLintedFileCount(summary)).toBe(12_481);
+        expect(parseLintedFileCount('Finished in 12ms on 1 file with 102 rules using 2 threads.')).toBe(1);
+        expect(parseLintedFileCount('no summary here')).toBeUndefined();
+    });
+
+    it('fails a pass that linted far fewer files than its targets track', () => {
+        expect(() => assertPluginCoverage(1, 12_494)).toThrow(/linted 1 files but 12494 source files/);
+    });
+
+    it('fails a pass that reported no count', () => {
+        expect(() => assertPluginCoverage(undefined, 12_494)).toThrow(/no linted file count/);
+    });
+
+    it('passes a count within the ignored-file allowance of the tracked files', () => {
+        expect(() => assertPluginCoverage(12_481, 12_494)).not.toThrow();
     });
 });
 

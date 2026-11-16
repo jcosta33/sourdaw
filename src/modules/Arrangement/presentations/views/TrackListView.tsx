@@ -361,7 +361,14 @@ export const TrackListView = ({
                 className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
             >
-                <div role="grid" aria-label="Track list" onKeyDown={handleKeyDown} onClick={handleRowClick}>
+                {/* Programmatically focusable only: the selected row carries the roving Tab stop. */}
+                <div
+                    role="grid"
+                    tabIndex={-1}
+                    aria-label="Track list"
+                    onKeyDown={handleKeyDown}
+                    onClick={handleRowClick}
+                >
                     {visibleTracks.map((track, index) => {
                         return (
                             <div

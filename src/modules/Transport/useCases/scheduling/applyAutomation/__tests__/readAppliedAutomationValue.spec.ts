@@ -4,10 +4,10 @@ import { readLastObservationSequence } from '#/infra/ordering/observationSequenc
 
 import {
     appliedAutomationBases,
-    recordAppliedAutomationWrite,
     appliedAutomationWriteSequences,
     clearAppliedAutomationBases,
 } from '../appliedAutomationBases';
+import { recordAppliedAutomationWrite } from '../recordAppliedAutomationWrite';
 import { readAppliedAutomationValue } from '../readAppliedAutomationValue';
 
 describe('readAppliedAutomationValue', () => {

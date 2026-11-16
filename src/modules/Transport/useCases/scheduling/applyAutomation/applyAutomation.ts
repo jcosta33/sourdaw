@@ -39,13 +39,10 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '../../../stores/transportStor
 import { beatAtSecondsFromAnchor } from '../../playheadScheduler/beatAtSecondsFromAnchor';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
-import {
-    appliedAutomationBases,
-    clearAppliedAutomationBases,
-    recordAppliedAutomationWrite,
-} from './appliedAutomationBases';
+import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
 import { clearDeviceReadBeatByTrack, deviceReadBeatByTrack } from './deviceReadBeatByTrack';
 import { deviceRuntimeParameterWriters } from './deviceRuntimeParameterWriters';
+import { recordAppliedAutomationWrite } from './recordAppliedAutomationWrite';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 import { scheduleComposedTrackGainAutomation } from './scheduleComposedTrackGainAutomation';
 
