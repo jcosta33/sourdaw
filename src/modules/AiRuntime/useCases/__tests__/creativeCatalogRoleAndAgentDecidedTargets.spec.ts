@@ -8,7 +8,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
 import { type CreativeInterpretationCatalog, type CreativeTargetCandidate } from '../../models/CreativeInterpretation';
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
 import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
 import { resolveWorkflowTrackIds } from '../agentReference/resolveWorkflowTrackIds';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
@@ -43,6 +43,42 @@ function fixtureContext(): ProjectContext {
 
 function prepare(prompt: string, context: ProjectContext = fixtureContext()): CreativeInterpretationCatalog {
     return prepareCreativeInterpretationCatalog({ prompt, context, projectRevision: REVISION });
+}
+
+/** The fixture under a brief holding one locked decision on `trackId`. */
+function withLockedDecision(context: ProjectContext, trackId: string): ProjectContext {
+    const productionBrief: ProjectContextProductionBrief = {
+        schemaVersion: 1,
+        id: 'brief-creative-targets',
+        revision: 1,
+        vision: null,
+        references: [],
+        hardConstraints: [],
+        preferences: [],
+        sectionGoals: [],
+        trackRoles: [],
+        locks: [],
+        decisions: [
+            {
+                id: 'decision-keep',
+                scope: { kind: 'track', trackId },
+                statement: 'Keep it as it is',
+                rationale: null,
+                status: 'locked',
+                sourceRunId: null,
+                relatedBatchId: null,
+                supersededByDecisionId: null,
+                createdAt: 0,
+            },
+        ],
+        unresolvedQuestions: [],
+        sourceRunLinks: [],
+        supersedesBriefId: null,
+        supersededByBriefId: null,
+        createdAt: 0,
+        updatedAt: 0,
+    };
+    return { ...context, productionBrief };
 }
 
 function slotParents(catalog: CreativeInterpretationCatalog, objectType: 'device' | 'clip' | 'notes'): string[] {
@@ -108,8 +144,9 @@ function admitEdit(input: {
     trackId: string;
     kind: MetricKind | null;
     catalog?: CreativeInterpretationCatalog;
+    context?: ProjectContext;
 }) {
-    const context = fixtureContext();
+    const context = input.context ?? fixtureContext();
     const creative = input.catalog ?? prepare(input.prompt, context);
     const answer = prepareAnswerInterpretationCatalog({ prompt: input.prompt, context, projectRevision: REVISION });
     const metric = prepareMetricIntentCatalog({ prompt: input.prompt, answer });
@@ -168,6 +205,46 @@ describe('creative catalog role-family targets', () => {
         expect(targetIds(prepare('the bass is too muddy in the chorus'))).toEqual([['track-bass-di']]);
     });
 
+    it('leaves a track the brief protects out of its role family, and keeps the rest of the family', () => {
+        const context = withLockedDecision(fixtureContext(), 'track-kick');
+        const catalog = prepare('tighten up the drums', context);
+
+        expect(provenances(catalog)).toEqual(['role-reference']);
+        expect(targetIds(catalog)).toEqual([['track-snare'], ['track-hi-hat'], ['track-overheads']]);
+    });
+
+    it('still publishes a brief-protected track the request names, so the brief refuses the edit itself', () => {
+        const catalog = prepare('make the kick punchier', withLockedDecision(fixtureContext(), 'track-kick'));
+
+        expect(provenances(catalog)).toEqual(['explicit-reference']);
+        expect(targetIds(catalog)).toEqual([['track-kick']]);
+    });
+
+    it.each(['add a delay bus', 'add a new bass track'])(
+        'publishes no role or agent-decided target for "%s", whose family word names the object it creates',
+        (prompt) => {
+            const catalog = prepare(prompt);
+
+            expect(catalog.targets).toEqual([]);
+            expect(catalog.modes).not.toContain('edit');
+        }
+    );
+
+    it.each(['add a delay bus', 'add a new bass track'])('keeps the selection as the edit target of "%s"', (prompt) => {
+        const context = { ...fixtureContext(), selectedTrackId: 'track-keys' };
+        const catalog = prepare(prompt, context);
+
+        expect(provenances(catalog)).toEqual(['contextual-selection']);
+        expect(targetIds(catalog)).toEqual([['track-keys']]);
+        const admission = admitEdit({ prompt, trackId: 'track-keys', kind: null, catalog, context });
+        if (admission.status !== 'admitted' || admission.kind !== 'creative' || !('authority' in admission)) {
+            throw new Error(`Expected the selected edit admitted: ${JSON.stringify(admission)}`);
+        }
+        expect(admission.authority.targets).toEqual([
+            expect.objectContaining({ provenance: 'contextual-selection', objectIds: ['track-keys'] }),
+        ]);
+    });
+
     it('reads a role family inside a protection clause as kept out, never as a target', () => {
         const context = fixtureContext();
         const catalog = prepare('make it punchier but leave the drums alone', context);
@@ -206,17 +283,30 @@ describe('creative catalog agent-decided targets', () => {
     });
 
     it('leaves out frozen, folder and protected tracks', () => {
-        const base = fixtureContext();
+        const base = withLockedDecision(fixtureContext(), 'track-lead-vocal');
         const context: ProjectContext = {
             ...base,
-            tracks: base.tracks.map((track) => (track.id === 'track-guitar' ? { ...track, frozen: true } : track)),
+            tracks: base.tracks.map((track) => {
+                if (track.id === 'track-guitar') {
+                    return { ...track, frozen: true };
+                }
+                return track.id === 'track-backing-vocal-left' ? { ...track, kind: 'folder' } : track;
+            }),
         };
         const catalog = prepare('polish the low end, leave Keys alone', context);
         const offered = catalog.targets.flatMap((target) => target.objectIds);
 
         expect(offered).toContain('track-bass-di');
+        expect(offered).toContain('track-backing-vocal-right');
         expect(offered).not.toContain('track-guitar');
+        expect(offered).not.toContain('track-backing-vocal-left');
+        expect(offered).not.toContain('track-lead-vocal');
         expect(offered).not.toContain('track-keys');
+        // Candidate ids number the offered tracks in order. A protected track dropped only after
+        // numbering, by the shared protected-target filter, would leave a gap here.
+        expect(catalog.targets.map((target) => target.candidateId)).toEqual(
+            catalog.targets.map((_, index) => `target-${String(index + 1)}`)
+        );
     });
 
     it.each([{ kind: 'literal' as const }, { kind: 'non-acoustic' as const }, { kind: null }])(
@@ -225,6 +315,16 @@ describe('creative catalog agent-decided targets', () => {
             const admission = admitEdit({ prompt: 'polish the low end', trackId: 'track-bass-di', kind });
 
             expect(admission).toEqual({ status: 'rejected', reason: expect.stringMatching(/agent-decided/u) });
+        }
+    );
+
+    it.each(['make this track brighter', 'brighten the selected track'])(
+        'publishes no target for "%s" when nothing is selected',
+        (prompt) => {
+            const catalog = prepare(prompt);
+
+            expect(catalog.targets).toEqual([]);
+            expect(catalog.modes).not.toContain('edit');
         }
     );
 
@@ -260,36 +360,68 @@ describe('creative catalog agent-decided targets', () => {
     });
 });
 
+describe('creative target rank', () => {
+    it('refuses a selected target the catalog published beside a role reference', () => {
+        const prompt = 'tighten up the drums';
+        const context = { ...fixtureContext(), selectedTrackId: 'track-keys' };
+        const roleCatalog = prepare(prompt, context);
+        expect(provenances(roleCatalog)).toEqual(['role-reference']);
+        const catalog: CreativeInterpretationCatalog = {
+            ...roleCatalog,
+            targets: [
+                ...roleCatalog.targets,
+                {
+                    candidateId: 'target-selected',
+                    provenance: 'contextual-selection',
+                    objectType: 'track',
+                    objectIds: ['track-keys'],
+                    parentTrackId: null,
+                    label: 'Keys',
+                },
+            ],
+        };
+
+        const admission = admitEdit({ prompt, trackId: 'track-keys', kind: 'literal', catalog, context });
+        expect(admission).toEqual({ status: 'rejected', reason: expect.stringMatching(/outrank/u) });
+    });
+});
+
+type StoredKind = 'literal' | 'non-acoustic' | 'perceptual' | 'comparative';
+
+/** A stored metric goal state whose one authority is an admitted perceptual edit of Bass DI, re-tagged. */
+function storedAuthority(): (provenance: string, kind?: StoredKind) => string {
+    const admission = admitEdit({ prompt: 'polish the low end', trackId: 'track-bass-di', kind: 'perceptual' });
+    if (admission.status !== 'admitted' || !('metricAuthority' in admission)) {
+        throw new Error('Expected admitted metric authority.');
+    }
+    const { metricAuthority } = admission;
+    const { creativeAuthority } = metricAuthority;
+    if (creativeAuthority === null) {
+        throw new Error('Expected the metric authority to carry creative authority.');
+    }
+    return (provenance, kind = metricAuthority.kind) =>
+        JSON.stringify({
+            schemaVersion: 1,
+            authorities: [
+                {
+                    ...metricAuthority,
+                    kind,
+                    goals: kind === 'literal' || kind === 'non-acoustic' ? [] : metricAuthority.goals,
+                    creativeAuthority: {
+                        ...creativeAuthority,
+                        targets: creativeAuthority.targets.map((target) => ({ ...target, provenance })),
+                    },
+                },
+            ],
+            steps: [],
+            proofs: [],
+            binding: null,
+        });
+}
+
 describe('persisted creative authority provenance', () => {
     it('decodes every provenance a stored authority may carry and refuses an unknown one', () => {
-        const admission = admitEdit({ prompt: 'polish the low end', trackId: 'track-bass-di', kind: 'perceptual' });
-        if (admission.status !== 'admitted' || !('metricAuthority' in admission)) {
-            throw new Error('Expected admitted metric authority.');
-        }
-        const { metricAuthority } = admission;
-        const { creativeAuthority } = metricAuthority;
-        if (creativeAuthority === null) {
-            throw new Error('Expected the metric authority to carry creative authority.');
-        }
-        const stored = (provenance: string) =>
-            JSON.stringify({
-                schemaVersion: 1,
-                authorities: [
-                    {
-                        ...metricAuthority,
-                        creativeAuthority: {
-                            ...creativeAuthority,
-                            targets: creativeAuthority.targets.map((target) => ({
-                                ...target,
-                                provenance,
-                            })),
-                        },
-                    },
-                ],
-                steps: [],
-                proofs: [],
-                binding: null,
-            });
+        const stored = storedAuthority();
 
         for (const provenance of [
             'explicit-reference',
@@ -304,4 +436,14 @@ describe('persisted creative authority provenance', () => {
         }
         expect(metricGoalStateCodec(stored('invented'))).toBeNull();
     });
+
+    it.each([{ kind: 'literal' as const }, { kind: 'non-acoustic' as const }])(
+        'refuses a stored agent-decided target under $kind metric intent',
+        ({ kind }) => {
+            const stored = storedAuthority();
+
+            expect(metricGoalStateCodec(stored('role-reference', kind))?.authorities[0]?.kind).toBe(kind);
+            expect(metricGoalStateCodec(stored('agent-decided', kind))).toBeNull();
+        }
+    );
 });

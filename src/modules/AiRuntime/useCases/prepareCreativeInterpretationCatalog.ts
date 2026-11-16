@@ -14,8 +14,10 @@ import {
 } from '../models/CreativeInterpretation';
 import { type ProjectContext, type ProjectContextClip } from '../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES, type SemanticCommandListRoleFamily } from '../models/SemanticCommandList';
+import { findIntroducedObjectRanges } from '../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
+import { CREATED_OBJECT_NOUNS } from './agentReference/batchLocalBindingProducers';
 import { findNamedRoleFamilies } from './agentReference/findNamedRoleFamilies';
 import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
 import { getExplicitClipProtection } from './agentReference/getExplicitlyProtectedClips';
@@ -167,21 +169,46 @@ function collectExplicitTargets(prompt: string, context: ProjectContext): Creati
     return targets;
 }
 
+type RoleFamilyReading = {
+    /** Families the request asks to change ("tighten up the drums"). */
+    named: SemanticCommandListRoleFamily[];
+    /**
+     * The request points at its object without naming a family to edit: the selection ("this bass
+     * track") or an object it creates ("add a delay bus"). Either way the agent decides no target.
+     */
+    pointsAtObject: boolean;
+};
+
+const CREATED_OBJECT_NOUN = new RegExp(
+    Object.values(CREATED_OBJECT_NOUNS)
+        .map((noun) => noun.source)
+        .join('|'),
+    'u'
+);
+
 /**
- * The role families the request asks to change ("tighten up the drums"), with quotations, track names
- * and protection clauses blanked so a quoted "bass", the track "Drum Bus" or a family a protection
- * keeps ("leave the drums alone") names no target. A request pointing at the selection ("this bass
+ * The role families the request's own words name, with quotations and track names blanked so a
+ * quoted "bass" or the track "Drum Bus" names no family. Protection clauses are blanked too, so a
+ * family one keeps ("leave the drums alone") names no target; the shared protection reader protects
+ * that family's tracks. A family inside an object the request creates ("add a new bass track") names
+ * that new object rather than the family's tracks. A request pointing at the selection ("this bass
  * track") names none.
  */
-function readNamedRoleFamilies(positivePrompt: string, context: ProjectContext): SemanticCommandListRoleFamily[] {
+function readNamedRoleFamilies(positivePrompt: string, context: ProjectContext): RoleFamilyReading {
     if (hasExplicitTrackSelection(positivePrompt)) {
-        return [];
+        return { named: [], pointsAtObject: true };
     }
     const slotRanges = protectionSlots
         .read(scanPromptQuotedText(positivePrompt).maskedText)
         .map((slot) => slot.completeRange ?? { start: slot.start, end: slot.end });
-    const outsideProtections = maskRanges(maskTrackReferences(positivePrompt, context, ' '), slotRanges);
-    return findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES);
+    const unnamed = maskTrackReferences(positivePrompt, context, ' ');
+    const createdObjects = findIntroducedObjectRanges(unnamed, CREATED_OBJECT_NOUN);
+    const uncreated = maskRanges(unnamed, createdObjects);
+    const outsideProtections = maskRanges(uncreated, slotRanges);
+    return {
+        named: findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES),
+        pointsAtObject: createdObjects.length > 0,
+    };
 }
 
 function resolveRoleFamilyTrackIds(context: ProjectContext, family: SemanticCommandListRoleFamily): string[] {
@@ -191,16 +218,19 @@ function resolveRoleFamilyTrackIds(context: ProjectContext, family: SemanticComm
 /**
  * One target per track of each role family the request names ("tighten up the drums"), resolved by
  * the shared selector resolver the structured command list uses, so a family means the same tracks
- * here as in a `roleFamily` predicate. Each track is its own candidate because a creation slot names
+ * here as in a `roleFamily` predicate. A track the brief protects is left out of its family, as a
+ * whole-project vibe run leaves it out; a request naming that track still reaches it and meets the
+ * brief's own refusal. Each track is its own candidate because a creation slot names
  * one parent object: a family candidate holding several tracks could carry a device to its first only.
  */
 function collectRoleTargets(
     families: readonly SemanticCommandListRoleFamily[],
     context: ProjectContext
 ): CreativeTargetCandidate[] {
+    const briefProtectedIds = readBriefProtectedTrackIds(context);
     const targets: CreativeTargetCandidate[] = [];
     for (const family of families) {
-        for (const trackId of resolveRoleFamilyTrackIds(context, family)) {
+        for (const trackId of resolveRoleFamilyTrackIds(context, family).filter((id) => !briefProtectedIds.has(id))) {
             targets.push({
                 candidateId: `target-${String(targets.length + 1)}`,
                 provenance: 'role-reference',
@@ -240,8 +270,8 @@ function collectAgentDecidedTargets(
 
 /**
  * The targets a request reaches, strongest reference first: named objects alone, else the tracks of
- * the role families it names, else the selection, else, when it names no family at all, every
- * plannable source the request and the brief do not protect.
+ * the role families it names, else the selection, else, when it names no family and points at no
+ * object of its own, every plannable source the request and the brief do not protect.
  */
 function collectRequestTargets(
     positivePrompt: string,
@@ -253,12 +283,12 @@ function collectRequestTargets(
         return explicitTargets;
     }
     const families = readNamedRoleFamilies(positivePrompt, context);
-    const roleTargets = collectRoleTargets(families, context);
+    const roleTargets = collectRoleTargets(families.named, context);
     if (roleTargets.length > 0) {
         return roleTargets;
     }
     const contextualTargets = collectContextualTargets(context, protectedIds);
-    if (contextualTargets.length > 0 || families.length > 0) {
+    if (contextualTargets.length > 0 || families.named.length > 0 || families.pointsAtObject) {
         return contextualTargets;
     }
     return collectAgentDecidedTargets(context, protectedIds);
