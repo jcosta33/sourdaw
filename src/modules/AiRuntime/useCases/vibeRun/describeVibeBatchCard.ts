@@ -10,6 +10,7 @@ import { describeRecipeValueSource } from './describeRecipeValueSource';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
 import { readVibeTargetName } from './readVibeTargetName';
+import { withVibeUnit } from './withVibeUnit';
 
 type Criterion = MetricGoalEvaluation['criteria'][number];
 
@@ -21,11 +22,7 @@ const DIRECTION_WORDS: Readonly<Record<VibeRunExpectedDelta['direction'], string
 
 /** A hold's versioned tolerance in its metric's unit, which a card line states because the figures alone cannot show it. */
 function describeTolerance(criterion: Criterion): string {
-    const { unit } = criterion;
-    if (unit === null || unit === 'ratio' || unit === 'count' || unit === 'correlation') {
-        return String(criterion.tolerance);
-    }
-    return `${String(criterion.tolerance)} ${unit === 'hertz' ? 'Hz' : unit}`;
+    return withVibeUnit(String(criterion.tolerance), criterion.unit);
 }
 
 const REQUIRED_MOVEMENT_WORDS: Readonly<Record<Criterion['relation'], string>> = {

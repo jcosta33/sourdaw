@@ -40,8 +40,9 @@ export function describePerceptualConstraintFailure(
             to: observed,
             relation: criterion.relation,
             tolerance: criterion.tolerance,
-            rounding: 'significant',
+            rounding: 'decimals',
             start: 3,
+            movement: 'printed',
         });
         return `The preview breaks “${clause}”: ${subject} ${moved} from ${String(from)} to ${String(to)} ${unit}, a movement of ${String(movement)} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
     }

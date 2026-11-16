@@ -53,15 +53,20 @@ export function readVerdictFigures(input: {
     tolerance: number;
     rounding: FigureRounding;
     start: number;
+    /** Whether the movement is the rounded real one or the difference of the printed endpoints, which a reader can check by subtracting. */
+    movement?: 'real' | 'printed';
 }): VerdictFigures {
     const { from, to, relation, tolerance, rounding, start } = input;
+    const printedMovement = input.movement === 'printed';
     const real = meetsRelation(relation, tolerance, from, to);
     const stated = real === false && isToleranceRelation(relation);
     function exact(digits: number): VerdictFigures {
+        const printedFrom = rounded(from, digits, rounding);
+        const printedTo = rounded(to, digits, rounding);
         return {
-            from: rounded(from, digits, rounding),
-            to: rounded(to, digits, rounding),
-            movement: rounded(Math.abs(to - from), digits, rounding),
+            from: printedFrom,
+            to: printedTo,
+            movement: rounded(Math.abs(printedMovement ? printedTo - printedFrom : to - from), digits, rounding),
             broken: stated,
         };
     }

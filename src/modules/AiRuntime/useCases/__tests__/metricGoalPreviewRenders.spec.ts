@@ -331,7 +331,7 @@ describe('a metric-goal preview of a card of recipe steps over eight tracks', { 
 });
 
 const DYNAMIC_RANGE_REFUSAL =
-    'The preview breaks “keep the vocal intimate”: estimated dynamic range on “Vocal” moved from 5.66 to 4.1 dB, a movement of 1.56 dB, beyond its 1 dB tolerance.';
+    'The preview breaks “keep the vocal intimate”: estimated dynamic range on “Vocal” moved from 5.662 to 4.104 dB, a movement of 1.558 dB, beyond its 1 dB tolerance.';
 
 function expectedVerdict(trackIds: readonly string[], vocalCutDb: number) {
     const passes = vocalCutDb === -1;
