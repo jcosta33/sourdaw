@@ -1644,6 +1644,54 @@ const EXPECTED_COMMANDS = [
         'bounded-reversible',
         false
     ),
+    expectedCommand(
+        'hideTrack',
+        'Hide a track from the arrangement, or show it again. Playback is unchanged.',
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            hidden: { type: 'boolean', description: 'true=hide, false=show' },
+        },
+        ['trackId', 'hidden'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'foldTrack',
+        "Fold a folder track to hide its children's rows, or unfold it.",
+        {
+            trackId: { type: 'string', description: 'Existing folder track ID' },
+            folded: { type: 'boolean', description: 'true=fold, false=unfold' },
+        },
+        ['trackId', 'folded'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setTrackHeight',
+        "Set a track's row height in pixels, from 30 to 300.",
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            height: { type: 'number', minimum: 30, maximum: 300, description: 'Row height in pixels, 30 to 300' },
+        },
+        ['trackId', 'height'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'zoomTracksVertical',
+        'Make every track row taller or shorter by one pixel delta, keeping each between 30 and 300.',
+        {
+            delta: {
+                type: 'number',
+                minimum: -270,
+                maximum: 270,
+                description: 'Signed pixels added to every row: positive = taller, negative = shorter. Never zero',
+            },
+        },
+        ['delta'],
+        'broad-reversible',
+        true
+    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -3015,6 +3063,53 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['reorder yeast processor', 'move midi effect'],
         targetRules: [],
         valueRules: [],
+    },
+    {
+        actionType: 'hideTrack',
+        intentPhrases: ['hide track', 'hide the track', 'show track', 'show the track', 'unhide track'],
+        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'hidden',
+                kind: 'boolean-intent',
+                truePhrases: ['hide track', 'hide the track'],
+                falsePhrases: ['show track', 'show the track', 'unhide track'],
+            },
+        ],
+    },
+    {
+        actionType: 'foldTrack',
+        intentPhrases: [
+            'fold folder',
+            'fold the folder',
+            'collapse folder',
+            'collapse the folder',
+            'unfold folder',
+            'unfold the folder',
+            'expand folder',
+            'expand the folder',
+        ],
+        targetRules: [{ argument: 'trackId', capability: 'folder-track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'folded',
+                kind: 'boolean-intent',
+                truePhrases: ['fold folder', 'fold the folder', 'collapse folder', 'collapse the folder'],
+                falsePhrases: ['unfold folder', 'unfold the folder', 'expand folder', 'expand the folder'],
+            },
+        ],
+    },
+    {
+        actionType: 'setTrackHeight',
+        intentPhrases: ['track height', 'row height', 'resize track'],
+        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+        valueRules: [{ argument: 'height', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'zoomTracksVertical',
+        intentPhrases: ['zoom tracks vertically', 'zoom tracks vertical'],
+        targetRules: [],
+        valueRules: [{ argument: 'delta', kind: 'number-if-present', requiredInPrompt: true }],
     },
 ] as const;
 

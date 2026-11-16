@@ -2230,6 +2230,257 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    describe('track display edit replay', () => {
+        const FOLDER_ID = 'track-folder';
+        const SHORT_ID = 'track-short';
+
+        function trackNamed(id: string) {
+            const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
+            if (track === undefined) {
+                throw new Error(`Expected track ${id}`);
+            }
+            return track;
+        }
+
+        function heights(): Record<string, number> {
+            return Object.fromEntries((trackStore.value?.tracks ?? []).map((track) => [track.id, track.height]));
+        }
+
+        function seedDisplayTracks(): void {
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({ id: TRACK_ID, kind: 'midi', height: 80 }),
+                    TrackDummy.create({ id: FOLDER_ID, kind: 'folder', height: 290 }),
+                    TrackDummy.create({ id: SHORT_ID, kind: 'audio', height: 31, frozen: true }),
+                ],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+        }
+
+        /** What an agent batch runs: preflight validation of the whole batch and guarded compensation. */
+        function runAsAgent(actions: ExecutableCommandAction[]) {
+            for (const action of actions) {
+                getExecutableCommandRegistrations()
+                    .find((candidate) => candidate.actionType === action.type)
+                    ?.materializeCommandArguments?.(action);
+            }
+            return executeAppActionBatch(actions, { groupId: 'agent-display', requireCompensation: true });
+        }
+
+        beforeEach(seedDisplayTracks);
+
+        it.each([
+            [
+                'hideTrack',
+                { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } },
+                () => trackNamed(TRACK_ID).hidden,
+                true,
+            ],
+            [
+                'foldTrack',
+                { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
+                () => trackNamed(FOLDER_ID).collapsed,
+                true,
+            ],
+            [
+                'setTrackHeight',
+                { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } },
+                () => trackNamed(TRACK_ID).height,
+                120,
+            ],
+        ] as const)(
+            '%s is one undo step whose undo and redo survive a page reload',
+            async (_name, action, read, written) => {
+                const original = read();
+
+                expect(await runAsAgent([structuredClone(action)])).toMatchObject({ status: 'committed' });
+                expect(read()).toBe(written);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+                );
+
+                reloadSavedProject();
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect((await undo()).headConsumed).toBe(true);
+                expect(read()).toBe(original);
+
+                reloadSavedProject();
+                await redo();
+                expect(read()).toBe(written);
+            }
+        );
+
+        it('restores the exact prior heights of a zoom that clamped some tracks, across reloads', async () => {
+            expect(await runAsAgent([{ type: 'zoomTracksVertical', payload: { delta: 20 } }])).toMatchObject({
+                status: 'committed',
+            });
+            expect(heights()).toEqual({ [TRACK_ID]: 100, [FOLDER_ID]: 300, [SHORT_ID]: 51 });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect((await undo()).headConsumed).toBe(true);
+            // The folder row sat 10 px under the bound, so an opposite zoom would leave it at 280.
+            expect(heights()).toEqual({ [TRACK_ID]: 80, [FOLDER_ID]: 290, [SHORT_ID]: 31 });
+
+            reloadSavedProject();
+            await redo();
+            expect(heights()).toEqual({ [TRACK_ID]: 100, [FOLDER_ID]: 300, [SHORT_ID]: 51 });
+        });
+
+        it('refuses to undo a zoom whose rows a later edit resized, keeping that edit', async () => {
+            expect(await runAsAgent([{ type: 'zoomTracksVertical', payload: { delta: -20 } }])).toMatchObject({
+                status: 'committed',
+            });
+            // A collaborator resizes a row; that edit is not on this session's undo stack.
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === TRACK_ID ? { ...track, height: 200 } : track
+                ),
+            });
+            flushAutomergeStorageWrites();
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(false);
+            expect(trackNamed(TRACK_ID).height).toBe(200);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+
+        it.each([
+            [
+                'two heights for one track',
+                [
+                    { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } },
+                    { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 200 } },
+                ] as const,
+                () => trackNamed(TRACK_ID).height,
+                200,
+            ],
+            [
+                'a hide then a show of one track',
+                [
+                    { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } },
+                    { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: false } },
+                ] as const,
+                () => trackNamed(TRACK_ID).hidden,
+                false,
+            ],
+            [
+                'a fold then an unfold of one folder',
+                [
+                    { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
+                    { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: false } },
+                ] as const,
+                () => trackNamed(FOLDER_ID).collapsed,
+                false,
+            ],
+            [
+                'a zoom then a height for a zoomed track',
+                [
+                    { type: 'zoomTracksVertical', payload: { delta: 20 } },
+                    { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 150 } },
+                ] as const,
+                () => heights(),
+                { [TRACK_ID]: 150, [FOLDER_ID]: 300, [SHORT_ID]: 51 },
+            ],
+            [
+                'a height then a zoom of the resized track',
+                [
+                    { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 150 } },
+                    { type: 'zoomTracksVertical', payload: { delta: 20 } },
+                ] as const,
+                () => heights(),
+                { [TRACK_ID]: 170, [FOLDER_ID]: 300, [SHORT_ID]: 51 },
+            ],
+            [
+                'two zooms',
+                [
+                    { type: 'zoomTracksVertical', payload: { delta: 20 } },
+                    { type: 'zoomTracksVertical', payload: { delta: -50 } },
+                ] as const,
+                () => heights(),
+                { [TRACK_ID]: 50, [FOLDER_ID]: 250, [SHORT_ID]: 30 },
+            ],
+        ])('undoes %s as one group back to the pre-batch state', async (_name, actions, read, written) => {
+            const original = structuredClone(read());
+
+            expect(await runAsAgent(actions.map((action) => structuredClone(action)))).toMatchObject({
+                status: 'committed',
+            });
+            expect(read()).toEqual(written);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(read()).toEqual(original);
+            expect(undoStore.value?.past ?? []).toEqual([]);
+
+            await redo();
+            expect(read()).toEqual(written);
+        });
+
+        it.each([
+            [
+                'a track that does not exist',
+                { type: 'hideTrack', payload: { trackId: 'ghost-track', hidden: true } },
+                'Track "ghost-track" does not exist',
+            ],
+            [
+                'a fold of a track that does not exist',
+                { type: 'foldTrack', payload: { trackId: 'ghost-track', folded: true } },
+                'Track "ghost-track" does not exist',
+            ],
+            [
+                'a fold of a track that is not a folder',
+                { type: 'foldTrack', payload: { trackId: TRACK_ID, folded: true } },
+                `Track "${TRACK_ID}" is not a folder, so it has nothing to fold`,
+            ],
+            [
+                'a height above the range',
+                { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 500 } },
+                'Track height 500 is outside 30 to 300',
+            ],
+            [
+                'a height below the range',
+                { type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 10 } },
+                'Track height 10 is outside 30 to 300',
+            ],
+            [
+                'a height for a track that does not exist',
+                { type: 'setTrackHeight', payload: { trackId: 'ghost-track', height: 100 } },
+                'Track "ghost-track" does not exist',
+            ],
+            [
+                'a zoom by zero',
+                { type: 'zoomTracksVertical', payload: { delta: 0 } },
+                'A vertical zoom of 0 pixels moves no track',
+            ],
+        ] as const)('refuses %s with its reason and writes nothing', async (_name, action, reason) => {
+            const before = ownerProjections();
+
+            const result = await runAsAgent([structuredClone(action)]);
+
+            expect(result).toMatchObject({ status: 'conflicted', reason: expect.stringContaining(reason) });
+            expect(ownerProjections()).toEqual(before);
+            expect(undoStore.value?.past ?? []).toEqual([]);
+        });
+
+        it('edits the display state of a frozen track, as a color edit does', async () => {
+            expect(trackNamed(SHORT_ID).frozen).toBe(true);
+
+            const result = await runAsAgent([
+                { type: 'hideTrack', payload: { trackId: SHORT_ID, hidden: true } },
+                { type: 'setTrackHeight', payload: { trackId: SHORT_ID, height: 100 } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(trackNamed(SHORT_ID)).toMatchObject({ hidden: true, height: 100, frozen: true });
+        });
+    });
+
     describe('audio start trim captured source replay', () => {
         afterEach(() => tempoMapStore.set({ changes: [] }));
 

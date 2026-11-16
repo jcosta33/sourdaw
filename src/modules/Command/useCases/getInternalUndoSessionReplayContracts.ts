@@ -88,5 +88,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('deleteGrooveTemplate'),
         // The guarded inverse of applyGroove; the application's own entry validator binds it.
         createInternalReplayContract('restoreGrooveAssignment'),
+        // The guarded inverse of zoomTracksVertical; the zoom's own entry validator binds it.
+        createInternalReplayContract('restoreTrackHeights'),
     ];
 }

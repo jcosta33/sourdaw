@@ -4,7 +4,7 @@ import { handleFoldTrack } from '../foldTrack';
 
 const mocks = vi.hoisted(() => ({
     foldTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; collapsed: boolean }[] } | null>(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; kind?: string; collapsed: boolean }[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/toggleTrackState/foldTrack', () => ({
@@ -54,7 +54,11 @@ describe('handleFoldTrack', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'foldTrack',
-            payload: { trackId: 't1', folded: false },
+            payload: { trackId: 't1', folded: false, expectedFolded: true },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'foldTrack',
+            payload: { trackId: 't1', folded: true, expectedFolded: false },
         });
     });
 
@@ -70,11 +74,63 @@ describe('handleFoldTrack', () => {
         // would wrongly unfold it. The inverse restores the captured pre-state.
         expect(desc.inverseAction).toEqual({
             type: 'foldTrack',
-            payload: { trackId: 't1', folded: true },
+            payload: { trackId: 't1', folded: true, expectedFolded: true },
         });
     });
 
     it('is undoable', () => {
         expect(handleFoldTrack.undoable).toBe(true);
+    });
+
+    describe('guarded replay', () => {
+        const forward = (expectedFolded?: boolean) =>
+            ({ type: 'foldTrack', payload: { trackId: 't1', folded: true, expectedFolded } }) as const;
+        const context = (action: ReturnType<typeof forward>) => ({ actions: [action], actionIndex: 0 });
+
+        it('refuses a track the project does not hold, naming it', () => {
+            const action = forward();
+
+            expect(handleFoldTrack.validate?.(action, context(action))).toBe(false);
+            expect(handleFoldTrack.validationRefusalReason?.(action, context(action))).toBe(
+                'Track "t1" does not exist'
+            );
+        });
+
+        it('refuses a track that is not a folder, naming it', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', collapsed: false }] });
+            const action = forward();
+
+            expect(handleFoldTrack.validate?.(action, context(action))).toBe(false);
+            expect(handleFoldTrack.validationRefusalReason?.(action, context(action))).toBe(
+                'Track "t1" is not a folder, so it has nothing to fold'
+            );
+        });
+
+        it('validates a restore only against the state it expects', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'folder', collapsed: true }] });
+
+            expect(handleFoldTrack.validate?.(forward(true), context(forward(true)))).toBe(true);
+            expect(handleFoldTrack.validate?.(forward(false), context(forward(false)))).toBe(false);
+        });
+
+        it('conflicts without writing when the live state is not the one expected', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'folder', collapsed: true }] });
+
+            expect(handleFoldTrack.execute(forward(false))).toEqual({ status: 'conflict' });
+            expect(mocks.foldTrack).not.toHaveBeenCalled();
+        });
+
+        it('can be replayed after divergence only when it states what it expects', () => {
+            expect(handleFoldTrack.canReapplyAfterDivergence?.(forward(false))).toBe(true);
+            expect(handleFoldTrack.canReapplyAfterDivergence?.(forward())).toBe(false);
+        });
+
+        it('is a no-op only when the state is already the requested one and the expected one', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'folder', collapsed: true }] });
+
+            expect(handleFoldTrack.isNoop?.(forward())).toBe(true);
+            expect(handleFoldTrack.isNoop?.(forward(true))).toBe(true);
+            expect(handleFoldTrack.isNoop?.(forward(false))).toBe(false);
+        });
     });
 });

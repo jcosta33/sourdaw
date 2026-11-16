@@ -4,6 +4,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 
 export type AgentReferenceCapability =
     | 'track'
+    | 'folder-track'
     | 'armable-track'
     | 'duplicable-track'
     | 'removable-track'
@@ -39,6 +40,9 @@ export function isAgentReferenceCapabilityCandidate(input: {
     if (track) {
         if (input.capability === 'track' || input.capability === 'removable-track') {
             return input.capability !== 'removable-track' || track.kind !== 'master';
+        }
+        if (input.capability === 'folder-track') {
+            return track.kind === 'folder';
         }
         if (input.capability === 'armable-track' || input.capability === 'device-host-track') {
             return track.kind !== 'vca';

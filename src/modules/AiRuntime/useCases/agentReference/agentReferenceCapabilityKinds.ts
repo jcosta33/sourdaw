@@ -10,6 +10,7 @@ export type AgentReferenceCapabilityKind = 'track' | 'clip' | 'other';
 
 const TRACK_REFERENCE_CAPABILITIES: readonly AgentReferenceCapability[] = [
     'track',
+    'folder-track',
     'armable-track',
     'duplicable-track',
     'removable-track',
