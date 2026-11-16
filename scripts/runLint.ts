@@ -169,7 +169,7 @@ const PUBLIC_PLUGIN_SOURCE = 'scripts/lint/sourdaw.mjs';
  * hands the plugins pass directories, never the ESLint glob targets.
  */
 export function publicPluginTargets(options: Pick<Options, 'files' | 'full'>): string[] {
-    return options.full ? [...FULL_ESLINT_TARGETS] : options.files;
+    return options.full ? [...FULL_OXLINT_TARGETS, PUBLIC_PLUGIN_SOURCE] : options.files;
 }
 
 /**
