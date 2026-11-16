@@ -105,6 +105,9 @@ export function buildEslintArgv(
     return [
         'exec',
         'eslint',
+        // Fix mode loads the moved plugin overrides, whose size rules warn on the eslint.size-baseline.mjs
+        // files under their own burn-down ratchet; check mode has no warn rules.
+        ...(options.fix ? ['--quiet'] : []),
         `--concurrency=${lintConcurrency(env)}`,
         '--cache',
         '--cache-location',

@@ -615,6 +615,21 @@ describe('AdjustmentLayerStrip', () => {
             expect(cell).not.toHaveFocus();
         });
 
+        it('draws the region border on the handler-carrying band, never on the handler-free cell', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+            const band = findRegionElement();
+            const cell = band.closest('[role="gridcell"]');
+
+            expect(cell).not.toHaveClass('border');
+            expect(band).toHaveClass('border');
+            // The band covers the cell's whole box, so no drawn pixel of the region lacks the handlers.
+            expect(band).toHaveClass('inset-0');
+            expect(band.style.borderColor).not.toBe('');
+            fireEvent.contextMenu(band, { clientX: 100, clientY: 100 });
+            expect(screen.getByText('Remove Region')).toBeInTheDocument();
+        });
+
         it('opens the region menu, not the layer menu, on a right-click of a region edge', () => {
             mocks.layers = [layerWithRegion()];
             renderStrip();

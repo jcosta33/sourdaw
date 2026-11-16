@@ -44,17 +44,19 @@ export const AdjustmentRegionBand = ({
     onEdgeKeyDown,
 }: AdjustmentRegionBandProps): ReactElement => {
     const rangeLabel = `${liveRegion.startBeat.toFixed(2)} to ${liveRegion.endBeat.toFixed(2)}`;
+    const { borderColor, ...cellStyle } = style;
     return (
-        <div role="gridcell" className="absolute top-0 bottom-0 rounded-sm border" style={style}>
-            {/* The band body, edges and fades each open the region's menu and inspector: the cell itself stays
-                handler-free so a click on it focuses the layer row. */}
+        <div role="gridcell" className="absolute top-0 bottom-0 rounded-sm" style={cellStyle}>
+            {/* The band body, edges and fades each open the region's menu and inspector. The cell is handler-free
+                so a click on it focuses the layer row, and so owns no border box that those elements do not cover. */}
             <Button
                 variant="bare"
                 size="bare"
                 type="button"
                 aria-label={`Adjustment region, beats ${rangeLabel}`}
                 aria-keyshortcuts="Enter ArrowLeft ArrowRight Delete ContextMenu Shift+F10"
-                className="absolute inset-0 cursor-grab rounded-sm active:cursor-grabbing"
+                className="absolute inset-0 cursor-grab rounded-sm border active:cursor-grabbing"
+                style={{ borderColor }}
                 onContextMenu={onContextMenu}
                 onDoubleClick={onDoubleClick}
                 onMouseDown={(e) => onDragStart(e, 'move')}
