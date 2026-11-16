@@ -5,9 +5,9 @@ import { type ScheduledVibeRunBatch, type VibeRunExpectedDelta } from '../../mod
 
 import { type VibeBatchValueChoice } from './chooseVibeBatchValues';
 import { describeCatalogueDefaultsReason } from './describeCatalogueDefaultsReason';
+import { describeCriterionPair } from './describeCriterionPair';
 import { describeRecipeValueSource } from './describeRecipeValueSource';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
-import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
 import { readVibeTargetName } from './readVibeTargetName';
 
@@ -41,6 +41,10 @@ const REQUIRED_MOVEMENT_WORDS: Readonly<Record<Criterion['relation'], string>> =
     unsupported: 'unsupported',
 };
 
+function describeMovement(movement: string | null): string {
+    return movement === null ? '' : `, a movement of ${movement}`;
+}
+
 /** A step that broke its criterion on figures other than the batch pair the line shows names its own pair. */
 function describeOwnStep(criterion: Criterion): string {
     const { unmet } = criterion;
@@ -50,7 +54,8 @@ function describeOwnStep(criterion: Criterion): string {
     if (unmet.from === criterion.initial[0] && unmet.to === criterion.final[0]) {
         return '';
     }
-    return `; within its own step it went ${formatVibeFigure(unmet.from, criterion.unit)} → ${formatVibeFigure(unmet.to, criterion.unit)}`;
+    const { figures, movement } = describeCriterionPair(criterion, unmet.from, unmet.to);
+    return `; within its own step it went ${figures}${describeMovement(movement)}`;
 }
 
 /** What admission found for one criterion: the figures it compared and whether they met the criterion. */
@@ -61,11 +66,11 @@ function describeCriterionFigures(criterion: Criterion): string {
     if (criterion.outcome === 'not-evaluated') {
         return 'not evaluated: admission read no compatible baseline and preview figures for it (blocked)';
     }
-    const figures = `${formatVibeFigure(criterion.initial[0], criterion.unit)} → ${formatVibeFigure(criterion.final[0], criterion.unit)}`;
+    const { figures, movement } = describeCriterionPair(criterion, criterion.initial[0], criterion.final[0]);
     if (criterion.outcome === 'met') {
         return `${figures} (${criterion.status})`;
     }
-    return `${figures} (blocked): not met, ${REQUIRED_MOVEMENT_WORDS[criterion.relation]}${describeOwnStep(criterion)}`;
+    return `${figures} (blocked): not met, ${REQUIRED_MOVEMENT_WORDS[criterion.relation]}${describeMovement(movement)}${describeOwnStep(criterion)}`;
 }
 
 /**
