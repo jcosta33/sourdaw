@@ -396,4 +396,44 @@ describe('planned bus and send', () => {
         expect(getPlannedBus('bus', [removeBus])).toBeUndefined();
         expect(getPlannedBus('bus', [removeBus, restores])).toMatchObject({ id: 'bus', name: 'Bus' });
     });
+
+    it('keeps the live bus through a restoreTrack that restores another track and patches nothing', () => {
+        const absent = createTrack({ id: 'absent', name: 'Absent', kind: 'audio' });
+        const restore: AppAction = { type: 'restoreTrack', payload: restorePayload(absent) };
+
+        expect(getPlannedBus('bus', [restore])).toMatchObject({ id: 'bus', kind: 'bus', name: 'Bus' });
+    });
+
+    it('keeps the live bus through a restoreTracks whose restores do not name it', () => {
+        const restores: AppAction = {
+            type: 'restoreTracks',
+            payload: {
+                restores: [
+                    { ...restorePayload(createTrack({ id: 'absent', name: 'Absent', kind: 'audio' })), trackIndex: 0 },
+                    {
+                        ...restorePayload(createTrack({ id: 'another', name: 'Another', kind: 'audio' })),
+                        trackIndex: 1,
+                    },
+                ],
+            },
+        };
+
+        expect(getPlannedBus('bus', [restores])).toMatchObject({ id: 'bus', kind: 'bus', name: 'Bus' });
+    });
+
+    it('keeps the live send through a restoreTracks that names neither its track nor patches it', () => {
+        const restores: AppAction = {
+            type: 'restoreTracks',
+            payload: {
+                restores: [
+                    {
+                        ...restorePayload(createTrack({ id: 'absent', name: 'Absent', kind: 'audio' })),
+                        trackIndex: 0,
+                    },
+                ],
+            },
+        };
+
+        expect(getPlannedSend('track', 'bus', [restores])).toMatchObject({ busId: 'bus', level: 0.5 });
+    });
 });
