@@ -33,10 +33,9 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::runtime_scope::RuntimeScope;
 use crate::NativeSingletons;
 
-use windows::{
-    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowResizableFn,
-    EditorWindowSizeRequest, JsWindowCallbacks, JsWindowHost,
-};
+pub use gpu::gpu_memory_budget;
+
+use windows::{JsWindowCallbacks, JsWindowHost, PluginWindowHostCallbacks};
 
 use daw_core::{PluginId, PluginInstanceId};
 
@@ -223,26 +222,19 @@ impl SourdawNative {
     pub fn register_plugin_window_host(
         &self,
         env: &Env,
-        create_editor_window: CreateEditorWindowFn,
-        editor_window_exists: EditorWindowExistsFn,
-        set_editor_window_size: Function<'_, EditorWindowSizeRequest, ()>,
-        set_editor_window_resizable: EditorWindowResizableFn,
-        show_and_focus_editor_window: EditorWindowLabelFn,
-        destroy_editor_window: EditorWindowLabelFn,
-        hide_editor_window: EditorWindowLabelFn,
-        show_editor_window: EditorWindowLabelFn,
+        callbacks: PluginWindowHostCallbacks<'_>,
     ) -> Result<()> {
         let host = JsWindowHost::new(
             env,
             JsWindowCallbacks {
-                create: create_editor_window,
-                exists: editor_window_exists,
-                set_size: set_editor_window_size.create_ref()?,
-                set_resizable: set_editor_window_resizable,
-                show_and_focus: show_and_focus_editor_window,
-                destroy: destroy_editor_window,
-                hide: hide_editor_window,
-                show: show_editor_window,
+                create: callbacks.create_editor_window,
+                exists: callbacks.editor_window_exists,
+                set_size: callbacks.set_editor_window_size.create_ref()?,
+                set_resizable: callbacks.set_editor_window_resizable,
+                show_and_focus: callbacks.show_and_focus_editor_window,
+                destroy: callbacks.destroy_editor_window,
+                hide: callbacks.hide_editor_window,
+                show: callbacks.show_editor_window,
             },
         )?;
         *self
