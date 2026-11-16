@@ -230,9 +230,12 @@ static WRITE_LOCK: Mutex<()> = Mutex::new(());
 /// grant or revoke is refused.
 #[cfg(not(test))]
 pub(crate) fn production_store_location() -> Option<PathBuf> {
-    let directory = crate::commands::filesystem::private_state_directory()
-        .ok()
-        .flatten()?;
+    store_location_in(crate::commands::filesystem::private_state_directory())
+}
+
+/// The grant document inside the private state directory `private_state` names.
+fn store_location_in(private_state: Result<Option<PathBuf>, String>) -> Option<PathBuf> {
+    let directory = private_state.ok().flatten()?;
     Some(directory.join(GRANT_FILE_NAME))
 }
 
@@ -590,6 +593,25 @@ mod tests {
             app_storage_roots: vec![tree.dir("app-storage/data")],
             renderer_writable_grants: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_refused_scope_has_no_forbidden_roots() {
+        crate::host::runtime_scope::RuntimeScope::test_in_refused_process(
+            concat!(module_path!(), "::a_refused_scope_has_no_forbidden_roots"),
+            || assert!(ForbiddenRoots::production().is_err()),
+        );
+    }
+
+    #[test]
+    fn a_refused_scope_has_no_grant_store() {
+        let private = PathBuf::from("/scope/native/data/private");
+        assert_eq!(
+            store_location_in(Ok(Some(private.clone()))),
+            Some(private.join(GRANT_FILE_NAME))
+        );
+        assert_eq!(store_location_in(Ok(None)), None);
+        assert_eq!(store_location_in(Err("refused".to_string())), None);
     }
 
     /// One refusal case: its label, the candidate folder, and the refusal it must produce.

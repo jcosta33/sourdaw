@@ -326,6 +326,16 @@ fn scoped_scan_response_directory() {
         },
     );
 }
+#[test]
+fn a_refused_scope_creates_no_scan_response_directory() {
+    crate::host::runtime_scope::RuntimeScope::test_in_refused_process(
+        concat!(
+            module_path!(),
+            "::a_refused_scope_creates_no_scan_response_directory"
+        ),
+        || assert!(ResponseDirectory::create().is_err()),
+    );
+}
 impl ResponseDirectory {
     fn create() -> Result<Self, String> {
         let parent =

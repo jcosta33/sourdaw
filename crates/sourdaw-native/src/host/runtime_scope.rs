@@ -183,12 +183,30 @@ impl RuntimeScope {
     /// Real global resolver tests each get a new process. The selector is never reset.
     #[cfg(test)]
     pub(crate) fn test_in_process(name: &str, test: impl FnOnce(&Path)) {
-        let name = name.strip_prefix("sourdaw_native::").unwrap_or(name);
-        const CHILD: &str = "SOURDAW_RUNTIME_SCOPE_TEST_CHILD";
-        if std::env::var(CHILD).as_deref() == Ok(name) {
+        Self::in_child_process(name, || {
             let fixture = Self::test_root();
             Self::select(Some(&fixture.root)).unwrap();
             test(&fixture.root);
+        });
+    }
+
+    /// `test` in a new process whose scope selection was refused, so every
+    /// resolver answers the refusal.
+    #[cfg(test)]
+    pub(crate) fn test_in_refused_process(name: &str, test: impl FnOnce()) {
+        Self::in_child_process(name, || {
+            assert!(Self::select(Some(Path::new(""))).is_err());
+            assert!(Self::root().is_err());
+            test();
+        });
+    }
+
+    #[cfg(test)]
+    fn in_child_process(name: &str, child: impl FnOnce()) {
+        let name = name.strip_prefix("sourdaw_native::").unwrap_or(name);
+        const CHILD: &str = "SOURDAW_RUNTIME_SCOPE_TEST_CHILD";
+        if std::env::var(CHILD).as_deref() == Ok(name) {
+            child();
             return;
         }
         let output = std::process::Command::new(std::env::current_exe().unwrap())
