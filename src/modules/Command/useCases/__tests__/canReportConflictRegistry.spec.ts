@@ -7,6 +7,7 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type DeviceStateChunkSnapshot } from '#/modules/Arrangement/events';
 import {
     defaultTrackState,
     persistDeviceParam,
@@ -15,7 +16,6 @@ import {
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { type DeviceStateChunkSnapshot } from '#/modules/Arrangement/events';
 import {
     addClip,
     clampDeviceParameterValue,

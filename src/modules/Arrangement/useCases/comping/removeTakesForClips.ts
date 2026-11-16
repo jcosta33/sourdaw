@@ -1,5 +1,4 @@
 import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
-
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { planTakeRetirement } from './planTakeRetirement';

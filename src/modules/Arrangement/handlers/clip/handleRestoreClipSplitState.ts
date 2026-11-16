@@ -1,3 +1,4 @@
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import {
     captureDurableDocumentWitness,
     captureProjectMutationAuthorization,
@@ -6,7 +7,6 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
 import { type AppAction, type HandlerValidationContext, type HandlerCommitValidation } from '#/utils/handlerContract';
 
 import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';

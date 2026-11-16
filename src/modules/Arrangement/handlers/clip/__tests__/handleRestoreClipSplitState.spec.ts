@@ -1,15 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
+import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
-
-import {
-    type ClipSplitActionSnapshot,
-    type ClipStateSnapshot,
-    type RetiredTakeLaneSnapshot,
-} from '../../../events/arrangementClipStateSnapshots';
 
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
@@ -68,6 +62,11 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
 }));
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import {
+    type ClipSplitActionSnapshot,
+    type ClipStateSnapshot,
+    type RetiredTakeLaneSnapshot,
+} from '../../../events/arrangementClipStateSnapshots';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';

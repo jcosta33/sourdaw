@@ -5,6 +5,15 @@ import { type AudioSourceTile } from '#/utils/audioSourceTime';
 import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
 import {
+    type ClipAutomationLaneActionSnapshot,
+    type ClipShiftSnapshot,
+    type GeneratedMidiStateGuard,
+    type MidiClipGlueActionSnapshot,
+    type StripSilenceActionSnapshot,
+    type TransientQuantizeMoveSnapshot,
+    type TransientQuantizeSkipSnapshot,
+} from './arrangementClipSnapshots';
+import {
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
     type ClipSatelliteGainEnvelopeSnapshot,
@@ -15,16 +24,6 @@ import {
     type RetiredTakeLaneSnapshot,
     type TakeSnapshot,
 } from './arrangementClipStateSnapshots';
-
-import {
-    type ClipAutomationLaneActionSnapshot,
-    type ClipShiftSnapshot,
-    type GeneratedMidiStateGuard,
-    type MidiClipGlueActionSnapshot,
-    type StripSilenceActionSnapshot,
-    type TransientQuantizeMoveSnapshot,
-    type TransientQuantizeSkipSnapshot,
-} from './arrangementClipSnapshots';
 import { type TrackClipStateSnapshot } from './arrangementTrackSnapshots';
 
 /** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */

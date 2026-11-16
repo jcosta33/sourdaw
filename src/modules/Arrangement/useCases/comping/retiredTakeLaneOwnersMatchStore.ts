@@ -2,7 +2,6 @@ import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
-
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';

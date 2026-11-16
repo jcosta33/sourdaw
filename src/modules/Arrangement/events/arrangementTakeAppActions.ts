@@ -8,12 +8,12 @@ import {
 } from '#/modules/MIDI/events';
 import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
 
-import { type ClipStateSnapshot, type RetiredTakeLaneSnapshot } from './arrangementClipStateSnapshots';
 import {
     type CompAudioSourceInputProof,
     type CompAudioSourceOwnerSnapshot,
     type OriginalMidiTakeRowCopy,
 } from './arrangementClipSnapshots';
+import { type ClipStateSnapshot, type RetiredTakeLaneSnapshot } from './arrangementClipStateSnapshots';
 
 export type CompAudioSourcePromotionSnapshot = {
     readonly expected: CompAudioSourceOwnerSnapshot;

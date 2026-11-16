@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
-import { type ClipSatelliteEntrySnapshot } from '../../../events/arrangementClipStateSnapshots';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type ClipSatelliteEntrySnapshot } from '../../../events/arrangementClipStateSnapshots';
 import { type TrackClipStateSnapshot } from '../../../events/arrangementTrackSnapshots';
 import { __resetGainEnvelopesForTest } from '../../../stores/gainEnvelopeStore';
 import { type Clip, type Track } from '../../../stores/trackStore';

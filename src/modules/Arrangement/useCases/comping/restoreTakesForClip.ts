@@ -1,5 +1,4 @@
 import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
-
 import { type TakeLane } from '../../models/TakeLane';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';

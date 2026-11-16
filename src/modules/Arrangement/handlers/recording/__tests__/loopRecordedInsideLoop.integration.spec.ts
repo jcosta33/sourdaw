@@ -25,13 +25,13 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import {
     frozenMidiTakeRepeats,
     midiStore,
     projectFrozenMidiTakeWindow,
     selectMidiNotesForRecordingPass,
 } from '#/modules/MIDI/stores';
-import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import {
     isValidMidiTimeStateRestorePlan,
     prepareMidiGlobalTimeTransaction,
