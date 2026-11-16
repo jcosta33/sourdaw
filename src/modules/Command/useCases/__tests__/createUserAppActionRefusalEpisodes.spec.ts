@@ -565,6 +565,53 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
         });
 
+        it('opens no episode for an older refusal that lands after a newer dispatch on the key committed', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const older = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(older.promise);
+            const olderRefused = episodes.execute('A', action);
+            await expect(episodes.execute('A', action)).resolves.toBe('committed');
+
+            lock();
+            older.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(olderRefused).resolves.toBe('refused');
+            unlock();
+            await afterMicrotasks();
+
+            // The newer edit already reached the project, so nothing is unsaved.
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('opens no episode for a refusal older than the newest commit when an oldest commit lands last', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const oldest = Promise.withResolvers<void>();
+            const middle = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction)
+                .mockImplementationOnce(async (_action, options) => {
+                    await oldest.promise;
+                    options?.onCommitted?.();
+                })
+                .mockReturnValueOnce(middle.promise);
+            const oldestCommitted = episodes.execute('A', action);
+            const middleRefused = episodes.execute('A', action);
+            await expect(episodes.execute('A', action)).resolves.toBe('committed');
+
+            oldest.resolve();
+            await expect(oldestCommitted).resolves.toBe('committed');
+            lock();
+            middle.reject(new AppActionAdmissionRefusedError('addTrack'));
+            await expect(middleRefused).resolves.toBe('refused');
+            unlock();
+            await afterMicrotasks();
+
+            // The newest commit started after the refused edit, so its state is saved.
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
         it('stays silent for a warned episode refused again while admitted and relocked before delivery', async () => {
             const onAdmitted = vi.fn();
             const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });

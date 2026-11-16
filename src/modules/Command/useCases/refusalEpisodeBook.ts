@@ -45,6 +45,30 @@ function createEndMarks(): EndMarks {
     };
 }
 
+type CommittedOrders = {
+    record: (key: string, order: number) => void;
+    supersedes: (key: string, order: number) => boolean;
+    forget: (key: string) => void;
+    forgetAll: () => void;
+};
+
+/** The latest committed dispatch per key, so a refusal can tell a newer edit already reached the project. */
+function createCommittedOrders(): CommittedOrders {
+    const latest = new Map<string, number>();
+    return {
+        record(key, order) {
+            latest.set(key, Math.max(order, latest.get(key) ?? 0));
+        },
+        supersedes: (key, order) => (latest.get(key) ?? 0) > order,
+        forget(key) {
+            latest.delete(key);
+        },
+        forgetAll() {
+            latest.clear();
+        },
+    };
+}
+
 /** Where an open episode stands now: replaced project, admitted again, or still refused. */
 function readVerdict(episode: OpenEpisode): 'stale' | 'admitted' | 'refused' {
     if (episode.projectIdentity !== captureProjectIdentity()) {
@@ -114,6 +138,7 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
     /** Admitted episodes waiting for their deferred delivery; closing a key withdraws it. */
     const delivering = new Map<string, HeldEpisode>();
     const endMarks = createEndMarks();
+    const committedOrders = createCommittedOrders();
     let dispatchCount = 0;
     let unsubscribe: (() => void) | null = null;
 
@@ -157,6 +182,10 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
             if (episode.endMark !== endMarks.markOf(key)) {
                 return;
             }
+            // A newer edit on the key already committed, so the session state this edit set is saved.
+            if (committedOrders.supersedes(key, episode.order)) {
+                return;
+            }
             const verdict = readVerdict(episode);
             if (verdict === 'stale') {
                 return;
@@ -194,6 +223,7 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
             }
         },
         closeCommitted(key, order) {
+            committedOrders.record(key, order);
             // A refusal that started after this commit refused a newer edit, which is still unsaved.
             const episode = open.get(key) ?? delivering.get(key);
             if (episode && episode.order > order) {
@@ -203,10 +233,12 @@ export function createRefusalEpisodeBook(onAdmitted: ((key: string) => void) | u
         },
         end(key) {
             endMarks.end(key);
+            committedOrders.forget(key);
             close(key);
         },
         endAll() {
             endMarks.endAll();
+            committedOrders.forgetAll();
             open.clear();
             delivering.clear();
             syncSubscription();

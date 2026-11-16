@@ -40,7 +40,9 @@ type UserAppActionRefusalEpisodeOptions = {
  * warning, because the session state it would write belongs to the outgoing
  * project. A refusal whose key the caller ended while its dispatch was in
  * flight opens nothing, because the key left the session store before the
- * refusal landed. The admission subscription is held only while an episode is open.
+ * refusal landed. Neither does a refusal from a dispatch that started before a
+ * committed dispatch on the key, because that newer commit already saved the
+ * key's session state. The admission subscription is held only while an episode is open.
  * Only the dispatch gate's admission refusal counts: every other failure, a
  * handler or storage conflict included, still rejects unchanged.
  *
