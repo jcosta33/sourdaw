@@ -190,6 +190,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/resourceGuardProcessTree.ts',
     'scripts/resourceGuardProofReasons.ts',
     'scripts/resourceGuardStorage.ts',
+    'scripts/resourceGuardStorageProcessProof.ts',
     'scripts/retirePullRequest.ts',
     'scripts/retirementRecord.ts',
     'scripts/reviewApprovalContext.ts',

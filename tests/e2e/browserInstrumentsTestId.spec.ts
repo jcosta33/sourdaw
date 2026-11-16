@@ -1,5 +1,3 @@
-import { type Page } from '@playwright/test';
-
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 

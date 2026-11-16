@@ -17,4 +17,8 @@ export type {
     ExternalPluginParameterSnapshot,
     ExternalPluginParameterState,
 } from './externalPluginParameterStore';
-export { externalPluginParameterStore, defaultExternalPluginParameterState } from './externalPluginParameterStore';
+export {
+    externalPluginParameterStore,
+    defaultExternalPluginParameterState,
+    readExternalPluginParameterReadIssue,
+} from './externalPluginParameterStore';

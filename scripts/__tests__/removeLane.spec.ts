@@ -895,6 +895,53 @@ describe('lane removal', () => {
         expect(fake.calls).not.toContain(`remove:${target}`);
     });
 
+    describe('a branch name reused by several pull requests', () => {
+        const spent = () => pullRequest({ number: 6717, headRefOid: 'older-head' });
+        const current = (overrides: Partial<PullRequest> = {}) => pullRequest({ number: 6830, ...overrides });
+
+        it('removes the lane when its head is the head of exactly one of them', () => {
+            const { port, calls } = fakePort({ pullRequests: [spent(), current()] });
+
+            removeLane(target, port);
+
+            expect(calls).toContain(`remove:${target}`);
+        });
+
+        it.each([
+            ['no pull request', [], /pull request/],
+            [
+                'none heading at the lane head',
+                [spent(), pullRequest({ number: 6830, headRefOid: 'other-head' })],
+                /does not identify one pull request at head head/,
+            ],
+            [
+                'two heading at the lane head',
+                [current(), pullRequest({ number: 6831 })],
+                /one pull request at head head/,
+            ],
+            [
+                'the selected one open',
+                [spent(), current({ state: 'OPEN', mergedAt: null })],
+                /PR #6830 is still active/,
+            ],
+            [
+                'the selected one closed unmerged',
+                [spent(), current({ state: 'CLOSED', mergedAt: null })],
+                /PR #6830 is closed without a superses/,
+            ],
+            [
+                'the selected one from a fork',
+                [spent(), current({ headRepository: 'jcosta33/fork' })],
+                /PR #6830 is foreign/,
+            ],
+        ])('still refuses with %s', (_name, pullRequests, message) => {
+            const { port, calls } = fakePort({ pullRequests });
+
+            expect(() => removeLane(target, port)).toThrow(message);
+            expect(calls).not.toContain(`remove:${target}`);
+        });
+    });
+
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
         const { port, calls } = fakePort({ remoteHead: null });
 
