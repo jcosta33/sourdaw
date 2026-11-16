@@ -908,31 +908,76 @@ fn unserializable_response(worker_pid: u32, error: &serde_json::Error) -> Result
     })
     .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))
 }
+/// One helper run's answer, and how much free space its response volume lost
+/// between the spawn and the helper's exit.
+///
+/// The consumption travels back so the caller can remember it against the
+/// binary: [`process_failure`] attributes a later full disk to a binary whose
+/// earlier run consumed [`CONSUMPTION_FOR_HELPER_ATTRIBUTION`] (#6943), and
+/// only the caller knows which binary a run was for and where readings are
+/// kept. `None` when no helper was spawned or either reading failed.
+pub struct ScanAttempt<T> {
+    pub result: Result<T, ScanFailure>,
+    pub consumed_bytes: Option<u64>,
+}
+
+impl<T> ScanAttempt<T> {
+    fn without_spawn(failure: ScanFailure) -> Self {
+        Self {
+            result: Err(failure),
+            consumed_bytes: None,
+        }
+    }
+}
+
 /// Read every plugin descriptor a file declares through that format's
 /// registered backend, in a bounded child process.
+///
+/// `recorded_consumption` is the most free space a recent earlier run of the
+/// same binary consumed, or `None`; see [`ScanAttempt`].
 pub fn scan_descriptor_metadata(
     format: PluginFormat,
     path: &Path,
     timeout: Duration,
-) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
-    scan_worker(format, path, None, timeout, WORKER_ARGUMENT)
+    recorded_consumption: Option<u64>,
+) -> ScanAttempt<Vec<ScannedDescriptor>> {
+    let request = HelperRequest {
+        format,
+        path,
+        plugin_id: None,
+        worker_argument: WORKER_ARGUMENT,
+    };
+    scan_worker(&request, timeout, recorded_consumption)
 }
 
 /// Inspect one live instance of the plugin `plugin_id` names in the file,
 /// through that format's registered backend, in a bounded child process.
+///
+/// `recorded_consumption` is as for [`scan_descriptor_metadata`].
 pub fn scan_instance_metadata(
     format: PluginFormat,
     path: &Path,
     plugin_id: &str,
     timeout: Duration,
-) -> Result<ScannedInstance, ScanFailure> {
-    scan_worker(
+    recorded_consumption: Option<u64>,
+) -> ScanAttempt<ScannedInstance> {
+    let request = HelperRequest {
         format,
         path,
-        Some(plugin_id),
-        timeout,
-        INSTANCE_WORKER_ARGUMENT,
-    )
+        plugin_id: Some(plugin_id),
+        worker_argument: INSTANCE_WORKER_ARGUMENT,
+    };
+    scan_worker(&request, timeout, recorded_consumption)
+}
+
+/// What one helper is asked to read.
+struct HelperRequest<'a> {
+    format: PluginFormat,
+    path: &'a Path,
+    /// Which plugin of a multi-plugin bundle to instantiate; the descriptor
+    /// pass has none.
+    plugin_id: Option<&'a str>,
+    worker_argument: &'a str,
 }
 
 /// The refusal `scan_worker` reports for a helper that exited unsuccessfully.
@@ -954,10 +999,16 @@ pub fn scan_instance_metadata(
 /// and the plugin is one.
 ///
 /// A full disk is the one storage fault a plugin can make true, by writing
-/// until the volume runs out (#6936), so it is the helper's own doing when
-/// `room_before_spawn` — the volume's free space read before the helper
-/// started — had room for a whole response and headroom. Only a volume that
-/// was already short, or whose space could not be read, keeps the refusal.
+/// until the volume runs out, so [`helper_filled_the_volume`] attributes it to
+/// the helper on either of two readings in `evidence`. The volume had room for
+/// a whole response and headroom before this helper started (#6936), or a
+/// recent earlier run of the same binary itself consumed
+/// [`CONSUMPTION_FOR_HELPER_ATTRIBUTION`], which is how a plugin splitting the
+/// fill across scans shows: most of the volume on one that exits 0, the rest
+/// on the next (#6943). A volume that was short before this spawn, for a
+/// binary with no such run recorded, keeps the refusal. When this spawn's free
+/// space could not be read, attribution rests on the recorded consumption
+/// alone.
 ///
 /// The probe runs only for exit 3, after the helper is gone, so a storage
 /// fault that clears in between reads as a process failure; a full rescan
@@ -965,13 +1016,13 @@ pub fn scan_instance_metadata(
 fn process_failure(
     path: &Path,
     status: &ExitStatus,
-    room_before_spawn: Option<u64>,
+    evidence: FillEvidence,
     probe_write: impl FnOnce() -> std::io::Result<()>,
 ) -> ScanFailure {
     let path = path.to_path_buf();
     if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE)
         && probe_write().is_err_and(|error| {
-            is_storage_fault(&error) && !helper_filled_the_volume(&error, room_before_spawn)
+            is_storage_fault(&error) && !helper_filled_the_volume(&error, evidence)
         })
     {
         return ScanFailure::ResponseWriteRefused { path };
@@ -983,20 +1034,69 @@ fn process_failure(
 /// afterwards to be the helper's doing: one maximal response plus 1 GiB.
 const ROOM_FOR_HELPER_ATTRIBUTION: u64 = MAX_RESPONSE_BYTES + 1024 * 1024 * 1024;
 
-/// Whether the probe's full disk is one the helper made: the volume had
-/// [`ROOM_FOR_HELPER_ATTRIBUTION`] before the spawn and none after it.
+/// How much free space one run of a binary must have consumed for a later
+/// full disk to be that binary's doing: 1 GiB.
 ///
-/// Another process filling more than the headroom inside the helper's
-/// deadline would wrongly quarantine a good plugin. That cost is bounded: the
+/// A scan helper writes one response of at most [`MAX_RESPONSE_BYTES`], and
+/// a plugin's scan entry points have no reason to write files at all, so a
+/// run that took a gibibyte from the volume wrote far more than any scan
+/// needs. A user filling the disk between scans is never measured against a
+/// binary, because no helper of it was running.
+const CONSUMPTION_FOR_HELPER_ATTRIBUTION: u64 = 1024 * 1024 * 1024;
+
+/// The readings [`helper_filled_the_volume`] decides a full disk from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FillEvidence {
+    /// The volume's free space before this helper spawned.
+    room_before_spawn: Option<u64>,
+    /// The most free space a recent earlier run of the same binary consumed
+    /// between its spawn and its exit.
+    recorded_consumption: Option<u64>,
+}
+
+/// Whether the probe's full disk is one the helper made: the volume had
+/// [`ROOM_FOR_HELPER_ATTRIBUTION`] before this spawn and none after it, or a
+/// recent run of the binary consumed [`CONSUMPTION_FOR_HELPER_ATTRIBUTION`].
+///
+/// Both readings span a helper's run and nothing outside it, so the one
+/// wrong quarantine they admit comes from another process writing during
+/// that run: more than the headroom inside this helper's deadline, or more
+/// than the consumption bound inside an earlier run's, recorded against that
+/// binary for the window the registry keeps it. That cost is bounded: the
 /// quarantine is persisted with its reason, named in every scan response, and
 /// cleared by the user's retry-quarantined rescan. A plugin that instead
 /// escapes needs a volume already within the headroom of full, where filling
-/// it costs the user little more. Only `StorageFull` is attributed:
-/// `statvfs` cannot see a user quota, and a plugin cannot make a filesystem
-/// read-only or a device fail.
-fn helper_filled_the_volume(error: &std::io::Error, room_before_spawn: Option<u64>) -> bool {
-    error.kind() == std::io::ErrorKind::StorageFull
-        && room_before_spawn.is_some_and(|room| room >= ROOM_FOR_HELPER_ATTRIBUTION)
+/// it costs the user little more, or must fill it in runs of under a gibibyte
+/// each, one helper run per scan that rereads its changed file. A plugin cannot make a filesystem read-only
+/// or a device fail, so only `StorageFull` is attributed.
+///
+/// `QuotaExceeded` stays unattributed (#6942) because no pre-spawn reading can
+/// say whose limit a later EDQUOT hit. `statvfs` reports the volume, not a
+/// quota. macOS APFS has no user quotas and the `libc` crate binds no
+/// `quotactl` there. On Linux, `quotactl(Q_GETQUOTA)` needs the block device
+/// behind the response directory, which only a `/proc/self/mountinfo` parse
+/// finds, and `quotactl_fd` needs kernel 5.14 and a raw syscall. Either reads
+/// one user quota, while EDQUOT also comes from group quotas, project quotas
+/// on ext4 and XFS, btrfs qgroups and NFS server quotas, none of which it
+/// sees. Attributing against user headroom alone would quarantine a good
+/// plugin whenever one of those is the limit hit.
+fn helper_filled_the_volume(error: &std::io::Error, evidence: FillEvidence) -> bool {
+    let had_room = evidence
+        .room_before_spawn
+        .is_some_and(|room| room >= ROOM_FOR_HELPER_ATTRIBUTION);
+    let consumed_before = evidence
+        .recorded_consumption
+        .is_some_and(|consumed| consumed >= CONSUMPTION_FOR_HELPER_ATTRIBUTION);
+    error.kind() == std::io::ErrorKind::StorageFull && (had_room || consumed_before)
+}
+
+/// The free space a run consumed: the fall from the reading before its spawn
+/// to the reading after its exit. Space freed meanwhile reads as none.
+fn consumed_during_run(
+    room_before_spawn: Option<u64>,
+    room_after_exit: Option<u64>,
+) -> Option<u64> {
+    Some(room_before_spawn?.saturating_sub(room_after_exit?))
 }
 
 /// Whether a write failed because of the storage itself rather than anything
@@ -1045,34 +1145,32 @@ pub fn response_limit_metadata_reason() -> String {
 }
 
 fn scan_worker<T: DeserializeOwned>(
-    format: PluginFormat,
-    path: &Path,
-    plugin_id: Option<&str>,
+    request: &HelperRequest<'_>,
     timeout: Duration,
-    worker_argument: &str,
-) -> Result<T, ScanFailure> {
+    recorded_consumption: Option<u64>,
+) -> ScanAttempt<T> {
     // Refused here as well as in the child: launching a process to be told the
     // format is unhostable spends a spawn and a deadline to reach the same
     // answer, and the child's refusal is an exit code with no reason in it.
-    if scan_backend(format).is_none() {
-        return Err(ScanFailure::Refused(no_scan_backend(format)));
+    if scan_backend(request.format).is_none() {
+        return ScanAttempt::without_spawn(ScanFailure::Refused(no_scan_backend(request.format)));
     }
-    let launcher = ScanWorkerCommand::resolve().map_err(ScanFailure::Refused)?;
+    let launcher = match ScanWorkerCommand::resolve() {
+        Ok(launcher) => launcher,
+        Err(reason) => return ScanAttempt::without_spawn(ScanFailure::Refused(reason)),
+    };
     scan_worker_with(
         &launcher,
         &PinnedResponseStorage,
-        format,
-        path,
-        plugin_id,
+        request,
         timeout,
-        worker_argument,
+        recorded_consumption,
     )
 }
 
 /// What the supervisor learns about the storage under a response directory:
-/// the volume's free space before the helper starts, and whether its own
-/// write succeeds after the helper exits — the two readings
-/// [`process_failure`] decides an exit 3 from.
+/// the volume's free space before the helper starts and after it exits, and
+/// whether its own write succeeds after the helper exits.
 trait ResponseStorage {
     fn available_bytes(&self, directory: &ResponseDirectory) -> Option<u64>;
     fn probe_write(&self, directory: &ResponseDirectory) -> std::io::Result<()>;
@@ -1094,40 +1192,79 @@ impl ResponseStorage for PinnedResponseStorage {
 fn scan_worker_with<T: DeserializeOwned>(
     launcher: &ScanWorkerCommand,
     storage: &impl ResponseStorage,
-    format: PluginFormat,
-    path: &Path,
-    plugin_id: Option<&str>,
+    request: &HelperRequest<'_>,
     timeout: Duration,
-    worker_argument: &str,
-) -> Result<T, ScanFailure> {
-    let response_directory = ResponseDirectory::create().map_err(ScanFailure::Refused)?;
+    recorded_consumption: Option<u64>,
+) -> ScanAttempt<T> {
+    let response_directory = match ResponseDirectory::create() {
+        Ok(directory) => directory,
+        Err(reason) => return ScanAttempt::without_spawn(ScanFailure::Refused(reason)),
+    };
     let response_path = response_directory.path.join("metadata.json");
+    let mut command = helper_command(launcher, request, &response_path);
+    let room_before_spawn = storage.available_bytes(&response_directory);
+    let exit = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT));
+    // Read on every way out, a clean exit included: the run a plugin fills
+    // the volume in can be one that answers the scan.
+    let room_after_exit = storage.available_bytes(&response_directory);
+    let evidence = FillEvidence {
+        room_before_spawn,
+        recorded_consumption,
+    };
+    let result = exit.and_then(|status| {
+        read_helper_answer(
+            storage,
+            &response_directory,
+            &response_path,
+            request.path,
+            &status,
+            evidence,
+        )
+    });
+    ScanAttempt {
+        result,
+        consumed_bytes: consumed_during_run(room_before_spawn, room_after_exit),
+    }
+}
+
+fn helper_command(
+    launcher: &ScanWorkerCommand,
+    request: &HelperRequest<'_>,
+    response_path: &Path,
+) -> Command {
     let mut command = Command::new(&launcher.program);
     command
         .args(&launcher.args)
-        .arg(worker_argument)
-        .arg(format.wire_name())
-        .arg(path);
-    // The instance marker names which plugin of a multi-plugin bundle to
-    // instantiate; the descriptor marker has no per-plugin argument.
-    if let Some(plugin_id) = plugin_id {
+        .arg(request.worker_argument)
+        .arg(request.format.wire_name())
+        .arg(request.path);
+    if let Some(plugin_id) = request.plugin_id {
         command.arg(plugin_id);
     }
     command
-        .arg(&response_path)
+        .arg(response_path)
         .envs(&launcher.env)
         .env(SCAN_PARENT_PID_ENV, std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let room_before_spawn = storage.available_bytes(&response_directory);
-    let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
+    command
+}
+
+fn read_helper_answer<T: DeserializeOwned>(
+    storage: &impl ResponseStorage,
+    response_directory: &ResponseDirectory,
+    response_path: &Path,
+    path: &Path,
+    status: &ExitStatus,
+    evidence: FillEvidence,
+) -> Result<T, ScanFailure> {
     if !status.success() {
-        return Err(process_failure(path, &status, room_before_spawn, || {
-            storage.probe_write(&response_directory)
+        return Err(process_failure(path, status, evidence, || {
+            storage.probe_write(response_directory)
         }));
     }
-    let bytes = read_response_bytes(&response_path, path)?;
+    let bytes = read_response_bytes(response_path, path)?;
     let response: WorkerResponse<T> = serde_json::from_slice(&bytes).map_err(|error| {
         ScanFailure::Refused(format!(
             "Plugin scan helper returned invalid metadata: {error}"
@@ -1746,7 +1883,9 @@ mod tests {
             PluginFormat::Vst2,
             Path::new("/plugins/Vendor.vst"),
             Duration::from_millis(1),
+            None,
         )
+        .result
         .expect_err("a format with no scan backend must be refused");
 
         assert_eq!(
@@ -2207,14 +2346,18 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
                 (ORPHAN_HELPER_MARKER_ENV.to_string(), "1".to_string()),
             ]),
         };
+        let request = HelperRequest {
+            format: PluginFormat::Clap,
+            path: Path::new(&plugin_path),
+            plugin_id: None,
+            worker_argument: WORKER_ARGUMENT,
+        };
         let _ = scan_worker_with::<Vec<ScannedDescriptor>>(
             &launcher,
             &PinnedResponseStorage,
-            PluginFormat::Clap,
-            Path::new(&plugin_path),
-            None,
+            &request,
             WORKER_TIMEOUT,
-            WORKER_ARGUMENT,
+            None,
         );
     }
 
@@ -2585,7 +2728,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             let failure = process_failure(
                 Path::new("/plugins/Wedged.clap"),
                 &exit_status_for_code(code),
-                SHORT_VOLUME,
+                before_spawn(SHORT_VOLUME),
                 storage_full_probe,
             );
             assert!(failure.is_process_failure(), "exit {code}: {failure}");
@@ -2709,28 +2852,34 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         launcher: ScanWorkerCommand,
         plugin_path: &Path,
     ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
-        scan_descriptor_observing(launcher, PinnedResponseStorage, plugin_path)
+        scan_descriptor_observing(launcher, PinnedResponseStorage, plugin_path, None).result
     }
 
     /// [`scan_descriptor_through`] with the supervisor's storage readings
-    /// taken by `storage`.
+    /// taken by `storage`, and `recorded_consumption` as an earlier scan of the
+    /// binary left it.
     #[cfg(unix)]
     fn scan_descriptor_observing(
         launcher: ScanWorkerCommand,
         storage: impl ResponseStorage + Send + 'static,
         plugin_path: &Path,
-    ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+        recorded_consumption: Option<u64>,
+    ) -> ScanAttempt<Vec<ScannedDescriptor>> {
         let plugin_path = plugin_path.to_path_buf();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
+            let request = HelperRequest {
+                format: PluginFormat::Clap,
+                path: &plugin_path,
+                plugin_id: None,
+                worker_argument: WORKER_ARGUMENT,
+            };
             let _ = sender.send(scan_worker_with::<Vec<ScannedDescriptor>>(
                 &launcher,
                 &storage,
-                PluginFormat::Clap,
-                &plugin_path,
-                None,
+                &request,
                 WORKER_TIMEOUT,
-                WORKER_ARGUMENT,
+                recorded_consumption,
             ));
         });
         receiver
@@ -3049,7 +3198,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("read-only filesystem", libc::EROFS),
             ("failing disk", libc::EIO),
         ] {
-            let message = process_failure(path, &status, SHORT_VOLUME, || {
+            let message = process_failure(path, &status, before_spawn(SHORT_VOLUME), || {
                 Err(std::io::Error::from_raw_os_error(errno))
             });
 
@@ -3068,6 +3217,16 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     const ROOMY_VOLUME: Option<u64> = Some(ROOM_FOR_HELPER_ATTRIBUTION);
 
+    /// This spawn's free-space reading alone, for a binary with no earlier
+    /// run recorded.
+    #[cfg(unix)]
+    fn before_spawn(room_before_spawn: Option<u64>) -> FillEvidence {
+        FillEvidence {
+            room_before_spawn,
+            recorded_consumption: None,
+        }
+    }
+
     /// #6936: a plugin can fill the volume and then exit 3, so a full disk
     /// after a spawn onto a volume with room is the helper's own doing and
     /// quarantines. Mutation this catches: dropping the free-space
@@ -3082,7 +3241,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("room exactly at the bound", ROOMY_VOLUME),
             ("ample room", Some(u64::MAX)),
         ] {
-            let message = process_failure(path, &status, room, storage_full_probe);
+            let message = process_failure(path, &status, before_spawn(room), storage_full_probe);
 
             assert_eq!(
                 message,
@@ -3109,7 +3268,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("no room at all", Some(0)),
             ("unreadable free space", None),
         ] {
-            let message = process_failure(path, &status, room, storage_full_probe);
+            let message = process_failure(path, &status, before_spawn(room), storage_full_probe);
 
             assert_eq!(message, write_refused("/plugins/Innocent.clap"), "{volume}");
             assert!(!message.is_process_failure(), "{volume}: {message}");
@@ -3131,7 +3290,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("read-only filesystem", libc::EROFS),
             ("failing disk", libc::EIO),
         ] {
-            let message = process_failure(path, &status, ROOMY_VOLUME, || {
+            let message = process_failure(path, &status, before_spawn(ROOMY_VOLUME), || {
                 Err(std::io::Error::from_raw_os_error(errno))
             });
 
@@ -3190,28 +3349,33 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     const HELPER_RAN_MARKER: &str = "helper-ran";
 
-    /// A volume whose free space before the spawn is `room` and whose disk is
-    /// full by the time the supervisor probes. Each reading records whether
-    /// the helper had already run when it was taken.
+    /// A volume with `room_before` free until the stand-in helper has run and
+    /// `room_after` once it has, whose disk is full by the time the supervisor
+    /// probes. Each reading records whether the helper had already run when it
+    /// was taken.
     #[cfg(unix)]
     struct FullDiskAfterSpawn {
-        room: Option<u64>,
+        room_before: Option<u64>,
+        room_after: Option<u64>,
         readings: std::sync::Arc<std::sync::Mutex<Vec<(&'static str, bool)>>>,
     }
 
     #[cfg(unix)]
     impl FullDiskAfterSpawn {
-        fn record(&self, reading: &'static str, directory: &ResponseDirectory) {
+        fn record(&self, reading: &'static str, directory: &ResponseDirectory) -> bool {
             let helper_ran = directory.path.join(HELPER_RAN_MARKER).exists();
             self.readings.lock().unwrap().push((reading, helper_ran));
+            helper_ran
         }
     }
 
     #[cfg(unix)]
     impl ResponseStorage for FullDiskAfterSpawn {
         fn available_bytes(&self, directory: &ResponseDirectory) -> Option<u64> {
-            self.record("free space", directory);
-            self.room
+            if self.record("free space", directory) {
+                return self.room_after;
+            }
+            self.room_before
         }
 
         fn probe_write(&self, directory: &ResponseDirectory) -> std::io::Result<()> {
@@ -3220,27 +3384,64 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         }
     }
 
-    /// One scan through the real spawn path of a helper that marks its
-    /// response directory and exits 3 onto a disk that is full afterwards,
-    /// with `room` free before the spawn. Returns the failure and the order
-    /// the supervisor took its readings in.
+    /// A stand-in helper that marks its response directory and exits 3.
     #[cfg(unix)]
-    fn scan_exit_3_onto_full_disk(room: Option<u64>) -> (ScanFailure, Vec<(&'static str, bool)>) {
+    fn exit_3_script() -> String {
+        format!(": > \"$(dirname \"$out\")/{HELPER_RAN_MARKER}\"\nexit 3")
+    }
+
+    /// A stand-in helper that marks its response directory and answers.
+    #[cfg(unix)]
+    fn exit_0_script() -> String {
+        format!(
+            ": > \"$(dirname \"$out\")/{HELPER_RAN_MARKER}\"\nprintf '%s' '{VALID_RESPONSE}' > \"$out\"\nexit 0"
+        )
+    }
+
+    /// One scan of `script` through the real spawn path onto `storage`'s
+    /// volume, for a binary whose earlier runs recorded
+    /// `recorded_consumption`. Returns the attempt and the order the
+    /// supervisor took its readings in.
+    #[cfg(unix)]
+    fn scan_onto(
+        script: String,
+        room_before: Option<u64>,
+        room_after: Option<u64>,
+        recorded_consumption: Option<u64>,
+    ) -> (
+        ScanAttempt<Vec<ScannedDescriptor>>,
+        Vec<(&'static str, bool)>,
+    ) {
         let readings = std::sync::Arc::default();
         let storage = FullDiskAfterSpawn {
-            room,
+            room_before,
+            room_after,
             readings: std::sync::Arc::clone(&readings),
         };
-        let script = format!(": > \"$(dirname \"$out\")/{HELPER_RAN_MARKER}\"\nexit 3");
-        let error = scan_descriptor_observing(
+        let attempt = scan_descriptor_observing(
             stand_in_launcher(script, BTreeMap::new()),
             storage,
             Path::new("/plugins/Stand-in.clap"),
-        )
-        .expect_err("an exit 3 must fail the scan");
+            recorded_consumption,
+        );
         let readings = readings.lock().unwrap().clone();
+        (attempt, readings)
+    }
+
+    /// One exit 3 onto a disk that is full afterwards, with `room` free before
+    /// the spawn and no earlier run recorded.
+    #[cfg(unix)]
+    fn scan_exit_3_onto_full_disk(room: Option<u64>) -> (ScanFailure, Vec<(&'static str, bool)>) {
+        let (attempt, readings) = scan_onto(exit_3_script(), room, Some(0), None);
+        let error = attempt.result.expect_err("an exit 3 must fail the scan");
         (error, readings)
     }
+
+    /// The readings an exit 3 takes: free space before the helper runs and
+    /// after it exits, then the probe.
+    #[cfg(unix)]
+    const EXIT_3_READINGS: [(&str, bool); 3] =
+        [("free space", false), ("free space", true), ("probe", true)];
 
     /// #6936 through the spawn path: the free space is read before the helper
     /// runs, the probe after it, and a roomy volume the helper filled
@@ -3251,7 +3452,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn a_helper_that_exits_3_onto_a_disk_it_filled_quarantines_through_the_spawn_path() {
         let (error, readings) = scan_exit_3_onto_full_disk(ROOMY_VOLUME);
 
-        assert_eq!(readings, [("free space", false), ("probe", true)]);
+        assert_eq!(readings, EXIT_3_READINGS);
         assert_eq!(error, exited_unsuccessfully("/plugins/Stand-in.clap"));
     }
 
@@ -3263,8 +3464,74 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     {
         let (error, readings) = scan_exit_3_onto_full_disk(SHORT_VOLUME);
 
-        assert_eq!(readings, [("free space", false), ("probe", true)]);
+        assert_eq!(readings, EXIT_3_READINGS);
         assert_eq!(error, write_refused("/plugins/Stand-in.clap"));
+    }
+
+    /// A run that answers the scan is measured too: free space is read before
+    /// the spawn and again after the exit, and the fall between them is the
+    /// run's consumption. Mutation this catches: taking the after-exit
+    /// reading only on a failed exit, or not at all.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_exits_0_has_its_consumption_measured_after_it_exits() {
+        let (attempt, readings) = scan_onto(exit_0_script(), Some(5_000), Some(4_000), None);
+
+        assert_eq!(readings, [("free space", false), ("free space", true)]);
+        assert_eq!(attempt.consumed_bytes, Some(1_000));
+        assert_eq!(attempt.result.ok(), Some(Vec::new()));
+    }
+
+    /// #6943, the split fill: one run answers the scan after taking most of a
+    /// roomy volume, and the next exits 3 onto the short volume it left. The
+    /// first run's consumption, handed to the second, attributes the full
+    /// disk. Mutation this catches: ignoring the recorded consumption.
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_that_filled_the_volume_on_an_earlier_run_quarantines_on_a_short_volume() {
+        let (filled, _) = scan_onto(exit_0_script(), ROOMY_VOLUME, Some(0), None);
+        assert!(filled.result.is_ok(), "the filling run answers the scan");
+
+        let (attempt, _) = scan_onto(exit_3_script(), Some(0), Some(0), filled.consumed_bytes);
+
+        assert_eq!(
+            attempt.result.err(),
+            Some(exited_unsuccessfully("/plugins/Stand-in.clap"))
+        );
+    }
+
+    /// The regression pin for the user's own fill: an earlier run on a roomy
+    /// volume that consumed little, then an exit 3 onto a volume the user
+    /// filled between scans, keeps the refusal, as does one just under the
+    /// consumption bound. Mutation this catches: attributing by any earlier
+    /// room or any recorded consumption rather than by a run's own fill.
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_scanned_on_a_roomy_volume_the_user_then_filled_keeps_the_refusal() {
+        let (earlier, _) = scan_onto(
+            exit_0_script(),
+            ROOMY_VOLUME,
+            ROOMY_VOLUME.map(|room| room - 1),
+            None,
+        );
+        assert_eq!(earlier.consumed_bytes, Some(1));
+
+        for (history, recorded_consumption) in [
+            ("a small earlier run", earlier.consumed_bytes),
+            (
+                "just under the bound",
+                Some(CONSUMPTION_FOR_HELPER_ATTRIBUTION - 1),
+            ),
+            ("no history", None),
+        ] {
+            let (attempt, _) = scan_onto(exit_3_script(), Some(0), Some(0), recorded_consumption);
+
+            assert_eq!(
+                attempt.result.err(),
+                Some(write_refused("/plugins/Stand-in.clap")),
+                "{history}"
+            );
+        }
     }
 
     /// Which probe errors keep the non-quarantining refusal. Systemic storage
@@ -3317,7 +3584,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             ("probe already present", Some(libc::EEXIST)),
         ] {
             for room in [SHORT_VOLUME, ROOMY_VOLUME] {
-                let message = process_failure(path, &status, room, || {
+                let message = process_failure(path, &status, before_spawn(room), || {
                     errno.map_or(Ok(()), |errno| {
                         Err(std::io::Error::from_raw_os_error(errno))
                     })
@@ -3342,7 +3609,12 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Hostile.clap");
         let status = exit_status_for_code(2);
 
-        let message = process_failure(path, &status, SHORT_VOLUME, storage_full_probe);
+        let message = process_failure(
+            path,
+            &status,
+            before_spawn(SHORT_VOLUME),
+            storage_full_probe,
+        );
 
         assert!(
             message.is_process_failure(),
@@ -3485,7 +3757,12 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let path = Path::new("/plugins/Innocent.clap");
         let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
 
-        let message = process_failure(path, &status, SHORT_VOLUME, storage_full_probe);
+        let message = process_failure(
+            path,
+            &status,
+            before_spawn(SHORT_VOLUME),
+            storage_full_probe,
+        );
 
         assert!(
             message
