@@ -6,6 +6,18 @@ import { fail } from './prContract.ts';
  * since changed a file the pull request also changed, and a ledger binds that file, the squash can
  * combine two green measurements into a red `main`. Every entry is read as text and never evaluated.
  */
+export const DEPENDENCY_BOUNDARY_BASELINE_FILES = [
+    // Dependency-boundary baselines: rows whose `from` names a file, compared exactly by
+    // `scripts/check-dependency-boundaries.mjs`. A row deleted on one side while the other edits its file
+    // leaves a violation no row covers.
+    '.dependency-cruiser-known-violations.json',
+    '.dependency-cruiser-known-violations-contract-reexports.json',
+    '.dependency-cruiser-known-violations-worker-spawns.json',
+    '.dependency-cruiser-known-violations-reachability.json',
+    '.dependency-cruiser-known-violations-types.json',
+    '.dependency-cruiser-known-violations-tests.json',
+] as const;
+
 export const LINT_LEDGER_FILES = [
     // ESLint suppression counts per file and rule: two prunes of one count leave an unused suppression.
     'eslint-suppressions.json',
@@ -20,6 +32,7 @@ export const LINT_LEDGER_FILES = [
     'eslint.size-baseline.mjs',
     // Per-file line ceilings: two growths each within the ceiling can exceed it together.
     'scripts/lintSizeCeilings.json',
+    ...DEPENDENCY_BOUNDARY_BASELINE_FILES,
 ] as const;
 
 const REFUSAL_PATH_LIMIT = 10;
@@ -47,10 +60,27 @@ export type LedgerTree = Readonly<Record<string, string>>;
 
 export type LedgerTrees = { base: LedgerTree; main: LedgerTree; head: LedgerTree };
 
-function ledgerBoundPaths(trees: readonly LedgerTree[]): Set<string> {
-    return new Set(
-        trees.flatMap((tree) => Object.values(tree).flatMap((text) => quotedStrings(text).map(normalizedLedgerPath)))
-    );
+const BOUNDARY_BASELINES: ReadonlySet<string> = new Set(DEPENDENCY_BOUNDARY_BASELINE_FILES);
+
+function pathsBoundBy(name: string, side: string, text: string): string[] {
+    if (BOUNDARY_BASELINES.has(name)) {
+        return boundaryBaselineRows(name, side, text).map((row) => row.from);
+    }
+    return quotedStrings(text);
+}
+
+/** Paths a boundary baseline binds are its rows' `from` files; its `to`, `via` and rule strings bind nothing. */
+function ledgerBoundPaths(trees: ReadonlyArray<{ tree: LedgerTree; side: string }>): Set<string> {
+    const bound = new Set<string>();
+    for (const { tree, side } of trees) {
+        for (const [name, text] of Object.entries(tree)) {
+            const paths = pathsBoundBy(name, side, text);
+            for (const path of paths) {
+                bound.add(normalizedLedgerPath(path));
+            }
+        }
+    }
+    return bound;
 }
 
 /** Code-unit order, independent of locale, so both sides of a comparison sort keys identically. */
@@ -176,12 +206,36 @@ function indexModuleList(index: BindingIndex, name: string, text: string): void 
     }
 }
 
+type BoundaryRow = { from: string; row: Record<string, unknown> };
+
+function boundaryBaselineRows(name: string, side: string, text: string): BoundaryRow[] {
+    const parsed = parseLedgerJson(name, side, text);
+    if (!Array.isArray(parsed)) {
+        return fail(`lint ledger ${name} in ${side} is not a JSON array of rows`);
+    }
+    return parsed.map((row) => {
+        if (!isRecord(row) || typeof row.from !== 'string') {
+            return fail(`lint ledger ${name} in ${side} has a row without a string \`from\` path`);
+        }
+        return { from: row.from, row };
+    });
+}
+
+/** One entry per row, so a row deleted or changed for a file is a change to that file's bindings. */
+function indexBoundaryBaseline(index: BindingIndex, name: string, side: string, text: string): void {
+    for (const { from, row } of boundaryBaselineRows(name, side, text)) {
+        addBinding(index, from, `${name}=${canonicalJson(row)}`);
+    }
+}
+
 const OXLINT_CONFIGS: ReadonlySet<string> = new Set(['.oxlintrc.json', '.oxlint-plugins.json']);
 
 function bindingIndex(tree: LedgerTree, side: string): BindingIndex {
     const entries: BindingIndex = new Map();
     for (const [name, text] of Object.entries(tree)) {
-        if (OXLINT_CONFIGS.has(name)) {
+        if (BOUNDARY_BASELINES.has(name)) {
+            indexBoundaryBaseline(entries, name, side, text);
+        } else if (OXLINT_CONFIGS.has(name)) {
             indexOxlintOverrides(entries, name, side, text);
         } else if (name.endsWith('.json')) {
             indexKeyedJson(entries, name, side, text);
@@ -220,7 +274,11 @@ export function lintLedgerCrossingPaths(
     pullRequestChanged: readonly string[],
     trees: LedgerTrees
 ): string[] {
-    const bound = ledgerBoundPaths([trees.base, trees.main, trees.head]);
+    const bound = ledgerBoundPaths([
+        { tree: trees.base, side: 'the merge base' },
+        { tree: trees.main, side: 'main' },
+        { tree: trees.head, side: 'the pull request head' },
+    ]);
     const base = bindingIndex(trees.base, 'the merge base');
     const mainSide = new Set([...mainChanged, ...rebound(base, bindingIndex(trees.main, 'main'))]);
     const pullRequestSide = new Set([
