@@ -202,6 +202,7 @@ export function FloatingDevicePanel({
                 ref={dialog}
                 role="dialog"
                 aria-modal="false"
+                data-device-editor=""
                 aria-labelledby={titleId}
                 tabIndex={-1}
                 style={bounds}

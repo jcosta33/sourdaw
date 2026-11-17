@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { currentKeyboardLayoutMap, loadKeyboardLayoutMap } from '#/infra/keyboardLayout/keyboardLayoutMap';
 import { getHandlerMap } from '#/modules/Command/stores';
 import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+import { isDeviceEditorHistoryTarget } from '#/utils/UI/isDeviceEditorHistoryTarget';
 
 import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
 import { isWithinModalSurface } from '../../useCases/isWithinModalSurface';
@@ -14,6 +15,9 @@ import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboa
 import { resolveShortcutKey } from '../../useCases/resolveShortcutKey';
 
 function resolveKeyTarget(isTextEntry: boolean, target: EventTarget | null): KeyTarget {
+    if (isDeviceEditorHistoryTarget(target)) {
+        return 'deviceEditor';
+    }
     if (isTextEntry) {
         return 'textEntry';
     }
