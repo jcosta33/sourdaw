@@ -1025,14 +1025,13 @@ function BrowserRail({
                     <span>{category}</span>
                     <span>{filteredPresets.length} shown</span>
                 </Row>
-                <Row align="stretch" wrap gap={2}>
+                <Row align="stretch" wrap gap={2} className="[&>button]:max-w-full [&>button]:wrap-anywhere">
                     {categories.map((item) => (
                         <DawPluginChip
                             key={item}
                             active={category === item}
                             tone="amber"
                             size="sm"
-                            className="max-w-full wrap-anywhere"
                             onClick={() => setCategory(item)}
                         >
                             {item}
@@ -1141,7 +1140,14 @@ function SectionTabs({
     tier: EffectDisclosureTier;
 }): ReactElement {
     return (
-        <Row align="stretch" wrap gap={1.5} role="group" aria-label="Grinder sections">
+        <Row
+            align="stretch"
+            wrap
+            gap={1.5}
+            role="group"
+            aria-label="Grinder sections"
+            className="[&>button]:min-h-6 [&>button]:transform-none [&>button]:px-2 [&>button]:py-0.5"
+        >
             {SECTION_TABS.filter((tab) => isEffectDisclosureStageVisible(tier, grinderSectionTier(tab.id))).map(
                 (tab) => {
                     const Icon = tab.icon;
@@ -1153,7 +1159,7 @@ function SectionTabs({
                             key={tab.id}
                             type="button"
                             aria-pressed={active}
-                            className={`grinder-tab min-h-6 transform-none px-2 py-0.5 ${active ? 'grinder-tab-active' : ''}`}
+                            className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
                             onClick={() => replaceGrinderPatchLocally(deviceId, { ...patch, uiSection: tab.id })}
                         >
                             <Icon className="size-3.5" />
