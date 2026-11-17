@@ -205,6 +205,8 @@ type BridgeGroundedLlmToolCallsInput = {
     protectionFacts?: ProposalProtectionFacts;
     /** Complete binding for replay of the same already-admitted request, never a new refinement. */
     requestProtections?: BoundRequestProtections;
+    /** Clip protection text with a contextual tone constraint consumed by the admitted MIDI-only route. */
+    midiToneProtectionPrompt?: string;
 };
 
 type GroundToolCallInput = {
@@ -7465,7 +7467,7 @@ function refuseWhenProtectionIsUnresolved(
     }
     // A protection binding any clip is a clip protection, so every member it lists must name an object.
     // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
-    const clipProtection = readClipProtection(input.prompt, context, protections);
+    const clipProtection = readClipProtection(input.midiToneProtectionPrompt ?? input.prompt, context, protections);
     const unnamedMembers =
         clipProtection.clips.length > 0
             ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
@@ -7591,6 +7593,7 @@ function bridgeUnrefinedLlmToolCalls(
         projectRevision,
         workflowCapabilityId,
         creativeAuthority,
+        midiToneProtectionPrompt,
         requestProtections,
     }: BridgeGroundedLlmToolCallsInput,
     catalog: GroundingCatalog
@@ -7624,7 +7627,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            complete = readClipProtection(prompt, context, trackProtections).complete;
+            complete = readClipProtection(midiToneProtectionPrompt ?? prompt, context, trackProtections).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));

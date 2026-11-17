@@ -2127,6 +2127,7 @@ const planPromptIntent = inject({ logger })(
                     transformTargetIds,
                     creativeAuthority,
                     musicalReadProof: refinement.status === 'refines' ? undefined : planningOutcome.musicalReadProof,
+                    thread,
                     providerProposal,
                     ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
                     ...(refinedProtections === undefined ? {} : { refinementProtections: refinedProtections }),

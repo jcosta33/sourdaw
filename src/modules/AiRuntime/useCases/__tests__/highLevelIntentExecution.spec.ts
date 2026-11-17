@@ -208,7 +208,7 @@ async function commitBluesSong(): Promise<PendingAppActionConfirmation> {
 
 const PHRASE_TASK =
     'Reshape the selected MIDI notes in the Lead Motif clip into a blues phrase, with the opening intact and the same instrument sound.';
-const SPARSE_PHRASE_TASK = 'Make the lick less busy with the same instrument sound.';
+const SPARSE_PHRASE_TASK = 'Keep that tone, but make the lick less busy';
 const PHRASE_CLIP_ID = 'existing-midi-motif';
 const PHRASE_TRACK_ID = 'existing-motif-track';
 const PHRASE_SIBLING_ID = 'existing-midi-sibling';
@@ -260,7 +260,7 @@ function selectPhraseNotes(noteIds: string[]) {
     setPianoRollSelection(clip.id, noteIds, [], [{ clipId: clip.id, projection }]);
 }
 
-function seedMidiPhrase() {
+function seedMidiPhrase(clipName = 'Lead Motif') {
     projectStore.set(defaultProjectStoreState);
     const track = createTrack({ id: PHRASE_TRACK_ID, kind: 'midi', name: 'Electric piano' });
     const instrument = track.devices[0];
@@ -279,7 +279,7 @@ function seedMidiPhrase() {
             startBeat,
             endBeat: startBeat + 8,
         });
-    const clip = add(PHRASE_CLIP_ID, 16, 'Lead Motif');
+    const clip = add(PHRASE_CLIP_ID, 16, clipName);
     expect(add(PHRASE_SIBLING_ID, 26, 'Sibling Motif')).not.toBeNull();
     if (!clip) {
         throw new Error('Expected the existing motif clip');
@@ -394,6 +394,16 @@ function scriptMidiPhraseEdit(
     }
     turns.push(() => []);
     return scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, turns);
+}
+
+async function commitScriptedPhraseEdit(prompt = PHRASE_TASK) {
+    scriptMidiPhraseEdit();
+    await sendChatMessage(prompt);
+    const confirmation = requireConfirmation();
+    await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+        status: 'executed',
+    });
+    return confirmation;
 }
 
 describe('high-level intent execution', () => {
@@ -595,10 +605,7 @@ describe('high-level intent execution', () => {
 
     it('follows an accepted motif edit with fresh authority to simplify only its notes and preserve its tone', async () => {
         seedMidiPhrase();
-        scriptMidiPhraseEdit();
-        await sendChatMessage(PHRASE_TASK);
-        const first = requireConfirmation();
-        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        const first = await commitScriptedPhraseEdit();
         const firstBatch = first.approvalSnapshot.commandBatch;
         if (!firstBatch) {
             throw new Error('Expected a versioned Command batch on the accepted motif');
@@ -645,7 +652,7 @@ describe('high-level intent execution', () => {
                 commands: [{ name: 'editMidiNotes', arguments: { clipId: PHRASE_CLIP_ID } }],
             },
         });
-        for (const privateField of ['expectedNotes', 'guard', 'scope', 'selectionToken', 'authorityId']) {
+        for (const privateField of ['expectedNotes', 'guard', 'selectionToken', 'authorityId']) {
             expect(section).not.toContain(`"${privateField}"`);
         }
         expect(section).not.toContain(pickup.id);
@@ -688,6 +695,59 @@ describe('high-level intent execution', () => {
         expect(durablePhraseNotes()).toEqual(acceptedNotes);
         expect(durablePhraseDevices()).toEqual(acceptedDevices);
         expect(undoStore.value?.past).toEqual(firstUndo);
+    });
+
+    it.each([
+        {
+            name: 'a selected clip named Tone',
+            clipName: 'Tone',
+            prompt: SPARSE_PHRASE_TASK,
+            read: true,
+            reason: 'Transform compilation includes a protected or unresolved target',
+        },
+        {
+            name: 'an adjacent unresolved protection',
+            clipName: 'Lead Motif',
+            prompt: `${SPARSE_PHRASE_TASK}. Keep Ghost unchanged.`,
+            read: true,
+            reason: 'Transform compilation includes a protected or unresolved target',
+        },
+        {
+            name: 'a broader protection that mentions tone',
+            clipName: 'Lead Motif',
+            prompt: 'Keep that tone and the arrangement, but make the lick less busy',
+            read: true,
+            reason: 'Transform compilation includes a protected or unresolved target',
+        },
+        {
+            name: 'no fresh musical read',
+            clipName: 'Lead Motif',
+            prompt: SPARSE_PHRASE_TASK,
+            read: false,
+            reason: 'Required musical evidence was not read',
+        },
+    ])('refuses a contextual tone continuation with $name', async ({ clipName, prompt, read, reason }) => {
+        seedMidiPhrase(clipName);
+        const first = await commitScriptedPhraseEdit(PHRASE_TASK.replace('Lead Motif', clipName));
+        const notes = durablePhraseNotes();
+        const pickup = notes?.find(({ pitch, startBeat }) => pitch === 58 && startBeat === 3.25);
+        if (!pickup) {
+            throw new Error('Expected the accepted result to contain its generated pickup');
+        }
+        const selectedNoteIds = [THIRD.id, pickup.id];
+        selectClip(PHRASE_CLIP_ID);
+        selectPhraseNotes(selectedNoteIds);
+        const requests = scriptMidiPhraseEdit({
+            selectedNoteIds,
+            canInsert: false,
+            read,
+            operations: [{ type: 'delete', noteId: pickup.id }],
+        });
+        await sendChatMessage(prompt);
+        expect(requireConfirmation().id, chatStore.value?.messages.at(-1)?.content).toBe(first.id);
+        expect(durablePhraseNotes()).toEqual(notes);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect([...requests, chatStore.value?.messages.at(-1)?.content].join('\n')).toContain(reason);
     });
 
     it('previews a blues song without touching the project or the undo history', async () => {

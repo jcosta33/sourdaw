@@ -15,6 +15,7 @@ import {
 } from '../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
+import { type ThreadContext } from '../models/ThreadContext';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { containsMidiNoteEditCall } from '../transformers/containsMidiNoteEditCall';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -29,6 +30,7 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalGroundingBasis, unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
+import { readMidiToneProtectionPrompt } from './agentReference/readMidiToneProtectionPrompt';
 import { checkMidiNoteEditAuthority } from './checkMidiNoteEditAuthority';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
@@ -51,6 +53,7 @@ type GroundCompiledCommandBatchInput = {
     transformTargetIds: readonly string[];
     creativeAuthority: CreativeRequestAuthority | undefined;
     musicalReadProof?: Parameters<typeof checkMidiNoteEditAuthority>[0]['proof'];
+    thread?: ThreadContext | null;
     providerProposal: AgentRunProviderProposal | null;
     /**
      * The grounding of the pending card this batch refines. Undefined grounds the batch exactly as
@@ -157,6 +160,7 @@ function bridgeCompiledCalls(
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
         midiNoteEditClipId: midiNoteEdit?.clipId,
+        midiToneProtectionPrompt: getMidiToneProtectionPrompt(input, midiNoteEdit),
         refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
         protectionFacts: readPriorProtectionFacts(input),
     };
@@ -196,6 +200,16 @@ function bridgeCompiledCalls(
         return { status: 'rejected', rejectionReason: `Provider action rejected: ${reason}`, rejectionEvidence };
     }
     return bridged;
+}
+
+function getMidiToneProtectionPrompt(
+    input: GroundCompiledCommandBatchInput,
+    edit: MaterializeActionStateGuardsOptions['midiNoteEdit']
+): string | undefined {
+    if (!edit || input.creativeAuthority?.editDimensions.some((dimension) => dimension !== 'midi-content')) {
+        return undefined;
+    }
+    return readMidiToneProtectionPrompt({ ...input, clipId: edit.clipId, thread: input.thread });
 }
 
 /** Runtime validation, batch-local identities, state guards and the production brief, in that order. */
