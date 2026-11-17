@@ -19,7 +19,7 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { clamp } from '#/utils/Math/clamp';
-import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
+import { beginDragGesture, isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
 
 type Size = { width: number; height: number };
 export type DevicePanelGeometry = Size & { left: number; top: number };
@@ -121,19 +121,58 @@ function useDevicePanelFocus(
     return { dialog, dismiss };
 }
 
+/** Capture has already succeeded. Keep a counted Escape owner until this exact drag ends. */
+function watchTitleDrag(target: HTMLButtonElement, pointerId: number, clearDrag: () => void): () => void {
+    const releaseMarker = beginDragGesture();
+    function finish(): void {
+        clearDrag();
+        window.removeEventListener('keydown', cancelOnEscape, true);
+        window.removeEventListener('blur', onWindowBlur);
+        releaseMarker();
+        if (target.hasPointerCapture(pointerId)) {
+            target.releasePointerCapture(pointerId);
+        }
+    }
+    function cancelOnEscape(event: KeyboardEvent): void {
+        if (!isPlainEscapePress(event)) {
+            return;
+        }
+        // Older capture listeners saw the drag marker. Later listeners must not see the
+        // same press after finish releases it, even if the virtual keyboard mounted mid-drag.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        finish();
+    }
+    function onWindowBlur(event: FocusEvent): void {
+        if (event.eventPhase === Event.AT_TARGET) {
+            finish();
+        }
+    }
+    window.addEventListener('keydown', cancelOnEscape, true);
+    window.addEventListener('blur', onWindowBlur);
+    return finish;
+}
+
 function useTitleMovement(
     bounds: DevicePanelGeometry,
     area: Size,
     setGeometry: FloatingDevicePanelProps['setGeometry']
 ) {
-    const drag = useRef<{ id: number; x: number; y: number; start: DevicePanelGeometry } | null>(null);
+    const drag = useRef<{ id: number; x: number; y: number; start: DevicePanelGeometry; finish: () => void } | null>(
+        null
+    );
+
+    useLayoutEffect(() => () => drag.current?.finish(), []);
 
     function startMove(event: ReactPointerEvent<HTMLButtonElement>): void {
         if (event.button !== 0 || drag.current !== null) {
             return;
         }
         event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, start: bounds };
+        const finish = watchTitleDrag(event.currentTarget, event.pointerId, () => {
+            drag.current = null;
+        });
+        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, start: bounds, finish };
     }
 
     function move(event: ReactPointerEvent<HTMLButtonElement>): void {
@@ -155,7 +194,7 @@ function useTitleMovement(
 
     function endMove(event: ReactPointerEvent<HTMLButtonElement>): void {
         if (drag.current?.id === event.pointerId) {
-            drag.current = null;
+            drag.current.finish();
         }
     }
 

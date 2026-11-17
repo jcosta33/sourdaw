@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
+import { beginDragGesture, isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { FloatingDevicePanel, type DevicePanelGeometry } from '../FloatingDevicePanel';
 
@@ -40,6 +41,19 @@ function openEditor() {
     return screen.getByRole('dialog', { name: 'Sampler' });
 }
 
+function getTitleWithPointerCapture() {
+    const title = screen.getByRole('button', { name: 'Move Sampler panel' });
+    const captured = new Set<number>();
+    vi.spyOn(title, 'setPointerCapture').mockImplementation((id) => {
+        captured.add(id);
+    });
+    vi.spyOn(title, 'releasePointerCapture').mockImplementation((id) => {
+        captured.delete(id);
+    });
+    Object.defineProperty(title, 'hasPointerCapture', { value: (id: number) => captured.has(id) });
+    return title;
+}
+
 describe('FloatingDevicePanel', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -66,6 +80,68 @@ describe('FloatingDevicePanel', () => {
         expect(screen.getByRole('button', { name: 'Open editor' })).toHaveFocus();
     });
 
+    it('cancels just the active title drag on the first plain Escape and closes on the next', () => {
+        vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1568);
+        vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(868);
+        render(<Workspace />);
+        const panel = openEditor();
+        const title = getTitleWithPointerCapture();
+        const pointer = { pointerId: 7, button: 0 };
+        fireEvent.pointerDown(title, { ...pointer, clientX: 200, clientY: 100 });
+        fireEvent.keyDown(title, { key: 'Escape', code: 'Escape', shiftKey: true });
+        fireEvent.keyDown(title, { key: 'Escape', code: 'Escape', repeat: true });
+        fireEvent.blur(title, { bubbles: true });
+        fireEvent.pointerMove(title, { ...pointer, clientX: 220, clientY: 120 });
+        expect(panel).toHaveStyle({ left: '204px', top: '74px' });
+        const nextOwner = vi.fn();
+        window.addEventListener('keydown', nextOwner, true);
+        try {
+            fireEvent.keyDown(title, { key: 'Escape', code: 'Escape' });
+        } finally {
+            window.removeEventListener('keydown', nextOwner, true);
+        }
+        expect(panel).toBeInTheDocument();
+        expect(nextOwner).not.toHaveBeenCalled();
+        fireEvent.pointerMove(title, { ...pointer, clientX: 290, clientY: 190 });
+        expect(panel).toHaveStyle({ left: '204px', top: '74px' });
+        expect(isDragGestureActive()).toBe(false);
+        fireEvent.keyDown(title, { key: 'Escape', code: 'Escape' });
+        expect(panel).not.toBeInTheDocument();
+    });
+
+    it.each(['pointerUp', 'pointerCancel', 'lostPointerCapture', 'blur', 'unmount', 'Escape'] as const)(
+        'releases only the title drag on %s',
+        (finish) => {
+            const { unmount } = render(<Workspace />);
+            openEditor();
+            const title = getTitleWithPointerCapture();
+            const endForeign = beginDragGesture();
+            try {
+                fireEvent.pointerDown(title, { pointerId: 8, button: 0, clientX: 200, clientY: 100 });
+                fireEvent.pointerCancel(title, { pointerId: 9 });
+                expect(title.hasPointerCapture(8)).toBe(true);
+                expect(document.documentElement).toHaveAttribute('data-drag-gesture-active', '2');
+                if (finish === 'unmount') {
+                    unmount();
+                } else if (finish === 'blur') {
+                    fireEvent.blur(window);
+                } else if (finish === 'Escape') {
+                    fireEvent.keyDown(title, { key: 'Escape', code: 'Escape' });
+                } else {
+                    if (finish === 'lostPointerCapture') {
+                        title.releasePointerCapture(8);
+                    }
+                    fireEvent[finish](title, { pointerId: 8 });
+                }
+                expect(title.hasPointerCapture(8)).toBe(false);
+                expect(isDragGestureActive()).toBe(true);
+            } finally {
+                endForeign();
+            }
+            expect(isDragGestureActive()).toBe(false);
+        }
+    );
+
     it('recovers usable bounds after workspace changes and retains movement and size on reopen', () => {
         let availableWidth = 1568;
         let availableHeight = 868;
@@ -87,7 +163,7 @@ describe('FloatingDevicePanel', () => {
         render(<Workspace />);
         const panel = openEditor();
         expect(panel).toHaveStyle({ width: '1200px', height: '760px', left: '184px', top: '54px' });
-        const title = screen.getByRole('button', { name: 'Move Sampler panel' });
+        const title = getTitleWithPointerCapture();
         fireEvent.pointerDown(title, { button: 0, pointerId: 1, clientX: 200, clientY: 100 });
         fireEvent.pointerMove(title, { pointerId: 1, clientX: 220, clientY: 120 });
         fireEvent.pointerUp(title, { pointerId: 1 });
