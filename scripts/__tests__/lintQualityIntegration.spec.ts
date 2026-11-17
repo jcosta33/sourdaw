@@ -127,10 +127,18 @@ describe('production quality lint', () => {
                         });
                     }
                 });
+                scenario('required wrapped step entry', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) {
+                        await (scenario.step('mandatory', async () => {
+                            await expect(entry).toBeVisible();
+                        }) satisfies Promise<unknown>);
+                    }
+                });
                 scenario('conditionally retry', async ({ page }) => {
                     const entry = page.getByRole('button');
                     if (!(await entry.isVisible())) { await page.reload(); }
-                    await scenario.step('mandatory', async () => { await expect(entry).toBeVisible(); });
+                    await (scenario.step('mandatory', async () => { await expect(entry).toBeVisible(); }) satisfies Promise<unknown>);
                     // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe a real absence window.
                     await page.waitForTimeout(25);
                 });
@@ -160,6 +168,7 @@ describe('production quality lint', () => {
             expect(report.fileCount).toBe(5);
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['sourceHelper.ts', 'sourdaw-craft/no-fixed-test-sleep'],

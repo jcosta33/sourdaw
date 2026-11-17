@@ -177,6 +177,15 @@ runCraftRule('no-silent-catch', {
         'function deferred() { const { promise, resolve } = Promise.withResolvers(); void promise.catch(() => undefined); register(); return { promise, resolve }; }',
         'function deferred(promise: Promise<string>) { void promise.catch(() => {}); return promise; }',
         'function deferred(promise: Promise<string>) { void promise.catch(() => {}); return Promise.all([promise]); }',
+        'function deferred(promise) { void promise.catch(() => {}); return Promise.allSettled([promise]); }',
+        'function deferred(promise) { void promise.catch(() => {}); return Promise.resolve(promise); }',
+        'function deferred(promise) { void promise.catch(() => {}); return promise.then(transform); }',
+        'function deferred(promise) { void promise.catch(() => {}); return promise.finally(cleanup); }',
+        'function deferred(promise, ready) { void promise.catch(() => {}); if (ready) { return promise; } else { return Promise.all([promise]); } }',
+        'function deferred(promise, items) { void promise.catch(() => {}); for (const item of items) { if (item.skip) { continue; } if (item.stop) { break; } } return promise; }',
+        'function deferred(promise) { void promise.catch(() => {}); function inspect() { return undefined; } inspect(); return promise; }',
+        'function deferred(promise, replacement) { promise = replacement; void promise.catch(() => {}); return promise; }',
+        'function deferred(promise, replacement) { void promise.catch(() => {}); { let promise; promise = replacement; inspect(promise); } return promise; }',
         'function cancelled(promise) { if (aborted) { void promise.catch(() => {}); throw abortReason(); } return promise; }',
     ],
     invalid: [
@@ -199,7 +208,51 @@ runCraftRule('no-silent-catch', {
             errors: [{ message: /empty handler discards/ }],
         },
         {
-            code: 'function deferred(promise) { void promise.catch(() => {}); return Promise.allSettled([promise]); }',
+            code: 'function deferred(promise) { void promise.catch(() => {}); return Promise.allSettled([promise]).then(() => undefined); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, Promise) { void promise.catch(() => {}); return Promise.resolve(promise); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise) { void promise.catch(() => {}); return promise.then(transform, () => undefined); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, other) { void promise.catch(() => {}); return Promise.race([promise, other]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, other) { void promise.catch(() => {}); return Promise.any([promise, other]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, stop) { void promise.catch(() => {}); if (stop) { return; } return promise; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, stop) { void promise.catch(() => {}); if (stop) { return; } return Promise.all([promise]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, stop) { void promise.catch(() => {}); if (stop) { return { done: true }; } return { promise }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, other, stop) { void promise.catch(() => {}); if (stop) { const promise = other; return Promise.all([promise]); } return promise; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, items) { for (const item of items) { void promise.catch(() => {}); if (item.skip) { continue; } return promise; } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, replacement) { void promise.catch(() => {}); promise = replacement; return promise; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, replacement) { void promise.catch(() => {}); promise = replacement; return Promise.all([promise]); }',
             errors: [{ message: /empty handler discards/ }],
         },
     ],
@@ -282,6 +335,7 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from '@playwright/test'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { throw new Error('missing'); } });",
         "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await test.step('required', async () => { await expect(locator).toBeVisible(); }); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { const helper = async () => { if (await locator.isVisible()) { await test.step('unused', async () => { await expect(locator).toBeVisible(); }); } }; await setup(); });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await (test.step('required', async () => { await expect(locator).toBeVisible(); }) satisfies Promise<unknown>); });",
     ],
     invalid: [
         {
@@ -306,6 +360,18 @@ runCraftRule('no-conditional-playwright-admission', {
         },
         {
             code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } await customStep('outside', async () => { await expect(locator).toBeVisible(); }); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await (test.step('required', async () => { await expect(locator).toBeVisible(); }) as Promise<unknown>); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { if (await locator.isVisible()) { await <Promise<unknown>>(scenario.step('outer', async () => { await (scenario.step('inner', async () => { await verify(locator).toBeVisible(); })! satisfies Promise<unknown>); })); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } void (test.step('outside', async () => { await expect(locator).toBeVisible(); }) satisfies Promise<unknown>); });",
             errors: [{ message: /test can finish without asserting/ }],
         },
     ],
@@ -364,6 +430,10 @@ runCraftRule('no-invalid-vitest-expect', {
     ],
     invalid: [
         { code: "import { expect } from 'vitest'; expect().toBe(1);", errors: [{ message: /needs a subject/ }] },
+        {
+            code: "import { expect } from 'vitest'; function test() { return Promise.allSettled([expect(execution).rejects.toThrow()]); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
         {
             code: "import { expect } from 'vitest'; expect(1, 'a', 'b').toBe(1);",
             errors: [{ message: /needs a subject/ }],

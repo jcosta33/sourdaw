@@ -23,17 +23,21 @@ const calledMember = (call, name) => call?.type === 'CallExpression' && memberNa
 const isFunction = (node) => node?.type === 'ArrowFunctionExpression' || node?.type === 'FunctionExpression';
 const isIdentifier = (node, name) => node?.type === 'Identifier' && node.name === name;
 
-function definitions(context, identifier) {
+function variableForIdentifier(context, identifier) {
     if (identifier?.type !== 'Identifier') {
-        return [];
+        return undefined;
     }
     for (let scope = context.sourceCode.getScope(identifier); scope; scope = scope.upper) {
         const variable = scope.set.get(identifier.name);
         if (variable) {
-            return variable.defs;
+            return variable;
         }
     }
-    return [];
+    return undefined;
+}
+
+function definitions(context, identifier) {
+    return variableForIdentifier(context, identifier)?.defs ?? [];
 }
 
 const isGlobal = (context, node, name) => isIdentifier(node, name) && definitions(context, node).length === 0;
@@ -82,6 +86,74 @@ function isEmptyHandler(context, body) {
     );
 }
 
+const LOOP_STATEMENTS = new Set([
+    'DoWhileStatement',
+    'ForInStatement',
+    'ForOfStatement',
+    'ForStatement',
+    'WhileStatement',
+]);
+
+function jumpStaysInside(node, statement) {
+    for (let parent = node.parent; parent && parent !== statement.parent; parent = parent.parent) {
+        if (node.label) {
+            if (parent.type === 'LabeledStatement' && parent.label.name === node.label.name) {
+                return true;
+            }
+        } else if (
+            LOOP_STATEMENTS.has(parent.type) ||
+            (node.type === 'BreakStatement' && parent.type === 'SwitchStatement')
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function rejectionExits(context, statements, returnsOriginal) {
+    for (const statement of statements) {
+        const exit = rejectionExit(context, statement, returnsOriginal);
+        if (exit !== 'fallthrough') {
+            return exit;
+        }
+    }
+    return 'fallthrough';
+}
+
+function rejectionExit(context, statement, returnsOriginal) {
+    switch (statement.type) {
+        case 'ReturnStatement':
+            return returnsOriginal(statement.argument) ? 'propagates' : 'discards';
+        case 'ThrowStatement':
+            return 'propagates';
+        case 'BlockStatement':
+            return rejectionExits(context, statement.body, returnsOriginal);
+        case 'IfStatement': {
+            const consequent = rejectionExit(context, statement.consequent, returnsOriginal);
+            const alternate = statement.alternate
+                ? rejectionExit(context, statement.alternate, returnsOriginal)
+                : 'fallthrough';
+            if (consequent === 'discards' || alternate === 'discards') {
+                return 'discards';
+            }
+            return consequent === 'propagates' && alternate === 'propagates' ? 'propagates' : 'fallthrough';
+        }
+        default:
+            // Other statement shapes may fall through. Inspect their exits without assuming that they execute.
+            return hasSameFunctionNode(context, statement, (node) => {
+                if (node.type === 'ReturnStatement') {
+                    return !returnsOriginal(node.argument);
+                }
+                return (
+                    (node.type === 'BreakStatement' || node.type === 'ContinueStatement') &&
+                    !jumpStaysInside(node, statement)
+                );
+            })
+                ? 'discards'
+                : 'fallthrough';
+    }
+}
+
 function leavesRejectionObservable(context, call) {
     const original = call.callee.object;
     if (original.type !== 'Identifier') {
@@ -98,28 +170,45 @@ function leavesRejectionObservable(context, call) {
     if (ignored !== call && following[0]?.type === 'ThrowStatement') {
         return true;
     }
-    const binding = definitions(context, original)[0];
+    const variable = variableForIdentifier(context, original);
+    const binding = variable?.defs[0];
     if (!binding) {
         return false;
     }
+    const laterWrites = variable.references.filter(
+        (reference) => reference.isWrite() && reference.identifier.range[0] >= call.range[1]
+    );
     const returnsBinding = (value) =>
         isIdentifier(value, original.name) && definitions(context, value)[0]?.node === binding.node;
-    return following.some((next) => {
-        if (next.type !== 'ReturnStatement') {
+    function retainsRejectingValue(expression) {
+        const value = unwrap(expression);
+        if (returnsBinding(value)) {
+            return true;
+        }
+        if (isGlobalPromiseCall(context, value, 'resolve')) {
+            return retainsRejectingValue(value.arguments[0]);
+        }
+        return safePromiseContinuation(context, value) && retainsRejectingValue(value.callee.object);
+    }
+    function returnsOriginal(argument) {
+        if (!argument || laterWrites.some((reference) => reference.identifier.range[0] < argument.range[1])) {
             return false;
         }
-        const value = unwrap(next.argument);
+        const value = unwrap(argument);
         if (value?.type === 'ObjectExpression') {
             return value.properties.some(
-                (property) => property.type === 'Property' && property.kind === 'init' && returnsBinding(property.value)
+                (property) =>
+                    property.type === 'Property' && property.kind === 'init' && retainsRejectingValue(property.value)
             );
         }
-        const joined = promiseAllArguments(context, value);
+        const joined =
+            promiseArrayArguments(context, value, 'all') ?? promiseArrayArguments(context, value, 'allSettled');
         if (joined) {
-            return joined.elements.some(returnsBinding);
+            return joined.elements.some(retainsRejectingValue);
         }
-        return returnsBinding(value);
-    });
+        return retainsRejectingValue(value);
+    }
+    return rejectionExits(context, following, returnsOriginal) === 'propagates';
 }
 
 const noSilentCatch = rule(
@@ -304,6 +393,22 @@ function enclosingFunction(node) {
     return parent;
 }
 
+const ERASED_EXPRESSION_WRAPPERS = new Set([
+    'ParenthesizedExpression',
+    'TSAsExpression',
+    'TSNonNullExpression',
+    'TSSatisfiesExpression',
+    'TSTypeAssertion',
+]);
+
+function isAwaitedThroughErasedWrappers(expression) {
+    let value = expression;
+    while (value.parent?.expression === value && ERASED_EXPRESSION_WRAPPERS.has(value.parent.type)) {
+        value = value.parent;
+    }
+    return value.parent?.type === 'AwaitExpression' && value.parent.argument === value;
+}
+
 function isAwaitedPlaywrightStep(context, callback) {
     if (!isFunction(callback)) {
         return false;
@@ -312,7 +417,7 @@ function isAwaitedPlaywrightStep(context, callback) {
     return (
         calledMember(call, 'step') &&
         call.arguments[1] === callback &&
-        call.parent?.type === 'AwaitExpression' &&
+        isAwaitedThroughErasedWrappers(call) &&
         playwrightBinding(context, call.callee.object, 'test')
     );
 }
@@ -536,8 +641,12 @@ function safePromiseContinuation(context, call) {
     return false;
 }
 
-function promiseAllArguments(context, call) {
-    if (!calledMember(call, 'all') || !isGlobal(context, call.callee.object, 'Promise')) {
+function isGlobalPromiseCall(context, call, method) {
+    return calledMember(call, method) && isGlobal(context, call.callee.object, 'Promise');
+}
+
+function promiseArrayArguments(context, call, method) {
+    if (!isGlobalPromiseCall(context, call, method)) {
         return undefined;
     }
     const values = call.arguments[0];
@@ -548,7 +657,7 @@ function observationExpression(context, assertion) {
     let current = assertion;
     while (current.parent) {
         const parent = current.parent;
-        if (parent.type === 'ArrayExpression' && promiseAllArguments(context, parent.parent) === parent) {
+        if (parent.type === 'ArrayExpression' && promiseArrayArguments(context, parent.parent, 'all') === parent) {
             current = parent.parent;
             continue;
         }
@@ -569,27 +678,33 @@ function consumesBinding(context, expression, declaration) {
     if (isIdentifier(value, declaration.id.name)) {
         return definitions(context, value)[0]?.node === declaration;
     }
-    const array = promiseAllArguments(context, value);
+    const array = promiseArrayArguments(context, value, 'all');
     if (array) {
         return array.elements.some((element) => consumesBinding(context, element, declaration));
     }
     return safePromiseContinuation(context, value) && consumesBinding(context, value.callee.object, declaration);
 }
 
-function maySkipObservation(context, node) {
-    if (['ReturnStatement', 'BreakStatement', 'ContinueStatement'].includes(node.type)) {
-        return true;
-    }
+function hasSameFunctionNode(context, node, predicate) {
     if (isFunction(node) || node.type === 'FunctionDeclaration') {
         return false;
+    }
+    if (predicate(node)) {
+        return true;
     }
     return (context.sourceCode.visitorKeys[node.type] ?? []).some((key) => {
         const child = node[key];
         if (Array.isArray(child)) {
-            return child.some((value) => value && maySkipObservation(context, value));
+            return child.some((value) => value && hasSameFunctionNode(context, value, predicate));
         }
-        return child && maySkipObservation(context, child);
+        return child && hasSameFunctionNode(context, child, predicate);
     });
+}
+
+function maySkipObservation(context, node) {
+    return hasSameFunctionNode(context, node, (current) =>
+        ['ReturnStatement', 'BreakStatement', 'ContinueStatement'].includes(current.type)
+    );
 }
 
 function capturedAssertionObserved(context, assertion) {

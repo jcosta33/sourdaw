@@ -58,12 +58,15 @@ The runner refuses an implicit `oxlint-suppressions.json` before starting. The q
 pass neither uses hidden suppression flags nor introduces another fixer.
 
 The failure rules flag empty catches and direct success objects from handlers that do no
-recovery. A boolean value by itself cannot distinguish success from a conservative
+recovery. A detached catch keeps the original rejection observable when its remaining
+statements preserve the unchanged promise on every successful exit the rule can prove.
+Returning `Promise.allSettled` with that promise exposes its rejection as explicit data.
+A boolean value by itself cannot distinguish success from a conservative
 predicate or policy. The boundary rule follows direct JSON parsing, a response with
 local `fetch` or `Response` provenance, and the imported desktop bridge. Assigning the
 result to `unknown` keeps the validation step explicit. Playwright admission checks
 locally visible guards that would let the case finish without an assertion, including assertions
-inside awaited Playwright steps. Fixed test
+inside awaited Playwright steps with or without type wrappers. Fixed test
 sleeps include Playwright's timeout, directly awaited timer promises and test helpers that
 return only a delay. Tests that
 measure a real observation window can use a line-scoped reason for the duration.
