@@ -119,7 +119,13 @@ const RUN_ID = 'run-preview';
 const ASSISTANT_ID = 'assistant-preview';
 const RANGE = { startBeat: 0, endBeat: 8 };
 
-type SubgraphRequest = { renderTracks: readonly Track[]; trackId?: string; targetTrackId?: string };
+type SubgraphRequest = {
+    renderTracks: readonly Track[];
+    trackId?: string;
+    targetTrackId?: string;
+    startBeat?: number;
+    endBeat?: number;
+};
 
 const DRUMS_TRIM_ID = 'drums-trim';
 const DEVICE_NAMES: Readonly<Record<string, string>> = {
@@ -2065,7 +2071,7 @@ describe('real caller sequential measurement opportunity', () => {
                     (sum, device) => sum + (device.parameterValues['gain-level'] ?? 0),
                     0
                 );
-                return sineBuffer(0.5 * target.gain * 10 ** (level / 20));
+                return sineBuffer(0.5 * target.gain * 10 ** (level / 20), SAMPLE_RATE, 4);
             });
             const scope = { kind: 'tracks', ids: ['drums', 'bass'] };
             const call = (id: string, level: number) => {
@@ -2174,6 +2180,11 @@ describe('real caller sequential measurement opportunity', () => {
                 projectRevision: before.revision,
                 streamIdentity: { runId: RUN_ID, requestId: 'refinement', cancellationGeneration: 0 },
             });
+            const renderRequests = engine.renderTrackSubgraphOffline.mock.calls.map(([request]) => request);
+            expect(renderRequests).toHaveLength(outcome === 'improve' ? 8 : 4);
+            for (const request of renderRequests) {
+                expect(request).toMatchObject({ startBeat: 0, endBeat: 8 });
+            }
             if (outcome === 'decline') {
                 expect(planned.planningOutcome).toMatchObject({
                     kind: 'unsupported',
@@ -2235,6 +2246,10 @@ describe('real caller sequential measurement opportunity', () => {
             const audition = resolveMeasuredPreviewAudition({ confirmationId, targetId: 'drums' });
             if (audition.status !== 'available') throw new TypeError(audition.reason);
             expect(audition.baseline.buffer).not.toBe(audition.preview.buffer);
+            expect(audition.baseline.buffer.duration).toBe(4);
+            expect(audition.preview.buffer.duration).toBe(4);
+            expect(audition.baseline.buffer.length).toBe(4 * SAMPLE_RATE);
+            expect(audition.preview.buffer.length).toBe(4 * SAMPLE_RATE);
             expect(audition.baseline.gain).toBeCloseTo(10 ** (improvedLevel / 20), 2);
             expect(audition.preview.gain).toBe(1);
             const pair = preview?.targets.find((target) => target.targetId === 'drums')?.audition;
