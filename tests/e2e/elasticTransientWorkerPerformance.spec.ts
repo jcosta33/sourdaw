@@ -8,6 +8,7 @@ import {
     JANK_TASK_CEILING_MS,
     NATIVE_REFERENCE_FACTOR,
 } from '../../scripts/e2eNativeTaskBudget';
+
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 import {
