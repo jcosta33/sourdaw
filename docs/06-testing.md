@@ -968,9 +968,12 @@ the PR secret scan and dependency review remain in required validation even when
 
 ### Required PR unit coverage
 
-The existing four isolated PR unit shards collect V8 coverage. The coverage job checks all four
-reports belong to the current run attempt and tested revision, merges them into one production
-report and contributes its result to the required `Gate`. The unit coverage artifact contains
+Each of the four isolated PR unit jobs runs its share of non-`src/` tests first, then runs its
+share of `src/` tests with V8 coverage. Each group uses the existing Vitest collection rules at
+the checkout root. Running tooling tests without V8 profiling keeps their compiler and linter
+work outside coverage collection. The coverage job checks all four reports belong to the
+current run attempt and tested revision, merges them into one production report and contributes
+its result to the required `Gate`. The unit coverage artifact contains
 the HTML report, exact covered/total counts, the uncovered changed file and line list in
 `gate.json`, and shard wall-clock durations. The coverage shards use a 15-second default test
 timeout to accommodate V8 instrumentation of CPU-intensive tests. Explicit per-test timeouts

@@ -490,7 +490,13 @@ export function runUnitPhase(
     );
     let args = ['run', 'test:run', `--shard=${shard}`, ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`)];
     if (reportsCoverage) {
+        const toolingStatus = ports.run(context.pnpm, [...args, '--exclude=src/**'], options).status ?? 1;
+        if (toolingStatus !== 0) {
+            return toolingStatus;
+        }
+        // Keep Vitest's existing exclusions and coverage paths rooted at the checkout.
         args.push(
+            '--exclude=!(src|src/**)',
             '--coverage',
             '--testTimeout=15000',
             '--coverage.reporter=json',
