@@ -231,6 +231,51 @@ describe('GrandBoulePanel', () => {
         expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
+    it('keeps the focusable piano disclosure open until the last preview pointer releases', () => {
+        render(<GrandBoulePanel deviceId="dev-1" />);
+        const piano = screen.getByRole('button', { name: 'Piano keyboard' });
+        piano.focus();
+        expect(piano).toHaveFocus();
+        fireEvent.click(piano);
+
+        const canvas = screen.getByLabelText('Grand Boule interactive piano');
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
+        expect(piano).toHaveAttribute('aria-disabled', 'true');
+        expect(piano).toHaveFocus();
+        fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 220, clientY: 400 });
+        fireEvent.click(piano);
+        expect(piano).toHaveAttribute('aria-expanded', 'true');
+        expect(canvas).toBeVisible();
+
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+        expect(piano).toHaveAttribute('aria-disabled', 'true');
+        fireEvent.click(piano);
+        expect(canvas).toBeVisible();
+
+        fireEvent.pointerCancel(window, { pointerId: 2 });
+        expect(piano).not.toHaveAttribute('aria-disabled', 'true');
+        fireEvent.click(piano);
+        expect(piano).toHaveAttribute('aria-expanded', 'false');
+        expect(canvas).not.toBeInTheDocument();
+    });
+
+    it('clears the disclosure lock when a different device takes over the panel', () => {
+        const { rerender } = render(<GrandBoulePanel deviceId="dev-1" />);
+        const piano = screen.getByRole('button', { name: 'Piano keyboard' });
+        fireEvent.click(piano);
+        const canvas = screen.getByLabelText('Grand Boule interactive piano');
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
+        expect(piano).toHaveAttribute('aria-disabled', 'true');
+
+        rerender(<GrandBoulePanel deviceId="dev-2" />);
+        expect(canvas).not.toBeInTheDocument();
+        expect(piano).not.toHaveAttribute('aria-disabled', 'true');
+        fireEvent.click(piano);
+        expect(piano).toHaveAttribute('aria-expanded', 'false');
+    });
+
     it('applies shrink-0 to Grand Boule section cards including MorphPanel', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
 

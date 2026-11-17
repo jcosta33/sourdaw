@@ -182,6 +182,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lastVelocity, setLastVelocity] = useState(0);
     const [openVisualizations, setOpenVisualizations] = useState<Visualization[]>([]);
+    const [pianoPreviewHeld, setPianoPreviewHeld] = useState(false);
     const visualizationId = useId();
 
     // The pedal subscriber dispatches through use cases that need the live
@@ -344,6 +345,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         lidPosition={config.lidPosition}
                         onNoteOn={handleNoteOn}
                         onNoteOff={handleNoteOff}
+                        onPreviewHoldChange={setPianoPreviewHeld}
                         className="h-48 w-full"
                     />
                 </>
@@ -390,18 +392,23 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 <Row wrap gap={1.5}>
                     {visualizations.map(({ id, label }) => {
                         const expanded = openVisualizations.includes(id);
+                        const collapseDisabled = id === 'piano' && pianoPreviewHeld;
                         return (
                             <DawPluginChip
                                 key={id}
                                 caps={false}
                                 className="gap-1"
+                                aria-disabled={collapseDisabled || undefined}
                                 aria-expanded={expanded}
                                 aria-controls={`${visualizationId}-${id}`}
-                                onClick={() =>
+                                onClick={() => {
+                                    if (collapseDisabled) {
+                                        return;
+                                    }
                                     setOpenVisualizations((current) =>
                                         current.includes(id) ? current.filter((open) => open !== id) : [...current, id]
-                                    )
-                                }
+                                    );
+                                }}
                             >
                                 {label}
                                 <ChevronDown aria-hidden="true" className={expanded ? 'size-3 rotate-180' : 'size-3'} />
