@@ -260,6 +260,31 @@ describe('GrandBoulePanel', () => {
         expect(canvas).not.toBeInTheDocument();
     });
 
+    it.each(['blur', 'lostpointercapture'])(
+        'makes the piano disclosure usable after %s without a pointer release',
+        (interruption) => {
+            render(<GrandBoulePanel deviceId="dev-1" />);
+            const piano = screen.getByRole('button', { name: 'Piano keyboard' });
+            fireEvent.click(piano);
+            const canvas = screen.getByLabelText('Grand Boule interactive piano');
+            vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 480));
+            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 400 });
+            expect(piano).toHaveAttribute('aria-disabled', 'true');
+
+            if (interruption === 'blur') {
+                fireEvent.blur(window);
+            } else {
+                fireEvent(canvas, new PointerEvent(interruption, { bubbles: true, pointerId: 1 }));
+            }
+
+            expect(piano).not.toHaveAttribute('aria-disabled', 'true');
+            expect(canvas).toBeVisible();
+            fireEvent.click(piano);
+            expect(piano).toHaveAttribute('aria-expanded', 'false');
+            expect(canvas).not.toBeInTheDocument();
+        }
+    );
+
     it('clears the disclosure lock when a different device takes over the panel', () => {
         const { rerender } = render(<GrandBoulePanel deviceId="dev-1" />);
         const piano = screen.getByRole('button', { name: 'Piano keyboard' });

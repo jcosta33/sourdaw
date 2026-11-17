@@ -250,20 +250,30 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
     return null;
 }
 
-function releasePreview(
-    pressed: Map<number, () => void>,
+function retirePreviewHold(
+    heldPointers: Set<number>,
     pointerId: number,
     onPreviewHoldChange: PianoModel3DProps['onPreviewHoldChange']
 ): void {
-    const release = pressed.get(pointerId);
-    if (release === undefined) {
-        return;
-    }
-    pressed.delete(pointerId);
-    if (pressed.size === 0) {
+    if (heldPointers.delete(pointerId) && heldPointers.size === 0) {
         onPreviewHoldChange?.(false);
     }
-    release();
+}
+
+type PreviewGestures = {
+    heldPointers: Set<number>;
+    releases: Map<number, () => void>;
+};
+
+function releasePreview(
+    { heldPointers, releases }: PreviewGestures,
+    pointerId: number,
+    onPreviewHoldChange: PianoModel3DProps['onPreviewHoldChange']
+): void {
+    const release = releases.get(pointerId);
+    releases.delete(pointerId);
+    retirePreviewHold(heldPointers, pointerId, onPreviewHoldChange);
+    release?.();
 }
 
 export const PianoModel3D = ({
@@ -276,9 +286,8 @@ export const PianoModel3D = ({
     className,
 }: PianoModel3DProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    // A held pointer retains the release route that belonged to its Note On,
-    // even if the panel subsequently resolves a different engine handle.
-    const pressedNotesRef = useRef<Map<number, () => void>>(new Map());
+    // A gesture can stop blocking the disclosure before its captured Note Off route is used.
+    const gesturesRef = useRef<PreviewGestures>({ heldPointers: new Set(), releases: new Map() });
     const previewHoldChangeRef = useRef(onPreviewHoldChange);
     previewHoldChangeRef.current = onPreviewHoldChange;
     const animRef = useRef<KeyAnim[]>(
@@ -562,19 +571,25 @@ export const PianoModel3D = ({
 
     // Window events cover ordinary gesture endings when capture is unavailable.
     useEffect(() => {
-        const pressed = pressedNotesRef.current;
+        const gestures = gesturesRef.current;
         const releaseFromWindow = (event: PointerEvent): void =>
-            releasePreview(pressed, event.pointerId, previewHoldChangeRef.current);
+            releasePreview(gestures, event.pointerId, previewHoldChangeRef.current);
+        const clearPreviewHolds = (): void => {
+            if (gestures.heldPointers.size > 0) {
+                gestures.heldPointers.clear();
+                previewHoldChangeRef.current?.(false);
+            }
+        };
         window.addEventListener('pointerup', releaseFromWindow);
         window.addEventListener('pointercancel', releaseFromWindow);
+        window.addEventListener('blur', clearPreviewHolds);
         return () => {
             window.removeEventListener('pointerup', releaseFromWindow);
             window.removeEventListener('pointercancel', releaseFromWindow);
+            window.removeEventListener('blur', clearPreviewHolds);
             // A pitch-wide Note Off here could stop somebody else's note.
-            if (pressed.size > 0) {
-                pressed.clear();
-                previewHoldChangeRef.current?.(false);
-            }
+            gestures.releases.clear();
+            clearPreviewHolds();
         };
     }, []);
 
@@ -590,8 +605,13 @@ export const PianoModel3D = ({
     };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-        const pressed = pressedNotesRef.current;
-        if (onNoteOn === undefined || pressed.has(e.pointerId)) {
+        const { heldPointers, releases } = gesturesRef.current;
+        if (heldPointers.has(e.pointerId)) {
+            return;
+        }
+        // A reused pointer ID starts a new gesture even if the prior one missed its terminal event.
+        releases.delete(e.pointerId);
+        if (onNoteOn === undefined) {
             return;
         }
         const canvas = canvasRef.current;
@@ -609,8 +629,9 @@ export const PianoModel3D = ({
         const [px, py] = canvasToPixel(e.clientX, e.clientY);
         const midi = hitTestKey(px, py, canvas.width, canvas.height);
         if (midi !== null) {
-            pressed.set(e.pointerId, () => onNoteOff?.(midi));
-            if (pressed.size === 1) {
+            releases.set(e.pointerId, () => onNoteOff?.(midi));
+            heldPointers.add(e.pointerId);
+            if (heldPointers.size === 1) {
                 onPreviewHoldChange?.(true);
             }
             onNoteOn(midi, 0.8);
@@ -618,7 +639,11 @@ export const PianoModel3D = ({
     };
 
     const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
-        releasePreview(pressedNotesRef.current, event.pointerId, onPreviewHoldChange);
+        releasePreview(gesturesRef.current, event.pointerId, onPreviewHoldChange);
+    };
+
+    const handleLostPointerCapture = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        retirePreviewHold(gesturesRef.current.heldPointers, event.pointerId, onPreviewHoldChange);
     };
 
     return (
@@ -633,6 +658,7 @@ export const PianoModel3D = ({
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
                 onPointerLeave={handlePointerUp}
+                onLostPointerCapture={handleLostPointerCapture}
             />
             {/* The canvas itself is opaque to assistive tech; announce the
                 currently sounding notes through a polite live region. */}
