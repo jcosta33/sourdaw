@@ -163,15 +163,24 @@ it('held case', async () => { writeFileSync(${JSON.stringify(entered)}, 'entered
         env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture },
     });
     let output = '';
-    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stdout.on('data', (chunk: Buffer) => {
+        output += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+        output += chunk.toString();
+    });
     const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
     try {
-        await vi.waitFor(() => {
-            expect(readFileSync(entered, 'utf8')).toBe('entered');
-            expect(child.exitCode).toBeNull();
-            expect(output).toContain('unique-early-failure-sentinel');
-        }, { timeout: 20_000 });
+        await vi.waitFor(
+            () => {
+                expect(readFileSync(entered, 'utf8')).toBe('entered');
+                expect(child.exitCode).toBeNull();
+                expect(output).toContain('vitest case failure: first case');
+                expect(output).toContain('Error: unique-early-failure-sentinel');
+                expect(output).toContain('early-failure.spec.ts:');
+            },
+            { timeout: 20_000 }
+        );
     } finally {
         if (child.pid !== undefined) {
             try {
