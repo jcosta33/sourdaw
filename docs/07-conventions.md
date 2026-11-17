@@ -8,7 +8,7 @@ This guide defines coding conventions and patterns for clarity, consistency, and
 
 - Use real types. Do not escape through `any`, unsafe casts, or broad index signatures.
 - Narrow unknown values at their boundary.
-- Do not suppress errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules. The one exception is an interface that is a declaration-merging target (module augmentation): it may carry a line-scoped disable for the rules that refuse merge targets, with the reason beside it ([ADR 0058](../.agents/decisions/0058-app-actions-live-with-their-owning-modules.md)).
+- Do not suppress actual errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules. An interface that is a declaration-merging target (module augmentation) may carry a line-scoped disable for the rules that refuse merge targets, with the reason beside it ([ADR 0058](../.agents/decisions/0058-app-actions-live-with-their-owning-modules.md)). An intentional duration measurement or failure-observation path that a quality rule cannot prove may carry a line-scoped disable naming the rule, with a specific reason and a test or other evidence that would expose the failure ([lint quality checks](../scripts/lint/README.md)).
 - Fix fixtures and tests to match production contracts. Never weaken the contract to make a check pass.
 
 ## Prefer explicit control flow
