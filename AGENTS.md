@@ -702,11 +702,12 @@ other way. Validation order, admission, and retry semantics: [delivery-orchestra
 Keep batches small and merges prompt. Hold at most five live lanes at once. Sequence changes to the
 same handwritten file or a contract another lane relies on. Stack only on a real dependency.
 
-When lanes touch the same generated file, compare their live diffs and trace the generator inputs.
-Separate lanes may proceed when their edits in that file are confined to distinct, deterministically
-regeneratable fields and their changed inputs are independent. Use the scoped generators in your
-own lane and check mergeability before delivery. Sequence changes that affect the same input or
-output field, or that edit a hand-curated record or measured baseline in the shared file.
+Compare live diffs and trace each changed generator input to the fields and digests it feeds,
+including outputs still awaiting regeneration. Separate lanes may share a generated file when
+their changes affect distinct, deterministically regeneratable fields from independent inputs.
+Use the scoped generators in your own lane and check mergeability before delivery. Sequence
+changes that affect the same input or output field, or that edit a hand-curated record or measured
+baseline in the shared file.
 
 Resolve generated conflicts in your own lane. Regenerate the affected fields from the merged inputs
 and preserve hand-curated evidence and measured baselines. Publish the resolved head for fresh

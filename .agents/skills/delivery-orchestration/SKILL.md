@@ -96,10 +96,11 @@ the same issue or surface:
 - `gh pr list --state open --json number,headRefName,files` for open PRs touching the files the
   change will touch.
 
-A lane or PR you did not open is another agent's claim and is read-only for you. When paths overlap
-in a generated file, read both diffs and trace the generator inputs to the fields they produce.
-Proceed in separate lanes for distinct, deterministically regeneratable fields with independent
-inputs. Apply the lane cap and shared-work rules in AGENTS.md [Delivery](../../../AGENTS.md#delivery).
+A lane or PR you did not open is another agent's claim and is read-only for you. Compare live diffs
+and trace their changed inputs to the generated fields and digests they feed, including outputs
+still awaiting regeneration. Proceed in separate lanes for distinct, deterministically
+regeneratable fields with independent inputs. Apply the lane cap and shared-work rules in AGENTS.md
+[Delivery](../../../AGENTS.md#delivery).
 
 Choose the author's model before opening the lane, then open it with
 `pnpm lane:open [issue] [slug] --type <type> --model <model>`. `--model` is required and must be the
