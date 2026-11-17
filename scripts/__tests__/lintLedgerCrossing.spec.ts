@@ -23,6 +23,7 @@ import {
 const SUP = 'eslint-suppressions.json';
 const OXC = '.oxlintrc.json';
 const CRAFT = 'oxlint.craft-baseline.mjs';
+const QUALITY = 'oxlint-quality-baseline.json';
 const SIZE = 'eslint.size-baseline.mjs';
 const CEIL = 'scripts/lintSizeCeilings.json';
 const PLG = '.oxlint-plugins.json';
@@ -160,6 +161,11 @@ describe('lint ledger crossing decision', () => {
             name: 'a suppression count lowered',
             base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 } } }) },
             edited: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 1 } } }) },
+        },
+        {
+            name: 'a quality violation count lowered',
+            base: { [QUALITY]: JSON.stringify({ 'src/x.ts': { 'vitest/valid-expect': { count: 2 } } }) },
+            edited: { [QUALITY]: JSON.stringify({ 'src/x.ts': { 'vitest/valid-expect': { count: 1 } } }) },
         },
         {
             name: 'one of two rules suppressed at the same figure removed',

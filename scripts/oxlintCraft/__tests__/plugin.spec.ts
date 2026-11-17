@@ -1,8 +1,7 @@
 import { RuleTester } from 'oxlint/plugins-dev';
 import { describe, expect, it } from 'vitest';
 
-import { craftBaselineFiles } from '../../../oxlint.craft-baseline.mjs';
-import plugin, { type CraftRuleId, isCraftBaselineFile, relativeFilename } from '../plugin.mjs';
+import plugin, { type CraftRuleId } from '../plugin.mjs';
 
 RuleTester.describe = describe;
 RuleTester.it = it;
@@ -25,27 +24,18 @@ describe('sourdaw-craft plugin surface', () => {
         expect(plugin.meta.name).toBe('sourdaw-craft');
         expect(Object.keys(rules).sort()).toEqual([
             'no-conditional-empty-spread',
+            'no-conditional-playwright-admission',
             'no-control-flow-ternary',
+            'no-external-data-assertion',
+            'no-failed-operation-success',
+            'no-fixed-test-sleep',
+            'no-invalid-vitest-expect',
             'no-json-parse-stringify',
             'no-long-array-chain',
+            'no-silent-catch',
             'no-spread-clone-array-method',
             'no-useless-clone-spread',
         ]);
-    });
-
-    it('should match listed relative paths and reject unlisted ones', () => {
-        expect(relativeFilename('src/example.ts')).toBe('src/example.ts');
-        expect(isCraftBaselineFile('src/not-on-any-list.ts', 'no-useless-clone-spread')).toBe(false);
-        const listed = craftBaselineFiles['no-useless-clone-spread'];
-        const first = listed[0];
-        const last = listed[listed.length - 1];
-        expect(listed.length).toBeGreaterThan(1);
-        if (typeof first !== 'string' || typeof last !== 'string') {
-            throw new TypeError('no-useless-clone-spread baseline must list at least two paths');
-        }
-        expect(first).not.toBe(last);
-        expect(isCraftBaselineFile(first, 'no-useless-clone-spread')).toBe(true);
-        expect(isCraftBaselineFile(last, 'no-useless-clone-spread')).toBe(true);
     });
 });
 
@@ -174,6 +164,192 @@ runCraftRule('no-control-flow-ternary', {
         {
             code: 'const next =\n    ready\n        ? start()\n        : stop();',
             errors: [{ message: /Do not use a ternary as an if/ }],
+        },
+    ],
+});
+
+runCraftRule('no-silent-catch', {
+    valid: [
+        'try { work(); } catch (error) { if (!isAbortError(error)) { throw error; } }',
+        'try { work(); } catch (error) { report(error); }',
+        'pending.catch((error) => { throw error; });',
+        'pending.catch(() => recover());',
+        'function deferred() { const { promise, resolve } = Promise.withResolvers(); void promise.catch(() => undefined); register(); return { promise, resolve }; }',
+        'function cancelled(promise) { if (aborted) { void promise.catch(() => {}); throw abortReason(); } return promise; }',
+    ],
+    invalid: [
+        { code: 'try { work(); } catch {}', errors: [{ message: /empty handler discards/ }] },
+        { code: 'try { work(); } catch { /* ignore */ }', errors: [{ message: /empty handler discards/ }] },
+        { code: 'work().catch(() => {});', errors: [{ message: /empty handler discards/ }] },
+        { code: 'await work().catch(() => undefined);', errors: [{ message: /empty handler discards/ }] },
+        { code: 'work()["catch"](() => { return; });', errors: [{ message: /empty handler discards/ }] },
+        { code: 'void work().catch(() => void 0);', errors: [{ message: /empty handler discards/ }] },
+    ],
+});
+
+runCraftRule('no-failed-operation-success', {
+    valid: [
+        'function read() { try { return storage(); } catch { return null; } }',
+        'function read() { try { return storage(); } catch { return []; } }',
+        'function hasCollision() { try { return findCollision(); } catch { return true; } }',
+        'async function probe() { return await optional().catch(() => false); }',
+        'async function load() { return await request().catch(() => retry()); }',
+        'function save() { try { create(); } catch (error) { if (isAlreadySaved(error)) { return true; } throw error; } }',
+        'function save() { try { create(); } catch { repair(); return { ok: true }; } }',
+    ],
+    invalid: [
+        {
+            code: 'function save() { try { create(); } catch { return { ok: true }; } }',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+        { code: 'work().catch(() => ({ success: true }));', errors: [{ message: /unconditionally return success/ }] },
+        {
+            code: 'work().catch((error) => { console.warn(error); return { ok: true }; });',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+    ],
+});
+
+runCraftRule('no-external-data-assertion', {
+    valid: [
+        'const raw = JSON.parse(text) as unknown;',
+        'const option = { kind: "a" } as const;',
+        'const raw: unknown = JSON.parse(text); const valid = schema.parse(raw);',
+        'const raw: unknown = JSON.parse(text); if (isModel(raw)) { use(raw); }',
+        'async function work(client: LocalCache) { return (await client.json()) as Model; }',
+        'function work(JSON: DomainParser) { return JSON.parse(raw) as Model; }',
+        'async function work(fetch: LocalReader) { const response = await fetch(key); return (await response.json()) as Model; }',
+        'async function work(response) { return (await response.json()) as Model; }',
+    ],
+    invalid: [
+        { code: 'const data = JSON.parse(text) as Model;', errors: [{ message: /Validate external data/ }] },
+        { code: 'const data = <Model>JSON["parse"](text);', errors: [{ message: /Validate external data/ }] },
+        {
+            code: 'async function work() { const response = await fetch(url); return (await response.json()) as Model; }',
+            errors: [{ message: /Validate external data/ }],
+        },
+        {
+            code: 'async function work(response: Response) { return (await response.json()) as Model; }',
+            errors: [{ message: /Validate external data/ }],
+        },
+        {
+            code: 'async function work() { return (await (await fetch(url)).json()) as Model; }',
+            errors: [{ message: /Validate external data/ }],
+        },
+        {
+            code: 'import { desktopInvoke as invoke } from "#/utils/desktopBridge"; async function work() { return (await invoke("read")) as Model; }',
+            errors: [{ message: /Validate external data/ }],
+        },
+    ],
+});
+
+runCraftRule('no-conditional-playwright-admission', {
+    valid: [
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await setup(); } await expect(locator).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; async function helper() { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } } test('name', async () => { await helper(); });",
+        "import { test, expect } from 'vitest'; test('name', async () => { if (await locator.isVisible()) { expect(value).toBe(1); } });",
+        "import { test, expect } from '@playwright/test'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { throw new Error('missing'); } });",
+    ],
+    invalid: [
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible().catch(() => false)) { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { const entryExists = await locator.isVisible().catch(() => false); if (entryExists) { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { if (!(await locator.isVisible())) { return; } await verify(locator).toBeVisible(); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+    ],
+});
+
+runCraftRule('no-fixed-test-sleep', {
+    valid: [
+        'await expect(locator).toBeVisible();',
+        'await vi.advanceTimersByTimeAsync(500);',
+        'await page.clock.runFor(500);',
+        'setTimeout(expire, 500);',
+        'await Promise.race([completed, new Promise((resolve) => setTimeout(resolve, 500))]);',
+        'import { setTimeout as sleep } from "./fakeClock"; await sleep(500);',
+        'const setTimeout = makeFakeTimer(); await new Promise((resolve) => setTimeout(resolve, 500));',
+    ],
+    invalid: [
+        { code: 'await page.waitForTimeout(500);', errors: [{ message: /observable outcome/ }] },
+        {
+            code: 'await new Promise((resolve) => setTimeout(resolve, 50));',
+            errors: [{ message: /observable outcome/ }],
+        },
+        {
+            code: 'await new Promise<void>((resolve) => { window.setTimeout(() => resolve(), 0); });',
+            errors: [{ message: /observable outcome/ }],
+        },
+        {
+            code: 'import { setTimeout as sleep } from "node:timers/promises"; await sleep(50);',
+            errors: [{ message: /observable outcome/ }],
+        },
+    ],
+});
+
+runCraftRule('no-invalid-vitest-expect', {
+    valid: [
+        "import { expect } from 'vitest'; expect(value, 'context').toBe(expected);",
+        "import { expect } from 'vitest'; expect(value).to.be.true;",
+        "import { expect } from 'vitest'; expect.soft(value, 'context').toBe(expected);",
+        "import { expect } from 'vitest'; expect.any(String); expect.assertions(1);",
+        "import { expect } from 'vitest'; function use(expect) { expect(value); }",
+        "import { expect } from 'vitest'; async function test() { await expect(execution).rejects.toThrow('invalid'); }",
+        "import { expect } from 'vitest'; function test() { return expect(execution).resolves.toBe(1); }",
+        "import { expect as check } from 'vitest'; async function test() { const rejected = check(execution).rejects.toThrow('invalid'); await vi.advanceTimersByTimeAsync(10); await rejected; check(calls).toBe(1); }",
+        "import { expect } from 'vitest'; async function test() { const settled = expect(rendering).rejects.toThrow('aborted'); controller.abort(); await vi.advanceTimersByTimeAsync(0); await settled; }",
+        "import { expect } from 'vitest'; async function test() { const assertion = expect(execution).rejects.toThrow(); await Promise.all([assertion, completed]); }",
+        "import { expect } from 'vitest'; async function test() { await expect.poll(getValue, { interval: 10 }).toBe(2); }",
+        "import { expect } from 'vitest'; async function test() { await expect(event).resolves.toBe(2).then(done).finally(cleanup); }",
+    ],
+    invalid: [
+        { code: "import { expect } from 'vitest'; expect().toBe(1);", errors: [{ message: /needs a subject/ }] },
+        {
+            code: "import { expect } from 'vitest'; expect(1, 'a', 'b').toBe(1);",
+            errors: [{ message: /needs a subject/ }],
+        },
+        { code: "import { expect } from 'vitest'; expect(value);", errors: [{ message: /with a matcher/ }] },
+        {
+            code: "import { expect } from 'vitest'; expect(value).toBeDefined;",
+            errors: [{ message: /with a matcher/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; expect(execution).rejects.toThrow();",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { const unused = expect(execution).rejects.toThrow(); await advance(); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { const assertion = expect(execution).rejects.toThrow(); if (ready) { await assertion; } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { const assertion = expect(execution).rejects.toThrow(); { const assertion = Promise.resolve(); await assertion; } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { const assertion = expect(execution).rejects.toThrow(); if (ready) { return; } await assertion; }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { await expect(event).resolves.toBe(2).catch(() => undefined); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { await expect(event).resolves.toBe(2).then(undefined, () => undefined); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; expect.poll(getValue).toBe(2);",
+            errors: [{ message: /rejection reaches the test/ }],
         },
     ],
 });

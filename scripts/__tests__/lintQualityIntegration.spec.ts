@@ -1,0 +1,200 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { parseQualityReport, QUALITY_BUDGET } from '../lintQualityBudget';
+import { buildQualityLintArgv } from '../runLint';
+
+const root = resolve(import.meta.dirname, '../..');
+
+describe('production quality lint', () => {
+    it('observes typed, Vitest and Playwright failures from one real CLI pass', () => {
+        const scripts = mkdtempSync(join(root, 'scripts/lint-quality-probe-'));
+        const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-probe-'));
+        try {
+            const runTime = join(scripts, 'typed.ts');
+            const unit = join(scripts, 'unit.spec.ts');
+            const browser = join(e2e, 'browser.spec.ts');
+            writeFileSync(
+                runTime,
+                `
+                export function missing(value: 'start' | 'stop') {
+                    switch (value) {
+                        case 'start': return 1;
+                        default: return 0;
+                    }
+                }
+                export function complete(value: 'start' | 'stop') {
+                    switch (value) {
+                        case 'start': return 1;
+                        case 'stop': return 0;
+                        default: throw new Error('unexpected');
+                    }
+                }
+                export function acceptsOpenString(value: string) {
+                    switch (value) {
+                        case 'start': return 1;
+                        default: return 0;
+                    }
+                }
+                export async function runtimeTimer() {
+                    await new Promise<void>((complete) => setTimeout(complete, 10));
+                }
+                export function catchesQuietly(run: () => void) {
+                    try { run(); } catch { /* ignore */ }
+                }
+                export function handlesCancellation(run: () => void) {
+                    try { run(); } catch (error) {
+                        if (!(error instanceof DOMException && error.name === 'AbortError')) { throw error; }
+                    }
+                }
+                export function hidesFailure(run: () => { ok: boolean }) {
+                    try { return run(); } catch { return { ok: true }; }
+                }
+                export function optionalStorage(read: () => string) {
+                    try { return read(); } catch { return null; }
+                }
+                export function assertsPayload(text: string) {
+                    return JSON.parse(text) as { name: string };
+                }
+                export function narrowsPayload(text: string) {
+                    const raw: unknown = JSON.parse(text);
+                    if (typeof raw === 'string') { return raw; }
+                    return null;
+                }
+                export function copiesWithoutChange(record: { name: string }) {
+                    return { ...record };
+                }
+                export function copiesWithChange(record: { name: string }) {
+                    return { ...record, name: 'new' };
+                }
+            `
+            );
+            writeFileSync(
+                unit,
+                `
+                import { expect, it, vi } from 'vitest';
+                it('keeps malformed assertions red', () => {
+                    expect(true).toBeDefined;
+                });
+                it('keeps floating assertion failures red', () => {
+                    expect(Promise.resolve(true)).resolves.toBe(true);
+                });
+                it('keeps conditional assertions red', () => {
+                    if (Math.random() > 0.5) { expect(true).toBe(true); }
+                });
+                it('accepts capture before progressing fake timers', async () => {
+                    const task = Promise.resolve(true);
+                    const assertion = expect(task, 'context').resolves.toBe(true);
+                    await vi.advanceTimersByTimeAsync(10);
+                    await assertion;
+                });
+                it.each([1, 2])('accepts an expectation per case', (value) => {
+                    const observed = value > 1 ? 2 : 1;
+                    expect(observed).toBe(value);
+                });
+                it('refuses a fixed synchronization delay', async () => {
+                    await new Promise<void>((complete) => setTimeout(complete, 10));
+                    expect(true).toBe(true);
+                });
+            `
+            );
+            writeFileSync(
+                browser,
+                `
+                import { test, expect } from '../e2eTest';
+                test('required entry', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible().catch(() => false)) {
+                        await expect(entry).toBeVisible();
+                    }
+                });
+                test('conditionally retry', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (!(await entry.isVisible())) { await page.reload(); }
+                    await expect(entry).toBeVisible();
+                    // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe a real absence window.
+                    await page.waitForTimeout(25);
+                });
+            `
+            );
+            const argv = buildQualityLintArgv([runTime, unit, browser]).slice(2);
+            const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), argv, {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 60_000,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+            const report = parseQualityReport(result.stdout, root);
+            expect(report.fileCount).toBe(3);
+            expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
+                [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
+                    ['typed.ts', 'sourdaw-craft/no-external-data-assertion'],
+                    ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
+                    ['typed.ts', 'sourdaw-craft/no-silent-catch'],
+                    ['typed.ts', 'sourdaw-craft/no-useless-clone-spread'],
+                    ['typed.ts', 'typescript/switch-exhaustiveness-check'],
+                    ['unit.spec.ts', 'sourdaw-craft/no-fixed-test-sleep'],
+                    ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
+                    ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
+                    ['unit.spec.ts', 'vitest/no-conditional-expect'],
+                ].toSorted()
+            );
+        } finally {
+            rmSync(scripts, { recursive: true, force: true });
+            rmSync(e2e, { recursive: true, force: true });
+        }
+    }, 75_000);
+
+    it('keeps the final bytes and the ledger stable across real focused check and fix', () => {
+        const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-run-'));
+        try {
+            const fixture = join(e2e, 'quietWindow.spec.ts');
+            const ledgerPath = join(root, QUALITY_BUDGET);
+            const ledger = readFileSync(ledgerPath);
+            const formatted = `import { expect, test } from '../e2eTest';
+
+test('observes the whole window', async ({ page }) => {
+    // eslint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe that no navigation occurs over time.
+    await page.waitForTimeout(25);
+    expect(page.url()).toBe('about:blank');
+});
+`;
+            writeFileSync(fixture, formatted.replace("'about:blank'", '"about:blank"'));
+            const runLint = (fix: boolean) => {
+                const args = [resolve(root, 'scripts/runLint.ts')];
+                if (fix) {
+                    args.push('--fix');
+                }
+                args.push(fixture);
+                return spawnSync(process.execPath, args, {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 75_000,
+                });
+            };
+            const fixed = runLint(true);
+            expect(fixed.error).toBeUndefined();
+            expect(fixed.status, fixed.stdout + fixed.stderr).toBe(0);
+            expect(fixed.stdout).toMatch(/lint: eslint passed[^]*lint: oxlint-quality passed/);
+            expect(readFileSync(fixture, 'utf8')).toBe(formatted);
+            const checked = runLint(false);
+            expect(checked.error).toBeUndefined();
+            expect(checked.status, checked.stdout + checked.stderr).toBe(0);
+            expect(checked.stdout).toContain('lint: oxlint-quality passed');
+            expect(readFileSync(ledgerPath)).toEqual(ledger);
+
+            writeFileSync(fixture, formatted.replace('sourdaw-craft/no-fixed-test-sleep', 'sourdaw-craft/not-a-rule'));
+            const unknown = runLint(false);
+            expect(unknown.status).toBe(1);
+            expect(unknown.stdout + unknown.stderr).toContain('sourdaw-craft/not-a-rule');
+            expect(readFileSync(ledgerPath)).toEqual(ledger);
+        } finally {
+            rmSync(e2e, { recursive: true, force: true });
+        }
+    }, 225_000);
+});

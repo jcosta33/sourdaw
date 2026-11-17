@@ -1,7 +1,8 @@
 # Lint engine ownership
 
 For checks, `scripts/runLint.ts` runs the existing native `.oxlintrc.json` pass, the native core rules and public JavaScript
-plugins in `.oxlint-plugins.json`, then the retained `eslint.config.mjs` pass. The plugin
+plugins in `.oxlint-plugins.json`, then the retained `eslint.config.mjs` pass and the
+read-only quality pass in `.oxlint-quality.json`. The plugin
 and final ESLint passes retain the previous ESLint targets and ignore set, with
 `scripts/lint/sourdaw.mjs` explicitly added to their full targets. The native pass
 excludes some JavaScript tooling and existing TypeScript debt that still needs these checks.
@@ -37,8 +38,43 @@ extra violations fail, and unused counts fail until explicitly pruned. This incl
 counted suppression machinery, but its `--fix` path automatically prunes stale counts,
 and a missing implicit `oxlint-suppressions.json` does not fail a clean run. Its
 suppression-generation and pruning switches are hidden from the public CLI help.
-Those contracts cannot replace the required file and explicit-prune-only behavior here;
-budgeted rules stay in ESLint and must not run twice. The committed counts only shrink.
+Those contracts cannot replace the required file and explicit-prune-only behavior for the
+rules retained in ESLint. The committed ESLint counts only shrink.
+
+The quality pass uses Oxlint's public JSON diagnostics on the checked files, including the
+final bytes after cofix. `oxlint-quality-baseline.json` holds counts by path and rule. Extra
+diagnostics fail the check. When the count drops, reduce or remove the entry in the same
+change. Both check and fix require the ledger and leave its bytes alone. The PR static
+check refuses new entries and raised counts against the merge base. Delivery checks for
+source and ledger changes that cross on `main` and the pull request. The historical counts
+record existing syntactic matches, which can include intentional handling of cleanup or
+observational failures. An intentional new instance whose full contract the rule cannot
+observe can use a reasoned `oxlint-disable-next-line` naming that rule.
+
+The native Oxlint suppression file is implicit for every invocation, including other
+passes and the initial `--fix`. Oxlint 1.93 prunes entries for rules that a pass did not
+run on a linted file, so using that shared file would erase another pass's ledger.
+The runner refuses an implicit `oxlint-suppressions.json` before starting. The quality
+pass neither uses hidden suppression flags nor introduces another fixer.
+
+The failure rules flag empty catches and direct success objects from handlers that do no
+recovery. A boolean value by itself cannot distinguish success from a conservative
+predicate or policy. The boundary rule follows direct JSON parsing, a response with
+local `fetch` or `Response` provenance, and the imported desktop bridge. Assigning the
+result to `unknown` keeps the validation step explicit. Playwright admission checks
+locally visible guards that would let the case finish without an assertion. Fixed test
+sleeps include Playwright's timeout and directly awaited timer promises. Tests that
+measure a real observation window can use a line-scoped reason for the duration.
+
+The stock Vitest conditional-expect rule runs only on Vitest specs. The local assertion
+rule checks imported Vitest `expect`, including aliases, `soft`, and `poll`, and leaves
+Chai getter assertions and static asymmetric matchers available. Oxlint 1.93 and the
+[public Vitest ESLint rule](https://github.com/vitest-dev/eslint-plugin-vitest/blob/main/src/rules/valid-expect.ts)
+report a raw async matcher promise assigned to a variable even when the test awaits the
+same binding after advancing fake timers. The local rule verifies direct await or return,
+or an immutable local binding observed later in the same block, including `Promise.all`.
+A conditional await or rejection handler that can conceal failure cannot establish that
+proof. Complex promise control flow still requires review.
 
 ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
 `@tanstack/query/no-void-query-fn`, `@tanstack/query/no-rest-destructuring`, and
