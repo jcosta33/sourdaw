@@ -442,7 +442,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         size="bare"
                                         key={preset.id}
                                         type="button"
-                                        aria-pressed={active}
                                         onClick={() =>
                                             loadGrandBoulePreset({ deviceId, engine, store, presetId: preset.id })
                                         }
