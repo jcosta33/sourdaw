@@ -312,6 +312,11 @@ describe('usePianoRollInteractions', () => {
         const otherView = makeNote('view-other', 62, 4, 1, 85);
         const projection = {
             notes: [firstView, repeatView, otherView],
+            baseOccurrences: [],
+            baseControllers: [],
+            basePitchBends: [],
+            frozenControllers: [],
+            frozenPitchBends: [],
             baseNotes: [],
             baseOwnersByViewId: new Map(),
             ownersByViewId: new Map([
@@ -435,6 +440,11 @@ describe('usePianoRollInteractions', () => {
         const second = makeNote('base-gap-second', 60, 4, 2, 80);
         const projection = {
             notes: [],
+            baseOccurrences: [],
+            baseControllers: [],
+            basePitchBends: [],
+            frozenControllers: [],
+            frozenPitchBends: [],
             baseNotes: [first, second],
             ownersByViewId: new Map(),
             baseOwnersByViewId: new Map([
@@ -1870,6 +1880,11 @@ describe('usePianoRollInteractions', () => {
             const clipStart = 4;
             const frozenProjection = {
                 notes: [],
+                baseOccurrences: [],
+                baseControllers: [],
+                basePitchBends: [],
+                frozenControllers: [],
+                frozenPitchBends: [],
                 baseNotes: [],
                 baseOwnersByViewId: new Map(),
                 ownersByViewId: new Map(),
