@@ -154,7 +154,8 @@ src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
     Read scroll offsets and confirm each target fits its clipped region and remains actionable.
     Remove the nonshrinking form's max-height to reproduce the unbounded allocation, then separately remove
     the field group's max-width. Those mutations must fail the corresponding Chromium measurements.
-    The reviewer checks “keeps both scroll regions keyboard reachable while creating a source” in
+    The reviewer checks “focuses native controls in the open creation form and the existing mapping list” in
     `src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx`. Remove either region's
-    accessible name or tab stop to fail that focused case. It checks named focusable regions. Chromium supplies
-    scroll movement and reachability.
+    accessible name or set the Remove mapping button's `tabIndex` to `-1` to fail the focused case. It checks
+    initial focus on the name input and native child focus and tab stops. Chromium exercises actual Tab
+    navigation followed by PageDown and measures scroll movement and reachability.
