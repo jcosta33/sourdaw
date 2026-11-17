@@ -1034,6 +1034,11 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
                 projectId: expected.projectId,
                 createdAt: expected.createdAt,
             });
+        // Boot resets ephemeral selection; compare wire snapshots with the same public selection input.
+        await current.evaluate(async (trackId) => {
+            const { selectTrack } = await import('/src/modules/Arrangement/useCases/index.ts');
+            selectTrack(trackId);
+        }, expected.expectedActive.tracks.selectedTrackId);
         return current;
     };
     try {
@@ -1047,11 +1052,6 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
         await page.close();
         const firstBoot = await coldBoot();
         await verify(firstBoot, expected, firstSaved.historyHashes, 'first-cold-boot', false);
-        // Selection is session state; use its public owner before making the later user edit.
-        await firstBoot.evaluate(async (trackId) => {
-            const { selectTrack } = await import('/src/modules/Arrangement/useCases/index.ts');
-            selectTrack(trackId);
-        }, expected.expectedActive.tracks.selectedTrackId);
         // Settle the actual public persistence queue before measuring the later edit-to-Save route.
         await firstBoot.evaluate(async () => {
             const { persistCrdtProject } = await import('/src/modules/CrdtDocument/useCases/index.ts');
