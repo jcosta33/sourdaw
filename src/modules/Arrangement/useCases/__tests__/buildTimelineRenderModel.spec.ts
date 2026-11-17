@@ -981,6 +981,44 @@ describe('buildTimelineRenderModel — variation lane rows', () => {
         expect(tracks[0]!.variationLanes).toBeUndefined();
         expect(getRenderedTrackTops(tracks)).toEqual([0, 26]);
     });
+
+    it('reprojects stored row heights and clip hit targets when only the display mode changes', () => {
+        const fixture = [
+            laneTrack('folder', 'folder', false),
+            {
+                ...laneTrack('upper', 'audio', true),
+                height: 80,
+                alternatives: [
+                    { id: 'alt', name: 'Alternative', clips: [clip({ id: 'alt-clip', startBeat: 2, endBeat: 6 })] },
+                ],
+            },
+            {
+                ...laneTrack('lower', 'audio', false),
+                height: 48,
+                clips: [clip({ id: 'main-clip', startBeat: 8, endBeat: 12 })],
+            },
+        ];
+        seedStores({ tracks: fixture });
+
+        const { tracks: normal } = buildTimelineRenderModel();
+        expect(normal.map(({ height }) => height)).toEqual([26, 80, 48]);
+
+        preferencesStoreMock.value = { trackHeight: 'compact' };
+        const { tracks: compact } = buildTimelineRenderModel();
+        expect(compact.map(({ height }) => height)).toEqual([26, 50, 30]);
+        expect(getRenderedTrackTops(compact)).toEqual([0, 26, 100]);
+        expect(hitTestClip(4 * 12, 86)).toEqual({ trackId: 'upper', clipId: 'alt-clip' });
+        expect(hitTestClip(10 * 12, 110)).toEqual({ trackId: 'lower', clipId: 'main-clip' });
+
+        preferencesStoreMock.value = { trackHeight: 'large' };
+        const { tracks: large } = buildTimelineRenderModel();
+        expect(large.map(({ height }) => height)).toEqual([26, 120, 72]);
+        expect(getRenderedTrackTops(large)).toEqual([0, 26, 170]);
+        expect(hitTestClip(4 * 12, 156)).toEqual({ trackId: 'upper', clipId: 'alt-clip' });
+        expect(hitTestClip(10 * 12, 180)).toEqual({ trackId: 'lower', clipId: 'main-clip' });
+        expect(trackStoreMock.value?.tracks).toBe(fixture);
+        expect(fixture.map(({ height }) => height)).toEqual([64, 80, 48]);
+    });
 });
 
 describe('buildTimelineRenderModel — clip mapping', () => {

@@ -77,6 +77,7 @@ describe('getTimelineContentHeight', () => {
         ];
 
         expect(getTimelineContentHeight(tracks)).toBe(64 + 2 * VARIATION_LANE_HEIGHT + 64);
+        expect(getTimelineContentHeight(tracks, 0.625, { trackId: 'plain', height: 80 })).toBe(40 + 48 + 50);
     });
 
     it('adds no lane height for a folder or a track whose lanes are off', () => {

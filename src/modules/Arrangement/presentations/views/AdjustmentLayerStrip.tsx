@@ -88,6 +88,8 @@ type DragState =
 
 const ROW_HEIGHT = 20;
 const MIN_DRAG_PX = 3;
+const ADD_MENU_WIDTH = 200;
+const ADD_MENU_HEIGHT = 300;
 
 export const getAdjustmentLayerStripHeight = (layerCount: number): number =>
     Math.max(ROW_HEIGHT, layerCount * ROW_HEIGHT) + ROW_HEIGHT;
@@ -112,7 +114,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     const layers = state.layers;
 
     const [contextMenu, setContextMenu] = useState<LayerContextMenu>({ kind: 'none' });
-    const [addMenuOpen, setAddMenuOpen] = useState(false);
+    const [addMenuAnchor, setAddMenuAnchor] = useState<{ x: number; y: number } | null>(null);
     const [inspector, setInspector] = useState<InspectorState>(null);
     const [tracksPicker, setTracksPicker] = useState<{ layerId: string } | null>(null);
     const [dragPreview, setDragPreview] = useState<{ regionId: string; startBeat: number; endBeat: number } | null>(
@@ -124,6 +126,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     const dragStateRef = useRef<DragState>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const addMenuRef = useRef<HTMLDivElement>(null);
+    const addMenuTriggerRef = useRef<HTMLButtonElement>(null);
     // Holds the teardown for the in-flight drag's global listeners (region or
     // fade) so an unmount mid-drag can detach them; null when no drag is active.
     const dragCleanupRef = useRef<(() => void) | null>(null);
@@ -177,17 +180,21 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     }, [contextMenu.kind]);
 
     useEffect(() => {
-        if (!addMenuOpen) {
+        if (!addMenuAnchor) {
             return undefined;
         }
-        const handleClick = (e: globalThis.MouseEvent) => {
-            if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-                setAddMenuOpen(false);
+        const handleClick = (event: globalThis.MouseEvent) => {
+            if (
+                event.target instanceof Node &&
+                !addMenuRef.current?.contains(event.target) &&
+                !addMenuTriggerRef.current?.contains(event.target)
+            ) {
+                setAddMenuAnchor(null);
             }
         };
         window.addEventListener('mousedown', handleClick);
         return () => window.removeEventListener('mousedown', handleClick);
-    }, [addMenuOpen]);
+    }, [addMenuAnchor]);
 
     const rowsHeight = Math.max(ROW_HEIGHT, layers.length * ROW_HEIGHT);
 
@@ -340,7 +347,37 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
         window.addEventListener('mouseup', handleUp);
     };
 
-    const openAddMenu = () => setAddMenuOpen((prev) => !prev);
+    const closeAddMenu = () => setAddMenuAnchor(null);
+
+    const toggleAddMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
+        if (addMenuAnchor) {
+            closeAddMenu();
+            return;
+        }
+        const button = event.currentTarget;
+        const { right, bottom } = button.getBoundingClientRect();
+        button.focus({ preventScroll: true });
+        setAddMenuAnchor({ x: Math.max(0, right - ADD_MENU_WIDTH), y: bottom });
+    };
+
+    const handleAddMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeAddMenu();
+            return;
+        }
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        const current = options.findIndex((option) => option === event.target);
+        const next = event.key === 'ArrowDown' ? (current + 1) % options.length : current - 1;
+        (options[next] ?? options.at(-1))?.focus();
+    };
 
     // These wrappers dispatch commands from UI handlers (click / slider / lane
     // click). The resulting state is observed reactively via the store, so each
@@ -351,7 +388,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             type: 'createAdjustmentLayer',
             payload: { name: label, effectType },
         });
-        setAddMenuOpen(false);
+        closeAddMenu();
     };
 
     const toggleLayer = (layerId: string) => {
@@ -470,8 +507,17 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                     size="bare"
                     type="button"
                     className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 hover:bg-white/10"
-                    onClick={openAddMenu}
+                    ref={addMenuTriggerRef}
+                    onMouseDown={(event) => {
+                        if (addMenuAnchor) {
+                            // Preserve menu focus until the trigger click dismisses it.
+                            event.preventDefault();
+                        }
+                    }}
+                    onClick={toggleAddMenu}
                     aria-label="Add adjustment layer"
+                    aria-haspopup="menu"
+                    aria-expanded={addMenuAnchor !== null}
                 >
                     <Plus className="size-3" />
                 </Button>
@@ -510,19 +556,26 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 })}
             </div>
 
-            {addMenuOpen ? (
-                <div
+            {addMenuAnchor ? (
+                <DawContextMenuSurface
                     ref={addMenuRef}
-                    className="daw-floating-surface absolute right-2 top-5 z-50 min-w-[200px] rounded-md p-1"
+                    x={addMenuAnchor.x}
+                    y={addMenuAnchor.y}
+                    xClampOffset={Math.min(ADD_MENU_WIDTH, window.innerWidth)}
+                    yClampOffset={ADD_MENU_HEIGHT}
+                    onClose={closeAddMenu}
+                    onKeyDown={handleAddMenuKeyDown}
+                    className="w-[200px] max-w-[100vw] p-1"
                     role="menu"
+                    aria-label="New Adjustment Layer"
                 >
                     <DawMenuMutedRow className="px-2">New Adjustment Layer</DawMenuMutedRow>
                     {ALL_EFFECT_TYPES.map((effectType) => (
-                        <DawMenuButton key={effectType} onClick={() => createLayer(effectType)}>
+                        <DawMenuButton key={effectType} role="menuitem" onClick={() => createLayer(effectType)}>
                             {effectType.charAt(0).toUpperCase() + effectType.slice(1)}
                         </DawMenuButton>
                     ))}
-                </div>
+                </DawContextMenuSurface>
             ) : null}
 
             {contextMenu.kind !== 'none' ? (

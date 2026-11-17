@@ -1,7 +1,11 @@
-import { getVariationLaneExtent } from '../models/TimelineTrackExtent';
+import {
+    getTimelineTrackHeight,
+    getVariationLaneExtent,
+    type TimelineTrackHeightPreview,
+} from '../models/TimelineTrackExtent';
 import { type Track } from '../models/Track';
 
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from './getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from './getVisibleTimelineTracks';
 
 /**
  * Total height of the rows the timeline canvas lays out: visible tracks only,
@@ -9,9 +13,14 @@ import { getTimelineTrackHeight, getVisibleTimelineTracks } from './getVisibleTi
  * canvas's row advance (`getRenderedTrackExtent`), and the scroll range the
  * canvas and the header list share.
  */
-export function getTimelineContentHeight(tracks: readonly Track[]): number {
+export function getTimelineContentHeight(
+    tracks: readonly Track[],
+    trackHeightScale = 1,
+    trackHeightPreview?: TimelineTrackHeightPreview | null
+): number {
     return getVisibleTimelineTracks(tracks).reduce(
-        (sum, track) => sum + getTimelineTrackHeight(track) + getVariationLaneExtent(track),
+        (sum, track) =>
+            sum + getTimelineTrackHeight(track, trackHeightScale, trackHeightPreview) + getVariationLaneExtent(track),
         0
     );
 }

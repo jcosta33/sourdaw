@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { midiStore } from '#/modules/MIDI/stores';
-import { preferencesStore } from '#/modules/Preferences/stores';
+import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import {
     DEFAULT_TEMPO_BPM,
@@ -24,16 +24,17 @@ import {
     type ClipRenderModel,
     type AudioWaveformProgrammePart,
 } from '../models/TimelineRenderModel';
-import { getVariationLaneCount } from '../models/TimelineTrackExtent';
+import { getTimelineTrackHeight, getVariationLaneCount } from '../models/TimelineTrackExtent';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
 import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
 import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
@@ -160,7 +161,7 @@ const renderCache: {
     view: unknown;
     midi: unknown;
     ws: unknown;
-    prefs: unknown;
+    trackHeightMode: Preferences['trackHeight'] | null;
     transport: number | null;
     timeSig: unknown;
     tempoMap: unknown;
@@ -171,7 +172,7 @@ const renderCache: {
     view: null,
     midi: null,
     ws: null,
-    prefs: null,
+    trackHeightMode: null,
     transport: null,
     timeSig: null,
     tempoMap: null,
@@ -236,13 +237,13 @@ function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineR
     return { ...cachedModel, tracks, dataDirty: true };
 }
 
-export function buildTimelineRenderModel(): TimelineRenderModel {
+export function buildTimelineRenderModel(heightMode?: Preferences['trackHeight']): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
     const transportState = transportStore.value;
     const midiState = midiStore.value;
     const ws = clipSelectionStore.value;
-    const prefs = preferencesStore.value;
+    const trackHeightMode = heightMode ?? preferencesStore.value?.trackHeight ?? 'normal';
     const timeSigState = timeSignatureMapStore.value;
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;
@@ -254,7 +255,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         viewState !== renderCache.view ||
         midiState !== renderCache.midi ||
         ws !== renderCache.ws ||
-        prefs !== renderCache.prefs ||
+        trackHeightMode !== renderCache.trackHeightMode ||
         transportTempo !== renderCache.transport ||
         timeSigState !== renderCache.timeSig ||
         tempoMapState !== renderCache.tempoMap ||
@@ -265,7 +266,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         renderCache.view = viewState;
         renderCache.midi = midiState;
         renderCache.ws = ws;
-        renderCache.prefs = prefs;
+        renderCache.trackHeightMode = trackHeightMode;
         renderCache.transport = transportTempo;
         renderCache.timeSig = timeSigState;
         renderCache.tempoMap = tempoMapState;
@@ -281,9 +282,10 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
         const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
+        const trackHeightScale = getTimelineTrackHeightScale(trackHeightMode);
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
-            const baseHeight = getTimelineTrackHeight(track);
+            const baseHeight = getTimelineTrackHeight(track, trackHeightScale, viewState?.trackHeightPreview);
             const compLane = takeLaneState?.lanes.find((lane) => lane.trackId === track.id);
             const hasAudibleProgramme =
                 compLane !== undefined &&
@@ -434,7 +436,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             };
         });
 
-        const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? 'normal'];
+        const trackHeight = TRACK_HEIGHT_VALUES[trackHeightMode];
         const playhead = playheadPositionRef.current;
         const { numerator, denominator } = getTimeSignatureAtBeat(playhead);
 

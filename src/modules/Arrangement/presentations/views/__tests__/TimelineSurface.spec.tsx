@@ -1,14 +1,17 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { type Store } from '#/infra/store/types';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { setTrackHeight } from '#/modules/Preferences/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
 import { setAutoScroll, setScrollX, setTimelineViewportSize } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
+import { createTimelineRenderer } from '../../renderers/createTimelineRenderer';
 import { TimelineSurface } from '../TimelineSurface';
 
 // Capture the zoom/scroll handlers the component registers, so the effect
@@ -211,7 +214,7 @@ vi.mock('#/modules/Collaboration/presentations/views', () => ({
     PresenceOverlay: (props: Record<string, unknown>) => {
         // Expose the coordinate-mapping callbacks so they can be invoked
         // directly: the real overlay is mocked away, so the beatToX /
-        // trackIdToY closures would otherwise never run.
+        // trackIdToCenterY closures would otherwise never run.
         (globalThis as { __presenceProps?: Record<string, unknown> }).__presenceProps = props;
         return <div data-testid="presence-overlay">Presence</div>;
     },
@@ -451,6 +454,39 @@ describe('TimelineSurface', () => {
 
         const { container } = renderWithTooltip(<TimelineSurface />);
         expect(container.firstChild).toHaveStyle({ minHeight: '96px' });
+    });
+
+    it('updates the canvas floor and paints scaled rows while transport is paused', async () => {
+        const previousMode = preferencesStore.value?.trackHeight ?? 'normal';
+        const selectedTrack = makeTrack({ id: 'selected', kind: 'midi', height: 96 });
+        try {
+            setTrackHeight('normal');
+            scheduler.loop = null;
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+            zoomHandlers.trackStoreRef.current?.set({ tracks: [selectedTrack], selectedTrackId: selectedTrack.id });
+            renderModelRef.tracks = [{ id: selectedTrack.id, height: 96 }];
+            const { container } = renderWithTooltip(<TimelineSurface />);
+            expect(container.firstChild).toHaveStyle({ minHeight: '96px' });
+            await waitFor(() => expect(scheduler.loop).not.toBeNull());
+            const renderer = await vi.mocked(createTimelineRenderer).mock.results.at(-1)!.value;
+            act(() => scheduler.loop!());
+            expect(renderer.render).toHaveBeenLastCalledWith({ tracks: [{ id: selectedTrack.id, height: 96 }] });
+            vi.mocked(renderer.render).mockClear();
+            act(() => scheduler.loop!());
+            expect(renderer.render).not.toHaveBeenCalled();
+
+            renderModelRef.tracks = [{ id: selectedTrack.id, height: 60 }];
+            act(() => setTrackHeight('compact'));
+            expect(container.firstChild).toHaveStyle({ minHeight: '60px' });
+            act(() => scheduler.loop!());
+
+            expect(renderer.render).toHaveBeenCalledExactlyOnceWith({
+                tracks: [{ id: selectedTrack.id, height: 60 }],
+            });
+        } finally {
+            renderModelRef.tracks = [];
+            act(() => setTrackHeight(previousMode));
+        }
     });
 });
 
@@ -884,34 +920,31 @@ describe('TimelineSurface — presence overlay coordinate callbacks', () => {
         expect(beatToX(5)).toBe(0);
     });
 
-    it('maps a track id to its y pixel via trackIdToY, or null when absent', () => {
+    it('maps a track id to its center across alternative lanes and vertical scroll, or null when absent', () => {
         zoomHandlers.timelineViewStoreRef.current?.set({
             scrollX: 0,
-            scrollY: 0,
+            scrollY: 10,
             pixelsPerBeat: 10,
             autoScrollEnabled: true,
         });
-        // trackIdToY consumes buildTimelineRenderModel(); populate its tracks.
         renderModelRef.tracks = [
-            { id: 'a', height: 40 },
+            { id: 'a', height: 40, variationLanes: [{}] },
             { id: 'b', height: 60 },
         ];
         renderWithTooltip(<TimelineSurface />);
         const props = (globalThis as { __presenceProps?: Record<string, unknown> }).__presenceProps!;
-        const trackIdToY = props.trackIdToY as (trackId: string) => number | null;
-        // Track b sits at y offset 40 (track a height).
-        expect(trackIdToY('b')).toBe(40);
-        // Unknown track id → null.
-        expect(trackIdToY('missing')).toBeNull();
+        const trackIdToCenterY = props.trackIdToCenterY as (trackId: string) => number | null;
+        expect(trackIdToCenterY('b')).toBe(40 + 24 + 30 - 10);
+        expect(trackIdToCenterY('missing')).toBeNull();
         renderModelRef.tracks = [];
     });
 
-    it('returns null from trackIdToY when the view store is null', () => {
+    it('returns null from trackIdToCenterY when the view store is null', () => {
         zoomHandlers.timelineViewStoreRef.current?.set(null);
         renderWithTooltip(<TimelineSurface />);
         const props = (globalThis as { __presenceProps?: Record<string, unknown> }).__presenceProps!;
-        const trackIdToY = props.trackIdToY as (trackId: string) => number | null;
-        expect(trackIdToY('a')).toBeNull();
+        const trackIdToCenterY = props.trackIdToCenterY as (trackId: string) => number | null;
+        expect(trackIdToCenterY('a')).toBeNull();
     });
 });
 

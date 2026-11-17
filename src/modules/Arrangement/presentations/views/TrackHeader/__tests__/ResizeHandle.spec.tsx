@@ -1,13 +1,17 @@
 import { render, screen, fireEvent, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { setTrackHeight } from '../../../../useCases/toggleTrackState/setTrackHeight';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
+import { timelineViewStore } from '../../../../stores/timelineViewStore';
 import { ResizeHandle } from '../ResizeHandle';
 
-// Mock external dependencies
-vi.mock('../../../../useCases/toggleTrackState/setTrackHeight', () => ({
-    setTrackHeight: vi.fn(),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
 }));
+
+const defaultProps = { trackId: 'track1', trackName: 'Test Track', height: 80, displayHeight: 80, heightScale: 1 };
 
 describe('ResizeHandle', () => {
     beforeEach(() => {
@@ -15,62 +19,62 @@ describe('ResizeHandle', () => {
     });
 
     it('should render without crashing', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should have correct role', () => {
-        render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        render(<ResizeHandle {...defaultProps} />);
         expect(screen.getByRole('separator')).toBeInTheDocument();
     });
 
     it('should have correct aria attributes', () => {
-        render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        render(<ResizeHandle {...defaultProps} />);
         const separator = screen.getByRole('separator');
         expect(separator).toHaveAttribute('aria-orientation', 'horizontal');
         expect(separator).toHaveAttribute('aria-label', 'Resize Test Track height');
     });
 
-    it('exposes the track height with its 30..300 bounds', () => {
-        render(<ResizeHandle trackId="track1" trackName="Test Track" height={120.4} />);
+    it('exposes the displayed track height and bounds in CSS pixels', () => {
+        render(<ResizeHandle {...defaultProps} height={81} displayHeight={50.625} heightScale={0.625} />);
         const separator = screen.getByRole('separator', { name: 'Resize Test Track height' });
-        expect(separator).toHaveAttribute('aria-valuenow', '120');
-        expect(separator).toHaveAttribute('aria-valuemin', '30');
-        expect(separator).toHaveAttribute('aria-valuemax', '300');
+        expect(separator).toHaveAttribute('aria-valuenow', '50.625');
+        expect(separator).toHaveAttribute('aria-valuemin', '18.75');
+        expect(separator).toHaveAttribute('aria-valuemax', '187.5');
     });
 
     it('should have resize cursor', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toHaveClass('cursor-ns-resize');
     });
 
     it('should handle mouse down', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
         expect(handle).toBeInTheDocument();
     });
 
     it('should set body cursor during resize', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
         expect(document.body.style.cursor).toBe('ns-resize');
     });
 
     it('should have hover opacity', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toHaveClass('opacity-0');
         expect(container.firstChild).toHaveClass('hover:opacity-100');
     });
 
     it('should have transition', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toHaveClass('transition-opacity');
     });
 
     it('should have correct positioning', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toHaveClass('absolute');
         expect(container.firstChild).toHaveClass('bottom-0');
         expect(container.firstChild).toHaveClass('left-0');
@@ -78,18 +82,18 @@ describe('ResizeHandle', () => {
     });
 
     it('should have correct height', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toHaveClass('h-1');
     });
 
     it('should have focus-visible styles', () => {
-        const { container } = render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        const { container } = render(<ResizeHandle {...defaultProps} />);
         expect(container.firstChild).toHaveClass('focus-visible:opacity-100');
         expect(container.firstChild).toHaveClass('focus-visible:bg-ring/40');
     });
 
     it('stops event propagation on mouseDown and pointerDown', () => {
-        render(<ResizeHandle trackId="track1" trackName="Test Track" height={80} />);
+        render(<ResizeHandle {...defaultProps} />);
         const handle = screen.getByRole('separator');
 
         const mouseDownEvent = createEvent.mouseDown(handle);
@@ -103,75 +107,106 @@ describe('ResizeHandle', () => {
         expect(stopPointerDownSpy).toHaveBeenCalled();
     });
 
-    it('invokes setTrackHeight with expected height on mouse drag', () => {
-        const { container } = render(
-            <div style={{ height: '80px' }}>
-                <ResizeHandle trackId="track1" trackName="Test Track" height={80} />
-            </div>
-        );
-        const parent = container.firstChild as HTMLElement;
-        vi.spyOn(parent, 'getBoundingClientRect').mockReturnValue({
-            height: 80,
-        } as DOMRect);
-
+    it('previews incremental display deltas during drag and dispatches one unscaled action on release', () => {
+        render(<ResizeHandle {...defaultProps} displayHeight={120} heightScale={1.5} />);
         const handle = screen.getByRole('separator');
         fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
-        fireEvent.mouseMove(document, { clientY: 120 });
+        fireEvent.mouseMove(document, { clientY: 107 });
+        fireEvent.mouseMove(document, { clientY: 112 });
+
+        expect(timelineViewStore.value?.trackHeightPreview).toEqual({ trackId: 'track1', height: 88 });
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+
         fireEvent.mouseUp(document);
 
-        expect(setTrackHeight).toHaveBeenCalledWith('track1', 100);
+        expect(timelineViewStore.value?.trackHeightPreview).toBeNull();
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackHeight',
+            payload: { trackId: 'track1', height: 88 },
+        });
     });
 
-    it('invokes setTrackHeight on keyboard ArrowDown and ArrowUp', () => {
-        const { container } = render(
-            <div style={{ height: '80px' }}>
-                <ResizeHandle trackId="track1" trackName="Test Track" height={80} />
-            </div>
-        );
-        const parent = container.firstChild as HTMLElement;
-        vi.spyOn(parent, 'getBoundingClientRect').mockReturnValue({
-            height: 80,
-        } as DOMRect);
-
+    it('turns keyboard arrows and Home/End into unscaled action heights', () => {
+        render(<ResizeHandle {...defaultProps} displayHeight={50} heightScale={0.625} />);
         const handle = screen.getByRole('separator');
-
         fireEvent.keyDown(handle, { key: 'ArrowDown' });
-        expect(setTrackHeight).toHaveBeenLastCalledWith('track1', 90);
-
         fireEvent.keyDown(handle, { key: 'ArrowUp' });
-        expect(setTrackHeight).toHaveBeenLastCalledWith('track1', 70);
+        fireEvent.keyDown(handle, { key: 'Home' });
+        fireEvent.keyDown(handle, { key: 'End' });
+
+        expect(vi.mocked(executeUserAppAction).mock.calls.map(([action]) => action)).toEqual(
+            [96, 64, 30, 300].map((height) => ({ type: 'setTrackHeight', payload: { trackId: 'track1', height } }))
+        );
     });
 
     it('clamps track height within bounds and prevents reversing deadzones', () => {
-        const { container } = render(
-            <div style={{ height: '290px' }}>
-                <ResizeHandle trackId="track1" trackName="Test Track" height={80} />
-            </div>
-        );
-        const parent = container.firstChild as HTMLElement;
-        vi.spyOn(parent, 'getBoundingClientRect').mockReturnValue({
-            height: 290,
-        } as DOMRect);
-
+        render(<ResizeHandle {...defaultProps} height={290} displayHeight={435} heightScale={1.5} />);
         const handle = screen.getByRole('separator');
         fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
 
-        // Drag down by 50px (290 + 50 = 340 -> clamped to 300)
-        fireEvent.mouseMove(document, { clientY: 150 });
-        expect(setTrackHeight).toHaveBeenLastCalledWith('track1', 300);
-
-        // Reverse drag up by 10px (should immediately decrease from 300 to 290, no deadzone)
-        fireEvent.mouseMove(document, { clientY: 140 });
-        expect(setTrackHeight).toHaveBeenLastCalledWith('track1', 290);
+        fireEvent.mouseMove(document, { clientY: 160 });
+        expect(timelineViewStore.value?.trackHeightPreview?.height).toBe(300);
+        fireEvent.mouseMove(document, { clientY: 130 });
+        expect(timelineViewStore.value?.trackHeightPreview?.height).toBe(280);
 
         fireEvent.mouseUp(document);
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackHeight',
+            payload: { trackId: 'track1', height: 280 },
+        });
+    });
+
+    it('discards a canceled pointer resize and allows the next drag to commit', () => {
+        render(<ResizeHandle {...defaultProps} />);
+        const handle = screen.getByRole('separator');
+        fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 });
+        fireEvent.pointerMove(document, { pointerId: 1, clientY: 120 });
+        expect(timelineViewStore.value?.trackHeightPreview?.height).toBe(100);
+
+        fireEvent.pointerCancel(handle, { pointerId: 1 });
+
+        expect(timelineViewStore.value?.trackHeightPreview).toBeNull();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.pointerDown(handle, { button: 0, pointerId: 2, clientY: 100 });
+        fireEvent.pointerMove(document, { pointerId: 2, clientY: 110 });
+        fireEvent.pointerUp(document, { pointerId: 2 });
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackHeight',
+            payload: { trackId: 'track1', height: 90 },
+        });
+    });
+
+    it('clears a pending resize when unmounted without dispatching', () => {
+        const { unmount } = render(<ResizeHandle {...defaultProps} />);
+        const handle = screen.getByRole('separator');
+        fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
+        fireEvent.mouseMove(document, { clientY: 120 });
+        expect(timelineViewStore.value?.trackHeightPreview?.height).toBe(100);
+
+        unmount();
+        fireEvent.mouseUp(document);
+
+        expect(timelineViewStore.value?.trackHeightPreview).toBeNull();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('does not dispatch when an incremental drag returns to its starting height', () => {
+        render(<ResizeHandle {...defaultProps} displayHeight={120} heightScale={1.5} />);
+        const handle = screen.getByRole('separator');
+        fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
+        fireEvent.mouseMove(document, { clientY: 101 });
+        fireEvent.mouseMove(document, { clientY: 104 });
+        fireEvent.mouseMove(document, { clientY: 100 });
+        fireEvent.mouseUp(document);
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('names each track height separator after its own track', () => {
         render(
             <>
-                <ResizeHandle trackId="track1" trackName="Kick" height={80} />
-                <ResizeHandle trackId="track2" trackName="Snare" height={80} />
+                <ResizeHandle {...defaultProps} trackName="Kick" />
+                <ResizeHandle {...defaultProps} trackId="track2" trackName="Snare" />
             </>
         );
         expect(screen.getByRole('separator', { name: 'Resize Kick height' })).toBeInTheDocument();

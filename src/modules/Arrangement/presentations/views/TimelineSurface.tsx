@@ -2,7 +2,8 @@ import { type ReactElement, useRef, useEffect, useLayoutEffect, lazy, Suspense }
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
-import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/WorkspaceShell/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
@@ -42,14 +43,16 @@ export const TimelineSurface = (): ReactElement => {
     const rendererRef = useRef<TimelineRenderer | null>(null);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const marqueeSelection = clipSelection.marqueeSelection;
-    const currentViewStore = useStore(timelineViewStore, {
+    const timelineView = useStoreSelector(timelineViewStore, (view) => view);
+    const currentViewStore = timelineView ?? {
         scrollX: 0,
         scrollY: 0,
         pixelsPerBeat: 20,
         autoScrollEnabled: true,
-    });
+    };
     const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
-    const viewportMeasurementRevision = currentViewStore.viewportMeasurementRevision ?? 0;
+    const heightMode = useStoreSelector(preferencesStore, (preferences) => preferences?.trackHeight ?? 'normal');
+    const viewportMeasurementRevision = timelineView?.viewportMeasurementRevision ?? 0;
     useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container || viewportMeasurementRevision === 0) {
@@ -60,7 +63,8 @@ export const TimelineSurface = (): ReactElement => {
     }, [viewportMeasurementRevision]);
     const timelineMinimumHeight = getTimelineSurfaceMinimumHeight(
         currentTrackStore.tracks,
-        currentTrackStore.selectedTrackId
+        currentTrackStore.selectedTrackId,
+        heightMode
     );
 
     const {
@@ -101,7 +105,7 @@ export const TimelineSurface = (): ReactElement => {
         // Rows as laid out on the canvas: visible tracks only, each with its
         // variation lanes. The marquee spans from its first row's top to its
         // last row's bottom.
-        const rows = buildTimelineRenderModel().tracks;
+        const rows = buildTimelineRenderModel(heightMode).tracks;
         const tops = getRenderedTrackTops(rows);
         let topRow = -1;
         let bottomRow = -1;
@@ -250,6 +254,7 @@ export const TimelineSurface = (): ReactElement => {
         const unsubTransport = transportStore.subscribe(markDirty);
         const unsubView = timelineViewStore.subscribe(markDirty);
         const unsubTracks = trackStore.subscribe(markDirty);
+        const unsubPreferences = preferencesStore.subscribe(markDirty);
         const unsubWorkspace = clipSelectionStore.subscribe(markDirty);
         const unsubMarkers = markerStore.subscribe(markDirty);
         const unsubTempoMap = tempoMapStore.subscribe(markDirty);
@@ -361,6 +366,7 @@ export const TimelineSurface = (): ReactElement => {
             unsubTransport();
             unsubView();
             unsubTracks();
+            unsubPreferences();
             unsubWorkspace();
             unsubMarkers();
             unsubTempoMap();
@@ -439,29 +445,26 @@ export const TimelineSurface = (): ReactElement => {
             <Suspense fallback={null}>
                 <PresenceOverlayLazy
                     beatToX={(beat) => {
-                        const view = timelineViewStore.value;
-                        if (!view) {
+                        if (!timelineView) {
                             return 0;
                         }
-                        return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
+                        return beat * timelineView.pixelsPerBeat - timelineView.scrollX;
                     }}
-                    trackIdToY={(trackId) => {
-                        const model = buildTimelineRenderModel();
-                        const view = timelineViewStore.value;
-                        if (!model || !view) {
+                    trackIdToCenterY={(trackId) => {
+                        if (!timelineView) {
                             return null;
                         }
-                        const scrollY = view.scrollY ?? 0;
+                        const model = buildTimelineRenderModel(heightMode);
+                        const scrollY = timelineView.scrollY ?? 0;
                         let y = 0;
                         for (const track of model.tracks) {
                             if (track.id === trackId) {
-                                return y - scrollY;
+                                return y + track.height / 2 - scrollY;
                             }
-                            y += track.height;
+                            y += getRenderedTrackExtent(track);
                         }
                         return null;
                     }}
-                    trackHeight={TRACK_HEIGHT_VALUES.normal}
                 />
             </Suspense>
 

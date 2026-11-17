@@ -1,8 +1,10 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { getTimelineHorizontalContentWidth } from '../models/TimelineHorizontalExtent';
+import { type TimelineTrackHeightPreview } from '../models/TimelineTrackExtent';
 import { getTimelineContentHeight } from '../transformers/getTimelineContentHeight';
 
+import { getTimelineTrackHeightScale } from './timelineTrackHeightPreference';
 import { trackStore } from './trackStore';
 
 export type TimelineViewState = {
@@ -25,6 +27,8 @@ export type TimelineViewState = {
     viewportHeight?: number;
     /** Ephemeral deferred-restore request; zero or absent means no measurement requested. */
     viewportMeasurementRevision?: number;
+    /** Local, unscaled row height during a manual resize. */
+    trackHeightPreview?: TimelineTrackHeightPreview | null;
 };
 
 export type TimelineWorkingView = Pick<TimelineViewState, 'scrollX' | 'scrollY' | 'pixelsPerBeat'>;
@@ -54,10 +58,34 @@ function clampScrollX(scrollX: number, pixelsPerBeat: number, viewportWidth: num
     return Math.min(Math.max(0, contentWidth - viewportWidth), nonNegative);
 }
 
-function clampScrollY(scrollY: number, viewportHeight: number): number {
-    const totalHeight = getTimelineContentHeight(trackStore.value?.tracks ?? []);
+function clampScrollY(
+    scrollY: number,
+    viewportHeight: number,
+    trackHeightPreview = timelineViewStore.value?.trackHeightPreview
+): number {
+    const totalHeight = getTimelineContentHeight(
+        trackStore.value?.tracks ?? [],
+        getTimelineTrackHeightScale(),
+        trackHeightPreview
+    );
     const maxY = Math.max(0, totalHeight - viewportHeight);
     return Math.max(0, Math.min(maxY, scrollY));
+}
+
+export function setTimelineTrackHeightPreview(trackId: string, height: number | null): void {
+    const state = timelineViewStore.value;
+    if (!state || (height === null && state.trackHeightPreview?.trackId !== trackId)) {
+        return;
+    }
+    if (state.trackHeightPreview?.trackId === trackId && state.trackHeightPreview.height === height) {
+        return;
+    }
+    const trackHeightPreview = height === null ? null : { trackId, height };
+    timelineViewStore.set({
+        ...state,
+        trackHeightPreview,
+        scrollY: clampScrollY(state.scrollY, state.viewportHeight ?? 0, trackHeightPreview),
+    });
 }
 
 export function zoomTimeline(delta: number): void {
