@@ -9,7 +9,7 @@ export function isNativeSdkDurationWithinBudget(
     sdkMs: number,
     referenceMedianMs: number
 ): boolean {
-    if (!Number.isFinite(referenceMedianMs) || referenceMedianMs <= 0) {
+    if (![taskMs, sdkMs, referenceMedianMs].every((durationMs) => Number.isFinite(durationMs) && durationMs > 0)) {
         return false;
     }
     if (taskMs < JANK_TASK_CEILING_MS && !observedLongTask) {

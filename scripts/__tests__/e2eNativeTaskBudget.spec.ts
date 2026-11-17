@@ -28,6 +28,16 @@ describe('isNativeSdkDurationWithinBudget', () => {
         expect(isNativeSdkDurationWithinBudget(74, false, 70.001, 35)).toBe(false);
     });
 
+    describe.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('invalid duration %s', (durationMs) => {
+        it('rejects an invalid renderer task duration', () => {
+            expect(isNativeSdkDurationWithinBudget(durationMs, false, 38, 20)).toBe(false);
+        });
+
+        it('rejects an invalid SDK span even in a short task', () => {
+            expect(isNativeSdkDurationWithinBudget(40, false, durationMs, 20)).toBe(false);
+        });
+    });
+
     it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
         'rejects invalid reference median %s even in a short task',
         (medianMs) => {
