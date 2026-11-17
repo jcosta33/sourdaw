@@ -1,6 +1,6 @@
 import { getExecutableAppActionProviderSchema, isExecutableAppActionType } from '#/modules/Command/useCases';
 
-import { type CommittedCommand } from './lastCommitOutcome';
+import { type CommittedCommand } from '../../models/CommittedBatch';
 
 /** The arguments a provider may state for the command, as committed: never a guard the application added. */
 export function readStatedArguments(command: CommittedCommand): Record<string, unknown> {

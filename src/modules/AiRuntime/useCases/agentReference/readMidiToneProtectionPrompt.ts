@@ -1,9 +1,9 @@
 import { getExecutableAppActionEffect } from '#/modules/Command/useCases';
 
+import { type CommittedCommand } from '../../models/CommittedBatch';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ThreadContext } from '../../models/ThreadContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
-import { type CommittedCommand } from '../lastCommitContinuation/lastCommitOutcome';
 import { readCommittedBatch } from '../lastCommitContinuation/readCommittedBatch';
 import { readChatThreadContext } from '../readChatThreadContext';
 

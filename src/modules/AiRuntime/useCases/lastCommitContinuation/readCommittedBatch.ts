@@ -1,9 +1,8 @@
 import { undoHistoryStore } from '#/modules/Command/stores';
 
+import { type CommittedBatch, type CommittedCommand } from '../../models/CommittedBatch';
 import { type ThreadContext } from '../../models/ThreadContext';
 import { agentRunStore } from '../../stores/agentRunStore';
-
-import { type CommittedBatch, type CommittedCommand } from './lastCommitOutcome';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -5,6 +5,7 @@ import {
 } from '#/modules/Command/useCases';
 
 import { type AdoptedRecipe } from '../models/AdoptedRecipe';
+import { type CommittedBatch, type CommittedCommand } from '../models/CommittedBatch';
 import { clarify, denied } from '../models/LastCommitRefusal';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ThreadContext } from '../models/ThreadContext';
@@ -19,12 +20,7 @@ import { readConfirmationBatchId } from './agentRequestOrchestration/readConfirm
 import { continueCommittedChange } from './lastCommitContinuation/continueCommittedChange';
 import { createsObjects } from './lastCommitContinuation/createsObjects';
 import { groundContinuedCalls } from './lastCommitContinuation/groundContinuedCalls';
-import {
-    type CommittedBatch,
-    type CommittedCommand,
-    type LastCommitContinuation,
-    type RetargetRequest,
-} from './lastCommitContinuation/lastCommitOutcome';
+import { type LastCommitContinuation, type RetargetRequest } from './lastCommitContinuation/lastCommitOutcome';
 import { readCommittedBatch } from './lastCommitContinuation/readCommittedBatch';
 import { readNamedTracks } from './lastCommitContinuation/readNamedTracks';
 import { readRetargetTracks } from './lastCommitContinuation/readRetargetTracks';
