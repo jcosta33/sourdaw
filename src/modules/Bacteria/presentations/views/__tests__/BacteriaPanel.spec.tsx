@@ -1,99 +1,45 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_BACTERIA_STATE, bacteriaStore } from '../../../stores/bacteriaStore';
+import { bacteriaStore, DEFAULT_BACTERIA_STATE } from '../../../stores/bacteriaStore';
 import { BacteriaPanel } from '../BacteriaPanel';
-
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
-}));
 
 describe('BacteriaPanel', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
         bacteriaStore.set({});
     });
 
-    it('should render without crashing', () => {
+    it('renders all three gain staging knobs and one set of band meters', () => {
         render(<BacteriaPanel deviceId="dev-1" />);
-        expect(document.body).toBeTruthy();
+
+        for (const name of ['Input', 'Output', 'Mix']) {
+            expect(screen.getByRole('slider', { name })).toBeInTheDocument();
+        }
+        expect(screen.getByText('Band energy')).toBeInTheDocument();
     });
 
-    it('should handle store state', () => {
-        render(<BacteriaPanel deviceId="dev-1" />);
-        expect(document.body).toBeTruthy();
-    });
-
-    it('should render with useCase bindings', () => {
-        render(<BacteriaPanel deviceId="dev-1" />);
-        expect(document.body).toBeTruthy();
-    });
-
-    it('should have interactive elements', () => {
-        render(<BacteriaPanel deviceId="dev-1" />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
-    });
-
-    it('should establish min-height floor and retain overflow containment', () => {
-        const { container } = render(<BacteriaPanel deviceId="dev-1" />);
-        const faceplate = container.querySelector<HTMLElement>('.bacteria-faceplate');
-        expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[460px]');
-        expect(faceplate?.style.overflow).toBe('hidden');
-    });
-
-    it('renders Gain staging with full-width layout without nested subgrid collision', () => {
-        render(<BacteriaPanel deviceId="dev-1" />);
-        const gainStagingHeader = screen.getByText('Gain staging');
-        expect(gainStagingHeader).not.toBeNull();
-
-        const gainStagingCard = gainStagingHeader.closest('.bacteria-window');
-        expect(gainStagingCard).not.toBeNull();
-
-        // Knobs inside Gain staging
-        expect(screen.getByRole('slider', { name: 'Input' })).not.toBeNull();
-        expect(screen.getByRole('slider', { name: 'Output' })).not.toBeNull();
-        expect(screen.getByRole('slider', { name: 'Mix' })).not.toBeNull();
-
-        // Ensure Gain staging is not inside a 2-column subgrid that squeezes it
-        expect(gainStagingCard?.parentElement?.className).not.toContain('grid-cols-2');
-
-        // Band energy meters should appear exactly once in the entire panel (in status bar)
-        const bandEnergyTitles = screen.getAllByText('Band energy');
-        expect(bandEnergyTitles).toHaveLength(1);
-    });
-
-    it('supports vertical scrolling in PlayHero columns when height is constrained', () => {
-        render(<BacteriaPanel deviceId="dev-1" />);
-        const morphFieldHeader = screen.getByText('Morph field');
-        const morphColumn = morphFieldHeader.closest('.bacteria-window');
-        expect(morphColumn).not.toBeNull();
-        expect(morphColumn?.className).toContain('overflow-y-auto');
-
-        const currentBrothHeader = screen.getByText('Current broth');
-        const brothColumn = currentBrothHeader.closest('.bacteria-window')?.parentElement;
-        expect(brothColumn).not.toBeNull();
-        expect(brothColumn?.className).toContain('overflow-y-auto');
-    });
-
-    it('keeps scroll containers from collapsing raw Stack children with [&>*]:shrink-0', () => {
+    it('selects an effect for the sixth band and preserves the band across tier changes', () => {
         bacteriaStore.set({
             'dev-1': {
                 ...DEFAULT_BACTERIA_STATE,
-                uiLevel: 2,
+                patch: { ...DEFAULT_BACTERIA_STATE.patch, bandCount: 6 },
             },
         });
         render(<BacteriaPanel deviceId="dev-1" />);
 
-        const presetDrawerHeader = screen.getByText('Preset drawer');
-        const presetScrollContainer = presetDrawerHeader.closest('.bacteria-window')?.querySelector('.overflow-y-auto');
-        expect(presetScrollContainer?.className).toContain('[&>*]:shrink-0');
-        expect(presetScrollContainer?.className).toContain('overflow-y-auto');
+        fireEvent.click(screen.getByRole('button', { name: 'Shape' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Band 6' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Body' }));
+        expect(screen.getByRole('group', { name: 'Body' })).toBeInTheDocument();
+        expect(
+            within(screen.getByRole('grid', { name: 'Bands' })).getByRole('row', { name: 'Band 6' })
+        ).toHaveAttribute('aria-selected', 'true');
 
-        const editDeckHeader = screen.getByText('Pick the mutation');
-        const editDeckScrollContainer = editDeckHeader.closest('.overflow-y-auto');
-        expect(editDeckScrollContainer?.className).toContain('[&>*]:shrink-0');
-        expect(editDeckScrollContainer?.className).toContain('overflow-y-auto');
+        fireEvent.click(screen.getByRole('button', { name: 'Lab' }));
+        expect(screen.getByRole('slider', { name: 'Speed' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Band 6' })).toHaveAttribute('aria-pressed', 'true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Shape' }));
+        expect(screen.getByRole('button', { name: 'Body' })).toHaveAttribute('aria-pressed', 'true');
     });
 });

@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState, useTransition } from 'react';
+import { type ReactElement, useEffect, useRef, useState, useTransition } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -301,9 +301,9 @@ const BChip = ({
 );
 
 const MetricCell = ({ label, value }: { label: string; value: string }): ReactElement => (
-    <Stack gap={1} className="bacteria-window min-w-[92px] px-3 py-2">
+    <Stack gap={1} className="bacteria-window min-w-0 px-2 py-2">
         <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">{label}</span>
-        <span className="font-mono text-[12px] text-foreground">{value}</span>
+        <span className="font-mono text-[12px] wrap-anywhere text-foreground">{value}</span>
     </Stack>
 );
 
@@ -313,7 +313,7 @@ const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
             <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">Band energy</span>
             <span className="text-micro text-muted-foreground">{state.patch.bandCount} active lanes</span>
         </Row>
-        <Row gap={2}>
+        <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,5rem),1fr))]">
             {Array.from({ length: state.patch.bandCount }, (_, index) => {
                 const level = Math.max(0, Math.min(1, ((state.bandLevels[index] ?? -60) + 60) / 60));
                 return (
@@ -331,7 +331,7 @@ const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
                     </Stack>
                 );
             })}
-        </Row>
+        </Grid>
     </Stack>
 );
 
@@ -368,8 +368,9 @@ const PresetRail = ({
         <Stack
             as="aside"
             gap={2}
-            shrink={false}
-            className="bacteria-window h-full w-[248px] gap-2.5 overflow-hidden p-2.5"
+            aria-label="Bacteria presets"
+            tabIndex={0}
+            className="bacteria-window min-w-0 overflow-y-auto overscroll-contain p-2.5 [&>*]:shrink-0"
         >
             <SectionHeader
                 eyebrow="Presets"
@@ -385,7 +386,7 @@ const PresetRail = ({
                 placeholder="Search cultures"
                 aria-label="Search Bacteria presets"
                 variant="ghost"
-                className="bacteria-window px-3 py-2"
+                className="bacteria-window max-w-80 px-2"
             />
 
             <Row wrap gap={1}>
@@ -400,12 +401,12 @@ const PresetRail = ({
                 })}
             </Row>
 
-            <Stack grow className="bacteria-window min-h-0 overflow-hidden">
-                <Row justify="between" gap={2} className="border-b border-white/6 px-3 py-2">
+            <Stack className="bacteria-window min-w-0">
+                <Row justify="between" wrap gap={2} className="border-b border-white/6 px-3 py-2">
                     <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">Preset drawer</span>
-                    <span className="text-micro text-muted-foreground">{state.patch.name}</span>
+                    <span className="text-micro wrap-anywhere text-muted-foreground">{state.patch.name}</span>
                 </Row>
-                <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2 [&>*]:shrink-0">
+                <Stack gap={1} className="px-2 py-2">
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => {
                             const active = preset.patch.name === state.patch.name;
@@ -416,7 +417,7 @@ const PresetRail = ({
                                     as="button"
                                     align="start"
                                     gap={1}
-                                    className={`bacteria-window w-full px-3 py-2 text-left ${
+                                    className={`bacteria-window w-full px-3 py-2 text-left wrap-anywhere ${
                                         active ? 'border-[var(--color-accent-mint-bright)]/35' : ''
                                     }`}
                                     onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
@@ -450,9 +451,44 @@ const PresetRail = ({
     );
 };
 
+function FitRendererWidth({
+    maxWidth,
+    children,
+}: {
+    maxWidth: number;
+    children: (width: number) => ReactElement;
+}): ReactElement {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [width, setWidth] = useState(maxWidth);
+
+    useEffect(() => {
+        const element = containerRef.current;
+        if (!element) {
+            return undefined;
+        }
+
+        // The canvas editors convert pointer coordinates in bitmap pixels.
+        // Keep their rendered size and drawing width in the same coordinate space.
+        const observer = new ResizeObserver(([entry]) => {
+            const nextWidth = Math.floor(entry?.contentRect.width ?? 0);
+            if (nextWidth > 0) {
+                setWidth(nextWidth);
+            }
+        });
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div ref={containerRef} className="w-full min-w-0" style={{ maxWidth }}>
+            {children(width)}
+        </div>
+    );
+}
+
 const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Grid gap={2} className="h-full min-h-0 grid-cols-[minmax(250px,0.92fr)_minmax(0,1.2fr)] gap-2.5 p-2.5">
-        <Stack gap={3} className="bacteria-window min-h-0 overflow-y-auto p-3">
+    <Grid gap={2.5} className="grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] p-2.5">
+        <Stack gap={3} className="bacteria-window min-w-0 p-3">
             <SectionHeader
                 eyebrow="Petri pad"
                 title="Morph field"
@@ -460,24 +496,30 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 detail="A/B/C/D"
             />
             <Stack grow align="center" justify="center">
-                <XYMorphPad
-                    x={state.patch.morphX}
-                    y={state.patch.morphY}
-                    onChange={(x, y) => applyBacteriaMorphWithAudio(deviceId, x, y)}
-                    snapshots={state.patch.snapshots}
-                    width={264}
-                    height={212}
-                />
+                <FitRendererWidth maxWidth={264}>
+                    {(width) => (
+                        <XYMorphPad
+                            x={state.patch.morphX}
+                            y={state.patch.morphY}
+                            onChange={(x, y) => applyBacteriaMorphWithAudio(deviceId, x, y)}
+                            snapshots={state.patch.snapshots}
+                            width={width}
+                            height={212}
+                        />
+                    )}
+                </FitRendererWidth>
             </Stack>
-            <Grid cols={4} gap={2}>
+            <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,5rem),1fr))]">
                 {state.patch.snapshots.slice(0, 4).map((snapshot, index) => {
                     const populated = Object.keys(snapshot.paramValues).length > 0;
                     return (
-                        <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
+                        <Stack key={snapshot.id} align="start" gap={1} className="bacteria-window px-2 py-2">
                             <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">
                                 Snap {snapshot.id}
                             </span>
-                            <span className="truncate text-compact text-foreground">{snapshot.name}</span>
+                            <span className="max-w-full text-compact wrap-anywhere text-foreground">
+                                {snapshot.name}
+                            </span>
                             <BChip
                                 className={
                                     populated
@@ -498,7 +540,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
             </Grid>
         </Stack>
 
-        <Stack gap={2.5} className="min-h-0 overflow-y-auto">
+        <Stack gap={2.5} className="min-w-0">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick read"
@@ -506,19 +548,23 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                     description="The analyzer and split map stay visible so the patch never feels like a blind box."
                     detail={state.patch.globalRouting.replace('-', ' ')}
                 />
-                <SpectrumAnalyzer
-                    width={560}
-                    height={86}
-                    crossoverFreqs={[
-                        state.patch.crossoverFreq1,
-                        state.patch.crossoverFreq2,
-                        state.patch.crossoverFreq3,
-                        state.patch.crossoverFreq4,
-                        state.patch.crossoverFreq5,
-                    ]}
-                    bandCount={state.patch.bandCount}
-                    showHeatmap
-                />
+                <FitRendererWidth maxWidth={560}>
+                    {(width) => (
+                        <SpectrumAnalyzer
+                            width={width}
+                            height={86}
+                            crossoverFreqs={[
+                                state.patch.crossoverFreq1,
+                                state.patch.crossoverFreq2,
+                                state.patch.crossoverFreq3,
+                                state.patch.crossoverFreq4,
+                                state.patch.crossoverFreq5,
+                            ]}
+                            bandCount={state.patch.bandCount}
+                            showHeatmap
+                        />
+                    )}
+                </FitRendererWidth>
                 <CrossoverDisplay
                     bandCount={state.patch.bandCount}
                     crossoverFreqs={[
@@ -539,7 +585,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
 
             <Stack gap={3} className="bacteria-window min-h-0 p-3">
                 <SectionHeader eyebrow="Input" title="Gain staging" description="Keep the organism fed, not flooded." />
-                <Row justify="between" gap={4} className="px-2">
+                <Row wrap gap={3}>
                     <K
                         deviceId={deviceId}
                         v={state.patch.inputGain}
@@ -579,7 +625,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
 );
 
 const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5">
+    <Stack gap={2} className="gap-2.5 p-2.5">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Macros"
@@ -587,7 +633,7 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 description="Eight knobs for pushing the patch around without diving into the microscope."
                 detail="8 slots"
             />
-            <Grid cols={4} gapX={2} gapY={4}>
+            <Grid gapX={2} gapY={4} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4rem),1fr))]">
                 {([1, 2, 3, 4, 5, 6, 7, 8] as const).map((index) => (
                     <K
                         key={index}
@@ -648,7 +694,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
-        <Stack gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+        <Stack gap={2} className="gap-2.5 p-2.5">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Mutation deck"
@@ -656,19 +702,23 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     description={moduleMeta.hint}
                     detail={`Band ${state.activeBand + 1}`}
                 />
-                <SpectrumAnalyzer
-                    width={560}
-                    height={88}
-                    crossoverFreqs={[
-                        state.patch.crossoverFreq1,
-                        state.patch.crossoverFreq2,
-                        state.patch.crossoverFreq3,
-                        state.patch.crossoverFreq4,
-                        state.patch.crossoverFreq5,
-                    ]}
-                    bandCount={state.patch.bandCount}
-                    showHeatmap
-                />
+                <FitRendererWidth maxWidth={560}>
+                    {(width) => (
+                        <SpectrumAnalyzer
+                            width={width}
+                            height={88}
+                            crossoverFreqs={[
+                                state.patch.crossoverFreq1,
+                                state.patch.crossoverFreq2,
+                                state.patch.crossoverFreq3,
+                                state.patch.crossoverFreq4,
+                                state.patch.crossoverFreq5,
+                            ]}
+                            bandCount={state.patch.bandCount}
+                            showHeatmap
+                        />
+                    )}
+                </FitRendererWidth>
                 <CrossoverDisplay
                     bandCount={state.patch.bandCount}
                     crossoverFreqs={[
@@ -695,7 +745,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     </Stack>
                     <DawPluginLed tone="mint">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
                 </Row>
-                <Row role="grid" aria-label="Bands" gap={2} className="min-h-0 overflow-x-auto">
+                <Row role="grid" aria-label="Bands" wrap gap={2}>
                     {Array.from({ length: state.patch.bandCount }, (_, index) => (
                         <BandStrip
                             key={index}
@@ -713,7 +763,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
 };
 
 const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+    <Stack gap={2} className="gap-2.5 p-2.5">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Band broth"
@@ -721,19 +771,23 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 description="Split the signal, retune the boundaries, and keep the lanes readable."
                 detail={`${state.patch.bandCount} bands`}
             />
-            <SpectrumAnalyzer
-                width={560}
-                height={94}
-                crossoverFreqs={[
-                    state.patch.crossoverFreq1,
-                    state.patch.crossoverFreq2,
-                    state.patch.crossoverFreq3,
-                    state.patch.crossoverFreq4,
-                    state.patch.crossoverFreq5,
-                ]}
-                bandCount={state.patch.bandCount}
-                showHeatmap
-            />
+            <FitRendererWidth maxWidth={560}>
+                {(width) => (
+                    <SpectrumAnalyzer
+                        width={width}
+                        height={94}
+                        crossoverFreqs={[
+                            state.patch.crossoverFreq1,
+                            state.patch.crossoverFreq2,
+                            state.patch.crossoverFreq3,
+                            state.patch.crossoverFreq4,
+                            state.patch.crossoverFreq5,
+                        ]}
+                        bandCount={state.patch.bandCount}
+                        showHeatmap
+                    />
+                )}
+            </FitRendererWidth>
             <CrossoverDisplay
                 bandCount={state.patch.bandCount}
                 crossoverFreqs={[
@@ -760,7 +814,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 </Stack>
                 <DawPluginLed tone="mint">{state.patch.crossoverMode}</DawPluginLed>
             </Row>
-            <Row role="grid" aria-label="Bands" gap={2} className="min-h-0 overflow-x-auto">
+            <Row role="grid" aria-label="Bands" wrap gap={2}>
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
                     <BandStrip
                         key={index}
@@ -777,8 +831,8 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
 );
 
 const RouteHero = ({ state }: { state: BacteriaState }): ReactElement => (
-    <Stack gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
-        <Stack gap={3} className="bacteria-window h-full min-h-0 p-3">
+    <Stack gap={2} className="gap-2.5 p-2.5">
+        <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Dish map"
                 title="Signal petri"
@@ -786,27 +840,31 @@ const RouteHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 detail={state.patch.globalRouting.replace('-', ' ')}
             />
             <Stack grow align="center" justify="center">
-                <NodeGraphEditor
-                    width={620}
-                    height={248}
-                    bandCount={state.patch.bandCount}
-                    bands={state.patch.bands}
-                    globalRouting={state.patch.globalRouting}
-                    crossoverFreqs={[
-                        state.patch.crossoverFreq1,
-                        state.patch.crossoverFreq2,
-                        state.patch.crossoverFreq3,
-                        state.patch.crossoverFreq4,
-                        state.patch.crossoverFreq5,
-                    ]}
-                />
+                <FitRendererWidth maxWidth={620}>
+                    {(width) => (
+                        <NodeGraphEditor
+                            width={width}
+                            height={248}
+                            bandCount={state.patch.bandCount}
+                            bands={state.patch.bands}
+                            globalRouting={state.patch.globalRouting}
+                            crossoverFreqs={[
+                                state.patch.crossoverFreq1,
+                                state.patch.crossoverFreq2,
+                                state.patch.crossoverFreq3,
+                                state.patch.crossoverFreq4,
+                                state.patch.crossoverFreq5,
+                            ]}
+                        />
+                    )}
+                </FitRendererWidth>
             </Stack>
         </Stack>
     </Stack>
 );
 
 const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
-    <Grid cols={2} gap={2} className="h-full min-h-0 gap-2.5 p-2.5">
+    <Grid gap={2.5} className="grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] p-2.5">
         <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
             <SectionHeader
                 eyebrow="Curve"
@@ -814,7 +872,11 @@ const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 description="For when the default clipping law is too polite."
             />
             <Stack grow align="center" justify="center">
-                <WaveshaperEditor width={300} height={176} segments={[]} onSegmentsChange={() => {}} />
+                <FitRendererWidth maxWidth={300}>
+                    {(width) => (
+                        <WaveshaperEditor width={width} height={176} segments={[]} onSegmentsChange={() => {}} />
+                    )}
+                </FitRendererWidth>
             </Stack>
         </Stack>
         <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
@@ -824,7 +886,17 @@ const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 description="Draw a wobble instead of babysitting a rate knob."
             />
             <Stack grow align="center" justify="center">
-                <BezierLfoEditor width={300} height={176} points={[]} onPointsChange={() => {}} gridDivisions={8} />
+                <FitRendererWidth maxWidth={300}>
+                    {(width) => (
+                        <BezierLfoEditor
+                            width={width}
+                            height={176}
+                            points={[]}
+                            onPointsChange={() => {}}
+                            gridDivisions={8}
+                        />
+                    )}
+                </FitRendererWidth>
             </Stack>
         </Stack>
         <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
@@ -835,13 +907,17 @@ const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 detail={`${state.patch.stepSeqSteps} steps`}
             />
             <Stack grow align="center" justify="center">
-                <StepSequencerEditor
-                    width={300}
-                    height={96}
-                    steps={[]}
-                    numSteps={state.patch.stepSeqSteps}
-                    onStepsChange={() => {}}
-                />
+                <FitRendererWidth maxWidth={300}>
+                    {(width) => (
+                        <StepSequencerEditor
+                            width={width}
+                            height={96}
+                            steps={[]}
+                            numSteps={state.patch.stepSeqSteps}
+                            onStepsChange={() => {}}
+                        />
+                    )}
+                </FitRendererWidth>
             </Stack>
         </Stack>
         <Stack gap={2} className="bacteria-window min-h-0 gap-2.5 p-3">
@@ -851,7 +927,17 @@ const LabHero = ({ state }: { state: BacteriaState }): ReactElement => (
                 description="Carve holes in the top end without leaving the panel."
             />
             <Stack grow align="center" justify="center">
-                <SpectralBinEditor width={300} height={96} binValues={[]} onBinValuesChange={() => {}} mode="gate" />
+                <FitRendererWidth maxWidth={300}>
+                    {(width) => (
+                        <SpectralBinEditor
+                            width={width}
+                            height={96}
+                            binValues={[]}
+                            onBinValuesChange={() => {}}
+                            mode="gate"
+                        />
+                    )}
+                </FitRendererWidth>
             </Stack>
         </Stack>
     </Grid>
@@ -870,7 +956,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
     };
 
     return (
-        <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5 [&>*]:shrink-0">
+        <Stack gap={2} className="gap-2.5 p-2.5">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Modules"
@@ -903,7 +989,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'distortion' ? (
                     <Stack gap={3}>
-                        <Row gap={2}>
+                        <Row wrap gap={2}>
                             <BChip
                                 active={Boolean(band.distortionEnabled)}
                                 onClick={() => setBandParam('distortionEnabled', !band.distortionEnabled)}
@@ -998,7 +1084,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'filter' ? (
                     <Stack gap={3}>
-                        <Row gap={2}>
+                        <Row wrap gap={2}>
                             <BChip
                                 active={Boolean(band.filterEnabled)}
                                 onClick={() => setBandParam('filterEnabled', !band.filterEnabled)}
@@ -1186,7 +1272,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'granular' ? (
                     <Stack gap={3}>
-                        <Row gap={2}>
+                        <Row wrap gap={2}>
                             <BChip
                                 active={Boolean(band.granularEnabled)}
                                 onClick={() => setBandParam('granularEnabled', !band.granularEnabled)}
@@ -1260,7 +1346,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'spectral' ? (
                     <Stack gap={3}>
-                        <Row gap={2}>
+                        <Row wrap gap={2}>
                             <BChip
                                 active={Boolean(band.spectralEnabled)}
                                 onClick={() => setBandParam('spectralEnabled', !band.spectralEnabled)}
@@ -1369,7 +1455,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'convolution' ? (
                     <Stack gap={3}>
-                        <Row gap={2}>
+                        <Row wrap gap={2}>
                             <BChip
                                 active={Boolean(band.convolutionEnabled)}
                                 onClick={() => setBandParam('convolutionEnabled', !band.convolutionEnabled)}
@@ -1472,7 +1558,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 }
 
 const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5 [&>*]:shrink-0">
+    <Stack gap={2.5} className="p-2.5">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Split"
@@ -1519,7 +1605,7 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             </Row>
         </Stack>
 
-        <Stack grow gap={2} className="bacteria-window min-h-0 overflow-y-auto p-3">
+        <Stack grow gap={2} className="bacteria-window min-w-0 p-3">
             <SectionHeader
                 eyebrow="Modulation"
                 title="Source dock"
@@ -1543,7 +1629,7 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
 );
 
 const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5 [&>*]:shrink-0">
+    <Stack gap={2.5} className="p-2.5">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Global"
@@ -1580,7 +1666,7 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             />
             <Stack gap={2}>
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
-                    <Row key={index} justify="between" gap={3} className="bacteria-window px-3 py-2">
+                    <Row key={index} justify="between" wrap gap={3} className="bacteria-window px-3 py-2">
                         <span className="text-compact font-medium text-foreground">Band {index + 1}</span>
                         <Row wrap gap={1}>
                             {ROUTING_MODES.map((mode) => (
@@ -1601,7 +1687,7 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
 );
 
 const LabDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+    <Stack gap={2.5} className="p-2.5">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="LFOs"
@@ -1829,22 +1915,10 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
     const activeBand = state.patch.bands[state.activeBand] ?? state.patch.bands[0]!;
     const moduleMeta = getModuleMeta(state.activeModule);
 
-    return (
-        // The faceplate must clip its subtree (#2311). InstrumentBottomPanel's
-        // Close button is an earlier flex-column sibling above this element, and
-        // the content stack sizes to its content — unclipped it spills past the
-        // faceplate's top edge and, painting as the later sibling, covers the
-        // chrome and swallows pointer clicks on it. Every sibling instrument
-        // faceplate carries containment, and align="stretch" pins the content
-        // stack to the faceplate box, while internal min-h-0 + scroll regions
-        // own the fit. The clip is an inline style, not a Tailwind class, because
-        // jsdom compiles no Tailwind and the containment must stay an observable DOM
-        // property for the regression test (same reasoning as ErrorBoundary's
-        // FALLBACK_HEIGHT).
-        <Row
-            align="stretch"
-            gap={2.5}
-            className="bacteria-faceplate h-full min-h-[460px] p-2.5"
+    // Keep scrolled content within the faceplate so it cannot cover the Close hit target (#2311).
+    const faceplate = (
+        <div
+            className="bacteria-faceplate isolate grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] gap-2.5 p-2.5 @[36rem]/bacteria:grid-cols-[clamp(10rem,22%,15.5rem)_minmax(0,1fr)] @[36rem]/bacteria:grid-rows-1"
             style={{ overflow: 'hidden' }}
         >
             <PresetRail
@@ -1864,7 +1938,13 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                 }}
             />
 
-            <Stack gap={2.5} grow className="min-w-0">
+            <Stack
+                as="section"
+                aria-label="Bacteria controls"
+                tabIndex={0}
+                gap={2.5}
+                className="@container/bacteria-controls min-w-0 overflow-y-auto overscroll-contain [&>*]:shrink-0"
+            >
                 <Row as="header" gap={2.5} className="bacteria-window shrink-0 flex-wrap px-3 py-2">
                     <Stack gap={1}>
                         <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-mint)]">
@@ -1904,7 +1984,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                         </Row>
                     ) : null}
 
-                    <Row gap={2} className="ml-auto">
+                    <Row wrap gap={2} className="ml-auto">
                         <DawPluginLed tone="mint">{moduleMeta.label}</DawPluginLed>
                         <Stack align="end" className="text-right">
                             <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground">
@@ -1923,19 +2003,21 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                     </Row>
                 </Row>
 
-                <Grid cols={2} gap={2.5} className="min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_minmax(320px,0.92fr)]">
-                    <section className="bacteria-window min-h-0 overflow-hidden">{renderHero(deviceId, state)}</section>
-                    <section className="bacteria-window min-h-0 overflow-hidden">{renderDeck(deviceId, state)}</section>
+                <Grid gap={2.5} className="@[52rem]/bacteria-controls:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+                    <section className="bacteria-window min-w-0">{renderHero(deviceId, state)}</section>
+                    <section className="bacteria-window min-w-0">{renderDeck(deviceId, state)}</section>
                 </Grid>
 
-                <Grid gap={2.5} className="shrink-0 grid-cols-[repeat(4,minmax(0,auto))_minmax(0,1fr)]">
+                <Grid gap={2.5} className="grid-cols-[repeat(auto-fit,minmax(min(100%,6rem),1fr))]">
                     <MetricCell label="Input" value={formatValue(state.inputDb, 'dB')} />
                     <MetricCell label="Output" value={formatValue(state.outputDb, 'dB')} />
                     <MetricCell label="Latency" value={state.latency > 0 ? `${state.latency} smp` : '0 smp'} />
                     <MetricCell label="Active band" value={`B${state.activeBand + 1}`} />
-                    <BandMeters state={state} />
                 </Grid>
+                <BandMeters state={state} />
             </Stack>
-        </Row>
+        </div>
     );
+
+    return <div className="@container/bacteria h-full min-h-0">{faceplate}</div>;
 };

@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
 import { ChevronDown } from 'lucide-react';
 
@@ -119,8 +119,11 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const { patch } = allInstances[deviceId] ?? getCrustState(deviceId);
     const disclosureTier = effectDisclosureTierFromLevel(patch.uiLevel);
     const meters = useCrustMeters(deviceId);
-    const [presetMenuOpen, setPresetMenuOpen] = useState(false);
-    const [streamingMenuOpen, setStreamingMenuOpen] = useState(false);
+    const [openMenu, setOpenMenu] = useState<'preset' | 'streaming' | null>(null);
+    const presetTrigger = useRef<HTMLButtonElement>(null);
+    const streamingTrigger = useRef<HTMLButtonElement>(null);
+    const presetMenuOpen = openMenu === 'preset';
+    const streamingMenuOpen = openMenu === 'streaming';
 
     const grDb = meters.grDb;
     const inputDb = meters.inputDb;
@@ -166,7 +169,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     }
 
     return (
-        <Stack gap={2.5} className="crust-faceplate h-full min-h-[440px] p-2.5 text-foreground">
+        <Stack gap={2.5} className="crust-faceplate @container h-full min-h-0 p-2.5 text-foreground">
             <Row as="header" wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
                 <Stack gap={1}>
                     <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-copper)]">
@@ -181,13 +184,31 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     onChange={(tier) => void setCrustPanelUiLevel(deviceId, effectDisclosureLevel(tier))}
                 />
 
-                <div className="relative shrink-0">
+                <div
+                    role="group"
+                    aria-label="Preset selector"
+                    className="relative shrink-0"
+                    onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                            setOpenMenu(null);
+                        }
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Escape' && presetMenuOpen) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setOpenMenu(null);
+                            presetTrigger.current?.focus();
+                        }
+                    }}
+                >
                     <Button
+                        ref={presetTrigger}
                         variant="bare"
                         size="bare"
                         type="button"
                         className="crust-window flex min-w-[164px] items-center gap-2 px-3 py-2 text-compact"
-                        onClick={() => setPresetMenuOpen((open) => !open)}
+                        onClick={() => setOpenMenu((open) => (open === 'preset' ? null : 'preset'))}
                         aria-haspopup="listbox"
                         aria-expanded={presetMenuOpen}
                     >
@@ -215,7 +236,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     className="crust-window w-full rounded-[12px]"
                                     onPress={() => {
                                         loadCrustPatchWithAudio(deviceId, preset.patch);
-                                        setPresetMenuOpen(false);
+                                        setOpenMenu(null);
                                     }}
                                     role="option"
                                     aria-selected={preset.patch.name === patch.name}
@@ -225,13 +246,31 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     ) : null}
                 </div>
 
-                <div className="relative shrink-0">
+                <div
+                    role="group"
+                    aria-label="Target selector"
+                    className="relative shrink-0"
+                    onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                            setOpenMenu(null);
+                        }
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Escape' && streamingMenuOpen) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setOpenMenu(null);
+                            streamingTrigger.current?.focus();
+                        }
+                    }}
+                >
                     <Button
+                        ref={streamingTrigger}
                         variant="bare"
                         size="bare"
                         type="button"
                         className="crust-window flex min-w-[196px] items-center gap-2 px-3 py-2 text-compact"
-                        onClick={() => setStreamingMenuOpen((open) => !open)}
+                        onClick={() => setOpenMenu((open) => (open === 'streaming' ? null : 'streaming'))}
                         aria-haspopup="listbox"
                         aria-expanded={streamingMenuOpen}
                     >
@@ -273,7 +312,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 if (preset.id !== 'custom') {
                                                     handleSetParam(CRUST_PARAM_IDS.ceiling, preset.tpCeiling);
                                                 }
-                                                setStreamingMenuOpen(false);
+                                                setOpenMenu(null);
                                             }}
                                             role="option"
                                             aria-selected={patch.streamingPreset === preset.id}
@@ -304,8 +343,15 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     onChange={(value, transient) => handleSetParam(CRUST_PARAM_IDS.gain, value, transient)}
                 />
 
-                <Stack grow gap={2.5} className="min-w-0 overflow-y-auto pr-1 [&>*]:shrink-0">
-                    <Grid cols={4} gap={2.5} className="shrink-0">
+                <Stack
+                    grow
+                    gap={2.5}
+                    role="region"
+                    aria-label="Crust controls"
+                    tabIndex={0}
+                    className="min-h-0 min-w-0 overflow-y-auto pr-1 [&>*]:shrink-0"
+                >
+                    <Grid gap={2.5} className="shrink-0 grid-cols-2 @3xl:grid-cols-4">
                         <MetricTile label="Push" value={`${patch.gain.toFixed(1)} dB`} detail="Input shove" />
                         <MetricTile
                             label="Shave"
@@ -367,7 +413,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         </div>
                     </Stack>
 
-                    <div className="crust-window min-h-0 overflow-y-auto">
+                    <div className="crust-window">
                         <CrustControlZone
                             patch={patch}
                             setParam={handleSetParam}

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createDefaultPatch } from '../../../models/LevainPatch';
 import { sendMicParamToEngine } from '../../../useCases/levainParamBridge/sendMicParamToEngine';
+import { setLevainParamWithAudio } from '../../../useCases/levainParamBridge/setLevainParamWithAudio';
 import { setMacroWithAudio } from '../../../useCases/levainParamBridge/setMacroWithAudio';
 import { setLevainPanelUiLevel } from '../../../useCases/setLevainPanelUiLevel';
 import { LevainPanel } from '../LevainPanel';
@@ -235,6 +236,32 @@ describe('LevainPanel', () => {
         expect(stageContainer?.querySelector('.grid.grid-cols-1.\\@\\[540px\\]\\:grid-cols-2')).not.toBeNull();
     });
 
+    it('keeps the lineup, phrase stage, and performance controls available to keyboard focus', () => {
+        render(<LevainPanel deviceId="test-device" />);
+
+        const lineup = screen.getByRole('complementary', { name: 'Instrument lineup' });
+        const stage = screen.getByRole('region', { name: 'Phrase stage' });
+        const performance = screen.getByRole('complementary', { name: 'Performance controls' });
+        expect(within(lineup).getByRole('button', { name: /Solo Violin/i })).toHaveAttribute('aria-current', 'true');
+        expect(within(stage).getByRole('region', { name: 'Selection detail' })).toHaveTextContent('Solo Violin');
+
+        for (const region of [lineup, stage, performance]) {
+            expect(region.tabIndex).toBe(0);
+            region.focus();
+            expect(region).toHaveFocus();
+        }
+
+        const dynamicTails = within(performance).getByRole('button', { name: 'Dynamic tails' });
+        expect(dynamicTails).toBeEnabled();
+        dynamicTails.focus();
+        expect(dynamicTails).toHaveFocus();
+        fireEvent.click(dynamicTails);
+        expect(setLevainParamWithAudio).toHaveBeenCalledWith('test-device', 'releaseTriggers', {
+            enabled: false,
+            dynamicScale: true,
+        });
+    });
+
     it('should display engine status', () => {
         render(<LevainPanel deviceId="test-device" />);
         const leds = screen.getAllByTestId('daw-plugin-led');
@@ -438,16 +465,6 @@ describe('LevainPanel', () => {
             dragSpace(spaceKnob);
             expect(capture).toHaveBeenCalledWith(1);
             expect(setMacroWithAudio).toHaveBeenCalledWith('test-device', 4, 0.63);
-        });
-    });
-
-    describe('overflow normalization', () => {
-        it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
-            const { container } = render(<LevainPanel deviceId="test-device" />);
-            const faceplate = container.querySelector<HTMLElement>('.levain-faceplate');
-            expect(faceplate).not.toBeNull();
-            expect(faceplate?.className).toContain('min-h-[440px]');
-            expect(faceplate?.className).not.toContain('overflow-hidden');
         });
     });
 });

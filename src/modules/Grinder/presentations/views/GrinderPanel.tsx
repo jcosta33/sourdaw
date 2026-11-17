@@ -504,8 +504,8 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
     }
 
     return (
-        <Stack gap={3} className="grinder-window h-full p-3">
-            <Row align="start" justify="between">
+        <Stack gap={3} className="grinder-window p-3">
+            <Row align="start" justify="between" wrap gap={2}>
                 <div>
                     <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                         Amp Stage
@@ -522,7 +522,7 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
             <Row grow gap={3} className="min-h-0">
                 <svg
                     viewBox="0 0 100 84"
-                    className="h-full flex-1 rounded-[18px] bg-black/35 p-2"
+                    className="h-[9rem] min-w-0 flex-1 rounded-[18px] bg-black/35 p-2"
                     preserveAspectRatio="none"
                     aria-label="Tone stack response"
                 >
@@ -576,6 +576,8 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
     );
 }
 
+const STAGE_GRID_CLASSES = 'grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-3 [&_canvas]:max-w-full';
+
 function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
     const compressor = patch.prePedals.find((pedal) => pedal.type === 'compressor');
     const drivePedal =
@@ -588,9 +590,9 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
     const driveMix = patch.outputMix;
 
     return (
-        <div className="grid h-full grid-cols-[1.1fr_0.9fr] gap-3">
+        <div className={STAGE_GRID_CLASSES}>
             <Stack gap={3} className="grinder-window p-3">
-                <Row align="start" justify="between">
+                <Row align="start" justify="between" wrap gap={2}>
                     <div>
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-peach)]">
                             Drive Surface
@@ -608,7 +610,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                     width={320}
                     height={152}
                 />
-                <Grid cols={3} gap={3}>
+                <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))]">
                     <StatusMeter
                         label="OD"
                         value={(patch.prePedals.find((pedal) => pedal.type === 'overdrive')?.params.drive ?? 0) / 10}
@@ -641,7 +643,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                     width={210}
                     height={152}
                 />
-                <Grid cols={2} gap={3}>
+                <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))]">
                     <StatusMeter label="Gate" value={patch.gateEnabled ? 1 : 0} accent="var(--color-accent-cyan)" />
                     <StatusMeter label="Comp" value={compressor?.enabled ? 1 : 0} accent="var(--color-accent-peach)" />
                 </Grid>
@@ -660,9 +662,9 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
     };
 
     return (
-        <div className="grid h-full grid-cols-[1.05fr_0.95fr] gap-3">
+        <div className={STAGE_GRID_CLASSES}>
             <Stack gap={3} className="grinder-window p-3">
-                <Row align="start" justify="between">
+                <Row align="start" justify="between" wrap gap={2}>
                     <div>
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                             Cab stage
@@ -702,17 +704,17 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         </Row>
                     ) : null}
                 </Row>
-                <Grid cols={3} gap={3}>
+                <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))]">
                     <StatusMeter label="Thump" value={patch.backEmf} accent="var(--color-accent-cyan)" />
                     <StatusMeter label="Breakup" value={patch.coneBreakup} accent="var(--color-accent-peach)" />
                     <StatusMeter label="Damp" value={patch.cabDamping} accent="var(--color-accent-lavender)" />
                 </Grid>
-                <Row align="stretch" gap={2}>
+                <Row align="stretch" wrap gap={2}>
                     <Stack gap={1}>
                         <span className="text-caption uppercase text-text-secondary tracking-wider font-semibold">
                             Mic 1
                         </span>
-                        <Row align="stretch" gap={2}>
+                        <Row align="stretch" wrap gap={2}>
                             <RotaryKnob
                                 aria-label="Mic 1 horizontal position"
                                 value={patch.mic1.positionX}
@@ -750,7 +752,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             <span className="text-caption uppercase text-text-secondary tracking-wider font-semibold">
                                 Mic 2
                             </span>
-                            <Row align="stretch" gap={2}>
+                            <Row align="stretch" wrap gap={2}>
                                 <RotaryKnob
                                     aria-label="Mic 2 horizontal position"
                                     value={patch.mic2.positionX}
@@ -810,14 +812,14 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
     const statusLabel = patch.engineMode === 'circuit' ? 'Idle' : 'Active';
 
     return (
-        <div className="grid h-full grid-cols-[1fr_0.94fr] gap-3">
+        <div className={STAGE_GRID_CLASSES}>
             <Stack gap={3} className="grinder-window p-3">
-                <Row align="start" justify="between">
+                <Row align="start" justify="between" wrap gap={2}>
                     <div>
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-lavender)]">
                             Capture engine
                         </div>
-                        <div className="mt-1 text-lg font-semibold text-text-primary">{modelName}</div>
+                        <div className="mt-1 text-lg font-semibold wrap-anywhere text-text-primary">{modelName}</div>
                         <div className="text-xs text-text-secondary">
                             {patch.neuralModelFamily} ·{' '}
                             {patch.neuralPlacement === 'amp-capture' ? 'Amp capture' : 'Rig capture'}
@@ -836,7 +838,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                             style={{ width: `${patch.neuralMix * 100}%` }}
                         />
                     </div>
-                    <Grid cols={2} gap={2} className="mt-4">
+                    <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))] mt-4">
                         <GrinderTelemetryMeter
                             deviceId={deviceId}
                             label="CPU"
@@ -918,7 +920,7 @@ function QuickTelemetryReadout({ deviceId }: { deviceId: string }): ReactElement
 
 function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     return (
-        <div className="grid h-full grid-cols-[0.92fr_1.08fr] gap-3">
+        <div className={STAGE_GRID_CLASSES}>
             <Stack gap={3} className="grinder-window p-3">
                 <div>
                     <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-orange)]">
@@ -956,7 +958,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                     What lives here
                 </div>
-                <Grid cols={2} gap={3}>
+                <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))]">
                     <StatusMeter
                         label="Bias"
                         value={Math.max(0, Math.min(1, patch.tubeBias))}
@@ -993,17 +995,18 @@ function BrowserRail({
     });
 
     return (
-        <Stack
+        <Grid
             as="aside"
             gap={3}
-            shrink={false}
-            className="grinder-faceplate h-full w-[296px] overflow-y-auto p-3 [&>*]:shrink-0"
+            aria-label="Grinder presets and amps"
+            tabIndex={0}
+            className="grinder-window min-h-0 min-w-0 auto-rows-max content-start overflow-y-auto overscroll-contain p-2.5"
         >
             <div>
                 <div className="text-dense uppercase tracking-[0.3em] text-[var(--color-accent-amber)]">Grinder</div>
-                <div className="mt-1 text-[22px] font-semibold tracking-[0.03em] text-text-primary">Presets</div>
+                <div className="mt-1 text-sm font-semibold text-text-primary">Presets</div>
             </div>
-            <Stack grow gap={2.5} className="grinder-window p-3">
+            <Grid gap={2.5} className="grinder-window min-w-0 p-3">
                 <DawSearchInput
                     value={query}
                     onChange={setQuery}
@@ -1011,9 +1014,14 @@ function BrowserRail({
                     aria-label="Search Grinder presets"
                     variant="ghost"
                     inputClassName="placeholder:text-text-primary/85"
-                    className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2"
+                    className="max-w-80 rounded-[18px] border border-white/6 bg-black/20 px-2"
                 />
-                <Row justify="between" className="text-dense uppercase tracking-[0.22em] text-text-primary">
+                <Row
+                    justify="between"
+                    wrap
+                    gap={1}
+                    className="text-dense uppercase tracking-[0.22em] text-text-primary"
+                >
                     <span>{category}</span>
                     <span>{filteredPresets.length} shown</span>
                 </Row>
@@ -1024,6 +1032,7 @@ function BrowserRail({
                             active={category === item}
                             tone="amber"
                             size="sm"
+                            className="max-w-full wrap-anywhere"
                             onClick={() => setCategory(item)}
                         >
                             {item}
@@ -1039,6 +1048,7 @@ function BrowserRail({
                             {patch.snapshots.map((snapshot, index) => (
                                 <DawPluginToggle
                                     key={snapshot.id}
+                                    className="max-w-full wrap-anywhere"
                                     pressed={patch.activeSnapshot === index}
                                     tone="cyan"
                                     size="sm"
@@ -1051,7 +1061,7 @@ function BrowserRail({
                         </Row>
                     </div>
                 ) : null}
-                <Stack grow gap={1.5} className="overflow-y-auto pr-1">
+                <Grid gap={1.5}>
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => (
                             <Button
@@ -1059,15 +1069,17 @@ function BrowserRail({
                                 size="bare"
                                 key={preset.id}
                                 type="button"
-                                className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left ${
+                                className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2 text-left whitespace-normal ${
                                     patch.name === preset.patch.name
                                         ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10'
                                         : ''
                                 }`}
                                 onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
                             >
-                                <Row justify="between" gap={3} className="w-full">
-                                    <span className="text-[13px] font-medium text-text-primary">{preset.name}</span>
+                                <Row justify="between" wrap gap={1} className="w-full">
+                                    <span className="text-compact font-medium wrap-anywhere text-text-primary">
+                                        {preset.name}
+                                    </span>
                                     <span className="text-caption uppercase tracking-[0.2em] text-text-secondary">
                                         {preset.category}
                                     </span>
@@ -1085,35 +1097,37 @@ function BrowserRail({
                             Nothing matches that search. Clear it or try another tray.
                         </div>
                     )}
-                </Stack>
-            </Stack>
-            <Stack gap={2} className="grinder-window max-h-[24vh] overflow-y-auto p-3">
+                </Grid>
+            </Grid>
+            <Grid gap={2} className="grinder-window min-w-0 p-3">
                 <div className="text-dense uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">Amp lineup</div>
-                <div className="grid gap-2">
+                <Grid gap={2}>
                     {AMP_MODELS.map((amp) => (
                         <Button
                             variant="bare"
                             size="bare"
                             key={amp.id}
                             type="button"
-                            className={`rounded-[18px] border px-3 py-2.5 text-left transition-colors ${
+                            className={`flex flex-col items-stretch gap-1 rounded-[18px] border px-3 py-2 text-left whitespace-normal transition-colors ${
                                 patch.ampModel === amp.id ? 'border-white/18 bg-white/6' : 'border-white/8 bg-black/16'
                             }`}
                             onClick={() => replacePatch({ ...patch, ampModel: amp.id })}
                         >
-                            <Row justify="between">
-                                <span className="text-[13px] font-medium text-text-primary">{amp.label}</span>
-                                <span className="h-2 w-2 rounded-full" style={{ background: amp.accent }} />
+                            <Row justify="between" gap={2}>
+                                <span className="min-w-0 text-compact font-medium wrap-anywhere text-text-primary">
+                                    {amp.label}
+                                </span>
+                                <span className="size-2 shrink-0 rounded-full" style={{ background: amp.accent }} />
                             </Row>
-                            <div className="mt-1 text-dense uppercase tracking-[0.22em] text-text-primary">
+                            <div className="text-dense uppercase tracking-[0.22em] text-text-primary">
                                 {amp.family} · {amp.tubes}
                             </div>
-                            <div className="mt-2 text-xs text-text-primary">{amp.voicing}</div>
+                            <div className="text-xs text-text-primary">{amp.voicing}</div>
                         </Button>
                     ))}
-                </div>
-            </Stack>
-        </Stack>
+                </Grid>
+            </Grid>
+        </Grid>
     );
 }
 
@@ -1139,7 +1153,7 @@ function SectionTabs({
                             key={tab.id}
                             type="button"
                             aria-pressed={active}
-                            className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
+                            className={`grinder-tab min-h-6 transform-none px-2 py-0.5 ${active ? 'grinder-tab-active' : ''}`}
                             onClick={() => replaceGrinderPatchLocally(deviceId, { ...patch, uiSection: tab.id })}
                         >
                             <Icon className="size-3.5" />
@@ -1156,8 +1170,8 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
     const chain_order = getGrinderSupportedChainOrder(patch.prePedals, { include_missing: false });
 
     return (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="grinder-window flex flex-col gap-3 p-3 md:col-span-2 xl:col-span-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12.5rem),1fr))] gap-3">
+            <div className="grinder-window col-span-full flex min-w-0 flex-col gap-3 p-3">
                 <Row justify="between" gap={3}>
                     <div>
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
@@ -1170,7 +1184,7 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                     <DawPluginLed tone="amber">{chain_order.length > 0 ? 'Live' : 'Empty'}</DawPluginLed>
                 </Row>
                 {chain_order.length > 0 ? (
-                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12.5rem),1fr))] gap-2">
                         {chain_order.map((pedal_type, index) => {
                             const control = get_drive_control_for_pedal_type(pedal_type);
                             if (!control) {
@@ -1183,13 +1197,13 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                                     key={`chain-${pedal_type}`}
                                     className="rounded-[18px] border border-white/8 bg-black/20 p-3"
                                 >
-                                    <Row gap={2}>
+                                    <Row wrap gap={2}>
                                         <DawPluginToggle
                                             pressed={pedal.enabled}
                                             tone="amber"
                                             size="sm"
                                             caps={false}
-                                            className="min-w-0 flex-1 justify-start"
+                                            className="max-w-full wrap-anywhere text-left"
                                             onClick={() =>
                                                 setGrinderPedalParamWithAudio(
                                                     deviceId,
@@ -1460,11 +1474,11 @@ function ControlDeck({
                     step={0.1}
                     defaultValue={5}
                 />
-                <Stack gap={3} className="grinder-window min-w-[220px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[220px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                         Voice switches
                     </div>
-                    <Row align="stretch" gap={2}>
+                    <Row align="stretch" wrap gap={2}>
                         {[0, 1, 2].map((channel) => (
                             <DawPluginChip
                                 key={channel}
@@ -1477,7 +1491,7 @@ function ControlDeck({
                             </DawPluginChip>
                         ))}
                     </Row>
-                    <Row align="stretch" gap={2}>
+                    <Row align="stretch" wrap gap={2}>
                         {[
                             { key: 'bright', label: 'Bright', active: patch.bright },
                             { key: 'fat', label: 'Fat', active: patch.fat },
@@ -1594,11 +1608,11 @@ function ControlDeck({
                     step={0.01}
                     defaultValue={0.1}
                 />
-                <Stack gap={3} className="grinder-window min-w-[210px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[210px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Cab toggles
                     </div>
-                    <Row align="stretch" gap={2}>
+                    <Row align="stretch" wrap gap={2}>
                         <DawPluginToggle
                             pressed={patch.cabEnabled}
                             tone="cyan"
@@ -1617,7 +1631,7 @@ function ControlDeck({
                         </DawPluginToggle>
                     </Row>
                 </Stack>
-                <Stack gap={3} className="grinder-window min-w-[280px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[280px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Cab voice
                     </div>
@@ -1637,7 +1651,7 @@ function ControlDeck({
                         ))}
                     </div>
                 </Stack>
-                <Stack gap={3} className="grinder-window min-w-[260px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[260px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                         Cab mode
                     </div>
@@ -1657,7 +1671,7 @@ function ControlDeck({
                         ))}
                     </div>
                 </Stack>
-                <Stack gap={3} className="grinder-window min-w-[280px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[280px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-peach)]">
                         Routing preset
                     </div>
@@ -1684,18 +1698,18 @@ function ControlDeck({
     if (patch.uiSection === 'neural') {
         return (
             <Row align="stretch" wrap gap={3}>
-                <Stack gap={3} className="grinder-window min-w-[280px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[280px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-lavender)]">
                         Engine Mode
                     </div>
-                    <Grid cols={3} gap={2}>
+                    <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,7rem),1fr))]">
                         {ENGINE_MODES.map((mode) => (
                             <Button
                                 variant="bare"
                                 size="bare"
                                 key={mode.id}
                                 type="button"
-                                className={`rounded-[16px] border px-3 py-3 text-left ${
+                                className={`rounded-[16px] border px-3 py-3 text-left whitespace-normal ${
                                     patch.engineMode === mode.id
                                         ? 'border-[var(--color-accent-lavender)]/60 bg-[var(--color-accent-lavender)]/12'
                                         : 'border-white/8 bg-black/20'
@@ -1734,7 +1748,7 @@ function ControlDeck({
                     step={1}
                     defaultValue={1}
                 />
-                <Stack gap={3} className="grinder-window min-w-[220px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[220px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Capture Role
                     </div>
@@ -1768,7 +1782,7 @@ function ControlDeck({
                         <NeuralTelemetryReadout deviceId={deviceId} />
                     </div>
                 </Stack>
-                <Stack grow gap={3} className="grinder-window min-w-[320px] px-3 py-3">
+                <Stack grow gap={3} className="grinder-window min-w-0 max-w-full basis-[320px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                         Factory Voices
                     </div>
@@ -1781,7 +1795,7 @@ function ControlDeck({
                                     size="bare"
                                     key={model.id}
                                     type="button"
-                                    className={`rounded-[18px] border px-4 py-3 text-left ${
+                                    className={`rounded-[18px] border px-3 py-2 text-left whitespace-normal ${
                                         selected
                                             ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/12'
                                             : 'border-white/8 bg-black/20'
@@ -1799,8 +1813,10 @@ function ControlDeck({
                                         })
                                     }
                                 >
-                                    <Row justify="between">
-                                        <span className="text-sm font-medium text-text-primary">{model.name}</span>
+                                    <Row justify="between" wrap gap={2}>
+                                        <span className="min-w-0 text-sm font-medium wrap-anywhere text-text-primary">
+                                            {model.name}
+                                        </span>
                                         <span className="text-dense uppercase tracking-[0.18em] text-text-primary">
                                             {model.family}
                                         </span>
@@ -1811,8 +1827,8 @@ function ControlDeck({
                         })}
                     </div>
                 </Stack>
-                <Stack grow gap={3} className="grinder-window min-w-[320px] px-3 py-3">
-                    <Row justify="between" gap={3}>
+                <Stack grow gap={3} className="grinder-window min-w-0 max-w-full basis-[320px] px-3 py-3">
+                    <Row justify="between" wrap gap={2}>
                         <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                             Imported captures
                         </div>
@@ -1861,7 +1877,7 @@ function ControlDeck({
     if (patch.uiSection === 'lab') {
         return (
             <Row align="stretch" wrap gap={3}>
-                <Stack gap={3} className="grinder-window min-w-[220px] px-3 py-3">
+                <Stack gap={3} className="grinder-window min-w-0 max-w-full basis-[220px] px-3 py-3">
                     <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Gate</div>
                     <DawPluginToggle
                         pressed={patch.gateEnabled}
@@ -1986,14 +2002,14 @@ function ControlDeck({
     return (
         <Row align="stretch" wrap gap={3}>
             <GrinderToneControls deviceId={deviceId} patch={patch} />
-            <Stack gap={2} className="grinder-window min-w-[250px] px-3 py-3">
+            <Stack gap={2} className="grinder-window min-w-0 max-w-full basis-[250px] px-3 py-3">
                 <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                     Current preset
                 </div>
-                <div className="text-xl font-semibold text-text-primary">{patch.name}</div>
+                <div className="text-xl font-semibold wrap-anywhere text-text-primary">{patch.name}</div>
                 <div className="text-sm text-text-primary">{engineModeText}</div>
             </Stack>
-            <Stack gap={2} className="grinder-window min-w-[200px] px-3 py-3">
+            <Stack gap={2} className="grinder-window min-w-0 max-w-full basis-[200px] px-3 py-3">
                 <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Quick read</div>
                 <QuickTelemetryReadout deviceId={deviceId} />
             </Stack>
@@ -2028,17 +2044,17 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
     }
 
     return (
-        <div className="grid h-full grid-cols-[1.02fr_0.98fr] gap-3">
+        <div className={STAGE_GRID_CLASSES}>
             <Stack gap={3} className="grinder-window p-3">
                 <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                     Current preset
                 </div>
-                <div className="text-[26px] font-semibold text-text-primary">{patch.name}</div>
+                <div className="text-xl font-semibold wrap-anywhere text-text-primary">{patch.name}</div>
                 <div className="max-w-[36rem] text-[14px] leading-6 text-text-secondary">
                     Grab a preset on the left and shape its basic tone below. Raise the control detail to reveal the
                     amp, pedal chain, cabinet, captures, and engine controls.
                 </div>
-                <Grid cols={3} gap={2}>
+                <Grid gap={2} className="grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))]">
                     <GrinderTelemetryMeter
                         deviceId={deviceId}
                         label="Input"
@@ -2079,7 +2095,7 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
 
 function StatusStrip({ deviceId }: { deviceId: string }): ReactElement {
     return (
-        <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
+        <div className="grid gap-2 grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))]">
             <GrinderTelemetryMeter
                 deviceId={deviceId}
                 label="Input"
@@ -2164,29 +2180,31 @@ export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     return (
-        <Stack className="grinder-faceplate h-full min-h-[460px] p-3">
-            <Row align="stretch" grow gap={3} className="min-h-[420px]">
+        <div className="@container/grinder h-full min-h-0">
+            <div className="grinder-faceplate grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] gap-3 p-3 @[36rem]/grinder:grid-cols-[clamp(11rem,24%,16rem)_minmax(0,1fr)] @[36rem]/grinder:grid-rows-1">
                 <BrowserRail deviceId={deviceId} patch={patch} replacePatch={replacePatch} />
-                <Stack as="section" grow gap={3} className="overflow-y-auto pr-1">
+                <Stack
+                    as="section"
+                    aria-label="Grinder controls"
+                    tabIndex={0}
+                    gap={3}
+                    className="min-w-0 overflow-y-auto overscroll-contain [&>*]:shrink-0"
+                >
                     <DawEffectDisclosure
                         tier={tier}
                         onChange={(next) => void setGrinderPanelUiLevel(deviceId, effectDisclosureLevel(next))}
                     />
                     <SectionTabs deviceId={deviceId} patch={visiblePatch} tier={tier} />
-                    <div className="min-h-[280px] shrink-0 overflow-hidden">
-                        <HeroStage deviceId={deviceId} patch={visiblePatch} />
-                    </div>
+                    <HeroStage deviceId={deviceId} patch={visiblePatch} />
                     <div className="shrink-0 rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.032),rgba(255,255,255,0.012))] p-3 shadow-[var(--shadow-elevation-raised)]">
                         <div className="mb-2 text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                             Control deck
                         </div>
                         <ControlDeck deviceId={deviceId} patch={visiblePatch} replacePatch={replacePatch} />
                     </div>
+                    <StatusStrip deviceId={deviceId} />
                 </Stack>
-            </Row>
-            <div className="mt-3">
-                <StatusStrip deviceId={deviceId} />
             </div>
-        </Stack>
+        </div>
     );
 };

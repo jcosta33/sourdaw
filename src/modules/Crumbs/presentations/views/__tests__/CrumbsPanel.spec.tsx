@@ -13,7 +13,7 @@ import {
 } from '../../../stores/crumbsNativeLifecycleStore';
 import { crumbsRecordingStore, type CrumbsRecordingSnapshot } from '../../../stores/crumbsRecordingStore';
 import { crumbsStore, defaultCrumbsState, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
-import { ensurePadInstance, padStore } from '../../../stores/padStore';
+import { ensurePadInstance, padStore, reorderPad } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
 import { ensureCrumbsInstanceFromProject } from '../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject';
 import { syncCrumbsRecordingState } from '../../../useCases/recording/syncCrumbsRecordingState';
@@ -45,6 +45,17 @@ vi.mock('../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject', asy
 // Silence the warnings the panel logs from its recorder controls.
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+const soundingNotes = vi.hoisted(() => new Set<string>());
+vi.mock('../../../repositories/crumbsBridge/crumbsNoteOn', () => ({
+    crumbsNoteOn: async (deviceId: string, note: number) => {
+        soundingNotes.add(`${deviceId}:${note}`);
+    },
+}));
+vi.mock('../../../repositories/crumbsBridge/crumbsNoteOff', () => ({
+    crumbsNoteOff: async (deviceId: string, note: number) => {
+        soundingNotes.delete(`${deviceId}:${note}`);
+    },
 }));
 const nativeRecorder = vi.hoisted(() => ({
     arm: vi.fn<(...args: unknown[]) => Promise<{ take_id: string } | null>>(),
@@ -168,6 +179,24 @@ afterEach(async () => {
 });
 
 describe('CrumbsPanel', () => {
+    it('releases the held pad after reordering without stopping another voice', () => {
+        soundingNotes.clear();
+        soundingNotes.add(`${DEVICE}:99`);
+        soundingNotes.add('other-device:99');
+        setMode(DEVICE, 'drum');
+        const first = padStore.value![DEVICE]!.pads[0]!;
+        const { unmount } = render(<CrumbsPanel deviceId={DEVICE} />);
+        const pad = screen.getByRole('button', { name: `${first.name} (empty)` });
+        fireEvent.keyDown(pad, { key: ' ' });
+        expect(soundingNotes.has(`${DEVICE}:${first.midiNote}`)).toBe(true);
+        act(() => reorderPad(DEVICE, 0, 1));
+        expect(padStore.value![DEVICE]!.pads[1]).toEqual(first);
+        unmount();
+        expect(soundingNotes.has(`${DEVICE}:${first.midiNote}`)).toBe(false);
+        expect(soundingNotes.has(`${DEVICE}:99`)).toBe(true);
+        expect(soundingNotes.has('other-device:99')).toBe(true);
+    });
+
     it('reconciles a mounted control when project truth changes or removes its value', async () => {
         setProjectParameters({ masterGain: defaultCrumbsState.masterGain });
 
@@ -481,16 +510,13 @@ describe('CrumbsPanel', () => {
         expect(screen.getAllByText(isThreeVoices).length).toBeGreaterThan(0);
     });
 
-    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
-        const { container } = render(<CrumbsPanel deviceId={DEVICE} />);
-        const faceplate = container.querySelector<HTMLElement>('.crumbs-faceplate');
-        expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[440px]');
-        expect(faceplate?.className).not.toContain('overflow-hidden');
-
-        const grid = faceplate?.querySelector<HTMLElement>('.grid');
-        expect(grid).not.toBeNull();
-        expect(grid?.className).toContain('min-h-[440px]');
+    it('keeps the gain control keyboard-operable inside the named region', () => {
+        render(<CrumbsPanel deviceId={DEVICE} />);
+        const region = screen.getByRole('region', { name: 'Crumbs controls' });
+        const gain = screen.getByRole('slider', { name: 'Gain' });
+        expect(region).toContainElement(gain);
+        fireEvent.keyDown(gain, { key: 'ArrowUp' });
+        expect(setParamMock).toHaveBeenCalledExactlyOnceWith(DEVICE, 'masterGain', 0.81, false);
     });
 
     it('prevents section cards from collapsing when faceplate is compressed', () => {
