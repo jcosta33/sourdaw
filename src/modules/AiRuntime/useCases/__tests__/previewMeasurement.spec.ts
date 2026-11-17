@@ -2279,6 +2279,8 @@ describe('real caller sequential measurement opportunity', () => {
             const candidate = getAgentMeasurementArtifact(pair.preview.artifact.contentAddress);
             expect(baseline?.sourceRevision).toBe(before.revision);
             expect(candidate?.sourceRevision).toBe(before.revision);
+            expect(audition.baseline.buffer).toBe(baseline?.buffer);
+            expect(audition.preview.buffer).toBe(candidate?.buffer);
             expect(baseline?.buffer).not.toBe(candidate?.buffer);
             expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({ status: 'executed' });
             expect(drumsLevel()).toBeCloseTo(improvedLevel, 4);
