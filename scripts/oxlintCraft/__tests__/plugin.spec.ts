@@ -368,11 +368,35 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from './e2eTest'; async function helper() { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } } test('name', async () => { await helper(); });",
         "import { test, expect } from 'vitest'; test('name', async () => { if (await locator.isVisible()) { expect(value).toBe(1); } });",
         "import { test, expect } from '@playwright/test'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { throw new Error('missing'); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { await expect(fallback).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await expect(fallback).toBeVisible(); return; } await expect(locator).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { await test.step('fallback', async () => { await expect(fallback).toBeVisible(); }); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { console.log('missing'); } await expect(ready).toBeVisible(); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await test.step('required', async () => { await expect(locator).toBeVisible(); }); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { const helper = async () => { if (await locator.isVisible()) { await test.step('unused', async () => { await expect(locator).toBeVisible(); }); } }; await setup(); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await (test.step('required', async () => { await expect(locator).toBeVisible(); }) satisfies Promise<unknown>); });",
     ],
     invalid: [
+        {
+            code: "import { test, expect } from '@playwright/test'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { console.log('missing'); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { console.log('missing'); } else { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { console.log('missing'); return; } await expect(locator).toBeVisible(); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { console.log('missing'); } } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { if (fallbackReady) { await expect(fallback).toBeVisible(); } } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
         {
             code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible().catch(() => false)) { await expect(locator).toBeVisible(); } });",
             errors: [{ message: /test can finish without asserting/ }],
@@ -475,6 +499,9 @@ runCraftRule('no-invalid-vitest-expect', {
         "import { expect } from 'vitest'; async function test() { try { const checked = expect(execution).rejects.toThrow() as Promise<unknown>; await vi.advanceTimersByTimeAsync(10); await (checked satisfies Promise<unknown>); } finally { cleanup(); } }",
         "import { expect } from 'vitest'; async function test() { try { await (Promise.all([expect(execution).resolves.toBe(1)]) satisfies Promise<unknown[]>); } finally { cleanup(); } }",
         "import { expect } from 'vitest'; async function test() { try { await expect(execution).resolves.toBe(1); } finally { throw new Error('cleanup failure'); } }",
+        "import { expect } from 'vitest'; async function test() { try { await expect(execution).resolves.toBe(1); } finally { try { throw new Error('handled cleanup failure'); } catch (error) { console.error(error); } } }",
+        "import { expect } from 'vitest'; async function test() { try { const checked = expect(execution).rejects.toThrow(); await advance(); await checked; } finally { try { throw new Error('handled cleanup failure'); } catch (error) { console.error(error); } } }",
+        "import { expect } from 'vitest'; function test() { try { return expect(execution).resolves.toBe(1); } finally { try { throw new Error('handled cleanup failure'); } catch (error) { console.error(error); } } }",
         "import { expect } from 'vitest'; async function test() { try { setup(); } catch (error) { await expect(execution).resolves.toBe(1); } }",
     ],
     invalid: [
@@ -496,6 +523,10 @@ runCraftRule('no-invalid-vitest-expect', {
         },
         {
             code: "import { expect } from 'vitest'; async function test() { try { try { return expect(execution).resolves.toBe(1); } finally { throw new Error('cleanup failure'); } } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { try { return expect(execution).resolves.toBe(1); } finally { try { throw new Error('cleanup failure'); } catch (error) { if (retry) { throw error; } } } } catch (error) { console.error(error); } }",
             errors: [{ message: /rejection reaches the test/ }],
         },
         {

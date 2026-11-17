@@ -117,6 +117,17 @@ describe('production quality lint', () => {
                         throw error;
                     }
                 });
+                it('accepts assertion failure with internally handled cleanup', async () => {
+                    try {
+                        await expect(Promise.resolve(true)).resolves.toBe(true);
+                    } finally {
+                        try {
+                            throw new Error('cleanup');
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                });
                 it.each([1, 2])('accepts an expectation per case', (value) => {
                     const observed = value > 1 ? 2 : 1;
                     expect(observed).toBe(value);
@@ -143,6 +154,22 @@ describe('production quality lint', () => {
                         await scenario.step('mandatory', async () => {
                             await expect(entry).toBeVisible();
                         });
+                    }
+                });
+                scenario('silent absent branch', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) {
+                        await expect(entry).toBeVisible();
+                    } else {
+                        console.log('missing');
+                    }
+                });
+                scenario('asserted absent branch', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) {
+                        await expect(entry).toBeVisible();
+                    } else {
+                        await expect(page.getByRole('alert')).toBeVisible();
                     }
                 });
                 scenario('required wrapped step entry', async ({ page }) => {
@@ -186,6 +213,7 @@ describe('production quality lint', () => {
             expect(report.fileCount).toBe(5);
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],

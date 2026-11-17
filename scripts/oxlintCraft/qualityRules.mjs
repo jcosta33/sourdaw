@@ -110,13 +110,28 @@ function jumpStaysInside(node, statement) {
     return false;
 }
 
+function throwIsHandledInsideFinalizer(context, statement, finalizer) {
+    for (let child = statement; child !== finalizer; child = child.parent) {
+        const parent = child.parent;
+        if (
+            parent.type === 'TryStatement' &&
+            parent.block === child &&
+            parent.handler &&
+            !hasSameFunctionNode(context, parent.handler.body, (node) => node.type === 'ThrowStatement')
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function finalizerCanReplaceCompletion(context, finalizer, replacesThrow) {
     return hasSameFunctionNode(context, finalizer, (node) => {
         if (node.type === 'ReturnStatement') {
             return true;
         }
         if (node.type === 'ThrowStatement') {
-            return replacesThrow(node);
+            return !throwIsHandledInsideFinalizer(context, node, finalizer) && replacesThrow(node);
         }
         return (
             (node.type === 'BreakStatement' || node.type === 'ContinueStatement') && !jumpStaysInside(node, finalizer)
@@ -501,24 +516,82 @@ function visibilityCondition(context, test) {
     return calledMember(call, 'isVisible') ? { negated } : undefined;
 }
 
-function silentReturn(statement) {
-    const body = statement.type === 'BlockStatement' ? statement.body : [statement];
-    return body.length === 1 && body[0].type === 'ReturnStatement' && body[0].argument === null;
+function observesPlaywrightAssertion(context, expression, assertions) {
+    const outer = withoutErasedWrappers(expression);
+    const value = outer?.type === 'AwaitExpression' ? withoutErasedWrappers(outer.argument) : outer;
+    if (
+        assertions.some((assertion) => {
+            const end = assertionEnd(assertion);
+            return end.valid && end.expression === value;
+        })
+    ) {
+        return true;
+    }
+    const step = value?.type === 'CallExpression' ? value.arguments[1] : undefined;
+    if (!isAwaitedPlaywrightStep(context, step)) {
+        return false;
+    }
+    return step.body.type === 'BlockStatement'
+        ? !branchCanSkipAssertion(context, step.body, assertions, true)
+        : observesPlaywrightAssertion(context, step.body, assertions);
+}
+
+function branchCanSkipAssertion(context, statement, assertions, nextCanSkip) {
+    switch (statement?.type) {
+        case 'BlockStatement':
+            return statement.body.reduceRight(
+                (canSkip, child) => branchCanSkipAssertion(context, child, assertions, canSkip),
+                nextCanSkip
+            );
+        case 'IfStatement':
+            return (
+                branchCanSkipAssertion(context, statement.consequent, assertions, nextCanSkip) ||
+                branchCanSkipAssertion(context, statement.alternate, assertions, nextCanSkip)
+            );
+        case 'ThrowStatement':
+            return !completionReachesCaller(context, statement);
+        case 'ReturnStatement':
+            return !observesPlaywrightAssertion(context, statement.argument, assertions);
+        case 'ExpressionStatement':
+            return nextCanSkip && !observesPlaywrightAssertion(context, statement.expression, assertions);
+        default:
+            return nextCanSkip;
+    }
 }
 
 function assertionGuard(context, statement, assertions) {
-    if (statement.type !== 'IfStatement' || statement.alternate) {
+    if (statement.type !== 'IfStatement') {
         return false;
     }
     const condition = visibilityCondition(context, statement.test);
     if (!condition) {
         return false;
     }
-    if (condition.negated) {
-        return silentReturn(statement.consequent) && assertions.every((node) => node.range[0] >= statement.range[1]);
+    if (assertions.some((node) => node.range[1] <= statement.range[0])) {
+        return false;
     }
-    const [start, end] = statement.consequent.range;
-    return assertions.every((node) => node.range[0] >= start && node.range[1] <= end);
+    const laterAssertion = assertions.some((node) => node.range[0] >= statement.range[1]);
+    const present = condition.negated ? statement.alternate : statement.consequent;
+    const presentAssertion =
+        present && assertions.some((node) => node.range[0] >= present.range[0] && node.range[1] <= present.range[1]);
+    if (!laterAssertion && !presentAssertion) {
+        return false;
+    }
+    const absent = condition.negated ? statement.consequent : statement.alternate;
+    return branchCanSkipAssertion(context, absent, assertions, !laterAssertion);
+}
+
+function findAssertionGuard(context, block, assertions) {
+    for (const statement of block.body) {
+        const guard =
+            statement.type === 'BlockStatement'
+                ? findAssertionGuard(context, statement, assertions)
+                : assertionGuard(context, statement, assertions) && statement;
+        if (guard) {
+            return guard;
+        }
+    }
+    return undefined;
 }
 
 const noConditionalPlaywrightAdmission = rule(
@@ -554,9 +627,7 @@ const noConditionalPlaywrightAdmission = rule(
                     if (assertions.length === 0) {
                         continue;
                     }
-                    const guard = callback.body.body.find((statement) =>
-                        assertionGuard(context, statement, assertions)
-                    );
+                    const guard = findAssertionGuard(context, callback.body, assertions);
                     if (guard) {
                         context.report({
                             node: guard,
