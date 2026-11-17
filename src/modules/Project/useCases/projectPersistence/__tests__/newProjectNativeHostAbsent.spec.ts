@@ -47,6 +47,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: () => 'outgoing-project-authority',
     captureProjectRevision: vi.fn(),
     compactProject: vi.fn().mockResolvedValue(undefined),
     createCrdtDoc: vi.fn(),

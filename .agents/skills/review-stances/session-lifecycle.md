@@ -83,6 +83,13 @@ __tests__`, read each caller and name what stands in for the correction there.
    copied root while the old flush is held and both old outcomes preserve the successor's same-ID clip, takes, media
    and history. Settled capture promises keep Transport's lifecycle count semantics, and that count never proves a
    landed take. Making the captured-root predicate always true must fail both stale-terminal cases.
+   A superseded replacement begins no outgoing take Save (#5537). In
+   `src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.spec.ts`,
+   enter with an unsaved closed take and an already-withdrawn replacement. The helper refuses before Save, Stop or
+   Reset and leaves the take owed. On reset retries, pass the same captured outgoing authority to each Save even
+   when the first take closes after the initial await. Withdraw the replacement while a retry Save is held. After it
+   settles, the successor's graph, plugins and authority remain intact. The Save queue probe is in
+   `project-integrity.md` probe 1.
 8. **A refusal cleanup or an earlier write lands inside a live preparation witness (#5999, #6010, #5729, #5998,
    #6013, #6012, #6037).** `startAudioRecording` resolving `false` when a stop moves `startGeneration` during a
    same-track wait left the automatic punch-in's provisional clip and take with no audio and no history. When a

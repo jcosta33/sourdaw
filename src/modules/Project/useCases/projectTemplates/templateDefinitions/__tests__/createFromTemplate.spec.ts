@@ -98,6 +98,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: () => 'outgoing-project-authority',
     captureProjectRevision: vi.fn(),
     compactProject: mocks.compactProject,
     createCrdtDoc: vi.fn(),
@@ -682,16 +683,10 @@ describe('createFromTemplate', () => {
         const releaseRuntimeTransition = vi.fn();
         mocks.acquireRuntimeTransition.mockResolvedValueOnce(releaseRuntimeTransition);
         mocks.executeAppAction.mockReturnValueOnce(action.promise);
-        // Asked after the stop, after the teardown, by the reset helper before its
-        // first attempt, and last once the action has settled.
-        mocks.transactionIsCurrent
-            .mockReturnValueOnce(true)
-            .mockReturnValueOnce(true)
-            .mockReturnValueOnce(true)
-            .mockReturnValueOnce(false);
         const creation = createFromTemplate('pop-song');
         await vi.waitFor(() => expect(mocks.executeAppAction).toHaveBeenCalledOnce());
         expect(releaseRuntimeTransition).not.toHaveBeenCalled();
+        mocks.transactionIsCurrent.mockReturnValue(false);
         action.resolve();
         await expect(creation).resolves.toBe(false);
         expect(releaseRuntimeTransition).toHaveBeenCalledOnce();

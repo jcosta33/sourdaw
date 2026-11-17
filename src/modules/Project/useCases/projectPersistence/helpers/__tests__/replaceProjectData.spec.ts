@@ -112,6 +112,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: () => 'outgoing-project-authority',
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
     resetCrdtProject: mockResetCrdtProject,

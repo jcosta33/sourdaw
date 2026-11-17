@@ -44,6 +44,13 @@ Split out (a stance matching one carries that file, not this one): replay agains
    Compare replay and later deltas against the final saved native bytes and authorized Save metadata changes,
    rather than demanding pre-Save heads survive unchanged. Restoring cursor-consuming capture or accepting
    an unapplied frontier must fail the native replay and omission controls.
+   An outgoing take Save must carry its native authority through the serialized queue (#5537, #5987).
+   In `src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts`,
+   hold a real predecessor at audio preflight, queue the outgoing Save, and install a different Automerge root
+   with the same persisted project ID and creation time while the old projection remains. Release the predecessor
+   and require the outgoing Save to refuse before migration or snapshot work, leave durable copies untouched, and
+   preserve dirty state and take debt. An ordinary edit on the same native authority still saves while the
+   replacement is loading.
 2. **Cold-cache consumers rebuild every durable reference and report owner results (#187, #4496).** Failure:
    export, mixdown, stems or recovery use a warm cache or a mocked owner, miss a buffer or swallow a failure.
    Probe: cold project with an ordinary clip and an active frozen print whose PCM has its own ID; both IDs reach
