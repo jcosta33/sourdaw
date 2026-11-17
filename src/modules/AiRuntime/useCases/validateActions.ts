@@ -213,6 +213,7 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     addAutomationPoint: noVcaTargets,
     setAutomationLaneEnabled: noVcaTargets,
     quantizeNotes: noVcaTargets,
+    editMidiNotes: noVcaTargets,
     removeShortMidiOverlaps: noVcaTargets,
     createDrumPreviewBranches: noVcaTargets,
     copyMidiArticulations: noVcaTargets,

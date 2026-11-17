@@ -114,6 +114,7 @@ const deviceBatchTargetByActionType: DeviceBatchTargetLookup = {
     addAutomationPoint: noDeviceBatchTarget,
     setAutomationLaneEnabled: noDeviceBatchTarget,
     quantizeNotes: noDeviceBatchTarget,
+    editMidiNotes: noDeviceBatchTarget,
     removeShortMidiOverlaps: noDeviceBatchTarget,
     createDrumPreviewBranches: noDeviceBatchTarget,
     copyMidiArticulations: noDeviceBatchTarget,

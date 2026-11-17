@@ -1,3 +1,4 @@
+import { type EditMidiNotesPayload } from '#/modules/MIDI/events';
 import { type AppAction } from '#/utils/handlerContract';
 
 import {
@@ -14,6 +15,7 @@ export type MaterializeActionStateGuardsOptions = {
     appOwnedRenderTailSeconds?: number;
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
     midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
+    midiNoteEdit?: { clipId: string; guard: EditMidiNotesPayload['guard'] };
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
 };

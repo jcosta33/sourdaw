@@ -240,6 +240,7 @@ const mutationKeysByActionType: MutationKeyLookup = {
     addAutomationPoint: (action) => [`automation-lane-point:${action.payload.laneId}:${String(action.payload.beat)}`],
     setAutomationLaneEnabled: (action) => [`automation-lane-enabled:${action.payload.laneId}`],
     quantizeNotes: (action) => [clipKey(action.payload.clipId, 'notes')],
+    editMidiNotes: noKeys,
     removeShortMidiOverlaps: noKeys,
     createDrumPreviewBranches: noKeys,
     copyMidiArticulations: noKeys,

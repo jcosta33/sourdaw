@@ -173,7 +173,7 @@ describe('addNotes command registration', () => {
     it('registers selective MIDI editing as a canonical command', () => {
         expect(isExecutableAppActionType('editMidiNotes')).toBe(true);
         const registration = getExecutableCommandRegistration('editMidiNotes');
-        expect(registration.discoverability).toBe('hidden');
+        expect(registration.discoverability).toBe('visible');
         expect(registration.confirmation.required).toBe(true);
         expect(registration.providerSchema.required).toEqual(['clipId', 'operations']);
         expect(Object.keys(registration.providerSchema.properties)).toEqual(['clipId', 'operations']);

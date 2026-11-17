@@ -178,6 +178,7 @@ export type ApplicationOwnedToolLoopOutcome =
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           terminalMeasurementSettlement?: string;
+          musicalReadProof?: ReturnType<NonNullable<ReturnType<typeof createMusicalReadPrerequisite>>['completed']>;
           turns: number;
           /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
           interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
@@ -2091,6 +2092,7 @@ export async function runApplicationOwnedToolLoop(
         turns: turn,
         interpretation,
         retainedCompilations: [...retainedCompilations.values()],
+        musicalReadProof: musicalRead?.completed(),
     });
 
     const releaseHeldTerminal = (held: HeldTerminal, turn: number): ApplicationOwnedToolLoopOutcome => {
@@ -3157,6 +3159,7 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
                 interpretation,
                 retainedCompilations: [...retainedCompilations.values()],
+                musicalReadProof: musicalRead?.completed(),
             };
         }
         if (isFinalTurn && heldTerminal === null) {

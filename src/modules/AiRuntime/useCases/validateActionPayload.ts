@@ -41,6 +41,7 @@ import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
+import { isMidiNoteEditProposal } from '../transformers/isMidiNoteEditProposal';
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
@@ -677,6 +678,7 @@ const validators = {
         isPositiveNumber(param.gridSize) &&
         param.gridSize <= 64 &&
         isOptionalOwn(param, 'noteIds', isNonEmptyStringArray),
+    editMidiNotes: isMidiNoteEditProposal,
     removeShortMidiOverlaps: (param): param is PayloadOf<'removeShortMidiOverlaps'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'maximumOverlapMs']) &&

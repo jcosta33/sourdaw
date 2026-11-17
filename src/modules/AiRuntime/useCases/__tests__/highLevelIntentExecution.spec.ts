@@ -7,8 +7,8 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
-import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     clearHandlerRegistry,
@@ -30,12 +30,19 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import {
+    clearPianoRollSelection,
+    getMidiNoteTransformHandlers,
+    projectPianoRollTakeNotes,
+    setPianoRollSelection,
+} from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -62,6 +69,10 @@ import {
 import {
     BLUES_CLIP_END_BEAT,
     BLUES_CLIP_START_BEAT,
+    assertDiscoveredCommandSchemas,
+    catalogDiscoveryCall,
+    getApplicationToolReceipts,
+    proposeCall,
     BLUES_PROMPT,
     bluesProposalItems,
     deriveBluesNotes,
@@ -186,6 +197,165 @@ async function commitBluesSong(): Promise<PendingAppActionConfirmation> {
     return confirmation;
 }
 
+const PHRASE_TASK =
+    'Reshape the selected MIDI notes in the Lead Motif clip into a blues phrase, with the opening intact and the same instrument sound.';
+const PHRASE_CLIP_ID = 'existing-midi-motif';
+const PHRASE_TRACK_ID = 'existing-motif-track';
+const PHRASE_SIBLING_ID = 'existing-midi-sibling';
+const OPENING = {
+    id: 'protected-opening',
+    pitch: 60,
+    startBeat: 0,
+    duration: 1,
+    velocity: 81,
+    expression: { slide: [{ offsetBeats: 0.25, value: 99 }] },
+};
+const THIRD = {
+    id: 'major-third',
+    pitch: 64,
+    startBeat: 2,
+    duration: 1,
+    velocity: 88,
+    channel: 3,
+    articulation: 'accent',
+    expression: { pressure: [{ offsetBeats: 0.25, value: 55 }] },
+};
+const FILLER = { id: 'filler', pitch: 67, startBeat: 3.5, duration: 0.25, velocity: 77 };
+const ENDING = { id: 'untouched-ending', pitch: 60, startBeat: 6, duration: 1, velocity: 89 };
+const PHRASE_NOTES = [OPENING, THIRD, FILLER, ENDING];
+const PHRASE_OPERATIONS = [
+    { type: 'patch', noteId: THIRD.id, patch: { pitch: 63, startBeat: 2.25, duration: 0.75, velocity: 96 } },
+    { type: 'delete', noteId: FILLER.id },
+    { type: 'insert', note: { pitch: 58, startBeat: 3.25, duration: 0.25, velocity: 84 } },
+];
+
+function durablePhraseNotes() {
+    return getCrdtDoc<{ midi: NonNullable<typeof midiStore.value> }>('root')?.midi?.notesByClipId[PHRASE_CLIP_ID];
+}
+
+function seedMidiPhrase() {
+    projectStore.set(defaultProjectStoreState);
+    const track = createTrack({ id: PHRASE_TRACK_ID, kind: 'midi', name: 'Electric piano' });
+    const instrument = track.devices[0];
+    if (!instrument) {
+        throw new Error('Expected the motif to have an instrument');
+    }
+    instrument.parameterValues.filterCutoff = 1_720;
+    instrument.parameterValues.filterResonance = 2.8;
+    trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    const add = (id: string, startBeat: number, name: string) =>
+        addClip({
+            id,
+            trackId: track.id,
+            name,
+            type: 'midi',
+            startBeat,
+            endBeat: startBeat + 8,
+        });
+    const clip = add(PHRASE_CLIP_ID, 16, 'Lead Motif');
+    expect(add(PHRASE_SIBLING_ID, 26, 'Sibling Motif')).not.toBeNull();
+    if (!clip) throw new Error('Expected the existing motif clip');
+    midiStore.set({
+        ...emptyMidiState(),
+        notesByClipId: {
+            [PHRASE_CLIP_ID]: structuredClone(PHRASE_NOTES),
+            [PHRASE_SIBLING_ID]: [{ id: 'sibling-note', pitch: 72, duration: 1, startBeat: 2, velocity: 90 }],
+        },
+    });
+    const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, PHRASE_NOTES);
+    setPianoRollSelection(clip.id, [THIRD.id, FILLER.id], [], [{ clipId: clip.id, projection }]);
+}
+
+function scriptMidiPhraseEdit(
+    options: {
+        clipId?: string;
+        operations?: unknown[];
+        read?: boolean | 'partial';
+        changeDuringRead?: () => void;
+        plain?: boolean;
+    } = {}
+) {
+    const clipId = options.clipId ?? PHRASE_CLIP_ID;
+    const read = () => [
+        {
+            name: 'project.query',
+            arguments: {
+                type: 'musical-content',
+                filters: { stableId: PHRASE_CLIP_ID, startBeat: 16, endBeat: 20 },
+                page: { limit: options.read === 'partial' ? 1 : 50 },
+            },
+        },
+    ];
+    const command = {
+        name: 'editMidiNotes',
+        arguments: { clipId, operations: options.operations ?? PHRASE_OPERATIONS },
+    };
+    const proposal = () =>
+        options.plain
+            ? [{ name: 'command.batch.propose', arguments: { commands: [command] } }]
+            : [
+                  proposeCall([{ id: 'edit-phrase', ...command }], {
+                      semantic: { classification: 'complex', uncertainty: [] },
+                      objective: 'Reshape the phrase while preserving the opening and the instrument.',
+                      constraints: [],
+                      scope: {
+                          targetIds: [clipId, PHRASE_TRACK_ID],
+                          targetRanges: [],
+                          protectedTargetIds: [],
+                          protectedRanges: [],
+                      },
+                      capabilityIds: [],
+                      assetIds: [],
+                      alternatives: [],
+                      validationStrategy: ['Preserve all notes outside the selection.'],
+                      stoppingConditions: ['Stop if the selected notes changed.'],
+                  }),
+              ];
+    return scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        nonAcousticMetricIntakeTurn({
+            modeId: 'edit',
+            targetObjectIds: [PHRASE_CLIP_ID],
+            dimensions: ['midi-content'],
+            creationSlotObjectTypes: ['notes'],
+        }),
+        ...(options.read === false ? [] : [read]),
+        (message) => {
+            if (options.read !== false) {
+                const receipt = getApplicationToolReceipts(message).find(
+                    (entry) =>
+                        typeof entry === 'object' &&
+                        entry !== null &&
+                        'toolName' in entry &&
+                        entry.toolName === 'project.query'
+                );
+                if (options.read === 'partial') {
+                    expect(receipt).toMatchObject({ status: 'success', data: { nextCursor: expect.any(String) } });
+                    return [catalogDiscoveryCall(['editMidiNotes'])];
+                }
+                expect(receipt).toMatchObject({
+                    status: 'success',
+                    data: {
+                        queryType: 'musical-content',
+                        nextCursor: null,
+                        items: expect.arrayContaining([
+                            expect.objectContaining({ noteId: THIRD.id, selected: true }),
+                            expect.objectContaining({ noteId: FILLER.id, selected: true }),
+                        ]),
+                    },
+                });
+            }
+            options.changeDuringRead?.();
+            return [catalogDiscoveryCall(['editMidiNotes'])];
+        },
+        (message) => {
+            if (options.read !== false) assertDiscoveredCommandSchemas(message, ['editMidiNotes']);
+            return proposal();
+        },
+        ...(options.read === false || options.read === 'partial' ? [proposal, proposal] : []),
+        () => [],
+    ]);
+}
+
 describe('high-level intent execution', () => {
     beforeEach(async () => {
         // Dependency resolutions are cached per invoker for the process lifetime (src/infra/di/
@@ -252,6 +422,134 @@ describe('high-level intent execution', () => {
         await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
+    });
+
+    it('reads the selected motif, previews exact note edits, and commits and undoes one guarded batch', async () => {
+        seedMidiPhrase();
+        const tracksBefore = structuredClone(trackStore.value);
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
+        const confirmation = requireConfirmation();
+        expect(confirmation.actionLabels[0]).toContain('change pitch 64 at beat 2 to pitch 63');
+        expect(confirmation.actionLabels[0]).toContain('remove pitch 67 at beat 3.5');
+        expect(confirmation.actionLabels[0]).toContain('insert pitch 58 at beat 3.25');
+        expect(confirmation.actions).toMatchObject([
+            {
+                type: 'editMidiNotes',
+                payload: {
+                    clipId: PHRASE_CLIP_ID,
+                    guard: {
+                        expectedNotes: PHRASE_NOTES,
+                        scope: { allowedNoteIds: [THIRD.id, FILLER.id], protectedNoteIds: [OPENING.id, ENDING.id] },
+                    },
+                },
+            },
+        ]);
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(durablePhraseNotes()).toEqual([
+            OPENING,
+            { ...THIRD, pitch: 63, startBeat: 2.25, duration: 0.75, velocity: 96 },
+            ENDING,
+            {
+                id: expect.stringMatching(/^note-command-/u),
+                pitch: 58,
+                startBeat: 3.25,
+                duration: 0.25,
+                velocity: 84,
+                probability: 100,
+            },
+        ]);
+        expect(trackStore.value).toEqual(tracksBefore);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+                ?.content
+        ).toContain('Outcome: committed');
+        await undo();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(trackStore.value).toEqual(tracksBefore);
+    });
+
+    it.each([
+        {
+            name: 'wrong clip owner',
+            input: { clipId: PHRASE_SIBLING_ID },
+            reason: 'positive edit authority and complete current musical evidence',
+        },
+        {
+            name: 'protected opening',
+            input: { operations: [{ type: 'delete', noteId: OPENING.id }] },
+            reason: 'outside the admitted MIDI selection',
+        },
+        { name: 'missing read', input: { read: false }, reason: 'Required musical evidence was not read' },
+        { name: 'partial read', input: { read: 'partial' as const }, reason: 'Required musical evidence was not read' },
+        {
+            name: 'stale read',
+            input: { changeDuringRead: () => clearPianoRollSelection() },
+            reason: 'Musical evidence is stale',
+        },
+        { name: 'direct command escape', input: { plain: true }, reason: 'requires one structured command list item' },
+        {
+            name: 'provider-supplied insert ID',
+            input: {
+                operations: [{ type: 'insert', note: { id: 'forged-note', pitch: 48, duration: 0.5, startBeat: 2 } }],
+            },
+            reason: 'positive edit authority and complete current musical evidence',
+        },
+    ])('does not propose a MIDI edit with $name', async ({ input, reason }) => {
+        seedMidiPhrase();
+        const transcript = scriptMidiPhraseEdit(input);
+        await sendChatMessage(PHRASE_TASK);
+        expect(getConfirmationId()).toBe('');
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect([...transcript, JSON.stringify(chatStore.value?.messages)].join('\n')).toContain(reason);
+    });
+
+    it('invalidates a selective edit when the note selection changes after proposal', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        clearPianoRollSelection();
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'invalidated',
+            detail: expect.stringContaining('MIDI note selection changed'),
+        });
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('requires a new musical read after project revision drift, even on another track', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        await executeAppAction({ type: 'addTrack', payload: { name: 'New unrelated track', kind: 'audio' } });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'invalidated',
+            detail: expect.stringContaining('project revision changed'),
+        });
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+    });
+
+    it('keeps internal note guards out of the next provider request', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        requireConfirmation();
+        const messages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [() => []]);
+        await sendChatMessage('Which edit is waiting for confirmation?');
+        expect(messages[0]).toContain('thread_context');
+        expect(messages[0]).toContain('editMidiNotes');
+        expect(messages[0]).not.toContain('expectedNotes');
+        expect(messages[0]).not.toContain('selectionToken');
+        expect(messages[0]).not.toContain(ENDING.id);
     });
 
     it('previews a blues song without touching the project or the undo history', async () => {

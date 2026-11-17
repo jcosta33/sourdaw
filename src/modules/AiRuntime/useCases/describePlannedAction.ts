@@ -12,6 +12,7 @@ import { describeClipLoopLength } from './plannedActionDescriptions/describeClip
 import { describeCopiedArticulations } from './plannedActionDescriptions/describeCopiedArticulations';
 import { describeDrumPreviewBranches } from './plannedActionDescriptions/describeDrumPreviewBranches';
 import { describeGluedClips } from './plannedActionDescriptions/describeGluedClips';
+import { describeMidiNoteEdit } from './plannedActionDescriptions/describeMidiNoteEdit';
 import { describeMovedClip } from './plannedActionDescriptions/describeMovedClip';
 import { describeNormalizedClip } from './plannedActionDescriptions/describeNormalizedClip';
 import { describeParameterRange } from './plannedActionDescriptions/describeParameterRange';
@@ -260,7 +261,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
             context,
             (clip) => `Quantize notes in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`
         ),
-    editMidiNotes: (action) => describeAction(action),
+    editMidiNotes: describeMidiNoteEdit,
     removeShortMidiOverlaps: (action) => describeShortOverlapRemoval(action) ?? describeAction(action),
     createDrumPreviewBranches: describeDrumPreviewBranches,
     deleteDrumPreviewBranches: describeFromRegistry,

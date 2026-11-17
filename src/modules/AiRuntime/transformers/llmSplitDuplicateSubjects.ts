@@ -112,6 +112,7 @@ export const splitDuplicateSubjectsByActionType: SplitDuplicateLookup = {
     addAutomationPoint: noSplitDuplicateSubjects,
     setAutomationLaneEnabled: noSplitDuplicateSubjects,
     quantizeNotes: noSplitDuplicateSubjects,
+    editMidiNotes: noSplitDuplicateSubjects,
     removeShortMidiOverlaps: noSplitDuplicateSubjects,
     createDrumPreviewBranches: noSplitDuplicateSubjects,
     copyMidiArticulations: noSplitDuplicateSubjects,

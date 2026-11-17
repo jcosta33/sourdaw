@@ -45,7 +45,8 @@ export function planGuardedMidiNoteEdits(value: unknown, actual?: NoteBucket) {
     }
     const { guard, operations } = value;
     if (
-        Reflect.ownKeys(guard).length !== 5 ||
+        Reflect.ownKeys(guard).length !== (Object.hasOwn(guard, 'selectionToken') ? 6 : 5) ||
+        (Object.hasOwn(guard, 'selectionToken') && !isId(guard.selectionToken)) ||
         !['trackId', 'expectedNotes', 'expectedNotesBucketPresent', 'editWindow', 'scope'].every((key) =>
             Object.hasOwn(guard, key)
         ) ||

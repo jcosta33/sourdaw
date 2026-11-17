@@ -18,6 +18,7 @@ import { approvedProjectRevision } from '../approvedProjectRevision';
 import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { readMidiNoteEditApprovalRefusal } from '../readMidiNoteEditApprovalRefusal';
 
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
@@ -270,6 +271,16 @@ async function resolveConfirmationAdmission(input: {
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
         priorVerifiedBatchReceipt.pendingEffects.length > 0;
     if (!hasPriorVerifiedBatchReceipt) {
+        const selectionRefusal = readMidiNoteEditApprovalRefusal(
+            confirmation.approvalSnapshot.actions,
+            confirmation.projectRevision
+        );
+        if (selectionRefusal !== null) {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation, selectionRefusal),
+            };
+        }
         const briefDrift = readParkedVibeBatchBriefDrift(confirmation);
         if (briefDrift !== null) {
             return {

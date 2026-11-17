@@ -1,3 +1,5 @@
+import { isMidiNoteEditProposal } from '../../transformers/isMidiNoteEditProposal';
+
 import { getExecutableAppActionEffect, getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 
 import { type CreativeEditDimension, type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
@@ -455,7 +457,7 @@ function admitCall(input: {
     }
     // A deletion is never something a request delegated by describing a sound; an explicit request to
     // remove an object carries its own vocabulary and grounds on the ordinary route.
-    if ((effect.removes ?? []).length > 0) {
+    if ((effect.removes ?? []).length > 0 && input.call.name !== 'editMidiNotes') {
         return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} never removes existing objects`);
     }
     const groundingRules = getExecutableAppActionGroundingRules(input.call.name);
@@ -479,7 +481,12 @@ function admitCall(input: {
     const creationAdmission = admitCreations({
         authority: input.authority,
         context: input.context,
-        creates: effect.creates ?? [],
+        creates:
+            input.call.name === 'editMidiNotes' && isMidiNoteEditProposal(input.call.arguments)
+                ? input.call.arguments.operations.flatMap((operation) =>
+                      operation.type === 'insert' ? ['notes' as const] : []
+                  )
+                : (effect.creates ?? []),
         slotUsage: input.slotUsage,
         targets: targetAdmission.targets,
     });

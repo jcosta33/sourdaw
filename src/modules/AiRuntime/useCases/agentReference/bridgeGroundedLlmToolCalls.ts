@@ -43,6 +43,7 @@ import {
 } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
+import { containsMidiNoteEditCall } from '../../transformers/containsMidiNoteEditCall';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
@@ -191,6 +192,7 @@ type BridgeGroundedLlmToolCallsInput = {
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
     creativeAuthority?: CreativeRequestAuthority;
+    midiNoteEditClipId?: string;
     /**
      * The grounding of the pending card this batch refines. Absent, the batch grounds exactly as any
      * request does; present, a call may inherit a pending command instead of grounding in this text.
@@ -7327,6 +7329,15 @@ function groundInheritedRefinement(route: {
 }
 
 export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (
+        containsMidiNoteEditCall(input.calls) &&
+        (input.midiNoteEditClipId === undefined ||
+            input.compilerEvidence?.commands.length !== 1 ||
+            input.compilerEvidence.commands[0]?.name !== 'editMidiNotes' ||
+            input.compilerEvidence.commands[0].arguments.clipId !== input.midiNoteEditClipId)
+    ) {
+        return refuseProtectedRequest('Selective MIDI editing requires one application-admitted note selection.');
+    }
     if (input.requestProtections !== undefined && input.requestProtections.request !== input.prompt) {
         return refuseProtectedRequest('Stored protections belong to a different request');
     }

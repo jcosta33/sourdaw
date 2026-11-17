@@ -6,6 +6,7 @@ import {
 } from '#/modules/Command/useCases';
 
 import { type AgentRunPhase } from '../models/AgentRun';
+import { readMidiNoteEditApprovalRefusal } from './readMidiNoteEditApprovalRefusal';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { appendChatMessage, chatStore, updateChatMessage } from '../stores/chatStore';
@@ -317,6 +318,13 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const refusal = admitReproposal(confirmation);
     if (refusal) {
         return refusal;
+    }
+    const selectionRefusal = readMidiNoteEditApprovalRefusal(
+        confirmation.approvalSnapshot.actions,
+        confirmation.projectRevision
+    );
+    if (selectionRefusal !== null) {
+        return { status: 'rejected' as const, reason: selectionRefusal };
     }
     const { agentApproval, commandBatch } = confirmation.approvalSnapshot;
     if (!commandBatch) {

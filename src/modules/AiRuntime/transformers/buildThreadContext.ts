@@ -1,3 +1,4 @@
+import { isMidiNoteEditProposal } from './isMidiNoteEditProposal';
 import { type AgentRunReceipt } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatMessage } from '../models/Chat';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
@@ -70,11 +71,29 @@ function isOpenProjectConfirmation(confirmation: ThreadConfirmation, sources: Th
     return confirmation.approvalSnapshot.commandBatch?.authority.projectId === sources.projectId;
 }
 
+function publicMidiNoteEditArguments(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    if (!Array.isArray(payload.operations)) {
+        return undefined;
+    }
+    const operations = payload.operations.map((operation: unknown) => {
+        if (!isRecord(operation) || operation.type !== 'insert' || !isRecord(operation.note)) {
+            return operation;
+        }
+        const { id: _assigned, ...note } = operation.note;
+        return { type: 'insert', note };
+    });
+    const visible = { clipId: payload.clipId, operations };
+    return isMidiNoteEditProposal(visible) ? visible : undefined;
+}
+
 function commandsOfSnapshot(snapshot: ThreadConfirmation['approvalSnapshot']): ThreadCommand[] {
     return snapshot.actions.map((action, index) => {
         const command: ThreadCommand = { name: action.type, label: snapshot.actionLabels[index] ?? action.type };
         if (isRecord(action.payload)) {
-            command.arguments = action.payload;
+            const args = action.type === 'editMidiNotes' ? publicMidiNoteEditArguments(action.payload) : action.payload;
+            if (args !== undefined) {
+                command.arguments = args;
+            }
         }
         return command;
     });

@@ -1,7 +1,8 @@
-import { issueCommandApprovalBinding } from '#/modules/Command/useCases';
+import { issueCommandApprovalBinding, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { approvedProjectRevision } from './approvedProjectRevision';
 import { type compileAgentRiskApproval } from './compileAgentRiskApproval';
+import { readMidiNoteEditApprovalRefusal } from './readMidiNoteEditApprovalRefusal';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type CommandApprovalInput = Parameters<typeof issueCommandApprovalBinding>[0];
@@ -17,6 +18,14 @@ export function issueAgentCommandApprovalBinding(input: {
     confirmationId?: string;
     onRejection?: (rejection: ApprovalBindingRejection) => void;
 }) {
+    const parsed = parseVersionedCommandBatchEnvelope(input.commandBatch.serialized, input.commandBatch.authority);
+    const actions =
+        parsed.status === 'valid'
+            ? parsed.envelope.commands.map((command) => ({
+                  type: command.operation,
+                  payload: command.arguments,
+              }))
+            : [];
     return issueCommandApprovalBinding({
         authority: input.commandBatch.authority,
         serialized: input.commandBatch.serialized,
@@ -31,6 +40,11 @@ export function issueAgentCommandApprovalBinding(input: {
                 currentRevision,
                 confirmationId: input.confirmationId,
             });
+            const selectionRefusal = validation.status === 'valid' ? readMidiNoteEditApprovalRefusal(actions) : null;
+            if (selectionRefusal !== null) {
+                input.onRejection?.({ reason: selectionRefusal, stale: true });
+                return { status: 'invalid', reason: selectionRefusal, stale: true };
+            }
             if (validation.status === 'invalid' && input.onRejection) {
                 input.onRejection({ reason: validation.reason, stale: validation.stale });
             }

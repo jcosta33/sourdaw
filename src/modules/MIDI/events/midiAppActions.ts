@@ -119,6 +119,7 @@ export type EditMidiNotesPayload = {
         readonly trackId: string;
         readonly expectedNotes: readonly MidiClipNoteSnapshot[];
         readonly expectedNotesBucketPresent: boolean;
+        readonly selectionToken?: string;
         readonly editWindow: MidiNoteEditWindow;
         readonly scope: MidiNoteEditScope;
     };

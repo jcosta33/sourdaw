@@ -133,6 +133,7 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     addAutomationPoint: neverInvalidates,
     setAutomationLaneEnabled: neverInvalidates,
     quantizeNotes: neverInvalidates,
+    editMidiNotes: neverInvalidates,
     removeShortMidiOverlaps: neverInvalidates,
     createDrumPreviewBranches: neverInvalidates,
     copyMidiArticulations: neverInvalidates,

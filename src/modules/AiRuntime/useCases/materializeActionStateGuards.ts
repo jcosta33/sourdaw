@@ -18,6 +18,7 @@ import { materializeCopyMidiArticulations } from './actionStateGuards/materializ
 import { materializeCreatedBus } from './actionStateGuards/materializeCreatedBus';
 import { materializeDeviceParameter } from './actionStateGuards/materializeDeviceParameter';
 import { materializeDrumPreviewBranches } from './actionStateGuards/materializeDrumPreviewBranches';
+import { materializeMidiNoteEdit } from './actionStateGuards/materializeMidiNoteEdit';
 import { materializeParameterRange } from './actionStateGuards/materializeParameterRange';
 import { materializeSectionRenders } from './actionStateGuards/materializeSectionRenders';
 import { materializeSendRange } from './actionStateGuards/materializeSendRange';
@@ -138,6 +139,7 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     setAutomationLaneEnabled: passThrough,
     addAutomationPoint: passThrough,
     quantizeNotes: passThrough,
+    editMidiNotes: materializeMidiNoteEdit,
     removeShortMidiOverlaps: materializeShortMidiOverlaps,
     createDrumPreviewBranches: materializeDrumPreviewBranches,
     copyMidiArticulations: materializeCopyMidiArticulations,

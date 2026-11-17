@@ -16,6 +16,7 @@ import {
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
+import { containsMidiNoteEditCall } from '../transformers/containsMidiNoteEditCall';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
@@ -26,6 +27,9 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalGroundingBasis, unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
+import { captureMidiNoteEditGuard } from './actionStateGuards/captureMidiNoteEditGuard';
+import { type MaterializeActionStateGuardsOptions } from './actionStateGuards/MaterializationState';
+import { checkMidiNoteEditAuthority } from './checkMidiNoteEditAuthority';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
@@ -46,6 +50,7 @@ type GroundCompiledCommandBatchInput = {
     transformCommands: readonly ToolCallResult[];
     transformTargetIds: readonly string[];
     creativeAuthority: CreativeRequestAuthority | undefined;
+    musicalReadProof?: Parameters<typeof checkMidiNoteEditAuthority>[0]['proof'];
     providerProposal: AgentRunProviderProposal | null;
     /**
      * The grounding of the pending card this batch refines. Undefined grounds the batch exactly as
@@ -135,7 +140,8 @@ function isOrdinaryBatch(input: GroundCompiledCommandBatchInput): boolean {
 }
 
 function bridgeCompiledCalls(
-    input: GroundCompiledCommandBatchInput
+    input: GroundCompiledCommandBatchInput,
+    midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit']
 ): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
     const transformProof = buildTransformProof(input);
@@ -150,6 +156,7 @@ function bridgeCompiledCalls(
         projectRevision: input.projectRevision,
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
+        midiNoteEditClipId: midiNoteEdit?.clipId,
         refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
         protectionFacts: readPriorProtectionFacts(input),
     };
@@ -194,7 +201,8 @@ function bridgeCompiledCalls(
 /** Runtime validation, batch-local identities, state guards and the production brief, in that order. */
 function bindBridgedActions(
     bridged: Bridged,
-    context: ProjectContext
+    context: ProjectContext,
+    midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit']
 ): Guarded | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const validated = validateActions(bridged.actions, bridged.batchLocalActionIdentities);
     if (validated.length !== bridged.actions.length) {
@@ -216,6 +224,7 @@ function bindBridgedActions(
         appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
         bassProcessingCopyScope: bridged.bassProcessingCopyScope,
         midiOverlapTransformScope: bridged.midiOverlapTransformScope,
+        midiNoteEdit,
         drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
         syncopatedArpeggioScope: bridged.syncopatedArpeggioScope,
     });
@@ -462,14 +471,43 @@ function getProviderKnownTargetIds(input: GroundCompiledCommandBatchInput): stri
  * the same gates whichever turn produced it.
  */
 export function groundCompiledCommandBatch(input: GroundCompiledCommandBatchInput): GroundCompiledCommandBatchResult {
-    const bridged = bridgeCompiledCalls(input);
+    let midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit'];
+    if (containsMidiNoteEditCall(input.toolCalls)) {
+        const compiled = input.compilerEvidence?.commands;
+        const command = compiled?.[0];
+        const authority =
+            compiled?.length === 1 &&
+            command?.name === 'editMidiNotes' &&
+            input.workflowCapabilityId === undefined &&
+            input.selectedCompilations.length === 0 &&
+            input.transformCommands.length === 0 &&
+            input.refinementBasis === undefined &&
+            input.refinementProtections === undefined
+                ? checkMidiNoteEditAuthority({
+                      call: command,
+                      proof: input.musicalReadProof,
+                      authority: input.creativeAuthority,
+                      revision: input.projectRevision,
+                  })
+                : null;
+        const guard = authority && captureMidiNoteEditGuard(authority);
+        if (!authority || !guard) {
+            return {
+                status: 'rejected',
+                rejectionReason:
+                    'Selective MIDI editing requires a complete current read and one unambiguous base-note selection.',
+            };
+        }
+        midiNoteEdit = { clipId: authority.clipId, guard };
+    }
+    const bridged = bridgeCompiledCalls(input, midiNoteEdit);
     if ('status' in bridged) {
         return bridged;
     }
     if (bridged.actions.length === 0) {
         return { status: 'empty' };
     }
-    const guarded = bindBridgedActions(bridged, input.context);
+    const guarded = bindBridgedActions(bridged, input.context, midiNoteEdit);
     if (guarded.status !== 'accepted') {
         return guarded;
     }

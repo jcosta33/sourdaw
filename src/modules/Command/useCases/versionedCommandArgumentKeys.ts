@@ -2246,6 +2246,7 @@ const schemaDefinitions = [
             expectedNotes: 132,
             expectedNotesBucketPresent: 13,
             scope: 281,
+            selectionToken: 1,
             trackId: 1,
         },
         required: ['editWindow', 'expectedNotes', 'expectedNotesBucketPresent', 'scope', 'trackId'],
