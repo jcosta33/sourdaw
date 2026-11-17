@@ -483,7 +483,8 @@ function assertProspectiveObservations(
             throw new Error('Every completed Detect reply must carry actual native changes');
         }
         expect(reply.changeCount).toBeGreaterThan(1);
-        expect(request.terminated).toBeGreaterThanOrEqual(reply.received);
+        // The application's earlier message handler may terminate before the passive observer runs.
+        expect(reply.received).toBeGreaterThanOrEqual(request.requested);
         assertCompletedSequence(window, reply.changeCount, request.terminated, end);
         completed += 1;
     }
