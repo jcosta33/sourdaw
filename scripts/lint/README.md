@@ -60,6 +60,8 @@ pass neither uses hidden suppression flags nor introduces another fixer.
 The failure rules flag empty catches and direct success objects from handlers that do no
 recovery. A detached catch keeps the original rejection observable when its remaining
 statements preserve the unchanged promise on every successful exit the rule can prove.
+Writes from a closure leave the promise identity unproven. A supporting throw must leave
+the same function without interception by a handler or replacement by a `finally` exit.
 Returning `Promise.allSettled` with that promise exposes its rejection as explicit data.
 A boolean value by itself cannot distinguish success from a conservative
 predicate or policy. The boundary rule follows direct JSON parsing, a response with
@@ -78,6 +80,7 @@ Chai getter assertions and static asymmetric matchers available. Oxlint 1.93 and
 report a raw async matcher promise assigned to a variable even when the test awaits the
 same binding after advancing fake timers. The local rule verifies direct await or return,
 or an immutable local binding observed later in the same block, including `Promise.all`.
+Erased TypeScript wrappers preserve those observation routes.
 A conditional await or rejection handler that can conceal failure cannot establish that
 proof. Complex promise control flow still requires review.
 

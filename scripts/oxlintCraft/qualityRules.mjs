@@ -110,6 +110,35 @@ function jumpStaysInside(node, statement) {
     return false;
 }
 
+function finalizerCanReplaceCompletion(context, finalizer) {
+    return hasSameFunctionNode(context, finalizer, (node) => {
+        if (node.type === 'ReturnStatement' || node.type === 'ThrowStatement') {
+            return true;
+        }
+        return (
+            (node.type === 'BreakStatement' || node.type === 'ContinueStatement') && !jumpStaysInside(node, finalizer)
+        );
+    });
+}
+
+function completionReachesCaller(context, statement) {
+    const owner = enclosingFunction(statement);
+    let child = statement;
+    for (let parent = child.parent; parent && parent !== owner; parent = parent.parent) {
+        if (parent.type === 'TryStatement') {
+            if (statement.type === 'ThrowStatement' && parent.block === child && parent.handler) {
+                return false;
+            }
+            const finalizer = parent.finalizer;
+            if (finalizer && finalizer !== child && finalizerCanReplaceCompletion(context, finalizer)) {
+                return false;
+            }
+        }
+        child = parent;
+    }
+    return true;
+}
+
 function rejectionExits(context, statements, returnsOriginal) {
     for (const statement of statements) {
         const exit = rejectionExit(context, statement, returnsOriginal);
@@ -123,9 +152,9 @@ function rejectionExits(context, statements, returnsOriginal) {
 function rejectionExit(context, statement, returnsOriginal) {
     switch (statement.type) {
         case 'ReturnStatement':
-            return returnsOriginal(statement.argument) ? 'propagates' : 'discards';
+            return returnsOriginal(statement) ? 'propagates' : 'discards';
         case 'ThrowStatement':
-            return 'propagates';
+            return completionReachesCaller(context, statement) ? 'propagates' : 'discards';
         case 'BlockStatement':
             return rejectionExits(context, statement.body, returnsOriginal);
         case 'IfStatement': {
@@ -142,7 +171,7 @@ function rejectionExit(context, statement, returnsOriginal) {
             // Other statement shapes may fall through. Inspect their exits without assuming that they execute.
             return hasSameFunctionNode(context, statement, (node) => {
                 if (node.type === 'ReturnStatement') {
-                    return !returnsOriginal(node.argument);
+                    return !returnsOriginal(node);
                 }
                 return (
                     (node.type === 'BreakStatement' || node.type === 'ContinueStatement') &&
@@ -168,16 +197,23 @@ function leavesRejectionObservable(context, call) {
     const following = siblings.slice(siblings.indexOf(statement) + 1);
     // A cancellation branch can observe the losing rejection while still rejecting the caller.
     if (ignored !== call && following[0]?.type === 'ThrowStatement') {
-        return true;
+        return completionReachesCaller(context, following[0]);
     }
     const variable = variableForIdentifier(context, original);
     const binding = variable?.defs[0];
     if (!binding) {
         return false;
     }
-    const laterWrites = variable.references.filter(
-        (reference) => reference.isWrite() && reference.identifier.range[0] >= call.range[1]
+    const owner = enclosingFunction(call);
+    const initialization =
+        binding.type === 'Parameter' || (binding.type === 'Variable' && ['let', 'const'].includes(binding.parent?.kind))
+            ? binding.name
+            : undefined;
+    const writes = variable.references.filter(
+        (reference) => reference.isWrite() && !(reference.init && reference.identifier === initialization)
     );
+    const hasCapturedWrite = writes.some((reference) => enclosingFunction(reference.identifier) !== owner);
+    const laterWrites = writes.filter((reference) => reference.identifier.range[0] >= call.range[1]);
     const returnsBinding = (value) =>
         isIdentifier(value, original.name) && definitions(context, value)[0]?.node === binding.node;
     function retainsRejectingValue(expression) {
@@ -190,8 +226,14 @@ function leavesRejectionObservable(context, call) {
         }
         return safePromiseContinuation(context, value) && retainsRejectingValue(value.callee.object);
     }
-    function returnsOriginal(argument) {
-        if (!argument || laterWrites.some((reference) => reference.identifier.range[0] < argument.range[1])) {
+    function returnsOriginal(statement) {
+        const argument = statement.argument;
+        if (
+            !argument ||
+            hasCapturedWrite ||
+            laterWrites.some((reference) => reference.identifier.range[0] < argument.range[1]) ||
+            !completionReachesCaller(context, statement)
+        ) {
             return false;
         }
         const value = unwrap(argument);
@@ -401,11 +443,24 @@ const ERASED_EXPRESSION_WRAPPERS = new Set([
     'TSTypeAssertion',
 ]);
 
-function isAwaitedThroughErasedWrappers(expression) {
+function throughErasedParents(expression) {
     let value = expression;
     while (value.parent?.expression === value && ERASED_EXPRESSION_WRAPPERS.has(value.parent.type)) {
         value = value.parent;
     }
+    return value;
+}
+
+function withoutErasedWrappers(expression) {
+    let value = expression;
+    while (value && ERASED_EXPRESSION_WRAPPERS.has(value.type)) {
+        value = value.expression;
+    }
+    return value;
+}
+
+function isAwaitedThroughErasedWrappers(expression) {
+    const value = throughErasedParents(expression);
     return value.parent?.type === 'AwaitExpression' && value.parent.argument === value;
 }
 
@@ -649,22 +704,25 @@ function promiseArrayArguments(context, call, method) {
     if (!isGlobalPromiseCall(context, call, method)) {
         return undefined;
     }
-    const values = call.arguments[0];
+    const values = withoutErasedWrappers(call.arguments[0]);
     return values?.type === 'ArrayExpression' ? values : undefined;
 }
 
 function observationExpression(context, assertion) {
-    let current = assertion;
+    let current = throughErasedParents(assertion);
     while (current.parent) {
         const parent = current.parent;
-        if (parent.type === 'ArrayExpression' && promiseArrayArguments(context, parent.parent, 'all') === parent) {
-            current = parent.parent;
-            continue;
+        if (parent.type === 'ArrayExpression') {
+            const array = throughErasedParents(parent);
+            if (promiseArrayArguments(context, array.parent, 'all') === parent) {
+                current = throughErasedParents(array.parent);
+                continue;
+            }
         }
         if (parent.type === 'MemberExpression' && parent.object === current && parent.parent?.callee === parent) {
             const continuation = parent.parent;
             if (safePromiseContinuation(context, continuation)) {
-                current = continuation;
+                current = throughErasedParents(continuation);
                 continue;
             }
         }
@@ -674,7 +732,13 @@ function observationExpression(context, assertion) {
 }
 
 function consumesBinding(context, expression, declaration) {
-    const value = unwrap(expression);
+    const value = withoutErasedWrappers(expression);
+    if (value?.type === 'AwaitExpression') {
+        return consumesBinding(context, value.argument, declaration);
+    }
+    if (value?.type === 'ChainExpression') {
+        return consumesBinding(context, value.expression, declaration);
+    }
     if (isIdentifier(value, declaration.id.name)) {
         return definitions(context, value)[0]?.node === declaration;
     }
@@ -718,8 +782,9 @@ function capturedAssertionObserved(context, assertion) {
     }
     const siblings = statement.parent.body;
     for (const following of siblings.slice(siblings.indexOf(statement) + 1)) {
-        if (following.type === 'ExpressionStatement' && following.expression.type === 'AwaitExpression') {
-            if (consumesBinding(context, following.expression.argument, declaration)) {
+        if (following.type === 'ExpressionStatement') {
+            const expression = withoutErasedWrappers(following.expression);
+            if (expression?.type === 'AwaitExpression' && consumesBinding(context, expression.argument, declaration)) {
                 return true;
             }
         }
@@ -737,8 +802,8 @@ function assertionObserved(context, expression) {
     const assertion = observationExpression(context, expression);
     const parent = assertion.parent;
     return (
-        parent?.type === 'AwaitExpression' ||
-        parent?.type === 'ReturnStatement' ||
+        (parent?.type === 'AwaitExpression' && parent.argument === assertion) ||
+        (parent?.type === 'ReturnStatement' && parent.argument === assertion) ||
         (parent?.type === 'ArrowFunctionExpression' && parent.body === assertion) ||
         capturedAssertionObserved(context, assertion)
     );

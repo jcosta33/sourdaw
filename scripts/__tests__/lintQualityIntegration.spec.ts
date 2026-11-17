@@ -99,6 +99,9 @@ describe('production quality lint', () => {
                     await vi.advanceTimersByTimeAsync(10);
                     await assertion;
                 });
+                it('accepts an awaited assertion through erased TypeScript wrappers', async () => {
+                    await (expect(Promise.resolve(true)).resolves.toBe(true) satisfies Promise<unknown>);
+                });
                 it.each([1, 2])('accepts an expectation per case', (value) => {
                     const observed = value > 1 ? 2 : 1;
                     expect(observed).toBe(value);

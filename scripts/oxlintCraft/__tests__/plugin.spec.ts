@@ -186,7 +186,14 @@ runCraftRule('no-silent-catch', {
         'function deferred(promise) { void promise.catch(() => {}); function inspect() { return undefined; } inspect(); return promise; }',
         'function deferred(promise, replacement) { promise = replacement; void promise.catch(() => {}); return promise; }',
         'function deferred(promise, replacement) { void promise.catch(() => {}); { let promise; promise = replacement; inspect(promise); } return promise; }',
+        'function deferred(promise, replacement) { void promise.catch(() => {}); replace(); return promise; function replace() { let promise; promise = replacement; inspect(promise); } }',
+        'function owner() { const initialPromise = start(); return function deferred() { void initialPromise.catch(() => {}); return initialPromise; }; }',
+        'function owner() { let initialPromise = start(); return function deferred() { void initialPromise.catch(() => {}); return initialPromise; }; }',
         'function cancelled(promise) { if (aborted) { void promise.catch(() => {}); throw abortReason(); } return promise; }',
+        'function cancelled(promise) { try { void promise.catch(() => {}); throw abortReason(); } finally { cleanup(); } }',
+        'function deferred(promise) { try { void promise.catch(() => {}); return promise; } finally { cleanup(); } }',
+        'function cancelled(promise) { try { start(); } catch (error) { void promise.catch(() => {}); throw error; } }',
+        'async function observe(promise) { try { await promise; } catch (error) { record(error); } }',
     ],
     invalid: [
         { code: 'try { work(); } catch {}', errors: [{ message: /empty handler discards/ }] },
@@ -253,6 +260,34 @@ runCraftRule('no-silent-catch', {
         },
         {
             code: 'function deferred(promise, replacement) { void promise.catch(() => {}); promise = replacement; return Promise.all([promise]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, replacement) { void promise.catch(() => {}); replace(); return promise; function replace() { promise = replacement; } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, replacement) { function replace() { promise = replacement; } void promise.catch(() => {}); replace(); return Promise.all([promise]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise) { try { void promise.catch(() => {}); throw new Error("stop"); } catch (error) { log(error); return undefined; } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, stop) { try { void promise.catch(() => {}); if (stop) { throw new Error("stop"); } return promise; } catch (error) { log(error); return undefined; } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise) { try { void promise.catch(() => {}); throw new Error("stop"); } finally { cleanup(); return undefined; } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, stop) { try { void promise.catch(() => {}); if (stop) { throw new Error("stop"); } return promise; } finally { cleanup(); return undefined; } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise) { try { void promise.catch(() => {}); return promise; } finally { cleanup(); return undefined; } }',
             errors: [{ message: /empty handler discards/ }],
         },
     ],
@@ -427,11 +462,34 @@ runCraftRule('no-invalid-vitest-expect', {
         "import { expect } from 'vitest'; async function test() { const assertion = expect(execution).rejects.toThrow(); await Promise.all([assertion, completed]); }",
         "import { expect } from 'vitest'; async function test() { await expect.poll(getValue, { interval: 10 }).toBe(2); }",
         "import { expect } from 'vitest'; async function test() { await expect(event).resolves.toBe(2).then(done).finally(cleanup); }",
+        "import { expect } from 'vitest'; async function test() { await (expect(execution).resolves.toBe(1) satisfies Promise<unknown>); }",
+        "import { expect } from 'vitest'; async function test() { await expect(execution).resolves.toBe(1)!; }",
+        "import { expect } from 'vitest'; function test() { return <Promise<unknown>>expect(execution).resolves.toBe(1); }",
+        "import { expect } from 'vitest'; async function test() { const checked = expect(execution).rejects.toThrow() as Promise<unknown>; await vi.advanceTimersByTimeAsync(10); (await (checked satisfies Promise<unknown>)) as unknown; }",
+        "import { expect } from 'vitest'; async function test() { const checked = (expect(execution).rejects.toThrow() satisfies Promise<unknown>); await vi.advanceTimersByTimeAsync(10); return await (checked as Promise<unknown>); }",
+        "import { expect } from 'vitest'; async function test() { await ((expect(execution).resolves.toBe(1) satisfies Promise<unknown>).then(done) as Promise<unknown>).finally(cleanup); }",
+        "import { expect } from 'vitest'; async function test() { await (Promise.all([(expect(execution).resolves.toBe(1) as Promise<unknown>)] satisfies Promise<unknown>[]) satisfies Promise<unknown[]>); }",
     ],
     invalid: [
         { code: "import { expect } from 'vitest'; expect().toBe(1);", errors: [{ message: /needs a subject/ }] },
         {
             code: "import { expect } from 'vitest'; function test() { return Promise.allSettled([expect(execution).rejects.toThrow()]); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; function test() { return (Promise.allSettled([(expect(execution).rejects.toThrow() as Promise<unknown>)]) satisfies Promise<unknown[]>); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; function test() { (expect(execution).resolves.toBe(1) satisfies Promise<unknown>); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { await (expect(execution).rejects.toThrow() as Promise<unknown>).then(undefined, () => undefined); }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { await ((expect(execution).rejects.toThrow() satisfies Promise<unknown>).catch(() => undefined))!; }",
             errors: [{ message: /rejection reaches the test/ }],
         },
         {
