@@ -4,8 +4,8 @@ Use this file for a stance that attacks whether the resource guard deletes verif
 settles a process group, on an operating-system observation that was partial, stale, denied, or mis-parsed.
 Deleting storage another process still holds, and retaining storage forever, are both defects: a run whose own
 work succeeded ended `FAILED (leak)` and stopped its lane (#5337). Each probe names the failure, the input, and
-the check that must go red. The owning specs are `scripts/__tests__/resourceGuardStorage.spec.ts` and
-`scripts/__tests__/resourceGuard.spec.ts`, except probe 11, whose process-group owner is `scripts/nativeCommand.ts`.
+the check that must go red. The guard specs are `scripts/__tests__/resourceGuardStorage.spec.ts` and
+`scripts/__tests__/resourceGuard.spec.ts`. Probes 11 and 13 also name checks owned outside the guard.
 Historical reviewer prompts and tiers are unestablished unless a probe says otherwise.
 
 ## Standing probes
@@ -154,6 +154,12 @@ evidence out of the child output unless it explains retention`, where startup, s
     In `scripts/__tests__/resourceGuardStorage.spec.ts`'s `unproved guard storage` group, the survivor cases require
     bounded cleanup predicates, stored/current identities, errnos and available/unavailable metadata without
     command, environment or raw error text. These ordered observations claim neither atomic signaling nor a past leak's cause.
+
+    The process-lifetime review in #6744 missed a failed fork as an input to scan-worker fixture cleanup.
+    A parsed `-1` could reach `Stragglers` and turn its `SIGKILL` into a broadcast. #6848 rejects nonpositive
+    PIDs at the parser and uses a positive-only signalling helper. Exercise `-1`, `0`, a positive PID, and
+    malformed text without sending any signals. Removing the parser's positive filter must fail
+    `pnpm guard --profile focused --show-output -- pnpm cargo:test --package sourdaw-native pid_files_admit_only_positive_process_ids`.
 
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c
