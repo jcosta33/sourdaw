@@ -44,9 +44,9 @@ function sourceValues(): readonly unknown[] {
 }
 
 function canonicalValue(value: unknown): unknown {
-    const json = JSON.stringify(value);
-    if (json === undefined) {
-        throw new Error('Project Save preparation requires a serializable value');
+    const json: unknown = JSON.stringify(value);
+    if (typeof json !== 'string') {
+        throw new TypeError('Project Save preparation requires a serializable value');
     }
     const result: unknown = JSON.parse(json);
     return result;
@@ -85,6 +85,16 @@ function assertAvailable(signal: AbortSignal, expectedOutgoingProjectIdentity: s
         throw new Error('Project Save preparation requires settled project identity');
     }
     return projectId;
+}
+
+function readProjectIdAfterSettlement(
+    signal: AbortSignal,
+    expectedOutgoingProjectIdentity: string | undefined
+): string | undefined {
+    if (expectedOutgoingProjectIdentity !== undefined) {
+        return assertAvailable(signal, expectedOutgoingProjectIdentity);
+    }
+    return getSettledProjectId();
 }
 
 function createSaveCommitValidation(
@@ -131,10 +141,7 @@ export async function prepareProjectSaveSnapshot(
     if (!root || !project || !arrangements || !isRecord(root.projectMeta)) {
         throw new Error('Project Save preparation requires native project metadata and arrangements');
     }
-    const projectId =
-        expectedOutgoingProjectIdentity === undefined
-            ? getSettledProjectId()
-            : assertAvailable(signal, expectedOutgoingProjectIdentity);
+    const projectId = readProjectIdAfterSettlement(signal, expectedOutgoingProjectIdentity);
     const sources = sourceValues();
     let expectedProject = project;
     let expectedArrangements = arrangements;

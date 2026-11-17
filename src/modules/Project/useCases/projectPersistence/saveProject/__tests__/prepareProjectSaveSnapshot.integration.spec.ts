@@ -12,6 +12,7 @@ import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCa
 import {
     captureAutomergeStoragePreparationScope,
     configureAutomergeStoragePort,
+    createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -32,6 +33,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type HandlerExecutionResult } from '#/utils/handlerContract';
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
@@ -91,6 +93,22 @@ type NativeRoot = {
 
 function root() {
     return requireValue(getCrdtDoc<NativeRoot>('root'));
+}
+
+function materializeExpectedArrangementSlot(value: NonNullable<typeof arrangementStore.value>): unknown {
+    const empty = A.init<Record<string, unknown>>();
+    const preview = createAutomergeStoragePreview(new Map([['root', empty]]));
+    try {
+        preview.scope(() => arrangementStore.set(value));
+        const slot = requireValue(preview.getDocument('root')?.arrangements);
+        // The detached owner omits unencodable optional fields. The intended
+        // JSON verifies it did not silently sanitize any persisted content.
+        expect(matchesJsonFingerprint(slot, JSON.stringify(value))).toBe(true);
+        return slot;
+    } finally {
+        preview.release();
+        A.free(empty);
+    }
 }
 
 function witnessNativeTruth(): () => void {
@@ -297,14 +315,12 @@ describe('private Project Save preparation with real native storage', () => {
         A.free(control);
         expect(cursor.byteLength).toBeGreaterThan(0);
         const state = requireValue(arrangementStore.value);
-        const expected: unknown = JSON.parse(
-            JSON.stringify({
-                ...state,
-                arrangements: state.arrangements.map((snapshot) =>
-                    snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
-                ),
-            })
-        );
+        const expected = materializeExpectedArrangementSlot({
+            ...state,
+            arrangements: state.arrangements.map((snapshot) =>
+                snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+            ),
+        });
         const publications: string[][] = [];
         const unsubscribe = subscribeToCrdtChanges(() => publications.push(A.getHeads(root())));
         const transaction = startPreparation();
@@ -355,10 +371,10 @@ describe('private Project Save preparation with real native storage', () => {
         projectStore.set({ ...project, loading: true, initialized: false, dirty: false });
         const before = A.toJS(root());
         const state = requireValue(arrangementStore.value);
-        const expected = {
+        const expected = materializeExpectedArrangementSlot({
             ...state,
-            arrangements: [takeSnapshot('active', 'Active'), state.arrangements[1]],
-        };
+            arrangements: [takeSnapshot('active', 'Active'), requireValue(state.arrangements[1])],
+        });
         const verifyNativeTruth = witnessNativeTruth();
         const held = holdPreparation(captureProjectIdentity());
         const deliver = await held.reply;
@@ -373,7 +389,7 @@ describe('private Project Save preparation with real native storage', () => {
             held.transaction.commit();
             expect(A.toJS(root())).toEqual({
                 ...before,
-                arrangements: JSON.parse(JSON.stringify(expected)),
+                arrangements: expected,
                 projectMeta: { ...before.projectMeta, updatedAt },
             });
             expect(projectStore.value).toMatchObject({ loading: true, initialized: false, dirty: true, updatedAt });
@@ -670,14 +686,12 @@ describe('private Project Save preparation with real native storage', () => {
         const source = root();
         const before = A.toJS(source);
         const state = requireValue(arrangementStore.value);
-        const intended: unknown = JSON.parse(
-            JSON.stringify({
-                ...state,
-                arrangements: state.arrangements.map((snapshot) =>
-                    snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
-                ),
-            })
-        );
+        const intended = materializeExpectedArrangementSlot({
+            ...state,
+            arrangements: state.arrangements.map((snapshot) =>
+                snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+            ),
+        });
         const transaction = startPreparation();
         try {
             const result = await transaction.value;
@@ -811,14 +825,12 @@ describe('private Project Save preparation with real native storage', () => {
             expect(getWarpState(`scale-clip-${index + 1}-0`).markers).toHaveLength(120);
         }
         const state = requireValue(arrangementStore.value);
-        const intended: unknown = JSON.parse(
-            JSON.stringify({
-                ...state,
-                arrangements: state.arrangements.map((snapshot) =>
-                    snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
-                ),
-            })
-        );
+        const intended = materializeExpectedArrangementSlot({
+            ...state,
+            arrangements: state.arrangements.map((snapshot) =>
+                snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+            ),
+        });
         const control = A.clone(original);
         const cursor = A.saveIncremental(control);
         A.free(control);
@@ -949,9 +961,7 @@ describe('private Project Save preparation with real native storage', () => {
             }
             report.reached.push('complete-native-truth-history-cursor-and-phase-census');
             const actorSequence = requireValue(
-                A.getChangesMetaSince(updated, [])
-                    .filter((entry) => entry.actor === actor)
-                    .at(-1)
+                A.getChangesMetaSince(updated, []).findLast((entry) => entry.actor === actor)
             ).seq;
             renameTrack('scale-track-0', 'Later dense owner edit');
             flushAutomergeStorageWrites();
