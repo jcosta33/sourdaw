@@ -100,7 +100,8 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(117);
+        expect(registrations).toHaveLength(118);
+        expect(registrations.map(({ actionType }) => actionType)).toContain('editMidiNotes');
         expect(registrations.map(({ actionType }) => actionType)).toContain('stripSilence');
         expect(registrations.map(({ actionType }) => actionType)).toContain('extractGroove');
         expect(registrations.map(({ actionType }) => actionType)).toContain('applyGroove');
