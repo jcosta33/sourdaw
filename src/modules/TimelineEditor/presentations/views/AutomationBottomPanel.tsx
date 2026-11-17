@@ -58,21 +58,20 @@ type AutomationTimelineState = {
 
 /** Reactively track an element's width via ResizeObserver */
 function useContainerWidth(element: HTMLDivElement | null): number {
-    const [width, setWidth] = useState(0);
+    const [measurement, setMeasurement] = useState<{ element: HTMLDivElement; width: number } | null>(null);
     useLayoutEffect(() => {
         if (!element) {
             return undefined;
         }
-        const ro = new ResizeObserver(([entry]) => {
+        const observer = new ResizeObserver(([entry]) => {
             if (entry) {
-                setWidth(entry.contentRect.width);
+                setMeasurement({ element, width: entry.contentRect.width });
             }
         });
-        ro.observe(element);
-        setWidth(element.clientWidth);
-        return () => ro.disconnect();
+        observer.observe(element);
+        return () => observer.disconnect();
     }, [element]);
-    return width;
+    return measurement?.element === element ? measurement.width : 0;
 }
 
 const LaneSparkline = ({

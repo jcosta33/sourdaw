@@ -231,12 +231,24 @@ describe('AutomationBottomPanel', () => {
         vi.stubGlobal(
             'ResizeObserver',
             class {
+                private element: Element | undefined;
+
                 constructor(readonly receive: (entries: { contentRect: { width: number } }[]) => void) {}
-                observe(element: Element) {
-                    observed.set(element, (width) => this.receive([{ contentRect: { width } }]));
+
+                observe(element: Element): void {
+                    this.element = element;
+                    observed.set(element, (width) => {
+                        if (this.element === element) {
+                            this.receive([{ contentRect: { width } }]);
+                        }
+                    });
                 }
-                disconnect() {
-                    observed.clear();
+
+                disconnect(): void {
+                    if (this.element) {
+                        observed.delete(this.element);
+                        this.element = undefined;
+                    }
                 }
             }
         );
@@ -265,17 +277,37 @@ describe('AutomationBottomPanel', () => {
                     maxValue: 2,
                 },
             ];
-            for (const open of [true, false, true]) {
+            let previousObservation: [Element, (width: number) => void] | undefined;
+            for (const [open, firstWidth, resizedWidth] of [
+                [true, 475.5, 321],
+                [false, 671.5, 532],
+                [true, 453.5, 312],
+            ] as const) {
                 mocks.workspaceStore.value.trackListOpen = open;
                 view.rerender(<AutomationBottomPanel />);
-                const row = screen.getByTestId('lane-row-gain-lane');
-                expect(row).toHaveAttribute('data-width', open ? '480' : '680');
+                expect(screen.queryByTestId('lane-row-gain-lane')).not.toBeInTheDocument();
                 expect(observed.size).toBe(1);
-                const [element, resize] = [...observed][0]!;
-                expect(element.contains(row)).toBe(true);
-                act(() => resize(321));
-                expect(row).toHaveAttribute('data-width', '321');
+                const observation = [...observed][0]!;
+                const [element, resize] = observation;
+                expect(element).toBeInTheDocument();
+                if (previousObservation) {
+                    const [previousElement, previousResize] = previousObservation;
+                    expect(previousElement).not.toBeInTheDocument();
+                    expect(observed.has(previousElement)).toBe(false);
+                    act(() => previousResize(123));
+                    expect(screen.queryByTestId('lane-row-gain-lane')).not.toBeInTheDocument();
+                }
+
+                act(() => resize(firstWidth));
+                const row = screen.getByTestId('lane-row-gain-lane');
+                expect(element).toContainElement(row);
+                expect(row).toHaveAttribute('data-width', String(firstWidth));
+                act(() => resize(resizedWidth));
+                expect(row).toHaveAttribute('data-width', String(resizedWidth));
+                previousObservation = observation;
             }
+            view.unmount();
+            expect(observed.size).toBe(0);
         } finally {
             width.mockRestore();
         }
