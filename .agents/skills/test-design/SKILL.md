@@ -4,7 +4,8 @@ description: >-
     Design tests that observe their claimed subject and fail when it breaks.
     ALWAYS apply when deciding what a case asserts, choosing its fixtures, writing
     its waits, deciding where a test double's boundary sits, writing or changing a
-    Vitest or Playwright case or a Rust test, and when reviewing whether a test
+    Vitest or Playwright case or a Rust test, verifying a bug fix or behavior
+    change before editing production code, and reviewing whether a test
     observes what its name claims — even if the change looks like a one-line tweak
     to an existing spec. Skip file placement, naming, and mock-seam mechanics
     (testing-file-layout), driving the live UI ad hoc (playwright-ui-bridge), and
@@ -13,7 +14,7 @@ description: >-
 
 ## Purpose
 
-A green test is evidence only when it would have gone red had the subject broken. This skill covers what a test asserts, what it waits on, what it doubles, and how its run is read. File placement, import paths, mock-seam mechanics and the red-first workflow belong to `testing-file-layout`; harness choice is detailed in `docs/06-testing.md`.
+A green test is evidence only when it would have gone red had the subject broken. This skill covers what a test asserts, what it waits on, what it doubles, and how its run is read. File placement, import paths, and mock-seam mechanics belong to [testing-file-layout](../testing-file-layout/SKILL.md). See the [testing guide](../../../docs/06-testing.md) for harness choice.
 
 ## Core rules
 
@@ -67,7 +68,11 @@ Replace hardware, OS I/O, hosted services, the desktop bridge and an injectable'
 
 ### 7. Reproduce a defect with a red test before the fix
 
-See `testing-file-layout` rule 2. The red output and the mutation of rule 1 are the same evidence seen from two ends.
+For a behavior change or bug fix, write or update the focused test before changing production code. Run it and observe it fail on the intended assertion. Make the production change, rerun the same test, and observe it pass. Paste both outputs with the verification evidence.
+
+Correct invalid tests and surface any defects they expose. Never change production solely to satisfy a bad test. Rule 1 probes the case's failure sensitivity during review.
+
+**Enforced by:** review only.
 
 ### 8. Timing specs assert frames, not wall-clock time
 
