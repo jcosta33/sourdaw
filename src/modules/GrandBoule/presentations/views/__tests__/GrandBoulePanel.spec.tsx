@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -200,10 +200,10 @@ describe('GrandBoulePanel', () => {
     it('opens controls-first and mounts each optional visualization only when revealed', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
 
-        expect(screen.getByRole('region', { name: 'Grand Boule controls' })).toHaveAttribute('tabindex', '0');
-        const piano = screen.getByRole('button', { name: 'Piano keyboard' });
-        const strings = screen.getByRole('button', { name: 'String activity' });
-        const spectrum = screen.getByRole('button', { name: 'Spectrum history' });
+        const controls = within(screen.getByRole('region', { name: 'Grand Boule controls' }));
+        const piano = controls.getByRole('button', { name: 'Piano keyboard' });
+        const strings = controls.getByRole('button', { name: 'String activity' });
+        const spectrum = controls.getByRole('button', { name: 'Spectrum history' });
         for (const button of [piano, strings, spectrum]) {
             expect(button).toHaveAttribute('aria-expanded', 'false');
         }

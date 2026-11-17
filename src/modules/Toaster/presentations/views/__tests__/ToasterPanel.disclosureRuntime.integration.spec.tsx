@@ -372,7 +372,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
     });
     it('ends the held keyboard repeat on blur and close while the pattern keeps playing', () => {
         const { unmount } = render(<ToasterPanel deviceId={DEVICE_ID} />);
-        fireEvent.click(screen.getByRole('button', { name: 'Play', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play' }));
         const releasesAtPlay = current.allNotesOff.mock.calls.length;
         fireEvent.click(screen.getByRole('button', { name: 'Note repeat mode' }));
         const pad = screen.getByTestId('toaster-pad-2');

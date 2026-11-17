@@ -421,7 +421,6 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                 )}
                 role="region"
                 aria-label="Toaster controls"
-                tabIndex={0}
             >
                 <Stack gap={3} className={viewLevel === 'full' ? 'min-w-0' : 'contents'}>
                     <SectionCard title="Kit shelf" detail="Find and load a kit.">
@@ -439,7 +438,6 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             className="max-h-48 overflow-y-auto p-0.5"
                             role="region"
                             aria-label="Kit results"
-                            tabIndex={0}
                         >
                             {visiblePresets.map((preset) => {
                                 const active = preset.name === kit.name;

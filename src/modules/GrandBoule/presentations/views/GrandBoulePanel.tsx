@@ -385,7 +385,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
             className="grand-boule-faceplate @container flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-[26px] p-3"
             role="region"
             aria-label="Grand Boule controls"
-            tabIndex={0}
         >
             <Row justify="between" wrap gap={2} shrink={false}>
                 <Row wrap gap={1.5}>
