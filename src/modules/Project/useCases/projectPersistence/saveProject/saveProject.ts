@@ -83,6 +83,26 @@ function describeSnapshotChange(
     return null;
 }
 
+function createSnapshotContinuationAssertion(
+    persistedProject: ProjectStoreState,
+    snapshotRevision: string,
+    expectedOutgoingProjectIdentity: string | undefined
+): (audioDurabilityReceipt?: AudioDurabilityReceipt) => void {
+    return (audioDurabilityReceipt) => {
+        assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
+        // A public project edit updates its store immediately but may defer
+        // the corresponding Automerge write until the next animation frame.
+        // Expose that write before every post-await authority check so the
+        // original serialized revision cannot certify a newer visible state.
+        flushAutomergeStorageWrites();
+        assertProjectSnapshotAuthority();
+        const change = describeSnapshotChange(persistedProject, snapshotRevision, audioDurabilityReceipt);
+        if (change !== null) {
+            throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
+        }
+    };
+}
+
 let pendingFolderSelection: { projectId: string; root: Promise<FileSystemDirectoryHandle> } | null = null;
 
 function folderSaveAvailable(): boolean {
@@ -367,19 +387,11 @@ async function persistProjectSnapshot(
             throw new Error('[saveProject] Project snapshot could not be built');
         }
 
-        const assertSnapshotContinuation = (audioDurabilityReceipt?: AudioDurabilityReceipt): void => {
-            assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
-            // A public project edit updates its store immediately but may defer
-            // the corresponding Automerge write until the next animation frame.
-            // Expose that write before every post-await authority check so the
-            // original serialized revision cannot certify a newer visible state.
-            flushAutomergeStorageWrites();
-            assertProjectSnapshotAuthority();
-            const change = describeSnapshotChange(persistedProject, built.snapshotRevision, audioDurabilityReceipt);
-            if (change !== null) {
-                throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
-            }
-        };
+        const assertSnapshotContinuation = createSnapshotContinuationAssertion(
+            persistedProject,
+            built.snapshotRevision,
+            expectedOutgoingProjectIdentity
+        );
 
         let preflightReceipt: AudioDurabilityReceipt | undefined;
         try {
