@@ -966,6 +966,30 @@ a file without a recording weighs as the median file.
 CodeQL runs for JavaScript/TypeScript and relevant workflow or security configuration changes;
 the PR secret scan and dependency review remain in required validation even when CodeQL is skipped.
 
+### Required PR unit coverage
+
+The existing four isolated PR unit shards collect V8 coverage. The coverage job checks all four
+reports belong to the current run attempt and tested revision, merges them into one production
+report and contributes its result to the required `Gate`. The unit coverage artifact contains
+the HTML report, exact covered/total counts, the uncovered changed file and line list in
+`gate.json`, and shard wall-clock durations. The nightly unit commands retain their existing scope.
+
+Coverage applies to production TypeScript and TSX under `src/`. It excludes declarations, test
+specs and test helpers, the test setup and the app bootstrap entry point. Files the shards never
+import are included. The PR must cover at least 90% of changed executable lines, counted once
+each using Istanbul statement-start line coverage. The diff uses the tested integration commit
+and its first parent, so reported lines match the tested tree even when the base advances. A
+change without executable lines has an explicit zero-line result. Missing production coverage
+or a missing shard fails the check.
+
+The overall floors for lines, statements, branches and functions live in
+`scripts/unitCoverageFloors.json`. They are measured from the merged report, in hundredths of
+a percentage point rounded down. The gate compares exact counts to these floors and rejects
+any proposed decrease against the tested base. The initial floors come from the hosted unit
+suite's measured baseline. To raise them, review `measured-floors.json` in the unit coverage
+artifact and commit the desired increases. A successful change must meet the proposed floors
+as well as the changed-line minimum.
+
 The nightly keeps the full E2E matrix, Browser AI hardware admission, platform and desktop proofs,
 full-history secret scan and security analysis. Production deployment remains downstream of that
 full successful train. Scoped PR coverage supplements rather than replaces this full-load gate.

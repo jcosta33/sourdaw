@@ -352,6 +352,79 @@ describe('required unit account isolation', () => {
         expect(run).toHaveBeenCalledTimes(2);
     });
 
+    it('exports coverage as runner-owned data only after the dropped-identity shard succeeds', () => {
+        const { ports, run, write } = setupPorts();
+        const original = run.getMockImplementation();
+        const contextPath = `${root}/.agents/guard-storage-fixtures/unit-account-${nonce}.json`;
+        ports.env.RUNNER_TEMP = '/runner-temp';
+        ports.env.GITHUB_RUN_ID = '1891';
+        ports.env.GITHUB_RUN_ATTEMPT = '2';
+        const report = { [join(context.workspace, 'src/choice.ts')]: { s: { 0: 1 } } };
+        run.mockImplementation((file, args, options) => {
+            if (args.includes('/usr/bin/head')) {
+                expect(file).toBe('/usr/bin/sudo');
+                expect(args).toEqual(
+                    expect.arrayContaining([
+                        '/usr/bin/setpriv',
+                        '--reuid=20000',
+                        '--regid=20000',
+                        '--no-new-privs',
+                        '/usr/bin/head',
+                        join(context.temp, 'unit-coverage-shard/coverage-final.json'),
+                    ])
+                );
+                expect(args).not.toContain('/runner-temp');
+                return { status: 0, stdout: JSON.stringify(report), stderr: '' };
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
+
+        expect(launchUnitPhase(contextPath, 'coverage-shard', '3/4', ports)).toBe(0);
+        expect(run.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['coverage-shard', '3/4']));
+        expect(ports.mkdir).toHaveBeenCalledWith('/runner-temp/unit-coverage-shard', 0o700);
+        const [path, packet, mode] = write.mock.calls[0] ?? [];
+        expect(path).toBe('/runner-temp/unit-coverage-shard/shard-3.json');
+        expect(mode).toBe(0o600);
+        expect(JSON.parse(packet ?? '')).toEqual({
+            version: 1,
+            revision: sourceHead,
+            runId: '1891',
+            attempt: '2',
+            shard: 3,
+            sourceRoot: context.workspace,
+            elapsedMs: expect.any(Number),
+            coverage: report,
+        });
+
+        run.mockImplementation((file, args, options) => {
+            if (file === '/usr/bin/sudo') {
+                expect(args).not.toContain('/usr/bin/head');
+                return { status: 7, stdout: '', stderr: '' };
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
+        expect(launchUnitPhase(contextPath, 'coverage-shard', '3/4', ports)).toBe(7);
+        expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it('enables JSON coverage only for the PR shard through the existing guarded test command', () => {
+        const { ports, run } = runtimePorts();
+        expect(runUnitPhase(context, 'coverage-shard', '2/4', ports)).toBe(0);
+        for (const [file, args] of run.mock.calls.slice(0, 3)) {
+            expect(file).toBe(context.pnpm);
+            expect(args).not.toContain('--coverage');
+        }
+        expect(run.mock.calls[3]?.[1]).toEqual(
+            expect.arrayContaining([
+                'test:run',
+                '--shard=2/4',
+                '--coverage',
+                '--coverage.reporter=json',
+                `--coverage.reportsDirectory=${context.temp}/unit-coverage-shard`,
+            ])
+        );
+    });
+
     it('requires the native denied-consumer proof during verification and propagates its failure before any install', () => {
         const { ports, run } = runtimePorts();
         run.mockReturnValue({ status: 6, stdout: '', stderr: '' });
