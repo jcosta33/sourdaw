@@ -82,8 +82,8 @@ outcomes must land together, name the invariant or dependency that requires join
 name or changed-line target is insufficient. If a review repair introduces a new mechanism or outcome,
 reassess the PR scope before dispatching more author work.
 
-Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
-and overlapping files.
+Run agents in parallel only on write-disjoint files within a lane. Across lanes, apply the overlap
+rules under [Delivery](#delivery).
 
 ## Review
 
@@ -699,15 +699,23 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small and merges prompt. Hold at most five live lanes at once. Lanes that do not
-stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
-file or pinned digest when it feeds that file's generator or digest: an app action feeds the
-command schema and the agent evidence manifest, device guidance feeds the evidence manifest, an
-edit to the admitted Grand Boule DSP source or ADR 0036 feeds the release inventory, and a crate's dependency closure feeds the wasm
-manifest. Work that shares any of these with a live lane waits for it to merge, or stacks on it
-only when it depends on that lane's change. A head waiting on CI or review does not block opening
-a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
-whole, reassess its scope under Delegation before review.
+Keep batches small and merges prompt. Hold at most five live lanes at once. Sequence changes to the
+same handwritten file or a contract another lane relies on. Stack only on a real dependency.
+
+Compare live diffs and trace each changed generator input to the fields and digests it feeds,
+including outputs still awaiting regeneration. Separate lanes may share a generated file when
+their changes affect distinct, deterministically regeneratable fields from independent inputs.
+Use the scoped generators in your own lane and check mergeability before delivery. Sequence
+changes that affect the same input or output field, or that edit a hand-curated record or measured
+baseline in the shared file.
+
+Resolve generated conflicts in your own lane. Regenerate the affected fields from the merged inputs
+and preserve hand-curated evidence and measured baselines. Publish the resolved head for fresh
+`Gate` and review.
+
+A head waiting on CI or review does not block opening a new lane; merge each as soon as its Gate and
+approval allow. If reviewers cannot attack a diff whole, reassess its scope under Delegation before
+review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 The `commit-msg` hook refuses what `lane:publish` refuses in a subject: one that is not
 `type(scope)!: subject` with a pull-request title type (so neither `style`, `revert` nor a
