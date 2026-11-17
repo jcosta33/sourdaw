@@ -157,6 +157,9 @@ function DeviceHistoryHost() {
                 </div>
             ) : null}
             <input aria-label="Preset name" />
+            <input type="range" aria-label="Gain" />
+            <input type="checkbox" aria-label="Bypass" />
+            <input type="radio" aria-label="Stereo" />
         </FloatingDevicePanel>
     );
 }
@@ -238,13 +241,21 @@ describe('Edit command focus in the workspace', () => {
             invoke(control, 'Cut');
             expect(dispatch).not.toHaveBeenCalled();
             expect(clipIds()).toEqual(['clip-two']);
-            invoke(control, 'Undo');
-            await waitFor(() => expect(clipIds()).toEqual(['clip-one', 'clip-two']));
-            expect(undo).toHaveBeenCalledOnce();
-            expect(undoHistoryStore.value?.future).toHaveLength(1);
-            invoke(control, 'Redo');
-            await waitFor(() => expect(clipIds()).toEqual(['clip-two']));
-            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            const historyControls = [
+                control,
+                screen.getByRole('slider', { name: 'Gain' }),
+                screen.getByRole('checkbox', { name: 'Bypass' }),
+                screen.getByRole('radio', { name: 'Stereo' }),
+            ];
+            for (const target of historyControls) {
+                invoke(target, 'Undo');
+                await waitFor(() => expect(clipIds()).toEqual(['clip-one', 'clip-two']));
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+                invoke(target, 'Redo');
+                await waitFor(() => expect(clipIds()).toEqual(['clip-two']));
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+            }
+            expect(undo).toHaveBeenCalledTimes(historyControls.length);
         }
     );
 

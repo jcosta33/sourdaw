@@ -1,5 +1,5 @@
-/** The nearest surface owns history. Text entry and nested popups keep their own Undo. */
-export function isDeviceEditorHistoryTarget(target: EventTarget | null): boolean {
+/** Identifies a floating device control after text entry and nested surfaces take priority. */
+export function isDeviceEditorControlTarget(target: EventTarget | null): boolean {
     if (!(target instanceof Element) || (target instanceof HTMLElement && target.isContentEditable)) {
         return false;
     }

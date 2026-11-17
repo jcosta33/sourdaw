@@ -51,35 +51,12 @@ type FloatingDevicePanelProps = {
     children: ReactNode;
 };
 
-export function FloatingDevicePanel({
-    label,
-    labelColor,
-    borderColor,
-    geometry,
-    setGeometry,
-    otherSurfaceOwnsEscape,
-    onClose,
-    children,
-}: FloatingDevicePanelProps): ReactElement {
-    const titleId = useId();
-    const workspace = useRef<HTMLDivElement>(null);
+function useDevicePanelFocus(
+    onClose: () => void,
+    otherSurfaceOwnsEscape: FloatingDevicePanelProps['otherSurfaceOwnsEscape']
+) {
     const dialog = useRef<HTMLDivElement>(null);
     const opener = useRef<HTMLElement | null>(null);
-    const drag = useRef<{ id: number; x: number; y: number; start: DevicePanelGeometry } | null>(null);
-    const [area, setArea] = useState<Size>({ width: 0, height: 0 });
-    const bounds = fitGeometry(geometry, area);
-
-    useLayoutEffect(() => {
-        const element = workspace.current;
-        if (!element) {
-            return;
-        }
-        const measure = (): void => setArea({ width: element.clientWidth, height: element.clientHeight });
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(element);
-        return () => observer.disconnect();
-    }, []);
 
     function restoreFocus(): void {
         const trigger = opener.current;
@@ -141,6 +118,16 @@ export function FloatingDevicePanel({
         };
     }, [onClose, otherSurfaceOwnsEscape]);
 
+    return { dialog, dismiss };
+}
+
+function useTitleMovement(
+    bounds: DevicePanelGeometry,
+    area: Size,
+    setGeometry: FloatingDevicePanelProps['setGeometry']
+) {
+    const drag = useRef<{ id: number; x: number; y: number; start: DevicePanelGeometry } | null>(null);
+
     function startMove(event: ReactPointerEvent<HTMLButtonElement>): void {
         if (event.button !== 0 || drag.current !== null) {
             return;
@@ -187,6 +174,46 @@ export function FloatingDevicePanel({
         setGeometry(fitGeometry({ ...bounds, left: bounds.left + step[0], top: bounds.top + step[1] }, area));
     }
 
+    return {
+        onPointerDown: startMove,
+        onPointerMove: move,
+        onPointerUp: endMove,
+        onPointerCancel: endMove,
+        onLostPointerCapture: endMove,
+        onKeyDown: moveByKey,
+    };
+}
+
+export function FloatingDevicePanel({
+    label,
+    labelColor,
+    borderColor,
+    geometry,
+    setGeometry,
+    otherSurfaceOwnsEscape,
+    onClose,
+    children,
+}: FloatingDevicePanelProps): ReactElement {
+    const titleId = useId();
+    const workspace = useRef<HTMLDivElement>(null);
+    const [area, setArea] = useState<Size>({ width: 0, height: 0 });
+    const bounds = fitGeometry(geometry, area);
+
+    useLayoutEffect(() => {
+        const element = workspace.current;
+        if (!element) {
+            return;
+        }
+        const measure = (): void => setArea({ width: element.clientWidth, height: element.clientHeight });
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
+
+    const { dialog, dismiss } = useDevicePanelFocus(onClose, otherSurfaceOwnsEscape);
+    const titleMovement = useTitleMovement(bounds, area, setGeometry);
+
     function resize(axis: keyof Size, delta: number): void {
         setGeometry((previous) => {
             const fitted = fitGeometry(previous, area);
@@ -214,12 +241,7 @@ export function FloatingDevicePanel({
                         aria-label={`Move ${label} panel`}
                         title="Drag or use arrow keys to move"
                         className="flex min-w-0 flex-1 cursor-move touch-none select-none items-center gap-2 py-1.5 text-left"
-                        onPointerDown={startMove}
-                        onPointerMove={move}
-                        onPointerUp={endMove}
-                        onPointerCancel={endMove}
-                        onLostPointerCapture={endMove}
-                        onKeyDown={moveByKey}
+                        {...titleMovement}
                     >
                         <GripHorizontal aria-hidden="true" className="size-3.5 text-muted-foreground" />
                         <span
