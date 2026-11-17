@@ -81,8 +81,10 @@ report a raw async matcher promise assigned to a variable even when the test awa
 same binding after advancing fake timers. The local rule verifies direct await or return,
 or an immutable local binding observed later in the same block, including `Promise.all`.
 Erased TypeScript wrappers preserve those observation routes.
-A conditional await or rejection handler that can conceal failure cannot establish that
-proof. Complex promise control flow still requires review.
+An enclosing catch can handle an awaited rejection. A simple rethrow keeps it visible,
+and returning the assertion promise delivers its later rejection to the runner. A
+conditional await, rejection handler or `finally` exit that can let the test succeed
+cannot establish observation. Complex promise control flow still requires review.
 
 ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
 `@tanstack/query/no-void-query-fn`, `@tanstack/query/no-rest-destructuring`, and

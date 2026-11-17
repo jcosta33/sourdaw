@@ -102,6 +102,21 @@ describe('production quality lint', () => {
                 it('accepts an awaited assertion through erased TypeScript wrappers', async () => {
                     await (expect(Promise.resolve(true)).resolves.toBe(true) satisfies Promise<unknown>);
                 });
+                it('refuses a caught assertion failure', async () => {
+                    try {
+                        await expect(Promise.resolve(1)).resolves.toBe(2);
+                    } catch (error) {
+                        console.error(error);
+                    }
+                });
+                it('accepts a caught and rethrown assertion failure', async () => {
+                    try {
+                        await expect(Promise.resolve(true)).resolves.toBe(true);
+                    } catch (error) {
+                        console.error(error);
+                        throw error;
+                    }
+                });
                 it.each([1, 2])('accepts an expectation per case', (value) => {
                     const observed = value > 1 ? 2 : 1;
                     expect(observed).toBe(value);
@@ -181,6 +196,7 @@ describe('production quality lint', () => {
                     ['typed.ts', 'sourdaw-craft/no-useless-clone-spread'],
                     ['typed.ts', 'typescript/switch-exhaustiveness-check'],
                     ['unit.spec.ts', 'sourdaw-craft/no-fixed-test-sleep'],
+                    ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
                     ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
                     ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
                     ['unit.spec.ts', 'vitest/no-conditional-expect'],

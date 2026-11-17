@@ -110,10 +110,13 @@ function jumpStaysInside(node, statement) {
     return false;
 }
 
-function finalizerCanReplaceCompletion(context, finalizer) {
+function finalizerCanReplaceCompletion(context, finalizer, replacesThrow) {
     return hasSameFunctionNode(context, finalizer, (node) => {
-        if (node.type === 'ReturnStatement' || node.type === 'ThrowStatement') {
+        if (node.type === 'ReturnStatement') {
             return true;
+        }
+        if (node.type === 'ThrowStatement') {
+            return replacesThrow(node);
         }
         return (
             (node.type === 'BreakStatement' || node.type === 'ContinueStatement') && !jumpStaysInside(node, finalizer)
@@ -121,16 +124,20 @@ function finalizerCanReplaceCompletion(context, finalizer) {
     });
 }
 
-function completionReachesCaller(context, statement) {
+function completionReachesCaller(
+    context,
+    statement,
+    { handlerIntercepts = () => statement.type === 'ThrowStatement', replacesThrow = () => true } = {}
+) {
     const owner = enclosingFunction(statement);
     let child = statement;
     for (let parent = child.parent; parent && parent !== owner; parent = parent.parent) {
         if (parent.type === 'TryStatement') {
-            if (statement.type === 'ThrowStatement' && parent.block === child && parent.handler) {
+            if (parent.block === child && parent.handler && handlerIntercepts(parent.handler)) {
                 return false;
             }
             const finalizer = parent.finalizer;
-            if (finalizer && finalizer !== child && finalizerCanReplaceCompletion(context, finalizer)) {
+            if (finalizer && finalizer !== child && finalizerCanReplaceCompletion(context, finalizer, replacesThrow)) {
                 return false;
             }
         }
@@ -731,22 +738,34 @@ function observationExpression(context, assertion) {
     return current;
 }
 
-function consumesBinding(context, expression, declaration) {
+function bindingConsumption(context, expression, declaration) {
     const value = withoutErasedWrappers(expression);
     if (value?.type === 'AwaitExpression') {
-        return consumesBinding(context, value.argument, declaration);
+        const consumption = bindingConsumption(context, value.argument, declaration);
+        return consumption?.type === 'Identifier' ? value : consumption;
     }
     if (value?.type === 'ChainExpression') {
-        return consumesBinding(context, value.expression, declaration);
+        return bindingConsumption(context, value.expression, declaration);
     }
     if (isIdentifier(value, declaration.id.name)) {
-        return definitions(context, value)[0]?.node === declaration;
+        return definitions(context, value)[0]?.node === declaration ? value : undefined;
     }
     const array = promiseArrayArguments(context, value, 'all');
     if (array) {
-        return array.elements.some((element) => consumesBinding(context, element, declaration));
+        let read;
+        for (const element of array.elements) {
+            const consumption = bindingConsumption(context, element, declaration);
+            if (consumption?.type === 'AwaitExpression') {
+                return consumption;
+            }
+            read ??= consumption;
+        }
+        return read;
     }
-    return safePromiseContinuation(context, value) && consumesBinding(context, value.callee.object, declaration);
+    if (safePromiseContinuation(context, value)) {
+        return bindingConsumption(context, value.callee.object, declaration);
+    }
+    return undefined;
 }
 
 function hasSameFunctionNode(context, node, predicate) {
@@ -765,10 +784,33 @@ function hasSameFunctionNode(context, node, predicate) {
     });
 }
 
-function maySkipObservation(context, node) {
-    return hasSameFunctionNode(context, node, (current) =>
-        ['ReturnStatement', 'BreakStatement', 'ContinueStatement'].includes(current.type)
+function catchEndsByThrowing(handler) {
+    const statements = handler.body.body;
+    return (
+        statements.at(-1)?.type === 'ThrowStatement' &&
+        statements.slice(0, -1).every(({ type }) => type === 'ExpressionStatement' || type === 'VariableDeclaration')
     );
+}
+
+function assertionCompletionReachesCaller(context, statement) {
+    const catchesFailure = statement.type === 'AwaitExpression' || statement.type === 'ThrowStatement';
+    return completionReachesCaller(context, statement, {
+        handlerIntercepts: (handler) => catchesFailure && !catchEndsByThrowing(handler),
+        replacesThrow: (throwStatement) => !assertionCompletionReachesCaller(context, throwStatement),
+    });
+}
+
+function maySkipObservation(context, node, declaration) {
+    return hasSameFunctionNode(context, node, (current) => {
+        if (['ReturnStatement', 'BreakStatement', 'ContinueStatement'].includes(current.type)) {
+            return true;
+        }
+        return (
+            current.type === 'AwaitExpression' &&
+            bindingConsumption(context, current, declaration) !== undefined &&
+            !assertionCompletionReachesCaller(context, current)
+        );
+    });
 }
 
 function capturedAssertionObserved(context, assertion) {
@@ -784,14 +826,24 @@ function capturedAssertionObserved(context, assertion) {
     for (const following of siblings.slice(siblings.indexOf(statement) + 1)) {
         if (following.type === 'ExpressionStatement') {
             const expression = withoutErasedWrappers(following.expression);
-            if (expression?.type === 'AwaitExpression' && consumesBinding(context, expression.argument, declaration)) {
-                return true;
+            if (expression?.type === 'AwaitExpression') {
+                const consumption = bindingConsumption(context, expression, declaration);
+                if (consumption) {
+                    return assertionCompletionReachesCaller(context, consumption);
+                }
             }
         }
         if (following.type === 'ReturnStatement') {
-            return consumesBinding(context, following.argument, declaration);
+            const consumption = bindingConsumption(context, following.argument, declaration);
+            return (
+                consumption !== undefined &&
+                assertionCompletionReachesCaller(
+                    context,
+                    consumption.type === 'AwaitExpression' ? consumption : following
+                )
+            );
         }
-        if (maySkipObservation(context, following)) {
+        if (maySkipObservation(context, following, declaration)) {
             return false;
         }
     }
@@ -801,9 +853,10 @@ function capturedAssertionObserved(context, assertion) {
 function assertionObserved(context, expression) {
     const assertion = observationExpression(context, expression);
     const parent = assertion.parent;
+    if ((parent?.type === 'AwaitExpression' || parent?.type === 'ReturnStatement') && parent.argument === assertion) {
+        return assertionCompletionReachesCaller(context, parent);
+    }
     return (
-        (parent?.type === 'AwaitExpression' && parent.argument === assertion) ||
-        (parent?.type === 'ReturnStatement' && parent.argument === assertion) ||
         (parent?.type === 'ArrowFunctionExpression' && parent.body === assertion) ||
         capturedAssertionObserved(context, assertion)
     );

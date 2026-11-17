@@ -469,8 +469,55 @@ runCraftRule('no-invalid-vitest-expect', {
         "import { expect } from 'vitest'; async function test() { const checked = (expect(execution).rejects.toThrow() satisfies Promise<unknown>); await vi.advanceTimersByTimeAsync(10); return await (checked as Promise<unknown>); }",
         "import { expect } from 'vitest'; async function test() { await ((expect(execution).resolves.toBe(1) satisfies Promise<unknown>).then(done) as Promise<unknown>).finally(cleanup); }",
         "import { expect } from 'vitest'; async function test() { await (Promise.all([(expect(execution).resolves.toBe(1) as Promise<unknown>)] satisfies Promise<unknown>[]) satisfies Promise<unknown[]>); }",
+        "import { expect, it } from 'vitest'; it('rethrows a failed assertion', async () => { try { await expect(Promise.resolve(1)).resolves.toBe(2); } catch (error) { console.error(error); throw error; } });",
+        "import { expect } from 'vitest'; async function test() { try { return expect(execution).resolves.toBe(1); } catch (error) { console.error(error); } }",
+        "import { expect } from 'vitest'; async function test() { try { const checked = expect(execution).rejects.toThrow(); await advance(); return (checked satisfies Promise<unknown>); } catch (error) { console.error(error); } }",
+        "import { expect } from 'vitest'; async function test() { try { const checked = expect(execution).rejects.toThrow() as Promise<unknown>; await vi.advanceTimersByTimeAsync(10); await (checked satisfies Promise<unknown>); } finally { cleanup(); } }",
+        "import { expect } from 'vitest'; async function test() { try { await (Promise.all([expect(execution).resolves.toBe(1)]) satisfies Promise<unknown[]>); } finally { cleanup(); } }",
+        "import { expect } from 'vitest'; async function test() { try { await expect(execution).resolves.toBe(1); } finally { throw new Error('cleanup failure'); } }",
+        "import { expect } from 'vitest'; async function test() { try { setup(); } catch (error) { await expect(execution).resolves.toBe(1); } }",
     ],
     invalid: [
+        {
+            code: "import { expect, it } from 'vitest'; it('swallows a failed assertion', async () => { try { await expect(Promise.resolve(1)).resolves.toBe(2); } catch (error) { console.error(error); } });",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { return await (expect(execution).resolves.toBe(1) satisfies Promise<unknown>); } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { await Promise.all([expect(execution).resolves.toBe(1)]); } finally { return; } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; function test() { try { return Promise.all([expect(execution).resolves.toBe(1)]); } finally { cleanup(); return; } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { try { return expect(execution).resolves.toBe(1); } finally { throw new Error('cleanup failure'); } } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { const checked = expect(execution).rejects.toThrow() as Promise<unknown>; await advance(); await (checked satisfies Promise<unknown>); } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { const checked = expect(execution).rejects.toThrow(); await advance(); return Promise.all([await checked]); } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function earliestFailure() { try { const checked = expect(execution).rejects.toThrow(); await checked; return checked; } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function earliestFailure() { try { const checked = expect(execution).rejects.toThrow(); if (ready) { await checked; } return checked; } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
+        {
+            code: "import { expect } from 'vitest'; async function test() { try { try { await expect(execution).resolves.toBe(1); } catch (error) { throw error; } } catch (error) { console.error(error); } }",
+            errors: [{ message: /rejection reaches the test/ }],
+        },
         { code: "import { expect } from 'vitest'; expect().toBe(1);", errors: [{ message: /needs a subject/ }] },
         {
             code: "import { expect } from 'vitest'; function test() { return Promise.allSettled([expect(execution).rejects.toThrow()]); }",
