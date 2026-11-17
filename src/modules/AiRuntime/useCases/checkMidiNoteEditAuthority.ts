@@ -18,11 +18,12 @@ function readPermittedClipTarget(authority: CreativeRequestAuthority, clipId: st
         target.objectIds[0] !== clipId ||
         !target.parentTrackId ||
         !['explicit-reference', 'contextual-selection'].includes(target.provenance) ||
-        authority.prohibitions.some((prohibition) =>
-            prohibition.kind === 'exclude-dimension'
-                ? prohibition.dimension === 'midi-content'
-                : prohibition.objectId === clipId || prohibition.objectId === target.parentTrackId
-        )
+        authority.prohibitions.some((prohibition) => {
+            if (prohibition.kind === 'exclude-dimension') {
+                return prohibition.dimension === 'midi-content';
+            }
+            return prohibition.objectId === clipId || prohibition.objectId === target.parentTrackId;
+        })
     ) {
         return null;
     }

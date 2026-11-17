@@ -41,8 +41,8 @@ import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
-import { isMidiNoteEditProposal } from '../transformers/isMidiNoteEditProposal';
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
+import { isMidiNoteEditProposal } from '../transformers/isMidiNoteEditProposal';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
 type Extract2<ActionUnion, TypeString> = ActionUnion extends { type: TypeString } ? ActionUnion : never;

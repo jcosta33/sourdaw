@@ -55,7 +55,10 @@ function getDeletedObjectCount(command: VersionedCommandEnvelope): number {
     if (effect.deletedObjects !== undefined) {
         return effect.deletedObjects(command.arguments);
     }
-    return typeof effect.delete === 'function' ? effect.delete(command.arguments) : effect.delete ? 1 : 0;
+    if (typeof effect.delete === 'function') {
+        return effect.delete(command.arguments);
+    }
+    return effect.delete ? 1 : 0;
 }
 
 function requiresGrant(grant: true | CommandBatchCountReader | undefined, command: VersionedCommandEnvelope): boolean {

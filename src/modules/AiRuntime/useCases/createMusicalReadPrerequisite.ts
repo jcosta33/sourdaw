@@ -104,9 +104,10 @@ export function createMusicalReadPrerequisite(
     let found = new Set<string>();
     return {
         completed() {
-            return index === windows.length && musicalContentBindingIsCurrent(binding)
-                ? structuredClone(captured)
-                : undefined;
+            if (index === windows.length && musicalContentBindingIsCurrent(binding)) {
+                return structuredClone(captured);
+            }
+            return undefined;
         },
         hint() {
             const window = windows[index];

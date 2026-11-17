@@ -29,6 +29,7 @@ import {
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
 } from '../../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
+import { containsMidiNoteEditCall } from '../../transformers/containsMidiNoteEditCall';
 import {
     bridgeLlmToolCalls,
     type LlmActionBridgeResult,
@@ -43,7 +44,6 @@ import {
 } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
-import { containsMidiNoteEditCall } from '../../transformers/containsMidiNoteEditCall';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';

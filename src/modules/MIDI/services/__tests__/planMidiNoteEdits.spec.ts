@@ -62,7 +62,9 @@ function scope() {
 
 function freezeInput<Value>(value: Value): Value {
     if (typeof value === 'object' && value !== null) {
-        for (const child of Object.values(value)) freezeInput(child);
+        for (const child of Object.values(value)) {
+            freezeInput(child);
+        }
         Object.freeze(value);
     }
     return value;
@@ -91,7 +93,9 @@ describe('planMidiNoteEdits', () => {
         });
 
         expect(result.status).toBe('planned');
-        if (result.status !== 'planned') throw new Error('Expected the admitted note edits');
+        if (result.status !== 'planned') {
+            throw new Error('Expected the admitted note edits');
+        }
         const edited = {
             ...before[1],
             pitch: 63,
@@ -137,7 +141,9 @@ describe('planMidiNoteEdits', () => {
                 { type: 'patch', noteId: 'phrase', before: first, after: second },
             ],
         });
-        if (result.status !== 'planned') throw new Error('Expected the ordered patches');
+        if (result.status !== 'planned') {
+            throw new Error('Expected the ordered patches');
+        }
         expect(result.notes[1]).toEqual(second);
         expect(result.notes[1]?.expression).toEqual(before.expression);
     });
@@ -146,7 +152,9 @@ describe('planMidiNoteEdits', () => {
         const original = sourceNotes()[1]!;
         const result = plan([{ type: 'patch', noteId: 'phrase', patch: { startBeat: 2, duration: 4 } }]);
 
-        if (result.status !== 'planned') throw new Error('Expected an admitted timing edit');
+        if (result.status !== 'planned') {
+            throw new Error('Expected an admitted timing edit');
+        }
         expect(result.notes[1]).toEqual({ ...original, startBeat: 2, duration: 4 });
     });
 
@@ -347,8 +355,8 @@ describe('planMidiNoteEdits', () => {
 
     it('rejects sparse operations and enforces the exact operation cap', () => {
         const operation: MidiNoteEditOperation = { type: 'patch', noteId: 'phrase', patch: { velocity: 97 } };
-        const sparse = [operation];
-        delete sparse[0];
+        const sparse: MidiNoteEditOperation[] = [];
+        sparse.length = 1;
         expect(plan(sparse)).toEqual({ status: 'rejected', reason: 'invalid-operations', operationIndex: 0 });
         expect(plan(Array.from({ length: 128 }, () => operation)).status).toBe('planned');
         expect(plan(Array.from({ length: 129 }, () => operation))).toEqual({
@@ -374,9 +382,13 @@ describe('planMidiNoteEdits', () => {
             scope: scope(),
             operations: [{ type: 'patch', noteId: 'phrase', patch: { pitch: 63 } }],
         });
-        if (result.status !== 'planned') throw new Error('Expected a planned patch');
+        if (result.status !== 'planned') {
+            throw new Error('Expected a planned patch');
+        }
         const point = result.notes[1]?.expression?.pressure?.[0];
-        if (!point) throw new Error('Expected retained expression');
+        if (!point) {
+            throw new Error('Expected retained expression');
+        }
         point.value = 1;
         expect(notes).toEqual(before);
         expect(result.changes[0]?.after?.expression?.pressure?.[0]?.value).toBe(40);

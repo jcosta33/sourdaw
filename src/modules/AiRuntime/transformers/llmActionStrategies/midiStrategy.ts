@@ -2,8 +2,8 @@ import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#
 
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
-import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { isMidiNoteEditProposal } from '../isMidiNoteEditProposal';
+import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 import { type ClipContentWindowInput, validateNotesWithinClipWindow } from '../validateNotesWithinClipWindow';
 

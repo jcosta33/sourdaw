@@ -26,20 +26,20 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';
-import { clearUndoHistory } from '../clearUndoHistory';
+import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { captureCommandTargetFingerprints } from '../captureCommandTargetFingerprints';
+import { clearUndoHistory } from '../clearUndoHistory';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
-import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
-import { resetCommandBatchIdempotency } from '../resetCommandBatchIdempotency';
+import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { redo } from '../redo';
+import { resetCommandBatchIdempotency } from '../resetCommandBatchIdempotency';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
-import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { undo } from '../undo';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
@@ -290,7 +290,9 @@ describe('selective MIDI command on Automerge project truth', () => {
         expect(undoStore.value?.past).toHaveLength(1);
         const history = undoStore.value?.past[0];
         expect(history?.kind).toBe('action');
-        if (history?.kind !== 'action') throw new Error('Expected an action history entry');
+        if (history?.kind !== 'action') {
+            throw new Error('Expected an action history entry');
+        }
         expect(getExecutableCommandRegistration('editMidiNotes').sessionEntryValidator?.(history)).toBe(true);
         expect(
             getExecutableCommandRegistration('editMidiNotes').sessionEntryValidator?.({

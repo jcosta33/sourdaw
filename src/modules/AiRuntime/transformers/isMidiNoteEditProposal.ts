@@ -71,13 +71,18 @@ function isOperation(value: unknown): boolean {
 export function isMidiNoteEditProposal(
     value: unknown
 ): value is Extract<RuntimeAction, { type: 'editMidiNotes' }>['payload'] {
+    if (
+        !isRecord(value) ||
+        !hasKeys(value, ['clipId', 'operations']) ||
+        !isId(value.clipId) ||
+        !Array.isArray(value.operations)
+    ) {
+        return false;
+    }
+    const operations: readonly unknown[] = value.operations;
     return (
-        isRecord(value) &&
-        hasKeys(value, ['clipId', 'operations']) &&
-        isId(value.clipId) &&
-        Array.isArray(value.operations) &&
-        value.operations.length > 0 &&
-        value.operations.length <= MIDI_NOTE_EDIT_MAX_OPERATIONS &&
-        [...value.operations].every(isOperation)
+        operations.length > 0 &&
+        operations.length <= MIDI_NOTE_EDIT_MAX_OPERATIONS &&
+        [...operations].every(isOperation)
     );
 }

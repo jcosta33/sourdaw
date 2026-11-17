@@ -36,9 +36,10 @@ export function countMidiNoteOperations(
     type: 'insert' | 'delete' | 'patch'
 ): number {
     const operations = commandArguments.operations;
-    return Array.isArray(operations)
-        ? operations.filter((operation) => isRecord(operation) && operation.type === type).length
-        : 0;
+    if (!Array.isArray(operations)) {
+        return 0;
+    }
+    return operations.filter((operation: unknown) => isRecord(operation) && operation.type === type).length;
 }
 
 /** The grants and counts one action type puts on a versioned command batch. */

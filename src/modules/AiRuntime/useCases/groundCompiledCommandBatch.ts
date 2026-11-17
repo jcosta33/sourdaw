@@ -20,6 +20,8 @@ import { containsMidiNoteEditCall } from '../transformers/containsMidiNoteEditCa
 import { type ToolCallResult } from '../transformers/toolCallParser';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
+import { captureMidiNoteEditGuard } from './actionStateGuards/captureMidiNoteEditGuard';
+import { type MaterializeActionStateGuardsOptions } from './actionStateGuards/MaterializationState';
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
@@ -27,8 +29,6 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalGroundingBasis, unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
-import { captureMidiNoteEditGuard } from './actionStateGuards/captureMidiNoteEditGuard';
-import { type MaterializeActionStateGuardsOptions } from './actionStateGuards/MaterializationState';
 import { checkMidiNoteEditAuthority } from './checkMidiNoteEditAuthority';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
@@ -463,6 +463,28 @@ function getProviderKnownTargetIds(input: GroundCompiledCommandBatchInput): stri
     return [...new Set([...compiledTargetIds, ...input.transformTargetIds])];
 }
 
+function readCompiledMidiEditAuthority(input: GroundCompiledCommandBatchInput) {
+    const compiled = input.compilerEvidence?.commands;
+    const command = compiled?.[0];
+    if (
+        compiled?.length !== 1 ||
+        command?.name !== 'editMidiNotes' ||
+        input.workflowCapabilityId !== undefined ||
+        input.selectedCompilations.length > 0 ||
+        input.transformCommands.length > 0 ||
+        input.refinementBasis !== undefined ||
+        input.refinementProtections !== undefined
+    ) {
+        return null;
+    }
+    return checkMidiNoteEditAuthority({
+        call: command,
+        proof: input.musicalReadProof,
+        authority: input.creativeAuthority,
+        revision: input.projectRevision,
+    });
+}
+
 /**
  * Grounds one compiled command batch against a project snapshot: the bridge, runtime validation,
  * batch-local identities, state guards, the production brief, and the application-verified scope.
@@ -473,23 +495,7 @@ function getProviderKnownTargetIds(input: GroundCompiledCommandBatchInput): stri
 export function groundCompiledCommandBatch(input: GroundCompiledCommandBatchInput): GroundCompiledCommandBatchResult {
     let midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit'];
     if (containsMidiNoteEditCall(input.toolCalls)) {
-        const compiled = input.compilerEvidence?.commands;
-        const command = compiled?.[0];
-        const authority =
-            compiled?.length === 1 &&
-            command?.name === 'editMidiNotes' &&
-            input.workflowCapabilityId === undefined &&
-            input.selectedCompilations.length === 0 &&
-            input.transformCommands.length === 0 &&
-            input.refinementBasis === undefined &&
-            input.refinementProtections === undefined
-                ? checkMidiNoteEditAuthority({
-                      call: command,
-                      proof: input.musicalReadProof,
-                      authority: input.creativeAuthority,
-                      revision: input.projectRevision,
-                  })
-                : null;
+        const authority = readCompiledMidiEditAuthority(input);
         const guard = authority && captureMidiNoteEditGuard(authority);
         if (!authority || !guard) {
             return {

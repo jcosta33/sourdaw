@@ -30,6 +30,25 @@ function isId(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
+function hasGuardKeys(guard: Record<string, unknown>): boolean {
+    const hasSelectionToken = Object.hasOwn(guard, 'selectionToken');
+    return (
+        Reflect.ownKeys(guard).length === (hasSelectionToken ? 6 : 5) &&
+        (!hasSelectionToken || isId(guard.selectionToken)) &&
+        ['trackId', 'expectedNotes', 'expectedNotesBucketPresent', 'editWindow', 'scope'].every((key) =>
+            Object.hasOwn(guard, key)
+        )
+    );
+}
+
+function matchesNoteBucket(actual: NoteBucket, expectedNotes: readonly MidiNote[], expectedPresent: boolean): boolean {
+    return (
+        actual.present === expectedPresent &&
+        isMidiNoteSnapshot(actual.value) &&
+        valuesEqual(actual.value, expectedNotes)
+    );
+}
+
 /** Verify the captured source and plan the same exact delta for preview, execution and replay. */
 export function planGuardedMidiNoteEdits(value: unknown, actual?: NoteBucket) {
     if (
@@ -45,20 +64,13 @@ export function planGuardedMidiNoteEdits(value: unknown, actual?: NoteBucket) {
     }
     const { guard, operations } = value;
     if (
-        Reflect.ownKeys(guard).length !== (Object.hasOwn(guard, 'selectionToken') ? 6 : 5) ||
-        (Object.hasOwn(guard, 'selectionToken') && !isId(guard.selectionToken)) ||
-        !['trackId', 'expectedNotes', 'expectedNotesBucketPresent', 'editWindow', 'scope'].every((key) =>
-            Object.hasOwn(guard, key)
-        ) ||
+        !hasGuardKeys(guard) ||
         !isId(guard.trackId) ||
         !isBeatWindow(guard.editWindow) ||
         !isMidiNoteSnapshot(guard.expectedNotes) ||
         typeof guard.expectedNotesBucketPresent !== 'boolean' ||
         (!guard.expectedNotesBucketPresent && guard.expectedNotes.length > 0) ||
-        (actual &&
-            (actual.present !== guard.expectedNotesBucketPresent ||
-                !isMidiNoteSnapshot(actual.value) ||
-                !valuesEqual(actual.value, guard.expectedNotes)))
+        (actual && !matchesNoteBucket(actual, guard.expectedNotes, guard.expectedNotesBucketPresent))
     ) {
         return null;
     }

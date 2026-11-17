@@ -48,7 +48,7 @@ function readSelectedBaseMidiNotes({ clipId, proof }: Authority) {
     const notes = midi?.notesByClipId[clipId];
     if (
         !notes ||
-        !Object.hasOwn(midi?.notesByClipId ?? {}, clipId) ||
+        !Object.hasOwn(midi.notesByClipId, clipId) ||
         selection.token !== proof.binding.selectionToken ||
         selection.status !== 'resolved' ||
         selection.clipId !== clipId ||
@@ -62,15 +62,18 @@ function readSelectedBaseMidiNotes({ clipId, proof }: Authority) {
     const coveredViews = new Set(proof.windows.flatMap((window) => window.owners.map((owner) => owner.viewId)));
     const selected = selection.owners.flatMap((owner) => {
         const note = notesById.get(owner.storedNoteId);
-        return owner.clipId === clipId &&
-            owner.ownerClipId === clipId &&
-            owner.takeId === undefined &&
-            owner.occurrenceIndex === undefined &&
-            coveredViews.has(owner.viewId) &&
-            note &&
-            note.recordingPassIndex === undefined
-            ? [note]
-            : [];
+        if (
+            owner.clipId !== clipId ||
+            owner.ownerClipId !== clipId ||
+            owner.takeId !== undefined ||
+            owner.occurrenceIndex !== undefined ||
+            !coveredViews.has(owner.viewId) ||
+            !note ||
+            note.recordingPassIndex !== undefined
+        ) {
+            return [];
+        }
+        return [note];
     });
     const allowedNoteIds = new Set(selected.map(({ id }) => id));
     if (notesById.size !== notes.length || allowedNoteIds.size !== selection.owners.length) {

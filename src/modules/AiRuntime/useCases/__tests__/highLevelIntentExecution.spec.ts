@@ -83,6 +83,7 @@ import {
     GENERATED_TRACK_ID,
     proposeDiscoveredCalls,
     scriptProviderTurns,
+    type ScriptedTurn,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
 import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
@@ -230,7 +231,7 @@ const PHRASE_OPERATIONS = [
 ];
 
 function durablePhraseNotes() {
-    return getCrdtDoc<{ midi: NonNullable<typeof midiStore.value> }>('root')?.midi?.notesByClipId[PHRASE_CLIP_ID];
+    return getCrdtDoc<{ midi?: NonNullable<typeof midiStore.value> }>('root')?.midi?.notesByClipId[PHRASE_CLIP_ID];
 }
 
 function seedMidiPhrase() {
@@ -254,7 +255,9 @@ function seedMidiPhrase() {
         });
     const clip = add(PHRASE_CLIP_ID, 16, 'Lead Motif');
     expect(add(PHRASE_SIBLING_ID, 26, 'Sibling Motif')).not.toBeNull();
-    if (!clip) throw new Error('Expected the existing motif clip');
+    if (!clip) {
+        throw new Error('Expected the existing motif clip');
+    }
     midiStore.set({
         ...emptyMidiState(),
         notesByClipId: {
@@ -311,14 +314,18 @@ function scriptMidiPhraseEdit(
                       stoppingConditions: ['Stop if the selected notes changed.'],
                   }),
               ];
-    return scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+    const turns: ScriptedTurn[] = [
         nonAcousticMetricIntakeTurn({
             modeId: 'edit',
             targetObjectIds: [PHRASE_CLIP_ID],
             dimensions: ['midi-content'],
             creationSlotObjectTypes: ['notes'],
         }),
-        ...(options.read === false ? [] : [read]),
+    ];
+    if (options.read !== false) {
+        turns.push(read);
+    }
+    turns.push(
         (message) => {
             if (options.read !== false) {
                 const receipt = getApplicationToolReceipts(message).find(
@@ -348,12 +355,17 @@ function scriptMidiPhraseEdit(
             return [catalogDiscoveryCall(['editMidiNotes'])];
         },
         (message) => {
-            if (options.read !== false) assertDiscoveredCommandSchemas(message, ['editMidiNotes']);
+            if (options.read !== false) {
+                assertDiscoveredCommandSchemas(message, ['editMidiNotes']);
+            }
             return proposal();
-        },
-        ...(options.read === false || options.read === 'partial' ? [proposal, proposal] : []),
-        () => [],
-    ]);
+        }
+    );
+    if (options.read === false || options.read === 'partial') {
+        turns.push(proposal, proposal);
+    }
+    turns.push(() => []);
+    return scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, turns);
 }
 
 describe('high-level intent execution', () => {

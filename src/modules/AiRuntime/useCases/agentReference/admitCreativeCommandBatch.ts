@@ -1,9 +1,8 @@
-import { isMidiNoteEditProposal } from '../../transformers/isMidiNoteEditProposal';
-
 import { getExecutableAppActionEffect, getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 
 import { type CreativeEditDimension, type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { isMidiNoteEditProposal } from '../../transformers/isMidiNoteEditProposal';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
@@ -423,6 +422,13 @@ function admitCreations(input: {
     return { status: 'admitted', usedSlotIndexes };
 }
 
+function requestedCreations(call: ToolCallResult, effect: ExecutableAppActionEffect): readonly EffectCreatedObject[] {
+    if (call.name === 'editMidiNotes' && isMidiNoteEditProposal(call.arguments)) {
+        return call.arguments.operations.flatMap((operation) => (operation.type === 'insert' ? ['notes'] : []));
+    }
+    return effect.creates ?? [];
+}
+
 function admitCall(input: {
     authority: CreativeRequestAuthority;
     call: ToolCallResult;
@@ -481,12 +487,7 @@ function admitCall(input: {
     const creationAdmission = admitCreations({
         authority: input.authority,
         context: input.context,
-        creates:
-            input.call.name === 'editMidiNotes' && isMidiNoteEditProposal(input.call.arguments)
-                ? input.call.arguments.operations.flatMap((operation) =>
-                      operation.type === 'insert' ? ['notes' as const] : []
-                  )
-                : (effect.creates ?? []),
+        creates: requestedCreations(input.call, effect),
         slotUsage: input.slotUsage,
         targets: targetAdmission.targets,
     });

@@ -1,4 +1,3 @@
-import { isMidiNoteEditProposal } from './isMidiNoteEditProposal';
 import { type AgentRunReceipt } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatMessage } from '../models/Chat';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
@@ -9,6 +8,8 @@ import {
     type ThreadContext,
     type ThreadMeasuredDelta,
 } from '../models/ThreadContext';
+
+import { isMidiNoteEditProposal } from './isMidiNoteEditProposal';
 
 type ThreadConfirmation = {
     id: string;

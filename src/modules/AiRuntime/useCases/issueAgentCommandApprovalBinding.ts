@@ -12,20 +12,21 @@ type ApprovalBindingRejection = {
     stale: boolean;
 };
 
+function readApprovedBatchActions(batch: Pick<CommandApprovalInput, 'authority' | 'serialized'>) {
+    const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+    if (parsed.status !== 'valid') {
+        return [];
+    }
+    return parsed.envelope.commands.map((command) => ({ type: command.operation, payload: command.arguments }));
+}
+
 export function issueAgentCommandApprovalBinding(input: {
     approval: ReturnType<typeof compileAgentRiskApproval>;
     commandBatch: Pick<CommandApprovalInput, 'authority' | 'serialized'>;
     confirmationId?: string;
     onRejection?: (rejection: ApprovalBindingRejection) => void;
 }) {
-    const parsed = parseVersionedCommandBatchEnvelope(input.commandBatch.serialized, input.commandBatch.authority);
-    const actions =
-        parsed.status === 'valid'
-            ? parsed.envelope.commands.map((command) => ({
-                  type: command.operation,
-                  payload: command.arguments,
-              }))
-            : [];
+    const actions = readApprovedBatchActions(input.commandBatch);
     return issueCommandApprovalBinding({
         authority: input.commandBatch.authority,
         serialized: input.commandBatch.serialized,

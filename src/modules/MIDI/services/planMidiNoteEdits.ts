@@ -3,7 +3,6 @@ import { MIDI_NOTE_EDIT_MAX_OPERATIONS, MIDI_NOTE_MIN_DURATION_BEATS } from '#/u
 
 import { type MidiNoteEditScope } from '../events/midiAppActions';
 import { type MidiNote } from '../models/MidiNote';
-import { cloneMidiNoteForAdmission } from '../transformers/cloneMidiNoteForAdmission';
 import { isMidiNoteSnapshot } from '../transformers/isMidiNoteSnapshot';
 import { normalizeMidiNoteInput } from '../transformers/normalizeMidiNoteInput';
 
@@ -122,20 +121,25 @@ function isOperation(value: unknown): value is MidiNoteEditOperation {
 }
 
 function isIdList(value: unknown): value is readonly string[] {
-    return Array.isArray(value) && [...value].every(isId) && new Set(value).size === value.length;
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    const items: readonly unknown[] = value;
+    return [...items].every(isId) && new Set(items).size === items.length;
 }
 
 function isWindowList(value: unknown): value is readonly BeatWindow[] {
-    return (
-        Array.isArray(value) &&
-        [...value].every(
-            (window) =>
-                isRecord(window) &&
-                hasKeys(window, ['startBeat', 'endBeat']) &&
-                isFiniteBeat(window.startBeat) &&
-                isFiniteBeat(window.endBeat) &&
-                window.endBeat > window.startBeat
-        )
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    const items: readonly unknown[] = value;
+    return [...items].every(
+        (window) =>
+            isRecord(window) &&
+            hasKeys(window, ['startBeat', 'endBeat']) &&
+            isFiniteBeat(window.startBeat) &&
+            isFiniteBeat(window.endBeat) &&
+            window.endBeat > window.startBeat
     );
 }
 
@@ -176,15 +180,45 @@ function overlapsWindow(note: MidiNote, window: BeatWindow): boolean {
 }
 
 function copyNote(note: MidiNote): MidiNote {
-    return cloneMidiNoteForAdmission({ ...note });
+    return structuredClone(note);
 }
 
 function patchNote(note: MidiNote, patch: NotePatch): MidiNote {
-    const base =
-        patch.duration !== undefined && patch.duration < note.duration
-            ? sliceMidiNoteExtent(note, { fromOffset: 0, duration: patch.duration })
-            : note;
+    let base = note;
+    if (patch.duration !== undefined && patch.duration < note.duration) {
+        base = sliceMidiNoteExtent(note, { fromOffset: 0, duration: patch.duration });
+    }
     return copyNote({ ...base, ...patch });
+}
+
+function planInsertion(
+    scope: MidiNoteEditScope,
+    note: InsertNote,
+    usedIds: ReadonlySet<string>,
+    protectedIds: ReadonlySet<string>,
+    insertedCount: number
+): MidiNote | RefusalReason {
+    if (usedIds.has(note.id)) {
+        return 'insert-id-collision';
+    }
+    if (protectedIds.has(note.id)) {
+        return 'protected-note';
+    }
+    if (insertedCount >= scope.insertionBudget) {
+        return 'insertion-budget-exceeded';
+    }
+    const after = normalizeMidiNoteInput(note);
+    if (scope.protectedWindows.some((window) => overlapsWindow(after, window))) {
+        return 'protected-window';
+    }
+    if (
+        !scope.insertionWindows.some(
+            (window) => after.startBeat >= window.startBeat && after.startBeat + after.duration <= window.endBeat
+        )
+    ) {
+        return 'outside-insertion-window';
+    }
+    return after;
 }
 
 /** Plan one clip's ordered edits without writing project state or assigning new identities. */
@@ -217,33 +251,18 @@ export function planMidiNoteEdits(input: { notes: unknown; operations: unknown; 
     const protectedIds = new Set(input.scope.protectedNoteIds);
     let insertedCount = 0;
     for (const [operationIndex, operation] of input.operations.entries()) {
-        const refuse = (reason: RefusalReason): PlanResult => ({ status: 'rejected', reason, operationIndex });
+        function refuse(reason: RefusalReason): PlanResult {
+            return { status: 'rejected', reason, operationIndex };
+        }
         if (!isOperation(operation)) {
             return refuse('invalid-operations');
         }
         if (operation.type === 'insert') {
-            if (usedIds.has(operation.note.id)) {
-                return refuse('insert-id-collision');
-            }
-            if (protectedIds.has(operation.note.id)) {
-                return refuse('protected-note');
+            const after = planInsertion(input.scope, operation.note, usedIds, protectedIds, insertedCount);
+            if (typeof after === 'string') {
+                return refuse(after);
             }
             insertedCount += 1;
-            if (insertedCount > input.scope.insertionBudget) {
-                return refuse('insertion-budget-exceeded');
-            }
-            const after = normalizeMidiNoteInput(operation.note);
-            if (input.scope.protectedWindows.some((window) => overlapsWindow(after, window))) {
-                return refuse('protected-window');
-            }
-            if (
-                !input.scope.insertionWindows.some(
-                    (window) =>
-                        after.startBeat >= window.startBeat && after.startBeat + after.duration <= window.endBeat
-                )
-            ) {
-                return refuse('outside-insertion-window');
-            }
             usedIds.add(after.id);
             notes.push(after);
             changes.push({ type: 'insert', noteId: after.id, before: null, after: copyNote(after) });

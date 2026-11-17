@@ -96,13 +96,14 @@ export const handleEditMidiNotes = createHandler<'editMidiNotes'>({
     validationRefusalReason: () => 'The MIDI edit disagrees with its allowed clip, note snapshot or batch prefix',
     describe: (action) => {
         const plan = planGuardedMidiNoteEdits(action.payload);
-        return plan
-            ? {
-                  label: describePlan(plan),
-                  inverseAction: makeReplay(plan, 'undo'),
-                  redoAction: makeReplay(plan, 'redo'),
-              }
-            : { label: 'Edit MIDI notes' };
+        if (!plan) {
+            return { label: 'Edit MIDI notes' };
+        }
+        return {
+            label: describePlan(plan),
+            inverseAction: makeReplay(plan, 'undo'),
+            redoAction: makeReplay(plan, 'redo'),
+        };
     },
     execute: (action) => {
         const plan = planAgainstProject(action);
