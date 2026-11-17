@@ -11,6 +11,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     removeCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
@@ -24,6 +25,7 @@ import { arrangementStore } from '../../stores/arrangementStore';
 import { defaultMissingMediaStoreState, missingMediaStore } from '../../stores/missingMediaStore';
 import { projectStore, defaultProjectStoreState } from '../../stores/projectStore';
 import { locateMissingMedia } from '../locateMissingMedia';
+import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
 const mocks = vi.hoisted(() => ({
     buffers: new Map<string, AudioBuffer>(),
@@ -32,6 +34,13 @@ const mocks = vi.hoisted(() => ({
     isCurrentProject: vi.fn(),
 }));
 
+vi.mock('#/modules/AudioEngine/stores', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/AudioEngine/stores')>();
+    return {
+        ...original,
+        audioBufferCache: { ...original.audioBufferCache, has: (bufferId: string) => mocks.buffers.has(bufferId) },
+    };
+});
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
@@ -139,6 +148,28 @@ function arrange(clips: Clip[]): void {
 
 function replacement(name: string): File {
     return new File([new Uint8Array(8)], name, { type: 'audio/wav' });
+}
+
+type RootTracks = { tracks: { tracks: Track[] } };
+
+function addPeerBassSource(): void {
+    mutateCrdtDoc<RootTracks>({
+        id: 'root',
+        message: 'Peer added a missing Bass.wav source',
+        changeFn: (document) => {
+            document.tracks.tracks.push(trackForClip(audioClip('clip-peer', 'track-peer', 'buf-peer', 'Bass.wav')));
+        },
+    });
+    trackStore.hydrate({ keepLocalRuntimeState: true });
+}
+
+function expectOnlyInitialRepair(unrepairedSources: readonly string[]): void {
+    const sources = ['decoded-first-replacement.wav', ...unrepairedSources];
+    expect(getCrdtDoc<RootTracks>('root')?.tracks.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual(
+        sources
+    );
+    expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual(sources);
+    expect(undoHistoryStore.value?.past).toHaveLength(1);
 }
 
 describe('locateMissingMedia', () => {
@@ -502,4 +533,129 @@ describe('locateMissingMedia', () => {
             );
         }
     );
+
+    it.each(['frozen', 'locked'] as const)(
+        'skips a same-folder name shared by an editable and a %s source',
+        async (blockedBy) => {
+            arrange([
+                audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+                audioClip('clip-editable', 'track-editable', 'buf-editable', 'Bass.wav'),
+                audioClip('clip-blocked', 'track-blocked', 'buf-blocked', 'Bass.wav'),
+            ]);
+            mutateCrdtDoc<RootTracks>({
+                id: 'root',
+                changeFn: (document) => {
+                    const owner = document.tracks.tracks[2]!;
+                    if (blockedBy === 'frozen') {
+                        owner.frozen = true;
+                        owner.freezeState = { status: 'frozen', frozenBufferId: 'rendered-bass' };
+                    } else {
+                        owner.clips[0]!.locked = true;
+                    }
+                },
+            });
+            trackStore.hydrate({ keepLocalRuntimeState: true });
+            mocks.buffers.set('rendered-bass', {} as AudioBuffer);
+            const firstFile = replacement('first-replacement.wav');
+            vi.mocked(pickFilesFromNativeDialog)
+                .mockResolvedValueOnce([firstFile])
+                .mockResolvedValueOnce([replacement('Bass.wav')]);
+            vi.mocked(confirmUser).mockResolvedValue(true);
+
+            await locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+
+            expect(pickFilesFromNativeDialog).toHaveBeenCalledTimes(2);
+            expectOnlyInitialRepair(['buf-editable', 'buf-blocked']);
+            expect(mocks.decodeAudioFile).toHaveBeenCalledExactlyOnceWith(firstFile);
+        }
+    );
+
+    it('skips a same-folder name which becomes ambiguous while the picker is open', async () => {
+        arrange([
+            audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+            audioClip('clip-bass', 'track-bass', 'buf-bass', 'Bass.wav'),
+        ]);
+        const firstFile = replacement('first-replacement.wav');
+        const opened = Promise.withResolvers<void>();
+        const selection = Promise.withResolvers<File[] | null>();
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([firstFile])
+            .mockImplementationOnce(() => {
+                opened.resolve();
+                return selection.promise;
+            });
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        const locating = locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+        await opened.promise;
+        addPeerBassSource();
+        verifyAudioBufferReferences();
+        expect(missingMediaStore.value?.items.map((item) => item.bufferId)).toEqual(['buf-bass', 'buf-peer']);
+        selection.resolve([replacement('Bass.wav')]);
+        await locating;
+
+        expectOnlyInitialRepair(['buf-bass', 'buf-peer']);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledExactlyOnceWith(firstFile);
+    });
+
+    it('discards the same-folder decode when its name becomes ambiguous during decoding', async () => {
+        arrange([
+            audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+            audioClip('clip-bass', 'track-bass', 'buf-bass', 'Bass.wav'),
+        ]);
+        const bassFile = replacement('Bass.wav');
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('first-replacement.wav')])
+            .mockResolvedValueOnce([bassFile]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        const decoding = Promise.withResolvers<File>();
+        const decoded = Promise.withResolvers<{ id: string; buffer: AudioBuffer }>();
+        mocks.decodeAudioFile
+            .mockImplementationOnce(mocks.decodeAudioFile.getMockImplementation()!)
+            .mockImplementationOnce((file: File) => {
+                decoding.resolve(file);
+                return decoded.promise;
+            });
+        mocks.discardDecodedAudioFile.mockImplementationOnce((id: string) => mocks.buffers.delete(id));
+
+        const locating = locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+        expect(await decoding.promise).toBe(bassFile);
+        addPeerBassSource();
+        const buffer = {} as AudioBuffer;
+        const id = 'decoded-Bass.wav';
+        mocks.buffers.set(id, buffer);
+        decoded.resolve({ id, buffer });
+        await locating;
+
+        expectOnlyInitialRepair(['buf-bass', 'buf-peer']);
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledExactlyOnceWith(id);
+        expect(mocks.buffers.has(id)).toBe(false);
+    });
+
+    it('refuses a same-folder relink when its name becomes ambiguous after command staging', async () => {
+        arrange([
+            audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+            audioClip('clip-bass', 'track-bass', 'buf-bass', 'Bass.wav'),
+        ]);
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('first-replacement.wav')])
+            .mockResolvedValueOnce([replacement('Bass.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        const handler = getArrangementHandlers().relinkClipAudioSources;
+        const execute = handler.execute;
+        vi.spyOn(handler, 'execute').mockImplementation(async (action, context) => {
+            const result = await execute(action, context);
+            if (action.payload.targets[0]?.before.audioBufferId === 'buf-bass') {
+                expect(trackStore.value?.tracks[1]?.clips[0]?.audioBufferId).toBe('decoded-Bass.wav');
+                addPeerBassSource();
+            }
+            return result;
+        });
+
+        await locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+
+        expect(handler.execute).toHaveBeenCalledTimes(2);
+        expectOnlyInitialRepair(['buf-bass', 'buf-peer']);
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledExactlyOnceWith('decoded-Bass.wav');
+    });
 });

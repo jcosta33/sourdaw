@@ -1,13 +1,15 @@
+import { type Track, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { readRelinkAudioSourceEligibility, relinkClipAudioSource } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { AUDIO_EXTENSION_ROSTER, AUDIO_EXTENSIONS, isAudioFile } from '#/utils/audioFileExtensions';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { missingMediaStore } from '../stores/missingMediaStore';
-
 import { captureArrangementMediaAuthority } from './captureArrangementMediaAuthority';
 import { pickFiles } from './fileDialog';
+import { collectMissingMedia } from './projectPersistence/helpers/collectMissingMedia';
 import { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
 const AUDIO_FILTER = { name: 'Audio files', extensions: [...AUDIO_EXTENSION_ROSTER] };
@@ -40,7 +42,12 @@ async function pickReplacements(multiple: boolean, isCurrent: () => boolean): Pr
     }
 }
 
-async function relinkReplacement(source: MissingSource, file: File, isCurrent: () => boolean): Promise<boolean> {
+async function relinkReplacement(
+    source: MissingSource,
+    file: File,
+    isCurrent: () => boolean,
+    selectionMatches?: (tracks: readonly Track[]) => boolean
+): Promise<boolean> {
     if (!isAudioFile(file.name)) {
         notifyUser(`"${file.name}" is not a supported audio file. The missing source was left unchanged.`, 'error');
         return false;
@@ -55,7 +62,7 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
         }
         return false;
     }
-    if (!isCurrent()) {
+    if (!isCurrent() || selectionMatches?.(trackStore.value?.tracks ?? []) === false) {
         discardDecodedAudioFile(replacementBufferId);
         return false;
     }
@@ -65,7 +72,10 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
         result = await relinkClipAudioSource({
             sourceBufferId: source.sourceBufferId,
             replacementBufferId,
-            shouldExecute: isCurrent,
+            shouldExecute: () =>
+                isCurrent() &&
+                // The optimistic projection already shows the replacement when the commit guard runs.
+                selectionMatches?.(sanitizeTrackSnapshot(getCrdtDoc(DOC_PREFIX_ROOT)?.tracks).tracks) !== false,
         });
     } catch (error) {
         discardDecodedAudioFile(replacementBufferId);
@@ -76,7 +86,7 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
     }
 
     discardDecodedAudioFile(replacementBufferId);
-    if (!isCurrent()) {
+    if (!isCurrent() || selectionMatches?.(trackStore.value?.tracks ?? []) === false) {
         return false;
     }
     notifyUser(
@@ -86,9 +96,9 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
     return false;
 }
 
-function remainingSources(excludedBufferId: string): SameFolderCandidate[] {
+function remainingSources(excludedBufferId: string, tracks: readonly Track[]): SameFolderCandidate[] {
     const sources = new Map<string, SameFolderCandidate>();
-    for (const item of missingMediaStore.value?.items ?? []) {
+    for (const item of collectMissingMedia(tracks, (bufferId) => audioBufferCache.has(bufferId))) {
         if (item.kind !== 'clip' || item.bufferId === excludedBufferId) {
             continue;
         }
@@ -96,9 +106,6 @@ function remainingSources(excludedBufferId: string): SameFolderCandidate[] {
         const source = sources.get(item.bufferId);
         if (source) {
             source.names.add(name);
-            continue;
-        }
-        if (readRelinkAudioSourceEligibility(item.bufferId) !== 'eligible') {
             continue;
         }
         sources.set(item.bufferId, { sourceBufferId: item.bufferId, label: item.label, names: new Set([name]) });
@@ -124,27 +131,16 @@ function matchSameFolderFile(
     return selectedFileCount === 1 ? source : undefined;
 }
 
-async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () => boolean): Promise<void> {
-    const candidates = remainingSources(excludedBufferId);
-    if (candidates.length === 0 || !isCurrent()) {
-        return;
-    }
-    const chooseMore = await confirmUser({
-        title: 'Resolve other missing files?',
-        message:
-            'Choose replacements from the same folder. Files are matched to unambiguous missing clip names; unrelated sources are left unchanged.',
-        confirmLabel: 'Choose Files',
-        cancelLabel: 'Not Now',
-        variant: 'default',
-    });
-    if (!chooseMore || !isCurrent()) {
-        return;
-    }
+function eligibleForRelink(source: MissingSource): boolean {
+    return readRelinkAudioSourceEligibility(source.sourceBufferId) === 'eligible';
+}
 
-    const files = await pickReplacements(true, isCurrent);
-    if (!files || !isCurrent()) {
-        return;
-    }
+async function recoverSameFolderSelections(
+    candidates: readonly SameFolderCandidate[],
+    files: readonly File[],
+    excludedBufferId: string,
+    isCurrent: () => boolean
+): Promise<void> {
     const selectedNameCounts = new Map<string, number>();
     for (const file of files) {
         const name = comparableSourceName(file.name);
@@ -158,16 +154,21 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
             return;
         }
         const source = matchSameFolderFile(candidates, file, selectedNameCounts);
-        if (!source) {
+        if (!source || !eligibleForRelink(source)) {
             skippedCount++;
             continue;
         }
-        if (readRelinkAudioSourceEligibility(source.sourceBufferId) !== 'eligible') {
+        const selectionMatches = (tracks: readonly Track[]): boolean =>
+            matchSameFolderFile(remainingSources(excludedBufferId, tracks), file, selectedNameCounts)
+                ?.sourceBufferId === source.sourceBufferId;
+        if (!selectionMatches(trackStore.value?.tracks ?? [])) {
             skippedCount++;
             continue;
         }
-        if (await relinkReplacement(source, file, isCurrent)) {
+        if (await relinkReplacement(source, file, isCurrent, selectionMatches)) {
             repaired = true;
+        } else if (isCurrent() && !selectionMatches(trackStore.value?.tracks ?? [])) {
+            skippedCount++;
         }
         if (!isCurrent()) {
             return;
@@ -181,6 +182,31 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
             `${String(skippedCount)} selected ${skippedCount === 1 ? 'file did' : 'files did'} not uniquely match a missing clip name and ${skippedCount === 1 ? 'was' : 'were'} left unchanged.`,
             'warning'
         );
+    }
+}
+
+async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () => boolean): Promise<void> {
+    if (!isCurrent() || !remainingSources(excludedBufferId, trackStore.value?.tracks ?? []).some(eligibleForRelink)) {
+        return;
+    }
+    const chooseMore = await confirmUser({
+        title: 'Resolve other missing files?',
+        message:
+            'Choose replacements from the same folder. Files are matched to unambiguous missing clip names; unrelated sources are left unchanged.',
+        confirmLabel: 'Choose Files',
+        cancelLabel: 'Not Now',
+        variant: 'default',
+    });
+    if (!chooseMore || !isCurrent()) {
+        return;
+    }
+    const candidates = remainingSources(excludedBufferId, trackStore.value?.tracks ?? []);
+    if (!candidates.some(eligibleForRelink)) {
+        return;
+    }
+    const files = await pickReplacements(true, isCurrent);
+    if (files && isCurrent()) {
+        await recoverSameFolderSelections(candidates, files, excludedBufferId, isCurrent);
     }
 }
 

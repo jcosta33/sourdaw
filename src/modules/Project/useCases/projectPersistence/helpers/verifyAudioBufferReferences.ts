@@ -1,47 +1,12 @@
-import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type MissingMediaItem, missingMediaStore } from '../../../stores/missingMediaStore';
 
+import { collectMissingMedia } from './collectMissingMedia';
+
 const TOAST_NAME_LIMIT = 3;
-
-function collectMissingMedia(tracks: readonly Track[]): MissingMediaItem[] {
-    const items: MissingMediaItem[] = [];
-    for (const track of tracks) {
-        for (const clip of track.clips) {
-            if (clip.type !== 'audio' || !clip.audioBufferId) {
-                continue;
-            }
-            if (getCachedAudioBuffer({ bufferId: clip.audioBufferId }) !== null) {
-                continue;
-            }
-            items.push({
-                bufferId: clip.audioBufferId,
-                clipId: clip.id,
-                kind: 'clip',
-                label: clip.name,
-                trackId: track.id,
-                trackName: track.name,
-            });
-        }
-
-        if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
-            continue;
-        }
-        if (getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId }) !== null) {
-            continue;
-        }
-        items.push({
-            bufferId: track.freezeState.frozenBufferId,
-            kind: 'frozenTrack',
-            label: `Frozen track ${track.name}`,
-            trackId: track.id,
-            trackName: track.name,
-        });
-    }
-    return items;
-}
 
 function summarizeLabels(items: readonly MissingMediaItem[]): string {
     const labels = items.map((item) => item.label);
@@ -73,7 +38,9 @@ export function verifyAudioBufferReferences(): void {
     const state = trackStore.value;
     // No track state means no project to make a claim about — clear rather than
     // leave the prior project's rows looking current.
-    const items = state ? collectMissingMedia(state.tracks) : [];
+    const items = state
+        ? collectMissingMedia(state.tracks, (bufferId) => getCachedAudioBuffer({ bufferId }) !== null)
+        : [];
 
     missingMediaStore.set({ items });
 
