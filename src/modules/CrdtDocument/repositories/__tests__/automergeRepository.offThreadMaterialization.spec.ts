@@ -701,17 +701,63 @@ describe('repository canonical Worker candidate adoption', () => {
         }
         await repository.loadAll({ bundle });
         const reloaded = repository.getDoc<Document>('root');
+        if (!reloaded) {
+            throw new Error('Expected the actual IDB-reloaded root');
+        }
+        expect(reloaded).not.toBe(actual);
         expect(reloaded).toEqual(actual);
         expect(readChangesSinceHeads('root', oldHeads)).toEqual(graph);
-        repository.insertDoc('root', actual);
+        const reloadedHeads = getHeads(reloaded);
+        const reloadedActor = getActorId(reloaded);
+        const reloadedOwnSequence = native
+            .getChangesMetaSince(reloaded, [])
+            .reduce((latest, entry) => (entry.actor === reloadedActor ? Math.max(latest, entry.seq) : latest), 0);
         repository.changeDoc<Document>('root', (doc) => {
             doc.slot.count = 2;
         });
         const next = repository.getDoc<Document>('root');
         if (!next) {
-            throw new Error('Expected next same-actor change');
+            throw new Error('Expected an edit on the actual IDB-reloaded root');
         }
-        expect(decodeChange(getChanges(actual, next)[0]!)).toMatchObject({ actor, seq: 4, deps: getHeads(actual) });
+        expect(decodeChange(getChanges(reloaded, next)[0]!)).toMatchObject({
+            actor: reloadedActor,
+            seq: reloadedOwnSequence + 1,
+            deps: reloadedHeads,
+        });
+        const laterChunk = repository.saveDocIncremental('root');
+        if (!laterChunk) {
+            throw new Error('Expected the later edit persistence delta');
+        }
+        const laterSave = saveIncrementalsToIdb([{ id: 'root', chunk: laterChunk }]);
+        (await persistence.waitForTransaction('readwrite', 2)).complete();
+        expect(await laterSave).toMatchObject({ status: 'committed' });
+        const laterRead = loadAllFromIdb();
+        (await persistence.waitForTransaction('readonly', 2)).complete();
+        const laterBundle = await laterRead;
+        if (!laterBundle) {
+            throw new Error('Expected the later edit durable bundle');
+        }
+        await repository.loadAll({ bundle: laterBundle });
+        expect(repository.getDoc<Document>('root')).toEqual(next);
+        expect(readChangesSinceHeads('root', reloadedHeads)).toEqual(
+            native.getChangesMetaSince(next, reloadedHeads).map(({ hash, deps }) => ({ hash, deps }))
+        );
+
+        // Separately retain the original adopted-handle actor-continuation control.
+        // The cold-reload roundtrip above never replaces its loaded root with this old view.
+        repository.insertDoc('root', actual);
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.slot.count = 2;
+        });
+        const continued = repository.getDoc<Document>('root');
+        if (!continued) {
+            throw new Error('Expected the original adopted actor to continue');
+        }
+        expect(decodeChange(getChanges(actual, continued)[0]!)).toMatchObject({
+            actor,
+            seq: 4,
+            deps: getHeads(actual),
+        });
     });
 
     it('preserves native graph/source readers, real incremental persistence/reload and the next actual actor sequence', async () => {

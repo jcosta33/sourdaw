@@ -1,4 +1,6 @@
-import { type AppAction, type AppActionType, type ClipSatelliteEntrySnapshot } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+
+import { type ClipSatelliteEntrySnapshot } from '../events/arrangementClipStateSnapshots';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 

@@ -105,6 +105,10 @@ function cargoMetadataFor(root: string, packages: readonly string[]): string {
             targets: [
                 { kind: ['lib'], src_path: join(root, 'crates/root-crate/src/lib.rs') },
                 { kind: ['test'], src_path: join(root, 'crates/root-crate/tests/it.rs') },
+                { kind: ['example'], src_path: join(root, 'crates/root-crate/examples/demo.rs') },
+                { kind: ['bench'], src_path: join(root, 'crates/root-crate/benches/speed.rs') },
+                { kind: ['example'], src_path: join(root, 'crates/root-crate/demos/demo.rs') },
+                { kind: ['bin'], src_path: join(root, 'crates/root-crate/main.rs') },
             ],
         },
         'dep-crate': {
@@ -178,12 +182,15 @@ function workspace(): { root: string; io: ClosureIo } {
         ].join('\n')
     );
     write(root, 'Cargo.toml', '[workspace]\nmembers = ["crates/*"]\n');
+    write(root, 'Cargo.lock', 'version = 4\n');
     write(root, 'rust-toolchain.toml', '[toolchain]\nchannel = "1.90.0"\n');
     write(root, '.cargo/config.toml', '[build]\n');
+    write(root, '.gitignore', 'target/\n*.log\n');
     for (const crate of CRATES) {
         write(root, `crates/${crate}/Cargo.toml`, `[package]\nname = "${crate}"\n`);
         write(root, `crates/${crate}/src/lib.rs`, 'pub fn value() -> u8 { 1 }\n');
     }
+    write(root, 'crates/root-crate/main.rs', 'fn main() {}\n');
     write(root, 'crates/root-crate/tests/it.rs', '#[test]\nfn filter() {}\n');
     write(root, 'crates/dep-crate/build.rs', 'fn main() {}\n');
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
@@ -305,6 +312,80 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
         ]);
     });
 
+    it('refuses a record once an untracked file appears in a tree it compiles, naming that file', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        const added = 'crates/root-crate/tests/added.rs';
+        write(root, added, '#[test]\nfn added() {}\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${added}`]);
+    });
+
+    it('passes a record when only a gitignored file appears in a tree it compiles', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        write(root, 'crates/root-crate/src/target/out.rs', 'fn built() {}\n');
+        write(root, 'crates/root-crate/tests/ignored.log', 'noise\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([]);
+    });
+
+    it('refuses a record once Cargo.lock changes, naming it', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        write(root, 'Cargo.lock', 'version = 4\n\n[[package]]\nname = "bumped"\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: Cargo.lock`]);
+    });
+
+    it('refuses a record once an example or bench of the tested crate appears, naming that file', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        write(root, 'crates/root-crate/examples/demo.rs', 'fn main() {}\n');
+        write(root, 'crates/root-crate/benches/speed.rs', 'fn main() {}\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([
+            `${SUITE.id}: closure file drifted: crates/root-crate/benches/speed.rs`,
+            `${SUITE.id}: closure file drifted: crates/root-crate/examples/demo.rs`,
+        ]);
+    });
+
+    it('refuses a record once a file a declared example target points at changes, naming it', async () => {
+        const { root, io } = workspace();
+        const demo = 'crates/root-crate/demos/demo.rs';
+        write(
+            root,
+            'crates/root-crate/Cargo.toml',
+            '[package]\nname = "root-crate"\n\n[[example]]\nname = "demo"\npath = "demos/demo.rs"\n'
+        );
+        write(root, demo, 'fn main() {}\n');
+        execFileSync('git', ['add', '.'], { cwd: root });
+        execFileSync('git', [...GIT_IDENTITY, 'commit', '-q', '-m', 'declare example'], { cwd: root });
+        const record = await recordedRun(root, io);
+        expect(record.closure?.files.map(({ path }) => path)).toContain(demo);
+        write(root, demo, 'fn main() { let _ = 1; }\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${demo}`]);
+    });
+
+    it('refuses a record once a crate-root target source file changes, naming it', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        const main = 'crates/root-crate/main.rs';
+        write(root, main, 'fn main() { let _ = 1; }\n');
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${main}`]);
+    });
+
+    it('refuses a record once a tracked file in its closure is deleted', async () => {
+        const { root, io } = workspace();
+        const record = await recordedRun(root, io);
+        const deleted = 'crates/root-crate/tests/it.rs';
+        rmSync(join(root, deleted));
+
+        expect(await releaseBlockers(root, io, record)).toEqual([`${SUITE.id}: closure file drifted: ${deleted}`]);
+    });
+
     it('refuses a record once a file its suite declares it reads by path changes', async () => {
         const { root, io } = workspace();
         const record = await recordedRun(root, io, DECLARED_READ_SUITE);
@@ -321,11 +402,13 @@ describe('evidence closure at release', { timeout: 60_000 }, () => {
 
         expect(paths).toEqual([
             '.cargo/config.toml',
+            'Cargo.lock',
             'Cargo.toml',
             'crates/dep-crate/Cargo.toml',
             'crates/dep-crate/build.rs',
             DEPENDENCY_SOURCE,
             'crates/root-crate/Cargo.toml',
+            'crates/root-crate/main.rs',
             'crates/root-crate/src/lib.rs',
             'crates/root-crate/tests/it.rs',
             'rust-toolchain.toml',

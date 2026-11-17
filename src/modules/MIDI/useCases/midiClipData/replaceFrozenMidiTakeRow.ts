@@ -1,10 +1,10 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import {
     type MidiClipCcSnapshot,
     type MidiClipNoteSnapshot,
     type MidiClipPitchBendSnapshot,
-} from '#/utils/handlerContract';
-import { valuesEqual } from '#/utils/structuralEquality';
-
+} from '../../events/midiClipDataSnapshots';
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from '../../stores/isFrozenMidiTakeSource';
 
 type SlotPresence = {

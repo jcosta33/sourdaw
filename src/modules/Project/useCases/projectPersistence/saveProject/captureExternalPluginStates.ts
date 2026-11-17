@@ -13,9 +13,10 @@ import { warnedExternalPluginCaptureRejections } from './warnedExternalPluginCap
 
 export type ExternalPluginCaptureOutcome = {
     /**
-     * Plugins whose capture command was rejected before any project write
-     * landed, so their live edit is NOT in project truth. The caller must not
-     * treat the save as a clean success for those edits.
+     * Loaded plugins whose state could not be read or whose capture command was
+     * rejected before any project write landed, so their live edit is NOT in
+     * project truth. The caller must not treat the save as a clean success for
+     * those edits.
      */
     readonly rejectedPlugins: readonly string[];
 };
@@ -147,7 +148,7 @@ export async function captureExternalPluginStates(): Promise<ExternalPluginCaptu
                 }
                 continue;
             }
-            if (read.status === 'stale') {
+            if (read.status === 'stale' || read.status === 'unreadable') {
                 rejectOrPreserve(
                     { instanceId, pluginName, authorityToken: read.authorityToken },
                     preservedPlugins,

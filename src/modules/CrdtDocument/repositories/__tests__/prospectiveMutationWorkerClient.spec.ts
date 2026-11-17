@@ -173,6 +173,22 @@ describe('prospective mutation Worker ownership', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
+    it('rejects the former full native document reply instead of treating it as a delta', async () => {
+        const { doc, request } = fixture();
+        const bytes = Uint8Array.from(save(clone(doc)));
+        expect(load(bytes)).toEqual(doc);
+        const pending = requestProspectiveMutation(request, new AbortController().signal);
+        const rejected = expect(pending).rejects.toThrow('Invalid prospective mutation Worker response');
+        const worker = ControlledWorker.instances[0]!;
+        worker.onmessage?.(
+            new MessageEvent('message', {
+                data: { status: 'complete', bytes, heads: getHeads(doc) },
+            })
+        );
+        await rejected;
+        expectReleased(worker);
+    });
+
     it.each([
         { changes: Uint8Array.of(1), heads: [] },
         { changes: sparseEnvelopeArray(), heads: [] },

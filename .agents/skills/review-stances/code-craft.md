@@ -91,3 +91,13 @@ findings without a concrete break ("I'd prefer if") are discarded.
    preserving all surviving paths, severities and ceilings. Require the exact warning-set and canonical
    burn-down cases in `scripts/__tests__/eslintWarnLevels.spec.ts` and
    `scripts/__tests__/oxlintPluginMigration.spec.ts`; restoring the obsolete mirrored path must fail both.
+10. **A lint pass that lints almost nothing stays green (PR #6610).** The full-tree public-plugin pass
+    was handed shell globs through `spawnSync` with no shell, so oxlint linted one file in about a second
+    while seven violations of error-level plugin rules merged behind it. PR #6610's review had no stance
+    asking whether a moved lint step still observes its files. Input: plant a known violation of an
+    error-level plugin rule in a file the step claims to cover and confirm that step's CI run goes red;
+    compare the step's reported file count and duration with a directory run of the same config. A step
+    that lints even one file fewer than the tracked, non-ignored sources under its targets must fail
+    `scripts/__tests__/runLint.spec.ts` "fails a pass one file short, however large the tree", and
+    deleting the coverage assertion from the full run must fail "fails a plugin pass that lints fewer
+    files than the targets track, before ESLint runs".

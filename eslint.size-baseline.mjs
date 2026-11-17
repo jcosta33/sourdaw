@@ -545,5 +545,4 @@ export const sizeBaselineFiles = [
     'src/modules/Yeast/workers/processors/GrooveModule.ts',
     'src/modules/Yeast/workers/yeastWorker.ts',
     'src/utils/automationCurve.ts',
-    'src/utils/handlerContract.ts',
 ];

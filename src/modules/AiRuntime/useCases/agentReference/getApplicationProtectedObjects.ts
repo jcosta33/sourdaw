@@ -18,6 +18,7 @@ import { getSharedVocalFxBusesPromptScope } from './getSharedVocalFxBusesPromptS
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './getSyncopatedArpeggioPromptScope';
 import { readExplicitProtections } from './readExplicitProtections';
+import { withBatchBriefRoles } from './withBatchBriefRoles';
 
 export type ApplicationProtectedObject = { id: string; name: string };
 
@@ -29,7 +30,8 @@ export function getApplicationProtectedObjects(input: {
     workflowCapabilityId?: WorkflowCapabilityId;
 }): ApplicationProtectedObject[] {
     const { actions, context, prompt, workflowCapabilityId } = input;
-    const readProtections = readExplicitProtections(prompt, context);
+    // A batch writing the brief protects a role family by the roles that brief states, as its vibe run plans.
+    const readProtections = readExplicitProtections(prompt, withBatchBriefRoles(context, actions));
     const excludedFrozenTrackIds = new Set(
         getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
     );

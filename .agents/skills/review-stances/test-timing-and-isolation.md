@@ -100,6 +100,11 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
    authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
    until the unchanged whole-task/frame gates pass.
+   [#6514](https://github.com/jcosta33/sourdaw/pull/6514) split the Worker-built complete-document parse from
+   later root materialization; its fresh-project Detect case passed, yet a later sensitivity response occupied
+   a full renderer task in native `prepareLoad`. Attribute the receiving Worker message and its Promise
+   continuations as well as publication, and bound the native parse and enclosing task through unchanged
+   completion gates on cold and repeated routes. A phase split alone does not bound either task.
    A fresh-project green does not establish project-scale coverage: build a realistic current document and
    retained native history through real actions, then assert both from authoritative state. Record fixture
    size and history depth outside the measured interval without warming worker or replica state on the route.

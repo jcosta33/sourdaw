@@ -753,10 +753,10 @@ class AutomergeRepository {
                     }
                     const result = workerResult;
                     workerResult = undefined;
-                    const captured = candidate;
+                    const retained = candidate;
                     candidate = undefined;
                     updated = adoptProspectiveMutationChanges({
-                        candidate: captured,
+                        candidate: retained,
                         doc,
                         result,
                         actor,

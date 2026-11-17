@@ -11,8 +11,10 @@ const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
     { kind: 'verb', pattern: new RegExp(String.raw`\b${PROTECTION_VERB}\b`, 'giu') },
     {
         kind: 'prohibition',
-        pattern: /\b(?:do\s+not|don['’]t|never)\s+(?:change|touch|alter|adjust|modify|edit|affect|move)\b/giu,
+        pattern:
+            /\b(?:do\s+not|don['’]t|never)\s+(?:change|touch|alter|adjust|modify|edit|affect|move|mess\s+with)\b/giu,
     },
+    { kind: 'prohibition', pattern: /\b(?:keep\s+(?:your\s+)?)?hands\s+off\b/giu },
     { kind: 'prohibition', pattern: /\bwithout\s+(?:touching|changing|altering|moving|editing)\b/giu },
     { kind: 'prohibition', pattern: /\bno\s+changes?\s+to\b/giu },
     {
@@ -127,8 +129,19 @@ function joiningAndStart(masked: string, index: number): number {
     return joining === null ? index : joining.index;
 }
 
+/** A start inside a longer one is part of it: the `keep` of "keep your hands off" opens no clause of its own. */
+function isInsideLongerStart(start: Event, starts: readonly Event[]): boolean {
+    return starts.some(
+        (other) =>
+            other !== start &&
+            other.index <= start.index &&
+            other.end >= start.end &&
+            other.end - other.index > start.end - start.index
+    );
+}
+
 function collectStarts(masked: string, names: readonly Range[]): Event[] {
-    return startPatterns.flatMap(({ kind, pattern }) =>
+    const starts = startPatterns.flatMap(({ kind, pattern }) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
@@ -136,6 +149,7 @@ function collectStarts(masked: string, names: readonly Range[]): Event[] {
             cutAt: match.index,
         })).filter((start) => !opensTitleCasedPhrase(masked, start.index, names))
     );
+    return starts.filter((start) => !isInsideLongerStart(start, starts));
 }
 
 /** The spans of the words that open a protection, so a caller blanking object names can leave them readable. */

@@ -13,7 +13,7 @@ export const AGENT_DISCOVERY_SCHEMA = 'sourdaw.agent-discovery-receipt';
 
 export const AGENT_DISCOVERY_SCHEMA_VERSION = 1 as const;
 
-export const AGENT_DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', 'capability'] as const;
+export const AGENT_DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', 'capability', 'groove'] as const;
 
 /**
  * The page size a sample discovery request asks the catalog for: the ceiling
@@ -86,7 +86,7 @@ export type AgentDiscoveryReceipt = {
 
 /** Why a catalog that exists cannot be read right now. */
 export type AgentDiscoveryUnavailableReason =
-    'capability-provider-unregistered' | 'catalog-not-indexed' | 'plugin-scan-not-run';
+    'capability-provider-unregistered' | 'catalog-not-indexed' | 'groove-pool-unavailable' | 'plugin-scan-not-run';
 
 /** Why the query itself is outside what this layer answers. */
 export type AgentDiscoveryUnsupportedReason = 'unknown-domain' | 'sample-browse-requires-text' | 'filter-not-supported';

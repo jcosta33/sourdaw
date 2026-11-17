@@ -22,6 +22,7 @@ describe('internalReplayOwnerValidationByActionType', () => {
             'discardRecording',
             'restoreClipMoves',
             'restoreDrawnClip',
+            'restoreGrooveAssignment',
         ]);
     });
 

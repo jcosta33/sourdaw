@@ -34,7 +34,6 @@ import {
     type RuntimeGraphTrackStripInitializationDelta,
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
-import { createAudioPreviewIntents } from '../services/audioPreview/createAudioPreviewIntents';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
 
@@ -44,6 +43,7 @@ import { createOfflineDeviceNode } from './deviceNodeFactory';
 import { addCountByType } from './webAudioEngine/addCountByType';
 import { addDeviceResources } from './webAudioEngine/addDeviceResources';
 import { countDeviceRuntimeResources } from './webAudioEngine/countDeviceRuntimeResources';
+import { createAudioPreview, type AudioPreview } from './webAudioEngine/createAudioPreview';
 import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/createEmptyGraphSlotResourcesByLoadState';
 import { createMasterSection, type MasterMeterNode, type MasterSection } from './webAudioEngine/createMasterSection';
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
@@ -311,9 +311,6 @@ class AudioEngineImpl implements AudioEngine {
         return this.master.analyserRight;
     }
 
-    private previewProgrammeOpen = true;
-    private previewRestoration: Promise<void> | null = null;
-
     private trackNodes = new Map<string, TrackNode>();
     /** Tracks the native engine currently carries audibly; see
      *  {@link setNativeCarriedTracks}. Strips created later read it too. */
@@ -360,8 +357,7 @@ class AudioEngineImpl implements AudioEngine {
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
     private disposed = false;
-    private previewIntents = createAudioPreviewIntents();
-    private previewResetDepth = 0;
+    private readonly preview: AudioPreview;
     private disposalPromise: Promise<void> | null = null;
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
@@ -403,6 +399,14 @@ class AudioEngineImpl implements AudioEngine {
             readContext: () => this.context,
             readMasterGain: () => this.master.gainNode,
             assertActive: () => this.assertActive(),
+            isFallback: () => this.fallbackMode,
+        });
+
+        this.preview = createAudioPreview({
+            readContext: () => this.context,
+            readProgrammeGate: () => this.master.previewProgrammeGate,
+            readMonitorMono: () => this.master.monitorMonoNode,
+            isDisposed: () => this.disposed,
             isFallback: () => this.fallbackMode,
         });
 
@@ -2389,18 +2393,11 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public beginAudioPreviewIntent() {
-        const intent = this.previewIntents.beginOrdinary();
-        if (this.previewRestoration === null) {
-            return intent;
-        }
-        return { ...intent, ready: this.previewRestoration };
+        return this.preview.beginOrdinaryIntent();
     }
 
     public beginExclusiveAudioPreviewIntent() {
-        // A suspended context must resume with programme already closed, in
-        // the gesture itself, before any asynchronous native admission.
-        this.setAudioPreviewProgrammeSuppressed(true);
-        return this.previewIntents.beginExclusive();
+        return this.preview.beginExclusiveIntent();
     }
 
     public get audioPreviewOutput(): AudioNode {
@@ -2408,126 +2405,23 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public setAudioPreviewProgrammeSuppressed(suppressed: boolean): void {
-        if (this.disposed || this.fallbackMode || (!suppressed && this.previewIntents.hasExclusive())) {
-            return;
-        }
-        const open = !suppressed;
-        if (this.previewProgrammeOpen === open) {
-            return;
-        }
-        if (open) {
-            this.master.previewProgrammeGate.connect(this.master.monitorMonoNode);
-        } else {
-            this.master.previewProgrammeGate.disconnect(this.master.monitorMonoNode);
-        }
-        this.previewProgrammeOpen = open;
+        this.preview.setProgrammeSuppressed(suppressed);
     }
 
-    /**
-     * Ordinary previews wait only while a restoration is in flight. A rejected one is not
-     * latched: its owner retries the restore, and the programme gate stays closed until then.
-     */
     public holdAudioPreviewRestoration(restoration: Promise<void>): void {
-        this.previewRestoration = restoration;
-        const release = () => {
-            if (this.previewRestoration === restoration) {
-                this.previewRestoration = null;
-            }
-        };
-        void restoration.then(release, release);
+        this.preview.holdRestoration(restoration);
     }
 
     public playAudioPreviewTone(frequency: number, durationSeconds: number, intent: AudioPreviewIntent) {
-        if (!Number.isFinite(frequency) || !Number.isFinite(durationSeconds) || durationSeconds < 0) {
-            throw new RangeError('Preview tone frequency and duration must be finite.');
-        }
-        if (!intent.isCurrent()) {
-            return null;
-        }
-        let oscillator: OscillatorNode;
-        let gain: GainNode;
-        try {
-            oscillator = this.context.createOscillator();
-            try {
-                gain = this.context.createGain();
-            } catch (error) {
-                oscillator.disconnect();
-                throw error;
-            }
-        } catch (error) {
-            intent.release();
-            throw error;
-        }
-        let ended = false;
-        let started = false;
-        const finish = (stopSource: boolean) => {
-            if (ended) {
-                return;
-            }
-            ended = true;
-            oscillator.onended = null;
-            intent.signal.removeEventListener('abort', stop);
-            runAllEffects([
-                () => gain.gain.setValueAtTime(0, this.context.currentTime),
-                () => {
-                    if (stopSource && started) {
-                        oscillator.stop();
-                    }
-                },
-                () => oscillator.disconnect(),
-                () => gain.disconnect(),
-                () => intent.release(),
-            ]);
-        };
-        const stop = () => finish(true);
-        try {
-            oscillator.type = 'sine';
-            oscillator.frequency.value = frequency;
-            oscillator.connect(gain);
-            gain.connect(this.context.destination);
-            oscillator.onended = () => finish(false);
-            intent.signal.addEventListener('abort', stop, { once: true });
-        } catch (error) {
-            finish(false);
-            throw error;
-        }
-        const start = () => {
-            if (ended || !intent.isCurrent()) {
-                return;
-            }
-            const now = this.context.currentTime;
-            gain.gain.setValueAtTime(0.4, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + durationSeconds);
-            started = true;
-            oscillator.start();
-            oscillator.stop(now + durationSeconds);
-        };
-        try {
-            if (intent.ready === undefined) {
-                start();
-            }
-        } catch (error) {
-            stop();
-            throw error;
-        }
-        const ready = intent.ready === undefined ? Promise.resolve() : intent.ready.then(start);
-        void ready.catch((error: unknown) => {
-            stop();
-            logger.warn(new Error('Preview tone could not restore its listening output', { cause: error }));
-        });
-        return { stop, ready };
+        return this.preview.playTone(frequency, durationSeconds, intent);
     }
 
     public resetGraph(): void {
-        this.previewResetDepth++;
+        this.preview.beginReset();
         try {
-            runAllEffects([() => this.previewIntents.dispose(), () => this.resetProjectGraph()]);
+            runAllEffects([() => this.preview.disposeIntents(), () => this.resetProjectGraph()]);
         } finally {
-            this.previewResetDepth--;
-            // Nested teardown and its callbacks cannot reopen the outgoing preview lifetime.
-            if (this.previewResetDepth === 0 && !this.disposed) {
-                this.previewIntents = createAudioPreviewIntents();
-            }
+            this.preview.endReset();
         }
     }
 

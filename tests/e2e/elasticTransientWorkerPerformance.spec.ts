@@ -65,7 +65,17 @@ type PreparationMeasure = {
     startTime: number;
     detail?: unknown;
 };
+type ProspectiveObservation = {
+    primaryKey: string;
+    requested: number;
+    posted: boolean;
+    heads: string[];
+    replies: { received: number; status: string | null; changeCount: number | null }[];
+    terminated: number | null;
+};
+type BrowserProspectiveObservation = { requests: ProspectiveObservation[]; failures: string[]; restore(): void };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
+const elasticProspectiveObserverPages = new WeakMap<TestInfo, Page>();
 const armedSaveOverlaps = new WeakSet<TestInfo>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
@@ -359,6 +369,159 @@ function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>
     }
     return count;
 }
+function assertProspectiveObservations(measures: PreparationMeasure[], requests: ProspectiveObservation[]): void {
+    expect(requests.length, 'Native request census must be independent of phase emission').toBeGreaterThan(0);
+    for (const request of requests) {
+        expect(request.primaryKey, 'Other prospective roles cannot be silently attributed to Detect').toBe(
+            'warpStates'
+        );
+        expect(request.posted).toBe(true);
+        expect(request.terminated).not.toBeNull();
+        expect(request.replies.length).toBeLessThanOrEqual(1);
+        for (const reply of request.replies) {
+            expect(reply.status).toBe('complete');
+            expect(reply.changeCount).not.toBeNull();
+        }
+    }
+    const completed = requests.flatMap((request) => request.replies);
+    const responses = measures.filter((entry) => entry.name === 'automerge-prospective-response-task');
+    const applies = measures.filter((entry) => entry.name === 'automerge-prospective-apply-task');
+    const authorities = measures.filter((entry) => entry.name === 'automerge-prospective-authority-task');
+    expect(responses).toHaveLength(completed.length);
+    expect(applies.length).toBeGreaterThan(0);
+    expect(applies.length).toBeLessThanOrEqual(completed.length);
+    expect(authorities).toHaveLength(applies.length);
+    // A reply can be discarded before materialize; termination is not admission or publication.
+    expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
+        requests.length
+    );
+    expect(measures.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')).toHaveLength(
+        requests.length
+    );
+}
+
+async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<void> {
+    await page.evaluate(() => {
+        const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
+        if (target.elasticProspectiveObservation) {
+            throw new Error('Prospective observations already installed');
+        }
+        const prototype = Worker.prototype;
+        const postDescriptor = Object.getOwnPropertyDescriptor(prototype, 'postMessage');
+        const terminateDescriptor = Object.getOwnPropertyDescriptor(prototype, 'terminate');
+        if (!postDescriptor || !terminateDescriptor) {
+            throw new Error('Native Worker descriptors are required for passive observation');
+        }
+        const requests: ProspectiveObservation[] = [];
+        const failures: string[] = [];
+        const pending = new WeakMap<Worker, ProspectiveObservation>();
+        const cleanups: (() => void)[] = [];
+        function describeRequest(data: unknown): ProspectiveObservation | undefined {
+            if (
+                typeof data !== 'object' ||
+                data === null ||
+                !('mutation' in data) ||
+                typeof data.mutation !== 'object' ||
+                data.mutation === null ||
+                !('kind' in data.mutation) ||
+                data.mutation.kind !== 'canonical-json-slot-v1' ||
+                !('key' in data.mutation) ||
+                typeof data.mutation.key !== 'string' ||
+                !('seed' in data) ||
+                !(data.seed instanceof Uint8Array) ||
+                !('heads' in data) ||
+                !Array.isArray(data.heads)
+            ) {
+                return undefined;
+            }
+            return {
+                primaryKey: data.mutation.key,
+                requested: performance.now(),
+                posted: false,
+                heads: data.heads.filter((head: unknown): head is string => typeof head === 'string'),
+                replies: [],
+                terminated: null,
+            };
+        }
+        const post = new Proxy(prototype.postMessage, {
+            apply(original, receiver: Worker, args: unknown[]): unknown {
+                if (!(receiver instanceof Worker)) {
+                    return Reflect.apply(original, receiver, args);
+                }
+                const observation = describeRequest(args[0]);
+                if (observation) {
+                    requests.push(observation);
+                }
+                const returned: unknown = Reflect.apply(original, receiver, args);
+                if (observation) {
+                    observation.posted = true;
+                    pending.set(receiver, observation);
+                    const receive = (event: MessageEvent<unknown>): void => {
+                        const reply = event.data;
+                        let status: string | null = null;
+                        let changeCount: number | null = null;
+                        if (typeof reply === 'object' && reply !== null && 'status' in reply) {
+                            status = typeof reply.status === 'string' ? reply.status : null;
+                            if ('changes' in reply && Array.isArray(reply.changes)) {
+                                changeCount = reply.changes.length;
+                            }
+                        }
+                        observation.replies.push({ received: performance.now(), status, changeCount });
+                    };
+                    const error = (): void => {
+                        failures.push('Actual prospective Worker emitted a native error');
+                    };
+                    receiver.addEventListener('message', receive, { capture: true });
+                    receiver.addEventListener('error', error);
+                    receiver.addEventListener('messageerror', error);
+                    cleanups.push(() => {
+                        receiver.removeEventListener('message', receive, { capture: true });
+                        receiver.removeEventListener('error', error);
+                        receiver.removeEventListener('messageerror', error);
+                    });
+                }
+                return returned;
+            },
+        });
+        const terminate = new Proxy(prototype.terminate, {
+            apply(original, receiver: Worker, args: unknown[]): unknown {
+                const returned: unknown = Reflect.apply(original, receiver, args);
+                const observation = pending.get(receiver);
+                if (observation) {
+                    observation.terminated = performance.now();
+                }
+                return returned;
+            },
+        });
+        Object.defineProperty(prototype, 'postMessage', { ...postDescriptor, value: post });
+        Object.defineProperty(prototype, 'terminate', { ...terminateDescriptor, value: terminate });
+        target.elasticProspectiveObservation = {
+            requests,
+            failures,
+            restore() {
+                try {
+                    for (const cleanup of cleanups) {
+                        cleanup();
+                    }
+                } finally {
+                    if (prototype.postMessage === post) {
+                        Object.defineProperty(prototype, 'postMessage', postDescriptor);
+                    } else {
+                        failures.push('Native Worker postMessage descriptor changed during passive observation');
+                    }
+                    if (prototype.terminate === terminate) {
+                        Object.defineProperty(prototype, 'terminate', terminateDescriptor);
+                    } else {
+                        failures.push('Native Worker terminate descriptor changed during passive observation');
+                    }
+                    delete target.elasticProspectiveObservation;
+                }
+            },
+        };
+    });
+    elasticProspectiveObserverPages.set(info, page);
+}
+
 async function startElasticTaskTrace(
     page: Page,
     info: TestInfo,
@@ -517,6 +680,29 @@ test.afterEach(async ({ page: _page }, info) => {
         await attachSaveOverlap(_page, info);
     } catch (error) {
         failures.push(String(error));
+    }
+    const observerPage = elasticProspectiveObserverPages.get(info);
+    if (observerPage) {
+        try {
+            const observation = await observerPage.evaluate(() => {
+                const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
+                const current = target.elasticProspectiveObservation;
+                if (!current) {
+                    throw new Error('Installed prospective observations are missing during cleanup');
+                }
+                current.restore();
+                return { requests: current.requests, failures: current.failures };
+            });
+            failures.push(...observation.failures);
+            await info.attach('elastic-prospective-native-requests.json', {
+                body: JSON.stringify(observation),
+                contentType: 'application/json',
+            });
+        } catch (error) {
+            failures.push(String(error));
+        } finally {
+            elasticProspectiveObserverPages.delete(info);
+        }
     }
     for (const capture of elasticTaskTraces.get(info) ?? []) {
         try {
@@ -811,6 +997,8 @@ for (const projectScale of [false, true]) {
                     const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
                     fixture.armElasticSaveOverlap(clipId);
                 }, targetClipId);
+            } else {
+                await observeProspectiveRequests(page, info);
             }
             const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect', projectScale);
             await page.evaluate(async (withSave) => {
@@ -978,7 +1166,7 @@ for (const projectScale of [false, true]) {
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
             }, projectScale);
             await panel.getByTestId('elastic-detect-button').click();
-            const measured = await page.evaluate(async () => {
+            const measured = await page.evaluate(async (projectScale) => {
                 const target = window as Window & {
                     elasticMeasurement?: Promise<{
                         start: number;
@@ -999,8 +1187,20 @@ for (const projectScale of [false, true]) {
                 if (!inputMark) {
                     throw new Error('Measured Detect omitted its input clock mark');
                 }
-                return { ...measurement, inputMarkStart: inputMark.startTime };
-            });
+                let prospectiveRequests: ProspectiveObservation[] | null = null;
+                if (!projectScale) {
+                    const observed = (
+                        window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation }
+                    ).elasticProspectiveObservation;
+                    if (!observed) {
+                        throw new Error('Actual prospective request observation missing');
+                    }
+                    prospectiveRequests = observed.requests.filter(
+                        (request) => request.requested >= measurement.start && request.requested < measurement.end
+                    );
+                }
+                return { ...measurement, inputMarkStart: inputMark.startTime, prospectiveRequests };
+            }, projectScale);
             await coldTrace.stop();
             const overlap = await attachSaveOverlap(page, info);
             await coldTrace.attach();
@@ -1098,7 +1298,9 @@ for (const projectScale of [false, true]) {
                     entry.name.startsWith('automerge-prospective-sequence-')
             );
             const preparedPublications = measured.measures.filter(
-                (entry) => entry.name === 'automerge-storage-prepared-publication' && storageRole(entry, 'warpStates')
+                (entry) =>
+                    entry.name === 'automerge-storage-prepared-publication' &&
+                    (!projectScale || storageRole(entry, 'warpStates'))
             );
             const union = {
                 end: measured.unionEnd,
@@ -1169,7 +1371,14 @@ for (const projectScale of [false, true]) {
                 expect(union.longTasks).toEqual([]);
             }
             assertMaterializationTaskSpans(result.nativePhases);
-            assertMaterializationAttempts(measured.measures, overlap);
+            if (projectScale) {
+                assertMaterializationAttempts(measured.measures, overlap);
+            } else {
+                if (!measured.prospectiveRequests) {
+                    throw new Error('Required ordinary prospective request census missing');
+                }
+                assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
+            }
             if (overlap) {
                 assertSequenceCensus(measured.measures, overlap);
             }
@@ -1228,7 +1437,15 @@ for (const projectScale of [false, true]) {
             const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
             await armPopulatedMeasurement(page, 'click');
             await panel.getByTestId('elastic-detect-button').click();
-            await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained, repeatedTrace);
+            await assertPopulatedMeasurement(
+                page,
+                info,
+                're-detect-populated',
+                populated,
+                retained,
+                repeatedTrace,
+                projectScale
+            );
             await assertPreserved();
             expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
             const redetected = await sourceState(page);
@@ -1247,7 +1464,8 @@ for (const projectScale of [false, true]) {
                 'sensitivity-populated',
                 populated,
                 retained,
-                sensitivityTrace
+                sensitivityTrace,
+                projectScale
             );
             expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
             const sensitive = await sourceState(page);
@@ -1582,9 +1800,10 @@ async function assertPopulatedMeasurement(
     phase: string,
     before: Awaited<ReturnType<typeof sourceState>>,
     retained: Awaited<ReturnType<typeof sourceState>>['projected'],
-    trace: ElasticTaskTrace
+    trace: ElasticTaskTrace,
+    projectScale: boolean
 ): Promise<void> {
-    const measured = await page.evaluate(async () => {
+    const measured = await page.evaluate(async (projectScale) => {
         const target = window as Window & {
             populatedElasticMeasurement?: Promise<{
                 start: number;
@@ -1603,8 +1822,19 @@ async function assertPopulatedMeasurement(
         if (!inputMark) {
             throw new Error('Measured Detect omitted its input clock mark');
         }
-        return { ...measurement, inputMarkStart: inputMark.startTime };
-    });
+        let prospectiveRequests: ProspectiveObservation[] | null = null;
+        if (!projectScale) {
+            const observed = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
+                .elasticProspectiveObservation;
+            if (!observed) {
+                throw new Error('Actual prospective request observation missing');
+            }
+            prospectiveRequests = observed.requests.filter(
+                (request) => request.requested >= measurement.start && request.requested < measurement.end
+            );
+        }
+        return { ...measurement, inputMarkStart: inputMark.startTime, prospectiveRequests };
+    }, projectScale);
     await trace.stop();
     const gaps = measured.frames
         .slice(1)
@@ -1623,7 +1853,9 @@ async function assertPopulatedMeasurement(
     );
     const preparationTasks = measured.measures.filter((entry) => MATERIALIZATION_PHASE_NAMES.includes(entry.name));
     const preparedPublications = measured.measures.filter(
-        (entry) => entry.name === 'automerge-storage-prepared-publication' && storageRole(entry, 'warpStates')
+        (entry) =>
+            entry.name === 'automerge-storage-prepared-publication' &&
+            (!projectScale || storageRole(entry, 'warpStates'))
     );
     const result = {
         ...measured,
@@ -1648,7 +1880,14 @@ async function assertPopulatedMeasurement(
     });
     await trace.attach();
     assertMaterializationTaskSpans(result.nativePhases);
-    assertMaterializationAttempts(measured.measures);
+    if (projectScale) {
+        assertMaterializationAttempts(measured.measures);
+    } else {
+        if (!measured.prospectiveRequests) {
+            throw new Error('Required ordinary prospective request census missing');
+        }
+        assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
+    }
     const after = await sourceState(page);
     expect(after.raw).toEqual(after.projected);
     expect(after.pcm).toEqual(before.pcm);

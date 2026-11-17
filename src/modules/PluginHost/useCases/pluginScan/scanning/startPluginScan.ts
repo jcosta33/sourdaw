@@ -6,7 +6,8 @@ import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
 import { type ScanResult } from '../../../repositories/pluginBridge/types';
 import { pluginScanStore } from '../../../stores/pluginScanStore';
 
-import { getState, isWithinFolder } from './helpers';
+import { getState } from './helpers';
+import { isWithinFolder } from './isWithinFolder';
 
 /** A plugin's format-scoped identity, the key the native list is unique on. */
 function pluginIdentity(plugin: ScannedPlugin): string {
