@@ -80,9 +80,12 @@ function isOpenProjectConfirmation(confirmation: ThreadConfirmation, sources: Th
 
 function interpretationForRun(
     run: ThreadRun | undefined,
-    authorityIds = run?.creativeAuthorityIds
+    authorityIds: readonly string[] | undefined
 ): { creativeInterpretation?: string } {
-    const interpretation = readPublicCreativeInterpretation(run?.plan?.applicationToolReceipts ?? [], authorityIds);
+    const interpretation = readPublicCreativeInterpretation(
+        run?.plan?.applicationToolReceipts ?? [],
+        authorityIds ?? []
+    );
     return interpretation === null ? {} : { creativeInterpretation: interpretation };
 }
 
@@ -199,7 +202,7 @@ function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): 
     return {
         runId,
         batchId,
-        ...interpretationForRun(run),
+        ...interpretationForRun(run, run?.creativeAuthorityIds),
         receiptIds: [receipt.receiptIdentity],
         standing: readStanding(receipt, sources),
         commands: (group?.actions ?? []).map((action) => ({ name: action.actionType, label: action.label })),

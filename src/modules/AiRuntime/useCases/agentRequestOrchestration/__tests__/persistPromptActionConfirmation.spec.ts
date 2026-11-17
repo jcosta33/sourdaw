@@ -198,7 +198,7 @@ describe('persistPromptActionConfirmation', () => {
         clearHandlerRegistry();
     });
 
-    it('shows the admitted public reading on the confirmation message', () => {
+    it('does not show an unbound run reading on a legacy confirmation', () => {
         mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation', approvalSnapshot: {} });
         mocks.getRun.mockReturnValueOnce(null).mockReturnValueOnce({
             plan: {
@@ -219,7 +219,7 @@ describe('persistPromptActionConfirmation', () => {
         expect(mocks.updateChatMessage).toHaveBeenCalledWith(
             'assistant-confirmation',
             expect.objectContaining({
-                content: expect.stringContaining('Interpretation: A small vintage receiver'),
+                content: expect.not.stringContaining('Interpretation: A small vintage receiver'),
             })
         );
     });

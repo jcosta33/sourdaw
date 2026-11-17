@@ -282,7 +282,10 @@ describe('thread context for the planner', () => {
     describe('reading the thread', () => {
         it('carries the admitted reading and exact committed or cancelled batch to both provider profiles', () => {
             const makeThread = (reading: string, status: 'executed' | 'cancelled', hasReceipt: boolean) => {
-                const card = confirmation({ runId: 'radio-run', assistantMessageId: 'radio-card', status });
+                const card = {
+                    ...confirmation({ runId: 'radio-run', assistantMessageId: 'radio-card', status }),
+                    creativeAuthorityIds: ['authority'],
+                };
                 return buildThreadContext(
                     sources({
                         messages: [
@@ -341,6 +344,57 @@ describe('thread context for the planner', () => {
                 creativeInterpretation: 'A small vintage receiver',
             });
         });
+        it.each(['proposed', 'executed', 'cancelled'] as const)(
+            'does not borrow a run reading for an unbound %s confirmation',
+            (status) => {
+                const card = confirmation({ runId: 'radio-run', assistantMessageId: 'radio-card', status });
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('request', 'user', 'change it'),
+                            message('radio-card', 'assistant', 'Proposal'),
+                        ],
+                        confirmations: [card],
+                        runs: [
+                            {
+                                runId: 'radio-run',
+                                creativeAuthorityIds: ['later'],
+                                receipts: status === 'executed' ? [receipt('radio-run')] : [],
+                                plan: {
+                                    applicationToolReceipts: [
+                                        {
+                                            schema: 'sourdaw.application-tool-receipt',
+                                            schemaVersion: 1,
+                                            callId: 'intake',
+                                            toolName: 'selectCreativeInterpretation',
+                                            turn: 1,
+                                            status: 'success',
+                                            revision: null,
+                                            data: {
+                                                kind: 'metric-intent',
+                                                authorityId: 'later',
+                                                creativeInterpretation: 'Later reading',
+                                            },
+                                            summary: 'admitted',
+                                            warnings: [],
+                                            error: null,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    })
+                );
+                const result =
+                    status === 'proposed'
+                        ? thread?.pendingProposal
+                        : status === 'executed'
+                          ? thread?.lastCommit
+                          : thread?.lastCancelled;
+                expect(result).not.toBeNull();
+                expect(result).not.toHaveProperty('creativeInterpretation');
+            }
+        );
         it('does not treat an accepted confirmation without its batch receipt as committed', () => {
             const card = confirmation({ runId: 'accepted-run', assistantMessageId: 'card', status: 'accepted' });
             expect(
