@@ -1,6 +1,10 @@
+import { getExecutableAppActionEffect } from '#/modules/Command/useCases';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ThreadContext } from '../../models/ThreadContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
+import { type CommittedCommand } from '../lastCommitContinuation/lastCommitOutcome';
+import { readCommittedBatch } from '../lastCommitContinuation/readCommittedBatch';
 import { readChatThreadContext } from '../readChatThreadContext';
 
 import { protectionCandidates } from './protectionCandidates';
@@ -8,6 +12,14 @@ import { protectionSlots, type Range } from './readProtectionSlots';
 import { refinementRequestReading } from './refinementRequestReading';
 
 const CONTEXTUAL_TONE_REFERENCE = /^(?:that|the same)\s+(?:tone|sound|timbre)$/iu;
+
+type ToneProtectionInput = {
+    prompt: string;
+    context: ProjectContext;
+    thread: ThreadContext | null | undefined;
+    clipId: string;
+    trackId: string;
+};
 
 function findContextualToneClause(prompt: string, context: ProjectContext): Range | undefined {
     const { complete, maskedText } = scanPromptQuotedText(prompt);
@@ -51,18 +63,54 @@ function findContextualToneClause(prompt: string, context: ProjectContext): Rang
     return hasIndependentInstruction ? range : undefined;
 }
 
-function hasStandingMidiResult(thread: ThreadContext | null | undefined, clipId: string): boolean {
-    const prior = thread?.lastCommit;
-    if (prior?.standing !== 'standing' || prior.receiptIds.length !== 1) {
+function hasCommittedParameterOnOwner(command: CommittedCommand, { context, trackId }: ToneProtectionInput): boolean {
+    const { type, payload } = command;
+    const { deviceId, expectedTrackId, paramId, value } = payload;
+    if (
+        type !== 'setDeviceParameter' ||
+        expectedTrackId !== trackId ||
+        typeof deviceId !== 'string' ||
+        typeof paramId !== 'string' ||
+        typeof value !== 'number'
+    ) {
         return false;
     }
-    const current = readChatThreadContext()?.lastCommit;
+    const effect = getExecutableAppActionEffect(type);
+    const targets = context.tracks.flatMap((track) =>
+        track.devices.filter((device) => device.id === deviceId).map((device) => ({ track, device }))
+    );
+    const target = targets[0];
+    if (effect?.dimensions.length !== 1 || effect.dimensions[0] !== 'processing' || targets.length !== 1) {
+        return false;
+    }
+    const param = target?.device.parameters?.find((parameter) => parameter.id === paramId);
+    return target?.track.id === trackId && param?.valuePresent !== false && param?.value === value;
+}
+
+function hasStandingMidiResult(input: ToneProtectionInput): boolean {
+    const { thread, clipId } = input;
+    const prior = thread?.lastCommit;
+    if (thread?.pendingProposal !== null || prior?.standing !== 'standing' || prior.receiptIds.length !== 1) {
+        return false;
+    }
+    const liveThread = readChatThreadContext();
+    const current = liveThread?.lastCommit;
+    if (
+        liveThread?.pendingProposal !== null ||
+        current?.standing !== 'standing' ||
+        current.runId !== prior.runId ||
+        current.receiptIds.length !== 1 ||
+        current.receiptIds[0] !== prior.receiptIds[0]
+    ) {
+        return false;
+    }
+    const batch = readCommittedBatch(current);
     return (
-        current?.standing === 'standing' &&
-        current.runId === prior.runId &&
-        current.receiptIds.length === 1 &&
-        current.receiptIds[0] === prior.receiptIds[0] &&
-        current.commands.some((command) => command.name === 'editMidiNotes' && command.arguments?.clipId === clipId)
+        batch?.commands.every(
+            (command) =>
+                (command.type === 'editMidiNotes' && command.payload.clipId === clipId) ||
+                hasCommittedParameterOnOwner(command, input)
+        ) === true
     );
 }
 
@@ -70,14 +118,9 @@ function hasStandingMidiResult(thread: ThreadContext | null | undefined, clipId:
  * The caller has already proved a single-clip MIDI-only write. A contextual tone hold constrains
  * its processing, which this command cannot write. Leave every other span to clip protection.
  */
-export function readMidiToneProtectionPrompt(input: {
-    prompt: string;
-    context: ProjectContext;
-    thread: ThreadContext | null | undefined;
-    clipId: string;
-}): string | undefined {
-    const { prompt, context, thread, clipId } = input;
-    if (!hasStandingMidiResult(thread, clipId)) {
+export function readMidiToneProtectionPrompt(input: ToneProtectionInput): string | undefined {
+    const { prompt, context } = input;
+    if (!hasStandingMidiResult(input)) {
         return undefined;
     }
     const range = findContextualToneClause(prompt, context);

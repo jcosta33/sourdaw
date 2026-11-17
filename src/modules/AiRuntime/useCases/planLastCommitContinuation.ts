@@ -1,5 +1,4 @@
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
-import { undoHistoryStore } from '#/modules/Command/stores';
 import {
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
@@ -9,7 +8,6 @@ import { type AdoptedRecipe } from '../models/AdoptedRecipe';
 import { clarify, denied } from '../models/LastCommitRefusal';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ThreadContext } from '../models/ThreadContext';
-import { agentRunStore } from '../stores/agentRunStore';
 import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmationStore';
 import { type LastCommitRequest, readLastCommitRequest } from '../transformers/readLastCommitRequest';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -27,6 +25,7 @@ import {
     type LastCommitContinuation,
     type RetargetRequest,
 } from './lastCommitContinuation/lastCommitOutcome';
+import { readCommittedBatch } from './lastCommitContinuation/readCommittedBatch';
 import { readNamedTracks } from './lastCommitContinuation/readNamedTracks';
 import { readRetargetTracks } from './lastCommitContinuation/readRetargetTracks';
 import { readStatedArguments } from './lastCommitContinuation/readStatedArguments';
@@ -58,10 +57,6 @@ function readDeclaredParameterUnits(): string[] {
     ];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
  * Only a commit whose whole revert group the undo history holds applied has committed values to
  * work from: an undone one has none in the project, and one of unknown standing may hold only part.
@@ -80,29 +75,6 @@ function refuseUnlessStanding(commit: ThreadCommit, request: FollowUpRequest): L
     return denied(
         `The undo history no longer shows whether the last committed change still stands as committed, so it cannot ${REQUESTED_ACT[request.kind]} it.`
     );
-}
-
-/** The committed batch as the undo history holds it: every entry of the commit's revert group, in order. */
-function readCommittedBatch(commit: ThreadCommit): CommittedBatch | null {
-    const run = agentRunStore.value?.runs.find((candidate) => candidate.runId === commit.runId);
-    const receipt = run?.receipts.find((candidate) => commit.receiptIds.includes(candidate.receiptIdentity));
-    const revertGroupId = receipt?.revertGroupId ?? null;
-    if (revertGroupId === null) {
-        return null;
-    }
-    const entries = (undoHistoryStore.value?.past ?? []).filter((entry) => entry.groupId === revertGroupId);
-    const commands: CommittedCommand[] = [];
-    for (const entry of entries) {
-        if (entry.kind !== 'action') {
-            return null;
-        }
-        const payload = 'payload' in entry.action && isRecord(entry.action.payload) ? entry.action.payload : {};
-        commands.push({ type: entry.action.type, payload, label: entry.label });
-    }
-    if (commands.length === 0 || receipt === undefined) {
-        return null;
-    }
-    return { runId: commit.runId, workId: receipt.workId, revertGroupId, commands };
 }
 
 /**

@@ -94,7 +94,7 @@ import {
     type ScriptedTurn,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
-import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
 
@@ -107,7 +107,7 @@ const bluesIntake = nonAcousticMetricIntakeTurn({
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
-    return { backend, generateWebLlmCompletion: vi.fn() };
+    return { backend, generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() };
 });
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -124,6 +124,11 @@ vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
 const noActionHistoryMetadataPort = {
@@ -269,6 +274,7 @@ function seedMidiPhrase(clipName = 'Lead Motif') {
     }
     instrument.parameterValues.filterCutoff = 1_720;
     instrument.parameterValues.filterResonance = 2.8;
+    instrument.parameterValues.sustain = 0.61;
     trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
     const add = (id: string, startBeat: number, name: string) =>
         addClip({
@@ -404,6 +410,98 @@ async function commitScriptedPhraseEdit(prompt = PHRASE_TASK) {
         status: 'executed',
     });
     return confirmation;
+}
+
+function readAcceptedReceipt(confirmation: PendingAppActionConfirmation) {
+    const commandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!commandBatch) {
+        throw new Error('Expected an accepted versioned Command batch');
+    }
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error(parsed.reason);
+    }
+    const receipt = agentRunLifecycle
+        .get(confirmation.runId)
+        ?.receipts.find(({ workId }) => workId === parsed.envelope.batchId);
+    if (!receipt) {
+        throw new Error('Expected a receipt for the exact accepted batch');
+    }
+    return receipt;
+}
+
+function readCapturedThread(requests: string[]) {
+    const section = /^thread_context:\n(?<payload>.+)$/mu.exec(requests[0] ?? '')?.groups?.payload;
+    if (!section) {
+        throw new Error('Expected the prior accepted result in the next actual provider request');
+    }
+    const thread: unknown = JSON.parse(section);
+    return { section, thread };
+}
+
+const FOLLOWUP_CUTOFF = 1_840;
+const FOLLOWUP_RESONANCE = 3.2;
+const REPLACEMENT_CUTOFF = 2_060;
+
+async function commitScriptedToneChange(track: Track) {
+    const device = track.devices[0];
+    if (!device) {
+        throw new Error('Expected a Synth on the tone target');
+    }
+    const deviceId = device.id;
+    const name = 'setDeviceParameter';
+    const changes = [
+        { deviceId, paramId: 'filterCutoff', value: FOLLOWUP_CUTOFF },
+        { deviceId, paramId: 'filterResonance', value: FOLLOWUP_RESONANCE },
+    ];
+    scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        literalMetricIntakeTurn,
+        () => [catalogDiscoveryCall([name])],
+        (message) => {
+            assertDiscoveredCommandSchemas(message, [name]);
+            return [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: changes.map((args) => ({ name, arguments: args })),
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Set the requested filter cutoff and resonance.',
+                            constraints: [],
+                            scope: {
+                                targetIds: [track.id, deviceId, ...changes.map(({ paramId }) => paramId)],
+                                targetRanges: [],
+                                protectedTargetIds: [`${deviceId}:sustain`],
+                                protectedRanges: [],
+                            },
+                            capabilityIds: [name],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: ['Check the device owner and preserve its other settings.'],
+                            stoppingConditions: ['Stop if the device changed.'],
+                        },
+                    },
+                },
+            ];
+        },
+        () => [],
+    ]);
+    await sendChatMessage(
+        `Set the ${track.name} ${device.name} Filter Cutoff to ${String(FOLLOWUP_CUTOFF)} Hz and Filter Resonance to ${String(FOLLOWUP_RESONANCE)}, leaving Sustain unchanged.`
+    );
+    const reply = chatStore.value?.messages.at(-1);
+    expect(getConfirmationId(), reply?.error ?? reply?.content).not.toBe('');
+    const confirmation = requireConfirmation();
+    expect(confirmation.actions).toEqual(
+        changes.map((payload) => ({
+            type: 'setDeviceParameter',
+            payload: expect.objectContaining({ ...payload, expectedTrackId: track.id }),
+        }))
+    );
+    await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+        status: 'executed',
+    });
+    return { confirmation, deviceId, receipt: readAcceptedReceipt(confirmation) };
 }
 
 describe('high-level intent execution', () => {
@@ -606,25 +704,15 @@ describe('high-level intent execution', () => {
     it('follows an accepted motif edit with fresh authority to simplify only its notes and preserve its tone', async () => {
         seedMidiPhrase();
         const first = await commitScriptedPhraseEdit();
-        const firstBatch = first.approvalSnapshot.commandBatch;
-        if (!firstBatch) {
-            throw new Error('Expected a versioned Command batch on the accepted motif');
-        }
-        const parsed = parseVersionedCommandBatchEnvelope(firstBatch.serialized, firstBatch.authority);
-        if (parsed.status !== 'valid') {
-            throw new Error(parsed.reason);
-        }
-        const { batchId } = parsed.envelope;
-        const receipt = agentRunLifecycle.get(first.runId)?.receipts.find(({ workId }) => workId === batchId);
+        const receipt = readAcceptedReceipt(first);
         const acceptedNotes = structuredClone(durablePhraseNotes());
         const acceptedDevices = structuredClone(durablePhraseDevices());
         const acceptedRevision = captureProjectRevision();
         const pickup = acceptedNotes?.find(({ pitch, startBeat }) => pitch === 58 && startBeat === 3.25);
-        if (!receipt || !acceptedNotes || !acceptedDevices || !pickup) {
+        if (!acceptedNotes || !acceptedDevices || !pickup) {
             throw new Error('Expected an accepted, receipted motif and its generated pickup');
         }
         expect(acceptedDevices[0]?.parameterValues).toMatchObject({ filterCutoff: 1_720, filterResonance: 2.8 });
-        expect(receipt).toMatchObject({ workId: batchId, receiptIdentity: expect.any(String) });
         const firstUndo = structuredClone(undoStore.value?.past ?? []);
         expect(firstUndo).toHaveLength(1);
 
@@ -637,11 +725,7 @@ describe('high-level intent execution', () => {
         ];
         const requests = scriptMidiPhraseEdit({ selectedNoteIds, canInsert: false, operations });
         await sendChatMessage(SPARSE_PHRASE_TASK);
-        const section = /^thread_context:\n(?<payload>.+)$/mu.exec(requests[0] ?? '')?.groups?.payload;
-        if (!section) {
-            throw new Error('Expected the prior accepted result in the next actual provider request');
-        }
-        const thread: unknown = JSON.parse(section);
+        const { section, thread } = readCapturedThread(requests);
         expect(thread).toMatchObject({
             requests: [{ value: PHRASE_TASK, trust: 'untrusted_user_string', truncated: false }],
             pendingProposal: null,
@@ -696,6 +780,119 @@ describe('high-level intent execution', () => {
         expect(durablePhraseDevices()).toEqual(acceptedDevices);
         expect(undoStore.value?.past).toEqual(firstUndo);
     });
+
+    it.each([
+        { name: 'same track', prior: 'same' },
+        { name: 'different track', prior: 'different' },
+        { name: 'undone result', prior: 'undone' },
+        { name: 'superseded parameter', prior: 'changed' },
+    ] as const)(
+        'checks the $name against a recorded processing receipt before a MIDI continuation',
+        async ({ prior }) => {
+            seedMidiPhrase();
+            const phaseTrack = trackStore.value?.tracks.find(({ id }) => id === PHRASE_TRACK_ID);
+            if (!phaseTrack) {
+                throw new Error('Expected the seeded motif track');
+            }
+            let toneTrack = phaseTrack;
+            if (prior === 'different') {
+                toneTrack = createTrack({ kind: 'midi', name: 'Other Keys' });
+                const device = toneTrack.devices[0];
+                if (!device) {
+                    throw new Error('Expected a device on the unrelated track');
+                }
+                device.parameterValues = { filterCutoff: 960, filterResonance: 4, sustain: 0.63 };
+                trackStore.set({ tracks: [phaseTrack, toneTrack], selectedTrackId: phaseTrack.id, ghostClips: [] });
+            }
+            const { confirmation: first, deviceId, receipt } = await commitScriptedToneChange(toneTrack);
+            if (prior === 'undone') {
+                await undo();
+            }
+            if (prior === 'changed') {
+                await executeAppAction({
+                    type: 'setDeviceParameter',
+                    payload: { deviceId, paramId: 'filterCutoff', value: REPLACEMENT_CUTOFF },
+                });
+            }
+            const devicesBefore = structuredClone(durablePhraseDevices());
+            const runtimeWritesBefore = runtimeMocks.updateDeviceParam.mock.calls.length;
+            expect(runtimeWritesBefore).toBeGreaterThan(0);
+            const acceptedSettings = { filterCutoff: FOLLOWUP_CUTOFF, filterResonance: FOLLOWUP_RESONANCE };
+            const originalSettings = { filterCutoff: 1_720, filterResonance: 2.8 };
+            const expectedSettings = {
+                same: acceptedSettings,
+                different: originalSettings,
+                undone: originalSettings,
+                changed: { ...acceptedSettings, filterCutoff: REPLACEMENT_CUTOFF },
+            };
+            expect(devicesBefore?.[0]?.parameterValues).toMatchObject(expectedSettings[prior]);
+            expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            selectClip(PHRASE_CLIP_ID);
+            selectPhraseNotes([THIRD.id, FILLER.id]);
+            const requests = scriptMidiPhraseEdit({
+                canInsert: false,
+                operations: [
+                    { type: 'patch', noteId: THIRD.id, patch: { duration: 0.5 } },
+                    { type: 'delete', noteId: FILLER.id },
+                ],
+            });
+            await sendChatMessage(SPARSE_PHRASE_TASK);
+            const { section, thread } = readCapturedThread(requests);
+            expect(thread).toMatchObject({
+                lastCommit: {
+                    runId: first.runId,
+                    receiptIds: [receipt.receiptIdentity],
+                    standing: prior === 'undone' ? 'undone' : 'standing',
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            targetTrackId: toneTrack.id,
+                            arguments: {
+                                deviceId,
+                                paramId: 'filterCutoff',
+                                value: FOLLOWUP_CUTOFF,
+                            },
+                        },
+                        {
+                            name: 'setDeviceParameter',
+                            targetTrackId: toneTrack.id,
+                            arguments: {
+                                deviceId,
+                                paramId: 'filterResonance',
+                                value: FOLLOWUP_RESONANCE,
+                            },
+                        },
+                    ],
+                },
+            });
+            for (const guard of ['expectedTrackId', 'expectedDeviceType', 'expectedDeviceIds', 'expectedValue']) {
+                expect(section).not.toContain(`"${guard}"`);
+            }
+            const second = requireConfirmation();
+            expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            if (prior !== 'same') {
+                expect(second.id).toBe(first.id);
+                expect([...requests, chatStore.value?.messages.at(-1)?.content].join('\n')).toContain(
+                    'Transform compilation includes a protected or unresolved target'
+                );
+                expect(durablePhraseDevices()).toEqual(devicesBefore);
+                expect(runtimeMocks.updateDeviceParam).toHaveBeenCalledTimes(runtimeWritesBefore);
+                return;
+            }
+            expect(second.id, chatStore.value?.messages.at(-1)?.content).not.toBe(first.id);
+            expect(second.actions.map(({ type }) => type)).toEqual(['editMidiNotes']);
+            await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(durablePhraseNotes()).toEqual([OPENING, { ...THIRD, duration: 0.5 }, ENDING]);
+            expect(durablePhraseDevices()).toEqual(devicesBefore);
+            await undo();
+            expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            expect(durablePhraseDevices()).toEqual(devicesBefore);
+            expect(runtimeMocks.updateDeviceParam).toHaveBeenCalledTimes(runtimeWritesBefore);
+            expect(undoStore.value?.past).toHaveLength(2);
+        }
+    );
 
     it.each([
         {

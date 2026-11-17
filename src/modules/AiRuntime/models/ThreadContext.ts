@@ -25,6 +25,8 @@ export const THREAD_CONTEXT_MAX_BYTES = { hosted: 16_384, local: 5_120 } as cons
 export type ThreadCommand = {
     name: string;
     label: string;
+    /** A recorded owner of the command's target, as historical reference evidence. */
+    targetTrackId?: string;
     arguments?: Record<string, unknown>;
     /** Set when the arguments did not fit the section's cap and the command is stated by name and label alone. */
     argumentsOmitted?: true;

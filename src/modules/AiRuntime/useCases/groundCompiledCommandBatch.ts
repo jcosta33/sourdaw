@@ -209,7 +209,13 @@ function getMidiToneProtectionPrompt(
     if (!edit || input.creativeAuthority?.editDimensions.some((dimension) => dimension !== 'midi-content')) {
         return undefined;
     }
-    return readMidiToneProtectionPrompt({ ...input, clipId: edit.clipId, thread: input.thread });
+    return readMidiToneProtectionPrompt({
+        prompt: input.prompt,
+        context: input.context,
+        clipId: edit.clipId,
+        trackId: edit.guard.trackId,
+        thread: input.thread,
+    });
 }
 
 /** Runtime validation, batch-local identities, state guards and the production brief, in that order. */

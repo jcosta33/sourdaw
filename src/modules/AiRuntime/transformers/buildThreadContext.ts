@@ -87,13 +87,35 @@ function publicMidiNoteEditArguments(payload: Record<string, unknown>): Record<s
     return isMidiNoteEditProposal(visible) ? visible : undefined;
 }
 
+function publicDeviceParameterArguments(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    const { deviceId, paramId, value } = payload;
+    if (typeof deviceId !== 'string' || typeof paramId !== 'string' || typeof value !== 'number') {
+        return undefined;
+    }
+    return { deviceId, paramId, value };
+}
+
+function publicCommandArguments(type: string, payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    switch (type) {
+        case 'editMidiNotes':
+            return publicMidiNoteEditArguments(payload);
+        case 'setDeviceParameter':
+            return publicDeviceParameterArguments(payload);
+        default:
+            return payload;
+    }
+}
+
 function commandsOfSnapshot(snapshot: ThreadConfirmation['approvalSnapshot']): ThreadCommand[] {
     return snapshot.actions.map((action, index) => {
         const command: ThreadCommand = { name: action.type, label: snapshot.actionLabels[index] ?? action.type };
         if (isRecord(action.payload)) {
-            const args = action.type === 'editMidiNotes' ? publicMidiNoteEditArguments(action.payload) : action.payload;
+            const args = publicCommandArguments(action.type, action.payload);
             if (args !== undefined) {
                 command.arguments = args;
+            }
+            if (action.type === 'setDeviceParameter' && typeof action.payload.expectedTrackId === 'string') {
+                command.targetTrackId = action.payload.expectedTrackId;
             }
         }
         return command;
