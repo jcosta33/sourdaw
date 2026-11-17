@@ -75,9 +75,10 @@ type ProspectiveObservation = {
     replies: { received: number; status: string | null; changeCount: number | null }[];
     terminated: number | null;
 };
-type BrowserProspectiveObservation = { requests: ProspectiveObservation[]; failures: string[]; restore(): void };
+type BrowserProspectiveObservation = { requests: ProspectiveObservation[]; failures: string[]; restore(): boolean };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
 const elasticProspectiveObserverPages = new WeakMap<TestInfo, Page>();
+const elasticIncrementalObserverPages = new WeakMap<TestInfo, Page>();
 const armedSaveOverlaps = new WeakSet<TestInfo>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
@@ -580,6 +581,7 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
             requests,
             failures,
             restore() {
+                let restored = true;
                 try {
                     for (const cleanup of cleanups) {
                         cleanup();
@@ -588,15 +590,18 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                     if (prototype.postMessage === post) {
                         Object.defineProperty(prototype, 'postMessage', postDescriptor);
                     } else {
+                        restored = false;
                         failures.push('Native Worker postMessage descriptor changed during passive observation');
                     }
                     if (prototype.terminate === terminate) {
                         Object.defineProperty(prototype, 'terminate', terminateDescriptor);
                     } else {
+                        restored = false;
                         failures.push('Native Worker terminate descriptor changed during passive observation');
                     }
                     delete target.elasticProspectiveObservation;
                 }
+                return restored;
             },
         };
     });
@@ -755,6 +760,50 @@ async function startElasticTaskTrace(
     }
     return capture;
 }
+async function finishProspectiveObservation(info: TestInfo): Promise<string[]> {
+    const owner = elasticProspectiveObserverPages.get(info);
+    if (!owner) {
+        return [];
+    }
+    const observation = await owner.evaluate(() => {
+        const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
+        const current = target.elasticProspectiveObservation;
+        if (!current) {
+            throw new Error('Installed prospective observations are missing during cleanup');
+        }
+        const restored = current.restore();
+        return { requests: current.requests, failures: current.failures, restored };
+    });
+    await info.attach('elastic-prospective-native-requests.json', {
+        body: JSON.stringify(observation),
+        contentType: 'application/json',
+    });
+    if (!observation.restored || elasticProspectiveObserverPages.get(info) !== owner) {
+        throw new Error('Prospective observer ownership or native descriptor restoration failed');
+    }
+    elasticProspectiveObserverPages.delete(info);
+    return observation.failures;
+}
+async function finishIncrementalObservation(info: TestInfo) {
+    const owner = elasticIncrementalObserverPages.get(info);
+    if (!owner) {
+        return null;
+    }
+    const observation = await owner.evaluate(async () => {
+        const path = '/tests/e2e/elasticSaveOverlapFixture.ts';
+        const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
+        return fixture.stopElasticIncrementalObservation();
+    });
+    await info.attach('elastic-post-reopen-incremental-requests.json', {
+        body: JSON.stringify(observation),
+        contentType: 'application/json',
+    });
+    if (!observation.restored || elasticIncrementalObserverPages.get(info) !== owner) {
+        throw new Error('Incremental observer ownership or native descriptor restoration failed');
+    }
+    elasticIncrementalObserverPages.delete(info);
+    return observation;
+}
 test.afterEach(async ({ page: _page }, info) => {
     const failures: string[] = [];
     try {
@@ -762,28 +811,18 @@ test.afterEach(async ({ page: _page }, info) => {
     } catch (error) {
         failures.push(String(error));
     }
-    const observerPage = elasticProspectiveObserverPages.get(info);
-    if (observerPage) {
-        try {
-            const observation = await observerPage.evaluate(() => {
-                const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
-                const current = target.elasticProspectiveObservation;
-                if (!current) {
-                    throw new Error('Installed prospective observations are missing during cleanup');
-                }
-                current.restore();
-                return { requests: current.requests, failures: current.failures };
-            });
-            failures.push(...observation.failures);
-            await info.attach('elastic-prospective-native-requests.json', {
-                body: JSON.stringify(observation),
-                contentType: 'application/json',
-            });
-        } catch (error) {
-            failures.push(String(error));
-        } finally {
-            elasticProspectiveObserverPages.delete(info);
+    try {
+        failures.push(...(await finishProspectiveObservation(info)));
+    } catch (error) {
+        failures.push(String(error));
+    }
+    try {
+        const incremental = await finishIncrementalObservation(info);
+        if (incremental) {
+            failures.push(...incremental.failures);
         }
+    } catch (error) {
+        failures.push(String(error));
     }
     for (const capture of elasticTaskTraces.get(info) ?? []) {
         try {
@@ -794,6 +833,16 @@ test.afterEach(async ({ page: _page }, info) => {
     }
     elasticTaskTraces.delete(info);
     // Keep the original assertion/measurement error when diagnostics also fail.
+    if (failures.length > 0) {
+        try {
+            await info.attach('elastic-observer-cleanup-failures.json', {
+                body: JSON.stringify(failures),
+                contentType: 'application/json',
+            });
+        } catch (error) {
+            failures.push(String(error));
+        }
+    }
     if (failures.length > 0 && info.status === info.expectedStatus) {
         throw new Error(`Elastic task attribution failed: ${failures.join('; ')}`);
     }
@@ -895,6 +944,229 @@ async function projectScalePreservedState(page: Page, targetClipId: string) {
         const fixture: typeof import('./elasticProjectScaleFixture') = await import(entryPath);
         return fixture.captureElasticProjectScalePreservedState(targetClipId);
     }, targetClipId);
+}
+async function assertDensePersistenceContinuation(page: Page, info: TestInfo, targetClipId: string): Promise<void> {
+    const context = page.context();
+    const url = page.url();
+    const pages: Page[] = [];
+    const cleanupFailures: string[] = [];
+    const capture = (current: Page) =>
+        current.evaluate(async (clipId) => {
+            const path = '/tests/e2e/elasticProjectScaleFixture.ts';
+            const fixture: typeof import('./elasticProjectScaleFixture') = await import(path);
+            return fixture.captureElasticPersistenceTruth(clipId);
+        }, targetClipId);
+    const expected = await capture(page);
+    const expectedSource = await sourceState(page);
+    expect(expectedSource.clipId).toBe(targetClipId);
+    const verify = async (
+        current: Page,
+        truth: typeof expected,
+        previousHashes: string[],
+        phase: string,
+        saved: boolean
+    ) => {
+        const actual = await capture(current);
+        const source = await sourceState(current);
+        const named = await current.evaluate(async (createdAt) => {
+            const path = '/tests/e2e/elasticProjectScaleFixture.ts';
+            const fixture: typeof import('./elasticProjectScaleFixture') = await import(path);
+            return fixture.readElasticNamedProject(createdAt);
+        }, truth.createdAt);
+        await info.attach(`elastic-dense-${phase}-persistence.json`, {
+            body: JSON.stringify({ actual, source, named }),
+            contentType: 'application/json',
+        });
+        expect(actual.projectId).toBe(truth.projectId);
+        expect(actual.createdAt).toBe(truth.createdAt);
+        expect(actual.nativeProjectId).toBe(truth.projectId);
+        expect(actual.nativeCreatedAt).toBe(truth.createdAt);
+        expect(actual.preserved).toEqual(truth.preserved);
+        expect(actual.nativeActive).toEqual(truth.expectedActive);
+        expect(actual.historyHashes).toEqual(expect.arrayContaining(previousHashes));
+        expect(source.clipId).toBe(targetClipId);
+        expect(source).toEqual(expectedSource);
+        const expectedWire = {
+            ...truth.wire,
+            meta: { ...truth.wire.meta, updatedAt: expect.any(Number) },
+        };
+        expect(actual.wire).toEqual(expectedWire);
+        expect(named).toEqual(expectedWire);
+        if (saved) {
+            expect(actual.dirty).toBe(false);
+        }
+        return actual;
+    };
+    const save = async (current: Page): Promise<void> => {
+        expect(
+            await current.evaluate(async () => {
+                const { saveProject } = await import('/src/modules/Project/useCases/index.ts');
+                return saveProject();
+            }),
+            'Actual public Save must finish successfully'
+        ).toBe(true);
+    };
+    const coldBoot = async (): Promise<Page> => {
+        const current = await context.newPage();
+        pages.push(current);
+        const boot = attach_first_paint_console(current);
+        await current.goto(url);
+        await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30000);
+        await wait_for_workspace_ready(current);
+        await expect
+            .poll(
+                async () =>
+                    current.evaluate(async () => {
+                        const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+                        const project = projectStore.value;
+                        return {
+                            loading: project?.loading,
+                            initialized: project?.initialized,
+                            projectId: project?.projectId,
+                            createdAt: project?.createdAt,
+                        };
+                    }),
+                { timeout: 30000 }
+            )
+            .toEqual({
+                loading: false,
+                initialized: true,
+                projectId: expected.projectId,
+                createdAt: expected.createdAt,
+            });
+        return current;
+    };
+    try {
+        await save(page);
+        const firstSaved = await verify(page, expected, expected.historyHashes, 'first-save', true);
+        expect(
+            elasticProspectiveObserverPages.get(info),
+            'Dense prospective cleanup must retain its actual Page owner'
+        ).toBe(page);
+        expect(await finishProspectiveObservation(info)).toEqual([]);
+        await page.close();
+        const firstBoot = await coldBoot();
+        await verify(firstBoot, expected, firstSaved.historyHashes, 'first-cold-boot', false);
+        // Selection is session state; use its public owner before making the later user edit.
+        await firstBoot.evaluate(async (trackId) => {
+            const { selectTrack } = await import('/src/modules/Arrangement/useCases/index.ts');
+            selectTrack(trackId);
+        }, expected.expectedActive.tracks.selectedTrackId);
+        // Settle the actual public persistence queue before measuring the later edit-to-Save route.
+        await firstBoot.evaluate(async () => {
+            const { persistCrdtProject } = await import('/src/modules/CrdtDocument/useCases/index.ts');
+            await persistCrdtProject();
+        });
+        const beforeEdit = await capture(firstBoot);
+        const edited = structuredClone(expected);
+        const name = 'Dense cursor continuity after reopen';
+        const trackId = expected.targetTrack.id;
+        const rename = <TrackRow extends { id: string; name: string }>(tracks: readonly TrackRow[]): TrackRow[] =>
+            tracks.map((track) => (track.id === trackId ? { ...track, name } : track));
+        if (!edited.preserved.raw.tracks || !edited.preserved.projected.tracks) {
+            throw new Error('Immutable dense preservation oracle is missing its tracks');
+        }
+        edited.targetTrack.name = name;
+        edited.preserved.raw.tracks.tracks = rename(edited.preserved.raw.tracks.tracks);
+        edited.preserved.projected.tracks = rename(edited.preserved.projected.tracks);
+        edited.expectedActive.tracks.tracks = rename(edited.expectedActive.tracks.tracks);
+        edited.wire.arrangement.tracks = rename(edited.wire.arrangement.tracks);
+        const activeWire = edited.wire.arrangements?.find((entry) => entry.id === edited.wire.activeArrangementId);
+        if (!activeWire) {
+            throw new Error('Immutable dense wire oracle is missing its active arrangement');
+        }
+        activeWire.tracks.tracks = rename(activeWire.tracks.tracks);
+        await firstBoot.evaluate(async () => {
+            const path = '/tests/e2e/elasticSaveOverlapFixture.ts';
+            const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
+            fixture.armElasticIncrementalObservation();
+        });
+        elasticIncrementalObserverPages.set(info, firstBoot);
+        await firstBoot.evaluate(
+            async ({ trackId, name, expectedName }) => {
+                const { executeAppAction } = await import('/src/modules/Command/useCases/index.ts');
+                await executeAppAction({ type: 'renameTrack', payload: { trackId, name, expectedName } });
+            },
+            { trackId, name, expectedName: expected.targetTrack.name }
+        );
+        const afterEdit = await capture(firstBoot);
+        expect(afterEdit.targetTrack.name).toBe(name);
+        expect(afterEdit.preserved).toEqual(edited.preserved);
+        expect(afterEdit.historyHashes).toEqual(expect.arrayContaining(beforeEdit.historyHashes));
+        const renameHashes = afterEdit.historyHashes.filter((hash) => !beforeEdit.historyHashes.includes(hash));
+        expect(renameHashes.length, 'The actual rename must add native history').toBeGreaterThan(0);
+        await save(firstBoot);
+        const secondSaved = await verify(firstBoot, edited, afterEdit.historyHashes, 'second-save', true);
+        const observation = await finishIncrementalObservation(info);
+        if (!observation) {
+            throw new Error('The post-reopen edit-to-Save incremental observer is missing');
+        }
+        expect(observation.failures).toEqual([]);
+        expect(observation.otherPersistenceRequests, 'Full compaction is not incremental cursor coverage').toEqual([]);
+        expect(
+            observation.incrementalRequests.length,
+            'Zero native incremental requests is a route miss'
+        ).toBeGreaterThan(0);
+        for (const request of observation.incrementalRequests) {
+            expect(Number.isSafeInteger(request.id)).toBe(true);
+            expect(request.documents.length).toBeGreaterThan(0);
+            expect(request.received).toBeGreaterThanOrEqual(request.requested);
+            expect(request.status).toBe('incrementalsEncoded');
+            expect(request.results.map((entry) => entry.id).sort()).toEqual(
+                request.documents.map((entry) => entry.id).sort()
+            );
+            for (const result of request.results) {
+                const input = request.documents.find((entry) => entry.id === result.id);
+                expect(input).toBeDefined();
+                expect(result.heads.toSorted()).toEqual(input?.heads.toSorted());
+                expect(result.bytes).toBeGreaterThan(0);
+            }
+        }
+        expect(
+            observation.incrementalRequests.some((request) =>
+                request.documents.some(
+                    (entry) =>
+                        entry.id === 'root' &&
+                        entry.heads.toSorted().join(',') !== entry.frontier.toSorted().join(',') &&
+                        request.results.some((result) => result.id === entry.id && result.bytes > 0)
+                )
+            ),
+            'A changed real root frontier must have been encoded'
+        ).toBe(true);
+        await firstBoot.close();
+        const secondBoot = await coldBoot();
+        const final = await verify(secondBoot, edited, secondSaved.historyHashes, 'second-cold-boot', false);
+        expect(final.historyHashes).toEqual(expect.arrayContaining(renameHashes));
+    } finally {
+        try {
+            const remaining = await finishIncrementalObservation(info);
+            if (remaining) {
+                cleanupFailures.push(...remaining.failures);
+            }
+        } catch (error) {
+            cleanupFailures.push(String(error));
+        }
+        for (const current of pages.reverse()) {
+            try {
+                await current.close();
+            } catch (error) {
+                cleanupFailures.push(String(error));
+            }
+        }
+        if (cleanupFailures.length > 0) {
+            try {
+                await info.attach('elastic-dense-persistence-cleanup-failures.json', {
+                    body: JSON.stringify(cleanupFailures),
+                    contentType: 'application/json',
+                });
+            } catch (error) {
+                cleanupFailures.push(String(error));
+            }
+        }
+    }
+    if (cleanupFailures.length > 0) {
+        throw new Error(`Dense persistence cleanup failed: ${cleanupFailures.join('; ')}`);
+    }
 }
 async function seedProjectScaleFixture(page: Page, info: TestInfo) {
     const diagnostics: {
@@ -1600,6 +1872,9 @@ for (const projectScale of [false, true]) {
             await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
             await assertPreserved();
             expect((await sourceState(page)).pcm).toEqual(before.pcm);
+            if (projectScale) {
+                await assertDensePersistenceContinuation(page, info, targetClipId);
+            }
         }
     );
 }

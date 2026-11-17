@@ -1,9 +1,13 @@
 import { getChangesMetaSince, getHeads, getMissingDeps, toJS, type Heads } from '@automerge/automerge';
 
-import { getWarpState, trackStore } from '../../src/modules/Arrangement/stores';
+import { getWarpState, markerStore, takeLaneStore, trackStore } from '../../src/modules/Arrangement/stores';
+import { automationStore } from '../../src/modules/Automation/stores';
 import { executeAppAction, executeAppActionBatch } from '../../src/modules/Command/useCases';
 import { getCrdtDoc, settlePendingProjectWritesAndCaptureRevision } from '../../src/modules/CrdtDocument/useCases';
 import { midiStore } from '../../src/modules/MIDI/stores';
+import { type ArrangementStoreState, projectStore } from '../../src/modules/Project/stores';
+import { buildProjectData, getProjectSnapshotKey } from '../../src/modules/Project/useCases';
+import { tempoMapStore, timeSignatureMapStore } from '../../src/modules/Transport/stores';
 
 /** A substantial arrangement and edit session, rather than padding an unrelated document field. */
 export const elasticProjectScale = {
@@ -17,10 +21,10 @@ export const elasticProjectScale = {
 } as const;
 
 /** Plain caller-read truth, captured outside Detect's measured interval. */
-export function captureElasticProjectScalePreservedState(targetClipId: string): unknown {
+export function captureElasticProjectScalePreservedState(targetClipId: string) {
     const document = getCrdtDoc<{
-        tracks?: unknown;
-        midi?: unknown;
+        tracks?: Pick<NonNullable<typeof trackStore.value>, 'tracks'>;
+        midi?: NonNullable<typeof midiStore.value>;
         warpStates?: { states: Record<string, unknown> };
     }>('root');
     if (!document) {
@@ -46,6 +50,105 @@ export function captureElasticProjectScalePreservedState(targetClipId: string): 
         },
         projected,
     };
+}
+
+/** Read native cached arrangements independently of the serializer's active-snapshot refresh. */
+export async function captureElasticPersistenceTruth(targetClipId: string) {
+    settlePendingProjectWritesAndCaptureRevision();
+    const document = getCrdtDoc<{
+        tracks: Pick<NonNullable<typeof trackStore.value>, 'tracks'>;
+        midi: NonNullable<typeof midiStore.value>;
+        arrangements: ArrangementStoreState;
+        projectMeta: { projectId: string; createdAt: number };
+    }>('root');
+    const project = projectStore.value;
+    if (!document || !project?.projectId || project.loading || !project.initialized) {
+        throw new Error('Persistence acceptance requires a fully loaded real project');
+    }
+    const raw = toJS(document);
+    const active = raw.arrangements.arrangements.find((entry) => entry.id === raw.arrangements.activeArrangementId);
+    const targetTrack = raw.tracks.tracks.find((track) => track.clips.some((clip) => clip.id === targetClipId));
+    if (!active || !targetTrack) {
+        throw new Error('Persistence acceptance lost the active arrangement or target track');
+    }
+    const midiState = midiStore.value;
+    if (!midiState) {
+        throw new Error('Persistence acceptance requires the actual MIDI projection');
+    }
+    const midi: typeof active.midi = {
+        notesByClipId: midiState.notesByClipId,
+        ccByClipId: midiState.ccByClipId,
+        pitchBendByClipId: midiState.pitchBendByClipId,
+    };
+    if (midiState.noteCoordinateFormat === 'clip-relative') {
+        midi.noteCoordinateFormat = 'clip-relative';
+    }
+    const expectedActive = {
+        id: active.id,
+        name: active.name,
+        tracks: { tracks: raw.tracks.tracks, selectedTrackId: trackStore.value?.selectedTrackId ?? null },
+        automation: automationStore.value ?? { lanes: [] },
+        midi,
+        tempoMap: tempoMapStore.value ?? undefined,
+        timeSignatureMap: timeSignatureMapStore.value ?? undefined,
+        markers: markerStore.value ?? undefined,
+        takeLanes: takeLaneStore.value ?? undefined,
+    };
+    const built = await buildProjectData({ includeAudioBuffers: false });
+    if (!built) {
+        throw new Error('Persistence acceptance could not capture the real wire representation');
+    }
+    return {
+        projectId: project.projectId,
+        createdAt: project.createdAt,
+        nativeProjectId: raw.projectMeta.projectId,
+        nativeCreatedAt: raw.projectMeta.createdAt,
+        dirty: projectStore.value?.dirty,
+        targetTrack: { id: targetTrack.id, name: targetTrack.name },
+        historyHashes: getChangesMetaSince(document, [])
+            .map((change) => change.hash)
+            .sort(),
+        preserved: captureElasticProjectScalePreservedState(targetClipId),
+        nativeActive: active,
+        expectedActive: structuredClone(expectedActive),
+        wire: built.data,
+    };
+}
+
+/** Read the named record of record without importing a private repository or installing a snapshot. */
+export async function readElasticNamedProject(createdAt: number): Promise<unknown> {
+    const key = getProjectSnapshotKey(createdAt);
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('sourdaw-projects');
+        request.onupgradeneeded = () => {
+            request.transaction?.abort();
+            reject(new Error('Named project database must already exist after public Save'));
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('Named project database read failed'));
+    });
+    try {
+        return await new Promise<unknown>((resolve, reject) => {
+            const transaction = database.transaction('projects', 'readonly');
+            const request = transaction.objectStore('projects').get(key);
+            transaction.oncomplete = () => {
+                try {
+                    const value: unknown = request.result;
+                    if (typeof value !== 'string') {
+                        throw new TypeError('Public Save did not write the expected named JSON record');
+                    }
+                    const parsed: unknown = JSON.parse(value);
+                    resolve(parsed);
+                } catch (error) {
+                    reject(error instanceof Error ? error : new Error(String(error)));
+                }
+            };
+            transaction.onerror = () => reject(transaction.error ?? new Error('Named JSON read failed'));
+            transaction.onabort = () => reject(transaction.error ?? new Error('Named JSON read aborted'));
+        });
+    } finally {
+        database.close();
+    }
 }
 
 export function inspectElasticProjectScale(historyHeads: Heads) {

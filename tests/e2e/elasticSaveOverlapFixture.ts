@@ -183,7 +183,7 @@ function readIncrementalRequest(data: unknown): IncrementalRequest | undefined {
 /** Observe existing CRDT Workers too; no bytes are read, copied or replaced. */
 function observeIncrementals(
     worker: Worker,
-    report: SaveOverlapReport,
+    report: Pick<SaveOverlapReport, 'incrementalRequests'>,
     cleanups: (() => void)[]
 ): (request: IncrementalRequest) => void {
     const requests = new Map<number, IncrementalRequest>();
@@ -212,6 +212,127 @@ function observeIncrementals(
         report.incrementalRequests.push(request);
         requests.set(request.id, request);
     };
+}
+
+type PassiveIncrementalReport = {
+    incrementalRequests: IncrementalRequest[];
+    otherPersistenceRequests: { id: number; type: string }[];
+    failures: string[];
+    restored: boolean;
+};
+let passiveIncremental: { report: PassiveIncrementalReport; stop(): void } | undefined;
+
+/** Observe an edit-to-Save span, including an already-running native CRDT Worker. */
+export function armElasticIncrementalObservation(): void {
+    if (active || passiveIncremental) {
+        throw new Error('Incremental observation requires exclusive native Worker descriptors');
+    }
+    const prototype = Worker.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'postMessage');
+    const warningDescriptor = Object.getOwnPropertyDescriptor(console, 'warn');
+    if (!descriptor || !warningDescriptor) {
+        throw new Error('Incremental observation requires restorable native descriptors');
+    }
+    const report: PassiveIncrementalReport = {
+        incrementalRequests: [],
+        otherPersistenceRequests: [],
+        failures: [],
+        restored: false,
+    };
+    const cleanups: (() => void)[] = [];
+    const workers = new WeakMap<Worker, ReturnType<typeof observeIncrementals>>();
+    const postMessage = prototype.postMessage;
+    const warn = console.warn;
+    const observedPost = new Proxy(prototype.postMessage, {
+        apply(original, receiver: Worker, args: unknown[]): unknown {
+            const request = receiver instanceof Worker ? readIncrementalRequest(args[0]) : undefined;
+            let observe = workers.get(receiver);
+            if (request && !observe) {
+                observe = observeIncrementals(receiver, report, cleanups);
+                workers.set(receiver, observe);
+                const fail = (): void => {
+                    report.failures.push('Actual incremental Worker emitted a native error');
+                };
+                receiver.addEventListener('error', fail);
+                receiver.addEventListener('messageerror', fail);
+                cleanups.push(() => {
+                    receiver.removeEventListener('error', fail);
+                    receiver.removeEventListener('messageerror', fail);
+                });
+            }
+            const data = args[0];
+            if (
+                isRecord(data) &&
+                typeof data.id === 'number' &&
+                (data.type === 'compactShadow' || data.type === 'loadBundle')
+            ) {
+                report.otherPersistenceRequests.push({ id: data.id, type: data.type });
+            }
+            const returned: unknown = Reflect.apply(original, receiver, args);
+            if (request && observe) {
+                observe(request);
+            }
+            return returned;
+        },
+    });
+    const observedWarn = new Proxy(warn, {
+        apply(original, receiver: unknown, args: unknown[]): unknown {
+            const warning = args.find(
+                (argument): argument is string =>
+                    typeof argument === 'string' && argument.startsWith('[AutomergeRepository]')
+            );
+            if (warning) {
+                report.failures.push(warning);
+            }
+            return Reflect.apply(original, receiver, args);
+        },
+    });
+    Object.defineProperty(prototype, 'postMessage', { ...descriptor, value: observedPost });
+    Object.defineProperty(console, 'warn', { ...warningDescriptor, value: observedWarn });
+    passiveIncremental = {
+        report,
+        stop() {
+            try {
+                if (prototype.postMessage !== observedPost) {
+                    report.failures.push('Native postMessage descriptor changed during incremental observation');
+                } else {
+                    Object.defineProperty(prototype, 'postMessage', descriptor);
+                }
+            } catch (error) {
+                report.failures.push(String(error));
+            } finally {
+                try {
+                    if (console.warn !== observedWarn) {
+                        report.failures.push('Native warning descriptor changed during incremental observation');
+                    } else {
+                        Object.defineProperty(console, 'warn', warningDescriptor);
+                    }
+                } catch (error) {
+                    report.failures.push(String(error));
+                }
+                for (const cleanup of cleanups) {
+                    try {
+                        cleanup();
+                    } catch (error) {
+                        report.failures.push(String(error));
+                    }
+                }
+                report.restored = prototype.postMessage === postMessage && console.warn === warn;
+            }
+        },
+    };
+}
+
+export function stopElasticIncrementalObservation(): PassiveIncrementalReport {
+    if (!passiveIncremental) {
+        throw new Error('Installed incremental observation is missing during cleanup');
+    }
+    const current = passiveIncremental;
+    current.stop();
+    if (current.report.restored) {
+        passiveIncremental = undefined;
+    }
+    return current.report;
 }
 
 /** Release Detect at Save's real post, then make Save observe the actual Detect publication. */
