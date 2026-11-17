@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -214,7 +217,7 @@ vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
 
 vi.mock('#/modules/Levain/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Levain/presentations/views')>()),
-    LevainPanel: () => <div data-testid="levain-panel" />,
+    LevainPanel: ({ deviceId }: { deviceId: string }) => <div data-testid="levain-panel">{deviceId}</div>,
 }));
 
 vi.mock('#/modules/Bacteria/presentations/views', async (importOriginal) => ({
@@ -1649,9 +1652,62 @@ describe('AppShell', () => {
         });
     });
 
-    // ── Bottom-dock drawer accent color tokens ────────────────────────────────────
-    describe('bottom drawer accent color tokens', () => {
-        const drawerTokenCases: Array<{
+    it('dismisses the floating editor after the nested menu, preserving text and select Escape', () => {
+        function Controls() {
+            const [menuOpen, setMenuOpen] = useState(true);
+            return (
+                <>
+                    <input aria-label="Preset name" />
+                    <select aria-label="Routing mode">
+                        <option>Mono</option>
+                    </select>
+                    {menuOpen
+                        ? createPortal(
+                              <div role="menu" aria-label="Presets">
+                                  <button role="menuitem" onKeyDown={() => setMenuOpen(false)}>
+                                      Choose preset
+                                  </button>
+                              </div>,
+                              document.body
+                          )
+                        : null}
+                </>
+            );
+        }
+        activeDevicePanelStateMock.activePanel = { kind: 'levain', deviceId: 'levain-1', trackId: null };
+        render(
+            <AppShell>
+                <Controls />
+            </AppShell>
+        );
+        const panel = screen.getByRole('dialog', { name: 'Levain' });
+        fireEvent.keyDown(screen.getByRole('menuitem'), { key: 'Escape' });
+        expect(screen.queryByRole('menu', { name: 'Presets' })).toBeNull();
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Preset name' }), { key: 'Escape' });
+        fireEvent.keyDown(screen.getByRole('combobox', { name: 'Routing mode' }), { key: 'Escape' });
+        fireEvent.keyDown(panel, { key: 'Escape', shiftKey: true });
+        fireEvent.keyDown(panel, { key: 'Escape', repeat: true });
+        expect(activeDevicePanelStateMock.closeActivePanel).not.toHaveBeenCalled();
+        fireEvent.keyDown(panel, { key: 'Escape' });
+        expect(activeDevicePanelStateMock.closeActivePanel).toHaveBeenCalledOnce();
+    });
+
+    it('unmounts the previous device instance when another editor of the same kind opens', () => {
+        activeDevicePanelStateMock.activePanel = { kind: 'levain', deviceId: 'first', trackId: null };
+        const shell = render(<AppShell>Content</AppShell>);
+        const previous = screen.getByTestId('levain-panel');
+        expect(previous).toHaveTextContent('first');
+        activeDevicePanelStateMock.activePanel = { kind: 'levain', deviceId: 'second', trackId: null };
+        shell.rerender(<AppShell>Content</AppShell>);
+        expect(previous).not.toBeInTheDocument();
+        expect(within(screen.getByRole('dialog', { name: 'Levain' })).getByTestId('levain-panel')).toHaveTextContent(
+            'second'
+        );
+    });
+
+    // ── Floating editor accent color tokens ────────────────────────────────────
+    describe('floating editor accent color tokens', () => {
+        const editorTokenCases: Array<{
             label: string;
             kind: ActiveDevicePanel['kind'];
             expectedLabelColor: string;
@@ -1693,13 +1749,15 @@ describe('AppShell', () => {
             },
         ];
 
-        it.each(drawerTokenCases)(
-            'passes tokenized accent classes to $label drawer and omits legacy Tailwind color classes',
+        it.each(editorTokenCases)(
+            'passes tokenized accent classes to $label editor and omits legacy Tailwind color classes',
             ({ label, kind, expectedLabelColor, expectedBorderColor, deprecatedLabelColor, deprecatedBorderColor }) => {
                 activeDevicePanelStateMock.activePanel = { kind, deviceId: `device-${kind}`, trackId: null };
 
                 render(<AppShell>Content</AppShell>);
 
+                const panelContainer = screen.getByRole('dialog', { name: label });
+                expect(panelContainer).toHaveAttribute('aria-modal', 'false');
                 const closeButton = screen.getByRole('button', { name: `Close ${label}` });
                 const headerRow = closeButton.parentElement;
                 const labelElement = headerRow?.querySelector('span');
@@ -1709,8 +1767,6 @@ describe('AppShell', () => {
                 expect(labelElement).toHaveClass(expectedLabelColor);
                 expect(labelElement).not.toHaveClass(deprecatedLabelColor);
 
-                const panelContainer = labelElement?.closest('div[class*="border-t"]');
-                expect(panelContainer).not.toBeNull();
                 expect(panelContainer).toHaveClass(expectedBorderColor);
                 expect(panelContainer).not.toHaveClass(deprecatedBorderColor);
             }
