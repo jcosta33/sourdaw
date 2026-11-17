@@ -94,20 +94,24 @@ const LOOP_STATEMENTS = new Set([
     'WhileStatement',
 ]);
 
-function jumpStaysInside(node, statement) {
-    for (let parent = node.parent; parent && parent !== statement.parent; parent = parent.parent) {
+function jumpTarget(node, boundary) {
+    for (let parent = node.parent; parent && parent !== boundary; parent = parent.parent) {
         if (node.label) {
             if (parent.type === 'LabeledStatement' && parent.label.name === node.label.name) {
-                return true;
+                return parent;
             }
         } else if (
             LOOP_STATEMENTS.has(parent.type) ||
             (node.type === 'BreakStatement' && parent.type === 'SwitchStatement')
         ) {
-            return true;
+            return parent;
         }
     }
-    return false;
+    return undefined;
+}
+
+function jumpStaysInside(node, statement) {
+    return jumpTarget(node, statement.parent) !== undefined;
 }
 
 function throwIsHandledInsideFinalizer(context, statement, finalizer) {
@@ -205,6 +209,46 @@ function rejectionExit(context, statement, returnsOriginal) {
     }
 }
 
+function propertyName(property) {
+    const key = withoutErasedWrappers(property.key);
+    if (!property.computed && key.type === 'Identifier') {
+        return key.name;
+    }
+    if (
+        key.type === 'Literal' &&
+        (key.value === null || ['string', 'number', 'bigint', 'boolean'].includes(typeof key.value))
+    ) {
+        return String(key.value);
+    }
+    if (key.type === 'TemplateLiteral' && key.expressions.length === 0) {
+        return key.quasis[0].value.cooked;
+    }
+    return undefined;
+}
+
+function literalObjectFields(object, fields = new Map()) {
+    for (const property of object.properties) {
+        if (property.type === 'SpreadElement') {
+            const spread = withoutErasedWrappers(property.argument);
+            if (spread.type === 'ObjectExpression') {
+                literalObjectFields(spread, fields);
+            } else {
+                fields.clear();
+            }
+            continue;
+        }
+        const name = propertyName(property);
+        if (name === undefined) {
+            fields.clear();
+        } else if (property.kind !== 'init') {
+            fields.delete(name);
+        } else if (name !== '__proto__' || property.computed || property.shorthand || property.method) {
+            fields.set(name, property.value);
+        }
+    }
+    return fields;
+}
+
 function leavesRejectionObservable(context, call) {
     const original = call.callee.object;
     if (original.type !== 'Identifier') {
@@ -260,10 +304,7 @@ function leavesRejectionObservable(context, call) {
         }
         const value = unwrap(argument);
         if (value?.type === 'ObjectExpression') {
-            return value.properties.some(
-                (property) =>
-                    property.type === 'Property' && property.kind === 'init' && retainsRejectingValue(property.value)
-            );
+            return [...literalObjectFields(value).values()].some(retainsRejectingValue);
         }
         const joined =
             promiseArrayArguments(context, value, 'all') ?? promiseArrayArguments(context, value, 'allSettled');
@@ -314,16 +355,11 @@ const isTrue = (node) => {
 
 function isSuccessValue(node) {
     const value = successRuntimeValue(node);
-    return (
-        value?.type === 'ObjectExpression' &&
-        value.properties.some(
-            (property) =>
-                property.type === 'Property' &&
-                !property.computed &&
-                ['ok', 'success'].includes(property.key.name ?? property.key.value) &&
-                isTrue(property.value)
-        )
-    );
+    if (value?.type !== 'ObjectExpression') {
+        return false;
+    }
+    const fields = literalObjectFields(value);
+    return ['ok', 'success'].some((name) => isTrue(fields.get(name)));
 }
 
 function unconditionalSuccess(body) {
@@ -536,22 +572,29 @@ function observesPlaywrightAssertion(context, expression, assertions) {
         : observesPlaywrightAssertion(context, step.body, assertions);
 }
 
-function branchCanSkipAssertion(context, statement, assertions, nextCanSkip) {
+function sequenceCanSkipAssertion(context, statements, assertions, nextCanSkip, exitCanSkip) {
+    return statements.reduceRight(
+        (canSkip, child) => branchCanSkipAssertion(context, child, assertions, canSkip, exitCanSkip),
+        nextCanSkip
+    );
+}
+
+function branchCanSkipAssertion(context, statement, assertions, nextCanSkip, exitCanSkip = () => true) {
     switch (statement?.type) {
         case 'BlockStatement':
-            return statement.body.reduceRight(
-                (canSkip, child) => branchCanSkipAssertion(context, child, assertions, canSkip),
-                nextCanSkip
-            );
+            return sequenceCanSkipAssertion(context, statement.body, assertions, nextCanSkip, exitCanSkip);
         case 'IfStatement':
             return (
-                branchCanSkipAssertion(context, statement.consequent, assertions, nextCanSkip) ||
-                branchCanSkipAssertion(context, statement.alternate, assertions, nextCanSkip)
+                branchCanSkipAssertion(context, statement.consequent, assertions, nextCanSkip, exitCanSkip) ||
+                branchCanSkipAssertion(context, statement.alternate, assertions, nextCanSkip, exitCanSkip)
             );
         case 'ThrowStatement':
             return !completionReachesCaller(context, statement);
         case 'ReturnStatement':
-            return !observesPlaywrightAssertion(context, statement.argument, assertions);
+            return exitCanSkip(statement) && !observesPlaywrightAssertion(context, statement.argument, assertions);
+        case 'BreakStatement':
+        case 'ContinueStatement':
+            return exitCanSkip(statement);
         case 'ExpressionStatement':
             return nextCanSkip && !observesPlaywrightAssertion(context, statement.expression, assertions);
         default:
@@ -559,15 +602,44 @@ function branchCanSkipAssertion(context, statement, assertions, nextCanSkip) {
     }
 }
 
-function assertionGuard(context, { statement, negated }, { callback, assertions }) {
-    if (assertions.some((node) => node.range[1] <= statement.range[0])) {
-        return false;
+function missingBranchCanSkipAssertion(context, statement, absent, { callback, assertions }) {
+    const route = [];
+    for (let current = statement; current !== callback; current = current.parent) {
+        route.push(current);
     }
-    const guardCallback = enclosingFunction(statement);
-    if (guardCallback !== callback && assertions.some((node) => node.range[0] >= guardCallback.range[1])) {
-        // Returning from the step cannot skip assertions after the step.
-        return false;
+    const after = new Map([[callback, true]]);
+    const exitCanSkip = (exit) => {
+        const target = exit.type === 'ReturnStatement' ? enclosingFunction(exit) : jumpTarget(exit);
+        return after.get(target) ?? true;
+    };
+    let nextCanSkip = true;
+    for (const current of route.reverse()) {
+        const parent = current.parent;
+        if (parent.type === 'ReturnStatement') {
+            nextCanSkip = exitCanSkip(parent);
+        }
+        const siblings = parent.type === 'BlockStatement' ? parent.body : parent.consequent;
+        const index = Array.isArray(siblings) ? siblings.indexOf(current) : -1;
+        if (index >= 0) {
+            if (!sequenceCanSkipAssertion(context, siblings.slice(0, index), assertions, true, exitCanSkip)) {
+                return false;
+            }
+            nextCanSkip = sequenceCanSkipAssertion(
+                context,
+                siblings.slice(index + 1),
+                assertions,
+                nextCanSkip,
+                exitCanSkip
+            );
+        }
+        // A jump out of this statement resumes after its siblings have been accounted for.
+        after.set(current, nextCanSkip);
     }
+    return branchCanSkipAssertion(context, absent, assertions, nextCanSkip, exitCanSkip);
+}
+
+function assertionGuard(context, { statement, negated }, test) {
+    const { assertions } = test;
     const laterAssertion = assertions.some((node) => node.range[0] >= statement.range[1]);
     const present = negated ? statement.alternate : statement.consequent;
     const presentAssertion =
@@ -576,7 +648,7 @@ function assertionGuard(context, { statement, negated }, { callback, assertions 
         return false;
     }
     const absent = negated ? statement.consequent : statement.alternate;
-    return branchCanSkipAssertion(context, absent, assertions, !laterAssertion);
+    return missingBranchCanSkipAssertion(context, statement, absent, test);
 }
 
 const noConditionalPlaywrightAdmission = rule(

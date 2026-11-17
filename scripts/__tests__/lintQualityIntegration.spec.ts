@@ -61,6 +61,20 @@ describe('production quality lint', () => {
                 export function hidesFailure(run: () => { ok: boolean }) {
                     try { return run(); } catch { return { ok: true }; }
                 }
+                export function replacesObservedPromise(promise: Promise<void>) {
+                    void promise.catch(() => {}); // original promise is discarded
+                    return { promise, ...{ promise: Promise.resolve() } };
+                }
+                export function restoresObservedPromise(promise: Promise<void>) {
+                    void promise.catch(() => {});
+                    return { ...{ promise: Promise.resolve() }, promise };
+                }
+                export function returnsFailure(run: () => { ok: boolean }) {
+                    try { return run(); } catch { return { ok: true, ...{ ok: false } }; }
+                }
+                export function returnsSuccess(run: () => { ok: boolean }) {
+                    try { return run(); } catch { return { ok: false, ...{ ok: true } }; }
+                }
                 export function optionalStorage(read: () => string) {
                     try { return read(); } catch { return null; }
                 }
@@ -220,6 +234,29 @@ describe('production quality lint', () => {
                     // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe a real absence window.
                     await page.waitForTimeout(25);
                 });
+                scenario('conditional observer before the required entry', async ({ page }) => {
+                    if (process.env.CHECK_READY) { await expect(page.getByRole('status')).toBeVisible(); }
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) { // earlier observer can be skipped
+                        await expect(entry).toBeVisible();
+                    }
+                });
+                scenario('conditional observer after the required entry', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) { // later observer can be skipped
+                        await expect(entry).toBeVisible();
+                    }
+                    if (process.env.CHECK_READY) { await expect(page.getByRole('status')).toBeVisible(); }
+                });
+                scenario('observers in both branches', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) { await expect(entry).toBeVisible(); }
+                    if (process.env.CHECK_READY) {
+                        await expect(page.getByRole('status')).toBeVisible();
+                    } else {
+                        await expect(page.getByRole('alert')).toBeVisible();
+                    }
+                });
             `
             );
             writeFileSync(
@@ -244,8 +281,28 @@ describe('production quality lint', () => {
             expect(result.status, result.stdout + result.stderr).toBe(1);
             const report = parseQualityReport(result.stdout, root);
             expect(report.fileCount).toBe(5);
+            const diagnosticLines = (file: string, rule: string) => {
+                const lines = readFileSync(file, 'utf8').split('\n');
+                return report.diagnostics
+                    .filter((entry) => basename(entry.file) === basename(file) && entry.rule === rule)
+                    .map(({ line }) => (line === undefined ? undefined : lines[line - 1]?.trim()));
+            };
+            expect(diagnosticLines(runTime, 'sourdaw-craft/no-failed-operation-success')).toEqual(
+                expect.arrayContaining(['try { return run(); } catch { return { ok: false, ...{ ok: true } }; }'])
+            );
+            expect(diagnosticLines(runTime, 'sourdaw-craft/no-silent-catch')).toContain(
+                'void promise.catch(() => {}); // original promise is discarded'
+            );
+            expect(diagnosticLines(browser, 'sourdaw-craft/no-conditional-playwright-admission')).toEqual(
+                expect.arrayContaining([
+                    'if (await entry.isVisible()) { // earlier observer can be skipped',
+                    'if (await entry.isVisible()) { // later observer can be skipped',
+                ])
+            );
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
@@ -255,6 +312,8 @@ describe('production quality lint', () => {
                     ['sourceHelper.ts', 'sourdaw-craft/no-fixed-test-sleep'],
                     ['typed.ts', 'sourdaw-craft/no-external-data-assertion'],
                     ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
+                    ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
+                    ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-useless-clone-spread'],
                     ['typed.ts', 'typescript/switch-exhaustiveness-check'],

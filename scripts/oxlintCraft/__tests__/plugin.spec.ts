@@ -194,8 +194,36 @@ runCraftRule('no-silent-catch', {
         'function deferred(promise) { try { void promise.catch(() => {}); return promise; } finally { cleanup(); } }',
         'function cancelled(promise) { try { start(); } catch (error) { void promise.catch(() => {}); throw error; } }',
         'async function observe(promise) { try { await promise; } catch (error) { record(error); } }',
+        'function defer(promise) { void promise.catch(() => {}); return { promise, ...{ ready: true } }; }',
+        'function defer(promise, replacement) { void promise.catch(() => {}); return { ...{ task: replacement }, task: promise }; }',
+        'function defer(promise, other) { void promise.catch(() => {}); return { ...other, ...{ ["task"]: promise } }; }',
+        'function restoreNestedWrite(promise, other) { void promise.catch(() => {}); return { ...{ task: null, ...other }, task: promise }; }',
     ],
     invalid: [
+        {
+            code: 'function defer(promise, replacement) { void promise.catch(() => {}); return { promise, ...{ promise: replacement } }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function defer(promise) { void promise.catch(() => {}); return { task: promise, ...{ task: null } }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function defer(promise) { void promise.catch(() => {}); return { task: promise, ["task"]: null }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function defer(promise) { void promise.catch(() => {}); return { task: promise, get task() { return null; } }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function defer(promise, extra) { void promise.catch(() => {}); return { task: promise, ...extra }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function unknownNestedWrite(promise, extra) { void promise.catch(() => {}); return { task: promise, ...{ ready: true, ...extra } }; }',
+            errors: [{ message: /empty handler discards/ }],
+        },
         { code: 'try { work(); } catch {}', errors: [{ message: /empty handler discards/ }] },
         { code: 'try { work(); } catch { /* ignore */ }', errors: [{ message: /empty handler discards/ }] },
         { code: 'work().catch(() => {});', errors: [{ message: /empty handler discards/ }] },
@@ -303,8 +331,24 @@ runCraftRule('no-failed-operation-success', {
         'function save() { try { create(); } catch (error) { if (isAlreadySaved(error)) { return true; } throw error; } }',
         'function save() { try { create(); } catch { repair(); return { ok: true }; } }',
         'function save() { try { return create(); } catch { return { ok: false } as Result; } }',
+        'work().catch(() => ({ ok: true, ...{ ok: false } }));',
+        'work().catch(() => ({ ok: true, ["ok"]: false }));',
+        'work().catch(() => ({ ok: true, get ok() { return false; } }));',
+        'work().catch(() => ({ ok: true, ...unknownResult }));',
     ],
     invalid: [
+        {
+            code: 'work().catch(() => ({ ok: false, ...{ ["ok"]: true } }));',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+        {
+            code: 'work().catch(() => ({ ok: true, ...{ ok: false }, ["ok"]: true }));',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+        {
+            code: 'work().catch(() => ({ ...unknownResult, success: true }));',
+            errors: [{ message: /unconditionally return success/ }],
+        },
         {
             code: 'function save() { try { create(); } catch { return { ok: true }; } }',
             errors: [{ message: /unconditionally return success/ }],
@@ -380,8 +424,42 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from './e2eTest'; test('name', async () => { await customStep('unrelated', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } }); });",
         "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { const scenario = unrelated; await scenario.step('unrelated', async () => { if (await locator.isVisible()) { await verify(locator).toBeVisible(); } }); });",
         "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { await (scenario.step('optional setup', async () => { if (!(await locator.isVisible())) { return; } await verify(locator).toBeVisible(); }) satisfies Promise<unknown>); await verify(ready).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { await expect(ready).toBeVisible(); if (await locator.isVisible()) { await expect(locator).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (ready) { await expect(first).toBeVisible(); } else { await expect(second).toBeVisible(); } if (await locator.isVisible()) { await expect(locator).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } if (ready) { await expect(first).toBeVisible(); } else { await expect(second).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } await test.step('required', async () => { await expect(ready).toBeVisible(); }); });",
+        "import { test, expect } from './e2eTest'; test('observer after loop exit', async () => { for (const locator of entries) { if (!(await locator.isVisible())) { continue; } await expect(locator).toBeVisible(); } await expect(ready).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('observer after switch exit', async () => { switch (kind) { case 'entry': if (!(await locator.isVisible())) { break; } await expect(locator).toBeVisible(); } await expect(ready).toBeVisible(); });",
     ],
     invalid: [
+        {
+            code: "import { test, expect } from './e2eTest'; test('loop exit skips observer', async () => { for (const locator of entries) { if (!(await locator.isVisible())) { break; } await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('loop continue skips observer', async () => { for (const locator of entries) { if (!(await locator.isVisible())) { continue; } await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('switch exit skips observer', async () => { switch (kind) { case 'entry': if (!(await locator.isVisible())) { break; } await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (flag) { await expect(ready).toBeVisible(); } if (await locator.isVisible()) { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } if (flag) { await expect(ready).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { await (test.step('conditional before', async () => { if (flag) { await expect(ready).toBeVisible(); } }) satisfies Promise<unknown>); if (await locator.isVisible()) { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { await (test.step('optional setup', async () => { if (!(await locator.isVisible())) { return; } await expect(locator).toBeVisible(); }) satisfies Promise<unknown>); if (flag) { await expect(ready).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
         {
             code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async ({ page }) => { if (page) { if (await locator.isVisible()) { await verify(locator).toBeVisible(); } } });",
             errors: [{ message: /test can finish without asserting/ }],
