@@ -559,59 +559,44 @@ function branchCanSkipAssertion(context, statement, assertions, nextCanSkip) {
     }
 }
 
-function assertionGuard(context, statement, assertions) {
-    if (statement.type !== 'IfStatement') {
-        return false;
-    }
-    const condition = visibilityCondition(context, statement.test);
-    if (!condition) {
-        return false;
-    }
+function assertionGuard(context, { statement, negated }, { callback, assertions }) {
     if (assertions.some((node) => node.range[1] <= statement.range[0])) {
         return false;
     }
+    const guardCallback = enclosingFunction(statement);
+    if (guardCallback !== callback && assertions.some((node) => node.range[0] >= guardCallback.range[1])) {
+        // Returning from the step cannot skip assertions after the step.
+        return false;
+    }
     const laterAssertion = assertions.some((node) => node.range[0] >= statement.range[1]);
-    const present = condition.negated ? statement.alternate : statement.consequent;
+    const present = negated ? statement.alternate : statement.consequent;
     const presentAssertion =
         present && assertions.some((node) => node.range[0] >= present.range[0] && node.range[1] <= present.range[1]);
     if (!laterAssertion && !presentAssertion) {
         return false;
     }
-    const absent = condition.negated ? statement.consequent : statement.alternate;
+    const absent = negated ? statement.consequent : statement.alternate;
     return branchCanSkipAssertion(context, absent, assertions, !laterAssertion);
-}
-
-function findAssertionGuard(context, block, assertions) {
-    for (const statement of block.body) {
-        const guard =
-            statement.type === 'BlockStatement'
-                ? findAssertionGuard(context, statement, assertions)
-                : assertionGuard(context, statement, assertions) && statement;
-        if (guard) {
-            return guard;
-        }
-    }
-    return undefined;
 }
 
 const noConditionalPlaywrightAdmission = rule(
     'Require Playwright assertions to be reachable when a required locator is absent.',
     (context) => {
-        const assertionsByCallback = new Map();
+        const testsByCallback = new Map();
 
-        function recordAssertion(node) {
+        function owningTest(node) {
             let owner = enclosingFunction(node);
             while (isAwaitedPlaywrightStep(context, owner)) {
                 owner = enclosingFunction(owner);
             }
-            assertionsByCallback.get(owner)?.push(node);
+            return testsByCallback.get(owner);
         }
 
         return {
             CallExpression(node) {
                 const callback = playwrightTestCallback(context, node);
                 if (callback) {
-                    assertionsByCallback.set(callback, []);
+                    testsByCallback.set(callback, { callback, assertions: [], guards: [] });
                     return;
                 }
                 if (
@@ -619,18 +604,28 @@ const noConditionalPlaywrightAdmission = rule(
                     (['poll', 'soft'].includes(memberName(node.callee)) &&
                         playwrightBinding(context, node.callee.object, 'expect'))
                 ) {
-                    recordAssertion(node);
+                    owningTest(node)?.assertions.push(node);
+                }
+            },
+            IfStatement(node) {
+                const test = owningTest(node);
+                if (!test) {
+                    return;
+                }
+                const condition = visibilityCondition(context, node.test);
+                if (condition) {
+                    test.guards.push({ statement: node, negated: condition.negated });
                 }
             },
             'Program:exit'() {
-                for (const [callback, assertions] of assertionsByCallback) {
-                    if (assertions.length === 0) {
+                for (const test of testsByCallback.values()) {
+                    if (test.assertions.length === 0) {
                         continue;
                     }
-                    const guard = findAssertionGuard(context, callback.body, assertions);
+                    const guard = test.guards.find((guard) => assertionGuard(context, guard, test));
                     if (guard) {
                         context.report({
-                            node: guard,
+                            node: guard.statement,
                             message:
                                 'This test can finish without asserting when the locator is absent. Assert or wait for the required locator unconditionally.',
                         });

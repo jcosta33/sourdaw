@@ -375,8 +375,33 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await test.step('required', async () => { await expect(locator).toBeVisible(); }); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { const helper = async () => { if (await locator.isVisible()) { await test.step('unused', async () => { await expect(locator).toBeVisible(); }); } }; await setup(); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await (test.step('required', async () => { await expect(locator).toBeVisible(); }) satisfies Promise<unknown>); });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (page) { if (await locator.isVisible()) { await setup(); } await expect(locator).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (page) { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { throw new Error('missing'); } } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { await customStep('unrelated', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } }); });",
+        "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { const scenario = unrelated; await scenario.step('unrelated', async () => { if (await locator.isVisible()) { await verify(locator).toBeVisible(); } }); });",
+        "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { await (scenario.step('optional setup', async () => { if (!(await locator.isVisible())) { return; } await verify(locator).toBeVisible(); }) satisfies Promise<unknown>); await verify(ready).toBeVisible(); });",
     ],
     invalid: [
+        {
+            code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async ({ page }) => { if (page) { if (await locator.isVisible()) { await verify(locator).toBeVisible(); } } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { try { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } } finally { cleanup(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { for (const locator of entries) { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { switch (kind) { case 'entry': if (await locator.isVisible()) { await expect(locator).toBeVisible(); } break; } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { await (scenario.step('required', async () => { if (await locator.isVisible()) { await verify(locator).toBeVisible(); } }) satisfies Promise<unknown>); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
         {
             code: "import { test, expect } from '@playwright/test'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { console.log('missing'); } });",
             errors: [{ message: /test can finish without asserting/ }],

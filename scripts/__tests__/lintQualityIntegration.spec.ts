@@ -172,6 +172,39 @@ describe('production quality lint', () => {
                         await expect(page.getByRole('alert')).toBeVisible();
                     }
                 });
+                scenario('required entry inside a nested branch', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (page) {
+                        if (await entry.isVisible()) {
+                            await expect(entry).toBeVisible();
+                        }
+                    }
+                });
+                scenario('required guard inside a wrapped step', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    await (scenario.step('mandatory', async () => {
+                        if (await entry.isVisible()) {
+                            await expect(entry).toBeVisible();
+                        }
+                    }) satisfies Promise<unknown>);
+                });
+                scenario('nested branch with an unconditional assertion', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (page) {
+                        if (!(await entry.isVisible())) { await page.reload(); }
+                        await expect(entry).toBeVisible();
+                    }
+                });
+                scenario('nested branch fails when the required entry is missing', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (page) {
+                        if (await entry.isVisible()) {
+                            await expect(entry).toBeVisible();
+                        } else {
+                            throw new Error('missing required entry');
+                        }
+                    }
+                });
                 scenario('required wrapped step entry', async ({ page }) => {
                     const entry = page.getByRole('button');
                     if (await entry.isVisible()) {
@@ -213,6 +246,8 @@ describe('production quality lint', () => {
             expect(report.fileCount).toBe(5);
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
