@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { externalPluginActivationStore } from '../../../stores/externalPluginActivationStore';
 import { externalPluginTailStore } from '../../../stores/externalPluginTailStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
@@ -133,7 +134,7 @@ describe('external plugin tail store', () => {
         };
     }
 
-    it('seeds the in-flight load from its own answer once the engine retired the instance', async () => {
+    it('discards the tail from an in-flight load when the engine retires its instance', async () => {
         const { finishFirstLoad } = await holdRevisionDuringLoad();
 
         // An engine retire forgets the instance without waiting for its load,
@@ -141,7 +142,59 @@ describe('external plugin tail store', () => {
         forgetRetiredPluginInstances(['inst-1']);
         await finishFirstLoad();
 
-        expect(tailOf('inst-1')).toBe(96_000);
+        expect(tailOf('inst-1')).toBeUndefined();
+    });
+
+    it('preserves an in-flight tail revision for a successor reusing a retired instance ID', async () => {
+        const oldLoad = Promise.withResolvers<PluginInstance>();
+        const successorLoad = Promise.withResolvers<PluginInstance>();
+        mocks.loadPluginRepo.mockReturnValueOnce(oldLoad.promise).mockReturnValueOnce(successorLoad.promise);
+
+        const retired = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
+        forgetRetiredPluginInstances(['inst-1']);
+        const successor = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+
+        oldLoad.resolve(loadedInstance('inst-1', 48_000));
+        await retired;
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
+        const tailAfterRetiredLoad = tailOf('inst-1');
+        emitTailChange({ instance_id: 'inst-1', tail_samples: 240_000 });
+        const tailDuringSuccessorLoad = tailOf('inst-1');
+        successorLoad.resolve(loadedInstance('inst-1', 96_000));
+        await successor;
+
+        expect(tailOf('inst-1')).toBe(240_000);
+        expect(tailAfterRetiredLoad).toBeUndefined();
+        expect(tailDuringSuccessorLoad).toBeUndefined();
+    });
+
+    it('preserves the successor when a retired load rejects', async () => {
+        const oldLoad = Promise.withResolvers<PluginInstance>();
+        const successorLoad = Promise.withResolvers<PluginInstance>();
+        mocks.loadPluginRepo.mockReturnValueOnce(oldLoad.promise).mockReturnValueOnce(successorLoad.promise);
+
+        const retired = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
+        forgetRetiredPluginInstances(['inst-1']);
+        const successor = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+
+        oldLoad.reject(new Error('retired load failed'));
+        const retiredOutcome = await retired;
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
+        const successorStatus = externalPluginActivationStore.value?.byInstanceId['inst-1'];
+        emitTailChange({ instance_id: 'inst-1', tail_samples: 240_000 });
+        successorLoad.resolve(loadedInstance('inst-1', 96_000));
+        const successorOutcome = await successor;
+
+        expect(retiredOutcome).toEqual({
+            status: 'failed',
+            stage: 'load',
+            reason: 'Error: retired load failed',
+        });
+        expect(tailOf('inst-1')).toBe(240_000);
+        expect(successorStatus).toEqual({ status: 'loading' });
+        expect(successorOutcome).toEqual({ status: 'active' });
     });
 
     it('seeds a reactivation from its own load once the graph generation ended', async () => {

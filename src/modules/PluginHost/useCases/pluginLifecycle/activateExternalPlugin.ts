@@ -233,16 +233,26 @@ export function activateExternalPlugin({
         watchExternalPluginLatency();
     }
 
+    // Engine retirement can forget this task without ending the graph
+    // generation, and a successor can already hold the same instance ID.
+    function isCurrentActivation(): boolean {
+        return (
+            activationEpoch === externalPluginActivationEpoch.current &&
+            externalPluginActivationTasks.get(instanceId) === activationTask &&
+            loadedExternalInstances.has(instanceId)
+        );
+    }
+
     let restoredCarry: CarriedExternalPluginState | undefined;
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachment: ExternalPluginActivationResult | null = null;
         try {
             const instance = await loadPlugin(pluginId, instanceId);
-            if (activationEpoch !== externalPluginActivationEpoch.current) {
+            if (!isCurrentActivation()) {
                 return {
                     status: 'failed',
                     stage: 'attach',
-                    reason: 'External plugin activation was superseded by a runtime graph rebuild',
+                    reason: 'External plugin activation was superseded by a runtime teardown',
                 };
             }
             // Publish what this instance reports about itself before anything
@@ -280,15 +290,18 @@ export function activateExternalPlugin({
             // through the plugin-latency-changed subscription instead.
             onLatencyMs?.(instance.latency_ms);
         } catch (error) {
-            // Instantiation failed: drop the guard so a later rebuild can retry,
-            // and the sink with it — nothing is live to report for.
-            loadedExternalInstances.delete(instanceId);
-            loadedExternalInstancePluginIds.delete(instanceId);
-            externalLatencyReporters.delete(instanceId);
-            tailRevisionsDuringLoad.delete(instanceId);
-            setActivationStatus(instanceId, 'error', String(error));
-            logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
-            return { status: 'failed', stage: 'load', reason: String(error) };
+            const reason = String(error);
+            if (isCurrentActivation()) {
+                // Drop the guard so a later rebuild can retry, and the sink
+                // with it since the instance never went live.
+                loadedExternalInstances.delete(instanceId);
+                loadedExternalInstancePluginIds.delete(instanceId);
+                externalLatencyReporters.delete(instanceId);
+                tailRevisionsDuringLoad.delete(instanceId);
+                setActivationStatus(instanceId, 'error', reason);
+            }
+            logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${reason}`);
+            return { status: 'failed', stage: 'load', reason };
         }
 
         // No base-chunk check against the project chunk is needed: project
