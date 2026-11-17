@@ -21,12 +21,12 @@ export const ResizeHandle = ({
     displayHeight,
     heightScale,
 }: ResizeHandleProps): ReactElement => {
-    const pendingHeight = useRef<number | null>(null);
-    const cancelListener = useRef<AbortController | null>(null);
+    const pendingHeightRef = useRef<number | null>(null);
+    const pointerCancelControllerRef = useRef<AbortController | null>(null);
 
     useEffect(
         () => () => {
-            cancelListener.current?.abort();
+            pointerCancelControllerRef.current?.abort();
             setTimelineTrackHeightPreview(trackId, null);
         },
         [trackId]
@@ -39,17 +39,17 @@ export const ResizeHandle = ({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => {
                 event.stopPropagation();
-                if (event.button !== 0 || cancelListener.current) {
+                if (event.button !== 0 || pointerCancelControllerRef.current) {
                     return;
                 }
                 const pointerId = event.pointerId;
                 const controller = new AbortController();
-                cancelListener.current = controller;
+                pointerCancelControllerRef.current = controller;
                 document.addEventListener(
                     'pointercancel',
                     (cancellation) => {
                         if (cancellation.pointerId === pointerId) {
-                            pendingHeight.current = null;
+                            pendingHeightRef.current = null;
                             setTimelineTrackHeightPreview(trackId, null);
                         }
                     },
@@ -58,18 +58,18 @@ export const ResizeHandle = ({
                 );
             }}
             onResize={(delta) => {
-                const next = clampTrackHeight(pendingHeight.current ?? height, delta / heightScale);
-                pendingHeight.current = next;
+                const next = clampTrackHeight(pendingHeightRef.current ?? height, delta / heightScale);
+                pendingHeightRef.current = next;
                 setTimelineTrackHeightPreview(trackId, next);
             }}
             onSetSize={(size) => {
-                pendingHeight.current = clampTrackHeight(size / heightScale, 0);
+                pendingHeightRef.current = clampTrackHeight(size / heightScale, 0);
             }}
             onResizeEnd={() => {
-                cancelListener.current?.abort();
-                cancelListener.current = null;
-                const next = pendingHeight.current;
-                pendingHeight.current = null;
+                pointerCancelControllerRef.current?.abort();
+                pointerCancelControllerRef.current = null;
+                const next = pendingHeightRef.current;
+                pendingHeightRef.current = null;
                 if (next !== null && Math.abs(next - height) > Number.EPSILON * MAX_TRACK_HEIGHT) {
                     void executeUserAppAction({ type: 'setTrackHeight', payload: { trackId, height: next } });
                 }
