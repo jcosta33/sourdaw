@@ -198,8 +198,10 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    Worker reply on the same page in independent reference tasks, with exact bytes, predecessor
    heads and resulting heads or checksum verified. Require a no-op or mismatched reference to fail,
    app work in validation or the vendor callback to exhaust its own budget, and an unmarked 50 ms
-   task to fail while the qualified vendor operation may cross that line. Match observer long tasks
-   to exactly one qualified trace task and keep the full 100 ms frame-gap predicate.
+   task to fail while the qualified vendor operation may cross that line. A sub-50 ms task without
+   a matched observer entry must still pass with valid reference and app-work evidence even when
+   the cold SDK span exceeds the relative allowance. Match observer long tasks to exactly one
+   qualified trace task and keep the full 100 ms frame-gap predicate.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**

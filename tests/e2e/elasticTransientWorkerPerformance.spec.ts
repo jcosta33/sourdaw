@@ -3,6 +3,11 @@ import { cpus, platform, release } from 'node:os';
 
 import { type Page, type TestInfo } from '@playwright/test';
 
+import {
+    isNativeSdkDurationWithinBudget,
+    JANK_TASK_CEILING_MS,
+    NATIVE_REFERENCE_FACTOR,
+} from '../../scripts/e2eNativeTaskBudget';
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 import {
@@ -13,15 +18,6 @@ import {
 } from './firstPaintDiagnostics';
 import { type createElasticNativeApplyReference } from './helpers/elasticNativeApplyReference';
 
-/**
- * Keep the 60 Hz frame budget as the design target and the 50 ms ceiling on
- * every application task. Only an attributed indivisible SDK call may use the
- * exact same-page reference, with the separate application-share and frame gates.
- */
-const JANK_TASK_CEILING_MS = 50;
-// Allow cold SDK execution headroom above the median of five same-page calls on the exact delta.
-// Controlled 4× cold apply and decode measured 1.41× and 1.52× their respective medians.
-const NATIVE_REFERENCE_FACTOR = 2;
 // Scheduling, callback and validation work around an SDK call may occupy at most half a 60 Hz frame.
 const APP_TASK_SHARE_MS = 1000 / 60 / 2;
 
@@ -508,8 +504,11 @@ function assertNativeTaskBudget(measurement: NativeTaskMeasurement, reference: N
     ];
     expect(controls[0].task).not.toBe(controls[1].task);
     const failures: string[] = [];
-    const qualified = controls.filter(({ operation, sdkMs, medianMs, appMs }) => {
-        const sdkWithinBudget = sdkMs <= NATIVE_REFERENCE_FACTOR * medianMs;
+    const qualified = controls.filter(({ operation, sdkMs, medianMs, appMs, task, phase }) => {
+        const observedLongTask = measurement.longTasks.some((entry) =>
+            matchesLongTask(entry, task, phase, measurement.inputMarkStart)
+        );
+        const sdkWithinBudget = isNativeSdkDurationWithinBudget(task.durationMs, observedLongTask, sdkMs, medianMs);
         const appWithinBudget = appMs >= -0.002 && appMs < APP_TASK_SHARE_MS;
         if (!sdkWithinBudget) {
             failures.push(
@@ -1157,8 +1156,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         commitTasks,
         browser: await page.evaluate(() => navigator.userAgent),
         criterion:
-            'Hard gates: app tasks under 50 ms, isolated SDK calls within 2× their exact same-page reference median, ' +
-            'app work sharing an SDK task under half a 60 Hz frame, and no frame gap over 100 ms during Detect. ' +
+            'Hard gates: tasks under 50 ms unless an isolated SDK call qualifies against its exact same-page reference. ' +
+            'A task reaching 50 ms or matched by the long-task observer needs an SDK span within 2× its reference median. ' +
+            'App work sharing any SDK task stays under half a 60 Hz frame, with no frame gap over 100 ms during Detect. ' +
             'Recorded per task and per gap: 60 Hz budgets (task <= 16.667 ms, rAF gap <= 25 ms) and the capture-to-afterCommit wall span.',
     };
     await info.attach('elastic-120-second-performance.json', {

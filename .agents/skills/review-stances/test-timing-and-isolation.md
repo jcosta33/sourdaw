@@ -110,7 +110,9 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    full-task attribution held, but the gate did not distinguish the indivisible SDK call from
    product work around it. Require complete same-page reference tasks using the exact Worker bytes
    and predecessor heads. Check each marked vendor span maps to one enclosing task, and account for
-   the app-owned native callback in the bounded remainder. Extra validation or callback work above
+   the app-owned native callback in the bounded remainder. Require a relative allowance only for
+   a trace task reaching 50 ms or a matched browser long task. A responsive short task must pass
+   even when its cold SDK span exceeds the reference allowance. Extra validation or callback work above
    that budget and an unmarked task reaching 50 ms must each fail. Preserve the 100 ms frame limit
    and the full task census through DOM completion.
    A fresh-project green does not establish project-scale coverage: build a realistic current document and
