@@ -1867,8 +1867,15 @@ function textFor(injection: Injection, clean: string): string {
  * asserts the body the transport received; the red case feeds a 1024-sample series through the same
  * entry and expects the detector to flag the body.
  */
+/**
+ * The slowest builder measured about 0.5 s on a CI unit shard and each row awaits only mocked
+ * transports, so the default 5 s left no room for the multi-second runner stalls seen in loaded
+ * shards: a 1 ms row timed out inside one.
+ */
+const EGRESS_ROW_TIMEOUT_MS = 20_000;
+
 function describeNoSampleData(title: string, builders: Readonly<Record<string, ComposedBodyBuilder>>): void {
-    describe(title, () => {
+    describe(title, { timeout: EGRESS_ROW_TIMEOUT_MS }, () => {
         const named = Object.entries(builders);
         const injectable = named.filter(([, builder]) => builder.injectable !== false);
 

@@ -1184,6 +1184,12 @@ const planPromptIntent = inject({ logger })(
                 };
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     musicalContentBinding,
+                    offeredMusicalWorkflows: [
+                        ...(articulationTransferCapability ? ['articulation-transfer' as const] : []),
+                        ...(midiOverlapTransformCapability ? ['midi-overlap-shortening' as const] : []),
+                        ...(syncopatedArpeggioCapability ? ['syncopated-arpeggio' as const] : []),
+                        ...(drumPreviewBranchesCapability ? ['drum-preview-branches' as const] : []),
+                    ],
                     readCreativeAuthority: () => creativeAuthority,
                     ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
                     // The loop binds this authority to the actual admitted generic or workflow intake.

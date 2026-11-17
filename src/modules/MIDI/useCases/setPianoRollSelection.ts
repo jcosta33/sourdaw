@@ -1,9 +1,5 @@
-import {
-    currentIdentity,
-    pianoRollSelectionRuntime,
-    resolveOwners,
-    type Projection,
-} from './pianoRollSelectionRuntime';
+import { currentIdentity, pianoRollSelectionRuntime, type Projection } from './pianoRollSelectionRuntime';
+import { resolvePianoRollSelectionOwners } from './resolvePianoRollSelectionOwners';
 
 export function setPianoRollSelection(
     clipId: string,
@@ -35,7 +31,7 @@ export function setPianoRollSelection(
         };
         return;
     }
-    const resolved = resolveOwners(viewIds, projections);
+    const resolved = resolvePianoRollSelectionOwners(viewIds, projections);
     pianoRollSelectionRuntime.selection = {
         clipId,
         clipIds,

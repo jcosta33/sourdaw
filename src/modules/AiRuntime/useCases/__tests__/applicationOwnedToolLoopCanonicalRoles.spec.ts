@@ -210,6 +210,71 @@ describe('canonical roles at the provider continuation boundary', () => {
         }
     );
 
+    it('does not let an offered workflow carry an unrelated command past the musical read', async () => {
+        const binding = captureMusicalContentBinding();
+        const authority = {
+            schemaVersion: 1 as const,
+            authorityId: 'a',
+            catalogId: 'catalog',
+            requestDigest: 'request',
+            revision: 'revision',
+            selection: { trackId: 't', clipId: 'c', clipIds: ['c'], activeView: 'clip' as const },
+            mode: 'edit' as const,
+            targets: [
+                {
+                    provenance: 'contextual-selection' as const,
+                    objectType: 'clip' as const,
+                    objectIds: ['c'],
+                    parentTrackId: 't',
+                },
+            ],
+            editDimensions: ['midi-content' as const],
+            prohibitions: [],
+            creationSlots: [],
+            uncertainty: 'none' as const,
+        };
+        let admitted = false;
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'mixed-workflow',
+            musicalContentBinding: binding,
+            offeredMusicalWorkflows: ['syncopated-arpeggio'],
+            readCreativeAuthority: () => (admitted ? authority : undefined),
+            interpretation: {
+                toolName: 'interpret',
+                admit: () => {
+                    admitted = true;
+                    return { status: 'admitted', receipt: { data: {}, summary: 'admitted' } };
+                },
+            },
+            terminalToolNames: new Set(['selectWorkflowCapability', 'command.batch.propose']),
+            requestTurn: async ({ turn }) =>
+                turn === 1
+                    ? { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] }
+                    : {
+                          status: 'complete',
+                          toolCalls: [
+                              {
+                                  id: `selection-${turn}`,
+                                  name: 'selectWorkflowCapability',
+                                  arguments: { capabilityId: 'syncopated-arpeggio' },
+                              },
+                              {
+                                  id: `proposal-${turn}`,
+                                  name: 'command.batch.propose',
+                                  arguments: {
+                                      commands: [
+                                          { name: 'arpeggiate', arguments: {} },
+                                          { name: 'setTempo', arguments: { bpm: 120 } },
+                                      ],
+                                  },
+                              },
+                          ],
+                      },
+        });
+        expect(result.status).toBe('rejected');
+        expect(result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')).toBe(true);
+    });
+
     it('requires each cursor page from the real query before accepting a proposal', async () => {
         setPianoRollSelection('c', [], ['c']);
         const musicalContentBinding = captureMusicalContentBinding();

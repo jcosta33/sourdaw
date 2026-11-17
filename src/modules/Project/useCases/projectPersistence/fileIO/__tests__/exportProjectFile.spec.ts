@@ -16,7 +16,11 @@ import { midiLearnProjection } from '../midiLearnProjection';
 import type { Track } from '#/modules/Arrangement/stores';
 import type { ProjectDataWithOriginalMedia } from '../projectOriginalMediaArchive';
 
-const captureExternalPluginStatesMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
+const captureExternalPluginStatesMock = vi.hoisted(() =>
+    vi.fn<() => Promise<{ readonly rejectedPlugins: readonly string[] }>>(() =>
+        Promise.resolve({ rejectedPlugins: [] })
+    )
+);
 const agentProjectRepairStateStoreMock = vi.hoisted((): { value: unknown } => ({ value: null }));
 const trackStoreMock = vi.hoisted((): { value: { tracks: Track[] } } => ({ value: { tracks: [] } }));
 
@@ -192,6 +196,23 @@ describe('exportProjectFile', () => {
         expect(written.version).toBe(CURRENT_PROJECT_VERSION);
         expect(notifyUser).toHaveBeenCalledTimes(1);
         expect(notifyUser).toHaveBeenCalledWith('Project exported successfully', 'info');
+    });
+
+    // #6558: the file holds a stale chunk for a plugin whose state could not be read.
+    it.each([
+        {
+            failure: 'a plugin whose state could not be read',
+            capture: () => Promise.resolve({ rejectedPlugins: ['serum'] }),
+        },
+        { failure: 'a capture that threw', capture: () => Promise.reject(new Error('plugin host gone')) },
+    ])('writes the file but does not report success after $failure', async ({ capture }) => {
+        captureExternalPluginStatesMock.mockImplementationOnce(capture);
+
+        await exportProjectFile();
+
+        expect(downloadProjectFile).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('could not be read'), 'warning');
+        expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
     });
 
     it('reports unavailable originals only after writing playable PCM and its archive marker', async () => {

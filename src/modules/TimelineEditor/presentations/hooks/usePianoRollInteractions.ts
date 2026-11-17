@@ -54,7 +54,6 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { readClipPlayheadBeat } from '../helpers/clipPlayheadBeat';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../helpers/editPianoRollTakeNote';
-
 import {
     ROW_HEIGHT,
     RULER_HEIGHT,
@@ -65,6 +64,7 @@ import {
     getPianoRollRowAtY,
     getPianoRollRowTop,
 } from '../helpers/pianoRollConstants';
+
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 
 /**
