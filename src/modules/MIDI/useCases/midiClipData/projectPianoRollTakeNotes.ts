@@ -14,7 +14,7 @@ import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 
 import { projectMidiClipWindow } from './projectMidiClipWindow';
 import { projectClipMidiEvents } from '../grooveTemplates/projectClipMidiEvents';
-import { projectClipControllerEventsWithProvenance } from './projectClipControllerEvents';
+import { projectClipControllerEventsWithProvenance } from './projectClipControllerEventsWithProvenance';
 import { projectClipPitchBendEvents } from './projectClipPitchBendEvents';
 import { type SourceLocatedMidiPitchBend } from '../../services/projectMidiClipWindow';
 
