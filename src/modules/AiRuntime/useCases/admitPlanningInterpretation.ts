@@ -219,9 +219,10 @@ export function admitPlanningInterpretation(input: PlanningInterpretationInput) 
             return admitLiteralInterpretation(input, legacyArguments, metricIntent);
         }
         const result = admitCreativeInterpretationWithMetricIntent(input, legacyArguments, metricIntent);
-        return result.status === 'admitted' && creativeInterpretation !== undefined
-            ? { ...result, creativeInterpretation }
-            : result;
+        if (result.status === 'admitted' && creativeInterpretation !== undefined) {
+            return { ...result, creativeInterpretation };
+        }
+        return result;
     }
     return admitJointAnswerInterpretation(input, answer, metricIntent);
 }

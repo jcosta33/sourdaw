@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
 
+import { readPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { updateChatMessage } from '../../stores/chatStore';
 import {
@@ -16,11 +17,9 @@ import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { deriveAudibleImpact } from '../deriveAudibleImpact';
 import { NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
-import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { metricGoalStateCodec, readMetricCreativeAuthorityIds } from '../metricGoalStateCodec';
 
 import { createPromptConfirmationId } from './createPromptConfirmationId';
-import { readPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
-import { readMetricCreativeAuthorityIds } from '../metricGoalStateCodec';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
@@ -209,7 +208,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         recordConfirmationMetricGoalPlan(input, confirmation);
         const interpretation = readPublicCreativeInterpretation(
             agentRunLifecycle.get(input.runId)?.plan?.applicationToolReceipts ?? [],
-            readMetricCreativeAuthorityIds(confirmation.approvalSnapshot?.metricGoalState)
+            readMetricCreativeAuthorityIds(confirmation.approvalSnapshot.metricGoalState)
         );
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,

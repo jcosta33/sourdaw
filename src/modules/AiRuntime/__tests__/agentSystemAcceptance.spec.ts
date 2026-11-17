@@ -2960,7 +2960,9 @@ describe('agent acceptance corpora', () => {
             try {
                 const turns = testCase.providerTurns.map((turn) => toScriptedTurn(turn));
                 const intake = turns[0];
-                if (!intake) throw new Error('Expected creative intake');
+                if (!intake) {
+                    throw new Error('Expected creative intake');
+                }
                 turns[0] = (message, view) =>
                     intake(message, view).map((call) => ({
                         ...call,
@@ -2986,7 +2988,9 @@ describe('agent acceptance corpora', () => {
                     `${lastAssistantReply()} calls=${seen.length} errors=${scriptErrors.join('; ')}`
                 ).toHaveLength(1);
                 const card = getPendingActionConfirmation(ids[0]!);
-                if (!card) throw new Error('Expected proposal');
+                if (!card) {
+                    throw new Error('Expected proposal');
+                }
                 expect(lastAssistantReply()).toContain(`Interpretation: ${reading}`);
                 if (disposition !== 'cancel') {
                     await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({
@@ -3005,15 +3009,20 @@ describe('agent acceptance corpora', () => {
                     creativeInterpretation: reading,
                 });
                 expect(result?.batchId).toBeDefined();
-                if (disposition !== 'cancel') expect(thread?.lastCommit?.receiptIds).toHaveLength(1);
-                else expect(thread?.lastCommit).toBeNull();
+                if (disposition !== 'cancel') {
+                    expect(thread?.lastCommit?.receiptIds).toHaveLength(1);
+                } else {
+                    expect(thread?.lastCommit).toBeNull();
+                }
                 if (disposition === 'deleted') {
                     await commandUseCases.executeAppAction({
                         type: 'removeTrack',
                         payload: { trackId: 'track-guitar' },
                     });
                     const current = trackStore.value;
-                    if (!current) throw new Error('Expected the open track store');
+                    if (!current) {
+                        throw new Error('Expected the open track store');
+                    }
                     trackStore.set({ ...current, selectedTrackId: 'track-kick' });
                     const kickBefore = structuredClone(
                         trackStore.value?.tracks.find((track) => track.id === 'track-kick')
@@ -3050,21 +3059,27 @@ describe('agent acceptance corpora', () => {
                 expect(messages[0]).toContain(reading);
                 expect(messages[0]).toContain(result!.batchId);
                 const currentTracks = trackStore.value;
-                if (!currentTracks) throw new Error('Expected the open track store');
+                if (!currentTracks) {
+                    throw new Error('Expected the open track store');
+                }
                 trackStore.set({ ...currentTracks, selectedTrackId: 'track-kick' });
                 expect(getProjectContext().selectedTrackId).toBe('track-kick');
                 const afterSelection = readChatThreadContext();
                 const retained = disposition === 'commit' ? afterSelection?.lastCommit : afterSelection?.lastCancelled;
                 expect(retained).toMatchObject({ batchId: result!.batchId, creativeInterpretation: reading });
                 const currentChat = chatStore.value;
-                if (!currentChat) throw new Error('Expected the chat');
+                if (!currentChat) {
+                    throw new Error('Expected the chat');
+                }
                 chatStore.set({ ...currentChat, messages: [] });
                 expect(readChatThreadContext()).toBeNull();
                 chatStore.set(currentChat);
                 resetCrdtProjectAuthority('switch project');
                 expect(readChatThreadContext()).toBeNull();
             } finally {
-                for (const track of context.tracks) removeTrackStrip(track.id);
+                for (const track of context.tracks) {
+                    removeTrackStrip(track.id);
+                }
                 markerStore.set(markersBefore);
                 projectStore.set(projectBefore);
                 closeChatProject();

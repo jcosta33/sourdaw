@@ -312,10 +312,13 @@ export function buildThreadContext(sources: ThreadContextSources): ThreadContext
     if (pendingProposal === null && lastCommit === null && lastCancelled === null) {
         return null;
     }
-    return {
+    const thread: ThreadContext = {
         requests: window.filter((message) => message.role === 'user').map((message) => message.content),
         pendingProposal,
         lastCommit,
-        ...(lastCancelled === null ? {} : { lastCancelled }),
     };
+    if (lastCancelled !== null) {
+        thread.lastCancelled = lastCancelled;
+    }
+    return thread;
 }

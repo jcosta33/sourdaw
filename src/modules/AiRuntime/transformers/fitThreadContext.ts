@@ -43,9 +43,7 @@ function serializePendingProposal(pending: ThreadContext['pendingProposal'], fit
         runId: pending.runId,
         confirmationId: pending.confirmationId,
         batchPosition: pending.batchPosition,
-        ...(pending.creativeInterpretation === undefined
-            ? {}
-            : { creativeInterpretation: pending.creativeInterpretation }),
+        creativeInterpretation: pending.creativeInterpretation,
         commands: fitted.pendingCommands,
         omittedCommandCount: pending.commands.length - fitted.pendingCommands.length,
     };
@@ -58,11 +56,9 @@ function serializeLastCommit(commit: ThreadContext['lastCommit'], fitted: Fitted
     return {
         trust: 'untrusted_project_data' as const,
         runId: commit.runId,
-        ...(commit.batchId === undefined ? {} : { batchId: commit.batchId }),
-        ...(commit.confirmationId === undefined ? {} : { confirmationId: commit.confirmationId }),
-        ...(commit.creativeInterpretation === undefined
-            ? {}
-            : { creativeInterpretation: commit.creativeInterpretation }),
+        batchId: commit.batchId,
+        confirmationId: commit.confirmationId,
+        creativeInterpretation: commit.creativeInterpretation,
         receiptIds: commit.receiptIds
             .slice(-MAX_THREAD_RECEIPT_IDS)
             .map((receiptId) => receiptId.slice(0, MAX_THREAD_RECEIPT_ID_LENGTH)),
@@ -84,17 +80,18 @@ function serializeSection(thread: ThreadContext, fitted: FittedThread): string {
         omittedRequestCount: thread.requests.length - fitted.requests.length,
         pendingProposal: serializePendingProposal(thread.pendingProposal, fitted),
         lastCommit: serializeLastCommit(thread.lastCommit, fitted),
-        ...(fitted.cancelled && thread.lastCancelled
-            ? {
-                  lastCancelled: {
-                      trust: 'untrusted_project_data',
-                      ...thread.lastCancelled,
-                      commands: fitted.cancelledCommands,
-                      omittedCommandCount: thread.lastCancelled.commands.length - fitted.cancelledCommands.length,
-                  },
-              }
-            : {}),
     };
+    if (fitted.cancelled && thread.lastCancelled) {
+        return `thread_context:\n${JSON.stringify({
+            ...value,
+            lastCancelled: {
+                trust: 'untrusted_project_data',
+                ...thread.lastCancelled,
+                commands: fitted.cancelledCommands,
+                omittedCommandCount: thread.lastCancelled.commands.length - fitted.cancelledCommands.length,
+            },
+        })}`;
+    }
     return `thread_context:\n${JSON.stringify(value)}`;
 }
 
@@ -153,7 +150,9 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
     const newestFirstRequests = [...thread.requests].reverse();
     const newestRequest = newestFirstRequests[0];
     const requestsFit = newestRequest === undefined || tryAdd({ ...fitted, requests: [newestRequest] });
-    if (thread.lastCancelled) tryAdd({ ...fitted, cancelled: true });
+    if (thread.lastCancelled) {
+        tryAdd({ ...fitted, cancelled: true });
+    }
     if (fitted.cancelled) {
         for (const command of thread.lastCancelled?.commands ?? []) {
             tryAddCommand(command, (entry) => ({ ...fitted, cancelledCommands: [...fitted.cancelledCommands, entry] }));

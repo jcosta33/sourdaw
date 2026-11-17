@@ -1492,7 +1492,9 @@ describe('thread context for the planner', () => {
                 const call = vi.mocked(generateToolPlanningOutcome).mock.calls.at(-1);
                 for (const index of [1, 10] as const) {
                     const text = call?.[index];
-                    if (typeof text !== 'string') throw new Error('Expected provider message');
+                    if (typeof text !== 'string') {
+                        throw new TypeError('Expected provider message');
+                    }
                     expect(readSection(text).lastCommit).toMatchObject({
                         creativeInterpretation: reading,
                         batchId: 'radio-batch',
