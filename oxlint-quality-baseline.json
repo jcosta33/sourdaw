@@ -4963,7 +4963,7 @@
             "count": 2
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 1
@@ -9582,11 +9582,6 @@
     "tests/e2e/crdtPersistence.native.spec.ts": {
         "sourdaw-craft/no-external-data-assertion": {
             "count": 1
-        }
-    },
-    "tests/e2e/crustAttackTimeTestId.spec.ts": {
-        "sourdaw-craft/no-fixed-test-sleep": {
-            "count": 3
         }
     },
     "tests/e2e/crustPresetSelectTestId.spec.ts": {
