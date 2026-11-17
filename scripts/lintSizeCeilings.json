@@ -204,7 +204,7 @@
     "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx": 600,
     "src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx": 600,
     "src/modules/AudioEngine/repositories/audioRecorder/recording.ts": 600,
-    "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": 2619,
+    "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": 2056,
     "src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts": 600,
     "src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts": 1323,
     "src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts": 692,
