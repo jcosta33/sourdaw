@@ -508,8 +508,9 @@ function persistForApproval(planned: IntentResult, revision: string, prompt = PR
     agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
     if (retainReceipts) {
         const run = agentRunLifecycle.get(RUN_ID);
-        if (run === null || planned.applicationToolReceipts === undefined)
+        if (run === null || planned.applicationToolReceipts === undefined) {
             throw new TypeError('Expected run and receipts');
+        }
         agentRunLifecycle.recordApplicationToolEvidence({
             runId: RUN_ID,
             summary: 'Measured candidates',
@@ -2055,7 +2056,9 @@ describe('real caller sequential measurement opportunity', () => {
                 sections: [{ id: 'passage', name: 'Passage', startBeat: 0, endBeat: 8, color: '#ffffff' }],
             });
             const state = trackStore.value;
-            if (state === null) throw new TypeError('Expected tracks');
+            if (state === null) {
+                throw new TypeError('Expected tracks');
+            }
             trackStore.set({
                 ...state,
                 tracks: state.tracks.map((track) => (track.id === 'bass' ? { ...track, gain: 0.4 } : track)),
@@ -2066,7 +2069,9 @@ describe('real caller sequential measurement opportunity', () => {
             const prompt = 'Make Drums match Bass loudness over Passage';
             engine.renderTrackSubgraphOffline.mockImplementation(async (request: SubgraphRequest) => {
                 const target = request.renderTracks.find((track) => track.id === request.targetTrackId);
-                if (target === undefined) throw new TypeError('Expected rendered target');
+                if (target === undefined) {
+                    throw new TypeError('Expected rendered target');
+                }
                 const level = target.devices.reduce(
                     (sum, device) => sum + (device.parameterValues['gain-level'] ?? 0),
                     0
@@ -2127,8 +2132,9 @@ describe('real caller sequential measurement opportunity', () => {
                     };
                     const drums = data.targets.find((target) => target.targetId === 'drums');
                     const bass = data.targets.find((target) => target.targetId === 'bass');
-                    if (drums === undefined || bass === undefined)
+                    if (drums === undefined || bass === undefined) {
                         throw new TypeError('Expected both measured targets');
+                    }
                     expect(drums.deltas.integratedLoudness.delta).toBeCloseTo(-12, 1);
                     expect(
                         drums.preview.integratedLoudness.value - drums.baseline.integratedLoudness.value
@@ -2232,8 +2238,9 @@ describe('real caller sequential measurement opportunity', () => {
                 bass?.status !== 'measured' ||
                 typeof drums.value !== 'number' ||
                 typeof bass.value !== 'number'
-            )
+            ) {
                 throw new TypeError('Expected measured loudness');
+            }
             expect(Math.abs(drums.value - bass.value)).toBeLessThan(firstError);
             expect(improvedLevel).not.toBeCloseTo(-12, 1);
             assertUnchanged(before);
@@ -2244,7 +2251,9 @@ describe('real caller sequential measurement opportunity', () => {
                 metricGoals: { status: 'verified' },
             });
             const audition = resolveMeasuredPreviewAudition({ confirmationId, targetId: 'drums' });
-            if (audition.status !== 'available') throw new TypeError(audition.reason);
+            if (audition.status !== 'available') {
+                throw new TypeError(audition.reason);
+            }
             expect(audition.baseline.buffer).not.toBe(audition.preview.buffer);
             expect(audition.baseline.buffer.duration).toBe(4);
             expect(audition.preview.buffer.duration).toBe(4);
@@ -2253,7 +2262,9 @@ describe('real caller sequential measurement opportunity', () => {
             expect(audition.baseline.gain).toBeCloseTo(10 ** (improvedLevel / 20), 2);
             expect(audition.preview.gain).toBe(1);
             const pair = preview?.targets.find((target) => target.targetId === 'drums')?.audition;
-            if (pair === undefined) throw new TypeError('Expected retained original and candidate renders');
+            if (pair === undefined) {
+                throw new TypeError('Expected retained original and candidate renders');
+            }
             const baseline = getAgentMeasurementArtifact(pair.baseline.artifact.contentAddress);
             const candidate = getAgentMeasurementArtifact(pair.preview.artifact.contentAddress);
             expect(baseline?.sourceRevision).toBe(before.revision);
