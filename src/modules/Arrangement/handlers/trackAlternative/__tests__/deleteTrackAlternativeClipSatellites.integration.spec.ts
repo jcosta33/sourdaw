@@ -93,7 +93,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -104,6 +104,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -113,6 +114,7 @@ import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { warpStateStore } from '../../../stores/warpStates';
 import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 
 class NoopArrangementEventBus extends ArrangementEventBus {
@@ -299,6 +301,19 @@ function trackAAlternativeIds(): string[] {
     return trackStore.value!.tracks.find((track) => track.id === 'a')!.alternatives.map((alt) => alt.id);
 }
 
+function snapshotRetirementState() {
+    return {
+        root: JSON.stringify(getCrdtDoc('root')),
+        tracks: structuredClone(trackStore.value),
+        automation: structuredClone(automationStore.value),
+        takes: structuredClone(takeLaneStore.value),
+        midi: structuredClone(midiStore.value),
+        envelopes: clipIds.map((clipId) => structuredClone(getEnvelope(clipId))),
+        warp: structuredClone(warpStateStore.value),
+        history: structuredClone(undoHistoryStore.value),
+    };
+}
+
 describe('deleteTrackAlternative retires the clips the alternative held (#6633)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -404,6 +419,77 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         await undo();
         expectSeededState();
         expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { owner: 'another track’s active alternative', trackId: 'b', inactive: false },
+        { owner: 'another track’s inactive alternative', trackId: 'b', inactive: true },
+        { owner: 'the same track’s surviving alternative', trackId: 'a', inactive: false },
+    ])('refuses Undo while $owner holds the retired clip id', async ({ trackId, inactive }) => {
+        await executeAppAction(
+            { type: 'deleteTrackAlternative', payload: { trackId: 'a', alternativeId: 'alt-2' } },
+            { source: 'manual' }
+        );
+        expectClipDataRetired('c');
+
+        // Keep the local Undo entry at the head while applying the state a peer left.
+        const peerOptions = { source: 'manual', skipUndo: true } as const;
+        const createPeerAlternative = (alternativeId: string) =>
+            executeAppAction(
+                {
+                    type: 'createTrackAlternative',
+                    payload: { trackId, name: alternativeId, duplicateActive: false, alternativeId },
+                },
+                peerOptions
+            );
+        if (inactive) {
+            await createPeerAlternative('alt-peer');
+        }
+        await executeAppAction(
+            {
+                type: 'addClip',
+                payload: { id: 'c', trackId, startBeat: 8, endBeat: 12, name: 'Peer Clip', type: 'midi' },
+            },
+            peerOptions
+        );
+        if (inactive) {
+            await createPeerAlternative('alt-empty');
+        }
+        const peerTrack = trackStore.value!.tracks.find((track) => track.id === trackId)!;
+        const peerClips = inactive
+            ? peerTrack.alternatives.find((alternative) => alternative.id === 'alt-peer')!.clips
+            : peerTrack.clips;
+        expect(peerClips.find((clip) => clip.id === 'c')?.name).toBe('Peer Clip');
+        const before = snapshotRetirementState();
+        expect(before.root).toContain('Peer Clip');
+
+        expect((await undo()).headConsumed).toBe(false);
+        expect(snapshotRetirementState()).toEqual(before);
+
+        if (inactive) {
+            await executeAppAction(
+                { type: 'switchTrackAlternative', payload: { trackId, alternativeId: 'alt-peer' } },
+                peerOptions
+            );
+        }
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'c', ripple: false } }, peerOptions);
+        const trackAfterRemoval = trackStore.value!.tracks.find((track) => track.id === trackId)!;
+        expect(trackAfterRemoval.clips.some((clip) => clip.id === 'c')).toBe(false);
+        if (inactive) {
+            expect(trackAfterRemoval.activeAlternativeId).toBe('alt-peer');
+            const staleCopy = trackAfterRemoval.alternatives.find((alternative) => alternative.id === 'alt-peer');
+            expect(staleCopy?.clips.find((clip) => clip.id === 'c')?.name).toBe('Peer Clip');
+        }
+
+        expect((await undo()).headConsumed).toBe(true);
+        expect(trackStore.value!.tracks.find((track) => track.id === 'a')).toEqual(seededTracks[0]);
+        expectClipDataPresent('c');
+        expect(laneIds()).toEqual(seededLanes.map((lane) => lane.id));
+        expect(takeLaneStore.value!.lanes).toEqual(expectedTakeLanes);
+
+        await redo();
+        expect(trackAAlternativeIds()).toEqual(['alt-1']);
+        expectClipDataRetired('c');
     });
 
     it('refuses an undo whose retired lane id a peer re-created, writes nothing, and undoes once the row is gone', async () => {
