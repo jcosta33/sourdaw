@@ -1,11 +1,10 @@
-import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
-import { ChevronDown, Power } from 'lucide-react';
+import { Power } from 'lucide-react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
-import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
@@ -50,12 +49,10 @@ import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperamen
 import { setGrandBouleUnaCorda } from '../../useCases/setGrandBouleUnaCorda';
 import { setGrandBouleVelocityCurve } from '../../useCases/setGrandBouleVelocityCurve';
 import { triggerGrandBouleNote } from '../../useCases/triggerGrandBouleNote';
+import { GrandBouleVisualizations, type GrandBouleVisualization } from '../components/GrandBouleVisualizations';
 import { MidiCalibrationPanel } from '../components/MidiCalibrationPanel';
 import { MorphPanel } from '../components/MorphPanel';
 import { PerNoteEditor } from '../components/PerNoteEditor';
-import { PianoModel3D } from '../components/PianoModel3D';
-import { SpectralWaterfall } from '../components/SpectralWaterfall';
-import { StringVibrationView } from '../components/StringVibrationView';
 import { GRAND_BOULE_PER_NOTE_AVAILABLE } from '../helpers/perNoteAvailability';
 
 /**
@@ -158,8 +155,6 @@ const TEMPERAMENT_OPTIONS = [
     { value: 5 as TemperamentIndex, label: 'Meantone ¼' },
 ] as const;
 
-type Visualization = 'piano' | 'strings' | 'spectrum';
-
 const MICROPHONE_POSITIONS = [
     { value: 0, label: 'Close' },
     { value: 1, label: 'Player' },
@@ -181,9 +176,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lastVelocity, setLastVelocity] = useState(0);
-    const [openVisualizations, setOpenVisualizations] = useState<Visualization[]>([]);
+    const [openVisualizations, setOpenVisualizations] = useState<GrandBouleVisualization[]>([]);
     const [pianoPreviewHeld, setPianoPreviewHeld] = useState(false);
-    const visualizationId = useId();
 
     // The pedal subscriber dispatches through use cases that need the live
     // engine/store. Both are recomputed each render (engine is a fresh handle,
@@ -329,62 +323,13 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         velocityCurveReadout = 'hard';
     }
 
-    const pianoVisible = openVisualizations.includes('piano');
-    const visualizations = [
-        {
-            id: 'piano',
-            label: 'Piano keyboard',
-            content: (
-                <>
-                    {pianoVisible ? (
-                        <p className="text-caption text-muted-foreground">
-                            {engineReady ? 'Click the piano keys to audition notes.' : 'Piano audio is unavailable.'}
-                        </p>
-                    ) : null}
-                    <PianoModel3D
-                        key={deviceId}
-                        activeNotes={activeNotes}
-                        sustainPedal={pedals.sustain}
-                        lidPosition={config.lidPosition}
-                        visible={pianoVisible}
-                        onNoteOn={handleNoteOn}
-                        onNoteOff={handleNoteOff}
-                        onPreviewHoldChange={setPianoPreviewHeld}
-                        className="h-48 w-full"
-                    />
-                </>
-            ),
-        },
-        {
-            id: 'strings',
-            label: 'String activity',
-            content: (
-                <>
-                    <p className="text-caption text-muted-foreground">
-                        Estimated string motion from note activity.
-                        {activeNotes.size === 0 ? ' No notes are sounding.' : ''}
-                    </p>
-                    <StringVibrationView activeNotes={activeNotes} className="h-24 w-full" />
-                </>
-            ),
-        },
-        {
-            id: 'spectrum',
-            label: 'Spectrum history',
-            content: (
-                <>
-                    <p className="text-caption text-muted-foreground">
-                        {analyser
-                            ? 'Recent frequency activity at the track output. The display stays dark during silence.'
-                            : 'No track analyser is available.'}
-                    </p>
-                    {analyser ? (
-                        <SpectralWaterfall analyser={analyser} sampleRate={engineSampleRate} className="h-36 w-full" />
-                    ) : null}
-                </>
-            ),
-        },
-    ] as const;
+    const handleToggleVisualization = (visualization: GrandBouleVisualization): void => {
+        setOpenVisualizations((current) =>
+            current.includes(visualization)
+                ? current.filter((open) => open !== visualization)
+                : [...current, visualization]
+        );
+    };
 
     return (
         <div
@@ -392,54 +337,21 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
             role="region"
             aria-label="Grand Boule controls"
         >
-            <Row justify="between" wrap gap={2} shrink={false}>
-                <Row wrap gap={1.5}>
-                    {visualizations.map(({ id, label }) => {
-                        const expanded = openVisualizations.includes(id);
-                        const collapseDisabled = id === 'piano' && pianoPreviewHeld;
-                        return (
-                            <DawPluginChip
-                                key={id}
-                                caps={false}
-                                className="gap-1"
-                                aria-disabled={collapseDisabled || undefined}
-                                aria-expanded={expanded}
-                                aria-controls={`${visualizationId}-${id}`}
-                                onClick={() => {
-                                    if (collapseDisabled) {
-                                        return;
-                                    }
-                                    setOpenVisualizations((current) =>
-                                        current.includes(id) ? current.filter((open) => open !== id) : [...current, id]
-                                    );
-                                }}
-                            >
-                                {label}
-                                <ChevronDown aria-hidden="true" className={expanded ? 'size-3 rotate-180' : 'size-3'} />
-                            </DawPluginChip>
-                        );
-                    })}
-                </Row>
-                <DawPluginMetricTile
-                    className="grand-boule-window"
-                    label="Engine"
-                    value={engineReady ? 'ready' : 'idle'}
-                    detail="WASM"
-                />
-            </Row>
-            {visualizations.map(({ id, content }) => {
-                const expanded = openVisualizations.includes(id);
-                return (
-                    <div id={`${visualizationId}-${id}`} key={id} hidden={!expanded} className="shrink-0">
-                        {/* A late preview release can still arrive after the canvas is hidden. */}
-                        {expanded || id === 'piano' ? (
-                            <Stack gap={2} className="grand-boule-window p-2">
-                                {content}
-                            </Stack>
-                        ) : null}
-                    </div>
-                );
-            })}
+            <GrandBouleVisualizations
+                deviceId={deviceId}
+                activeNotes={activeNotes}
+                sustainPedal={pedals.sustain}
+                lidPosition={config.lidPosition}
+                engineReady={engineReady}
+                analyser={analyser}
+                sampleRate={engineSampleRate}
+                openVisualizations={openVisualizations}
+                pianoPreviewHeld={pianoPreviewHeld}
+                onToggleVisualization={handleToggleVisualization}
+                onPreviewHoldChange={setPianoPreviewHeld}
+                onNoteOn={handleNoteOn}
+                onNoteOff={handleNoteOff}
+            />
 
             <div className="grid shrink-0 items-start gap-3 @[36rem]:grid-cols-2 @[54rem]:grid-cols-3">
                 <Stack gap={3} className="min-w-0">
