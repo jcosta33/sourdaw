@@ -240,7 +240,7 @@ export default defineConfig({
             '**/*.e2e.spec.*',
         ],
         coverage: {
-            provider: 'v8',
+            provider: 'istanbul',
             reportsDirectory: './coverage',
             reporter: ['text', 'json', 'html', 'lcov'],
             include: unitCoverageInclude,

@@ -157,11 +157,11 @@ function writeFixtureSource(root: string, yes: string, prefix = ''): void {
 }
 `
     );
-    writeFileSync(join(root, 'src/never.ts'), 'export const never = 1;\n');
+    writeFileSync(join(root, 'src/never.ts'), 'export type Shape = boolean;\nMath.abs(-1);\n');
     writeFileSync(join(root, 'src/typeOnly.ts'), 'export type State = { run: boolean };\n');
 }
 
-it('collects complementary V8 hits across disjoint roots and enforces floors against the tested merge', () => {
+it('collects complementary Istanbul hits across disjoint roots and enforces floors against the tested merge', () => {
     const root = temporaryRoot();
     const input = join(root, 'input');
     const output = join(root, 'output');
@@ -171,10 +171,10 @@ it('collects complementary V8 hits across disjoint roots and enforces floors aga
     mkdirSync(input);
     command(checkout, 'git', ['init', '-q', '-b', 'base']);
     writeFixtureSource(checkout, 'old');
-    const base = commit(checkout);
+    let base = commit(checkout);
     command(checkout, 'git', ['switch', '-qc', 'feature']);
     writeFixtureSource(checkout, 'yes');
-    const head = commit(checkout);
+    let head = commit(checkout);
     command(checkout, 'git', ['switch', '-q', 'base']);
     const prefix = 'export const baseOnly = 0;\n\n';
     writeFixtureSource(checkout, 'old', prefix);
@@ -204,7 +204,7 @@ it('collects complementary V8 hits across disjoint roots and enforces floors aga
             join(sourceRoot, 'vite.config.mjs'),
             `
             export default { test: { globals: true, maxWorkers: 1, coverage: {
-                provider: 'v8', include: ['src/**/*.ts'], exclude: ['**/*.spec.ts'],
+                provider: 'istanbul', include: ['src/**/*.ts'], exclude: ['**/*.spec.ts'],
             } } };
         `
         );
@@ -274,15 +274,57 @@ it('collects complementary V8 hits across disjoint roots and enforces floors aga
         '--amend',
         '--no-edit',
     ]);
-    const unseeded = revision;
-    revision = command(checkout, 'git', ['rev-parse', 'HEAD']);
-    for (let shard = 1; shard <= 4; shard++) {
-        const packet = join(input, `shard-${shard}.json`);
-        writeFileSync(packet, readFileSync(packet, 'utf8').replace(unseeded, revision));
-    }
+    const rebindFixtureReports = () => {
+        const prior = revision;
+        revision = command(checkout, 'git', ['rev-parse', 'HEAD']);
+        for (let shard = 1; shard <= 4; shard++) {
+            const packet = join(input, `shard-${shard}.json`);
+            writeFileSync(packet, readFileSync(packet, 'utf8').replace(prior, revision));
+        }
+    };
+    rebindFixtureReports();
     const initialized = runGate();
     expect(initialized.stderr).toBe('');
     expect(initialized.status).toBe(0);
+
+    base = revision;
+    command(checkout, 'git', ['switch', '-qc', 'type-change']);
+    writeFileSync(join(checkout, 'src/typeOnly.ts'), 'export type State = { run: number };\n');
+    head = commit(checkout);
+    command(checkout, 'git', ['switch', '--detach', base]);
+    command(checkout, 'git', [
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.test',
+        'merge',
+        '--no-ff',
+        '--quiet',
+        'type-change',
+    ]);
+    rebindFixtureReports();
+    const changedType = runGate();
+    expect(changedType.stderr).toBe('');
+    expect(changedType.status).toBe(0);
+    expect(readFileSync(summary, 'utf8')).toContain('No changed executable lines.');
+
+    const originals = new Map<string, string>();
+    for (let shard = 1; shard <= 4; shard++) {
+        const path = join(input, `shard-${shard}.json`);
+        const original = readFileSync(path, 'utf8');
+        const packet: { coverage: Record<string, unknown>; sourceRoot: string } = JSON.parse(original);
+        const runtime = join(packet.sourceRoot, 'src/never.ts');
+        expect(Object.hasOwn(packet.coverage, runtime)).toBe(true);
+        originals.set(path, original);
+        delete packet.coverage[runtime];
+        writeFileSync(path, JSON.stringify(packet));
+    }
+    const missingRuntime = runGate();
+    expect(missingRuntime.status).toBe(1);
+    expect(missingRuntime.stderr).toContain('Merged coverage omitted production files: "src/never.ts"');
+    for (const [path, original] of originals) {
+        writeFileSync(path, original);
+    }
 
     const reportPath = join(input, 'shard-4.json');
     const saved = readFileSync(reportPath, 'utf8');

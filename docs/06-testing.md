@@ -915,7 +915,7 @@ To use an approved updated checkout without changing the stopped lane, invoke th
 directory and passing `--recover -- <finite-proof-command>`; lane detection, dependency preflight,
 recorded cwd and receipt ownership still come from the stopped lane.
 
-Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
+Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-istanbul`.
 
 CI owns lint and all TypeScript typechecks, including the spec-inclusive `tsconfig.test.json` check. Do not run lint or typecheck commands locally; use the pull request's CI results as their verification evidence. When you touch a spec, dummy factory, or model shape mirrored by fixtures, keep fixtures aligned with the real types and never silence errors with `any` or `@ts-expect-error`.
 
@@ -968,24 +968,22 @@ the PR secret scan and dependency review remain in required validation even when
 
 ### Required PR unit coverage
 
-Each of the four isolated PR unit jobs runs its share of non-`src/` tests first, then runs its
-share of `src/` tests with V8 coverage. Each group uses the existing Vitest collection rules at
-the checkout root. Running tooling tests without V8 profiling keeps their compiler and linter
-work outside coverage collection. The coverage job checks all four reports belong to the
+The four isolated PR unit shards run the existing test suite with Istanbul coverage. Istanbul
+instruments production sources selectively so test helpers, dependencies and compiler tooling
+run without coverage instrumentation. The coverage job checks all four reports belong to the
 current run attempt and tested revision, merges them into one production report and contributes
-its result to the required `Gate`. The unit coverage artifact contains
-the HTML report, exact covered/total counts, the uncovered changed file and line list in
-`gate.json`, and shard wall-clock durations. The coverage shards use a 15-second default test
-timeout to accommodate V8 instrumentation of CPU-intensive tests. Explicit per-test timeouts
-and performance assertions still apply.
+its result to the required `Gate`. The unit coverage artifact contains the HTML report, exact
+covered/total counts, the uncovered changed file and line list in `gate.json`, and shard
+wall-clock durations.
 
 Coverage applies to production TypeScript and TSX under `src/`. It excludes declarations, test
 specs and test helpers, the test setup and the app bootstrap entry point. Files the shards never
 import are included. The PR must cover at least 90% of changed executable lines, counted once
 each using Istanbul statement-start line coverage. The diff uses the tested integration commit
 and its first parent, so reported lines match the tested tree even when the base advances. A
-change without executable lines has an explicit zero-line result. Missing production coverage
-or a missing shard fails the check.
+change without executable lines has an explicit zero-line result. If Istanbul omits a file,
+the gate checks the tested Git blob for an empty runtime body or static import/export declarations.
+A missing executable file or shard fails the check.
 
 The overall floors for lines, statements, branches and functions live in
 `scripts/unitCoverageFloors.json`. They are measured from the merged report, in hundredths of

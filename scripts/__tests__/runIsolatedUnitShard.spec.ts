@@ -1,17 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import {
-    accessSync,
-    constants,
-    mkdirSync,
-    mkdtempSync,
-    readFileSync,
-    realpathSync,
-    rmSync,
-    statSync,
-    writeFileSync,
-} from 'node:fs';
+import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, relative, sep } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -23,7 +13,7 @@ import {
     type UnitIsolationPorts,
 } from '../runIsolatedUnitShard';
 import { ownCheckoutDirectories, type DirectoryPorts } from '../unitShardCheckoutOwnership';
-import { appendUnitShardExclusions, UNIT_SHARD_EXCLUDED_SPECS } from '../vitestUnitShardExclusions';
+import { appendUnitShardExclusions } from '../vitestUnitShardExclusions';
 
 const root = '/checkout';
 const nonce = '01234567-0123-4123-8123-012345678901';
@@ -417,22 +407,22 @@ describe('required unit account isolation', () => {
         expect(write).toHaveBeenCalledTimes(1);
     });
 
-    it('runs tooling first and applies the coverage budget only to the source shard', () => {
+    it('applies Istanbul coverage to the whole PR shard at the standard test budgets', () => {
         const { ports, run } = runtimePorts();
         expect(runUnitPhase(context, 'coverage-shard', '2/4', ports)).toBe(0);
         const standardOptions = { cwd: context.workspace, env: ports.env, inheritOutput: true };
         const guardOptions = { ...standardOptions, env: { ...ports.env, VITEST_MAX_WORKERS: '1' } };
-        const shard = ['run', 'test:run', '--shard=2/4', ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`)];
         expect(run.mock.calls).toEqual([
             ...sequentialGuardSpecs.map((spec) => [context.pnpm, ['run', 'test:run', spec], guardOptions]),
-            [context.pnpm, [...shard, '--exclude=src/**'], standardOptions],
             [
                 context.pnpm,
                 [
-                    ...shard,
-                    '--exclude=!(src|src/**)',
+                    'run',
+                    'test:run',
+                    '--shard=2/4',
+                    ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`),
                     '--coverage',
-                    '--testTimeout=15000',
+                    '--coverage.provider=istanbul',
                     '--coverage.reporter=json',
                     `--coverage.reportsDirectory=${context.temp}/unit-coverage-shard`,
                 ],
@@ -440,181 +430,6 @@ describe('required unit account isolation', () => {
             ],
         ]);
     });
-
-    it('returns the tooling failure before starting coverage', () => {
-        const { ports, run } = runtimePorts();
-        run.mockImplementation((_file, args) => ({
-            status: args.includes('--exclude=src/**') ? 9 : 0,
-            stdout: '',
-            stderr: '',
-        }));
-        expect(runUnitPhase(context, 'coverage-shard', '3/4', ports)).toBe(9);
-        const commands = run.mock.calls.map(([, args]) => args);
-        expect(commands.slice(0, 3)).toEqual(sequentialGuardSpecs.map((spec) => ['run', 'test:run', spec]));
-        expect(commands.slice(3)).toEqual([
-            [
-                'run',
-                'test:run',
-                '--shard=3/4',
-                ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`),
-                '--exclude=src/**',
-            ],
-        ]);
-    });
-
-    it('partitions the real Vitest collector across four coverage shard jobs without losses or duplicates', () => {
-        const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-unit-partition-')));
-        const conventionalExtensions = ['ts', 'tsx', 'cts', 'mts', 'js', 'jsx', 'cjs', 'mjs'];
-        const testNames = conventionalExtensions.flatMap((extension) => [
-            `example.test.${extension}`,
-            `example.spec.${extension}`,
-        ]);
-        const source = [
-            ...testNames.map((name) => `src/components/${name}`),
-            'src/root.spec.ts',
-            'src/dist/source.spec.ts',
-            'src/electron/out/source.test.ts',
-            'src/server/worker.spec.cts',
-        ];
-        const tooling = [
-            ...testNames.map((name) => `scripts/fixtures/${name}`),
-            'root.spec.ts',
-            'src.test.ts',
-            'scripts/src-named.spec.ts',
-            'scripts/src/nested.spec.ts',
-            '.tooling/root.test.ts',
-            'scripts/__tests__/contract.test.ts',
-            'electron/main.spec.ts',
-            'tests/harness.test.mjs',
-            'src-peer/worker.spec.ts',
-        ];
-        const excluded = [
-            ...sequentialGuardSpecs,
-            ...UNIT_SHARD_EXCLUDED_SPECS,
-            'src/node_modules/dependency.test.ts',
-            'src/.git/internal.test.ts',
-            'dist/generated.spec.ts',
-            'electron/out/generated.test.ts',
-            'server/main.spec.ts',
-            'tests/e2e/fixture.test.ts',
-            '.agents/worktrees/lane/src/nested.spec.ts',
-            '.agents/review-worktrees/probe/src/nested.test.ts',
-            'src/ui/embedded.e2e.spec.ts',
-        ];
-        try {
-            for (const path of [...source, ...tooling, ...excluded]) {
-                const destination = join(fixture, path);
-                mkdirSync(dirname(destination), { recursive: true });
-                writeFileSync(destination, 'throw new Error("Collector executed a fixture");\n');
-            }
-            writeFileSync(
-                join(fixture, 'vitest.config.mjs'),
-                `export default { test: { exclude: ${JSON.stringify([
-                    '**/node_modules/**',
-                    '**/.git/**',
-                    'dist/**',
-                    'electron/out/**',
-                    'server/**',
-                    'tests/e2e/**',
-                    '.agents/worktrees/**',
-                    '.agents/review-worktrees/**',
-                    '**/*.e2e.spec.*',
-                ])} } };\n`
-            );
-            const plans = ['shard', 'coverage-shard'].flatMap((phase) =>
-                ['1/4', '2/4', '3/4', '4/4'].flatMap((shard) => {
-                    const { ports, run } = runtimePorts();
-                    expect(runUnitPhase(context, phase, shard, ports)).toBe(0);
-                    return run.mock.calls.slice(3).map(([, args]) => appendUnitShardExclusions(args.slice(2)));
-                })
-            );
-            const whole = [...source, ...tooling].sort();
-            const expectedLists = [whole, tooling.sort(), source.sort()];
-            for (const [index, planIndex] of [0, 4, 5].entries()) {
-                const args = plans[planIndex];
-                if (args === undefined) {
-                    throw new Error('The original, tooling and source commands must all be present');
-                }
-                const cli = spawnSync(
-                    process.execPath,
-                    [
-                        join(process.cwd(), 'node_modules/vitest/vitest.mjs'),
-                        'list',
-                        '--filesOnly',
-                        '--json',
-                        '--root',
-                        fixture,
-                        ...args,
-                    ],
-                    { cwd: process.cwd(), encoding: 'utf8', timeout: 20_000 }
-                );
-                expect(cli.error).toBeUndefined();
-                expect(cli.status, cli.stderr).toBe(0);
-                const files: { file: string }[] = JSON.parse(cli.stdout);
-                expect(files.map(({ file }) => relative(fixture, file).split(sep).join('/')).sort()).toEqual(
-                    expectedLists[index]
-                );
-            }
-
-            // The CLI list reports the eligible files before sharding.
-            const result = spawnSync(
-                process.execPath,
-                [
-                    '--input-type=module',
-                    '-e',
-                    `
-                        const {relative, sep} = await import('node:path');
-                        const {createVitest, parseCLI} = await import('vitest/node');
-                        const root = process.argv[1];
-                        const results = [];
-                        for (const args of JSON.parse(process.argv[2])) {
-                            const parsed = parseCLI(['vitest', 'run', ...args]);
-                            // The CLI adds --exclude to the config rather than replacing it.
-                            const {exclude, ...options} = parsed.options;
-                            const runner = await createVitest({...options, cliExclude:exclude, root, watch:false, run:true});
-                            try {
-                                let specs = await runner.globTestSpecifications(parsed.filter);
-                                if (runner.config.shard) {
-                                    const sequencer = new runner.config.sequence.sequencer(runner);
-                                    specs = await sequencer.shard(specs);
-                                }
-                                results.push(specs.map(({moduleId}) => relative(root, moduleId).split(sep).join('/')));
-                            } finally {
-                                await runner.close();
-                            }
-                        }
-                        process.stdout.write(JSON.stringify(results));
-                    `,
-                    fixture,
-                    JSON.stringify(plans),
-                ],
-                { cwd: process.cwd(), encoding: 'utf8', timeout: 20_000 }
-            );
-            expect(result.error).toBeUndefined();
-            expect(result.status, result.stderr).toBe(0);
-            const collections: string[][] = JSON.parse(result.stdout);
-            const control = collections.slice(0, 4).flat().sort();
-            const partitions = collections.slice(4);
-            expect(control).toEqual(whole);
-            expect(partitions).toHaveLength(8);
-            expect(partitions.every((paths) => paths.length > 0)).toBe(true);
-            expect(
-                partitions
-                    .filter((_paths, index) => index % 2 === 0)
-                    .flat()
-                    .sort()
-            ).toEqual(tooling.sort());
-            expect(
-                partitions
-                    .filter((_paths, index) => index % 2 === 1)
-                    .flat()
-                    .sort()
-            ).toEqual(source.sort());
-            expect(partitions.flat().sort()).toEqual(control);
-        } finally {
-            rmSync(fixture, { recursive: true, force: true });
-        }
-    }, 30_000);
 
     it('requires the native denied-consumer proof during verification and propagates its failure before any install', () => {
         const { ports, run } = runtimePorts();

@@ -3,7 +3,8 @@ import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } f
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import v8 from '@vitest/coverage-v8';
+import istanbul from '@vitest/coverage-istanbul';
+import ts from 'typescript';
 import { createVitest } from 'vitest/node';
 
 import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
@@ -174,7 +175,7 @@ function spanStart(value: unknown, restoreEndColumn: boolean): number {
     const line = integer(start.line, 'coverage start line', 1);
     integer(start.column, 'coverage start column');
     integer(end.line, 'coverage end line', line);
-    // V8's mapper uses Infinity for an end column beyond the mapped span.
+    // Istanbul's source-map remapper uses Infinity for an end column beyond the mapped span.
     // JSON serializes that sentinel as null.
     if (end.column === null) {
         if (restoreEndColumn) {
@@ -246,7 +247,7 @@ function fileTotals(
         const counters: readonly unknown[] = hits;
         for (const [index, location] of locations.entries()) {
             const arm = asRecord(location, 'coverage branch arm');
-            // The V8 mapper emits empty positions for an implicit else arm.
+            // Istanbul emits empty positions for an implicit else arm.
             if (
                 branch.type === 'if' &&
                 index === 1 &&
@@ -443,10 +444,10 @@ export async function mergeUnitCoverage(
         config: false,
         root: checkout,
         watch: false,
-        coverage: { enabled: true, provider: 'v8', reportsDirectory: output, reporter: ['json', 'html'] },
+        coverage: { enabled: true, provider: 'istanbul', reportsDirectory: output, reporter: ['json', 'html'] },
     });
     try {
-        const provider = await v8.getProvider();
+        const provider = await istanbul.getProvider();
         if (provider.mergeReports === undefined) {
             throw new Error('Vitest coverage provider cannot merge shard reports');
         }
@@ -508,6 +509,29 @@ function reportEvaluation(
     }
 }
 
+function hasNoInstrumentableBody(root: string, revision: string, path: string): boolean {
+    // Istanbul omits empty remapped files. Prove each omitted tracked blob has
+    // no runtime statements beyond static imports and exports.
+    const source = git(root, ['show', `${revision}:${path}`]);
+    const emitted = ts.transpileModule(source, {
+        fileName: path,
+        reportDiagnostics: true,
+        compilerOptions: {
+            target: ts.ScriptTarget.ESNext,
+            module: ts.ModuleKind.ESNext,
+            jsx: ts.JsxEmit.Preserve,
+            verbatimModuleSyntax: true,
+        },
+    });
+    if (emitted.diagnostics?.some(({ category }) => category === ts.DiagnosticCategory.Error)) {
+        return false;
+    }
+    const parsed = ts.createSourceFile(path, emitted.outputText, ts.ScriptTarget.ESNext, false, ts.ScriptKind.JSX);
+    return parsed.statements.every(
+        (statement) => ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)
+    );
+}
+
 async function main(): Promise<number> {
     const root = process.cwd();
     const revision = requiredEnv('GITHUB_SHA');
@@ -537,14 +561,20 @@ async function main(): Promise<number> {
             return [path, { ...file, path }];
         })
     );
-    if (production.size > 0) {
-        throw new Error(
-            `Merged coverage omitted production files: ${Array.from(production, (path) => JSON.stringify(path)).join(', ')}`
-        );
+    const changed = changedProductionLines(root, firstParent, revision);
+    const missingExecutable: string[] = [];
+    for (const path of production) {
+        if (hasNoInstrumentableBody(root, revision, path)) {
+            changed.delete(path);
+        } else {
+            missingExecutable.push(JSON.stringify(path));
+        }
+    }
+    if (missingExecutable.length > 0) {
+        throw new Error(`Merged coverage omitted production files: ${missingExecutable.join(', ')}`);
     }
     const previous = floorsAt(root, firstParent);
     const proposed = floorsAt(root, revision);
-    const changed = changedProductionLines(root, firstParent, revision);
     const result = evaluateUnitCoverage(coverage, changed, previous, proposed);
     reportEvaluation(output, result, proposed, timings, {
         tested: revision,
