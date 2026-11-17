@@ -502,7 +502,7 @@
     "src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts": 600,
     "src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts": 600,
     "src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts": 600,
-    "src/modules/WorkspaceShell/presentations/views/AppShell.tsx": 1297,
+    "src/modules/WorkspaceShell/presentations/views/AppShell.tsx": 1129,
     "src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx": 664,
     "src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx": 600,
     "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx": 600,
