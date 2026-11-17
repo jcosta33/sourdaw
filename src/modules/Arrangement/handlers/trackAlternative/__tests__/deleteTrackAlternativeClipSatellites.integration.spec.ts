@@ -456,9 +456,10 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
             await createPeerAlternative('alt-empty');
         }
         const peerTrack = trackStore.value!.tracks.find((track) => track.id === trackId)!;
-        const peerClips = inactive
-            ? peerTrack.alternatives.find((alternative) => alternative.id === 'alt-peer')!.clips
-            : peerTrack.clips;
+        let peerClips = peerTrack.clips;
+        if (inactive) {
+            peerClips = peerTrack.alternatives.find((alternative) => alternative.id === 'alt-peer')!.clips;
+        }
         expect(peerClips.find((clip) => clip.id === 'c')?.name).toBe('Peer Clip');
         const before = snapshotRetirementState();
         expect(before.root).toContain('Peer Clip');
