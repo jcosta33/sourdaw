@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { type MidiClipGlueActionSnapshot } from '#/modules/Arrangement/events';
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
+import { type MidiClipDataActionSnapshot } from '../../../events/midiClipDataSnapshots';
 import { type MidiStoreState } from '../../../stores/midiStore';
 import { midiClipGlueStateMatches } from '../midiClipGlueStateMatches';
 

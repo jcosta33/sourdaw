@@ -1,5 +1,7 @@
-import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
+import { type ProjectContext } from '../../models/ProjectContext';
 import { CANONICAL_ROLE_OPTIONS } from '../canonicalRoleFamilies';
+
+export type BriefTrackRole = { trackId: string; role: string };
 
 /**
  * The roles the confirmed brief states, read onto every track that had none, exactly as the project
@@ -8,7 +10,7 @@ import { CANONICAL_ROLE_OPTIONS } from '../canonicalRoleFamilies';
  */
 export function withBriefTrackRoles(
     tracks: ProjectContext['tracks'],
-    brief: ProjectContextProductionBrief
+    brief: { trackRoles: readonly BriefTrackRole[] }
 ): ProjectContext['tracks'] {
     return tracks.map((track) => {
         if (track.canonicalRole?.source === 'authored') {

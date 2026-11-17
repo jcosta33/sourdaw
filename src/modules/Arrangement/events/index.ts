@@ -11,3 +11,12 @@ export type {
     ScratchPadSectionSnapshot,
     StemImportTrackSnapshot,
 } from './arrangementClipSnapshots';
+export type {
+    ClipAutomationLaneSnapshot,
+    ClipSatelliteEntrySnapshot,
+    ClipSplitActionSnapshot,
+    ClipStateSnapshot,
+    RetiredTakeLaneSnapshot,
+    TakeSnapshot,
+} from './arrangementClipStateSnapshots';
+export type { DeviceStateChunkSnapshot } from './arrangementDeviceStateSnapshots';

@@ -24,6 +24,7 @@ import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
+import { pluginStateEditCount } from './pluginStateEditCount';
 
 const {
     beginProjectDirectorySelection,
@@ -109,13 +110,18 @@ function requestProjectFolderSelection(): Promise<FileSystemDirectoryHandle> | n
     return selection;
 }
 
-async function captureRejectedPluginStates(): Promise<readonly string[]> {
+/** False when a loaded plugin's current state may be missing from the snapshot this save writes. */
+async function captureEveryPluginState(): Promise<boolean> {
     try {
         const capture = await captureExternalPluginStates();
-        return capture.rejectedPlugins;
+        return capture.rejectedPlugins.length === 0;
     } catch (error) {
         logger.warn('[saveProject] Native plugin state capture failed:', error);
-        return [];
+        notifyUser(
+            'Plugin state could not be captured — the project still reports unsaved changes, so save again to retry.',
+            'warning'
+        );
+        return false;
     }
 }
 
@@ -293,10 +299,12 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
         // before serialization, so a reopened project restores editor-driven state
         // (presets, oversampling, internal routing) instead of plugin defaults
         // (PH-3). A capture failure must not abort the save — the rest of the
-        // project still persists. A PRECOMMIT rejection is reported back instead
-        // of thrown: that plugin's live edit is not in project truth, so this
-        // save must not read as a clean success for it.
-        const rejectedCapturePlugins = await captureRejectedPluginStates();
+        // project still persists. A plugin whose state could not be read, a
+        // rejected capture, or a failed capture leaves a live edit out of project
+        // truth, so this save must not read as a clean success for it. Neither
+        // may a plugin edit reported after its state was read (#5989).
+        const pluginEditsAtCapture = pluginStateEditCount.read();
+        const everyPluginCaptured = await captureEveryPluginState();
 
         const current = projectStore.value;
         if (!current || current.createdAt !== project.createdAt) {
@@ -403,13 +411,12 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
                     assertSnapshotContinuation(audioDurabilityReceipt);
 
                     // The CRDT snapshot and named project file establish the same
-                    // durable project identity and exact PCM set. A rejected
-                    // plugin capture left that plugin's live edit out of project
-                    // truth, so keep the project dirty for the next save attempt.
+                    // durable project identity and exact PCM set. A plugin edit
+                    // missing from it keeps the project dirty for the next save.
                     const latest = projectStore.value!;
                     projectStore.set({
                         ...latest,
-                        dirty: rejectedCapturePlugins.length > 0,
+                        dirty: !everyPluginCaptured || pluginStateEditCount.read() !== pluginEditsAtCapture,
                         identityPersistencePending: false,
                     });
                     unsavedClosedTakes.markSavedThrough(settledTakesAtSnapshot);

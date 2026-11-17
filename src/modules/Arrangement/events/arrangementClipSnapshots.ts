@@ -1,12 +1,14 @@
+import { type AutomationPointSnapshot } from '#/modules/Automation/events';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
+
+import { type StemImportRole } from '../models/StemImportRole';
+
 import {
-    type AutomationPointSnapshot,
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
-    type MidiClipDataActionSnapshot,
-    type StemImportRole,
-} from '#/utils/handlerContract';
+} from './arrangementClipStateSnapshots';
 
 export type ClipSnapshot = {
     readonly id: string;

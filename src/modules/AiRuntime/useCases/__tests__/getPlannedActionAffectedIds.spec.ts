@@ -23,4 +23,19 @@ describe('getPlannedActionAffectedIds', () => {
             'bus-1'
         );
     });
+
+    it('names the device an addDevice mints after the track it targets', () => {
+        expect(
+            getPlannedActionAffectedIds({
+                type: 'addDevice',
+                payload: { trackId: 'track-a', deviceType: 'eq', deviceId: 'device-1' },
+            })
+        ).toEqual(['track-a', 'device-1']);
+    });
+
+    it('names only the targeted track for an addDevice that leaves the device id to the handler', () => {
+        expect(
+            getPlannedActionAffectedIds({ type: 'addDevice', payload: { trackId: 'track-a', deviceType: 'eq' } })
+        ).toEqual(['track-a']);
+    });
 });

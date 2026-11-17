@@ -39,6 +39,7 @@ use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
 use daw_dsp::proof::parameter_registry::{self as proof_parameters, NativeAdmission};
+use daw_dsp::toaster::transient::TransientShaperError;
 use daw_dsp::toaster::ToasterInstance;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
@@ -1172,7 +1173,10 @@ impl PluginCore {
     /// actually opened at, so no two producers can construct the same
     /// built-in against different clocks. Fails when the body refuses the
     /// sample rate.
-    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Result<Self, String> {
+    pub fn builtin(
+        plugin_type: BuiltinEffectType,
+        sample_rate: f32,
+    ) -> Result<Self, TransientShaperError> {
         Ok(match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
@@ -1420,14 +1424,17 @@ impl PluginCore {
     pub fn transient_shaper_with_patch(
         sample_rate: f32,
         patch: &[(BuiltinParamName, f32)],
-    ) -> Result<Self, String> {
+    ) -> Result<Self, TransientShaperError> {
         let mut body = TransientShaperBody {
             engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)?,
             attack_gain: 1.0,
             sustain_gain: 1.0,
         };
         for (name, value) in patch {
-            body.set_param(name.as_str(), *value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            body.set_param(name, *value);
         }
         Ok(Self::TransientShaper(Box::new(body)))
     }
@@ -1839,7 +1846,10 @@ impl FermenterBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Fermenter.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -1873,18 +1883,21 @@ const LAYER_ROUTING_KEY: &str = "active_layer";
 /// its own, and every caller that builds a patch from one — a body's own
 /// `load_patch`, and the graph mapper's immediate parameter batch — reuses
 /// this rather than reordering it again. `name` is a function pointer so
-/// every filter below can hold it.
+/// every filter below can hold it; an entry it spells as `None` names no key
+/// and follows in patch order with the rest.
 pub fn precedence_first<'a, T: Copy>(
     patch: &'a [(T, f32)],
-    name: fn(&T) -> &str,
+    name: fn(&T) -> Option<&str>,
     first: &'static [&'static str],
 ) -> impl Iterator<Item = (T, f32)> + 'a {
-    let led = first
-        .iter()
-        .flat_map(move |key| patch.iter().filter(move |(entry, _)| name(entry) == *key));
+    let led = first.iter().flat_map(move |key| {
+        patch
+            .iter()
+            .filter(move |(entry, _)| name(entry) == Some(*key))
+    });
     let rest = patch
         .iter()
-        .filter(move |(entry, _)| !first.iter().any(|key| name(entry) == *key));
+        .filter(move |(entry, _)| !first.iter().any(|key| name(entry) == Some(*key)));
     led.chain(rest).copied()
 }
 
@@ -2277,7 +2290,10 @@ impl GrandBouleBody {
     /// counterpart here to obey.
     fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
         for (name, value) in patch {
-            self.set_param(name.as_str(), *value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, *value);
         }
     }
 }
@@ -2397,7 +2413,10 @@ impl GlutenBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Gluten.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -2543,7 +2562,10 @@ impl CrustBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Crust.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -2707,7 +2729,10 @@ impl GrinderBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Grinder.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 }
@@ -3030,7 +3055,10 @@ impl BacteriaBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Bacteria.patch_precedence(),
         ) {
-            self.engine.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.engine.set_param(name, value);
         }
     }
 
@@ -3338,10 +3366,13 @@ impl ProofBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Proof.patch_precedence(),
         ) {
-            if PROOF_RECORD_REFUSED.contains(&name.as_str()) {
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            if PROOF_RECORD_REFUSED.contains(&name) {
                 continue;
             }
-            self.set_param(name.as_str(), value);
+            self.set_param(name, value);
         }
     }
 
@@ -3553,7 +3584,10 @@ impl DutchOvenBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::DutchOven.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 
@@ -3908,7 +3942,10 @@ impl ToasterBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Toaster.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 
@@ -4278,7 +4315,10 @@ impl LevainBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Levain.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            self.set_param(name, value);
         }
     }
 
@@ -4495,10 +4535,13 @@ impl ScoringBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Scoring.patch_precedence(),
         ) {
-            if SCORING_NATIVE_REFUSED.contains(&name.as_str()) {
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            if SCORING_NATIVE_REFUSED.contains(&name) {
                 continue;
             }
-            self.engine.set_param(name.as_str(), value);
+            self.engine.set_param(name, value);
         }
     }
 
@@ -4563,7 +4606,8 @@ fn take_cleared_grinder_model(
     let DeviceParam::BuiltinNamed(name) = param else {
         return None;
     };
-    if name.as_str() != "neuralModelSlot" && !(name.as_str() == "neuralModelMode" && value <= 0.5) {
+    let name = name.as_str();
+    if name != Some("neuralModelSlot") && !(name == Some("neuralModelMode") && value <= 0.5) {
         return None;
     }
     let PluginCore::Grinder(body) = instance else {
@@ -4590,50 +4634,59 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             engine.set_formant_preserve(value != 0.0);
             true
         }
-        (PluginCore::Fermenter(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        // A carrier with no str view names nothing any body answers to, so it
+        // is refused like a name the body does not hold.
+        (instance, DeviceParam::BuiltinNamed(name)) => match name.as_str() {
+            Some(name) => apply_builtin_named_param(instance, name, value),
+            None => false,
+        },
+        _ => false,
+    }
+}
+
+/// [`apply_builtin_param`] for a name in a built-in body's own vocabulary.
+fn apply_builtin_named_param(instance: &mut PluginCore, name: &str, value: f32) -> bool {
+    match instance {
+        PluginCore::Fermenter(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::GrandBoule(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::GrandBoule(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Gluten(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Gluten(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Crust(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Crust(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Grinder(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Grinder(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Bacteria(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Bacteria(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::DutchOven(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::DutchOven(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Toaster(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Toaster(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Levain(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Levain(body) => {
+            body.set_param(name, value);
             true
         }
-        (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value)
-        }
-        (PluginCore::TransientShaper(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value)
-        }
-        (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
+        PluginCore::Proof(body) => body.set_param(name, value),
+        PluginCore::TransientShaper(body) => body.set_param(name, value),
+        PluginCore::Scoring(body) => {
+            body.set_param(name, value);
             true
         }
         _ => false,
@@ -12558,7 +12611,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 for (name, value) in &writes {
-                    body.set_param(name.as_str(), *value);
+                    body.set_param(name.as_str().unwrap(), *value);
                 }
                 body.process(&mut left, &mut right);
             });
@@ -12740,7 +12793,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 for (name, value) in &refused {
-                    written.set_param(name.as_str(), *value);
+                    written.set_param(name.as_str().unwrap(), *value);
                 }
                 written.process(&mut written_left, &mut written_right);
                 untouched.process(&mut untouched_left, &mut untouched_right);
@@ -12820,7 +12873,7 @@ mod tests {
 
                 assert_no_alloc(|| {
                     for (name, value) in &choice {
-                        picked.set_param(name.as_str(), *value);
+                        picked.set_param(name.as_str().unwrap(), *value);
                     }
                     picked.process(&mut picked_left, &mut picked_right);
                 });
@@ -13035,7 +13088,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 for (name, value) in &writes {
-                    body.set_param(name.as_str(), *value);
+                    body.set_param(name.as_str().unwrap(), *value);
                 }
                 assert!(!body.set_param("eq_band0Xfreq", 800.0));
                 assert!(!body.set_param("input_gain", f32::NAN));
@@ -21283,9 +21336,9 @@ mod timeline_tests {
 
     /// The name a `&str` patch entry carries, for [`precedence_first`]'s own
     /// unit spec below — a plain function pointer rather than a closure,
-    /// because the signature it takes is `fn(&T) -> &str`.
-    fn plain_str_name<'a>(name: &'a &'a str) -> &'a str {
-        name
+    /// because the signature it takes is `fn(&T) -> Option<&str>`.
+    fn plain_str_name<'a>(name: &'a &'a str) -> Option<&'a str> {
+        Some(name)
     }
 
     /// [`precedence_first`] yields every entry naming a law key, in law
@@ -26422,7 +26475,7 @@ mod timeline_tests {
         let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
         let mut body = DutchOvenBody::new(DUTCH_OVEN_RATE);
         for (name, value) in &value_writes {
-            body.set_param(name.as_str(), *value);
+            body.set_param(name.as_str().unwrap(), *value);
         }
         let mut left = material_left.clone();
         let mut right = material_right.clone();

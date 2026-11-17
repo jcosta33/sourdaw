@@ -9,6 +9,8 @@ hot.on('fixture:message', ({ message }) => {
 });
 hot.on('vite:ws:disconnect', () => console.info('fixture-disconnected'));
 
-import('./App.js').then(({ content }) => {
-    document.getElementById('content').textContent = content;
-});
+const { content } = await import('./App.js');
+const target = document.getElementById('content');
+if (target) {
+    target.textContent = content;
+}

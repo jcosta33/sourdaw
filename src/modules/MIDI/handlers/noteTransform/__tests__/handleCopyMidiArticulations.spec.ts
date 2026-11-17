@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type MidiClipNoteSnapshot } from '../../../events/midiClipDataSnapshots';
 import { handleCopyMidiArticulations } from '../handleCopyMidiArticulations';
 import { handleRestoreMidiClipNotes } from '../handleRestoreMidiClipNotes';
 

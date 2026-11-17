@@ -30,11 +30,17 @@ impl PluginScanPolicy {
     /// The one production route that widens a policy past the defaults. The
     /// grant store is read fresh on every call, so a grant the main process
     /// just recorded or revoked is what the scan process enforces next.
+    ///
+    /// A refused runtime scope leaves only the platform defaults: no grant can
+    /// be validated against storage the scope would have located.
     pub fn production() -> Self {
+        let Ok(forbidden) = ForbiddenRoots::production() else {
+            return Self::platform_defaults();
+        };
         Self::over_grant_store(
             default_plugin_scan_roots(),
             plugin_folder_grants::production_store_location().as_deref(),
-            &ForbiddenRoots::production(),
+            &forbidden,
         )
     }
 
@@ -841,6 +847,30 @@ mod tests {
                     path.display()
                 );
             }
+        }
+
+        #[test]
+        fn a_refused_scope_widens_no_scan_policy_past_the_platform_defaults() {
+            crate::host::runtime_scope::RuntimeScope::test_in_refused_process(
+                concat!(
+                    module_path!(),
+                    "::a_refused_scope_widens_no_scan_policy_past_the_platform_defaults"
+                ),
+                || {
+                    let tree = TempTree::create("policy-refused-scope");
+                    let folder = tree.dir("Plugins");
+                    grant_at(&tree.store(), &ForbiddenRoots::default(), &folder)
+                        .expect("pick is valid");
+
+                    let policy = plugin_folder_grants::with_store_location_for_test(
+                        &tree.store(),
+                        PluginScanPolicy::production,
+                    );
+
+                    assert_eq!(policy.allowed_roots, default_plugin_scan_roots());
+                    assert!(policy.granted_roots.is_empty());
+                },
+            );
         }
 
         #[cfg(unix)]

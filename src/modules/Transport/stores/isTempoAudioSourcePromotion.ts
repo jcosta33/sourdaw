@@ -3,8 +3,10 @@ import {
     hasValidAudioPassOrigin,
     hasValidAudioSourceState,
     isAudioSourceSnapshot,
-} from './audioSourceTime';
-import { projectClipLoopExpansion } from './clipLoopProjection';
+} from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+
 import {
     type TempoAudioClipFieldsSnapshot,
     type TempoAudioClipInputsSnapshot,
@@ -12,8 +14,7 @@ import {
     type TempoAudioSourcePromotionSnapshot,
     type TempoAudioTakeFieldsSnapshot,
     type TempoAudioTakeInputsSnapshot,
-} from './handlerContract';
-import { isRecord, valuesEqual } from './structuralEquality';
+} from '../events/tempoAudioSourceSnapshots';
 
 type ClipDelta = TempoAudioSourcePromotionSnapshot['clips'][number];
 type TakeDelta = TempoAudioSourcePromotionSnapshot['takes'][number];

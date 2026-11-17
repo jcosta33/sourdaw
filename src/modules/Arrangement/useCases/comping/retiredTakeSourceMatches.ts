@@ -1,6 +1,7 @@
 import { commandSourcePublicationMatches } from '#/modules/CrdtDocument/useCases';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { isRecord } from '#/utils/structuralEquality';
+
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 import { sourceOwners, type SourceKind } from './retiredTakeSourceOwners';
 

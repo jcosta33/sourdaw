@@ -20,14 +20,108 @@ pub struct DocumentStore {
     root_id: DocId,
 }
 
+/// Why a `DocumentStore` operation failed.
+///
+/// Automerge's error is boxed because it is several times larger than every
+/// other variant, and each `Result` the store returns would carry its size.
+///
+/// `Display` is the message the renderer receives through the collaboration
+/// commands, so rewording a variant changes what TypeScript sees.
+#[derive(Debug)]
+pub enum DocumentStoreError {
+    /// Writing a fixed project key while creating the project failed.
+    WriteProjectKey {
+        key: &'static str,
+        source: Box<automerge::AutomergeError>,
+    },
+    /// The bundle holds `root` and other ids that shadow it, sorted.
+    MultipleRootDocuments { shadowing: Vec<DocId> },
+    /// The bundle holds no `root`, only ids that shadow it, sorted.
+    OnlyShadowingRootDocuments { shadowing: Vec<DocId> },
+    /// No document with this id is in the store.
+    DocumentNotFound { doc_id: DocId },
+    /// Automerge refused a remote change.
+    ApplyChange(Box<automerge::AutomergeError>),
+    /// Automerge refused to merge another document into a local one.
+    Merge(Box<automerge::AutomergeError>),
+    /// A bundle record is not a loadable Automerge document.
+    LoadDocument {
+        doc_id: DocId,
+        source: Box<automerge::AutomergeError>,
+    },
+    /// The bundle has no root document.
+    MissingRootDocument,
+    /// Merging a bundle record into its existing document failed.
+    MergeDocument {
+        doc_id: DocId,
+        source: Box<automerge::AutomergeError>,
+    },
+    /// The store has no root document.
+    RootDocumentNotFound,
+    /// The root document could not be serialized to JSON.
+    SerializeRoot(serde_json::Error),
+    /// A child document could not be serialized to JSON.
+    SerializeDocument {
+        doc_id: DocId,
+        source: serde_json::Error,
+    },
+}
+
+impl std::fmt::Display for DocumentStoreError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WriteProjectKey { key, source } => {
+                write!(formatter, "Failed to write project key '{key}': {source}")
+            }
+            Self::MultipleRootDocuments { shadowing } => write!(
+                formatter,
+                "Bundle carries more than one root document: {DOC_PREFIX_ROOT}, {}",
+                shadowing.join(", ")
+            ),
+            Self::OnlyShadowingRootDocuments { shadowing } => write!(
+                formatter,
+                "Bundle carries no root document, only ids shadowing it: {}",
+                shadowing.join(", ")
+            ),
+            Self::DocumentNotFound { doc_id } => {
+                write!(formatter, "Document not found: {doc_id}")
+            }
+            Self::ApplyChange(source) => write!(formatter, "Failed to apply change: {source}"),
+            Self::Merge(source) => write!(formatter, "Failed to merge: {source}"),
+            Self::LoadDocument { doc_id, source } => {
+                write!(formatter, "Failed to load document {doc_id}: {source}")
+            }
+            Self::MissingRootDocument => formatter.write_str("Bundle missing root document"),
+            Self::MergeDocument { doc_id, source } => {
+                write!(formatter, "Failed to merge document {doc_id}: {source}")
+            }
+            Self::RootDocumentNotFound => formatter.write_str("Root document not found"),
+            Self::SerializeRoot(source) => {
+                write!(formatter, "Failed to serialize root doc: {source}")
+            }
+            Self::SerializeDocument { doc_id, source } => {
+                write!(formatter, "Failed to serialize doc {doc_id}: {source}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DocumentStoreError {}
+
 /// Attach the key being written to an Automerge failure.
 ///
 /// Project creation writes a fixed set of keys and the rest of the system
 /// assumes every one of them exists. A write that fails must surface here, with
 /// the key named, rather than leave a document that is missing a collection the
 /// first projection will look for.
-fn wrote<T>(result: Result<T, automerge::AutomergeError>, key: &str) -> Result<T, String> {
-    result.map_err(|error| format!("Failed to write project key '{}': {}", key, error))
+fn wrote<T>(
+    result: Result<T, automerge::AutomergeError>,
+    key: &'static str,
+) -> Result<T, DocumentStoreError> {
+    result.map_err(|source| DocumentStoreError::WriteProjectKey {
+        key,
+        source: Box::new(source),
+    })
 }
 
 /// Reject a bundle carrying a document that shadows the project root.
@@ -40,15 +134,17 @@ fn wrote<T>(result: Result<T, automerge::AutomergeError>, key: &str) -> Result<T
 ///
 /// The message names only what the bundle actually holds — a bundle with a
 /// shadowing id and no `root` carries zero roots, not two.
-fn reject_root_shadowing<'ids>(ids: impl IntoIterator<Item = &'ids str>) -> Result<(), String> {
+fn reject_root_shadowing<'ids>(
+    ids: impl IntoIterator<Item = &'ids str>,
+) -> Result<(), DocumentStoreError> {
     let mut has_root = false;
-    let mut shadowing: Vec<&str> = Vec::new();
+    let mut shadowing: Vec<DocId> = Vec::new();
 
     for id in ids {
         if id == DOC_PREFIX_ROOT {
             has_root = true;
         } else if id.starts_with(DOC_PREFIX_ROOT) {
-            shadowing.push(id);
+            shadowing.push(id.to_string());
         }
     }
 
@@ -57,23 +153,29 @@ fn reject_root_shadowing<'ids>(ids: impl IntoIterator<Item = &'ids str>) -> Resu
     }
 
     shadowing.sort_unstable();
-    let shadowing = shadowing.join(", ");
     if has_root {
-        return Err(format!(
-            "Bundle carries more than one root document: {}, {}",
-            DOC_PREFIX_ROOT, shadowing
-        ));
+        return Err(DocumentStoreError::MultipleRootDocuments { shadowing });
     }
 
-    Err(format!(
-        "Bundle carries no root document, only ids shadowing it: {}",
-        shadowing
-    ))
+    Err(DocumentStoreError::OnlyShadowingRootDocuments { shadowing })
+}
+
+fn document_not_found(doc_id: &str) -> DocumentStoreError {
+    DocumentStoreError::DocumentNotFound {
+        doc_id: doc_id.to_string(),
+    }
+}
+
+fn load_document(doc_id: &str, bytes: &[u8]) -> Result<AutoCommit, DocumentStoreError> {
+    AutoCommit::load(bytes).map_err(|source| DocumentStoreError::LoadDocument {
+        doc_id: doc_id.to_string(),
+        source: Box::new(source),
+    })
 }
 
 impl DocumentStore {
     /// Create a new project with a root document.
-    pub fn create_project(name: &str, sample_rate: u32) -> Result<Self, String> {
+    pub fn create_project(name: &str, sample_rate: u32) -> Result<Self, DocumentStoreError> {
         let root_id = DOC_PREFIX_ROOT.to_string();
         let mut root = AutoCommit::new();
 
@@ -166,24 +268,28 @@ impl DocumentStore {
     }
 
     /// Apply a remote change to a specific document.
-    pub fn apply_change(&mut self, doc_id: &str, change: Change) -> Result<(), String> {
+    pub fn apply_change(&mut self, doc_id: &str, change: Change) -> Result<(), DocumentStoreError> {
         let doc = self
             .docs
             .get_mut(doc_id)
-            .ok_or_else(|| format!("Document not found: {}", doc_id))?;
+            .ok_or_else(|| document_not_found(doc_id))?;
         doc.apply_changes(vec![change])
-            .map_err(|e| format!("Failed to apply change: {}", e))?;
+            .map_err(|source| DocumentStoreError::ApplyChange(Box::new(source)))?;
         Ok(())
     }
 
     /// Merge another document's state into the local document.
-    pub fn merge_doc(&mut self, doc_id: &str, other: &mut AutoCommit) -> Result<(), String> {
+    pub fn merge_doc(
+        &mut self,
+        doc_id: &str,
+        other: &mut AutoCommit,
+    ) -> Result<(), DocumentStoreError> {
         let doc = self
             .docs
             .get_mut(doc_id)
-            .ok_or_else(|| format!("Document not found: {}", doc_id))?;
+            .ok_or_else(|| document_not_found(doc_id))?;
         doc.merge(other)
-            .map_err(|e| format!("Failed to merge: {}", e))?;
+            .map_err(|source| DocumentStoreError::Merge(Box::new(source)))?;
         Ok(())
     }
 
@@ -209,20 +315,19 @@ impl DocumentStore {
     /// `export_root_json` would then hand the frontend a different document run
     /// to run. A bundle carrying a root-shadowing id is rejected rather than
     /// resolved by guesswork.
-    pub fn load_all(bundle: HashMap<DocId, Vec<u8>>) -> Result<Self, String> {
+    pub fn load_all(bundle: HashMap<DocId, Vec<u8>>) -> Result<Self, DocumentStoreError> {
         reject_root_shadowing(bundle.keys().map(String::as_str))?;
 
         let mut docs = HashMap::new();
 
         for (id, bytes) in bundle {
-            let doc = AutoCommit::load(&bytes)
-                .map_err(|e| format!("Failed to load document {}: {}", id, e))?;
+            let doc = load_document(&id, &bytes)?;
             docs.insert(id, doc);
         }
 
         let root_id = DOC_PREFIX_ROOT.to_string();
         if !docs.contains_key(&root_id) {
-            return Err("Bundle missing root document".to_string());
+            return Err(DocumentStoreError::MissingRootDocument);
         }
 
         Ok(Self { docs, root_id })
@@ -240,13 +345,15 @@ impl DocumentStore {
     /// late record returns `Err` with the live store byte-identical to before
     /// the call. Publishing records one at a time failed after earlier records
     /// had already mutated the authoritative store.
-    pub fn merge_bundle(&mut self, bundle: HashMap<DocId, Vec<u8>>) -> Result<MergeResult, String> {
+    pub fn merge_bundle(
+        &mut self,
+        bundle: HashMap<DocId, Vec<u8>>,
+    ) -> Result<MergeResult, DocumentStoreError> {
         reject_root_shadowing(bundle.keys().map(String::as_str))?;
 
         let mut incoming_docs = HashMap::new();
         for (id, bytes) in bundle {
-            let doc = AutoCommit::load(&bytes)
-                .map_err(|e| format!("Failed to load document {}: {}", id, e))?;
+            let doc = load_document(&id, &bytes)?;
             incoming_docs.insert(id, doc);
         }
 
@@ -256,9 +363,12 @@ impl DocumentStore {
         for (id, mut incoming) in incoming_docs {
             if let Some(existing) = self.docs.get(&id) {
                 let mut candidate = existing.clone();
-                candidate
-                    .merge(&mut incoming)
-                    .map_err(|e| format!("Failed to merge document {}: {}", id, e))?;
+                if let Err(source) = candidate.merge(&mut incoming) {
+                    return Err(DocumentStoreError::MergeDocument {
+                        doc_id: id,
+                        source: Box::new(source),
+                    });
+                }
                 result.merged_doc_ids.push(id.clone());
                 staged.insert(id, candidate);
             } else {
@@ -273,25 +383,26 @@ impl DocumentStore {
     }
 
     /// Export the root document state as a JSON value for the frontend.
-    pub fn export_root_json(&self) -> Result<serde_json::Value, String> {
+    pub fn export_root_json(&self) -> Result<serde_json::Value, DocumentStoreError> {
         let doc = self
             .docs
             .get(&self.root_id)
-            .ok_or("Root document not found")?;
+            .ok_or(DocumentStoreError::RootDocumentNotFound)?;
         let auto_serde = AutoSerde::from(doc);
-        serde_json::to_value(&auto_serde)
-            .map_err(|e| format!("Failed to serialize root doc: {}", e))
+        serde_json::to_value(&auto_serde).map_err(DocumentStoreError::SerializeRoot)
     }
 
     /// Export a child document state as a JSON value for the frontend.
-    pub fn export_doc_json(&self, doc_id: &str) -> Result<serde_json::Value, String> {
+    pub fn export_doc_json(&self, doc_id: &str) -> Result<serde_json::Value, DocumentStoreError> {
         let doc = self
             .docs
             .get(doc_id)
-            .ok_or_else(|| format!("Document not found: {}", doc_id))?;
+            .ok_or_else(|| document_not_found(doc_id))?;
         let auto_serde = AutoSerde::from(doc);
-        serde_json::to_value(&auto_serde)
-            .map_err(|e| format!("Failed to serialize doc {}: {}", doc_id, e))
+        serde_json::to_value(&auto_serde).map_err(|source| DocumentStoreError::SerializeDocument {
+            doc_id: doc_id.to_string(),
+            source,
+        })
     }
 }
 
@@ -316,7 +427,7 @@ mod tests {
     fn load_error(bundle: HashMap<DocId, Vec<u8>>, expectation: &str) -> String {
         match DocumentStore::load_all(bundle) {
             Ok(_) => panic!("{expectation}"),
-            Err(error) => error,
+            Err(error) => error.to_string(),
         }
     }
 
@@ -462,7 +573,9 @@ mod tests {
                 .merge_bundle(bundle)
                 .expect_err("the corrupt late record must fail the whole merge");
             assert!(
-                error.contains(format!("Failed to load document {corrupt_id}").as_str()),
+                error
+                    .to_string()
+                    .contains(format!("Failed to load document {corrupt_id}").as_str()),
                 "{label}: the corrupt late record must be the failure, got: {error}"
             );
 
@@ -586,7 +699,7 @@ mod tests {
             .expect_err("a bundle the loader refuses must not be merged either");
 
         assert_eq!(
-            error,
+            error.to_string(),
             "Bundle carries more than one root document: root, root_backup"
         );
         assert!(
@@ -614,7 +727,7 @@ mod tests {
             .expect_err("the merge path refuses a root-shadowing bundle");
         let load_error = load_error(bundle, "the load path refuses a root-shadowing bundle");
 
-        assert_eq!(merge_error, load_error);
+        assert_eq!(merge_error.to_string(), load_error);
     }
 
     #[test]
@@ -622,5 +735,96 @@ mod tests {
         let store = project("JSON Test");
         let json = store.export_root_json().expect("should export JSON");
         assert!(json["project"]["name"].as_str().is_some());
+    }
+
+    /// The renderer receives these messages verbatim through the collaboration
+    /// commands, so each variant's text is pinned byte for byte.
+    #[test]
+    fn errors_print_the_messages_the_renderer_receives() {
+        // `AutoCommit` is not `Debug`, so `expect_err` is unavailable.
+        let automerge_error = || match AutoCommit::load(b"not an automerge document") {
+            Ok(_) => panic!("garbage bytes must not load"),
+            Err(error) => Box::new(error),
+        };
+        let automerge_text = automerge_error().to_string();
+        let json_error = || {
+            serde_json::from_str::<serde_json::Value>("{")
+                .expect_err("an unterminated object must not parse")
+        };
+        let json_text = json_error().to_string();
+
+        let cases = [
+            (
+                DocumentStoreError::WriteProjectKey {
+                    key: KEY_TRACKS,
+                    source: automerge_error(),
+                },
+                format!("Failed to write project key 'tracks': {automerge_text}"),
+            ),
+            (
+                DocumentStoreError::MultipleRootDocuments {
+                    shadowing: vec!["root_a".to_string(), "root_b".to_string()],
+                },
+                "Bundle carries more than one root document: root, root_a, root_b".to_string(),
+            ),
+            (
+                DocumentStoreError::OnlyShadowingRootDocuments {
+                    shadowing: vec!["root_a".to_string(), "root_b".to_string()],
+                },
+                "Bundle carries no root document, only ids shadowing it: root_a, root_b"
+                    .to_string(),
+            ),
+            (
+                DocumentStoreError::DocumentNotFound {
+                    doc_id: "track_1".to_string(),
+                },
+                "Document not found: track_1".to_string(),
+            ),
+            (
+                DocumentStoreError::ApplyChange(automerge_error()),
+                format!("Failed to apply change: {automerge_text}"),
+            ),
+            (
+                DocumentStoreError::Merge(automerge_error()),
+                format!("Failed to merge: {automerge_text}"),
+            ),
+            (
+                DocumentStoreError::LoadDocument {
+                    doc_id: "track_1".to_string(),
+                    source: automerge_error(),
+                },
+                format!("Failed to load document track_1: {automerge_text}"),
+            ),
+            (
+                DocumentStoreError::MissingRootDocument,
+                "Bundle missing root document".to_string(),
+            ),
+            (
+                DocumentStoreError::MergeDocument {
+                    doc_id: "track_1".to_string(),
+                    source: automerge_error(),
+                },
+                format!("Failed to merge document track_1: {automerge_text}"),
+            ),
+            (
+                DocumentStoreError::RootDocumentNotFound,
+                "Root document not found".to_string(),
+            ),
+            (
+                DocumentStoreError::SerializeRoot(json_error()),
+                format!("Failed to serialize root doc: {json_text}"),
+            ),
+            (
+                DocumentStoreError::SerializeDocument {
+                    doc_id: "track_1".to_string(),
+                    source: json_error(),
+                },
+                format!("Failed to serialize doc track_1: {json_text}"),
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
     }
 }

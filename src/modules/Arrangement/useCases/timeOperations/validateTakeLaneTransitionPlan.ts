@@ -1,5 +1,4 @@
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
-
+import { type RetiredTakeLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 
 import { isReKeyLaneTransition } from './isReKeyLaneTransition';

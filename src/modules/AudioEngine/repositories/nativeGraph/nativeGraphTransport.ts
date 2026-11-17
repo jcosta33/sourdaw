@@ -15,6 +15,7 @@ import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
 import { type NativeLevainBankLayout } from '../../models/NativeSampleBank';
 
+import { cancelNativeGraphOfflineRender } from './cancelNativeGraphOfflineRender';
 import { type NativeGraphWireBatch, type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 
 type TimelineGraphWireBatch = NativeGraphWireBatch & Readonly<{ timelineLease?: string }>;
@@ -231,15 +232,4 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
             return desktopInvoke('map_graph_batch', { prior, batch, sampleRate, session: session ?? null });
         },
     };
-}
-
-/**
- * `cancel_graph_offline`: stop the render started under `renderId` at its next
- * block. The render then rejects with an error starting
- * `offline-render-cancelled`, and every plugin instance it built is released.
- * A cancel that reaches the native side before its render is kept and still
- * cancels it; one for a finished or unknown id does nothing.
- */
-async function cancelNativeGraphOfflineRender(renderId: string): Promise<void> {
-    await desktopInvoke('cancel_graph_offline', { renderId });
 }

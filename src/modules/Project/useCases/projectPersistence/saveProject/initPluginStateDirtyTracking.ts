@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { observeExternalPluginParameterEdits, watchPluginStateDirty } from '#/modules/PluginHost/useCases';
 
 import { markDirty } from './markDirty';
+import { pluginStateEditCount } from './pluginStateEditCount';
 
 /**
  * Mark the open project dirty whenever a hosted plugin reports that its own
@@ -24,6 +25,7 @@ import { markDirty } from './markDirty';
  */
 export function initPluginStateDirtyTracking(): () => void {
     const subscription = watchPluginStateDirty(() => {
+        pluginStateEditCount.record();
         markDirty();
     }).catch((error: unknown) => {
         logger.warn(`Failed to subscribe to native plugin state changes: ${String(error)}`);
@@ -37,6 +39,7 @@ export function initPluginStateDirtyTracking(): () => void {
         if (edit.kind !== 'value') {
             return;
         }
+        pluginStateEditCount.record();
         markDirty();
     });
 

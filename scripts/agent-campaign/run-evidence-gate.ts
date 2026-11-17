@@ -8,13 +8,21 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { format, resolveConfig } from 'prettier';
 
+import {
+    DEFAULT_CLOSURE_IO,
+    closureBlockers,
+    readLiveClosures,
+    runAgainstStableClosure,
+    type ClosureIo,
+    type GateRunIo,
+} from './evidenceClosure.ts';
 import { EVIDENCE_SUITE_COMMANDS, EVIDENCE_SUITE_DATA, EVIDENCE_TASK_GROUPINGS } from './evidenceGateContract.ts';
 import {
     EVIDENCE_CAMPAIGN,
@@ -25,10 +33,12 @@ import {
     EVIDENCE_SCHEMA_VERSION,
     EVIDENCE_THRESHOLDS_PATH,
     computeFixtureDigest,
+    newEvidenceRecord,
     parseEvidenceManifest,
     parseEvidenceRecord,
     sharedFixturePaths,
     validateEvidenceManifest,
+    type EvidenceClosure,
     type EvidenceDigestedPath,
     type EvidenceFixture,
     type EvidenceManifest,
@@ -68,21 +78,15 @@ const ACTIVE_GATES_ENV = 'SOURDAW_EVIDENCE_ACTIVE_GATES';
 const BLOCKED_EXIT_CODE = 2;
 
 /**
- * Paths a verify command reads: the repository-relative file arguments it names, and the source tree
- * of every crate it tests. The manifest's own path is excluded — it cannot carry its own digest.
+ * The repository-relative file arguments a verify command names. A tested crate's tree is not one:
+ * its files reach the record closure through the cargo path-dependency closure instead. The
+ * manifest's own path is excluded — it cannot carry its own digest.
  */
 function commandFixturePaths(command: string): readonly string[] {
     const tokens = command.split(/\s+/u).filter((token) => token.length > 0);
-    const paths: string[] = [];
-    for (const [index, token] of tokens.entries()) {
-        if (FIXTURE_PREFIXES.some((prefix) => token.startsWith(prefix)) && token !== EVIDENCE_MANIFEST_PATH) {
-            paths.push(token);
-        }
-        const crate = tokens[index + 1];
-        if (token === '-p' && tokens[index - 2] === 'cargo' && tokens[index - 1] === 'test' && crate !== undefined) {
-            paths.push(`crates/${crate}/src`);
-        }
-    }
+    const paths = tokens.filter(
+        (token) => FIXTURE_PREFIXES.some((prefix) => token.startsWith(prefix)) && token !== EVIDENCE_MANIFEST_PATH
+    );
     return [...new Set(paths)].sort();
 }
 
@@ -129,7 +133,15 @@ function suiteKindOf(command: string): EvidenceSuiteKind {
     return 'unit+rust';
 }
 
+/**
+ * A manifest fixture is one named file. A tree moves with every unrelated edit inside it, which
+ * would fail the per-pull-request freshness check; trees belong to the record closure.
+ */
 function buildFixture(root: string, path: string): EvidenceFixture {
+    const absolute = resolve(root, path);
+    if (existsSync(absolute) && statSync(absolute).isDirectory()) {
+        throw new Error(`${path}: a manifest fixture must be a file; a tree belongs to the record closure`);
+    }
     const digest = computeFixtureDigest(root, path);
     if (digest === null) {
         return { path, digest: null, status: 'absent' };
@@ -290,14 +302,22 @@ function releaseBlockers(
     for (const path of driftedRecordPaths(suite, record, release.environment)) {
         blockers.push(`${suite.id}: record digest drifted for ${path}`);
     }
+    blockers.push(...closureBlockers(suite, record, release.closures.get(suite.id)));
     if (record.outcome !== 'passed') {
         blockers.push(`${suite.id}: record outcome is ${record.outcome}, not passed`);
     }
     return blockers;
 }
 
-/** The head a release answers to, and the environment digests the live tree carries for it. */
-export type ReleaseState = { head: string; environment: readonly EvidenceDigestedPath[] };
+/**
+ * The head a release answers to, the environment digests the live tree carries for it, and the
+ * live closure of every suite whose record carries one.
+ */
+export type ReleaseState = {
+    head: string;
+    environment: readonly EvidenceDigestedPath[];
+    closures: ReadonlyMap<string, EvidenceClosure>;
+};
 
 export function evaluateRelease(
     manifest: EvidenceManifest,
@@ -527,28 +547,6 @@ function blockedFixtures(root: string, suite: EvidenceSuite): readonly string[] 
         .map(({ path }) => path);
 }
 
-function newRecord(
-    manifest: EvidenceManifest,
-    suite: EvidenceSuite,
-    observed: ReleaseState,
-    run: { startedAt: string; durationMs: number; exitCode: number; outcome: EvidenceOutcome }
-): EvidenceRecord {
-    return {
-        schemaVersion: EVIDENCE_SCHEMA_VERSION,
-        suite: suite.id,
-        task: suite.task,
-        command: suite.command,
-        integratedCommit: observed.head,
-        capabilityInventoryDigest: manifest.capabilityInventory.digest,
-        fixtures: suite.fixtures,
-        environment: observed.environment,
-        startedAt: run.startedAt,
-        durationMs: run.durationMs,
-        exitCode: run.exitCode,
-        outcome: run.outcome,
-    };
-}
-
 function runSuiteCommand(root: string, suite: EvidenceSuite): { exitCode: number; durationMs: number } {
     const contractCommand = EVIDENCE_SUITE_COMMANDS[suite.id];
     if (suite.command !== contractCommand) {
@@ -577,13 +575,20 @@ function runBlockedGate(
         console.error(`${suite.id}: fixture ${path} does not exist`);
     }
     const run = { startedAt: new Date().toISOString(), durationMs: 0, exitCode: 0, outcome: 'blocked' } as const;
-    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
-    writeRecord(root, newRecord(manifest, suite, observed, run));
+    const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closure: null };
+    writeRecord(root, newEvidenceRecord(manifest, suite, observed, run));
     return BLOCKED_EXIT_CODE;
 }
 
-function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateId: string): number {
-    const suite = selectGate(manifest, taskId, gateId);
+const DEFAULT_GATE_IO: GateRunIo = { ...DEFAULT_CLOSURE_IO, runCommand: runSuiteCommand };
+
+async function runGate(
+    root: string,
+    manifest: EvidenceManifest,
+    selection: { task: string; gate: string },
+    io: GateRunIo
+): Promise<number> {
+    const suite = selectGate(manifest, selection.task, selection.gate);
     if (suite.kind === 'manual') {
         throw new Error(`${suite.id}: a manual suite carries no runnable command`);
     }
@@ -601,15 +606,26 @@ function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateI
     }
     const observed = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
     const startedAt = new Date().toISOString();
-    const run = runSuiteCommand(root, suite);
+    const run = await runAgainstStableClosure(root, suite, io);
+    if (run.kind === 'drifted') {
+        return report(run.problems);
+    }
     const outcome: EvidenceOutcome = run.exitCode === 0 ? 'passed' : 'failed';
-    writeRecord(root, newRecord(manifest, suite, observed, { startedAt, ...run, outcome }));
+    const result = { startedAt, durationMs: run.durationMs, exitCode: run.exitCode, outcome };
+    writeRecord(root, newEvidenceRecord(manifest, suite, { ...observed, closure: run.closure }, result));
     return run.exitCode;
 }
 
-function runRelease(root: string, manifest: EvidenceManifest): number {
-    const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
-    const { blockers } = evaluateRelease(manifest, readRecords(root, manifest), release);
+async function runRelease(root: string, manifest: EvidenceManifest, io: ClosureIo): Promise<number> {
+    const records = readRecords(root, manifest);
+    const recorded = new Set(records.filter(({ closure }) => closure !== null).map(({ suite }) => suite));
+    const closures = await readLiveClosures(
+        root,
+        manifest.suites.filter(({ id }) => recorded.has(id)),
+        io
+    );
+    const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest), closures };
+    const { blockers } = evaluateRelease(manifest, records, release);
     return report([...blockers, ...sourceExampleReleaseBlockers(root), ...acceptanceCorpusReleaseBlockers(root)]);
 }
 
@@ -665,7 +681,8 @@ function parseOptions(argv: readonly string[]): EvidenceGateOptions {
     };
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
+/** `io` stands in for the suite command and `cargo` under test; the CLI passes nothing. */
+export async function main(argv: readonly string[], io: GateRunIo = DEFAULT_GATE_IO): Promise<number> {
     const options = parseOptions(argv);
     const manifestPath = resolve(process.cwd(), options.manifest);
     const root = repositoryRootFor(manifestPath);
@@ -679,14 +696,14 @@ export async function main(argv: readonly string[]): Promise<number> {
         return report(structural);
     }
     if (options.task !== undefined && options.gate !== undefined) {
-        return runGate(root, manifest, options.task, options.gate);
+        return runGate(root, manifest, { task: options.task, gate: options.gate }, io);
     }
     const problems = liveProblems(root, manifest);
     if (problems.length > 0) {
         return report(problems);
     }
     if (options.release) {
-        return runRelease(root, manifest);
+        return runRelease(root, manifest, io);
     }
     return 0;
 }
