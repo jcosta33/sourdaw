@@ -89,3 +89,41 @@ src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
    placeholder must remain at least 4.5:1 without becoming the entered-value color. Inactive or disabled controls are
    exempt from this contrast floor. Reverting either route to `placeholder:text-text-primary` must fail the hierarchy
    assertion even when the contrast assertion still passes.
+10. **Timeline menus stay reachable through positioned and clipped ancestors (#6989, #7013).** Runs: orchestrator.
+    In Chromium, compare the section menu's rendered top-left to the right-click's client coordinates at two
+    horizontal scroll offsets with sidebars open and closed. Require at most four CSS pixels of drift away from
+    viewport edges. Check clamping and hit-test the menu items at the edges. Open New Adjustment Layer from the
+    actual button with zero and three layers, including a bottom-edge trigger. Require every option's rendered
+    bounds to fit and its center to hit the option. Choose the effect by keyboard and pointer, and test Escape
+    and trigger focus return. Activate Add Section and compare its snapped beat to the original click.
+    The reviewer checks the fixed command payload and runs one focused mutation at a time. Set `portal={false}`
+    at the section or add-layer caller. Under `src/modules/Arrangement/presentations/views/__tests__/`, the
+    corresponding case must fail. Run “anchors Add Section outside the clipped bar and retains the clicked
+    beat across scrolling” in `ArrangementBar.spec.tsx` or “opens the full Add menu outside the clipped strip
+    with %i existing layers” in `AdjustmentLayerStrip.spec.tsx`. Remove the portaled section menu's
+    context-menu propagation guard to fail the section test's original clicked-beat assertion. The focused
+    cases observe ancestry, inline positions, action payloads and focus. Chromium supplies the allocated
+    geometry and reachability.
+11. **Track-height mode changes row geometry, hit targets and scroll together (#7000, #7013).** Runs: orchestrator.
+    Cycle Compact, Normal and Large on a fixture with distinct stored track heights, a folder, a clip and visible
+    alternative lanes. In both Canvas2D and WebGPU, compare actual header bounds and fresh canvas pixels for row
+    heights and origins. Hit the clip body and the alternative lane in each mode. Shrink from a scrolled Large
+    view into Compact. Derive the scroll ceiling from Compact content height and the measured canvas viewport,
+    accounting for remaining overflow. Require the shared offset and native header scroll to agree within one
+    CSS pixel, and compare the header and canvas row origins using that offset. Check that stored heights,
+    Automerge heads, Undo/Redo stacks and the clean project state survive the cycle. Drag-resize in Compact.
+    Require one committed height change using the CSS delta divided by the display scale, then check the exact
+    project value and row through real Undo and Redo.
+    The reviewer checks the fixed tests and runs one focused mutation per check. Substitute scale 1 at the
+    render-model or header call to `getTimelineTrackHeight`. This must fail “reprojects stored row heights and
+    clip hit targets when only the display mode changes” in `src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts`
+    or “scales the actual header bounds on a local preference change and keeps folders fixed” in
+    `src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx`. Remove the preference's
+    renderer dirty subscription or scroll clamp. This must fail “updates the canvas floor and paints scaled
+    rows while transport is paused” in `src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx`
+    or “re-clamps the current vertical scroll when local row heights shrink” in
+    `src/modules/Arrangement/useCases/__tests__/initTimelineScrollClamp.spec.ts`. Remove division by the scale
+    or dispatch on each move. This must fail “previews incremental display deltas during drag and dispatches one
+    unscaled action on release” in `src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx`.
+    The focused cases observe projected heights, header CSS requests, renderer calls, store offsets and resize
+    dispatch. Chromium supplies the measured layout and committed history.
