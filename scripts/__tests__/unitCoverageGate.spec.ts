@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope.ts';
 import { changedProductionLines, evaluateUnitCoverage, readCoverageFloors } from '../unitCoverageGate.ts';
 
 const temporaryRoots: string[] = [];
@@ -60,6 +61,14 @@ afterEach(() => {
 });
 
 describe('PR unit coverage gate', () => {
+    it('selects broad non-browser validation for a floor-only change', () => {
+        const plan = selectValidationPlan(
+            ['scripts/unitCoverageFloors.json'],
+            [SMOKE_SPEC, 'tests/e2e/midiEditor.spec.ts']
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: false });
+    });
+
     it('compares Git content at the rename destination and ignores deleted, type declaration and test files', () => {
         const root = temporaryRoot();
         command(root, 'git', ['init', '-q']);
