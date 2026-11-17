@@ -324,11 +324,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     }
 
     const handleToggleVisualization = (visualization: GrandBouleVisualization): void => {
-        setOpenVisualizations((current) =>
-            current.includes(visualization)
-                ? current.filter((open) => open !== visualization)
-                : [...current, visualization]
-        );
+        setOpenVisualizations((current) => {
+            if (current.includes(visualization)) {
+                return current.filter((open) => open !== visualization);
+            }
+            return [...current, visualization];
+        });
     };
 
     return (
