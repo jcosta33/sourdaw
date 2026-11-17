@@ -605,8 +605,6 @@ export const PianoModel3D = ({
         if (heldPointers.has(e.pointerId)) {
             return;
         }
-        // A reused pointer ID starts a new gesture even if the prior one missed its terminal event.
-        releases.delete(e.pointerId);
         if (onNoteOn === undefined) {
             return;
         }
@@ -625,6 +623,7 @@ export const PianoModel3D = ({
         const [px, py] = canvasToPixel(e.clientX, e.clientY);
         const midi = hitTestKey(px, py, canvas.width, canvas.height);
         if (midi !== null) {
+            // Replace a pending release for a reused pointer ID only when it strikes a key.
             releases.set(e.pointerId, () => onNoteOff?.(midi));
             heldPointers.add(e.pointerId);
             if (heldPointers.size === 1) {

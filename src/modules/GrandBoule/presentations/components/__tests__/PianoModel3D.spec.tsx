@@ -164,6 +164,31 @@ describe('PianoModel3D', () => {
         expect(replacementNoteOff).not.toHaveBeenCalled();
     });
 
+    it('releases the interrupted note when a reused pointer misses the keyboard', () => {
+        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
+        const onNoteOff = vi.fn<(midi: number) => void>();
+        const { getByLabelText } = render(
+            <PianoModel3D
+                activeNotes={new Map()}
+                sustainPedal={0}
+                lidPosition={0.5}
+                onNoteOn={onNoteOn}
+                onNoteOff={onNoteOff}
+            />
+        );
+        const canvas = getByLabelText('Grand Boule interactive piano');
+        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
+        expect(onNoteOn).toHaveBeenCalledOnce();
+        const firstNote = onNoteOn.mock.calls[0]?.[0];
+        fireEvent.blur(window);
+        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: 0, clientY: 0 });
+        expect(onNoteOn).toHaveBeenCalledOnce();
+        expect(onNoteOff).not.toHaveBeenCalled();
+
+        fireEvent.pointerUp(window, { pointerId: 4 });
+        expect(onNoteOff.mock.calls).toEqual([[firstNote]]);
+    });
+
     it('starts a fresh preview when a pointer ID is reused after interruption without a terminal event', () => {
         const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
         const onNoteOff = vi.fn<(midi: number) => void>();
