@@ -1,4 +1,5 @@
 import { type MidiCC, type MidiNote } from '../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import {
     projectMidiClipWindow,
     type MidiNoteWindowRow,
@@ -11,7 +12,6 @@ import {
 
 import { frozenMidiTakeRepeat, type FrozenMidiTakeFragment, type FrozenMidiTakeRepeat } from './frozenMidiTakeRepeats';
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
-import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import { selectMidiNotesForRecordingPass } from './selectMidiNotesForRecordingPass';
 
 export { isFrozenMidiTakeSource } from './isFrozenMidiTakeSource';
@@ -184,6 +184,53 @@ function foldedNotes(
     }
 }
 
+function collectProjectedControllersAndBends(
+    source: FrozenMidiTakeSource,
+    window: SourceWindow,
+    projected: ReturnType<typeof projectMidiClipWindow<SourceLocatedMidiPitchBend>>,
+    synthetic: readonly MidiCC[],
+    collectController: ProjectFrozenMidiTakeWindowInput['collectController'],
+    collectBend: ProjectFrozenMidiTakeWindowInput['collectBend']
+): void {
+    if (collectController) {
+        const originals = new Map<string, MidiCC>();
+        for (const row of source.rows.controlChanges.value) {
+            if (originals.has(row.id)) {
+                throw new Error('Ambiguous MIDI controller identity');
+            }
+            originals.set(row.id, row);
+        }
+        for (const row of synthetic) {
+            collectController({ row, origin: 'synthetic' });
+        }
+        for (const row of projected.controlChanges) {
+            const original = originals.get(row.id);
+            if (!original) {
+                throw new Error('MIDI controller source unavailable');
+            }
+            const origin =
+                Math.abs(row.beat - window.beatOffset - original.beat) > SAME_BEAT_TOLERANCE ? 'carried' : 'source';
+            collectController({ row, origin, sourceBeat: original.beat });
+        }
+        for (const row of projected.closingControlChanges) {
+            const original = originals.get(row.id);
+            if (!original) {
+                throw new Error('MIDI controller source unavailable');
+            }
+            collectController({ row, origin: 'closing', sourceBeat: original.beat });
+        }
+    }
+    if (collectBend) {
+        for (const row of [...projected.priorPassPitchBends, ...projected.pitchBends]) {
+            const origin =
+                Math.abs(row.beat - window.beatOffset - row.sourceRecordedBeat) > SAME_BEAT_TOLERANCE
+                    ? 'carried'
+                    : 'source';
+            collectBend({ row, origin, sourceBeat: row.sourceRecordedBeat });
+        }
+    }
+}
+
 /**
  * One repeat of a frozen take in one timeline window, as a live comp fragment
  * of the same take plays its media (`frozenMidiTakeRepeat`): read from the
@@ -256,43 +303,7 @@ export function projectFrozenMidiTakeWindow({
         window.visibleStartBeat,
         window.visibleStartBeat + window.beatOffset
     );
-    if (collectController) {
-        const originals = new Map<string, MidiCC>();
-        for (const row of source.rows.controlChanges.value) {
-            if (originals.has(row.id)) {
-                throw new Error('Ambiguous MIDI controller identity');
-            }
-            originals.set(row.id, row);
-        }
-        for (const row of synthetic) {
-            collectController({ row, origin: 'synthetic' });
-        }
-        for (const row of projected.controlChanges) {
-            const original = originals.get(row.id);
-            if (!original) {
-                throw new Error('MIDI controller source unavailable');
-            }
-            const origin =
-                Math.abs(row.beat - window.beatOffset - original.beat) > SAME_BEAT_TOLERANCE ? 'carried' : 'source';
-            collectController({ row, origin, sourceBeat: original.beat });
-        }
-        for (const row of projected.closingControlChanges) {
-            const original = originals.get(row.id);
-            if (!original) {
-                throw new Error('MIDI controller source unavailable');
-            }
-            collectController({ row, origin: 'closing', sourceBeat: original.beat });
-        }
-    }
-    if (collectBend) {
-        for (const row of [...projected.priorPassPitchBends, ...projected.pitchBends]) {
-            const origin =
-                Math.abs(row.beat - window.beatOffset - row.sourceRecordedBeat) > SAME_BEAT_TOLERANCE
-                    ? 'carried'
-                    : 'source';
-            collectBend({ row, origin, sourceBeat: row.sourceRecordedBeat });
-        }
-    }
+    collectProjectedControllersAndBends(source, window, projected, synthetic, collectController, collectBend);
     return {
         ...empty,
         ...projected,

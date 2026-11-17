@@ -1,7 +1,8 @@
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type MidiNote } from '../models/MidiNote';
+
 import { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 import { type readPianoRollSelection } from './readPianoRollSelection';
 

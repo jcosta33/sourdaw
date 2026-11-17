@@ -1,9 +1,9 @@
 import { clipSelectionStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
-import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import {
     projectRevisionMatchesLiveIgnoringSaveWrites,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
+import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 
 import { CURRENT_PROJECT_VERSION } from '../models/ProjectData';
 import {
@@ -24,10 +24,10 @@ import {
 } from '../models/SemanticProjectQuery';
 import { projectStore } from '../stores/projectStore';
 
+import { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
+import { readMusicalContent } from './readMusicalContent';
 import { isSemanticProjectIdentityReady, semanticProjectIndex } from './semanticProjectIndex';
 import { semanticRangeOverlaps } from './semanticRangeOverlap';
-import { readMusicalContent } from './readMusicalContent';
-import { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_RETAINED_DIFF_REVISIONS = 32;

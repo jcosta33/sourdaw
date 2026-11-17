@@ -4,14 +4,13 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { clearPianoRollSelection, setMidiStoreState, setPianoRollSelection } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { captureMusicalContentBinding } from '#/modules/Project/useCases';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';

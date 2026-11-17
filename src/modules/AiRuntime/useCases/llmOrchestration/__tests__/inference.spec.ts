@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
-import { capabilityStore } from '#/modules/BrowserAi/stores';
-import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { clipSelectionStore, defaultTrackState } from '#/modules/Arrangement/stores';
 import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 import { captureProjectRevision, createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { chordTrackStore, defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { projectPianoRollTakeNotes, setMidiStoreState, setPianoRollSelection } from '#/modules/MIDI/useCases';
@@ -39,6 +39,7 @@ import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsSto
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
+import { nonAcousticMetricIntakeTurn } from '../../__tests__/metricGoalWorkflowFixture';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
@@ -51,7 +52,6 @@ import {
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
-import { nonAcousticMetricIntakeTurn } from '../../__tests__/metricGoalWorkflowFixture';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
