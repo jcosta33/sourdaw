@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope.ts';
-import { changedProductionLines, evaluateUnitCoverage, readCoverageFloors } from '../unitCoverageGate.ts';
+import {
+    changedProductionLines,
+    evaluateUnitCoverage,
+    mergeUnitCoverage,
+    readCoverageFloors,
+} from '../unitCoverageGate.ts';
 
 const temporaryRoots: string[] = [];
 
@@ -128,6 +133,67 @@ describe('PR unit coverage gate', () => {
             floors
         );
         expect(rejected.failures).toEqual([expect.stringContaining('17/20')]);
+    });
+
+    it('keeps Istanbul remapped endpoints and attributes merged hits to their start lines', async () => {
+        const root = temporaryRoot();
+        const input = join(root, 'input');
+        const output = join(root, 'output');
+        const path = 'src/app/App.tsx';
+        const absolutePath = join(root, path);
+        const identity = { revision: 'a'.repeat(40), runId: '5', attempt: '1' };
+        mkdirSync(input);
+        mkdirSync(dirname(absolutePath), { recursive: true });
+        writeFileSync(absolutePath, '// Source text for the native HTML report.\n'.repeat(34));
+        // These endpoint shapes came from the hosted Istanbul reports for JSX.
+        const statementMap = {
+            0: { start: { line: 33, column: 31 }, end: { line: 25, column: 9 } },
+            1: { start: { line: 24, column: 20 }, end: { line: null, column: -1 } },
+        };
+        for (let shard = 1; shard <= 4; shard++) {
+            const sourceRoot = join(root, `isolated-${shard}`);
+            const sourcePath = join(sourceRoot, path);
+            writeFileSync(
+                join(input, `shard-${shard}.json`),
+                JSON.stringify({
+                    ...identity,
+                    version: 1,
+                    sourceRoot,
+                    shard,
+                    elapsedMs: 1000,
+                    coverage: {
+                        [sourcePath]: {
+                            path: sourcePath,
+                            statementMap,
+                            s: { 0: shard === 2 ? 1 : 0, 1: 0 },
+                            ...coveredStructures,
+                        },
+                    },
+                })
+            );
+        }
+
+        await mergeUnitCoverage(input, output, root, identity, new Set([path]));
+        const merged: Record<string, object> = JSON.parse(readFileSync(join(output, 'coverage-final.json'), 'utf8'));
+        expect(merged[absolutePath]).toMatchObject({ statementMap, s: { 0: 1, 1: 0 } });
+        const result = evaluateUnitCoverage(
+            { [path]: { ...merged[absolutePath], path } },
+            new Map([[path, [{ start: 24, count: 10 }]]]),
+            floors,
+            floors
+        );
+        expect(result.changed).toEqual({ covered: 1, total: 2, uncovered: [{ path, line: 24 }] });
+    });
+
+    it.each([
+        { span: { ...location, end: { line: null, column: 0 } }, invalid: 'end line' },
+        { span: { ...location, end: { line: 1, column: -1 } }, invalid: 'end column' },
+        { span: { ...location, start: { line: 0, column: 0 } }, invalid: 'start line' },
+        { span: { ...location, start: { line: 1, column: -1 } }, invalid: 'start column' },
+    ])('rejects invalid coverage $invalid', ({ span, invalid }) => {
+        const path = 'src/one.ts';
+        const coverage = { [path]: { path, statementMap: { 0: span }, s: { 0: 1 }, ...coveredStructures } };
+        expect(() => evaluateUnitCoverage(coverage, new Map(), floors, floors)).toThrow(`Invalid coverage ${invalid}`);
     });
 
     it('fails for floor decreases, invalid floors and missing changed reports', () => {

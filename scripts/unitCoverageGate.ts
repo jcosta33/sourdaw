@@ -9,6 +9,7 @@ import { createVitest } from 'vitest/node';
 
 import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
 import { isProductionCoveragePath, unitCoverageJson, unitCoverageShardCount } from './unitCoveragePaths.ts';
+import { asRecord, integer, spanStart } from './unitCoverageValues.ts';
 
 const floorPath = 'scripts/unitCoverageFloors.json';
 const metrics = ['lines', 'statements', 'branches', 'functions'] as const;
@@ -24,20 +25,6 @@ type ChangedLines = Map<string, LineRange[]>;
 type UncoveredLine = { path: string; line: number };
 type CoverageIdentity = { revision: string; runId: string; attempt: string };
 type ShardCoverage = { coverage: Record<string, unknown>; elapsedMs: number };
-
-function asRecord(value: unknown, label: string): Record<string, unknown> {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        throw new Error(`Invalid ${label}`);
-    }
-    return value as Record<string, unknown>;
-}
-
-function integer(value: unknown, label: string, minimum = 0): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
-        throw new Error(`Invalid ${label}`);
-    }
-    return value;
-}
 
 function json(path: string): unknown {
     return JSON.parse(readFileSync(path, 'utf8')) as unknown;
@@ -166,25 +153,6 @@ function readHits(record: Record<string, unknown>, field: string): Record<string
 
 function positiveCount(value: unknown): number {
     return integer(value, 'coverage hit count') > 0 ? 1 : 0;
-}
-
-function spanStart(value: unknown, restoreEndColumn: boolean): number {
-    const span = asRecord(value, 'coverage span');
-    const start = asRecord(span.start, 'coverage span start');
-    const end = asRecord(span.end, 'coverage span end');
-    const line = integer(start.line, 'coverage start line', 1);
-    integer(start.column, 'coverage start column');
-    integer(end.line, 'coverage end line', line);
-    // Istanbul's source-map remapper uses Infinity for an end column beyond the mapped span.
-    // JSON serializes that sentinel as null.
-    if (end.column === null) {
-        if (restoreEndColumn) {
-            end.column = Number.POSITIVE_INFINITY;
-        }
-    } else {
-        integer(end.column, 'coverage end column');
-    }
-    return line;
 }
 
 function addCounter(totals: Totals, value: unknown): void {
