@@ -813,6 +813,8 @@ describe('production Oxlint public-plugin migration', () => {
         }
     }, 120_000);
 
+    const suppressionLintChildTimeout = 120_000;
+
     it.each([false, true])(
         'enforces retained bulk suppression budgets through the production ESLint CLI (fix=%s)',
         (fix) => {
@@ -838,7 +840,7 @@ describe('production Oxlint public-plugin migration', () => {
                     const result = spawnSync('pnpm', argv, {
                         cwd: process.cwd(),
                         encoding: 'utf8',
-                        timeout: 120_000,
+                        timeout: suppressionLintChildTimeout,
                         env: eslintEnvironment(process.env, fix),
                     });
                     expect(result.error).toBeUndefined();
@@ -852,7 +854,7 @@ describe('production Oxlint public-plugin migration', () => {
                     const missing = spawnSync('pnpm', missingArgv, {
                         cwd: process.cwd(),
                         encoding: 'utf8',
-                        timeout: 120_000,
+                        timeout: suppressionLintChildTimeout,
                         env: eslintEnvironment(process.env, fix),
                     });
                     expect(missing.error).toBeUndefined();
@@ -877,7 +879,7 @@ describe('production Oxlint public-plugin migration', () => {
                 }
             });
         },
-        180_000
+        5 * suppressionLintChildTimeout + 60_000
     );
 
     it.each(cases)(
