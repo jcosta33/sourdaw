@@ -60,8 +60,12 @@ pass neither uses hidden suppression flags nor introduces another fixer.
 The failure rules flag empty catches and direct success objects from handlers that do no
 recovery. A detached catch keeps the original rejection observable when its remaining
 statements preserve the unchanged promise on every successful exit the rule can prove.
-Writes from a closure leave the promise identity unproven. A supporting throw must leave
-the same function without interception by a handler or replacement by a `finally` exit.
+The proof follows explicit local exits and awaited rejections in the same function.
+An enclosing catch can absorb a failure that leaves the statement sequence and skip
+the return. An inner catch can resume the sequence and reach the return.
+Writes from a closure leave the promise identity unproven.
+A supporting throw must leave the same function without interception by a handler
+or replacement by a `finally` exit.
 Returning `Promise.allSettled` with that promise exposes its rejection as explicit data.
 A boolean value by itself cannot distinguish success from a conservative
 predicate or policy. The boundary rule follows direct JSON parsing, a response with

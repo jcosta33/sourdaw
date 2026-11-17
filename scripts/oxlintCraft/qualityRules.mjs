@@ -143,7 +143,7 @@ function finalizerCanReplaceCompletion(context, finalizer, replacesThrow) {
     });
 }
 
-function completionReachesCaller(
+function completionInterruption(
     context,
     statement,
     { handlerIntercepts = () => statement.type === 'ThrowStatement', replacesThrow = () => true } = {}
@@ -153,21 +153,32 @@ function completionReachesCaller(
     for (let parent = child.parent; parent && parent !== owner; parent = parent.parent) {
         if (parent.type === 'TryStatement') {
             if (parent.block === child && parent.handler && handlerIntercepts(parent.handler)) {
-                return false;
+                return parent.handler;
             }
             const finalizer = parent.finalizer;
             if (finalizer && finalizer !== child && finalizerCanReplaceCompletion(context, finalizer, replacesThrow)) {
-                return false;
+                return finalizer;
             }
         }
         child = parent;
     }
-    return true;
+    return undefined;
 }
 
-function rejectionExits(context, statements, returnsOriginal) {
+function completionReachesCaller(context, statement, options) {
+    return completionInterruption(context, statement, options) === undefined;
+}
+
+function throwExposesFailure(context, statement, failureSkipsReturn) {
+    return (
+        !hasSameFunctionNode(context, statement.argument, failureSkipsReturn) &&
+        completionReachesCaller(context, statement)
+    );
+}
+
+function rejectionExits(context, statements, proof) {
     for (const statement of statements) {
-        const exit = rejectionExit(context, statement, returnsOriginal);
+        const exit = rejectionExit(context, statement, proof);
         if (exit !== 'fallthrough') {
             return exit;
         }
@@ -175,19 +186,21 @@ function rejectionExits(context, statements, returnsOriginal) {
     return 'fallthrough';
 }
 
-function rejectionExit(context, statement, returnsOriginal) {
+function rejectionExit(context, statement, proof) {
+    const { returnsOriginal, failureSkipsReturn } = proof;
     switch (statement.type) {
         case 'ReturnStatement':
             return returnsOriginal(statement) ? 'propagates' : 'discards';
         case 'ThrowStatement':
-            return completionReachesCaller(context, statement) ? 'propagates' : 'discards';
+            return throwExposesFailure(context, statement, failureSkipsReturn) ? 'propagates' : 'discards';
         case 'BlockStatement':
-            return rejectionExits(context, statement.body, returnsOriginal);
+            return rejectionExits(context, statement.body, proof);
         case 'IfStatement': {
-            const consequent = rejectionExit(context, statement.consequent, returnsOriginal);
-            const alternate = statement.alternate
-                ? rejectionExit(context, statement.alternate, returnsOriginal)
-                : 'fallthrough';
+            if (hasSameFunctionNode(context, statement.test, failureSkipsReturn)) {
+                return 'discards';
+            }
+            const consequent = rejectionExit(context, statement.consequent, proof);
+            const alternate = statement.alternate ? rejectionExit(context, statement.alternate, proof) : 'fallthrough';
             if (consequent === 'discards' || alternate === 'discards') {
                 return 'discards';
             }
@@ -200,8 +213,9 @@ function rejectionExit(context, statement, returnsOriginal) {
                     return !returnsOriginal(node);
                 }
                 return (
-                    (node.type === 'BreakStatement' || node.type === 'ContinueStatement') &&
-                    !jumpStaysInside(node, statement)
+                    failureSkipsReturn(node) ||
+                    ((node.type === 'BreakStatement' || node.type === 'ContinueStatement') &&
+                        !jumpStaysInside(node, statement))
                 );
             })
                 ? 'discards'
@@ -249,6 +263,51 @@ function literalObjectFields(object, fields = new Map()) {
     return fields;
 }
 
+function isPlainAwaitedObject(node) {
+    return (
+        node.type === 'ObjectExpression' &&
+        node.properties.every((property) => {
+            if (property.type === 'SpreadElement') {
+                return isPlainAwaitedObject(withoutErasedWrappers(property.argument));
+            }
+            const name = propertyName(property);
+            return name !== undefined && name !== 'then' && name !== '__proto__';
+        })
+    );
+}
+
+function awaitMayReject(context, expression) {
+    const value = withoutErasedWrappers(expression);
+    if (!value || value.type === 'Literal' || isGlobal(context, value, 'undefined') || isPlainAwaitedObject(value)) {
+        return false;
+    }
+    if (isGlobalPromiseCall(context, value, 'resolve')) {
+        return awaitMayReject(context, value.arguments[0]);
+    }
+    return promiseArrayArguments(context, value, 'allSettled') === undefined;
+}
+
+function interceptedFailure(context, node, retentionBlock) {
+    const canReject =
+        node.type === 'ThrowStatement' || (node.type === 'AwaitExpression' && awaitMayReject(context, node.argument));
+    if (!canReject) {
+        return false;
+    }
+    const interruption = completionInterruption(context, node, {
+        handlerIntercepts: (handler) => !catchEndsByThrowing(handler),
+    });
+    if (!interruption) {
+        return false;
+    }
+    // An inner catch can resume the statement sequence. Its own abrupt exits are checked separately.
+    return (
+        interruption.type !== 'CatchClause' ||
+        !retentionBlock ||
+        interruption.range[0] < retentionBlock.range[0] ||
+        interruption.range[1] > retentionBlock.range[1]
+    );
+}
+
 function leavesRejectionObservable(context, call) {
     const original = call.callee.object;
     if (original.type !== 'Identifier') {
@@ -261,9 +320,10 @@ function leavesRejectionObservable(context, call) {
     }
     const siblings = statement.parent.body;
     const following = siblings.slice(siblings.indexOf(statement) + 1);
+    const failureSkipsReturn = (node) => interceptedFailure(context, node, statement.parent);
     // A cancellation branch can observe the losing rejection while still rejecting the caller.
     if (ignored !== call && following[0]?.type === 'ThrowStatement') {
-        return completionReachesCaller(context, following[0]);
+        return throwExposesFailure(context, following[0], failureSkipsReturn);
     }
     const variable = variableForIdentifier(context, original);
     const binding = variable?.defs[0];
@@ -292,19 +352,6 @@ function leavesRejectionObservable(context, call) {
         }
         return safePromiseContinuation(context, value) && retainsRejectingValue(value.callee.object);
     }
-    function interceptedAwait(node) {
-        if (node.type !== 'AwaitExpression') {
-            return false;
-        }
-        const value = unwrappedReturnedValue(node.argument);
-        const joined = promiseArrayArguments(context, value, 'all');
-        if (!retainsRejectingValue(value) && !joined?.elements.some(retainsRejectingValue)) {
-            return false;
-        }
-        return !completionReachesCaller(context, node, {
-            handlerIntercepts: (handler) => !catchEndsByThrowing(handler),
-        });
-    }
     function returnsOriginal(statement) {
         const argument = statement.argument;
         if (
@@ -312,7 +359,7 @@ function leavesRejectionObservable(context, call) {
             hasCapturedWrite ||
             laterWrites.some((reference) => reference.identifier.range[0] < argument.range[1]) ||
             !completionReachesCaller(context, statement) ||
-            hasSameFunctionNode(context, argument, interceptedAwait)
+            hasSameFunctionNode(context, argument, (node) => interceptedFailure(context, node))
         ) {
             return false;
         }
@@ -327,7 +374,7 @@ function leavesRejectionObservable(context, call) {
         }
         return retainsRejectingValue(value);
     }
-    return rejectionExits(context, following, returnsOriginal) === 'propagates';
+    return rejectionExits(context, following, { returnsOriginal, failureSkipsReturn }) === 'propagates';
 }
 
 const noSilentCatch = rule(

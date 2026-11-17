@@ -86,6 +86,36 @@ describe('production quality lint', () => {
                         throw error;
                     }
                 }
+                export async function interceptsAnotherReturnedAwait(promise: Promise<void>, other: Promise<void>) {
+                    try {
+                        void promise.catch(() => {}); // another rejection prevents the return
+                        return { promise, other: await other };
+                    } catch (error) {
+                        console.error(error);
+                    }
+                }
+                export async function interceptsAnotherPrecedingAwait(promise: Promise<void>, other: Promise<void>) {
+                    try {
+                        void promise.catch(() => {}); // another rejection skips the later return
+                        const status = await other;
+                        return { promise, status };
+                    } catch (error) {
+                        console.error(error);
+                    }
+                }
+                export async function handlesAnAwaitBeforeReturning(promise: Promise<void>, other: Promise<void>) {
+                    try {
+                        void promise.catch(() => {});
+                        try {
+                            await other;
+                        } catch (error) {
+                            console.error(error);
+                        }
+                        return { promise } as const;
+                    } catch (error) {
+                        console.error(error);
+                    }
+                }
                 export function returnsFailure(run: () => { ok: boolean }) {
                     try { return run(); } catch { return { ok: true, ...{ ok: false } }; }
                 }
@@ -351,6 +381,8 @@ describe('production quality lint', () => {
                 expect.arrayContaining([
                     'void promise.catch(() => {}); // original promise is discarded',
                     'void promise.catch(() => {}); // awaited rejection is handled locally',
+                    'void promise.catch(() => {}); // another rejection prevents the return',
+                    'void promise.catch(() => {}); // another rejection skips the later return',
                 ])
             );
             expect(diagnosticLines(browser, 'sourdaw-craft/no-conditional-playwright-admission')).toEqual(
@@ -375,6 +407,8 @@ describe('production quality lint', () => {
                     ['typed.ts', 'sourdaw-craft/no-external-data-assertion'],
                     ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
                     ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
+                    ['typed.ts', 'sourdaw-craft/no-silent-catch'],
+                    ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
