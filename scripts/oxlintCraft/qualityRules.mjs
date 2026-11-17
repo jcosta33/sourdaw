@@ -549,19 +549,34 @@ function isAwaitedPlaywrightStep(context, callback) {
     );
 }
 
+function visibilityOperand(expression) {
+    let value = unwrappedReturnedValue(expression);
+    let negated = false;
+    while (value?.type === 'UnaryExpression' && value.operator === '!') {
+        negated = !negated;
+        value = unwrappedReturnedValue(value.argument);
+    }
+    return { value, negated };
+}
+
 function visibilityCondition(context, test) {
-    const value = unwrap(test);
-    const negated = value?.type === 'UnaryExpression' && value.operator === '!';
-    let call = negated ? unwrap(value.argument) : value;
+    let { value: call, negated } = visibilityOperand(test);
     if (call?.type === 'Identifier') {
         const [definition, another] = definitions(context, call);
-        if (another || definition?.type !== 'Variable' || definition.parent.kind !== 'const') {
+        if (
+            another ||
+            definition?.type !== 'Variable' ||
+            definition.parent.kind !== 'const' ||
+            definition.node.id.type !== 'Identifier'
+        ) {
             return undefined;
         }
-        call = unwrap(definition.node.init);
+        const initializer = visibilityOperand(definition.node.init);
+        call = initializer.value;
+        negated = negated !== initializer.negated;
     }
     if (calledMember(call, 'catch')) {
-        call = unwrap(call.callee.object);
+        call = unwrappedReturnedValue(call.callee.object);
     }
     return calledMember(call, 'isVisible') ? { negated } : undefined;
 }

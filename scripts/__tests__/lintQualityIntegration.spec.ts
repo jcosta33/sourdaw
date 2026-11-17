@@ -251,6 +251,18 @@ describe('production quality lint', () => {
                     // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe a real absence window.
                     await page.waitForTimeout(25);
                 });
+                scenario('negative immutable guard skips a required entry', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    const missing = !(await entry.isVisible());
+                    if (missing) { return; } // immutable missing guard skips the assertion
+                    await expect(entry).toBeVisible();
+                });
+                scenario('negative immutable guard retries before an unconditional assertion', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    const missing = !(await entry.isVisible());
+                    if (missing) { await page.reload(); }
+                    await expect(entry).toBeVisible();
+                });
                 scenario('conditional observer before the required entry', async ({ page }) => {
                     if (process.env.CHECK_READY) { await expect(page.getByRole('status')).toBeVisible(); }
                     const entry = page.getByRole('button');
@@ -345,10 +357,12 @@ describe('production quality lint', () => {
                 expect.arrayContaining([
                     'if (await entry.isVisible()) { // earlier observer can be skipped',
                     'if (await entry.isVisible()) { // later observer can be skipped',
+                    'if (missing) { return; } // immutable missing guard skips the assertion',
                 ])
             );
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],

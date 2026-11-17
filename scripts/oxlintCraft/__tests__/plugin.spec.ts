@@ -446,6 +446,11 @@ runCraftRule('no-external-data-assertion', {
 
 runCraftRule('no-conditional-playwright-admission', {
     valid: [
+        "import { test, expect } from './e2eTest'; test('combined negations keep the absent assertion', async () => { const missing = !(await locator.isVisible()); if (!missing) { return; } await expect(fallback).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('unconditional assertion after a negative binding', async () => { const missing = !(await locator.isVisible()); if (missing) { await setup(); } await expect(locator).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('does not follow a shadowed visibility binding', async () => { const missing = !(await locator.isVisible()); { const missing = optional(); if (missing) { return; } await expect(locator).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('does not assume a mutable probe result', async () => { let missing = !(await locator.isVisible()); missing = optional(); if (missing) { return; } await expect(locator).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('does not substitute a destructured property with the whole probe', async () => { const { valueOf: missing } = !(await locator.isVisible()); if (missing) { return; } await expect(locator).toBeVisible(); });",
         "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await setup(); } await expect(locator).toBeVisible(); });",
         "import { test, expect } from './e2eTest'; async function helper() { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } } test('name', async () => { await helper(); });",
         "import { test, expect } from 'vitest'; test('name', async () => { if (await locator.isVisible()) { expect(value).toBe(1); } });",
@@ -474,6 +479,22 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from './e2eTest'; test('observes after the guard with rethrow', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { await expect(ready).toBeVisible(); } catch (error) { throw error; } });",
     ],
     invalid: [
+        {
+            code: "import { test, expect } from './e2eTest'; test('negative immutable guard admits no assertions', async () => { const missing = !(await locator.isVisible()); if (missing) { return; } await expect(locator).toBeVisible(); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('wrapped negative immutable guard', async () => { const missing = (!(await locator.isVisible().catch(() => false))) as boolean; if ((missing as boolean) satisfies boolean) { return; } await verify(locator).toBeVisible(); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('combined negations leave a positive guard', async () => { const missing = !(await locator.isVisible()); if (!missing) { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('direct double negation leaves a positive guard', async () => { if (!!(await locator.isVisible())) { await expect(locator).toBeVisible(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
         {
             code: "import { test, expect } from './e2eTest'; test('can skip observer with cleanup', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { if (ready) { await expect(ready).toBeVisible(); } } finally { cleanup(); } });",
             errors: [{ message: /test can finish without asserting/ }],
