@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState, useTransition } from 'react';
+import { type ReactElement, useEffect, useState, useTransition } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -32,6 +32,7 @@ import { hydrateBacteriaPatchFromProject } from '../../useCases/hydrateBacteriaP
 import { BandStrip } from '../components/BandStrip';
 import { BezierLfoEditor } from '../components/BezierLfoEditor';
 import { CrossoverDisplay } from '../components/CrossoverDisplay';
+import { FitRendererWidth } from '../components/FitRendererWidth';
 import { ModulationDock } from '../components/ModulationDock';
 import { NodeGraphEditor } from '../components/NodeGraphEditor';
 import { SpectralBinEditor } from '../components/SpectralBinEditor';
@@ -450,41 +451,6 @@ const PresetRail = ({
         </Stack>
     );
 };
-
-function FitRendererWidth({
-    maxWidth,
-    children,
-}: {
-    maxWidth: number;
-    children: (width: number) => ReactElement;
-}): ReactElement {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(maxWidth);
-
-    useEffect(() => {
-        const element = containerRef.current;
-        if (!element) {
-            return undefined;
-        }
-
-        // The canvas editors convert pointer coordinates in bitmap pixels.
-        // Keep their rendered size and drawing width in the same coordinate space.
-        const observer = new ResizeObserver(([entry]) => {
-            const nextWidth = Math.floor(entry?.contentRect.width ?? 0);
-            if (nextWidth > 0) {
-                setWidth(nextWidth);
-            }
-        });
-        observer.observe(element);
-        return () => observer.disconnect();
-    }, []);
-
-    return (
-        <div ref={containerRef} className="w-full min-w-0" style={{ maxWidth }}>
-            {children(width)}
-        </div>
-    );
-}
 
 const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <Grid gap={2.5} className="grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] p-2.5">
