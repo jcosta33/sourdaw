@@ -9,6 +9,7 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
@@ -16,7 +17,7 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { externalPluginParameterStore, defaultExternalPluginParameterState } from '#/modules/PluginHost/stores';
 import { refreshExternalPluginParameters } from '#/modules/PluginHost/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
+import { createDeviceAutomationTargetId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
@@ -43,6 +44,23 @@ function existingLane(parameterId: string, lanes: TrackAutomationState['lanes'],
         return exact;
     }
     return findEquivalentAutomationLane(parameterId, lanes, track.devices, track.id);
+}
+
+function hasCurrentTarget(parameterId: string, devices: Track['devices']): boolean {
+    if (parameterId === 'gain' || parameterId === 'pan') {
+        return true;
+    }
+    return (
+        resolveDeviceAutomationTargetIndex(parameterId, devices, (device, paramId) => {
+            // The menu names a specific device instance. A legacy type match
+            // cannot take over when that instance disappears.
+            if (createDeviceAutomationTargetId(device.id, paramId) !== parameterId) {
+                return false;
+            }
+            const descriptor = getAutomationDeviceDescriptor(device.type, device.externalInstanceId);
+            return descriptor?.parameters.some((param) => param.id === paramId && param.automatable) ?? false;
+        }) >= 0
+    );
 }
 
 const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement => {
@@ -76,13 +94,19 @@ const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement =
         const laneId = `auto-${crypto.randomUUID()}`;
         const currentLanes = () =>
             (automationStore.value?.lanes ?? []).filter((lane) => lane.trackId === track.id && !lane.clipId);
-        const canAdd = () =>
-            menuAuthority.isCurrent() &&
-            !existingLane(
-                parameterId,
-                currentLanes().filter((lane) => lane.id !== laneId),
-                track
+        const canAdd = () => {
+            const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
+            return (
+                menuAuthority.isCurrent() &&
+                currentTrack !== undefined &&
+                hasCurrentTarget(parameterId, currentTrack.devices) &&
+                !existingLane(
+                    parameterId,
+                    currentLanes().filter((lane) => lane.id !== laneId),
+                    currentTrack
+                )
             );
+        };
         try {
             await executeUserAppAction(
                 { type: 'addAutomationLane', payload: { trackId: track.id, parameterId, parameterName, laneId } },
