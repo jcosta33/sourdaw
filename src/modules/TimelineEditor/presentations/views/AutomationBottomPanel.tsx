@@ -1,13 +1,4 @@
-import {
-    type ReactElement,
-    type ReactNode,
-    type RefObject,
-    type WheelEvent,
-    useEffect,
-    useRef,
-    useState,
-    useLayoutEffect,
-} from 'react';
+import { type ReactElement, type ReactNode, type WheelEvent, useEffect, useState, useLayoutEffect } from 'react';
 
 import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 
@@ -66,11 +57,10 @@ type AutomationTimelineState = {
 };
 
 /** Reactively track an element's width via ResizeObserver */
-function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
+function useContainerWidth(element: HTMLDivElement | null): number {
     const [width, setWidth] = useState(0);
     useLayoutEffect(() => {
-        const el = ref.current;
-        if (!el) {
+        if (!element) {
             return undefined;
         }
         const ro = new ResizeObserver(([entry]) => {
@@ -78,10 +68,10 @@ function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
                 setWidth(entry.contentRect.width);
             }
         });
-        ro.observe(el);
-        setWidth(el.clientWidth);
+        ro.observe(element);
+        setWidth(element.clientWidth);
         return () => ro.disconnect();
-    }, [ref]);
+    }, [element]);
     return width;
 }
 
@@ -136,9 +126,8 @@ const LaneSparkline = ({
 };
 
 export const AutomationBottomPanel = (): ReactElement => {
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    const containerWidth = useContainerWidth(containerRef);
+    const [container, setContainer] = useState<HTMLDivElement | null>(null);
+    const containerWidth = useContainerWidth(container);
 
     const trackState = useStore<AutomationTrackState>(trackStore, { tracks: [], selectedTrackId: null });
     const autoState = useStore<AutomationPanelState>(automationStore, { lanes: [] });
@@ -230,9 +219,6 @@ export const AutomationBottomPanel = (): ReactElement => {
     }
 
     const renderLaneRows = (): ReactNode => {
-        if (containerWidth === 0) {
-            return null;
-        }
         if (trackLanes.length === 0) {
             return (
                 <Row justify="center" className="h-full p-4">
@@ -245,6 +231,9 @@ export const AutomationBottomPanel = (): ReactElement => {
                     />
                 </Row>
             );
+        }
+        if (containerWidth === 0) {
+            return null;
         }
         return trackLanes.map((lane) =>
             lane.collapsed ? (
@@ -265,7 +254,7 @@ export const AutomationBottomPanel = (): ReactElement => {
     const renderPanelBody = (): ReactElement => {
         if (!trackListOpen) {
             return (
-                <Stack grow className="min-w-0 overflow-hidden" ref={containerRef}>
+                <Stack grow className="min-w-0 overflow-hidden" ref={setContainer}>
                     {/* Right panel — automation lanes aligned with timeline */}
                     {/* Beat ruler for alignment */}
                     <BeatRulerBar />
@@ -287,15 +276,15 @@ export const AutomationBottomPanel = (): ReactElement => {
                 {/* Left panel — fixed width matching track list */}
                 <AutomationSidebarCell>
                     {/* Track info header */}
-                    <DawHeaderBand className="h-7 gap-2 px-2" compact>
-                        <div className="size-2.5 rounded-sm" style={{ backgroundColor: trackColor }} />
-                        <span className="text-xs font-medium text-foreground truncate flex-1">
+                    <DawHeaderBand className="flex min-h-7 items-center gap-2 px-2" compact>
+                        <div className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: trackColor }} />
+                        <span className="min-w-0 flex-1 break-words text-xs font-medium text-foreground">
                             {selectedTrack.name}
                         </span>
                     </DawHeaderBand>
                 </AutomationSidebarCell>
                 {/* Spacer: same height as track header so row 2 lines up across columns */}
-                <TimelineChromeSurface tone="subtle" className="h-7" aria-hidden />
+                <TimelineChromeSurface tone="subtle" className="min-h-7" aria-hidden />
                 {/* Automation mode selector */}
                 <AutomationSidebarCell className="shrink-0 border-b border-border/20 px-2 py-1.5">
                     <AutomationModeControl
@@ -356,12 +345,12 @@ export const AutomationBottomPanel = (): ReactElement => {
                     ))}
 
                     {/* Add lane — inline or picker */}
-                    <div className="shrink-0 px-2 py-1.5 hover:bg-surface-base/50">
+                    <div className="shrink-0 px-2 py-1.5">
                         <AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} showAvailableCount />
                     </div>
                 </AutomationSidebarCell>
                 {/* Right panel — automation lanes aligned with timeline */}
-                <Stack className="min-w-0 overflow-hidden" ref={containerRef}>
+                <Stack className="min-w-0 overflow-hidden" ref={setContainer}>
                     {/* Lanes area */}
                     <div className="min-h-0 flex-1 overflow-y-auto" onWheel={handleWheel}>
                         {renderLaneRows()}

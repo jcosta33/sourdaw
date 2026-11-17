@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { scrollTimelineViewportHorizontallyFromWheel } from '#/modules/Arrangement/useCases';
 
+import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { type Track } from '../../../models/TrackViewTypes';
 import { AutomationBottomPanel } from '../AutomationBottomPanel';
 
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
             autoScrollEnabled: true,
         },
     },
-    automationStore: { value: { lanes: [] } },
+    automationStore: { value: { lanes: [] as AutomationLane[] } },
     workspaceStore: { value: { trackListOpen: true, trackListWidth: 200 } },
     rawScrollTimeline: vi.fn(),
     scrollTimelineViewportHorizontallyFromWheel: vi.fn(),
@@ -95,8 +96,10 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 }));
 
 vi.mock('../AutomationView/AutomationLaneRow', () => ({
-    AutomationLaneRow: ({ lane }: { lane: { id: string } }) => (
-        <div data-testid={`lane-row-${lane.id}`}>Lane {lane.id}</div>
+    AutomationLaneRow: ({ lane, containerWidth }: { lane: { id: string }; containerWidth: number }) => (
+        <div data-testid={`lane-row-${lane.id}`} data-width={containerWidth}>
+            Lane {lane.id}
+        </div>
     ),
 }));
 
@@ -221,6 +224,71 @@ describe('AutomationBottomPanel', () => {
         render(<AutomationBottomPanel />);
         expect(screen.getByTestId('blocked-state')).toBeInTheDocument();
         expect(screen.getByText('No track selected')).toBeInTheDocument();
+    });
+
+    it('measures the mounted lane viewport after selecting a track and toggling the sidebar', () => {
+        const observed = new Map<Element, (width: number) => void>();
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                constructor(readonly receive: (entries: { contentRect: { width: number } }[]) => void) {}
+                observe(element: Element) {
+                    observed.set(element, (width) => this.receive([{ contentRect: { width } }]));
+                }
+                disconnect() {
+                    observed.clear();
+                }
+            }
+        );
+        const width = vi
+            .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+            .mockImplementation(() => (mocks.workspaceStore.value.trackListOpen ? 480 : 680));
+        try {
+            const view = render(<AutomationBottomPanel />);
+            expect(screen.getByText('No track selected')).toBeVisible();
+            mocks.trackStore.value = { tracks: [makeTrack()], selectedTrackId: 'track-1' };
+            view.rerender(<AutomationBottomPanel />);
+            expect(screen.getByText('No automation lanes yet')).toBeVisible();
+
+            mocks.automationStore.value.lanes = [
+                {
+                    id: 'gain-lane',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 2,
+                },
+            ];
+            for (const open of [true, false, true]) {
+                mocks.workspaceStore.value.trackListOpen = open;
+                view.rerender(<AutomationBottomPanel />);
+                const row = screen.getByTestId('lane-row-gain-lane');
+                expect(row).toHaveAttribute('data-width', open ? '480' : '680');
+                expect(observed.size).toBe(1);
+                const [element, resize] = [...observed][0]!;
+                expect(element.contains(row)).toBe(true);
+                act(() => resize(321));
+                expect(row).toHaveAttribute('data-width', '321');
+            }
+        } finally {
+            width.mockRestore();
+        }
+    });
+
+    it('lets the full track name wrap in its own header row', () => {
+        const name = 'Long unbroken track identity with additional take and microphone details';
+        mocks.trackStore.value = { tracks: [makeTrack({ name })], selectedTrackId: 'track-1' };
+        render(<AutomationBottomPanel />);
+        const label = screen.getByText(name);
+        expect(label).toHaveClass('break-words');
+        expect(label.closest('.h-7')).toBeNull();
+        expect(screen.getByTestId('mode-control')).toHaveAttribute('data-count', '0');
     });
 
     it('puts the add-lane action inside the empty state it explains', () => {

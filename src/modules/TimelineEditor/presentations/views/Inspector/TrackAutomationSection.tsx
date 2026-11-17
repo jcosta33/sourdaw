@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 
@@ -11,9 +11,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover
 import { useStore } from '#/infra/store/useStore';
 import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
+import { toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { externalPluginParameterStore, defaultExternalPluginParameterState } from '#/modules/PluginHost/stores';
 import { refreshExternalPluginParameters } from '#/modules/PluginHost/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -35,8 +37,23 @@ type TrackAutomationState = {
     }>;
 };
 
-export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): ReactElement => {
-    const [showAutoMenu, setShowAutoMenu] = useState(false);
+function existingLane(parameterId: string, lanes: TrackAutomationState['lanes'], track: Track) {
+    const exact = lanes.find((lane) => lane.parameterId === parameterId);
+    if (exact || parameterId === 'gain' || parameterId === 'pan') {
+        return exact;
+    }
+    return findEquivalentAutomationLane(parameterId, lanes, track.devices, track.id);
+}
+
+const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement => {
+    const [menuAuthority, setMenuAuthority] = useState<ReturnType<typeof captureProjectTransitionAuthority> | null>(
+        null
+    );
+    const showAutoMenu = menuAuthority !== null;
+    const [pending, setPending] = useState(false);
+    const [error, setError] = useState('');
+    const [addedLaneId, setAddedLaneId] = useState<string | null>(null);
+    const addedLaneLabel = useRef<HTMLSpanElement>(null);
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
     // External plugin parameters resolve out of this store, and a refresh fills
@@ -44,6 +61,69 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
     useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
 
     const trackLanes = autoState.lanes.filter((lane) => lane.trackId === track.id && !lane.clipId);
+
+    useEffect(() => {
+        addedLaneLabel.current?.scrollIntoView({ block: 'nearest' });
+    }, [addedLaneId]);
+
+    const addLane = async (parameterId: string, parameterName: string): Promise<void> => {
+        if (!menuAuthority || pending) {
+            return;
+        }
+        setMenuAuthority(null);
+        setPending(true);
+        setError('');
+        const laneId = `auto-${crypto.randomUUID()}`;
+        const currentLanes = () =>
+            (automationStore.value?.lanes ?? []).filter((lane) => lane.trackId === track.id && !lane.clipId);
+        const canAdd = () =>
+            menuAuthority.isCurrent() &&
+            !existingLane(
+                parameterId,
+                currentLanes().filter((lane) => lane.id !== laneId),
+                track
+            );
+        try {
+            await executeUserAppAction(
+                { type: 'addAutomationLane', payload: { trackId: track.id, parameterId, parameterName, laneId } },
+                { shouldExecute: canAdd, shouldCommit: canAdd }
+            );
+            const settled = menuAuthority.isCurrent() && existingLane(parameterId, currentLanes(), track);
+            if (settled) {
+                setAddedLaneId(settled.id);
+            } else {
+                setError(`Could not add ${parameterName}. Check the target and project locks, then try again.`);
+            }
+        } catch (cause) {
+            const reason = cause instanceof Error ? cause.message : 'The edit failed.';
+            setError(`Could not add ${parameterName}. ${reason} Check the target and try again.`);
+        } finally {
+            setPending(false);
+        }
+    };
+
+    const parameterButton = (parameterId: string, label: string, parameterName = label) => {
+        const existing = existingLane(parameterId, trackLanes, track);
+        return (
+            <Button
+                key={parameterId}
+                variant="bare"
+                size="bare"
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent/50"
+                disabled={Boolean(existing) || pending}
+                onClick={() => void addLane(parameterId, parameterName)}
+            >
+                <span className="min-w-0 whitespace-normal">{label}</span>
+                {existing ? (
+                    <span className="ml-auto text-[9px] text-muted-foreground" title={existing.parameterName}>
+                        Existing lane
+                    </span>
+                ) : null}
+            </Button>
+        );
+    };
 
     // Opening the menu is the moment the metadata has to be current: a plugin
     // can rename or rescale its parameters from inside its own editor window,
@@ -66,7 +146,10 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                 className="mb-2 rounded-sm"
                 title="Automation"
                 actions={
-                    <Popover open={showAutoMenu} onOpenChange={setShowAutoMenu}>
+                    <Popover
+                        open={showAutoMenu}
+                        onOpenChange={(open) => setMenuAuthority(open ? captureProjectTransitionAuthority() : null)}
+                    >
                         <PopoverTrigger asChild>
                             <Button
                                 variant="ghost"
@@ -86,32 +169,8 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                             className="daw-floating-surface w-48 p-0 py-1 rounded-md"
                         >
                             <DawMenuSectionLabel>Track</DawMenuSectionLabel>
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                role="menuitem"
-                                onClick={() => {
-                                    addAutomationLane(track.id, 'gain', 'Gain');
-                                    setShowAutoMenu(false);
-                                }}
-                            >
-                                Gain
-                            </Button>
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                role="menuitem"
-                                onClick={() => {
-                                    addAutomationLane(track.id, 'pan', 'Pan');
-                                    setShowAutoMenu(false);
-                                }}
-                            >
-                                Pan
-                            </Button>
+                            {parameterButton('gain', 'Gain')}
+                            {parameterButton('pan', 'Pan')}
                             {track.devices.length > 0 ? (
                                 <>
                                     <DawMenuSeparator />
@@ -123,41 +182,20 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                         if (!plugin) {
                                             return null;
                                         }
-                                        const autoParams = plugin.parameters.filter(
-                                            (param) =>
-                                                param.automatable &&
-                                                !findEquivalentAutomationLane(
-                                                    createDeviceAutomationTargetId(device.id, param.id),
-                                                    trackLanes,
-                                                    track.devices
-                                                )
-                                        );
+                                        const autoParams = plugin.parameters.filter((param) => param.automatable);
                                         if (autoParams.length === 0) {
                                             return null;
                                         }
                                         return (
                                             <div key={device.id}>
                                                 <DawMenuSectionLabel>{device.name}</DawMenuSectionLabel>
-                                                {autoParams.map((param) => (
-                                                    <Button
-                                                        variant="bare"
-                                                        size="bare"
-                                                        type="button"
-                                                        key={param.id}
-                                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                                        role="menuitem"
-                                                        onClick={() => {
-                                                            addAutomationLane(
-                                                                track.id,
-                                                                createDeviceAutomationTargetId(device.id, param.id),
-                                                                `${device.name}: ${param.name}`
-                                                            );
-                                                            setShowAutoMenu(false);
-                                                        }}
-                                                    >
-                                                        {param.name}
-                                                    </Button>
-                                                ))}
+                                                {autoParams.map((param) =>
+                                                    parameterButton(
+                                                        createDeviceAutomationTargetId(device.id, param.id),
+                                                        param.name,
+                                                        `${device.name}: ${param.name}`
+                                                    )
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -167,12 +205,18 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                     </Popover>
                 }
             />
+            {error ? (
+                <p role="alert" className="mb-2 text-xs text-destructive">
+                    {error}
+                </p>
+            ) : null}
             {trackLanes.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {trackLanes.map((lane) => (
                         <SurfaceCard key={lane.id} className="flex items-center justify-between">
                             <span
                                 className="text-[10px] text-foreground font-medium truncate pr-2"
+                                ref={lane.id === addedLaneId ? addedLaneLabel : undefined}
                                 title={lane.parameterName}
                             >
                                 {lane.parameterName}
@@ -219,3 +263,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
         </div>
     );
 };
+
+export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): ReactElement => (
+    <TrackAutomation key={track.id} track={track} />
+);

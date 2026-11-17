@@ -1,9 +1,13 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -12,12 +16,14 @@ import {
     clearUndoHistory,
     executeAppAction,
     registerProductionCommandHandlers,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -30,7 +36,8 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
-import { modulationStore } from '../../../stores/modulationStore';
+import { type Modulator } from '../../../models/Modulator';
+import { modulationStore, type ModulationStoreState } from '../../../stores/modulationStore';
 
 // Audit #4591 — the Modulation Matrix removes, adds, renames and toggles
 // modulators and mappings by calling these use cases directly. None of them
@@ -107,6 +114,52 @@ describe('Modulation Matrix edits and Undo', () => {
         Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('retains the mapped source across a duplicate destination and a second source creation, Undo and Redo', async () => {
+        const first: Modulator = {
+            id: 'lfo-1',
+            name: 'Wobble',
+            trackId: 't-drums',
+            kind: 'lfo',
+            config: { kind: 'lfo', waveform: 'triangle', rate: 2, sync: true, phase: 0, depth: 1 },
+            mappings: [
+                { targetTrackId: 't-drums', targetDeviceId: 'device-filter', targetParamId: 'cutoff', amount: -0.37 },
+            ],
+            enabled: true,
+        };
+        const second: Modulator = {
+            id: 'step-2',
+            name: 'Pulse',
+            trackId: 't-bass',
+            kind: 'step',
+            config: { kind: 'step', steps: [0, 1, 0.25], rate: 1, smooth: 0 },
+            mappings: [],
+            enabled: true,
+        };
+        const expectSources = (...modulators: Modulator[]) => {
+            flushAutomergeStorageWrites();
+            const root = getCrdtDoc<{ modulation: ModulationStoreState }>('root');
+            if (!root) {
+                throw new Error('Expected a live project document');
+            }
+            expect(Automerge.toJS(root).modulation).toEqual({ modulators });
+            expect(modulationStore.value).toEqual({ modulators });
+        };
+        modulationStore.set({ modulators: [structuredClone(first)] });
+        await executeAppAction({
+            type: 'addMapping',
+            payload: { modulatorId: first.id, mapping: { ...first.mappings[0]!, amount: 0.5 } },
+        });
+        expectSources(first);
+
+        const { id, ...source } = second;
+        await executeAppAction({ type: 'addModulator', payload: { modulatorId: id, modulator: source } });
+        expectSources(first, second);
+        await undo();
+        expectSources(first);
+        await redo();
+        expectSources(first, second);
     });
 
     it('undoes a modulator removed from the Modulation Matrix', async () => {
