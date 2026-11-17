@@ -9,7 +9,9 @@ import { trackStore } from '../stores/trackStore';
  * A denser track-height preference can also shrink the vertical extent.
  */
 export function initTimelineScrollClamp(): () => void {
-    const clampVertical = () => setScrollY(timelineViewStore.value?.scrollY ?? 0);
+    function clampVertical(): void {
+        setScrollY(timelineViewStore.value?.scrollY ?? 0);
+    }
     const stopTracks = trackStore.subscribe(() => {
         setScrollX(timelineViewStore.value?.scrollX ?? 0);
         clampVertical();
