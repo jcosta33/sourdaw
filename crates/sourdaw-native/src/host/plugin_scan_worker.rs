@@ -2896,8 +2896,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .read_exact(&mut [0])
             .expect("the runner should release the helper after the group member starts");
         arm_helper_watchdog(Duration::from_secs(1));
-        // SAFETY: setpgid takes plain values.
         assert_eq!(
+            // SAFETY: setpgid takes plain values.
             unsafe { libc::setpgid(0, target) },
             0,
             "the move must succeed"
