@@ -127,3 +127,34 @@ src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
     unscaled action on release” in `src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx`.
     The focused cases observe projected heights, header CSS requests, renderer calls, store offsets and resize
     dispatch. Chromium supplies the measured layout and committed history.
+12. **Automation marquee paint preserves the lane color and underlying points (#6986, #7015).** Runs: orchestrator.
+    In Chromium, drag a marquee over known points with OKLCH, hex and CSS-variable-backed lane colors. Compare the
+    SVG rectangle's computed fill to the resolved lane color and require computed fill opacity greater than zero
+    and below 0.25. Read the selection IDs after equivalent forward and reverse drags at different scroll offsets.
+    The reviewer restores the `15` alpha suffix on the marquee's fill and removes its separate `fillOpacity`.
+    This must fail “paints the marquee with its lane color %s and a translucent interior” in
+    `src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx`.
+    The focused case checks the authored SVG attributes. Chromium resolves the fill and drives the selection gesture.
+13. **A replaced automation viewport loses its live width measurement (#7015).** Runs: orchestrator.
+    In Chromium, open the panel with no selected track, select one, then populate the lane list. Close and reopen
+    the track-list sidebar. Measure the active viewport and actual rendered lane widths at distinct widths in each
+    branch. Resize again after each switch and require the lane to follow the mounted viewport. Drive a resize
+    immediately before replacing a viewport and check that detached or stale measurements never change the current
+    lane width. The reviewer restores the stable object ref and one-shot layout effect in
+    `AutomationBottomPanel.tsx`. This must fail “measures the mounted lane viewport after selecting a track and
+    toggling the sidebar” in `src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx`.
+    That case feeds widths to the observed node, checks that only the active node remains registered and reads
+    the lane's width prop. Chromium measures allocated widths and the live observer after replacement.
+14. **A short modulation form can leave the existing list unreachable (#6988, #7015).** Runs: orchestrator.
+    Put a mapped source A and enough cards and mappings to overflow in ModulationMatrix. Open the New Modulator form
+    for B and test an ordinary panel and one 220 CSS pixels tall. Measure both allocated scroll regions and the
+    field group at narrow and wide viewport widths. Require the group to fit the available width and stay within
+    40rem. Reset the scroll position for each input. Use real wheel input, PageDown with the intended region
+    focused, and native scrollbar-thumb drag to reach the form's Add button, the last card and its final mapping.
+    Read scroll offsets and confirm each target fits its clipped region and remains actionable.
+    Remove the nonshrinking form's max-height to reproduce the unbounded allocation, then separately remove
+    the field group's max-width. Those mutations must fail the corresponding Chromium measurements.
+    The reviewer checks “keeps both scroll regions keyboard reachable while creating a source” in
+    `src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx`. Remove either region's
+    accessible name or tab stop to fail that focused case. It checks named focusable regions. Chromium supplies
+    scroll movement and reachability.
