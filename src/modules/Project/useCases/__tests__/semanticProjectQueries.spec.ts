@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
@@ -49,12 +49,12 @@ import {
 import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { CURRENT_PROJECT_VERSION } from '../../models/ProjectData';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
-import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
-import { semanticProjectIndex } from '../semanticProjectIndex';
-import { parseSemanticProjectQueryInput } from '../parseSemanticProjectQueryInput';
-import { querySemanticProject } from '../semanticProjectQueries';
 import { bindMusicalContentQuery } from '../bindMusicalContentQuery';
 import { captureMusicalContentBinding } from '../captureMusicalContentBinding';
+import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
+import { parseSemanticProjectQueryInput } from '../parseSemanticProjectQueryInput';
+import { semanticProjectIndex } from '../semanticProjectIndex';
+import { querySemanticProject } from '../semanticProjectQueries';
 
 const SEMANTIC_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
 const SECOND_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368d';

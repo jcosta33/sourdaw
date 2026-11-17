@@ -15,6 +15,7 @@ import {
     type Dispatch,
     type SetStateAction,
     useEffect,
+    useEffectEvent,
     useRef,
     useLayoutEffect,
     useState,
@@ -432,34 +433,35 @@ export const PianoRoll = ({
     // The native application menu cannot synthesize a keyboard event: its
     // mouse clicks are explicit editor commands. Keep the command at the
     // focused Piano Roll boundary so arrangement editing never steals it.
+    const handleNativeEdit = useEffectEvent((event: Event): void => {
+        const request =
+            event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
+        if (request?.action === 'edit:deselect-all') {
+            setSelectedNoteIds(new Set());
+            request.handled = true;
+            return;
+        }
+        if (request?.action !== 'edit:select-all') {
+            return;
+        }
+        const allIds = new Set(notes.map((note) => note.id));
+        for (const openedNotes of Object.values(openedClipNotes ?? {})) {
+            for (const note of openedNotes) {
+                allIds.add(note.id);
+            }
+        }
+        setSelectedNoteIds(allIds);
+        request.handled = true;
+    });
     useEffect(() => {
         const canvas = canvasRef.current;
         if (canvas === null) {
             return undefined;
         }
-        const handleNativeEdit = (event: Event): void => {
-            const request =
-                event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
-            if (request?.action === 'edit:deselect-all') {
-                setSelectedNoteIds(new Set());
-                request.handled = true;
-                return;
-            }
-            if (request?.action !== 'edit:select-all') {
-                return;
-            }
-            const allIds = new Set(notes.map((note) => note.id));
-            for (const openedNotes of Object.values(openedClipNotes ?? {})) {
-                for (const note of openedNotes) {
-                    allIds.add(note.id);
-                }
-            }
-            setSelectedNoteIds(allIds);
-            request.handled = true;
-        };
-        canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
-        return () => canvas.removeEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
-    }, [notes, openedClipNotes, onSelectedNoteIdsChange]);
+        const listener = (event: Event): void => handleNativeEdit(event);
+        canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, listener);
+        return () => canvas.removeEventListener(CANVAS_EDITOR_COMMAND_EVENT, listener);
+    }, []);
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);

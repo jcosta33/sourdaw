@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 
 import { clearPianoRollSelection } from '../clearPianoRollSelection';
+import { projectPianoRollTakeNotes } from '../midiClipData/projectPianoRollTakeNotes';
 import { readPianoRollSelection } from '../readPianoRollSelection';
 import { setPianoRollSelection } from '../setPianoRollSelection';
-import { projectPianoRollTakeNotes } from '../midiClipData/projectPianoRollTakeNotes';
 
 describe('piano roll selection lifecycle', () => {
     it('changes its token across selection and clip changes, even after returning to the same selection', () => {

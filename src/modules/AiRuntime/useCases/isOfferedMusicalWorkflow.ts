@@ -1,5 +1,3 @@
-import { musicalContentBindingIsCurrent, type captureMusicalContentBinding } from '#/modules/Project/useCases';
-
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 const workflowCommands = {
@@ -47,12 +45,4 @@ export function isOfferedMusicalWorkflow(
     }
     const commandName = workflowCommands[capability as OfferedMusicalWorkflow];
     return proposal.commands.every((command: unknown) => isRecord(command) && command.name === commandName);
-}
-
-export function isMusicalReadStale(
-    read: { current(): boolean } | null | undefined,
-    unavailable: boolean,
-    binding: ReturnType<typeof captureMusicalContentBinding> | undefined
-): boolean {
-    return Boolean((read && !read.current()) || (unavailable && binding && !musicalContentBindingIsCurrent(binding)));
 }

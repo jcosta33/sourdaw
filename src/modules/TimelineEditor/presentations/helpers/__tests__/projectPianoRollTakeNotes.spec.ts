@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-
 import { projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 
 const first = { id: 'first-row', pitch: 60, startBeat: 5.5, duration: 1, velocity: 90, recordingPassIndex: 0 };

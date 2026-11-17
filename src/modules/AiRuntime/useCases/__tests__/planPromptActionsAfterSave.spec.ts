@@ -11,7 +11,6 @@ import {
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultMidiStoreState } from '#/modules/MIDI/stores';
 import {
     projectPianoRollTakeNotes,
@@ -19,6 +18,7 @@ import {
     setNotesForClip,
     setPianoRollSelection,
 } from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import {
     bindMusicalContentQuery,
     captureMusicalContentBinding,

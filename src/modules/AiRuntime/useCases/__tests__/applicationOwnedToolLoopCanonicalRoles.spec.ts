@@ -247,29 +247,31 @@ describe('canonical roles at the provider continuation boundary', () => {
                 },
             },
             terminalToolNames: new Set(['selectWorkflowCapability', 'command.batch.propose']),
-            requestTurn: async ({ turn }) =>
-                turn === 1
-                    ? { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] }
-                    : {
-                          status: 'complete',
-                          toolCalls: [
-                              {
-                                  id: `selection-${turn}`,
-                                  name: 'selectWorkflowCapability',
-                                  arguments: { capabilityId: 'syncopated-arpeggio' },
-                              },
-                              {
-                                  id: `proposal-${turn}`,
-                                  name: 'command.batch.propose',
-                                  arguments: {
-                                      commands: [
-                                          { name: 'arpeggiate', arguments: {} },
-                                          { name: 'setTempo', arguments: { bpm: 120 } },
-                                      ],
-                                  },
-                              },
-                          ],
-                      },
+            requestTurn: async ({ turn }) => {
+                if (turn === 1) {
+                    return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
+                }
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: `selection-${turn}`,
+                            name: 'selectWorkflowCapability',
+                            arguments: { capabilityId: 'syncopated-arpeggio' },
+                        },
+                        {
+                            id: `proposal-${turn}`,
+                            name: 'command.batch.propose',
+                            arguments: {
+                                commands: [
+                                    { name: 'arpeggiate', arguments: {} },
+                                    { name: 'setTempo', arguments: { bpm: 120 } },
+                                ],
+                            },
+                        },
+                    ],
+                };
+            },
         });
         expect(result.status).toBe('rejected');
         expect(result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')).toBe(true);

@@ -182,6 +182,17 @@ function parsePage(value: unknown): QueryPage | null {
     return page;
 }
 
+function validMusicalFilters(filters: SemanticProjectQueryInput['filters']): boolean {
+    return (
+        !!filters &&
+        !Object.keys(filters).some((key) => !['stableId', 'startBeat', 'endBeat'].includes(key)) &&
+        filters.stableId !== undefined &&
+        filters.startBeat !== undefined &&
+        filters.endBeat !== undefined &&
+        filters.endBeat > filters.startBeat
+    );
+}
+
 export function parseSemanticProjectQueryInput(value: unknown): ParsedSemanticProjectQueryInput {
     if (!isRecord(value) || Object.keys(value).some((key) => !ALLOWED_INPUT_KEYS.includes(key))) {
         return { status: 'invalid', reason: 'arguments' };
@@ -211,15 +222,7 @@ export function parseSemanticProjectQueryInput(value: unknown): ParsedSemanticPr
         input.sinceRevision = value.sinceRevision;
     }
     if (value.type === 'musical-content') {
-        const filters = input.filters;
-        if (
-            !filters ||
-            Object.keys(filters).some((key) => !['stableId', 'startBeat', 'endBeat'].includes(key)) ||
-            filters.stableId === undefined ||
-            filters.startBeat === undefined ||
-            filters.endBeat === undefined ||
-            filters.endBeat <= filters.startBeat
-        ) {
+        if (!validMusicalFilters(input.filters)) {
             return { status: 'invalid', reason: 'filters' };
         }
         if (

@@ -1,6 +1,9 @@
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
+
+import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
+import { type SourceLocatedMidiPitchBend } from '../../services/projectMidiClipWindow';
 import {
     frozenMidiTakeRepeatAt,
     frozenMidiTakeRepeats,
@@ -9,14 +12,10 @@ import {
 import { isFrozenMidiTakeSource } from '../../stores/isFrozenMidiTakeSource';
 import { projectFrozenMidiTakeWindow } from '../../stores/projectFrozenMidiTakeWindow';
 
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
-import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
-
-import { projectMidiClipWindow } from './projectMidiClipWindow';
-import { projectClipMidiEvents } from '../grooveTemplates/projectClipMidiEvents';
+import { projectBaseOccurrences } from './projectBaseOccurrences';
 import { projectClipControllerEventsWithProvenance } from './projectClipControllerEventsWithProvenance';
 import { projectClipPitchBendEvents } from './projectClipPitchBendEvents';
-import { type SourceLocatedMidiPitchBend } from '../../services/projectMidiClipWindow';
+import { projectMidiClipWindow } from './projectMidiClipWindow';
 
 type OriginalNote = NonNullable<
     TakeLaneStoreState['lanes'][number]['takes'][number]['midiSource']
@@ -267,283 +266,207 @@ function projectBaseGapNotes(
     return { notes, ownersByViewId };
 }
 
-function projectBaseOccurrences(
-    clip: ClipPlacement,
-    baseRows: readonly MidiNote[],
-    covered: readonly { startBeat: number; endBeat: number }[],
-    base: ReturnType<typeof projectBaseGapNotes>,
-    window: QueryWindow,
+function chargeFrozenRegion(
+    region: ReturnType<typeof selectedRegions>[number],
+    fromBeat: number,
+    toBeat: number,
     budget: QueryBudget
-): PianoRollTakeNotes['baseOccurrences'] {
+): void {
+    const { source } = region;
     const expansion = projectClipLoopExpansion({
-        clipDurationBeats: clip.endBeat - clip.startBeat,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
+        clipDurationBeats: region.endBeat - region.startBeat,
+        configuredLoopLengthBeats: region.fragment.loopLength,
+        loopEnabled: region.fragment.loopEnabled ?? false,
     });
-    const grid = resolveClipLoopPassGrid({
-        startBeat: clip.startBeat,
-        endBeat: clip.endBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        loopEnabled: clip.loopEnabled ?? false,
-        loopLengthBeats: expansion.loopLengthBeats,
-        iterationCount: expansion.iterationCount,
-    });
-    const first = Math.max(0, Math.floor((window.fromBeat - grid.firstPassStartBeat) / expansion.loopLengthBeats));
-    const last = Math.min(
-        grid.passCount,
-        Math.ceil((window.toBeat - grid.firstPassStartBeat) / expansion.loopLengthBeats)
-    );
+    const first = Math.max(0, Math.floor((fromBeat - region.startBeat) / expansion.loopLengthBeats));
+    const last = Math.min(expansion.iterationCount, Math.ceil((toBeat - region.startBeat) / expansion.loopLengthBeats));
+    const repeats = last - first;
     if (
         !Number.isSafeInteger(first) ||
         !Number.isSafeInteger(last) ||
-        first > last ||
-        grid.firstPassStartBeat + first * expansion.loopLengthBeats + expansion.loopLengthBeats <=
-            grid.firstPassStartBeat + first * expansion.loopLengthBeats
+        repeats < 0 ||
+        region.startBeat + first * expansion.loopLengthBeats + expansion.loopLengthBeats <=
+            region.startBeat + first * expansion.loopLengthBeats
     ) {
         throw new Error('MIDI projection work budget exceeded');
     }
-    const passes = last - first;
-    const segments = Math.max(1, covered.length + 1);
-    budget.charge(
-        passes *
-            Math.max(1, baseRows.length) *
-            2 *
-            (baseRows.length + segments * base.ownersByViewId.size + segments + 3)
+    const floor = Math.max(
+        source.rows.notes.value.reduce((earliest, note) => Math.min(earliest, note.startBeat), Infinity),
+        source.readStartBeat ?? -Infinity
     );
-    budget.emit(passes * baseRows.length * 2 * segments);
-    const gaps: { startBeat: number; endBeat: number }[] = [];
-    let cursor = clip.startBeat;
-    for (const region of [...covered].sort((a, b) => a.startBeat - b.startBeat)) {
-        if (region.startBeat > cursor) {
-            gaps.push({ startBeat: cursor, endBeat: region.startBeat });
-        }
-        cursor = Math.max(cursor, region.endBeat);
+    const firstHead = source.phaseHeadBeat + first * expansion.loopLengthBeats;
+    if (firstHead + expansion.loopLengthBeats <= firstHead) {
+        throw new Error('MIDI projection work budget exceeded');
     }
-    if (cursor < clip.endBeat) {
-        gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
+    let depth = 0;
+    if (Number.isFinite(floor) && region.fragment.loopEnabled) {
+        depth = Math.max(
+            0,
+            Math.ceil(
+                (Math.min(region.endBeat, region.startBeat + (first + 1) * expansion.loopLengthBeats) -
+                    (firstHead - source.sourceEntryBeat) -
+                    floor) /
+                    expansion.loopLengthBeats
+            )
+        );
     }
-    const occurrences: Array<PianoRollTakeNotes['baseOccurrences'][number]> = [];
-    for (let index = first; index < last; index++) {
-        const events = projectClipMidiEvents({
-            events: baseRows,
-            clipId: clip.id,
-            clipStartBeat: clip.startBeat,
-            clipEndBeat: clip.endBeat,
-            iterationStartBeat: grid.firstPassStartBeat + index * expansion.loopLengthBeats,
-            loopLengthBeats: expansion.loopLengthBeats,
-            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-            loopEnabled: clip.loopEnabled,
-            loopOriginBeat: clip.loopOriginBeat,
-        });
-        for (const event of events) {
-            const row = baseRows.find((candidate) => candidate.id === event.id);
-            if (!row) {
-                throw new Error('Projected MIDI note has no source row');
-            }
-            for (const gap of gaps) {
-                const start = Math.max(event.startBeat, gap.startBeat);
-                const end = Math.min(event.startBeat + event.duration, gap.endBeat);
-                if (end <= start || start >= window.toBeat || end <= window.fromBeat) {
-                    continue;
-                }
-                let viewId = row.id;
-                for (const [candidateViewId, candidate] of base.ownersByViewId) {
-                    const at = clip.startBeat + candidate.displayedStartBeat - (clip.midiOffsetBeats ?? 0);
-                    if (
-                        candidate.row.id === row.id &&
-                        at < gap.endBeat &&
-                        at + candidate.displayedDuration > gap.startBeat
-                    ) {
-                        viewId = candidateViewId;
-                        break;
-                    }
-                }
-                occurrences.push({
-                    row,
-                    viewId,
-                    startBeat: start,
-                    duration: end - start,
-                    velocity: event.velocity,
-                    occurrenceIndex: grid.passesAheadOfAnchor + index,
-                });
-            }
-        }
+    const finalAnchor = firstHead + (depth + 1) * expansion.loopLengthBeats;
+    if (!Number.isFinite(finalAnchor) || finalAnchor + expansion.loopLengthBeats <= finalAnchor) {
+        throw new Error('MIDI projection work budget exceeded');
     }
-    return occurrences;
+    const curvePoints = source.rows.notes.value.reduce(
+        (count, note) =>
+            count +
+            (note.expression?.pressure?.length ?? 0) +
+            (note.expression?.slide?.length ?? 0) +
+            (note.expression?.pitchBend?.length ?? 0),
+        0
+    );
+    budget.charge(
+        repeats *
+            Math.max(1, source.rows.notes.value.length + curvePoints) *
+            (depth + source.rows.notes.value.length + 2)
+    );
+    budget.emit(repeats * source.rows.notes.value.length * (depth + 2));
+    const controlCount = source.rows.controlChanges.value.length + source.rows.pitchBends.value.length;
+    budget.charge(repeats * controlCount * Math.max(1, controlCount + 3));
+    budget.emit(repeats * controlCount * 16);
 }
 
-export function projectPianoRollTakeNotes(
+function projectRegionOccurrences(
     clip: ClipPlacement,
-    trackId: string,
-    laneState: TakeLaneStoreState | null,
-    baseRows: readonly MidiNote[] = [],
-    window?: QueryWindow
-): PianoRollTakeNotes {
-    const budget = window ? queryBudget(window) : undefined;
-    if (budget) {
-        chargeNotes(budget, baseRows);
+    region: ReturnType<typeof selectedRegions>[number],
+    regionIndex: number,
+    fromBeat: number,
+    toBeat: number,
+    window: QueryWindow | undefined,
+    notes: MidiNote[],
+    ownersByViewId: Map<string, FrozenPianoRollNoteOwner>,
+    frozenControllers: Array<PianoRollTakeNotes['frozenControllers'][number]>,
+    frozenPitchBends: Array<PianoRollTakeNotes['frozenPitchBends'][number]>
+): void {
+    const { source } = region;
+    for (const { absoluteOccurrenceIndex: occurrenceIndex } of frozenMidiTakeRepeats(
+        source,
+        region.fragment,
+        fromBeat,
+        toBeat
+    )) {
+        type WindowInput = Parameters<typeof projectFrozenMidiTakeWindow>[0];
+        const projectionInput: { -readonly [Key in keyof WindowInput]: WindowInput[Key] } = {
+            source,
+            fragment: region.fragment,
+            recordingPassIndex: region.recordingPassIndex,
+            absoluteOccurrenceIndex: occurrenceIndex,
+            fromBeat: region.startBeat,
+            toBeat: region.endBeat,
+        };
+        if (window) {
+            projectionInput.collectController = (
+                entry: Parameters<
+                    NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectController']>
+                >[0]
+            ) => {
+                if (
+                    entry.row.beat >= window.fromBeat &&
+                    (entry.row.beat < window.toBeat || (entry.origin === 'closing' && entry.row.beat === window.toBeat))
+                ) {
+                    frozenControllers.push({
+                        ...entry,
+                        ownerClipId: source.sourceClipId,
+                        takeId: region.takeId,
+                        occurrenceIndex,
+                    });
+                }
+            };
+            projectionInput.collectBend = (
+                entry: Parameters<NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectBend']>>[0]
+            ) => {
+                if (entry.row.beat >= window.fromBeat && entry.row.beat < window.toBeat) {
+                    frozenPitchBends.push({
+                        ...entry,
+                        ownerClipId: source.sourceClipId,
+                        takeId: region.takeId,
+                        occurrenceIndex,
+                    });
+                }
+            };
+        }
+        const projected = projectFrozenMidiTakeWindow(projectionInput);
+        if (!projected) {
+            throw new Error('Invalid frozen MIDI take window');
+        }
+        const segmentsByRowId = new Map<string, number>();
+        for (const note of projected.notes) {
+            const original = source.rows.notes.value.find((row) => row.id === note.id);
+            if (!original) {
+                throw new Error('Frozen MIDI note has no original row');
+            }
+            const segmentIndex = segmentsByRowId.get(note.id) ?? 0;
+            segmentsByRowId.set(note.id, segmentIndex + 1);
+            const id = viewId(region, occurrenceIndex, regionIndex, note.id, segmentIndex);
+            const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+            if (window && (note.startBeat >= window.toBeat || note.startBeat + note.duration <= window.fromBeat)) {
+                continue;
+            }
+            const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
+            const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
+            notes.push(display);
+            ownersByViewId.set(id, {
+                laneId: region.laneId,
+                takeId: region.takeId,
+                sourceClipId: region.sourceClipId,
+                sourceEntryBeat: source.sourceEntryBeat,
+                row: original,
+                occurrenceIndex,
+                displayedStartBeat,
+                displayedDuration: note.duration,
+            });
+        }
     }
-    const regions = selectedRegions(clip, trackId, laneState, budget);
+}
+
+function projectFrozenRegions(
+    clip: ClipPlacement,
+    regions: ReturnType<typeof selectedRegions>,
+    window: QueryWindow | undefined,
+    budget: QueryBudget | undefined
+) {
     const notes: MidiNote[] = [];
     const ownersByViewId = new Map<string, FrozenPianoRollNoteOwner>();
     const frozenControllers: Array<PianoRollTakeNotes['frozenControllers'][number]> = [];
     const frozenPitchBends: Array<PianoRollTakeNotes['frozenPitchBends'][number]> = [];
     for (const [regionIndex, region] of regions.entries()) {
-        const { source } = region;
         const fromBeat = window ? Math.max(window.fromBeat, region.startBeat) : region.startBeat;
         const toBeat = window ? Math.min(window.toBeat, region.endBeat) : region.endBeat;
         if (fromBeat >= toBeat) {
             continue;
         }
         if (budget) {
-            const expansion = projectClipLoopExpansion({
-                clipDurationBeats: region.endBeat - region.startBeat,
-                configuredLoopLengthBeats: region.fragment.loopLength,
-                loopEnabled: region.fragment.loopEnabled ?? false,
-            });
-            const first = Math.max(0, Math.floor((fromBeat - region.startBeat) / expansion.loopLengthBeats));
-            const last = Math.min(
-                expansion.iterationCount,
-                Math.ceil((toBeat - region.startBeat) / expansion.loopLengthBeats)
-            );
-            const repeats = last - first;
-            if (
-                !Number.isSafeInteger(first) ||
-                !Number.isSafeInteger(last) ||
-                repeats < 0 ||
-                region.startBeat + first * expansion.loopLengthBeats + expansion.loopLengthBeats <=
-                    region.startBeat + first * expansion.loopLengthBeats
-            ) {
-                throw new Error('MIDI projection work budget exceeded');
-            }
-            const floor = Math.max(
-                source.rows.notes.value.reduce((earliest, note) => Math.min(earliest, note.startBeat), Infinity),
-                source.readStartBeat ?? -Infinity
-            );
-            const firstHead = source.phaseHeadBeat + first * expansion.loopLengthBeats;
-            if (firstHead + expansion.loopLengthBeats <= firstHead) {
-                throw new Error('MIDI projection work budget exceeded');
-            }
-            let depth = 0;
-            if (Number.isFinite(floor) && region.fragment.loopEnabled) {
-                depth = Math.max(
-                    0,
-                    Math.ceil(
-                        (Math.min(region.endBeat, region.startBeat + (first + 1) * expansion.loopLengthBeats) -
-                            (firstHead - source.sourceEntryBeat) -
-                            floor) /
-                            expansion.loopLengthBeats
-                    )
-                );
-            }
-            const finalAnchor = firstHead + (depth + 1) * expansion.loopLengthBeats;
-            if (!Number.isFinite(finalAnchor) || finalAnchor + expansion.loopLengthBeats <= finalAnchor) {
-                throw new Error('MIDI projection work budget exceeded');
-            }
-            const curvePoints = source.rows.notes.value.reduce(
-                (count, note) =>
-                    count +
-                    (note.expression?.pressure?.length ?? 0) +
-                    (note.expression?.slide?.length ?? 0) +
-                    (note.expression?.pitchBend?.length ?? 0),
-                0
-            );
-            budget.charge(
-                repeats *
-                    Math.max(1, source.rows.notes.value.length + curvePoints) *
-                    (depth + source.rows.notes.value.length + 2)
-            );
-            budget.emit(repeats * source.rows.notes.value.length * (depth + 2));
-            const controlCount = source.rows.controlChanges.value.length + source.rows.pitchBends.value.length;
-            budget.charge(repeats * controlCount * Math.max(1, controlCount + 3));
-            budget.emit(repeats * controlCount * 16);
+            chargeFrozenRegion(region, fromBeat, toBeat, budget);
         }
-        for (const { absoluteOccurrenceIndex: occurrenceIndex } of frozenMidiTakeRepeats(
-            source,
-            region.fragment,
+        projectRegionOccurrences(
+            clip,
+            region,
+            regionIndex,
             fromBeat,
-            toBeat
-        )) {
-            type WindowInput = Parameters<typeof projectFrozenMidiTakeWindow>[0];
-            const projectionInput: { -readonly [Key in keyof WindowInput]: WindowInput[Key] } = {
-                source,
-                fragment: region.fragment,
-                recordingPassIndex: region.recordingPassIndex,
-                absoluteOccurrenceIndex: occurrenceIndex,
-                fromBeat: region.startBeat,
-                toBeat: region.endBeat,
-            };
-            if (window) {
-                projectionInput.collectController = (
-                    entry: Parameters<
-                        NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectController']>
-                    >[0]
-                ) => {
-                    if (
-                        entry.row.beat >= window.fromBeat &&
-                        (entry.row.beat < window.toBeat ||
-                            (entry.origin === 'closing' && entry.row.beat === window.toBeat))
-                    ) {
-                        frozenControllers.push({
-                            ...entry,
-                            ownerClipId: source.sourceClipId,
-                            takeId: region.takeId,
-                            occurrenceIndex,
-                        });
-                    }
-                };
-                projectionInput.collectBend = (
-                    entry: Parameters<NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectBend']>>[0]
-                ) => {
-                    if (entry.row.beat >= window.fromBeat && entry.row.beat < window.toBeat) {
-                        frozenPitchBends.push({
-                            ...entry,
-                            ownerClipId: source.sourceClipId,
-                            takeId: region.takeId,
-                            occurrenceIndex,
-                        });
-                    }
-                };
-            }
-            const projected = projectFrozenMidiTakeWindow(projectionInput);
-            if (!projected) {
-                throw new Error('Invalid frozen MIDI take window');
-            }
-            const segmentsByRowId = new Map<string, number>();
-            for (const note of projected.notes) {
-                const original = source.rows.notes.value.find((row) => row.id === note.id);
-                if (!original) {
-                    throw new Error('Frozen MIDI note has no original row');
-                }
-                const segmentIndex = segmentsByRowId.get(note.id) ?? 0;
-                segmentsByRowId.set(note.id, segmentIndex + 1);
-                const id = viewId(region, occurrenceIndex, regionIndex, note.id, segmentIndex);
-                const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-                if (window && (note.startBeat >= window.toBeat || note.startBeat + note.duration <= window.fromBeat)) {
-                    continue;
-                }
-                const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
-                const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
-                notes.push(display);
-                ownersByViewId.set(id, {
-                    laneId: region.laneId,
-                    takeId: region.takeId,
-                    sourceClipId: region.sourceClipId,
-                    sourceEntryBeat: source.sourceEntryBeat,
-                    row: original,
-                    occurrenceIndex,
-                    displayedStartBeat,
-                    displayedDuration: note.duration,
-                });
-            }
-        }
+            toBeat,
+            window,
+            notes,
+            ownersByViewId,
+            frozenControllers,
+            frozenPitchBends
+        );
     }
-    const coveredWindows = regions.map((region) => ({ startBeat: region.startBeat, endBeat: region.endBeat }));
-    budget?.charge(baseRows.length * Math.max(1, coveredWindows.length + 1));
-    budget?.emit(baseRows.length * Math.max(1, coveredWindows.length + 1));
-    const base = projectBaseGapNotes(clip, baseRows, coveredWindows);
-    const baseOccurrences =
-        window && budget ? projectBaseOccurrences(clip, baseRows, coveredWindows, base, window, budget) : [];
+    return { notes, ownersByViewId, frozenControllers, frozenPitchBends };
+}
+
+function projectBaseControllers(
+    clip: ClipPlacement,
+    coveredWindows: readonly { startBeat: number; endBeat: number }[],
+    window: QueryWindow | undefined,
+    budget: QueryBudget | undefined
+) {
     let baseControllers: PianoRollTakeNotes['baseControllers'] = [];
     let basePitchBends: PianoRollTakeNotes['basePitchBends'] = [];
     if (window && budget) {
@@ -583,6 +506,34 @@ export function projectPianoRollTakeNotes(
                 origin: Math.abs(row.beat - row.recordedBeat) > SAME_BEAT_TOLERANCE ? 'carried' : 'source',
             }));
     }
+    return { baseControllers, basePitchBends };
+}
+
+export function projectPianoRollTakeNotes(
+    clip: ClipPlacement,
+    trackId: string,
+    laneState: TakeLaneStoreState | null,
+    baseRows: readonly MidiNote[] = [],
+    window?: QueryWindow
+): PianoRollTakeNotes {
+    const budget = window ? queryBudget(window) : undefined;
+    if (budget) {
+        chargeNotes(budget, baseRows);
+    }
+    const regions = selectedRegions(clip, trackId, laneState, budget);
+    const { notes, ownersByViewId, frozenControllers, frozenPitchBends } = projectFrozenRegions(
+        clip,
+        regions,
+        window,
+        budget
+    );
+    const coveredWindows = regions.map((region) => ({ startBeat: region.startBeat, endBeat: region.endBeat }));
+    budget?.charge(baseRows.length * Math.max(1, coveredWindows.length + 1));
+    budget?.emit(baseRows.length * Math.max(1, coveredWindows.length + 1));
+    const base = projectBaseGapNotes(clip, baseRows, coveredWindows);
+    const baseOccurrences =
+        window && budget ? projectBaseOccurrences(clip, baseRows, coveredWindows, base, window, budget) : [];
+    const { baseControllers, basePitchBends } = projectBaseControllers(clip, coveredWindows, window, budget);
     if (window) {
         base.notes = base.notes.filter((note) => {
             const start = clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0);

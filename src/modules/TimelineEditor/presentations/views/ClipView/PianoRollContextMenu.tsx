@@ -23,6 +23,7 @@ import {
     snapClipToScale,
     getGrooveTemplate,
     getStraightGrooveTemplateId,
+    type projectPianoRollTakeNotes,
 } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
@@ -38,7 +39,6 @@ import {
     transformPianoRollTakeNotes,
 } from '../../helpers/applyPianoRollTakeMenuAction';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
-import { type projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
 

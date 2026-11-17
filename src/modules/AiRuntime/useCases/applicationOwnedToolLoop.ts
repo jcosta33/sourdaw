@@ -23,7 +23,6 @@ import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
-import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import {
     ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
@@ -42,6 +41,7 @@ import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
 import { type BriefMixAlternative } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
+import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
     type HostedProviderTurn,
@@ -104,15 +104,15 @@ import {
     type AdmittedAnswerIntake,
     type AnswerReadSource,
 } from './composeMeasuredAnswer';
+import { createMusicalReadPrerequisite } from './createMusicalReadPrerequisite';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { formatReceiptContext } from './formatReceiptContext';
-import { createMusicalReadPrerequisite } from './createMusicalReadPrerequisite';
-import { validateCommandBatchProposal, validateOneProposalPerTurn } from './validateCommandBatchProposal';
-import { isMusicalReadStale, isOfferedMusicalWorkflow, type OfferedMusicalWorkflow } from './isOfferedMusicalWorkflow';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
+import { isMusicalReadStale } from './isMusicalReadStale';
+import { isOfferedMusicalWorkflow, type OfferedMusicalWorkflow } from './isOfferedMusicalWorkflow';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import { projectAnswerProviderReceipt } from './projectAnswerProviderReceipt';
 import {
@@ -120,6 +120,8 @@ import {
     type WholeRequestIntakePhase,
 } from './projectPlanningProviderToolSchemas';
 import { readAnswerProjectQuery } from './readAnswerProjectQuery';
+import { validateCommandBatchProposal } from './validateCommandBatchProposal';
+import { validateOneProposalPerTurn } from './validateOneProposalPerTurn';
 
 export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxTurns: 4,

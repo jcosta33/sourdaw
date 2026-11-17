@@ -12,6 +12,71 @@ function record(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+type ReadWindow = ReturnType<typeof resolveMusicalContentReadScope>[number];
+
+type PageState = { offset: number; total: number | undefined };
+
+function matchesReadCall(call: ToolCallResult, window: ReadWindow, cursor: string | undefined): boolean {
+    if (call.name !== 'project.query' || call.arguments.type !== 'musical-content' || !record(call.arguments.filters)) {
+        return false;
+    }
+    const filters = call.arguments.filters;
+    return (
+        filters.stableId === window.clipId &&
+        filters.startBeat === window.startBeat &&
+        filters.endBeat === window.endBeat &&
+        (record(call.arguments.page) ? call.arguments.page.cursor : undefined) === cursor
+    );
+}
+
+function admittedPage(raw: ApplicationToolReceipt, admitted: ApplicationToolReceipt, state: PageState) {
+    if (
+        raw.status !== 'success' ||
+        admitted.status !== 'success' ||
+        JSON.stringify(raw) !== JSON.stringify(admitted) ||
+        admitted.warnings.length > 0 ||
+        !record(admitted.data) ||
+        admitted.data.queryType !== 'musical-content' ||
+        !record(admitted.data.page) ||
+        admitted.data.page.offset !== state.offset ||
+        typeof admitted.data.page.total !== 'number' ||
+        !Array.isArray(admitted.data.items) ||
+        (state.total !== undefined && state.total !== admitted.data.page.total)
+    ) {
+        return null;
+    }
+    const total = admitted.data.page.total;
+    const { items, nextCursor: next } = admitted.data;
+    if (
+        (next !== null && typeof next !== 'string') ||
+        state.offset + items.length > total ||
+        (next === null && state.offset + items.length !== total) ||
+        (next !== null && items.length === 0)
+    ) {
+        return null;
+    }
+    return { items, next, total };
+}
+
+function selectedOwners(items: unknown[], window: ReadWindow, found: Set<string>): void {
+    for (const item of items) {
+        if (!record(item) || item.kind !== 'note' || item.selected !== true) {
+            continue;
+        }
+        for (const owner of window.owners) {
+            if (
+                item.viewId === owner.viewId &&
+                item.ownerClipId === owner.ownerClipId &&
+                item.noteId === owner.storedNoteId &&
+                (item.takeId ?? undefined) === owner.takeId &&
+                (owner.occurrenceIndex === undefined || item.occurrenceIndex === owner.occurrenceIndex)
+            ) {
+                found.add(owner.viewId);
+            }
+        }
+    }
+}
+
 /** Tracks only complete admitted real query pages; the read grants no edit authority. */
 export function createMusicalReadPrerequisite(
     authority: CreativeRequestAuthority,
@@ -57,56 +122,16 @@ export function createMusicalReadPrerequisite(
         },
         admit(call: ToolCallResult, raw: ApplicationToolReceipt, admitted: ApplicationToolReceipt) {
             const window = windows[index];
-            if (
-                !window ||
-                call.name !== 'project.query' ||
-                call.arguments.type !== 'musical-content' ||
-                !record(call.arguments.filters) ||
-                call.arguments.filters.stableId !== window.clipId ||
-                call.arguments.filters.startBeat !== window.startBeat ||
-                call.arguments.filters.endBeat !== window.endBeat ||
-                (record(call.arguments.page) ? call.arguments.page.cursor : undefined) !== cursor ||
-                raw.status !== 'success' ||
-                admitted.status !== 'success' ||
-                JSON.stringify(raw) !== JSON.stringify(admitted) ||
-                admitted.warnings.length > 0 ||
-                !record(admitted.data) ||
-                admitted.data.queryType !== 'musical-content' ||
-                !record(admitted.data.page) ||
-                admitted.data.page.offset !== offset ||
-                typeof admitted.data.page.total !== 'number' ||
-                !Array.isArray(admitted.data.items) ||
-                (total !== undefined && total !== admitted.data.page.total)
-            ) {
+            if (!window || !matchesReadCall(call, window, cursor)) {
                 return;
             }
-            const items = admitted.data.items;
-            const next = admitted.data.nextCursor;
-            if (
-                (next !== null && typeof next !== 'string') ||
-                offset + items.length > admitted.data.page.total ||
-                (next === null && offset + items.length !== admitted.data.page.total) ||
-                (next !== null && items.length === 0)
-            ) {
+            const page = admittedPage(raw, admitted, { offset, total });
+            if (page === null) {
                 return;
             }
-            total = admitted.data.page.total;
-            for (const item of items) {
-                if (!record(item) || item.kind !== 'note' || item.selected !== true) {
-                    continue;
-                }
-                for (const owner of window.owners) {
-                    if (
-                        item.viewId === owner.viewId &&
-                        item.ownerClipId === owner.ownerClipId &&
-                        item.noteId === owner.storedNoteId &&
-                        (item.takeId ?? undefined) === owner.takeId &&
-                        (owner.occurrenceIndex === undefined || item.occurrenceIndex === owner.occurrenceIndex)
-                    ) {
-                        found.add(owner.viewId);
-                    }
-                }
-            }
+            const { items, next } = page;
+            total = page.total;
+            selectedOwners(items, window, found);
             offset += items.length;
             if (next !== null) {
                 cursor = next;

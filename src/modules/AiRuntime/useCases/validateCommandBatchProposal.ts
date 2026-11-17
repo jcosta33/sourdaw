@@ -1,4 +1,3 @@
-import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
@@ -26,15 +25,10 @@ const COMMAND_BATCH_PROPOSAL_KEYS: ReadonlySet<string> = new Set([
     'refines',
 ]);
 
-export function validateCommandBatchProposal(
-    call: ToolCallResult,
-    disclosedCommandSchemas: ReadonlyMap<string, string>,
+function validReferences(
+    references: unknown,
     retainedCompilations: ReadonlyMap<string, RetainedCompilation>
-): string | null {
-    const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
-    const list = isRecord(call.arguments.list) ? call.arguments.list : null;
-    const hasStructuredList = list !== null && Array.isArray(list.items);
-    const references = call.arguments.compiledCallIds;
+): references is string[] | undefined {
     if (
         references !== undefined &&
         (!Array.isArray(references) ||
@@ -47,40 +41,24 @@ export function validateCommandBatchProposal(
             new Set(references).size !== references.length ||
             references.some((entry) => !retainedCompilations.has(entry)))
     ) {
-        return 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion, or measured preview.';
+        return false;
     }
-    const selectedCount = Array.isArray(references)
-        ? references.reduce((count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0), 0)
-        : 0;
-    const refines = call.arguments.refines;
-    if (
-        Object.keys(call.arguments).some((key) => !COMMAND_BATCH_PROPOSAL_KEYS.has(key)) ||
-        (refines !== undefined &&
-            refines !== null &&
-            (typeof refines !== 'string' || refines.length === 0 || refines.length > PROPOSAL_REFINES_MAX_LENGTH)) ||
-        hasPrimitiveCommands === hasStructuredList ||
-        (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
-    ) {
-        return 'Provider command proposal does not match the strict catalog contract.';
-    }
-    const commands: unknown[] = hasPrimitiveCommands
-        ? (call.arguments.commands as unknown[])
-        : (list!.items as unknown[]);
-    const commandLimit = hasPrimitiveCommands ? MAX_LLM_ACTIONS_PER_BATCH : SEMANTIC_COMMAND_LIST_MAX_ITEMS;
-    if (
-        commands.length + selectedCount === 0 ||
-        commands.length > commandLimit ||
-        commands.length + selectedCount > MAX_LLM_ACTIONS_PER_BATCH
-    ) {
-        return 'Provider command proposal exceeds the command budget.';
-    }
+    return true;
+}
+
+function validateCommands(
+    commands: unknown[],
+    hasPrimitiveCommands: boolean,
+    disclosedCommandSchemas: ReadonlyMap<string, string>
+): string | null {
     for (const command of commands) {
         if (!isRecord(command)) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
-        const allowedKeys = hasPrimitiveCommands
-            ? ['name', 'arguments']
-            : ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'];
+        const allowedKeys = ['name', 'arguments'];
+        if (!hasPrimitiveCommands) {
+            allowedKeys.push('id', 'selector', 'repeat', 'dependsOn');
+        }
         if (Object.keys(command).some((key) => !allowedKeys.includes(key))) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
@@ -111,12 +89,46 @@ export function validateCommandBatchProposal(
     return null;
 }
 
-/**
- * One turn proposes one batch. Two proposals leave no answer to which one the run made, and the
- * compiler downstream reads a single proposal — so a second one would slip past the budget and the
- * target rules that only ever examine the first. Refusing here says so in a reason the model sees.
- */
-export function validateOneProposalPerTurn(calls: readonly { call: ToolCallResult }[]): string | null {
-    const proposalCount = calls.filter(({ call }) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME).length;
-    return proposalCount > 1 ? 'Provider returned more than one command batch proposal in one turn.' : null;
+export function validateCommandBatchProposal(
+    call: ToolCallResult,
+    disclosedCommandSchemas: ReadonlyMap<string, string>,
+    retainedCompilations: ReadonlyMap<string, RetainedCompilation>
+): string | null {
+    const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
+    const list = isRecord(call.arguments.list) ? call.arguments.list : null;
+    const hasStructuredList = list !== null && Array.isArray(list.items);
+    const references = call.arguments.compiledCallIds;
+    if (!validReferences(references, retainedCompilations)) {
+        return 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion, or measured preview.';
+    }
+    let selectedCount = 0;
+    if (references !== undefined) {
+        selectedCount = references.reduce(
+            (count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0),
+            0
+        );
+    }
+    const refines = call.arguments.refines;
+    if (
+        Object.keys(call.arguments).some((key) => !COMMAND_BATCH_PROPOSAL_KEYS.has(key)) ||
+        (refines !== undefined &&
+            refines !== null &&
+            (typeof refines !== 'string' || refines.length === 0 || refines.length > PROPOSAL_REFINES_MAX_LENGTH)) ||
+        hasPrimitiveCommands === hasStructuredList ||
+        (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
+    ) {
+        return 'Provider command proposal does not match the strict catalog contract.';
+    }
+    const commands: unknown[] = hasPrimitiveCommands
+        ? (call.arguments.commands as unknown[])
+        : (list!.items as unknown[]);
+    const commandLimit = hasPrimitiveCommands ? MAX_LLM_ACTIONS_PER_BATCH : SEMANTIC_COMMAND_LIST_MAX_ITEMS;
+    if (
+        commands.length + selectedCount === 0 ||
+        commands.length > commandLimit ||
+        commands.length + selectedCount > MAX_LLM_ACTIONS_PER_BATCH
+    ) {
+        return 'Provider command proposal exceeds the command budget.';
+    }
+    return validateCommands(commands, hasPrimitiveCommands, disclosedCommandSchemas);
 }
