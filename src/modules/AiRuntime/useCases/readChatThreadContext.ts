@@ -9,7 +9,7 @@ import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmat
 import { buildThreadContext } from '../transformers/buildThreadContext';
 
 import { readConfirmationBatchId } from './agentRequestOrchestration/readConfirmationBatchId';
-import { readMetricCreativeAuthorityIds } from './metricGoalStateCodec';
+import { readMetricCreativeAuthorityIds } from './readMetricCreativeAuthorityIds';
 
 function groupIdsOf(entries: ReadonlyArray<{ groupId?: string }>): ReadonlySet<string> {
     return new Set(entries.flatMap((entry) => (entry.groupId === undefined ? [] : [entry.groupId])));
