@@ -430,8 +430,24 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } await test.step('required', async () => { await expect(ready).toBeVisible(); }); });",
         "import { test, expect } from './e2eTest'; test('observer after loop exit', async () => { for (const locator of entries) { if (!(await locator.isVisible())) { continue; } await expect(locator).toBeVisible(); } await expect(ready).toBeVisible(); });",
         "import { test, expect } from './e2eTest'; test('observer after switch exit', async () => { switch (kind) { case 'entry': if (!(await locator.isVisible())) { break; } await expect(locator).toBeVisible(); } await expect(ready).toBeVisible(); });",
+        "import { test, expect } from './e2eTest'; test('observes before the guard with cleanup', async () => { try { await expect(ready).toBeVisible(); } finally { cleanup(); } if (await locator.isVisible()) { await expect(locator).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('observes after the guard with cleanup', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { await expect(ready).toBeVisible(); } finally { cleanup(); } });",
+        "import { test, expect } from './e2eTest'; test('observes before the guard with rethrow', async () => { try { await expect(ready).toBeVisible(); } catch (error) { console.error(error); throw error; } if (await locator.isVisible()) { await expect(locator).toBeVisible(); } });",
+        "import { test, expect } from './e2eTest'; test('observes after the guard with rethrow', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { await expect(ready).toBeVisible(); } catch (error) { throw error; } });",
     ],
     invalid: [
+        {
+            code: "import { test, expect } from './e2eTest'; test('can skip observer with cleanup', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { if (ready) { await expect(ready).toBeVisible(); } } finally { cleanup(); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('catch can skip observer', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { await setup(); await expect(ready).toBeVisible(); } catch (error) { console.error(error); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('cleanup can replace observer failure', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } try { await expect(ready).toBeVisible(); } finally { return; } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
         {
             code: "import { test, expect } from './e2eTest'; test('loop exit skips observer', async () => { for (const locator of entries) { if (!(await locator.isVisible())) { break; } await expect(locator).toBeVisible(); } });",
             errors: [{ message: /test can finish without asserting/ }],

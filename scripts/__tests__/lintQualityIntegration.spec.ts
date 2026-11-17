@@ -257,6 +257,34 @@ describe('production quality lint', () => {
                         await expect(page.getByRole('alert')).toBeVisible();
                     }
                 });
+                scenario('unconditional observer with cleanup before the guard', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    try {
+                        await expect(page.getByRole('status')).toBeVisible();
+                    } finally {
+                        console.log('finished observing readiness');
+                    }
+                    if (await entry.isVisible()) { await expect(entry).toBeVisible(); }
+                });
+                scenario('unconditional observer with cleanup after the guard', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) { await expect(entry).toBeVisible(); }
+                    try {
+                        await expect(page.getByRole('status')).toBeVisible();
+                    } finally {
+                        console.log('finished observing readiness');
+                    }
+                });
+                scenario('an unconditional observer rethrows failures', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) { await expect(entry).toBeVisible(); }
+                    try {
+                        await expect(page.getByRole('status')).toBeVisible();
+                    } catch (error) {
+                        console.error(error);
+                        throw error;
+                    }
+                });
             `
             );
             writeFileSync(

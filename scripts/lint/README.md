@@ -168,12 +168,13 @@ a concrete version; ESLint retains its original settings.
 Oxlint parses `.cjs` as CommonJS. Valid `require`/`module.exports` tooling remains
 covered; ESM `export` syntax in a `.cjs` file is now rejected as invalid Node input.
 
-`scripts/__tests__/oxlintPluginMigration.spec.ts` owns all real lint processes and
-workspace fixtures, including local AST diagnostics, explicit suppressions, compiler
-rules, formatting fixes, warning-gate probes, retained typed checks, frozen core-rule parity controls, native candidate gaps, and
-warning-baseline parity. Its cases run
-sequentially: a native TypeScript program must not discover another worker's fixture
-just before that worker deletes it. The config and warning specs keep read-only
-metadata checks and the original parser's in-memory compatibility cases.
+`scripts/__tests__/oxlintPluginMigration.spec.ts` owns the live plugin migration and
+parity probes with their workspace fixtures. Its cases run sequentially so one native
+TypeScript program cannot discover a fixture that another case is about to delete.
+`scripts/__tests__/lintQualityIntegration.spec.ts` owns the native quality diagnostics
+and final-byte check and fix probes. Its cases use separate temporary fixture paths,
+write the files before starting their lint processes, and delete them after those
+processes exit. The config and warning specs keep read-only metadata checks and the
+original parser's in-memory compatibility cases.
 Typed fixture probes reset the public TypeScript parser caches after creating a new
 file, so CI's single-run program snapshot includes that file without widening its project.

@@ -588,6 +588,17 @@ function branchCanSkipAssertion(context, statement, assertions, nextCanSkip, exi
                 branchCanSkipAssertion(context, statement.consequent, assertions, nextCanSkip, exitCanSkip) ||
                 branchCanSkipAssertion(context, statement.alternate, assertions, nextCanSkip, exitCanSkip)
             );
+        case 'TryStatement': {
+            const { block, finalizer, handler } = statement;
+            const afterCleanup = branchCanSkipAssertion(context, finalizer, assertions, nextCanSkip, exitCanSkip);
+            if (finalizer && finalizerCanReplaceCompletion(context, finalizer, () => true)) {
+                return afterCleanup;
+            }
+            return (
+                branchCanSkipAssertion(context, block, assertions, afterCleanup, exitCanSkip) ||
+                (handler ? branchCanSkipAssertion(context, handler.body, assertions, afterCleanup, exitCanSkip) : false)
+            );
+        }
         case 'ThrowStatement':
             return !completionReachesCaller(context, statement);
         case 'ReturnStatement':
