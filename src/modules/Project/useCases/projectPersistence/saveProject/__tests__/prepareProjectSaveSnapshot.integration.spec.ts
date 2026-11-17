@@ -19,6 +19,7 @@ import { getWarpState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack, hydrateClipWarpStates, renameTrack } from '#/modules/Arrangement/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectIdentity,
     exportSdawFile,
     getCrdtDoc,
     getCrdtDocIds,
@@ -35,13 +36,14 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 import { seedDenseProject } from '../../../../__tests__/seedDenseProject';
+import { createProjectId } from '../../../../models/ProjectData';
 import { arrangementStore } from '../../../../stores/arrangementStore';
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { getSettledProjectId, projectStore } from '../../../../stores/projectStore';
+import { syncCurrentArrangementToStore } from '../../../arrangement/syncCurrentArrangementToStore';
 import { takeSnapshot } from '../../../arrangement/takeSnapshot';
 import { createFreshProjectMetadata } from '../../../createFreshProjectMetadata';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
-import { syncCurrentArrangementToStore } from '../../../arrangement/syncCurrentArrangementToStore';
 import { prepareProjectSaveSnapshot, ProjectSavePreparationStaleError } from '../prepareProjectSaveSnapshot';
 
 const requests: { key: unknown; policy: unknown }[] = [];
@@ -89,6 +91,23 @@ type NativeRoot = {
 
 function root() {
     return requireValue(getCrdtDoc<NativeRoot>('root'));
+}
+
+function witnessNativeTruth(): () => void {
+    const original = root();
+    const truth = A.toJS(original);
+    const heads = A.getHeads(original);
+    const history = A.getChangesMetaSince(original, []);
+    return () => {
+        expect(root()).toBe(original);
+        expect(A.toJS(root())).toEqual(truth);
+        expect(A.getHeads(root())).toEqual(heads);
+        expect(A.getChangesMetaSince(root(), [])).toEqual(history);
+    };
+}
+
+function reinstallNativeRoot(): void {
+    replaceCrdtDoc({ id: 'root', doc: A.from(A.toJS(root())) });
 }
 
 function finishLoadedProjection(): void {
@@ -170,8 +189,10 @@ function seedProject(): void {
     ]);
 }
 
-function startPreparation(signal?: AbortSignal) {
-    const transaction = runWithAutomergeStorageTransaction(undefined, () => prepareProjectSaveSnapshot(signal));
+function startPreparation(signal?: AbortSignal, expectedOutgoingProjectIdentity?: string) {
+    const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+        prepareProjectSaveSnapshot(signal, expectedOutgoingProjectIdentity)
+    );
     if (transaction.status !== 'returned') {
         throw transaction.error;
     }
@@ -186,11 +207,11 @@ function registerValidation(transaction: ReturnType<typeof startPreparation>, re
     transaction.validateDocument(validation.documentId, validation.validateDocument, validation.beforeMutation);
 }
 
-function holdPreparation() {
+function holdPreparation(expectedOutgoingProjectIdentity?: string) {
     const reply = Promise.withResolvers<() => void>();
     nextReply = reply;
     const cancellation = new AbortController();
-    const transaction = startPreparation(cancellation.signal);
+    const transaction = startPreparation(cancellation.signal, expectedOutgoingProjectIdentity);
     const response = Promise.race([
         reply.promise,
         transaction.value.then(() => {
@@ -308,6 +329,165 @@ describe('private Project Save preparation with real native storage', () => {
         } finally {
             transaction.abort();
             unsubscribe();
+        }
+    });
+
+    it.each([
+        { loading: true, initialized: true },
+        { loading: false, initialized: false },
+    ])('keeps ordinary preparation closed with loading=$loading or initialized=$initialized', async (flags) => {
+        projectStore.set({ ...requireValue(projectStore.value), ...flags });
+        const verifyNativeTruth = witnessNativeTruth();
+        const transaction = startPreparation();
+        try {
+            await expect(transaction.value).rejects.toThrow('requires settled project identity');
+            expect(requests).toEqual([]);
+            verifyNativeTruth();
+        } finally {
+            transaction.abort();
+        }
+    });
+
+    it('prepares and commits the outgoing take snapshot while the replacement is loading', async () => {
+        const project = requireValue(projectStore.value);
+        const updatedAt = project.updatedAt + 1;
+        vi.spyOn(Date, 'now').mockReturnValue(updatedAt);
+        projectStore.set({ ...project, loading: true, initialized: false, dirty: false });
+        const before = A.toJS(root());
+        const state = requireValue(arrangementStore.value);
+        const expected = {
+            ...state,
+            arrangements: [takeSnapshot('active', 'Active'), state.arrangements[1]],
+        };
+        const verifyNativeTruth = witnessNativeTruth();
+        const held = holdPreparation(captureProjectIdentity());
+        const deliver = await held.reply;
+        try {
+            expect(requests).toEqual([{ key: 'arrangements', policy: 'bounded-native-sequence-v1' }]);
+            verifyNativeTruth();
+            deliver();
+            const result = await held.transaction.value;
+            expect(result.status).toBe('written');
+            verifyNativeTruth();
+            registerValidation(held.transaction, result);
+            held.transaction.commit();
+            expect(A.toJS(root())).toEqual({
+                ...before,
+                arrangements: JSON.parse(JSON.stringify(expected)),
+                projectMeta: { ...before.projectMeta, updatedAt },
+            });
+            expect(projectStore.value).toMatchObject({ loading: true, initialized: false, dirty: true, updatedAt });
+        } finally {
+            await finishHeldPreparation(held, deliver);
+        }
+    });
+
+    it('refuses a spent outgoing identity before requesting a Worker even when persisted metadata still matches', async () => {
+        const expectedOutgoingProjectIdentity = captureProjectIdentity();
+        const oldMetadata = A.toJS(root()).projectMeta;
+        const project = projectStore.value;
+        const arrangements = arrangementStore.value;
+        reinstallNativeRoot();
+        expect(captureProjectIdentity()).not.toBe(expectedOutgoingProjectIdentity);
+        expect(A.toJS(root()).projectMeta).toEqual(oldMetadata);
+        expect(projectStore.value).toBe(project);
+        const verifyNativeTruth = witnessNativeTruth();
+        const transaction = startPreparation(undefined, expectedOutgoingProjectIdentity);
+        try {
+            await expect(transaction.value).rejects.toThrow('Project authority changed during Save preparation');
+            expect(requests).toEqual([]);
+            verifyNativeTruth();
+            expect(projectStore.value).toBe(project);
+            expect(arrangementStore.value).toBe(arrangements);
+        } finally {
+            transaction.abort();
+        }
+    });
+
+    it.each(['projectId', 'createdAt', 'pending migration'] as const)(
+        'refuses %s disagreement before requesting a Worker even for the current outgoing identity',
+        async (input) => {
+            const project = requireValue(projectStore.value);
+            if (input === 'pending migration') {
+                projectStore.set({ ...project, identityMigrationPending: true });
+            } else {
+                const mismatching = A.change(A.clone(root()), (draft) => {
+                    draft.projectMeta[input] = input === 'projectId' ? createProjectId() : project.createdAt + 1;
+                });
+                replaceCrdtDoc({ id: 'root', doc: mismatching });
+                expect(root().projectMeta[input]).not.toBe(project[input]);
+                expect(projectStore.value).toBe(project);
+            }
+            const projection = projectStore.value;
+            const arrangements = arrangementStore.value;
+            const verifyNativeTruth = witnessNativeTruth();
+            const expectedOutgoingProjectIdentity = captureProjectIdentity();
+            const transaction = startPreparation(undefined, expectedOutgoingProjectIdentity);
+            try {
+                const message =
+                    input === 'pending migration'
+                        ? 'requires settled project identity'
+                        : 'requires matching outgoing project metadata';
+                await expect(transaction.value).rejects.toThrow(message);
+                expect(requests).toEqual([]);
+                verifyNativeTruth();
+                expect(projectStore.value).toBe(projection);
+                expect(arrangementStore.value).toBe(arrangements);
+            } finally {
+                transaction.abort();
+            }
+        }
+    );
+
+    it('does not stage or replan a replaced outgoing root while its genuine Worker reply is held', async () => {
+        const project = requireValue(projectStore.value);
+        projectStore.set({ ...project, loading: true, initialized: false });
+        const oldMetadata = A.toJS(root()).projectMeta;
+        const expectedOutgoingProjectIdentity = captureProjectIdentity();
+        const held = holdPreparation(expectedOutgoingProjectIdentity);
+        const deliver = await held.reply;
+        try {
+            const arrangements = arrangementStore.value;
+            const projection = projectStore.value;
+            reinstallNativeRoot();
+            expect(captureProjectIdentity()).not.toBe(expectedOutgoingProjectIdentity);
+            expect(A.toJS(root()).projectMeta).toEqual(oldMetadata);
+            const verifyNativeTruth = witnessNativeTruth();
+            const refusal = held.transaction.value.catch((error: unknown) => error);
+            deliver();
+            const error = await refusal;
+            expect(error).toBeInstanceOf(Error);
+            expect(error).not.toBeInstanceOf(ProjectSavePreparationStaleError);
+            expect(error).toMatchObject({ message: 'Project authority changed during Save preparation' });
+            expect(projectStore.value).toBe(projection);
+            expect(arrangementStore.value).toBe(arrangements);
+            held.transaction.abort();
+            verifyNativeTruth();
+            expect(projectStore.value).toEqual(projection);
+            expect(arrangementStore.value).toEqual(arrangements);
+        } finally {
+            await finishHeldPreparation(held, deliver);
+        }
+    });
+
+    it('refuses a replaced outgoing root at the later owner commit', async () => {
+        const project = requireValue(projectStore.value);
+        projectStore.set({ ...project, loading: true, initialized: false });
+        const expectedOutgoingProjectIdentity = captureProjectIdentity();
+        const oldMetadata = A.toJS(root()).projectMeta;
+        const transaction = startPreparation(undefined, expectedOutgoingProjectIdentity);
+        try {
+            const result = await transaction.value;
+            registerValidation(transaction, result);
+            reinstallNativeRoot();
+            expect(captureProjectIdentity()).not.toBe(expectedOutgoingProjectIdentity);
+            expect(A.toJS(root()).projectMeta).toEqual(oldMetadata);
+            const verifyNativeTruth = witnessNativeTruth();
+            expect(() => transaction.commit()).toThrow('Project authority changed during Save preparation');
+            transaction.abort();
+            verifyNativeTruth();
+        } finally {
+            transaction.abort();
         }
     });
 

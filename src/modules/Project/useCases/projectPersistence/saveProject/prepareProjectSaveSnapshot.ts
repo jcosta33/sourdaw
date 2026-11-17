@@ -16,9 +16,10 @@ import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores
 import { type HandlerCommitValidation, type HandlerExecutionResult } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { arrangementStore, prepareArrangementStoreState } from '../../../stores/arrangementStore';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
-import { getSettledProjectId, projectStore } from '../../../stores/projectStore';
+import { getSettledProjectId, projectStore, readSettledProjectId } from '../../../stores/projectStore';
 import { takeSnapshot } from '../../arrangement/takeSnapshot';
 
 /** Only a still-open, same-project preparation may be replanned by its caller. */
@@ -51,14 +52,39 @@ function canonicalValue(value: unknown): unknown {
     return result;
 }
 
-function assertAvailable(signal: AbortSignal): void {
+function requireOutgoingProjectId(expectedOutgoingProjectIdentity: string): string {
+    if (captureProjectIdentity() !== expectedOutgoingProjectIdentity) {
+        throw new Error('Project authority changed during Save preparation');
+    }
+
+    const project = projectStore.value;
+    if (!project || project.identityMigrationPending !== false || !isCanonicalProjectId(project.projectId)) {
+        throw new Error('Project Save preparation requires settled project identity');
+    }
+    const metadata = getCrdtDoc('root')?.projectMeta;
+    if (
+        !isRecord(metadata) ||
+        readSettledProjectId(metadata) !== project.projectId ||
+        metadata.createdAt !== project.createdAt
+    ) {
+        throw new Error('Project Save preparation requires matching outgoing project metadata');
+    }
+    return project.projectId;
+}
+
+function assertAvailable(signal: AbortSignal, expectedOutgoingProjectIdentity: string | undefined): string {
     signal.throwIfAborted();
     if (agentProjectRepairStateStore.value !== null || projectLoadFailureStore.value !== null) {
         throw new Error('Project Save preparation requires a healthy loaded project');
     }
-    if (!getSettledProjectId() || projectStore.value?.loading) {
+    if (expectedOutgoingProjectIdentity !== undefined) {
+        return requireOutgoingProjectId(expectedOutgoingProjectIdentity);
+    }
+    const projectId = getSettledProjectId();
+    if (!projectId || projectStore.value?.loading) {
         throw new Error('Project Save preparation requires settled project identity');
     }
+    return projectId;
 }
 
 function createSaveCommitValidation(
@@ -85,16 +111,18 @@ function createSaveCommitValidation(
 /**
  * Prepare the Save-owned snapshot under the caller's existing transaction.
  * This stages only; Command retains final validation, publication and abort.
+ * The outgoing take Save carries its pre-switch native identity through loading.
  */
 export async function prepareProjectSaveSnapshot(
-    signal: AbortSignal = new AbortController().signal
+    signal: AbortSignal = new AbortController().signal,
+    expectedOutgoingProjectIdentity?: string
 ): Promise<HandlerExecutionResult> {
     const preparationScope = captureAutomergeStoragePreparationScope();
     const scope = captureAutomergeStorageTransactionScope();
     if (!preparationScope) {
         throw new Error('Project Save preparation requires an open owning transaction');
     }
-    assertAvailable(signal);
+    assertAvailable(signal, expectedOutgoingProjectIdentity);
     const revision = settlePendingProjectWritesAndCaptureRevision();
     const identity = captureProjectIdentity();
     const root = getCrdtDoc('root');
@@ -103,7 +131,10 @@ export async function prepareProjectSaveSnapshot(
     if (!root || !project || !arrangements || !isRecord(root.projectMeta)) {
         throw new Error('Project Save preparation requires native project metadata and arrangements');
     }
-    const projectId = getSettledProjectId();
+    const projectId =
+        expectedOutgoingProjectIdentity === undefined
+            ? getSettledProjectId()
+            : assertAvailable(signal, expectedOutgoingProjectIdentity);
     const sources = sourceValues();
     let expectedProject = project;
     let expectedArrangements = arrangements;
@@ -120,8 +151,8 @@ export async function prepareProjectSaveSnapshot(
     const expectedNativeMetadata = { ...root.projectMeta, updatedAt };
 
     function assertCurrent(): void {
-        assertAvailable(signal);
-        if (captureProjectIdentity() !== identity || getSettledProjectId() !== projectId) {
+        const currentProjectId = assertAvailable(signal, expectedOutgoingProjectIdentity);
+        if (captureProjectIdentity() !== identity || currentProjectId !== projectId) {
             throw new Error('Project authority changed during Save preparation');
         }
         if (
