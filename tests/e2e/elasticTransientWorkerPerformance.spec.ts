@@ -483,16 +483,18 @@ function matchesLongTask(
     phase: PreparationMeasure,
     inputMarkStart: number
 ): boolean {
-    // The observer's interval can end before RunTask ends. Bind its start to that
-    // task and require it to cover the actual SDK call within the observer's rounding.
+    // The trace and the observer can record different task-entry boundaries.
+    // Bound that difference and rounding to one millisecond, and require the
+    // observer's interval to cover the actual SDK call inside that task.
+    const observerResolutionMs = 1;
     const taskStart = inputMarkStart + task.startFromInputMs;
     const observedEnd = entry.start + entry.duration;
     return (
         entry.name === 'self' &&
-        Math.abs(entry.start - taskStart) <= 0.1 &&
-        observedEnd <= taskStart + task.durationMs + 1 &&
-        entry.start <= phase.startTime + 0.1 &&
-        observedEnd + 1 >= phase.startTime + phase.duration
+        Math.abs(entry.start - taskStart) <= observerResolutionMs &&
+        observedEnd <= taskStart + task.durationMs + observerResolutionMs &&
+        entry.start <= phase.startTime + observerResolutionMs &&
+        observedEnd + observerResolutionMs >= phase.startTime + phase.duration
     );
 }
 
