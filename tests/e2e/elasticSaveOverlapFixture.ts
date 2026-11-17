@@ -1,9 +1,16 @@
 import { getHeads } from '@automerge/automerge';
 
 import { trackStore } from '../../src/modules/Arrangement/stores';
-import { captureProjectIdentity, captureProjectRevision, getCrdtDoc } from '../../src/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRevision,
+    getCrdtDoc,
+    subscribeToCrdtChanges,
+} from '../../src/modules/CrdtDocument/useCases';
 import { projectStore } from '../../src/modules/Project/stores';
 import { saveProject } from '../../src/modules/Project/useCases';
+import { matchesJsonFingerprint } from '../../src/utils/jsonSemanticEquality';
+import { valuesEqual } from '../../src/utils/structuralEquality';
 
 function captureState() {
     const root = getCrdtDoc('root');
@@ -25,16 +32,23 @@ type Attempt = {
     url: string;
     created: number;
     requested: number | null;
+    requestState: NativeState | null;
+    posted: number | null;
     role: string;
     primaryKey: string | null;
     preparationPolicy: string | null;
     capturedHeads: string[];
+    targetWarpStateAtRequest: string | null;
+    expectedTargetWarpState: unknown;
     received: number | null;
+    receivedState: NativeState | null;
     forwarded: number | null;
+    forwardedState: NativeState | null;
     terminated: number | null;
-    cancelled: boolean;
+    terminatedState: NativeState | null;
     status: string | null;
     changeCount: number | null;
+    replyHeads: string[];
     replies: { received: number; forwarded: number | null; status: string | null; changeCount: number | null }[];
     held: boolean;
 };
@@ -49,6 +63,9 @@ type IncrementalRequest = {
 type SaveOverlapReport = {
     armed: NativeState;
     targetClipId: string;
+    expectedMarkerCount: number;
+    baselineTargetWarpState: string;
+    detectPublication: { state: NativeState; targetWarpState: string } | null;
     input: number | null;
     attempts: Attempt[];
     incrementalRequests: IncrementalRequest[];
@@ -80,6 +97,26 @@ function stringArray(value: unknown): string[] {
     }
     return value.filter((entry: unknown): entry is string => typeof entry === 'string');
 }
+function targetWarpState(value: unknown, clipId: string): unknown {
+    return isRecord(value) && isRecord(value.states) ? (value.states[clipId] ?? null) : null;
+}
+function serializeWitness(value: unknown): string {
+    const json = JSON.stringify(value);
+    if (typeof json !== 'string') {
+        throw new TypeError('Native overlap witness must be serializable');
+    }
+    return json;
+}
+function nativeTargetWarpState(clipId: string): unknown {
+    const root = getCrdtDoc<Record<string, unknown>>('root');
+    if (!root) {
+        throw new Error('Save overlap lost the actual native root');
+    }
+    return targetWarpState(root.warpStates, clipId);
+}
+function sameHeads(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((head) => right.includes(head));
+}
 
 /** A host task, rather than a promise continuation in the command's transaction. */
 function hostTask(run: () => void | Promise<void>): Promise<void> {
@@ -98,17 +135,23 @@ function hostTask(run: () => void | Promise<void>): Promise<void> {
     });
 }
 
-function classifyRequest(attempt: Attempt, data: unknown): void {
+function classifyRequest(attempt: Attempt, data: unknown, targetClipId: string): void {
     if (!isRecord(data) || !isRecord(data.mutation)) {
         return;
     }
-    attempt.requested = performance.now();
+    attempt.requestState = captureState();
+    attempt.requested = attempt.requestState.time;
+    attempt.targetWarpStateAtRequest = serializeWitness(nativeTargetWarpState(targetClipId));
     attempt.primaryKey = typeof data.mutation.key === 'string' ? data.mutation.key : null;
     attempt.preparationPolicy = typeof data.preparationPolicy === 'string' ? data.preparationPolicy : null;
     attempt.capturedHeads = stringArray(data.heads);
     attempt.role = 'other-prospective';
+    if (data.mutation.kind !== 'canonical-json-slot-v1') {
+        return;
+    }
     if (attempt.primaryKey === 'warpStates' && attempt.preparationPolicy === null) {
         attempt.role = 'detect';
+        attempt.expectedTargetWarpState = structuredClone(targetWarpState(data.mutation.value, targetClipId));
     } else if (attempt.primaryKey === 'arrangements' && attempt.preparationPolicy === 'bounded-native-sequence-v1') {
         attempt.role = 'save-arrangements';
     }
@@ -171,14 +214,22 @@ function observeIncrementals(
     };
 }
 
-/** Hold only Detect's first real reply, until Save posts its actual arrangements preparation. */
-export function armElasticSaveOverlap(targetClipId: string): void {
+/** Release Detect at Save's real post, then make Save observe the actual Detect publication. */
+export function armElasticSaveOverlap(targetClipId: string, expectedMarkerCount: number): void {
     if (active) {
         throw new Error('Save overlap controller is already armed');
     }
     if (!trackStore.value?.tracks.some((track) => track.clips.some((clip) => clip.id === targetClipId))) {
         throw new Error('Save overlap target is absent from the actual UI project');
     }
+    if (!Number.isSafeInteger(expectedMarkerCount) || expectedMarkerCount < 1) {
+        throw new Error('Save overlap requires a nonempty expected Detect result');
+    }
+    const baseline = nativeTargetWarpState(targetClipId);
+    if (baseline !== null && (!isRecord(baseline) || !Array.isArray(baseline.markers) || baseline.markers.length > 0)) {
+        throw new Error('Cold Save overlap requires an empty native target warp state');
+    }
+    const baselineTargetWarpState = serializeWitness(baseline);
     const NativeWorker = window.Worker;
     const constructorDescriptor = Object.getOwnPropertyDescriptor(window, 'Worker');
     const postDescriptor = Object.getOwnPropertyDescriptor(NativeWorker.prototype, 'postMessage');
@@ -190,6 +241,9 @@ export function armElasticSaveOverlap(targetClipId: string): void {
     const report: SaveOverlapReport = {
         armed: captureState(),
         targetClipId,
+        expectedMarkerCount,
+        baselineTargetWarpState,
+        detectPublication: null,
         input: null,
         attempts: [],
         incrementalRequests: [],
@@ -200,25 +254,71 @@ export function armElasticSaveOverlap(targetClipId: string): void {
     };
     const cleanups: (() => void)[] = [];
     const attempts = new WeakMap<Worker, Attempt>();
+    const observedWorkers = new Map<Worker, Attempt>();
     const incrementals = new WeakMap<Worker, ReturnType<typeof observeIncrementals>>();
-    let held: { attempt: Attempt; forward(): void } | undefined;
-    let selected = false;
+    type HeldReply = { attempt: Attempt; forward(): Promise<void> };
+    let heldDetect: HeldReply | undefined;
+    let heldSave: HeldReply | undefined;
+    let firstSave: Attempt | undefined;
     let stopping: Promise<void> | undefined;
-    let forwardWork: Promise<void> | undefined;
     let stopped = false;
+    let expired = false;
     let finishSave: () => void = () => undefined;
-    const saveSettled = new Promise<void>((resolve) => {
+    const saveFinishedOrExpired = new Promise<void>((resolve) => {
         finishSave = resolve;
     });
     let deadline: ReturnType<typeof setTimeout> | undefined;
 
     function releaseHeld(): void {
-        held?.forward();
+        void heldDetect?.forward();
+        void heldSave?.forward();
+    }
+    function forwardReply(attempt: Attempt, reply: Attempt['replies'][number]): void {
+        attempt.forwardedState = captureState();
+        attempt.forwarded = attempt.forwardedState.time;
+        reply.forwarded = attempt.forwarded;
+    }
+    function holdReply(
+        worker: Worker,
+        attempt: Attempt,
+        event: MessageEvent<unknown>,
+        reply: Attempt['replies'][number],
+        hasWitness: () => boolean
+    ): HeldReply | undefined {
+        const handler = worker.onmessage;
+        if (!handler) {
+            report.failures.push(`Held ${attempt.role} reply has no current client handler`);
+            return undefined;
+        }
+        event.stopImmediatePropagation();
+        attempt.held = true;
+        let work: Promise<void> | undefined;
+        return {
+            attempt,
+            forward() {
+                work ??= hostTask(() => {
+                    if (!hasWitness()) {
+                        report.failures.push(`Released ${attempt.role} reply without its required native witness`);
+                    }
+                    if (attempt.terminated !== null || worker.onmessage !== handler) {
+                        report.failures.push(`Held ${attempt.role} reply lost its live client before forwarding`);
+                        return;
+                    }
+                    forwardReply(attempt, reply);
+                    handler.call(worker, event);
+                }).catch((error: unknown) => {
+                    report.failures.push(String(error));
+                });
+                return work;
+            },
+        };
     }
     function startSave(): void {
         deadline = setTimeout(() => {
             report.failures.push('Actual Save overlap exceeded its bounded lifetime');
+            expired = true;
             releaseHeld();
+            // This releases only the observation wait; settlement is recorded solely by the real Save.
             finishSave();
         }, OVERLAP_LIFETIME_MS);
         void hostTask(async () => {
@@ -228,14 +328,17 @@ export function armElasticSaveOverlap(targetClipId: string): void {
             } catch (error) {
                 report.save.error = String(error);
             } finally {
-                report.save.settled = captureState();
-                performance.mark('elastic-save-settled');
-                if (report.save.preparationPosted === null) {
-                    report.failures.push('Actual Save settled without posting bounded arrangements preparation');
-                    releaseHeld();
+                try {
+                    report.save.settled = captureState();
+                    performance.mark('elastic-save-settled');
+                    if (report.save.preparationPosted === null) {
+                        report.failures.push('Actual Save settled without posting bounded arrangements preparation');
+                        releaseHeld();
+                    }
+                } finally {
+                    clearTimeout(deadline);
+                    finishSave();
                 }
-                clearTimeout(deadline);
-                finishSave();
             }
         }).catch((error: unknown) => {
             report.failures.push(String(error));
@@ -244,10 +347,12 @@ export function armElasticSaveOverlap(targetClipId: string): void {
         });
     }
     function receiveProspective(worker: Worker, attempt: Attempt, event: MessageEvent<unknown>): void {
-        attempt.received = performance.now();
+        attempt.receivedState = captureState();
+        attempt.received = attempt.receivedState.time;
         if (isRecord(event.data)) {
             attempt.status = typeof event.data.status === 'string' ? event.data.status : null;
             attempt.changeCount = Array.isArray(event.data.changes) ? event.data.changes.length : null;
+            attempt.replyHeads = stringArray(event.data.heads);
         }
         const reply: Attempt['replies'][number] = {
             received: attempt.received,
@@ -258,60 +363,51 @@ export function armElasticSaveOverlap(targetClipId: string): void {
         attempt.replies.push(reply);
         if (attempt.replies.length > 1) {
             report.failures.push('Private prospective Worker emitted more than one reply');
-        }
-        if (attempt.role !== 'detect' || selected || stopped) {
-            attempt.forwarded = performance.now();
-            reply.forwarded = attempt.forwarded;
             return;
         }
-        const handler = worker.onmessage;
-        if (!handler) {
-            report.failures.push('Detect reply has no current client handler');
+        if (attempt === firstSave && !report.detectPublication && !stopped && !expired) {
+            heldSave = holdReply(worker, attempt, event, reply, () => report.detectPublication !== null);
             return;
         }
-        selected = true;
-        attempt.held = true;
-        event.stopImmediatePropagation();
-        held = {
-            attempt,
-            forward() {
-                if (forwardWork) {
-                    return;
-                }
-                forwardWork = hostTask(() => {
-                    if (attempt.terminated !== null || worker.onmessage !== handler) {
-                        report.failures.push('Held Detect reply lost its live client before forwarding');
-                        return;
-                    }
-                    attempt.forwarded = performance.now();
-                    reply.forwarded = attempt.forwarded;
-                    handler.call(worker, event);
-                }).catch((error: unknown) => {
-                    report.failures.push(String(error));
-                });
-            },
-        };
-        startSave();
+        if (attempt.role !== 'detect' || heldDetect || stopped || expired) {
+            forwardReply(attempt, reply);
+            return;
+        }
+        if (attempt.status !== 'complete' || attempt.changeCount === null || attempt.changeCount < 1) {
+            report.failures.push('Cold Detect must return an actual nonempty native change');
+        }
+        heldDetect = holdReply(worker, attempt, event, reply, () => report.save.preparationPosted !== null);
+        if (heldDetect) {
+            startSave();
+        }
     }
     function observeProspective(worker: Worker, url: URL): void {
         const attempt: Attempt = {
             url: url.href,
             created: performance.now(),
             requested: null,
+            requestState: null,
+            posted: null,
             role: 'unclassified',
             primaryKey: null,
             preparationPolicy: null,
             capturedHeads: [],
+            targetWarpStateAtRequest: null,
+            expectedTargetWarpState: null,
             received: null,
+            receivedState: null,
             forwarded: null,
+            forwardedState: null,
             terminated: null,
-            cancelled: false,
+            terminatedState: null,
             status: null,
             changeCount: null,
+            replyHeads: [],
             replies: [],
             held: false,
         };
         attempts.set(worker, attempt);
+        observedWorkers.set(worker, attempt);
         report.attempts.push(attempt);
         const receive = (event: MessageEvent<unknown>): void => receiveProspective(worker, attempt, event);
         const fail = (): void => {
@@ -326,6 +422,33 @@ export function armElasticSaveOverlap(targetClipId: string): void {
             worker.removeEventListener('messageerror', fail);
         });
     }
+    cleanups.push(
+        subscribeToCrdtChanges((docId) => {
+            if (docId !== 'root' || report.detectPublication || !heldDetect || !firstSave || stopped || expired) {
+                return;
+            }
+            try {
+                const expected = heldDetect.attempt.expectedTargetWarpState;
+                const actual = nativeTargetWarpState(targetClipId);
+                if (!valuesEqual(actual, expected) || matchesJsonFingerprint(actual, baselineTargetWarpState)) {
+                    return;
+                }
+                const state = captureState();
+                if (
+                    state.identity !== report.armed.identity ||
+                    state.projectId !== report.armed.projectId ||
+                    sameHeads(state.heads, heldDetect.attempt.capturedHeads) ||
+                    sameHeads(state.heads, firstSave.capturedHeads)
+                ) {
+                    return;
+                }
+                report.detectPublication = { state, targetWarpState: serializeWitness(actual) };
+                void heldSave?.forward();
+            } catch (error) {
+                report.failures.push(String(error));
+            }
+        })
+    );
     const ObservedWorker = new Proxy(NativeWorker, {
         construct(Constructor, args: ConstructorParameters<typeof Worker>, newTarget): object {
             const instance: unknown = Reflect.construct(Constructor, args, newTarget);
@@ -355,10 +478,29 @@ export function armElasticSaveOverlap(targetClipId: string): void {
         apply(target, receiver: Worker, args: unknown[]): unknown {
             const attempt = attempts.get(receiver);
             if (attempt) {
-                classifyRequest(attempt, args[0]);
+                if (attempt.requested !== null) {
+                    report.failures.push('Private prospective Worker posted more than one request');
+                }
+                classifyRequest(attempt, args[0], targetClipId);
+                if (attempt.role === 'detect') {
+                    const expected = attempt.expectedTargetWarpState;
+                    if (
+                        !isRecord(expected) ||
+                        !Array.isArray(expected.markers) ||
+                        expected.markers.length !== expectedMarkerCount ||
+                        matchesJsonFingerprint(expected, baselineTargetWarpState)
+                    ) {
+                        report.failures.push(
+                            'Cold Detect request must replace the empty target with actual expected markers'
+                        );
+                    }
+                }
             }
             const request = receiver instanceof NativeWorker ? readIncrementalRequest(args[0]) : undefined;
             const result: unknown = Reflect.apply(target, receiver, args);
+            if (attempt) {
+                attempt.posted = performance.now();
+            }
             if (request) {
                 let observe = incrementals.get(receiver);
                 if (!observe) {
@@ -370,11 +512,12 @@ export function armElasticSaveOverlap(targetClipId: string): void {
             if (
                 attempt?.role === 'save-arrangements' &&
                 report.save.requested &&
-                held &&
+                heldDetect &&
                 report.save.preparationPosted === null
             ) {
+                firstSave = attempt;
                 report.save.preparationPosted = performance.now();
-                releaseHeld();
+                void heldDetect.forward();
             }
             return result;
         },
@@ -385,8 +528,8 @@ export function armElasticSaveOverlap(targetClipId: string): void {
             const result: unknown = Reflect.apply(target, receiver, args);
             const attempt = attempts.get(receiver);
             if (attempt) {
-                attempt.terminated = performance.now();
-                attempt.cancelled = attempt.forwarded === null;
+                attempt.terminatedState = captureState();
+                attempt.terminated = attempt.terminatedState.time;
             }
             return result;
         },
@@ -412,38 +555,47 @@ export function armElasticSaveOverlap(targetClipId: string): void {
     active = {
         report,
         async waitForSave(): Promise<void> {
-            if (!selected) {
+            if (!heldDetect) {
                 throw new Error('Detect completed without the required held native reply');
             }
-            await saveSettled;
+            await saveFinishedOrExpired;
             if (!report.save.settled) {
                 throw new Error('Actual public Save did not settle within the overlap lifetime');
             }
         },
         stop(): Promise<void> {
             stopping ??= (async () => {
-                if (held && held.attempt.forwarded === null && report.save.preparationPosted === null) {
-                    report.failures.push('Controller cleanup released Detect without actual Save preparation');
-                }
-                releaseHeld();
-                if (selected) {
-                    await saveSettled;
-                }
-                await forwardWork;
-                stopped = true;
-                clearTimeout(deadline);
-                for (const cleanup of cleanups) {
-                    try {
-                        cleanup();
-                    } catch (error) {
-                        report.failures.push(String(error));
+                try {
+                    releaseHeld();
+                    if (heldDetect) {
+                        await saveFinishedOrExpired;
                     }
+                    await heldDetect?.forward();
+                    await heldSave?.forward();
+                    for (const [worker, attempt] of observedWorkers) {
+                        if (attempt.terminated === null) {
+                            report.failures.push(`Native ${attempt.role} Worker remained live at controller cleanup`);
+                            worker.terminate();
+                        }
+                    }
+                } catch (error) {
+                    report.failures.push(String(error));
+                } finally {
+                    stopped = true;
+                    clearTimeout(deadline);
+                    for (const cleanup of cleanups) {
+                        try {
+                            cleanup();
+                        } catch (error) {
+                            report.failures.push(String(error));
+                        }
+                    }
+                    Object.defineProperty(window, 'Worker', constructorDescriptor);
+                    Object.defineProperty(NativeWorker.prototype, 'postMessage', postDescriptor);
+                    Object.defineProperty(NativeWorker.prototype, 'terminate', terminateDescriptor);
+                    Object.defineProperty(console, 'warn', warningDescriptor);
+                    report.restored = true;
                 }
-                Object.defineProperty(window, 'Worker', constructorDescriptor);
-                Object.defineProperty(NativeWorker.prototype, 'postMessage', postDescriptor);
-                Object.defineProperty(NativeWorker.prototype, 'terminate', terminateDescriptor);
-                Object.defineProperty(console, 'warn', warningDescriptor);
-                report.restored = true;
             })();
             return stopping;
         },

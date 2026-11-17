@@ -3,6 +3,8 @@ import { cpus, platform, release } from 'node:os';
 
 import { type Page, type TestInfo } from '@playwright/test';
 
+import { matchesJsonFingerprint } from '../../src/utils/jsonSemanticEquality';
+
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 import {
@@ -195,10 +197,10 @@ function assertMaterializationAttempts(
         const detect = overlap.attempts.filter((attempt) => attempt.role === 'detect');
         expect(detect.length).toBeGreaterThan(0);
         for (const attempt of detect) {
-            expect(
-                attempt.cancelled || attempt.status === 'complete',
-                'Every Detect attempt needs an actual terminal outcome'
-            ).toBe(true);
+            expect(attempt.status, 'Every Detect attempt needs an actual complete native reply').toBe('complete');
+            expect(attempt.replies).toHaveLength(1);
+            expect(attempt.forwarded).not.toBeNull();
+            expect(attempt.terminated).not.toBeNull();
         }
         const completed = detect.filter((attempt) => attempt.status === 'complete' && attempt.forwarded !== null);
         expect(responses).toHaveLength(completed.length);
@@ -228,51 +230,130 @@ function assertSequenceCensus(
     overlap: NonNullable<Awaited<ReturnType<typeof attachSaveOverlap>>>
 ): void {
     const attempts = overlap.attempts.filter((attempt) => attempt.preparationPolicy === 'bounded-native-sequence-v1');
-    expect(attempts.length, 'Actual Save must produce bounded native preparation').toBeGreaterThan(0);
-    const planning = measures.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task');
-    expect(planning).toHaveLength(attempts.length);
-    const indexed = measures.filter(isSequenceMeasure);
-    const expectedTotal = attempts.reduce((count, attempt) => count + (attempt.changeCount ?? 0), 0);
-    expect(expectedTotal, 'Native replies must independently establish a nonempty sequence census').toBeGreaterThan(0);
+    expect(attempts, 'Controlled stale Save must make exactly one fresh retry').toHaveLength(2);
+    const stale = attempts.at(0);
+    const fresh = attempts.at(1);
+    const publication = overlap.detectPublication;
+    const settled = overlap.save.settled;
+    if (
+        !stale ||
+        !fresh ||
+        !publication ||
+        !settled ||
+        !stale.requestState ||
+        !stale.forwardedState ||
+        !stale.terminatedState ||
+        !fresh.requestState ||
+        stale.requested === null ||
+        fresh.requested === null ||
+        fresh.forwarded === null ||
+        fresh.terminated === null ||
+        stale.targetWarpStateAtRequest === null ||
+        fresh.targetWarpStateAtRequest === null
+    ) {
+        throw new Error('Controlled stale Save and fresh request require actual native lifecycle witnesses');
+    }
+    expect(stale.requestState.time).toBeLessThan(publication.state.time);
+    expect(publication.state.heads.toSorted()).not.toEqual(stale.capturedHeads.toSorted());
+    expect(stale.forwardedState.time).toBeGreaterThanOrEqual(publication.state.time);
+    expect(stale.terminatedState.time).toBeGreaterThanOrEqual(stale.forwardedState.time);
+    expect(stale.forwardedState.heads.toSorted()).not.toEqual(stale.capturedHeads.toSorted());
+    expect(stale.terminatedState.heads.toSorted()).not.toEqual(stale.capturedHeads.toSorted());
+    expect(stale.forwardedState.identity).toBe(overlap.armed.identity);
+    expect(stale.terminatedState.identity).toBe(overlap.armed.identity);
+    const baseline: unknown = JSON.parse(overlap.baselineTargetWarpState);
+    expect(matchesJsonFingerprint(baseline, stale.targetWarpStateAtRequest)).toBe(true);
+    const detect = overlap.attempts.find((attempt) => attempt.held && attempt.role === 'detect');
+    if (!detect) {
+        throw new Error('Save replan requires the real held Detect request');
+    }
+    expect(matchesJsonFingerprint(detect.expectedTargetWarpState, stale.targetWarpStateAtRequest)).toBe(false);
+    expect(matchesJsonFingerprint(detect.expectedTargetWarpState, fresh.targetWarpStateAtRequest)).toBe(true);
+    expect(fresh.requested).toBeGreaterThanOrEqual(stale.terminatedState.time);
+    expect(fresh.capturedHeads.toSorted()).not.toEqual(stale.capturedHeads.toSorted());
+    const owned = measures.filter(
+        (entry) => entry.name === 'automerge-prospective-sequence-planning-task' || isSequenceMeasure(entry)
+    );
     const names = [
         'automerge-prospective-response-task',
         'automerge-prospective-apply-task',
         'automerge-prospective-authority-task',
         'automerge-prospective-sequence-slice-task',
     ];
-    for (const name of names) {
-        expect(indexed.filter((entry) => entry.name === name)).toHaveLength(expectedTotal);
-    }
+    let assigned = 0;
     for (const [index, attempt] of attempts.entries()) {
         expect(attempt.role, 'Sequence role must come from the actual request').toBe('save-arrangements');
         expect(attempt.status).toBe('complete');
-        expect(attempt.changeCount).not.toBeNull();
-        const start = planning[index].startTime;
-        const end = planning[index + 1]?.startTime ?? Infinity;
+        expect(attempt.replies).toHaveLength(1);
+        expect(attempt.changeCount).toBeGreaterThan(0);
+        expect(attempt.replyHeads.length).toBeGreaterThan(0);
+        expect(attempt.posted).not.toBeNull();
         expect(attempt.forwarded).not.toBeNull();
-        expect(start).toBeGreaterThanOrEqual(attempt.forwarded ?? Infinity);
-        // Interleaved bounded jobs have no emitted role on their slices; refuse ambiguous attribution.
-        const next = attempts.at(index + 1);
-        if (next) {
-            expect(next.forwarded).toBeGreaterThanOrEqual(start);
+        expect(attempt.terminated).not.toBeNull();
+        expect(attempt.capturedHeads.toSorted()).toEqual(attempt.requestState?.heads.toSorted());
+        const start = attempt.requested ?? Infinity;
+        const end = attempts.at(index + 1)?.requested ?? settled.time;
+        expect(end).toBeGreaterThan(start);
+        expect(attempt.posted).toBeGreaterThanOrEqual(start);
+        expect(attempt.forwarded).toBeGreaterThanOrEqual(attempt.posted ?? Infinity);
+        expect(attempt.terminated).toBeLessThan(end);
+        const window = owned.filter((entry) => entry.startTime >= start && entry.startTime < end);
+        assigned += window.length;
+        const publications = measures.filter(
+            (entry) =>
+                entry.name === 'automerge-storage-prepared-publication' &&
+                storageRole(entry, 'arrangements') &&
+                entry.startTime >= start &&
+                entry.startTime < end
+        );
+        if (index === 0) {
+            expect(window, 'The witnessed stale attempt must stop before any owned planning or slice').toEqual([]);
+            expect(publications, 'Stale Save must never publish').toEqual([]);
+            continue;
         }
+        const planning = window.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task');
+        expect(planning).toHaveLength(1);
+        expect(planning[0].startTime).toBeGreaterThanOrEqual(fresh.terminated);
+        const indexed = window.filter(isSequenceMeasure);
+        expect(indexed).toHaveLength(names.length * (attempt.changeCount ?? 0));
         const expected = Array.from({ length: attempt.changeCount ?? 0 }, (_, sequenceIndex) => sequenceIndex);
         for (const name of names) {
-            const phases = indexed.filter(
-                (entry) => entry.name === name && entry.startTime >= start && entry.startTime < end
-            );
+            const phases = indexed.filter((entry) => entry.name === name);
             expect(
                 phases.map((entry) => measureDetail(entry).sequenceIndex),
                 `Incomplete or ambiguous ${name} census`
             ).toEqual(expected);
         }
+        for (const phase of window) {
+            expect(phase.startTime).toBeGreaterThanOrEqual(fresh.forwarded);
+            expect(phase.startTime + phase.duration).toBeLessThanOrEqual(end);
+        }
+        const slices = indexed.filter((entry) => entry.name === 'automerge-prospective-sequence-slice-task');
+        expect(slices[0].startTime).toBeGreaterThanOrEqual(planning[0].startTime + planning[0].duration);
+        for (const [sliceIndex, slice] of slices.entries()) {
+            const previous = slices.at(sliceIndex - 1);
+            if (sliceIndex > 0 && previous) {
+                expect(slice.startTime).toBeGreaterThanOrEqual(previous.startTime + previous.duration);
+            }
+        }
+        expect(publications).toHaveLength(1);
+        const finalSlice = slices.at(-1);
+        if (!finalSlice) {
+            throw new Error('Accepted Save publication requires a nonempty actual sequence');
+        }
+        expect(publications[0].startTime).toBeGreaterThanOrEqual(finalSlice.startTime + finalSlice.duration);
     }
-    expect(
-        measures.filter(
-            (entry) =>
-                entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'arrangements')
-        )
-    ).toHaveLength(attempts.length);
+    expect(assigned, 'Unattributed bounded phases cannot be discounted').toBe(owned.length);
+    const handoffs = measures.filter(
+        (entry) => entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'arrangements')
+    );
+    expect(handoffs).toHaveLength(attempts.length);
+    for (const [index, attempt] of attempts.entries()) {
+        const handoff = handoffs[index];
+        expect(handoff.startTime).toBeLessThanOrEqual(attempt.requested ?? -Infinity);
+        expect(handoff.startTime + handoff.duration).toBeGreaterThanOrEqual(attempt.posted ?? Infinity);
+        expect(handoff.startTime + handoff.duration).toBeLessThanOrEqual(attempt.received ?? -Infinity);
+    }
     expect(
         measures.filter(
             (entry) => entry.name === 'automerge-storage-prepared-publication' && storageRole(entry, 'arrangements')
@@ -991,12 +1072,19 @@ for (const projectScale of [false, true]) {
             const workers: string[] = [];
             page.on('worker', (worker) => workers.push(worker.url()));
             if (projectScale) {
+                const coldSource = await sourceState(page);
+                expect(coldSource.clipId).toBe(targetClipId);
+                expect(coldSource.projected).toEqual([]);
+                expect(coldSource.raw).toEqual([]);
                 armedSaveOverlaps.add(info);
-                await page.evaluate(async (clipId) => {
-                    const path = '/tests/e2e/elasticSaveOverlapFixture.ts';
-                    const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
-                    fixture.armElasticSaveOverlap(clipId);
-                }, targetClipId);
+                await page.evaluate(
+                    async ({ clipId, expectedMarkerCount }) => {
+                        const path = '/tests/e2e/elasticSaveOverlapFixture.ts';
+                        const fixture: typeof import('./elasticSaveOverlapFixture') = await import(path);
+                        fixture.armElasticSaveOverlap(clipId, expectedMarkerCount);
+                    },
+                    { clipId: targetClipId, expectedMarkerCount: ATTACKS.length }
+                );
             } else {
                 await observeProspectiveRequests(page, info);
             }
@@ -1239,7 +1327,7 @@ for (const projectScale of [false, true]) {
                 expect(overlap.save.settled.identity).toBe(overlap.armed.identity);
                 expect(overlap.save.settled.projectId).toBe(overlap.armed.projectId);
                 expect(overlap.input).toBe(measured.inputMarkStart);
-                const held = overlap.attempts.filter((attempt) => attempt.held);
+                const held = overlap.attempts.filter((attempt) => attempt.held && attempt.role === 'detect');
                 expect(held).toHaveLength(1);
                 const first = held[0];
                 expect(first.role).toBe('detect');
@@ -1249,13 +1337,45 @@ for (const projectScale of [false, true]) {
                 expect(first.forwarded).toBeGreaterThanOrEqual(overlap.save.preparationPosted);
                 expect(first.forwarded).toBeLessThan(measured.end);
                 expect(overlap.save.settled.time).toBeLessThan(measured.unionEnd);
+                const publication = overlap.detectPublication;
+                if (!publication) {
+                    throw new Error('Save replan requires the exact native target Detect publication');
+                }
+                expect(publication.state.identity).toBe(overlap.armed.identity);
+                expect(publication.state.projectId).toBe(overlap.armed.projectId);
+                expect(publication.state.time).toBeGreaterThanOrEqual(first.forwarded ?? Infinity);
+                expect(publication.state.time).toBeLessThan(measured.end);
+                expect(publication.state.heads.toSorted()).not.toEqual(first.capturedHeads.toSorted());
+                expect(matchesJsonFingerprint(first.expectedTargetWarpState, publication.targetWarpState)).toBe(true);
+                expect(matchesJsonFingerprint(first.expectedTargetWarpState, overlap.baselineTargetWarpState)).toBe(
+                    false
+                );
+                expect(overlap.expectedMarkerCount).toBe(ATTACKS.length);
                 for (const attempt of overlap.attempts) {
+                    expect(['detect', 'save-arrangements']).toContain(attempt.role);
                     expect(
                         attempt.requested,
                         'Every observed prospective Worker must post its real request'
                     ).not.toBeNull();
+                    expect(attempt.posted).toBeGreaterThanOrEqual(attempt.requested ?? Infinity);
+                    expect(attempt.status).toBe('complete');
+                    expect(attempt.changeCount).toBeGreaterThan(0);
+                    expect(attempt.replyHeads.length).toBeGreaterThan(0);
+                    expect(attempt.replies).toHaveLength(1);
+                    expect(attempt.received).toBeGreaterThanOrEqual(attempt.posted ?? Infinity);
+                    expect(attempt.forwarded).toBeGreaterThanOrEqual(attempt.received ?? Infinity);
                     expect(attempt.terminated).not.toBeNull();
-                    expect(attempt.cancelled || attempt.forwarded !== null).toBe(true);
+                    expect(attempt.terminated).toBeGreaterThanOrEqual(attempt.forwarded ?? Infinity);
+                    expect(attempt.capturedHeads.toSorted()).toEqual(attempt.requestState?.heads.toSorted());
+                    for (const state of [
+                        attempt.requestState,
+                        attempt.receivedState,
+                        attempt.forwardedState,
+                        attempt.terminatedState,
+                    ]) {
+                        expect(state?.identity).toBe(overlap.armed.identity);
+                        expect(state?.projectId).toBe(overlap.armed.projectId);
+                    }
                 }
                 for (const request of overlap.incrementalRequests) {
                     expect(request.received, 'Every observed incremental request must settle').not.toBeNull();
@@ -1320,7 +1440,7 @@ for (const projectScale of [false, true]) {
                 ...measured,
                 union,
                 sequenceAttributionLimit:
-                    'Strict complete census; partial-prefix invalidation or interleaved jobs without an emitted operation identity refuse attribution, not accepted outcome proof',
+                    'Controlled Save stale-before-planning requires an exact native Detect publication witness; the fresh Save requires a complete request-bound census. Partial prefixes or interleaved jobs refuse attribution. This schedule does not force Detect replanning.',
                 persistenceEncodingObservation: overlap?.incrementalRequests.length
                     ? 'Actual incremental Worker requests recorded'
                     : 'No incremental Worker request observed; no incremental-route acceptance claim',
