@@ -414,7 +414,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
             </Row>
             <div
                 className={cn(
-                    'grid min-h-0 flex-1 content-start items-start gap-3 overflow-y-auto overscroll-contain px-0.5 pb-1',
+                    'grid min-h-0 flex-1 auto-rows-max content-start items-start gap-3 overflow-y-auto overscroll-contain px-0.5 pb-1',
                     viewLevel === 'full'
                         ? '@[42rem]:grid-cols-[minmax(19rem,1fr)_minmax(0,1.25fr)] @[66rem]:grid-cols-[minmax(19rem,1fr)_minmax(0,1.25fr)_minmax(15rem,0.7fr)]'
                         : '@[40rem]:grid-cols-[minmax(0,0.75fr)_minmax(19rem,1fr)] @[60rem]:grid-cols-[minmax(0,0.68fr)_minmax(19rem,1.3fr)_minmax(15rem,0.8fr)]'

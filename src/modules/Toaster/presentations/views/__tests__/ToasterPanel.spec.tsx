@@ -425,9 +425,10 @@ describe('ToasterPanel', () => {
         expect(mocks.setStepMicroTiming).toHaveBeenCalledWith('toaster-test', 0, 0, 0.25);
     });
 
-    it('ensures section cards do not collapse in the bottom panel', () => {
+    it('sizes scrollable Full rows to their content and keeps individual cards from shrinking', () => {
         const { container } = render(<ToasterPanel deviceId="toaster-test" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+        expect(screen.getByRole('region', { name: 'Toaster controls' })).toHaveClass('auto-rows-max');
         const sectionCards = container.querySelectorAll('section.toaster-window.shrink-0');
         expect(sectionCards.length).toBe(8);
         for (const title of [
