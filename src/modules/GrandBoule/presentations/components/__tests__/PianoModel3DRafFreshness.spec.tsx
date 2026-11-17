@@ -94,7 +94,10 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
 
     it('creates the renderer only while visible and cancels its pending frame on hide', () => {
         const gl = makeGlMock();
-        const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(gl);
+        const getContext = vi
+            .mocked(HTMLCanvasElement.prototype.getContext)
+            .mockImplementation(((id: string): RenderingContext | null =>
+                id === 'webgl2' ? gl : null) as typeof HTMLCanvasElement.prototype.getContext);
         const requestFrame = vi.mocked(window.requestAnimationFrame);
         const cancelFrame = vi.mocked(window.cancelAnimationFrame);
         const props = { activeNotes: new Map<number, number>(), sustainPedal: 0, lidPosition: 0.5 };

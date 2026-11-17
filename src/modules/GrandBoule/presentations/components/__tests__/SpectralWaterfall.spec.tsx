@@ -232,6 +232,12 @@ describe('SpectralWaterfall — renderer lifecycle', () => {
     const observe = vi.fn<ResizeObserver['observe']>();
     const disconnect = vi.fn<ResizeObserver['disconnect']>();
 
+    const makeGet2DContext = (): typeof HTMLCanvasElement.prototype.getContext => {
+        const ctx = makeRecordingCtx() as unknown as CanvasRenderingContext2D;
+        return ((id: string): RenderingContext | null =>
+            id === '2d' ? ctx : null) as typeof HTMLCanvasElement.prototype.getContext;
+    };
+
     beforeEach(() => {
         observe.mockClear();
         disconnect.mockClear();
@@ -248,12 +254,12 @@ describe('SpectralWaterfall — renderer lifecycle', () => {
         { context: 'display', contextRequests: 1 },
         { context: 'offscreen', contextRequests: 2 },
     ])('never registers a resize observer across remounts with no $context context', ({ contextRequests }) => {
-        const ctx = makeRecordingCtx() as unknown as CanvasRenderingContext2D;
         const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
+        const get2DContext = makeGet2DContext();
 
         for (let mount = 0; mount < 2; mount += 1) {
             if (contextRequests === 2) {
-                getContext.mockReturnValueOnce(ctx);
+                getContext.mockImplementationOnce(get2DContext);
             }
             getContext.mockReturnValueOnce(null);
 
@@ -267,8 +273,7 @@ describe('SpectralWaterfall — renderer lifecycle', () => {
     });
 
     it('disconnects its observer and cancels its frame when a working renderer unmounts', () => {
-        const ctx = makeRecordingCtx() as unknown as CanvasRenderingContext2D;
-        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx);
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(makeGet2DContext());
         const view = render(<SpectralWaterfall analyser={null} />);
         const canvas = view.getByLabelText('Grand Boule spectral waterfall');
 
