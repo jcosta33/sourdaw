@@ -1,3 +1,9 @@
+import {
+    type MidiNoteEditOperation as MidiNoteEditOperationModel,
+    type MidiNoteEditScope as MidiNoteEditScopeModel,
+    type MidiNoteEditWindow,
+} from '../models/MidiNoteEdit';
+
 import { type MidiClipNoteSnapshot } from './midiClipDataSnapshots';
 
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
@@ -92,24 +98,8 @@ export type OriginalMidiBaseRowReplacementPayload = {
     readonly replacementSlotPresent: boolean;
 };
 
-type MidiNoteEditWindow = { readonly startBeat: number; readonly endBeat: number };
-
-export type MidiNoteEditScope = {
-    readonly allowedNoteIds: readonly string[];
-    readonly protectedNoteIds: readonly string[];
-    readonly protectedWindows: readonly MidiNoteEditWindow[];
-    readonly insertionWindows: readonly MidiNoteEditWindow[];
-    readonly insertionBudget: number;
-};
-
-export type MidiNoteEditOperation =
-    | {
-          type: 'patch';
-          noteId: string;
-          patch: { pitch?: number; startBeat?: number; duration?: number; velocity?: number };
-      }
-    | { type: 'delete'; noteId: string }
-    | { type: 'insert'; note: { id?: string; pitch: number; startBeat: number; duration: number; velocity?: number } };
+export type MidiNoteEditScope = MidiNoteEditScopeModel;
+export type MidiNoteEditOperation = MidiNoteEditOperationModel;
 
 export type EditMidiNotesPayload = {
     clipId: string;

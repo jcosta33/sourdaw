@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { type MidiNote } from '../../models/MidiNote';
-import { type MidiNoteEditOperation, planMidiNoteEdits } from '../planMidiNoteEdits';
+import { type MaterializedMidiNoteEditOperation as MidiNoteEditOperation } from '../../models/MidiNoteEdit';
+import { planMidiNoteEdits } from '../planMidiNoteEdits';
 
 function sourceNotes(): MidiNote[] {
     return [

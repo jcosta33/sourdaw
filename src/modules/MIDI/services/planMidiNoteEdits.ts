@@ -1,29 +1,21 @@
 import { MAX_MIDI_DATA_7BIT, MIN_AUDIBLE_VELOCITY } from '#/utils/midiData';
 import { MIDI_NOTE_EDIT_MAX_OPERATIONS, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
-import { type MidiNoteEditScope } from '../events/midiAppActions';
 import { type MidiNote } from '../models/MidiNote';
+import {
+    type MaterializedMidiNoteEditOperation,
+    type MaterializedMidiNoteInsertion,
+    type MidiNoteEditPatch,
+    type MidiNoteEditScope,
+    type MidiNoteEditWindow,
+} from '../models/MidiNoteEdit';
 import { isMidiNoteSnapshot } from '../transformers/isMidiNoteSnapshot';
 import { normalizeMidiNoteInput } from '../transformers/normalizeMidiNoteInput';
 
 import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 
-type NotePatch = Partial<Pick<MidiNote, 'pitch' | 'startBeat' | 'duration' | 'velocity'>>;
-type InsertNote = Pick<MidiNote, 'id' | 'pitch' | 'startBeat' | 'duration'> & {
-    velocity?: number;
-    /** Accepted only as the canonical application default, never as a creative edit. */
-    probability?: number;
-};
-
-export type MidiNoteEditOperation =
-    | { type: 'patch'; noteId: string; patch: NotePatch }
-    | { type: 'delete'; noteId: string }
-    | { type: 'insert'; note: InsertNote };
-
-type BeatWindow = { startBeat: number; endBeat: number };
-
 type NoteEditChange = {
-    type: MidiNoteEditOperation['type'];
+    type: MaterializedMidiNoteEditOperation['type'];
     noteId: string;
     before: MidiNote | null;
     after: MidiNote | null;
@@ -84,7 +76,7 @@ function isNoteField(key: string, value: unknown): boolean {
     }
 }
 
-function isPatch(value: unknown): value is NotePatch {
+function isPatch(value: unknown): value is MidiNoteEditPatch {
     return (
         isRecord(value) &&
         Reflect.ownKeys(value).length > 0 &&
@@ -92,7 +84,7 @@ function isPatch(value: unknown): value is NotePatch {
     );
 }
 
-function isInsertNote(value: unknown): value is InsertNote {
+function isInsertNote(value: unknown): value is MaterializedMidiNoteInsertion {
     return (
         isRecord(value) &&
         hasKeys(value, ['id', 'pitch', 'startBeat', 'duration'], ['velocity', 'probability']) &&
@@ -104,7 +96,7 @@ function isInsertNote(value: unknown): value is InsertNote {
     );
 }
 
-function isOperation(value: unknown): value is MidiNoteEditOperation {
+function isOperation(value: unknown): value is MaterializedMidiNoteEditOperation {
     if (!isRecord(value)) {
         return false;
     }
@@ -128,7 +120,7 @@ function isIdList(value: unknown): value is readonly string[] {
     return [...items].every(isId) && new Set(items).size === items.length;
 }
 
-function isWindowList(value: unknown): value is readonly BeatWindow[] {
+function isWindowList(value: unknown): value is readonly MidiNoteEditWindow[] {
     if (!Array.isArray(value)) {
         return false;
     }
@@ -175,7 +167,7 @@ function isFiniteSpan(startBeat: unknown, duration: unknown): boolean {
     );
 }
 
-function overlapsWindow(note: MidiNote, window: BeatWindow): boolean {
+function overlapsWindow(note: MidiNote, window: MidiNoteEditWindow): boolean {
     return note.startBeat < window.endBeat && note.startBeat + note.duration > window.startBeat;
 }
 
@@ -183,7 +175,7 @@ function copyNote(note: MidiNote): MidiNote {
     return structuredClone(note);
 }
 
-function patchNote(note: MidiNote, patch: NotePatch): MidiNote {
+function patchNote(note: MidiNote, patch: MidiNoteEditPatch): MidiNote {
     let base = note;
     if (patch.duration !== undefined && patch.duration < note.duration) {
         base = sliceMidiNoteExtent(note, { fromOffset: 0, duration: patch.duration });
@@ -193,7 +185,7 @@ function patchNote(note: MidiNote, patch: NotePatch): MidiNote {
 
 function planInsertion(
     scope: MidiNoteEditScope,
-    note: InsertNote,
+    note: MaterializedMidiNoteInsertion,
     usedIds: ReadonlySet<string>,
     protectedIds: ReadonlySet<string>,
     insertedCount: number
