@@ -2537,7 +2537,9 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     impl Drop for Stragglers {
         fn drop(&mut self) {
             for pid in &self.pids {
-                send_signal(*pid, libc::SIGKILL);
+                if !process_is_gone_within(*pid, Duration::ZERO) {
+                    send_signal(*pid, libc::SIGKILL);
+                }
             }
             for child in &mut self.children {
                 let _ = child.kill();
@@ -2987,6 +2989,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             child_has_exited_within(helper, Duration::from_secs(2)),
             "the stopped helper {helper} survived because it left its group"
         );
+        stragglers.pids.retain(|pid| *pid != helper);
     }
 
     /// A helper that answers and exits 0 still takes the child it left in its
