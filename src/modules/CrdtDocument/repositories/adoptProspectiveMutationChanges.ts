@@ -133,12 +133,17 @@ export function adoptProspectiveMutationChanges<TDoc>({
         try {
             if (changes.length > 0) {
                 // TypeScript does not track writes to captured locals through the native callback.
-                const application: { patches: readonly Patch[] } = { patches: [] };
+                const application: {
+                    patches: readonly Patch[];
+                    callbackTiming?: { start: number; end: number };
+                } = { patches: [] };
                 const vendorStarted = performance.now();
                 try {
                     [loaded] = applyChanges(loaded, changes, {
                         patchCallback: (patches) => {
+                            const start = performance.now();
                             application.patches = patches;
+                            application.callbackTiming = { start, end: performance.now() };
                         },
                     });
                 } finally {
@@ -147,6 +152,10 @@ export function adoptProspectiveMutationChanges<TDoc>({
                         end: performance.now(),
                     });
                     performance.clearMeasures('automerge-prospective-vendor-apply-task');
+                }
+                if (application.callbackTiming) {
+                    performance.measure('automerge-prospective-patch-callback', application.callbackTiming);
+                    performance.clearMeasures('automerge-prospective-patch-callback');
                 }
                 assertOwnedPatches(application.patches, key);
             }
