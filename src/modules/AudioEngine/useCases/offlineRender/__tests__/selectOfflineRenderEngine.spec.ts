@@ -30,11 +30,15 @@ import {
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
+import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
 import { type TransportState } from '#/modules/Transport/stores';
 
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { renderOffline } from '../../renderOffline';
+import { nativeOfflineDeviceEntries } from '../nativeOfflineDeviceEntries';
+import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
+import { readScannedPluginKind } from '../readScannedPluginKind';
 import { resolveOutputTarget } from '../resolveOutputTarget';
 import { type OfflineRenderContext } from '../resolveRenderContext';
 import { selectOfflineRenderEngine, type SelectOfflineRenderEngineInput } from '../selectOfflineRenderEngine';
@@ -673,6 +677,163 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             });
 
             expect(selection).toEqual({ engine: 'web-audio/offline', reason, degraded: true });
+        });
+    });
+
+    describe('hosted plugins — a loaded effect renders natively, anything else keeps its route (#4592)', () => {
+        const hostedReverb: Device = {
+            id: 'plug-1',
+            name: 'Valhalla',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+            externalPluginId: 'valhalla',
+            externalInstanceId: 'instance-1',
+        };
+
+        function hostedTrack(devices: Device[] = [hostedReverb]): Track {
+            return createTrack({
+                id: 'track-a',
+                name: 'Vocals',
+                devices,
+                clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
+            });
+        }
+
+        function runtime(overrides: Partial<NativeOfflineHostedRuntime> = {}): NativeOfflineHostedRuntime {
+            return {
+                loadedInstanceIds: new Set(['instance-1']),
+                onDesktopRuntime: true,
+                pluginKind: () => 'effect',
+                ...overrides,
+            };
+        }
+
+        function select(track: Track, hostedPluginRuntime: NativeOfflineHostedRuntime, keyedDeviceId?: string) {
+            return selectOfflineRenderEngine({
+                renderableTracks: [track],
+                scheduledTracks: [track],
+                sidechainRoutes: keyedDeviceId === undefined ? [] : [{ targetDeviceId: keyedDeviceId }],
+                hostedPluginRuntime,
+            });
+        }
+
+        beforeEach(() => {
+            mocks.availability = { available: true, transport: stubTransport };
+        });
+
+        afterEach(() => {
+            pluginScanStore.set(defaultPluginScanState);
+        });
+
+        it('hands a loaded hosted effect to the native engine', async () => {
+            expect(await select(hostedTrack(), runtime())).toEqual({
+                engine: 'native/offline',
+                transport: stubTransport,
+            });
+        });
+
+        it('hands a loaded hosted effect beside a native built-in to the native engine', async () => {
+            const gluten: Device = {
+                id: 'glue-1',
+                name: 'Gluten',
+                type: 'gluten',
+                bypassed: false,
+                parameterValues: {},
+            };
+
+            expect(await select(hostedTrack([gluten, hostedReverb]), runtime())).toEqual({
+                engine: 'native/offline',
+                transport: stubTransport,
+            });
+        });
+
+        const degraded: { name: string; runtime: NativeOfflineHostedRuntime; keyed?: boolean; reason: string }[] = [
+            {
+                name: 'a loaded hosted instrument, named',
+                runtime: runtime({ pluginKind: () => 'instrument' }),
+                reason: 'track "Vocals" carries hosted instrument "Valhalla", which the native render does not host offline',
+            },
+            {
+                name: 'a loaded hosted plugin the scan holds no kind for',
+                runtime: runtime({ pluginKind: () => null }),
+                reason: 'track "Vocals" carries hosted plugin "Valhalla", which the plugin scan records no kind for',
+            },
+            {
+                // Unchanged from before: nothing loaded, a pass-through live.
+                name: 'a hosted device with nothing loaded',
+                runtime: runtime({ loadedInstanceIds: new Set() }),
+                reason: 'track "Vocals" carries device "external-plugin", which the native render has no body for',
+            },
+            {
+                // The browser build's stub writes a snapshot that never sounds.
+                name: 'a hosted device whose snapshot is the browser build’s',
+                runtime: runtime({ onDesktopRuntime: false }),
+                reason: 'track "Vocals" carries device "external-plugin", which the native render has no body for',
+            },
+            {
+                name: 'a loaded hosted effect keyed by a sidechain',
+                runtime: runtime(),
+                keyed: true,
+                reason: 'track "Vocals" carries device "external-plugin" keyed by a sidechain, which the native render does not wire',
+            },
+        ];
+
+        it.each(degraded)('degrades $name', async ({ runtime: hostedRuntime, keyed, reason }) => {
+            const selection = await select(hostedTrack(), hostedRuntime, keyed === true ? hostedReverb.id : undefined);
+
+            expect(selection).toEqual({ engine: 'web-audio/offline', reason, degraded: true });
+        });
+
+        // The selection and the programme must admit one set: a device the
+        // selection sends native that the programme stamps no lane for would
+        // print without its automation, and the reverse prints lanes for a
+        // device the engine never built.
+        const admissionCases: { name: string; runtime: NativeOfflineHostedRuntime }[] = [
+            { name: 'a loaded effect', runtime: runtime() },
+            { name: 'a loaded instrument', runtime: runtime({ pluginKind: () => 'instrument' }) },
+            { name: 'an unknown kind', runtime: runtime({ pluginKind: () => null }) },
+            { name: 'nothing loaded', runtime: runtime({ loadedInstanceIds: new Set() }) },
+            { name: 'a browser snapshot', runtime: runtime({ onDesktopRuntime: false }) },
+        ];
+
+        it.each(admissionCases)(
+            'admits $name to the native render exactly when the programme stamps it',
+            async ({ runtime: hostedRuntime }) => {
+                const track = hostedTrack();
+                const selection = await select(track, hostedRuntime);
+                const stamped = nativeOfflineDeviceEntries(track, hostedRuntime).some(
+                    (entry) => entry.deviceId === hostedReverb.id && entry.externalInstanceId === 'instance-1'
+                );
+
+                expect(selection.engine === 'native/offline').toBe(stamped);
+            }
+        );
+
+        it('reads a plugin’s kind from the scan the native chain splices on', () => {
+            const scanned = (id: string, category: string) => ({
+                id,
+                name: id,
+                vendor: 'v',
+                format: 'clap',
+                category,
+                path: `/plugins/${id}.clap`,
+                version: '1',
+                descriptor_id: id,
+                num_inputs: 2,
+                num_outputs: 2,
+                num_parameters: 0,
+                has_custom_ui: false,
+            });
+            pluginScanStore.set({
+                ...defaultPluginScanState,
+                scannedPlugins: [scanned('synth', 'instrument'), scanned('verb', 'reverb'), scanned('fx', '')],
+            });
+
+            expect(readScannedPluginKind('synth')).toBe('instrument');
+            expect(readScannedPluginKind('verb')).toBe('effect');
+            expect(readScannedPluginKind('fx')).toBe('effect');
+            expect(readScannedPluginKind('never-scanned')).toBeNull();
         });
     });
 

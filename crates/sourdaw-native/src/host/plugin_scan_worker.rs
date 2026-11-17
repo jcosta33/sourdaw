@@ -695,10 +695,15 @@ fn watch_helper_lifetime(
 /// rather than turning a resource fault into a plugin failure.
 fn arm_helper_watchdog(deadline: Duration) {
     let parent_alive = parent_probe();
+    // Read now, before any plugin code runs: plugin code may move this process
+    // out of its group, and the group it led still holds the plugin's children.
+    let leads_group = leads_own_process_group();
     let _ = std::thread::Builder::new()
         .name("sourdaw-scan-helper-watchdog".to_string())
         .spawn(move || {
-            watch_helper_lifetime(deadline, parent_alive, terminate_current_process);
+            watch_helper_lifetime(deadline, parent_alive, |code| {
+                terminate_current_process(code, leads_group);
+            });
         });
 }
 
@@ -832,29 +837,45 @@ fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
     Box::new(|| true)
 }
 
-/// End this process now, from any thread, without running exit handlers or
-/// static destructors a wedged plugin may hold a lock inside, and without
-/// the crash report an abort would file against the plugin's host.
-///
-/// A helper that leads its own process group — every helper a spawner
-/// starts — kills that whole group, so a child the plugin forked ends with
-/// it. The helper itself then ends by that `SIGKILL` or by the `_exit` after
-/// it, whichever the kernel completes first. A helper in
-/// someone else's group, such as a test runner's, never signals that group
-/// and ends by `_exit` alone.
-///
-/// Every descendant is killed first ([`kill_own_descendants`]), which reaches
-/// one that left the group with `setsid`.
+/// Whether this process leads its own process group, which every helper a
+/// spawner starts does.
 #[cfg(unix)]
-fn terminate_current_process(code: i32) {
-    kill_own_descendants();
+fn leads_own_process_group() -> bool {
     // SAFETY: getpid has no preconditions and cannot fail.
     let pid = unsafe { libc::getpid() };
     // SAFETY: getpgrp has no preconditions and cannot fail.
     let group = unsafe { libc::getpgrp() };
-    if group == pid {
-        // SAFETY: kill takes plain values; the target is this process's own
-        // group, which this process leads.
+    group == pid
+}
+
+#[cfg(not(unix))]
+fn leads_own_process_group() -> bool {
+    false
+}
+
+/// End this process now, from any thread, without running exit handlers or
+/// static destructors a wedged plugin may hold a lock inside, and without
+/// the crash report an abort would file against the plugin's host.
+///
+/// `leads_group` is what [`leads_own_process_group`] answered when the
+/// watchdog was armed. A helper that led its own process group — every helper
+/// a spawner starts — kills that whole group, so a child the plugin forked
+/// ends with it, even when the plugin has since moved the helper out of the
+/// group. The helper itself then ends by that `SIGKILL` or by the `_exit`
+/// after it, whichever the kernel completes first. A helper that was in
+/// someone else's group, such as a test runner's, never signals that group
+/// and ends by `_exit` alone.
+///
+/// The descendant sweep runs first to reach children that left the
+/// helper's original group.
+#[cfg(unix)]
+fn terminate_current_process(code: i32, leads_group: bool) {
+    kill_own_descendants();
+    if leads_group {
+        // SAFETY: getpid has no preconditions and cannot fail.
+        let pid = unsafe { libc::getpid() };
+        // SAFETY: kill takes plain values; the target is the group this
+        // process led when it was armed, named by this process's own pid.
         let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
     }
     // SAFETY: _exit is async-signal-safe and never returns.
@@ -862,7 +883,7 @@ fn terminate_current_process(code: i32) {
 }
 
 #[cfg(windows)]
-fn terminate_current_process(code: i32) {
+fn terminate_current_process(code: i32, _leads_group: bool) {
     use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
     // SAFETY: GetCurrentProcess has no preconditions and returns a
     // pseudo-handle that needs no closing.
@@ -876,7 +897,7 @@ fn terminate_current_process(code: i32) {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn terminate_current_process(code: i32) {
+fn terminate_current_process(code: i32, _leads_group: bool) {
     std::process::exit(code);
 }
 
@@ -1833,16 +1854,15 @@ fn helper_has_exited(pid: u32) -> std::io::Result<bool> {
     // SAFETY: an all-zero siginfo_t is a valid value, and waitid either left
     // it so (nothing has exited yet) or filled it in.
     let info = unsafe { info.assume_init() };
-    Ok(info.si_signo != 0)
+    Ok(siginfo_pid(&info) != 0)
 }
 
-/// Every helper leads its own process group, so its pid is the group's id.
+/// Every helper starts as the leader of the process group named by its pid.
 ///
-/// The helper is stopped and its descendants are swept first: a descendant
-/// that called `setsid` has left the group, but not the helper's tree, while
-/// the helper is unreaped. Stopping the helper keeps it from reaping, and so
-/// from freeing a descendant's pid, during the sweep. ESRCH from any of the
-/// signals means that process or group is already gone.
+/// Send the helper SIGSTOP before sweeping its tree to limit reaping during
+/// the sweep. The sweep reaches descendants that left its original group.
+/// Signal both the original group and the helper itself, which may also
+/// have moved. ESRCH means the target is already gone.
 #[cfg(unix)]
 fn kill_helper_tree(pid: u32) {
     let Ok(group) = libc::pid_t::try_from(pid) else {
@@ -1850,8 +1870,20 @@ fn kill_helper_tree(pid: u32) {
     };
     send_signal(group, libc::SIGSTOP);
     kill_descendants(group);
-    // SAFETY: kill takes plain values; the group is unreaped while registered.
+    // SAFETY: the unreaped helper pins the original group id until this call.
     let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+    send_signal(group, libc::SIGKILL);
+}
+
+#[cfg(all(unix, target_os = "linux"))]
+fn siginfo_pid(info: &libc::siginfo_t) -> libc::pid_t {
+    // SAFETY: waitid filled the SIGCHLD member, or left it zeroed.
+    unsafe { info.si_pid() }
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn siginfo_pid(info: &libc::siginfo_t) -> libc::pid_t {
+    info.si_pid
 }
 #[cfg(windows)]
 fn kill_helper_tree(pid: u32) {
@@ -2184,14 +2216,17 @@ mod tests {
  }
  let _=std::fs::write(pid_file,child.to_string());
 }
-#[cfg(unix)] fn fork_a_spinning_child_then_hang(pid_file:std::ffi::OsString)->!{
+#[cfg(unix)] fn fork_a_spinning_child(pid_file:std::ffi::OsString){
  let child=unsafe{fork()};
  if child==0{loop{std::hint::spin_loop();}}
  let _=std::fs::write(pid_file,child.to_string());
- loop{std::thread::sleep(std::time::Duration::from_secs(1));}
 }
 unsafe extern "C" fn init(_: *const c_char)->bool{
- #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){fork_a_spinning_child_then_hang(pid_file);}
+ #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){
+  fork_a_spinning_child(pid_file);
+  if std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_THEN_RETURN").is_some(){return true;}
+  loop{std::thread::sleep(std::time::Duration::from_secs(1));}
+ }
  #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_PID_FILE"){fork_a_lingering_child(pid_file);return false;}
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
  if let Some(code)=std::env::var("SOURDAW_TEST_PLUGIN_EXIT_CODE").ok().and_then(|code|code.parse().ok()){std::process::exit(code);}
@@ -2450,7 +2485,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         loop {
             if let Some(pid) = fs::read_to_string(path)
                 .ok()
-                .and_then(|text| text.trim().parse().ok())
+                .and_then(|text| text.trim().parse::<i32>().ok())
+                .filter(|pid| *pid > 0)
             {
                 return Some(pid);
             }
@@ -2458,6 +2494,22 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
                 return None;
             }
             std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pid_files_admit_only_positive_process_ids() {
+        let path = std::env::temp_dir().join(format!("sourdaw-test-pid-{}", uuid::Uuid::new_v4()));
+        let _cleanup = Stragglers::cleaning(vec![path.clone()]);
+        for (text, expected) in [
+            ("42\n", Some(42)),
+            ("-1", None),
+            ("0", None),
+            ("invalid", None),
+        ] {
+            fs::write(&path, text).expect("the pid fixture should be written");
+            assert_eq!(read_pid_within(&path, Duration::ZERO), expected, "{text:?}");
         }
     }
 
@@ -2486,8 +2538,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         fn drop(&mut self) {
             for pid in &self.pids {
                 if !process_is_gone_within(*pid, Duration::ZERO) {
-                    // SAFETY: kill takes plain values.
-                    let _ = unsafe { libc::kill(*pid, libc::SIGKILL) };
+                    send_signal(*pid, libc::SIGKILL);
                 }
             }
             for child in &mut self.children {
@@ -2769,6 +2820,176 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             process_has_exited_within(forked, Duration::from_secs(2)),
             "the plugin's forked child {forked} outlived its helper"
         );
+    }
+
+    const RETURNING_HELPER_MARKER_ENV: &str = "SOURDAW_TEST_RETURNING_HELPER";
+
+    /// The stand-in helper for a plugin that forks a spinning child and then
+    /// returns: the real worker entry, ended by its own exit code.
+    #[test]
+    fn returning_helper_child() {
+        if std::env::var_os(RETURNING_HELPER_MARKER_ENV).is_none() {
+            return;
+        }
+        let code = run_from_process_args().expect("the worker arguments name an extraction");
+        std::process::exit(code);
+    }
+
+    /// A helper that exits on its own, with no timeout and no stop, still
+    /// takes its process group with it: the spawner kills the group when it
+    /// observes the exit, before it reaps the helper.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_returns_leaves_no_forked_child_behind() {
+        let fixture = build_hostile_clap("fork-return");
+        let fork_pid_file =
+            std::env::temp_dir().join(format!("sourdaw-returned-child-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![fork_pid_file.clone()]);
+        let launcher = ScanWorkerCommand {
+            program: std::env::current_exe().expect("test executable should exist"),
+            // `--` hands the worker arguments to libtest as extra filters,
+            // which match no test, rather than as unknown options.
+            args: vec![
+                "--exact".to_string(),
+                "host::plugin_scan_worker::tests::returning_helper_child".to_string(),
+                "--".to_string(),
+            ],
+            env: BTreeMap::from([
+                (RETURNING_HELPER_MARKER_ENV.to_string(), "1".to_string()),
+                (
+                    "SOURDAW_TEST_PLUGIN_FORK_PID_FILE".to_string(),
+                    fork_pid_file.display().to_string(),
+                ),
+                (
+                    "SOURDAW_TEST_PLUGIN_FORK_THEN_RETURN".to_string(),
+                    "1".to_string(),
+                ),
+            ]),
+        };
+
+        let _ = scan_descriptor_through(launcher, &fixture.plugin_path);
+
+        let forked = read_pid_within(&fork_pid_file, Duration::from_secs(1))
+            .expect("the plugin should have forked its child and recorded its pid");
+        stragglers.pids.push(forked);
+        assert!(
+            process_has_exited_within(forked, Duration::from_secs(3)),
+            "the plugin's forked child {forked} outlived the helper that returned"
+        );
+    }
+
+    #[cfg(unix)]
+    const MOVED_HELPER_TARGET_GROUP_ENV: &str = "SOURDAW_TEST_MOVED_HELPER_GROUP";
+
+    /// Wait for the original group to gain a member, arm the real watchdog,
+    /// then simulate a plugin moving this helper into another group.
+    #[cfg(unix)]
+    #[test]
+    fn moved_out_helper_child() {
+        let Ok(target) = std::env::var(MOVED_HELPER_TARGET_GROUP_ENV) else {
+            return;
+        };
+        let target: libc::pid_t = target
+            .parse()
+            .expect("the helper needs a group to move into");
+        std::io::stdin()
+            .read_exact(&mut [0])
+            .expect("the runner should release the helper after the group member starts");
+        arm_helper_watchdog(Duration::from_secs(1));
+        assert_eq!(
+            // SAFETY: setpgid takes plain values.
+            unsafe { libc::setpgid(0, target) },
+            0,
+            "the move must succeed"
+        );
+        loop {
+            std::hint::spin_loop();
+        }
+    }
+
+    /// A process in the original group but outside the helper's descendant
+    /// tree can be reached only by the watchdog's remembered group kill.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_moved_out_of_its_group_still_ends_the_group_it_led() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+
+        let mut stragglers = Stragglers::cleaning(Vec::new());
+        // SAFETY: getpgrp has no preconditions and cannot fail.
+        let runner_group = unsafe { libc::getpgrp() };
+        let mut helper =
+            Command::new(std::env::current_exe().expect("test executable should exist"))
+                .arg("--exact")
+                .arg("host::plugin_scan_worker::tests::moved_out_helper_child")
+                .env(MOVED_HELPER_TARGET_GROUP_ENV, runner_group.to_string())
+                .env_remove(SCAN_PARENT_PID_ENV)
+                .process_group(0)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("the stand-in helper should start");
+        let helper_group = libc::pid_t::try_from(helper.id()).expect("the helper has a valid pid");
+        let mut release = helper.stdin.take().expect("the helper stdin is piped");
+        stragglers.children.push(helper);
+        let group_member = Command::new("sleep")
+            .arg("30")
+            .process_group(helper_group)
+            .spawn()
+            .expect("the runner's child should join the helper's original group");
+        stragglers.children.push(group_member);
+        release.write_all(b"1").expect("the helper should begin");
+
+        let helper_status = exit_status_within(&mut stragglers.children[0], Duration::from_secs(5));
+        assert_eq!(
+            helper_status.and_then(|status| status.code()),
+            Some(HELPER_DEADLINE_EXIT_CODE),
+            "the moved helper must end by its watchdog exit: {helper_status:?}"
+        );
+        let member_status = exit_status_within(&mut stragglers.children[1], Duration::from_secs(2));
+        assert_eq!(
+            member_status.and_then(|status| status.signal()),
+            Some(libc::SIGKILL),
+            "the original group member must end by SIGKILL: {member_status:?}"
+        );
+    }
+
+    /// A helper that moved itself out of its group is beyond `kill(-pid)`;
+    /// stop reaches it through its own pid.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_scan_kills_a_helper_that_left_its_group() {
+        let registry = std::sync::Arc::new(HelperRegistry::new());
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-left-group-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        // SAFETY: getpgrp has no preconditions and cannot fail.
+        let runner_group = unsafe { libc::getpgrp() };
+        let scanning = std::sync::Arc::clone(&registry);
+        let hanging_pid_file = pid_file.clone();
+        std::thread::spawn(move || {
+            let mut command = Command::new("perl");
+            command
+                .args([
+                    "-e",
+                    "setpgrp(0, $ARGV[1]) or die; open(F, '>', $ARGV[0]); print F $$; close(F); sleep 30",
+                ])
+                .arg(&hanging_pid_file)
+                .arg(runner_group.to_string());
+            let _ = run_bounded_in(&scanning, &mut command, WORKER_TIMEOUT);
+        });
+        // The pid is written only after the helper has left its group.
+        let helper = read_pid_within(&pid_file, Duration::from_secs(5))
+            .expect("the helper should leave its group and write its pid");
+        stragglers.pids.push(helper);
+
+        registry.stop();
+
+        assert!(
+            child_has_exited_within(helper, Duration::from_secs(2)),
+            "the stopped helper {helper} survived because it left its group"
+        );
+        stragglers.pids.retain(|pid| *pid != helper);
     }
 
     /// A helper that answers and exits 0 still takes the child it left in its

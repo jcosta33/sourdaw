@@ -40,6 +40,7 @@ import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
+import { hasOpenModalSurface, isNativeTextEditableTarget } from '#/modules/CommandInterface/useCases';
 import { Sidebar, type SidebarPanelActions } from '#/modules/ContentBrowser/presentations/views';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
 import { CrustPanel } from '#/modules/Crust/presentations/views';
@@ -99,11 +100,11 @@ import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { EngineFallbackNotice } from '../components/EngineFallbackNotice';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
+import { FloatingDevicePanel, type DevicePanelGeometry } from '../components/FloatingDevicePanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
-import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
+import { useActiveDevicePanel, type ActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useEngineFallbackNotice } from '../hooks/useEngineFallbackNotice';
@@ -176,6 +177,97 @@ const LazyPanelFallback = (): ReactElement => (
         <span className="sr-only">Loading…</span>
     </Row>
 );
+
+const DEVICE_ACCENTS = {
+    lavender: {
+        labelColor: 'text-[var(--color-accent-lavender)]',
+        borderColor: 'border-[var(--color-accent-lavender)]/20',
+    },
+    peach: { labelColor: 'text-[var(--color-accent-peach)]', borderColor: 'border-[var(--color-accent-peach)]/20' },
+    amber: { labelColor: 'text-[var(--color-accent-amber)]', borderColor: 'border-[var(--color-accent-amber)]/20' },
+    cyan: { labelColor: 'text-[var(--color-accent-cyan)]', borderColor: 'border-[var(--color-accent-cyan)]/20' },
+    rose: { labelColor: 'text-[var(--color-accent-rose)]', borderColor: 'border-[var(--color-accent-rose)]/20' },
+    copper: { labelColor: 'text-[var(--color-accent-copper)]', borderColor: 'border-[var(--color-accent-copper)]/20' },
+    mint: { labelColor: 'text-[var(--color-accent-mint)]', borderColor: 'border-[var(--color-accent-mint)]/20' },
+};
+
+const DEVICE_EDITORS = {
+    fermenter: {
+        label: 'Fermenter',
+        accent: DEVICE_ACCENTS.lavender,
+        render: (id: string) => <FermenterPanel deviceId={id} />,
+    },
+    toaster: { label: 'Toaster', accent: DEVICE_ACCENTS.peach, render: (id: string) => <ToasterPanel deviceId={id} /> },
+    levain: { label: 'Levain', accent: DEVICE_ACCENTS.amber, render: (id: string) => <LevainPanel deviceId={id} /> },
+    proofChamber: {
+        label: 'Dutch Oven',
+        accent: DEVICE_ACCENTS.cyan,
+        render: (id: string) => <ProofChamberPanel deviceId={id} />,
+    },
+    gluten: { label: 'Gluten', accent: DEVICE_ACCENTS.peach, render: (id: string) => <GlutenPanel deviceId={id} /> },
+    bacteria: {
+        label: 'Bacteria',
+        accent: DEVICE_ACCENTS.rose,
+        render: (id: string) => <BacteriaPanel deviceId={id} />,
+    },
+    grinder: {
+        label: 'Grinder',
+        accent: DEVICE_ACCENTS.copper,
+        render: (id: string) => <GrinderPanel deviceId={id} />,
+    },
+    proof: { label: 'Proof', accent: DEVICE_ACCENTS.mint, render: (id: string) => <ProofPanel deviceId={id} /> },
+    scoring: { label: 'Scoring', accent: DEVICE_ACCENTS.mint, render: (id: string) => <TunerPanel deviceId={id} /> },
+    yeast: {
+        label: 'Yeast',
+        accent: DEVICE_ACCENTS.peach,
+        render: (id: string | null) => <YeastPanel deviceId={id} />,
+    },
+    crust: { label: 'Crust', accent: DEVICE_ACCENTS.cyan, render: (id: string) => <CrustPanel deviceId={id} /> },
+    sampler: { label: 'Sampler', accent: DEVICE_ACCENTS.peach, render: (id: string) => <CrumbsPanel deviceId={id} /> },
+    grandBoule: {
+        label: 'Grand Boule',
+        accent: DEVICE_ACCENTS.amber,
+        render: (id: string) => <GrandBoulePanel deviceId={id} />,
+    },
+};
+
+function otherSurfaceOwnsDevicePanelEscape(dialog: Element | null, target: EventTarget | null): boolean {
+    return (
+        hasOpenModalSurface(dialog) ||
+        (target instanceof Element &&
+            (isNativeTextEditableTarget(target) ||
+                target.closest('select, [role="listbox"], [aria-expanded="true"][aria-haspopup]') !== null))
+    );
+}
+
+function ActiveDeviceEditor({
+    panel,
+    onClose,
+}: {
+    panel: ActiveDevicePanel | null;
+    onClose: () => void;
+}): ReactElement | null {
+    const [geometry, setGeometry] = useState<DevicePanelGeometry | null>(null);
+    if (panel === null) {
+        return null;
+    }
+    const { label, accent, render } = DEVICE_EDITORS[panel.kind];
+    return (
+        <FloatingDevicePanel
+            key={JSON.stringify([panel.kind, panel.deviceId, panel.trackId])}
+            label={label}
+            {...accent}
+            otherSurfaceOwnsEscape={otherSurfaceOwnsDevicePanelEscape}
+            geometry={geometry}
+            setGeometry={setGeometry}
+            onClose={onClose}
+        >
+            <ErrorBoundary variant="inline">
+                {panel.kind === 'yeast' ? DEVICE_EDITORS.yeast.render(panel.deviceId) : render(panel.deviceId)}
+            </ErrorBoundary>
+        </FloatingDevicePanel>
+    );
+}
 
 type AppShellProps = {
     children: ReactNode;
@@ -286,21 +378,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         editorHeight = 360,
         chatPanelWidth: chatWidth,
         aiPanelWidth: aiWidth,
-        fermenterHeight,
-        toasterHeight,
-        levainHeight,
-        glutenHeight,
-        bacteriaHeight,
-        grinderHeight,
-        proofChamberHeight,
-        proofHeight,
-        scoringHeight,
-        yeastHeight,
         virtualKeyboardOpen,
         virtualKeyboardHeight,
-        crustHeight,
-        samplerHeight,
-        grandBouleHeight,
     } = workspaceState;
     const selectedClipId = useStore(clipSelectionStore, defaultClipSelectionState).selectedClipId;
 
@@ -364,28 +443,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // state; read it here so the skip-link can be suppressed while it is up.
     const onboarding = useStore(onboardingStore, defaultOnboardingState);
 
-    // One unified "active device panel" slot. The "only one panel open at a
-    // time" invariant is enforced by the discriminated union in
-    // useActiveDevicePanel; adding a new plugin is one line there instead of
-    // three touch-points here.
     const { activePanel, closeActivePanel } = useActiveDevicePanel();
-    const fermenterDeviceId = activePanel?.kind === 'fermenter' ? activePanel.deviceId : null;
-    const toasterDeviceId = activePanel?.kind === 'toaster' ? activePanel.deviceId : null;
-    const levainDeviceId = activePanel?.kind === 'levain' ? activePanel.deviceId : null;
-    const proofChamberDeviceId = activePanel?.kind === 'proofChamber' ? activePanel.deviceId : null;
-    const glutenDeviceId = activePanel?.kind === 'gluten' ? activePanel.deviceId : null;
-    const bacteriaDeviceId = activePanel?.kind === 'bacteria' ? activePanel.deviceId : null;
-    const grinderDeviceId = activePanel?.kind === 'grinder' ? activePanel.deviceId : null;
-    const scoringDeviceId = activePanel?.kind === 'scoring' ? activePanel.deviceId : null;
-    const proofDeviceId = activePanel?.kind === 'proof' ? activePanel.deviceId : null;
-    const yeastOpen = activePanel?.kind === 'yeast';
-    // `null` while the panel is closed OR bound to no device — the panel then
-    // resolves its device from the selected track (issue #2422: the rack the
-    // panel edits must belong to one device instance).
-    const yeastDeviceId = activePanel?.kind === 'yeast' ? activePanel.deviceId : null;
-    const crustDeviceId = activePanel?.kind === 'crust' ? activePanel.deviceId : null;
-    const samplerDeviceId = activePanel?.kind === 'sampler' ? activePanel.deviceId : null;
-    const grandBouleDeviceId = activePanel?.kind === 'grandBoule' ? activePanel.deviceId : null;
 
     // ─── Extracted hooks ───
     // §10.2 item 1 — Keyboard shortcuts are now unified under
@@ -483,28 +541,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     }, [mixerOpen, selectedClipId]);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
-    // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
-    // Generic helper keeps the JSX readable without 14 nearly-identical one-liners (§47.4).
     type DimKey =
-        | 'sidebarWidth'
-        | 'inspectorWidth'
-        | 'chatPanelWidth'
-        | 'aiPanelWidth'
-        | 'mixerHeight'
-        | 'editorHeight'
-        | 'fermenterHeight'
-        | 'toasterHeight'
-        | 'levainHeight'
-        | 'glutenHeight'
-        | 'bacteriaHeight'
-        | 'grinderHeight'
-        | 'proofChamberHeight'
-        | 'proofHeight'
-        | 'scoringHeight'
-        | 'yeastHeight'
-        | 'crustHeight'
-        | 'samplerHeight'
-        | 'grandBouleHeight';
+        'sidebarWidth' | 'inspectorWidth' | 'chatPanelWidth' | 'aiPanelWidth' | 'mixerHeight' | 'editorHeight';
     const makeDimSetter = (key: DimKey, current: number) => (fn: (prev: number) => number) =>
         updateWorkspaceState({ [key]: fn(current) });
 
@@ -514,19 +552,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setAiWidth = makeDimSetter('aiPanelWidth', aiWidth);
     const setMixerHeight = makeDimSetter('mixerHeight', mixerHeight);
     const setEditorHeight = makeDimSetter('editorHeight', editorHeight);
-    const setFermenterHeight = makeDimSetter('fermenterHeight', fermenterHeight);
-    const setToasterHeight = makeDimSetter('toasterHeight', toasterHeight);
-    const setLevainHeight = makeDimSetter('levainHeight', levainHeight);
-    const setGlutenHeight = makeDimSetter('glutenHeight', glutenHeight);
-    const setBacteriaHeight = makeDimSetter('bacteriaHeight', bacteriaHeight);
-    const setGrinderHeight = makeDimSetter('grinderHeight', grinderHeight);
-    const setProofChamberHeight = makeDimSetter('proofChamberHeight', proofChamberHeight);
-    const setProofHeight = makeDimSetter('proofHeight', proofHeight);
-    const setScoringHeight = makeDimSetter('scoringHeight', scoringHeight);
-    const setYeastHeight = makeDimSetter('yeastHeight', yeastHeight);
-    const setCrustHeight = makeDimSetter('crustHeight', crustHeight);
-    const setSamplerHeight = makeDimSetter('samplerHeight', samplerHeight);
-    const setGrandBouleHeight = makeDimSetter('grandBouleHeight', grandBouleHeight);
 
     // §47.3 — Sidebar / Inspector / Chat / Ai panels render symmetrically on
     // both sides of the main content. Prior to this helper, each panel was
@@ -822,7 +847,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {showEngineFallbackNotice ? <EngineFallbackNotice onDismiss={dismissEngineFallbackNotice} /> : null}
 
                 {/* ─── Main horizontal layout ─── */}
-                <Row align="stretch" grow className="overflow-hidden">
+                <Row align="stretch" grow className="relative overflow-hidden">
                     {/* Left dynamically placed panels */}
                     {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'left', sidebarNode, sidebarResize)}
                     {renderSidePanel(
@@ -839,7 +864,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         The arrangement takes what the panels leave, down to its
                         minimum; each panel shrinks to its own minimum first. Only
                         when every minimum together exceeds the window (the editor
-                        dock, an instrument panel and the keyboard on a short
+                        dock and the keyboard on a short
                         screen) does this column scroll, as the last resort. */}
                     <Stack
                         grow
@@ -856,201 +881,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         >
                             {children}
                         </main>
-
-                        {fermenterDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Fermenter"
-                                labelColor="text-[var(--color-accent-lavender)]"
-                                borderColor="border-[var(--color-accent-lavender)]/20"
-                                height={fermenterHeight}
-                                onResize={setFermenterHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <FermenterPanel deviceId={fermenterDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {toasterDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Toaster"
-                                labelColor="text-[var(--color-accent-peach)]"
-                                borderColor="border-[var(--color-accent-peach)]/20"
-                                height={toasterHeight}
-                                onResize={setToasterHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <ToasterPanel deviceId={toasterDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {levainDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Levain"
-                                labelColor="text-[var(--color-accent-amber)]"
-                                borderColor="border-[var(--color-accent-amber)]/20"
-                                height={levainHeight}
-                                onResize={setLevainHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <LevainPanel deviceId={levainDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {proofChamberDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Dutch Oven"
-                                labelColor="text-[var(--color-accent-cyan)]"
-                                borderColor="border-[var(--color-accent-cyan)]/20"
-                                height={proofChamberHeight}
-                                onResize={setProofChamberHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <ProofChamberPanel deviceId={proofChamberDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {glutenDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Gluten"
-                                labelColor="text-[var(--color-accent-peach)]"
-                                borderColor="border-[var(--color-accent-peach)]/20"
-                                height={glutenHeight}
-                                onResize={setGlutenHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <GlutenPanel deviceId={glutenDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {bacteriaDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Bacteria"
-                                labelColor="text-[var(--color-accent-rose)]"
-                                borderColor="border-[var(--color-accent-rose)]/20"
-                                height={bacteriaHeight}
-                                onResize={setBacteriaHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <BacteriaPanel deviceId={bacteriaDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {grinderDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Grinder"
-                                labelColor="text-[var(--color-accent-copper)]"
-                                borderColor="border-[var(--color-accent-copper)]/20"
-                                height={grinderHeight}
-                                onResize={setGrinderHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <GrinderPanel deviceId={grinderDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {proofDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Proof"
-                                labelColor="text-[var(--color-accent-mint)]"
-                                borderColor="border-[var(--color-accent-mint)]/20"
-                                height={proofHeight}
-                                onResize={setProofHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <ProofPanel deviceId={proofDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {scoringDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Scoring"
-                                labelColor="text-[var(--color-accent-mint)]"
-                                borderColor="border-[var(--color-accent-mint)]/20"
-                                height={scoringHeight}
-                                onResize={setScoringHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <TunerPanel deviceId={scoringDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {yeastOpen ? (
-                            <InstrumentBottomPanel
-                                label="Yeast"
-                                labelColor="text-[var(--color-accent-peach)]"
-                                borderColor="border-[var(--color-accent-peach)]/20"
-                                height={yeastHeight}
-                                onResize={setYeastHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <YeastPanel deviceId={yeastDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {crustDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Crust"
-                                labelColor="text-[var(--color-accent-cyan)]"
-                                borderColor="border-[var(--color-accent-cyan)]/20"
-                                height={crustHeight}
-                                onResize={setCrustHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <CrustPanel deviceId={crustDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {samplerDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Sampler"
-                                labelColor="text-[var(--color-accent-peach)]"
-                                borderColor="border-[var(--color-accent-peach)]/20"
-                                height={samplerHeight}
-                                onResize={setSamplerHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <CrumbsPanel deviceId={samplerDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
-
-                        {grandBouleDeviceId !== null ? (
-                            <InstrumentBottomPanel
-                                label="Grand Boule"
-                                labelColor="text-[var(--color-accent-amber)]"
-                                borderColor="border-[var(--color-accent-amber)]/20"
-                                height={grandBouleHeight}
-                                onResize={setGrandBouleHeight}
-                                onClose={closeActivePanel}
-                            >
-                                <ErrorBoundary variant="inline">
-                                    <GrandBoulePanel deviceId={grandBouleDeviceId} />
-                                </ErrorBoundary>
-                            </InstrumentBottomPanel>
-                        ) : null}
 
                         {/* Mixer bottom panel */}
                         {mixerOpen ? (
@@ -1152,6 +982,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     )}
                     {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'right', chatNode, chatResize)}
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'right', aiNode('right'), aiResize)}
+                    <ActiveDeviceEditor panel={activePanel} onClose={closeActivePanel} />
                 </Row>
 
                 <StatusBar />
