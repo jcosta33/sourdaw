@@ -52,10 +52,10 @@ function isOwnedChange(value: unknown): value is Uint8Array<ArrayBuffer> {
 }
 
 function readPublishedChange(capture: PhaseCapture): PublishedChange {
-    const [request] = capture.requests;
-    if (!request || capture.requests.length !== 1) {
+    if (capture.requests.length !== 1) {
         throw new Error(`Expected one native Detect request for the reference in ${capture.phase}`);
     }
+    const [request] = capture.requests;
     const { actor, heads, reply } = request;
     if (
         typeof actor !== 'string' ||

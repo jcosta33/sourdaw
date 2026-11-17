@@ -293,10 +293,10 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                     observation.posted = true;
                     pending.set(receiver, observation);
                     const request = args[0];
-                    const observeReply =
-                        typeof request === 'object' && request !== null && 'actor' in request && 'heads' in request
-                            ? nativeReference.observeRequest({ actor: request.actor, heads: request.heads })
-                            : undefined;
+                    let observeReply: ((reply: unknown) => void) | undefined;
+                    if (typeof request === 'object' && request !== null && 'actor' in request && 'heads' in request) {
+                        observeReply = nativeReference.observeRequest({ actor: request.actor, heads: request.heads });
+                    }
                     const receive = (event: MessageEvent<unknown>): void => {
                         const reply = event.data;
                         let status: string | null = null;
@@ -382,16 +382,19 @@ async function captureNativeReferencePhase(page: Page, step: 'arm' | 'finish', p
 
 async function attachNativeApplyReference(page: Page, info: TestInfo) {
     const trace = await startElasticTaskTrace(page, info, 'native-apply-reference', REFERENCE_TRACE_MARKS);
-    const reference = await page
-        .evaluate(() => {
+    let reference;
+    try {
+        reference = await page.evaluate(() => {
             const observation = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
                 .elasticProspectiveObservation;
             if (!observation) {
                 throw new Error('Native Detect reference requires the actual Worker observer');
             }
             return observation.nativeReference.measure();
-        })
-        .finally(() => trace.stop());
+        });
+    } finally {
+        await trace.stop();
+    }
     const tasks = trace.tasks();
     const phases = reference.phases.map((phase) => ({
         ...phase,
