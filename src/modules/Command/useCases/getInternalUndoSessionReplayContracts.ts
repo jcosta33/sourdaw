@@ -99,5 +99,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreTempoMapEdit'),
         // The guarded inverse of extractGroove; the extraction's own entry validator binds it.
         createInternalReplayContract('deleteGrooveTemplate'),
+        // The guarded inverse of applyGroove; the application's own entry validator binds it.
+        createInternalReplayContract('restoreGrooveAssignment'),
     ];
 }

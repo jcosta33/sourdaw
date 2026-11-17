@@ -23,8 +23,6 @@ import {
     titleIncrement,
     upsertChangelogEntry,
     withPackageVersion,
-    withPathAddressedDigest,
-    withSnapshotDigest,
     withoutPullRequest,
     type MergedPullRequest,
 } from '../releaseVersion.ts';
@@ -43,20 +41,6 @@ const manifest = `{
     "private": true,
     "version": "0.1.0",
     "license": "Apache-2.0"
-}
-`;
-
-const inventory = `{
-    "snapshots": [
-        {
-            "path": "package.json",
-            "sha256": "${'a'.repeat(64)}"
-        },
-        {
-            "path": "server/package.json",
-            "sha256": "${'b'.repeat(64)}"
-        }
-    ]
 }
 `;
 
@@ -318,41 +302,12 @@ describe('changelog', () => {
     });
 });
 
-describe('manifest and inventory rewrites', () => {
+describe('manifest rewrites', () => {
     it('moves only the version field', () => {
         expect(packageVersion(manifest)).toBe('0.1.0');
         const bumped = withPackageVersion(manifest, version('0.2.0'));
         expect(packageVersion(bumped)).toBe('0.2.0');
         expect(bumped).toBe(manifest.replace('"version": "0.1.0"', '"version": "0.2.0"'));
-    });
-
-    it('moves only the named snapshot digest', () => {
-        const rewritten = withSnapshotDigest(inventory, 'package.json', 'c'.repeat(64));
-        expect(rewritten).toBe(inventory.replace('a'.repeat(64), 'c'.repeat(64)));
-        expect(rewritten).toContain('b'.repeat(64));
-    });
-
-    it('refuses a digest that is not SHA-256 and a path the inventory does not pin', () => {
-        expect(() => withSnapshotDigest(inventory, 'package.json', 'not-a-digest')).toThrow('not a SHA-256 digest');
-        expect(() => withSnapshotDigest(inventory, 'Cargo.toml', 'c'.repeat(64))).toThrow(
-            'does not carry exactly one Cargo.toml snapshot'
-        );
-    });
-
-    it('moves only the named path-addressed digest', () => {
-        const surfaces = `{
-    "digests": [
-        "sha256:${'a'.repeat(64)}:release/dependency-license-proofs.json",
-        "sha256:${'b'.repeat(64)}:release/web-artifact-manifest.json"
-    ]
-}
-`;
-        expect(withPathAddressedDigest(surfaces, 'release/dependency-license-proofs.json', 'c'.repeat(64))).toBe(
-            surfaces.replace('a'.repeat(64), 'c'.repeat(64))
-        );
-        expect(() => withPathAddressedDigest(surfaces, 'release/absent.json', 'c'.repeat(64))).toThrow(
-            'does not carry exactly one path-addressed digest for release/absent.json'
-        );
     });
 });
 

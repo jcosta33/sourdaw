@@ -59,6 +59,34 @@ function afterRemoveSend(
     return send;
 }
 
+function afterTrackRemoved(
+    action: ActionOf<'removeTrack' | 'discardCreatedTrack'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    if (action.payload.trackId === trackId || action.payload.trackId === busId) {
+        return undefined;
+    }
+    return send;
+}
+
+function afterTracksDiscarded(
+    action: ActionOf<'discardCreatedTracks'>,
+    trackId: string,
+    busId: string,
+    send: PlannedSend | undefined
+): PlannedSend | undefined {
+    if (action.payload.trackIds.some((id) => id === trackId || id === busId)) {
+        return undefined;
+    }
+    return send;
+}
+
+function afterAllTracksRemoved(): undefined {
+    return undefined;
+}
+
 // Every action type states how it changes the planned send: a new action does not compile until it does.
 const plannedSendByActionType: {
     readonly [Type in AppActionType]: (
@@ -71,12 +99,12 @@ const plannedSendByActionType: {
     importStemSet: unchangedSend,
     discardImportedStemSet: unchangedSend,
     addTrack: unchangedSend,
-    removeTrack: unchangedSend,
-    discardCreatedTrack: unchangedSend,
+    removeTrack: afterTrackRemoved,
+    discardCreatedTrack: afterTrackRemoved,
     restoreTrack: unchangedSend,
     restoreClip: unchangedSend,
     discardDuplicatedClip: unchangedSend,
-    removeAllTracks: unchangedSend,
+    removeAllTracks: afterAllTracksRemoved,
     renameTrack: unchangedSend,
     createTrackAlternative: unchangedSend,
     switchTrackAlternative: unchangedSend,
@@ -327,7 +355,7 @@ const plannedSendByActionType: {
     restoreTrackGroupMemberships: unchangedSend,
     restoreTracks: unchangedSend,
     restoreTrackClipStates: unchangedSend,
-    discardCreatedTracks: unchangedSend,
+    discardCreatedTracks: afterTracksDiscarded,
     discardCreatedCompGroup: unchangedSend,
     restoreTrackAlternativeState: unchangedSend,
     restoreScratchPadState: unchangedSend,

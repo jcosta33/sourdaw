@@ -1945,6 +1945,20 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            generatedMidiStateGuard: 249,
+            trackId: 1,
+        },
+        required: ['generatedMidiStateGuard', 'trackId'],
+        additionalProperties: false,
+    },
+    {
+        type: 'array',
+        items: 251,
+    },
+    {
+        type: 'object',
+        properties: {
+            generatedMidiStateGuards: 252,
             trackIds: 2,
         },
         required: ['trackIds'],
@@ -1975,7 +1989,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            audioSource: 252,
+            audioSource: 254,
             endBeat: 0,
             startBeat: 0,
             takeId: 1,
@@ -1985,12 +1999,12 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 253,
+        items: 255,
     },
     {
         type: 'object',
         properties: {
-            audioSource: 252,
+            audioSource: 254,
             clipId: 1,
             endBeat: 0,
             startBeat: 0,
@@ -2000,7 +2014,7 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 255,
+        items: 257,
     },
     {
         type: 'object',
@@ -2032,9 +2046,9 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            controlChanges: 257,
-            notes: 258,
-            pitchBends: 259,
+            controlChanges: 259,
+            notes: 260,
+            pitchBends: 261,
         },
         required: ['controlChanges', 'notes', 'pitchBends'],
         additionalProperties: false,
@@ -2047,7 +2061,7 @@ const schemaDefinitions = [
             phaseHeadBeat: 0,
             readEndBeat: 0,
             readStartBeat: 0,
-            rows: 260,
+            rows: 262,
             sourceClipId: 1,
             sourceEndBeat: 0,
             sourceEntryBeat: 0,
@@ -2061,7 +2075,7 @@ const schemaDefinitions = [
             clipId: 1,
             endBeat: 0,
             id: 1,
-            midiSource: 261,
+            midiSource: 263,
             name: 1,
             passAnchorSeconds: 0,
             passDepthSeconds: 0,
@@ -2079,16 +2093,16 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 262,
+        items: 264,
     },
     {
         type: 'object',
         properties: {
-            activeCompRegions: 254,
+            activeCompRegions: 256,
             automationLaneId: 1,
-            baseGapAudioSources: 256,
+            baseGapAudioSources: 258,
             id: 1,
-            takes: 263,
+            takes: 265,
             trackId: 1,
         },
         required: ['activeCompRegions', 'id', 'takes', 'trackId'],
@@ -2097,9 +2111,9 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            lane: 264,
+            lane: 266,
             laneIndex: 0,
-            retiredBaseGapAudioSources: 256,
+            retiredBaseGapAudioSources: 258,
             retiredTakeIds: 2,
         },
         required: ['lane', 'laneIndex'],
@@ -2107,7 +2121,7 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 265,
+        items: 267,
     },
     {
         type: 'object',
@@ -2121,25 +2135,25 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 267,
+        items: 269,
     },
     {
         type: 'object',
         properties: {
-            shiftedClips: 268,
+            shiftedClips: 270,
         },
         required: ['shiftedClips'],
         additionalProperties: false,
     },
     {
-        anyOf: [125, 269],
+        anyOf: [125, 271],
     },
     {
         type: 'object',
         properties: {
             clipId: 1,
-            retiredTakeLanes: 266,
-            ripplePlan: 270,
+            retiredTakeLanes: 268,
+            ripplePlan: 272,
             trackId: 1,
         },
         required: ['clipId', 'ripplePlan', 'trackId'],
@@ -2150,7 +2164,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 1,
             generatedMidiStateGuard: 249,
-            retiredTakeLanes: 266,
+            retiredTakeLanes: 268,
         },
         required: ['clipId'],
         additionalProperties: false,
@@ -2158,21 +2172,8 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            generatedMidiStateGuard: 249,
-            trackId: 1,
-        },
-        required: ['generatedMidiStateGuard', 'trackId'],
-        additionalProperties: false,
-    },
-    {
-        type: 'array',
-        items: 273,
-    },
-    {
-        type: 'object',
-        properties: {
             folderId: 1,
-            guards: 274,
+            guards: 252,
             stemTrackIds: 2,
         },
         required: ['folderId', 'guards', 'stemTrackIds'],
@@ -2307,7 +2308,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             present: 43,
-            value: 252,
+            value: 254,
         },
         required: ['present', 'value'],
         additionalProperties: false,
@@ -2933,7 +2934,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             clipId: 1,
-            data: 260,
+            data: 262,
         },
         required: ['clipId', 'data'],
         additionalProperties: false,
@@ -3657,7 +3658,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            audioSource: 252,
+            audioSource: 254,
             clipId: 1,
             endBeat: 0,
             kind: 464,
@@ -3673,7 +3674,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            audioSource: 252,
+            audioSource: 254,
             endBeat: 0,
             kind: 466,
             startBeat: 0,
@@ -3735,9 +3736,9 @@ const schemaDefinitions = [
             audioSourcePromotions: 472,
             baseGapAudioSourceFieldPresence: 473,
             endBeat: 0,
-            expected: 254,
+            expected: 256,
             laneId: 1,
-            replacement: 254,
+            replacement: 256,
             startBeat: 0,
             trackId: 1,
         },
@@ -4394,7 +4395,7 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 264,
+        items: 266,
     },
     {
         type: 'object',
@@ -4432,13 +4433,13 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            baseGapAudioSourcesAfter: 256,
-            baseGapAudioSourcesBefore: 256,
+            baseGapAudioSourcesAfter: 258,
+            baseGapAudioSourcesBefore: 258,
             laneId: 1,
-            regionsAfter: 254,
-            regionsBefore: 254,
-            takesAfter: 263,
-            takesBefore: 263,
+            regionsAfter: 256,
+            regionsBefore: 256,
+            takesAfter: 265,
+            takesBefore: 265,
             trackId: 1,
         },
         required: ['laneId', 'regionsAfter', 'regionsBefore', 'takesAfter', 'takesBefore', 'trackId'],
@@ -4713,7 +4714,7 @@ const schemaDefinitions = [
             midiCcSnapshot: 587,
             midiNotesSnapshot: 587,
             midiPitchBendSnapshot: 587,
-            retiredTakeLanes: 266,
+            retiredTakeLanes: 268,
             retiredTakeSourceProof: 588,
             ripplePlan: 595,
             trackId: 1,
@@ -4830,7 +4831,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             movedClips: 420,
-            neighborShifts: 268,
+            neighborShifts: 270,
         },
         required: ['movedClips', 'neighborShifts'],
         additionalProperties: false,
@@ -4872,8 +4873,8 @@ const schemaDefinitions = [
             rightClip: 608,
             rightClipIndex: 0,
             rightClipOrder: 2,
-            rightMidi: 260,
-            sourceMidi: 260,
+            rightMidi: 262,
+            sourceMidi: 262,
             trackId: 1,
         },
         required: ['leftClip', 'rightClip', 'rightClipIndex', 'rightMidi', 'sourceMidi', 'trackId'],
@@ -4886,7 +4887,7 @@ const schemaDefinitions = [
             expected: 609,
             reKeyedTakeLanes: 554,
             replacement: 609,
-            retiredTakeLanes: 266,
+            retiredTakeLanes: 268,
             retiredTakeSourceProof: 588,
             rightClipId: 1,
             splitSourceProof: 588,
@@ -4930,9 +4931,9 @@ const schemaDefinitions = [
             audioSourcePromotions: 472,
             baseGapAudioSourceFieldPresence: 473,
             endBeat: 0,
-            expected: 254,
+            expected: 256,
             laneId: 1,
-            replacement: 254,
+            replacement: 256,
             startBeat: 0,
             trackId: 1,
         },
@@ -5020,8 +5021,8 @@ const schemaDefinitions = [
             clipId: 1,
             endBeat: 0,
             name: 1,
-            retiredTakeLanes: 266,
-            ripplePlan: 270,
+            retiredTakeLanes: 268,
+            ripplePlan: 272,
             startBeat: 0,
             trackId: 1,
             type: 51,
@@ -5454,7 +5455,7 @@ const schemaDefinitions = [
             midiCcSnapshot: 587,
             midiNotesSnapshot: 587,
             midiPitchBendSnapshot: 587,
-            retiredTakeLanes: 266,
+            retiredTakeLanes: 268,
         },
         required: ['clip', 'midiCcSnapshot', 'midiNotesSnapshot', 'midiPitchBendSnapshot', 'retiredTakeLanes'],
         additionalProperties: false,
@@ -5797,7 +5798,7 @@ const schemaDefinitions = [
             midiCcByClipId: 698,
             midiNotesByClipId: 698,
             midiPitchBendByClipId: 698,
-            retiredTakeLanes: 266,
+            retiredTakeLanes: 268,
             trackFields: 713,
             trackId: 1,
         },
@@ -6085,9 +6086,9 @@ const schemaDefinitions = [
             audioSourcePromotions: 472,
             baseGapAudioSourceFieldPresence: 473,
             endBeat: 0,
-            expected: 254,
+            expected: 256,
             laneId: 1,
-            replacement: 254,
+            replacement: 256,
             startBeat: 0,
             takeId: 1,
             trackId: 1,
@@ -7064,9 +7065,9 @@ const schemaIdByActionType = {
     disableTrack: 247,
     discardCreatedCompGroup: 248,
     discardCreatedTrack: 250,
-    discardCreatedTracks: 251,
-    discardDrawnClip: 271,
-    discardDuplicatedClip: 272,
+    discardCreatedTracks: 253,
+    discardDrawnClip: 273,
+    discardDuplicatedClip: 274,
     discardImportedStemSet: 275,
     discardRecording: 244,
     disconnectPush: 116,

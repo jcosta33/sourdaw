@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Track } from '../../../stores/trackStore';
 import { handleLoadTrackTemplate } from '../handleLoadTrackTemplate';
 
 const mocks = vi.hoisted(() => ({
@@ -44,10 +46,21 @@ describe('handleLoadTrackTemplate', () => {
         expect(desc.label).toBe('Load Track Template');
     });
 
+    /** The store before the load holds `existing`; the load appends `created`. */
+    function appendOnLoad(created: readonly Track[]): void {
+        let tracks: readonly Track[] = [TrackDummy.create({ id: 'existing', name: 'Existing', kind: 'audio' })];
+        mocks.getTrackStoreState.mockImplementation(() => ({ tracks }));
+        mocks.loadTrackTemplate.mockImplementation(() => {
+            tracks = [...tracks, ...created];
+        });
+    }
+
     it('records exactly the ids the template appended, diffing the track store around execute', () => {
-        mocks.getTrackStoreState
-            .mockReturnValueOnce({ tracks: [{ id: 'existing' }] })
-            .mockReturnValueOnce({ tracks: [{ id: 'existing' }, { id: 'created-1' }, { id: 'created-2' }] });
+        const created = [
+            TrackDummy.create({ id: 'created-1', name: 'Lead', kind: 'audio' }),
+            TrackDummy.create({ id: 'created-2', name: 'Pad', kind: 'audio' }),
+        ];
+        appendOnLoad(created);
 
         const action = { type: 'loadTrackTemplate' as const, payload: { templateId: 'tmpl-1' } };
 
@@ -55,9 +68,16 @@ describe('handleLoadTrackTemplate', () => {
         const result = handleLoadTrackTemplate.execute(action);
 
         expect(result).toEqual({ status: 'written' });
+        // One guard per created track, fingerprinting the committed row (issue #6817).
         expect(desc.inverseAction).toEqual({
             type: 'discardCreatedTracks',
-            payload: { trackIds: ['created-1', 'created-2'] },
+            payload: {
+                trackIds: ['created-1', 'created-2'],
+                generatedMidiStateGuards: created.map((track) => ({
+                    trackId: track.id,
+                    generatedMidiStateGuard: expect.objectContaining({ entityJson: JSON.stringify(track) }),
+                })),
+            },
         });
         // Redo restores those exact ids instead of replaying the template, which mints
         // fresh ones and would strand the inverse above on ids nothing holds.
@@ -68,9 +88,7 @@ describe('handleLoadTrackTemplate', () => {
     });
 
     it('emits neither inverse nor redo when a created track could not be snapshotted', async () => {
-        mocks.getTrackStoreState
-            .mockReturnValueOnce({ tracks: [{ id: 'existing' }] })
-            .mockReturnValueOnce({ tracks: [{ id: 'existing' }, { id: 'created-1' }] });
+        appendOnLoad([TrackDummy.create({ id: 'created-1', name: 'Lead', kind: 'audio' })]);
         mocks.captureTrackRemovalSnapshot.mockReturnValue(null);
 
         const action = { type: 'loadTrackTemplate' as const, payload: { templateId: 'tmpl-1' } };

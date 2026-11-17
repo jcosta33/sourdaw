@@ -1336,6 +1336,33 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'applyGroove',
+        risk: 'bounded-reversible',
+        description:
+            "Assign one groove template from the project's groove pool to one unlocked MIDI clip on an unfrozen track, so its notes play with the template's timing and velocity feel; the stored notes do not change and the clip's previous groove is restored on undo.",
+        intentPhrases: ['apply groove', 'apply the groove', 'apply a groove', 'groove the clip', 'add swing from'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip', allowBatchLocal: false }],
+        valueRules: [],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing MIDI clip ID that has notes' },
+                grooveId: {
+                    type: 'string',
+                    description:
+                        "Groove template ID read from project.discover domain 'groove', or the ID an earlier extractGroove in this batch creates (groove-<clipId>-v1)",
+                },
+                amount: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description:
+                        "Groove strength, from 0 (no effect) through 1 (the full template), scaling the template's timing and velocity offsets together; defaults to 1",
+                },
+            },
+            required: ['clipId', 'grooveId'],
+        },
+    },
+    {
         actionType: 'transposeNotes',
         risk: 'broad-reversible',
         description: 'Transpose every note in one MIDI clip by an explicit semitone delta.',
@@ -3388,6 +3415,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     createDrumPreviewBranches: NO_MUTATION_IDENTITY,
     copyMidiArticulations: MIDI_ARTICULATION_COPY_MUTATION_IDENTITY,
     extractGroove: GROOVE_EXTRACTION_MUTATION_IDENTITY,
+    applyGroove: CLIP_MUTATION_IDENTITY,
     transposeNotes: CLIP_MUTATION_IDENTITY,
     invertNotes: CLIP_MUTATION_IDENTITY,
     retrogradeNotes: CLIP_MUTATION_IDENTITY,
@@ -3509,6 +3537,7 @@ export const executableAppActionMutationIdempotenceByType = {
     createDrumPreviewBranches: false,
     copyMidiArticulations: false,
     extractGroove: true,
+    applyGroove: true,
     transposeNotes: false,
     invertNotes: false,
     retrogradeNotes: false,

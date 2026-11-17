@@ -412,5 +412,9 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
 };
 
 export function hasDeterministicSerializedArguments(operation: AppActionType, value: Record<string, unknown>): boolean {
+    // `operation` comes from a parsed envelope, so an inherited name such as `constructor` must not select a check.
+    if (!Object.hasOwn(SERIALIZED_ARGUMENTS_CHECKS, operation)) {
+        return true;
+    }
     return SERIALIZED_ARGUMENTS_CHECKS[operation]?.(value) ?? true;
 }

@@ -1,7 +1,13 @@
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { isRecord } from '#/utils/structuralEquality';
 
 import { decodeMidiClipDataSnapshots } from './decodeMidiClipDataSnapshots';
+
+/** A service may not import `events/`, so it reads the events-defined slot shape off the split capture it validates. */
+type MidiClipDataActionSnapshot = Extract<
+    AppAction,
+    { type: 'restoreClipSplitState' }
+>['payload']['expected']['sourceMidi'];
 
 // String keys only: rows read back from the project document carry the CRDT's
 // own symbol-keyed object metadata, which is not content.

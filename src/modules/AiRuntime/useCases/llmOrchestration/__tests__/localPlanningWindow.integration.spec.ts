@@ -311,7 +311,7 @@ afterEach(() => {
 });
 
 it('fits the production planning turn with live authority, resume, receipts and a full bounded thread', async () => {
-    const prompt = 'make the chorus wider and tame the harshness on the lead vocal';
+    const prompt = 'pan the chorus track to 20 left and mute the lead vocal track';
     const context = getProjectContext();
     expect(querySemanticProject({ type: 'project-summary' }).items).not.toHaveLength(0);
     const projectRevision = captureProjectRevision();

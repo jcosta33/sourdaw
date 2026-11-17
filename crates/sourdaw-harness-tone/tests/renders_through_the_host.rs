@@ -3,7 +3,11 @@
 //! copies it into a fresh `.clap` bundle file, and drives it exactly the way
 //! the packaged-app latency harness (#3070) will.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use std::env;
 use std::fs;

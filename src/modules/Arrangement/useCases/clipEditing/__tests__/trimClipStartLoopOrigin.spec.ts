@@ -23,9 +23,9 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type TrackClipStateSnapshot } from '../../../events/arrangementTrackSnapshots';
 import { handleRestoreTrackClipStates } from '../../../handlers/clip/handleRestoreTrackClipStates';
 import { handleTrimClipStart } from '../../../handlers/clip/handleTrimClipStart';
 import { setClipLoop } from '../../clipLoop/setClipLoop';

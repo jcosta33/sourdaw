@@ -714,6 +714,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
 
@@ -810,6 +811,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
 

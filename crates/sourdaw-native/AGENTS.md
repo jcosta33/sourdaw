@@ -65,8 +65,17 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   monitor is shadowed: the shadow decides what the device is handed, never what a strip renders. A
   hosted instance no chain holds runs nowhere — it is registered homed detached, so releasing it
   from a chain returns it there rather than onto the master mix.
-- No instance can be bound where no engine holds one: an offline render, and any batch mapped before
-  its own attach ran, map with an empty lookup and fall back on the degradation law.
+- No instance can be bound where no engine holds one: a batch mapped before its own attach ran maps
+  with an empty lookup and falls back on the degradation law.
+- An offline render never borrows a live instance. For every engine-attached hosted effect on a
+  sounding strip it builds an independent offline instance (`commands/offline_plugins.rs`): the live
+  instance's state captured once at render start, construction on the UI thread from the file its
+  load vetted, activation at the export rate in offline mode, and release on the UI thread on every
+  path out. The live instance is touched only by that state read. An instance the engine does not
+  hold, a hosted instrument, an unreadable state, a failed construction, and a block the offline
+  instance was not served or failed to process each refuse the render by device and plugin name;
+  nothing prints dry.
+  `map_graph_batch` admits and refuses exactly that set, through the same mapping.
 
 ## Constraints
 

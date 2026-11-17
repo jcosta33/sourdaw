@@ -41,6 +41,7 @@ import { readVibeMetricLabel } from './readVibeMetricLabel';
 import { readVibeRunCandidates } from './readVibeRunCandidates';
 import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
 import { readVibeRunValueChoiceScheduleFit } from './readVibeRunValueChoiceScheduleFit';
+import { withBriefRoleContext } from './withBriefRoleContext';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -500,7 +501,8 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
             ],
         };
     }
-    const protections = readExplicitProtections(input.prompt, input.context);
+    // The protection reads the roles the run plans by, so a family it keeps holds every track the brief places in it.
+    const protections = readExplicitProtections(input.prompt, withBriefRoleContext(input.context, input.brief));
     if (protections.unresolved.length > 0) {
         return {
             status: 'unscheduled',

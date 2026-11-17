@@ -678,6 +678,28 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'applyGroove',
+        "Assign one groove template from the project's groove pool to one unlocked MIDI clip on an unfrozen track, so its notes play with the template's timing and velocity feel; the stored notes do not change and the clip's previous groove is restored on undo.",
+        {
+            clipId: { type: 'string', description: 'Existing MIDI clip ID that has notes' },
+            grooveId: {
+                type: 'string',
+                description:
+                    "Groove template ID read from project.discover domain 'groove', or the ID an earlier extractGroove in this batch creates (groove-<clipId>-v1)",
+            },
+            amount: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description:
+                    "Groove strength, from 0 (no effect) through 1 (the full template), scaling the template's timing and velocity offsets together; defaults to 1",
+            },
+        },
+        ['clipId', 'grooveId'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'transposeNotes',
         'Transpose every note in one MIDI clip by an explicit semitone delta.',
         {
@@ -2155,6 +2177,12 @@ const EXPECTED_GROUNDING = [
             'create a groove template',
         ],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'applyGroove',
+        intentPhrases: ['apply groove', 'apply the groove', 'apply a groove', 'groove the clip', 'add swing from'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip', allowBatchLocal: false }],
         valueRules: [],
     },
     {

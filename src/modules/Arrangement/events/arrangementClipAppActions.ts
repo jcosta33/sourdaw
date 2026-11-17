@@ -1,28 +1,30 @@
+import { type CommandSourceProof } from '#/modules/CrdtDocument/events';
+import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/modules/Knead/events';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
+
 import {
     type ClipAutomationLaneActionSnapshot,
+    type ClipShiftSnapshot,
+    type GeneratedMidiStateGuard,
+    type MidiClipGlueActionSnapshot,
+    type StripSilenceActionSnapshot,
+    type TransientQuantizeMoveSnapshot,
+    type TransientQuantizeSkipSnapshot,
+} from './arrangementClipSnapshots';
+import {
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
     type ClipSatelliteGainEnvelopeSnapshot,
-    type ClipShiftSnapshot,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
-    type CommandSourceProof,
     type CompRegionSnapshot,
     type CompTakeLaneSnapshot,
-    type GeneratedMidiStateGuard,
-    type KneadPitchBlobSnapshot,
-    type MidiClipGlueActionSnapshot,
-    type MidiClipNoteSnapshot,
-    type PitchContourSnapshot,
     type RetiredTakeLaneSnapshot,
-    type StripSilenceActionSnapshot,
     type TakeSnapshot,
-    type TrackClipStateSnapshot,
-    type TransientQuantizeMoveSnapshot,
-    type TransientQuantizeSkipSnapshot,
-} from '#/utils/handlerContract';
-import { type TempoSourceClock } from '#/utils/tempoSourceClock';
+} from './arrangementClipStateSnapshots';
+import { type TrackClipStateSnapshot } from './arrangementTrackSnapshots';
 
 /** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */
 type MidiRowCoordinateCapture = {

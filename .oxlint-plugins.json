@@ -29,6 +29,10 @@
         {
             "name": "jsx-a11y-x-js",
             "specifier": "eslint-plugin-jsx-a11y-x"
+        },
+        {
+            "name": "import-x-js",
+            "specifier": "eslint-plugin-import-x"
         }
     ],
     "categories": {
@@ -45,6 +49,10 @@
         "builtin": true
     },
     "settings": {
+        "import-x/resolver": {
+            "typescript": true,
+            "node": { "preserveSymlinks": false }
+        },
         "react-x": {
             "version": "detect",
             "importSource": "react",
@@ -157,6 +165,28 @@
         "@tanstack/query/mutation-property-order": "error"
     },
     "overrides": [
+        {
+            "files": ["**/*.{js,jsx,ts,tsx,mts,cts}"],
+            "rules": {
+                "import-x-js/order": [
+                    "error",
+                    {
+                        "groups": ["builtin", "external", "internal", "parent", "sibling", "index", "object", "type"],
+                        "pathGroups": [
+                            { "pattern": "react", "group": "external", "position": "before" },
+                            { "pattern": "src/**", "group": "internal", "position": "before" }
+                        ],
+                        "pathGroupsExcludedImportTypes": ["react"],
+                        "distinctGroup": true,
+                        "named": false,
+                        "sortTypesGroup": false,
+                        "warnOnUnassignedImports": false,
+                        "newlines-between": "always",
+                        "alphabetize": { "order": "asc", "caseInsensitive": true, "orderImportKind": "ignore" }
+                    }
+                ]
+            }
+        },
         {
             "files": [
                 "scripts/**/*.{js,mjs,cjs}",
@@ -378,7 +408,6 @@
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedBatchOutcome.ts",
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts",
                 "src/modules/AiRuntime/useCases/agentRequestOrchestration/settleVerifiedBatchReplay.ts",
-                "src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts",
                 "src/modules/AiRuntime/useCases/agentRunLifecycle.ts",
                 "src/modules/AiRuntime/useCases/agentToolCatalog.ts",
                 "src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts",
@@ -810,8 +839,7 @@
                 "src/modules/Yeast/workers/processors/ChordGenerator.ts",
                 "src/modules/Yeast/workers/processors/GrooveModule.ts",
                 "src/modules/Yeast/workers/yeastWorker.ts",
-                "src/utils/automationCurve.ts",
-                "src/utils/handlerContract.ts"
+                "src/utils/automationCurve.ts"
             ],
             "rules": {
                 "max-lines": [

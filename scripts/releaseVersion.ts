@@ -385,48 +385,6 @@ export function withPackageVersion(manifest: string, version: SemanticVersion): 
 }
 
 /**
- * The release inventory pins a digest of `package.json`, so a version bump that leaves it alone
- * lands a release pull request the inventory gate refuses. Only the one recorded digest moves.
- */
-export function withSnapshotDigest(inventory: string, path: string, sha256: string): string {
-    if (!/^[0-9a-f]{64}$/.test(sha256)) {
-        fail(`snapshot digest for ${path} is not a SHA-256 digest`);
-    }
-    const marker = `"path": ${JSON.stringify(path)},`;
-    const markerIndex = inventory.indexOf(marker);
-    if (markerIndex < 0 || inventory.includes(marker, markerIndex + marker.length)) {
-        fail(`release inventory does not carry exactly one ${path} snapshot`);
-    }
-    const digestPattern = /\n(\s*)"sha256": "[0-9a-f]{64}"/y;
-    digestPattern.lastIndex = markerIndex + marker.length;
-    const match = digestPattern.exec(inventory);
-    if (match === null) {
-        fail(`release inventory ${path} snapshot does not carry a digest`);
-    }
-    return `${inventory.slice(0, markerIndex + marker.length)}\n${match[1] ?? ''}"sha256": "${sha256}"${inventory.slice(digestPattern.lastIndex)}`;
-}
-
-function escapedForPattern(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\/]/g, String.raw`\$&`);
-}
-
-/**
- * The other shape a digest is pinned in: one surface addresses a file by `sha256:<digest>:<path>`
- * rather than by a snapshot entry. Rewriting one file the release gates pin therefore moves the
- * digest recorded for it here too.
- */
-export function withPathAddressedDigest(inventory: string, path: string, sha256: string): string {
-    if (!/^[0-9a-f]{64}$/.test(sha256)) {
-        fail(`path-addressed digest for ${path} is not a SHA-256 digest`);
-    }
-    const pattern = new RegExp(`sha256:[0-9a-f]{64}:${escapedForPattern(path)}`, 'g');
-    if ((inventory.match(pattern) ?? []).length !== 1) {
-        fail(`release inventory does not carry exactly one path-addressed digest for ${path}`);
-    }
-    return inventory.replaceAll(pattern, `sha256:${sha256}:${path}`);
-}
-
-/**
  * The pull requests a range of squash subjects names, in ascending order. A subject without a
  * trailing merge reference contributed no pull request and is dropped rather than guessed at.
  */

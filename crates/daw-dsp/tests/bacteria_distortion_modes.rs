@@ -12,7 +12,11 @@
 //! Smudge is now wired. Breakdown is not, and the tests at the bottom of this
 //! file pin *why* rather than leaving it to be rediscovered.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::bacteria::BacteriaInstance;
 

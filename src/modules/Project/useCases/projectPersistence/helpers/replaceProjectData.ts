@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
+import { settleProjectSwitchPluginTeardown, unloadPluginsBeforeProjectSwitch } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -81,6 +81,9 @@ function restorePreviousAudioGraph(context: ReplaceProjectDataInput['context']):
         // The law settles every start, so a refusal cannot fail this restore.
         void rearmInputMonitoring(trackStore.value?.tracks ?? []);
     }
+    // The rebuild above consumed the live state the teardown carried; only the
+    // plugins it could not read come back without their edits.
+    settleProjectSwitchPluginTeardown('refused');
 }
 
 export async function replaceProjectData({
@@ -263,7 +266,7 @@ export async function replaceProjectData({
             return abortProjectReplacement();
         }
         resetAudioGraph();
-        await unloadLoadedExternalPlugins();
+        await unloadPluginsBeforeProjectSwitch();
         if (!transaction.isCurrent() || (shouldProceed !== undefined && !shouldProceed())) {
             restorePreviousAudioGraph(context);
             releaseRuntimeTransition();

@@ -1,5 +1,5 @@
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { getNotesForClip, projectShortMidiOverlapRemoval } from '#/modules/MIDI/useCases';
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
 import {
     type MidiOverlapTransformCapability,

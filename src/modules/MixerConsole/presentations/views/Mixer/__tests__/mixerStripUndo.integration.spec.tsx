@@ -430,8 +430,10 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     registerFaustDSP: vi.fn(),
     restorePluginState: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
+    settleProjectSwitchPluginTeardown: vi.fn(),
     unloadPlugin: vi.fn(),
     unloadPluginCarryingLiveState: vi.fn(),
+    unloadPluginsBeforeProjectSwitch: vi.fn(() => Promise.resolve()),
     watchPluginStateDirty: vi.fn(),
 }));
 /**

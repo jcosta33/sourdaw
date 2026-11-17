@@ -1,5 +1,5 @@
+import { type TempoScalarTransition } from '#/modules/Transport/stores';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
-import { type TempoScalarTransition } from '#/utils/tempoAudioSourcePromotion';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 

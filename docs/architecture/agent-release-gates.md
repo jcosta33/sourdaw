@@ -127,6 +127,79 @@ Schema version 2 carries, per corpus file:
   leaves undone whole. A revert is an executed reversible change and scores as `execute-exact`. A
   write the prior turn makes to reach its commit is the case's setup; any other write its oracle
   does not name is an unintended mutation.
+- Measured proposal turns — a measured proposal (a perceptual or comparative case) scripts the
+  production planning route, never a shortcut past it. Four turn kinds join the earlier ones:
+  `intake` selects the creative interpretation with a `perceptual` or `comparative` intent, its
+  targets, and its objectives chosen by recipe or policy, target, optional reference and section
+  from the objectives the run itself published, never by a minted id; `expand` calls
+  `recipe.expand` for one recipe on one named track, stating the role the recipe serves; and
+  `measure-preview` calls `analysis.measure` with subject `preview` over one named section, measuring
+  an earlier expansion or a list of plain commands in the live project and in the isolated preview;
+  `propose-compiled` then adopts those measured commands by call id and adds none of its own, so the
+  figures stay bound to the exact batch that persists. A comparative names its subject and reference
+  exactly, and the subject comes before the reference in the fixture's track order, because the
+  catalog places a device slot only under the first track target; a case that needs a role target
+  or a slot under a second track waits rather than leaning on that order.
+- `cases[].oracle.measuredGoals` — a measured proposal's metric claims, each `{metric, band?,
+relation, target, reference?}`: the agent metric (and band for a band metric), the relation the
+  goal states (`increase`, `decrease`, or a comparative policy such as `greater-than-current`), the
+  track it holds over and, for a comparative, the track it is compared with. The scorer reads them
+  from the planned result through the one production route: materialize the batch, decode its goal
+  state with the metric-goal codec, and evaluate admission against the run's own preview receipts.
+  The case matches only when admission returns `verified` and the decoded goals equal the oracle's
+  exactly, so a batch the preview does not support, or one claiming a goal the oracle does not, fails
+  the case however its actions read.
+- Vibe runs — a `whole-project-vibe-with-constraint` case runs the chat route end to end on the
+  local chain: `intake` with the `brief` intent, `brief-compile` naming the vision and the mix-intent
+  descriptors, and `propose-brief` adopting the compiled brief with exactly the tracks the request
+  protects by name, since the application reads those protections itself and refuses a plan that
+  omits or enlarges them. Every case states a constraint, a hold or an exclusion. Its oracle is a
+  `proposal` whose `actions` are the brief card alone and whose `vibeRun` lists, in order, each later
+  batch's commands and whether the musician confirms or skips it, then the summary's headline; the
+  lines beneath it restate measured figures and are never pinned. The runner holds the card the run
+  proposes at each position to its batch, confirms or skips it, and requires the planning turn to
+  write nothing, the brief's Confirm to write only the brief, each batch's Confirm to commit exactly
+  its card as one undo group and touch no other track, and a skip to write nothing at all (AC-078);
+  a protected or skipped track ends the run as it began. Every batch is held to the oracle's
+  invariants, its command ceiling included (AC-069). The fixture records no clips, so the runner
+  gives each non-bus track one take across the arrangement, without which a run schedules nothing.
+  A run spends its renders from its own budget, measuring the arrangement before the brief card and
+  previewing each batch before its card, so the render count below binds single-turn cases only.
+  A held-out case differs from every development one in its vibe, the target of its constraint, or
+  where it skips.
+- Render count — every single-turn case must render exactly as often as its own measurements ask: one render
+  per target a project measurement names and two per target a preview names, the live project and
+  the preview. A case leaning on the render double beyond what it measures is a corpus defect, never
+  a free measurement.
+- Render law — measured figures come from one stated, deterministic law that stands in for the
+  offline renderer (`src/modules/AiRuntime/__tests__/acceptanceRenderLaw.ts`): each track sounds a
+  source fixed by its position in the fixture, and the built-in devices, pans, sends, buses and
+  master gain shape it as the law's doc comment states. Every measured figure an oracle pins is
+  derived from that law, independently of the spec, never copied from a run, and the law is never
+  tuned to make a case pass; a change to it moves the pinned figures, which must be derived again.
+  Every source strike rises over a few milliseconds before it decays, so the peak arrives after the
+  beat and a fast-attack compressor can clamp it; a strike that peaked on its first sample would
+  make every compressor without lookahead raise crest.
+  The law has limits a case must respect. Its spectrum is discrete partials at fixed band points,
+  centred by track position rather than by role, so a figure read between partials (a spectral
+  rolloff, a band's share where an edit moves only its neighbours) can stand still or move against a
+  real recording's. Its sources strike below the default threshold of the glue recipes, so a
+  catalogue-default compressor leaves them untouched. A case whose objective the law cannot move is
+  never sealed: its refusal would measure the law, not the agent.
+- Measured outcomes never give up — a sealed `comparative-by-measurement`, `perceptual-single-target`,
+  `perceptual-multi-target` or `whole-project-vibe-with-constraint` result that observes
+  `clarify-required`, `abstain-unsupported` or `deny-policy` fails the corpus run (AC-068), whatever
+  the thresholds would admit: these requests are answerable by measurement, so asking back,
+  abstaining or declining is a failure, never a safe outcome. A request that is truly underspecified
+  belongs in `boundary`.
+- No provider and no writes — every corpus case runs under a network guard refusing fetch,
+  XMLHttpRequest and WebSocket to every non-local http(s) or ws(s) origin (AC-074). The guard denies
+  by default: only localhost, 127.0.0.1, [::1] and non-network schemes pass, so a provider, artifact
+  origin or user-configured base URL is refused without a list to maintain. Any attempt fails its
+  case. Every case that measures the project, before or after a previewed change,
+  must make no project write across planning, measuring and previewing (AC-078), counted from the
+  command barrel, the materialized project before and after, and every observed transition between.
+  Each gate carries a self-check showing it fails when it stops observing.
 
 ## Frozen thresholds
 
@@ -177,10 +250,59 @@ verification runs against. Schema version 1 carries:
 - `collisions` — every fixture path that more than one suite reads, with the suites that read it.
   Two suites sharing a fixture cannot record independent evidence about that file.
 
-A fixture is a path the command names under `src/`, `scripts/`, `tests/`, or `evidence/`, plus the
-source tree of every crate the command tests with `cargo test -p`. A fixture path that does not
-exist carries `"digest": null` and `"status": "absent"`. The manifest's own path is never a fixture:
+A fixture is a named file: a path the command names under `src/`, `scripts/`, `tests/`,
+`evidence/`, or `electron/`, or a data file the contract declares for the suite. The manifest pins
+files only, and the generator refuses a fixture that is a directory: a tree's digest moves with
+every unrelated edit inside it, which would fail the per-pull-request freshness check on changes
+that have nothing to do with the suite. Directory and crate trees, a tested crate's source among
+them, are covered by the record closure below. A fixture path that does not exist carries
+`"digest": null` and `"status": "absent"`; the committed manifest may not carry that state for any
+fixture, because a moved spec must be repointed, never pinned as absent
+(`agentCampaignHarness.spec.ts` enforces it). The manifest's own path is never a fixture:
 a document cannot carry the digest of its own bytes.
+
+Named fixtures are not everything a suite's evidence depends on. A suite's closure is the full set:
+
+- every tracked file its named code fixtures reach through resolved static imports, type-only
+  edges included, through the root TypeScript aliases;
+- the files each `pnpm <script>` in its command runs under, cruised the same way: the repository
+  files the script's `package.json` command names, the files its runner loads by path or
+  configuration, declared per script in `EVIDENCE_SCRIPT_RUNTIME_FILES`, and, for a Vitest run,
+  every setup file `vite.config.ts` can name, read from its `setupFiles` expression as the union of
+  its branches;
+- for each crate it tests with `cargo test -p`, the workspace `Cargo.toml`, `Cargo.lock`,
+  `rust-toolchain.toml` and `.cargo/config.toml`, plus that crate and its transitive workspace path-dependency closure
+  from `cargo metadata --offline --no-deps`. Each package contributes its `Cargo.toml`, its `src`
+  tree and its build script. The tested crate also contributes its dev-dependencies and its `tests`
+  directory and every target's source directory from cargo metadata (`examples`, `benches`, or wherever
+  `Cargo.toml` points; a directory with no files contributes nothing); a dependency's dev-dependencies do not compile and are excluded;
+- its other named fixtures, and the files or trees its specs read by path, declared per suite in
+  `EVIDENCE_SUITE_CLOSURE_READS` in `scripts/agent-campaign/evidenceGateContract.ts`. A tree stands
+  for its tracked files.
+
+Every tree and import walk counts the files git lists as tracked or as untracked and not ignored
+(`git ls-files --cached --others --exclude-standard`): a new file inside a closure tree drifts the
+record before it is committed, and gitignored build output never does. A tracked file deleted from
+the working tree drops out of the live closure and drifts by membership.
+
+Derivation is offline and fails closed. An import that cannot be resolved, a reached file that is
+not tracked, a path dependency missing from the metadata, a script `package.json` does not declare
+or whose named file is missing, a `vite.config.ts` whose setup files cannot be read, or a declared
+read that names no tracked file refuses, never skips. The one exception is a bare package specifier
+the import resolver cannot follow (a package publishing only conditional `exports`) when that
+package is installed where Node looks for it: it is a dependency the lockfile pins, not a repository
+file. A relative or `#` alias specifier never takes that exception.
+
+The closure stays out of the manifest and out of `collisions`. Barrel imports pull most of the
+application into most suites, so nearly every product edit would move a manifest closure digest
+and fail the per-pull-request freshness check, and nearly every file would collide across nearly
+every suite, leaving the collision census meaningless. A record carries the closure its run observed
+instead, and release readiness recomputes it against the live tree.
+
+Path reads the closure cannot see stay a known limit: a file a spec locates through data at run time
+(the specs the source-examples corpus names), and a file a crate's `#[cfg(test)]` code embeds from
+outside its own tree with `include_str!` or `include_bytes!`, unless a suite's filtered tests reach
+it and the suite declares it.
 
 `kind` records the command's shape: `unit`, `unit+rust`, or `rust+unit` by which runner the command
 reaches first, or `manual` for a suite whose verification is not a runnable command. The runner
@@ -194,8 +316,9 @@ unless they are supplied explicitly.
 
 The runner writes one record per executed gate to `evidence/agent-campaign/records/<id>.json`. A
 record names the suite, its task, the command, the commit the run integrated, the capability
-inventory digest, the fixture and environment digests the run observed, its start time, duration,
-exit code, and outcome (`passed`, `failed`, or `blocked`). Records are run output, not source: they
+inventory digest, the fixture and environment digests the run observed, the closure it observed
+(each closure file with its digest, and one digest over that sorted list; null for a blocked run),
+its start time, duration, exit code, and outcome (`passed`, `failed`, or `blocked`). Records are run output, not source: they
 are not committed.
 
 ## Runner
@@ -209,11 +332,16 @@ readiness. Every mode requires `--manifest <path>`.
   gates is refused. A stale threshold or gate-fixture digest refuses the run and prints each stale
   path, because a suite verified against drifted inputs proves nothing about this tree. An
   absent fixture blocks the gate: the runner writes a `blocked` record and exits 2 without running
-  the command. Otherwise it runs the command through the shell with inherited stdio, writes the
-  record with the environment digests the run observed, and exits with the command's status.
+  the command. Otherwise it derives the suite's closure, which refuses the run when derivation
+  fails, runs the command through the shell with inherited stdio, and derives the closure again. A
+  closure that moved during the run prints each drifted file, writes no record, and exits 1.
+  Otherwise it writes the record with the environment digests and closure the run observed, and
+  exits with the command's status.
 - `--release` — validate, then require, for every suite, a record whose integrated commit is the
   current `HEAD`, whose recorded fixture digests match the manifest, whose recorded environment
-  digests match the live tree, and whose outcome is `passed`. It never runs a suite. It prints one
+  digests match the live tree, whose recorded closure matches the closure derived from the live
+  tree, and whose outcome is `passed`. A closure mismatch blocks once per drifted file and names
+  it; a record without a closure blocks. It never runs a suite. It prints one
   blocker line per unmet suite and exits 1 when any blocker exists. It also reads the source-examples
   register and prints `source examples corpus missing` when the file is absent, or
   `source-example <id>: unrecovered` for every example still carrying that disposition.

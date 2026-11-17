@@ -8,7 +8,7 @@ use crate::host::plugin_registry_store::{
     RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
-use crate::host::plugin_scan_worker::{self, ScanFailure};
+use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
@@ -22,7 +22,9 @@ use daw_plugin_host::scanner::{
     self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
     ScannedPlugin,
 };
-use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, Vst3Wrapper};
+use daw_plugin_host::{
+    AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, ProcessMode, Vst3Wrapper,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -268,6 +270,21 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 /// can produce was not written by one. The two bounds have to move together, or
 /// the cap quietly stops meaning what it says.
 pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
+
+/// The most bytes of one candidate's helper failure text a scan reports.
+///
+/// That text can be the helper's own `Err`, which is the plugin's bytes and
+/// bounded only by the response limit (16 MiB). A few hundred bytes carry any
+/// real diagnostic; the rest is cut on a character boundary and marked with
+/// [`TRUNCATED_SCAN_ERROR_MARKER`].
+const MAX_SCAN_ERROR_TEXT_BYTES: usize = 512;
+
+const TRUNCATED_SCAN_ERROR_MARKER: &str = "… (truncated)";
+
+/// The most candidate failures one scan reports by name. The rest are
+/// counted in one closing entry, so a folder of broken bundles answers with a
+/// short list rather than one row per candidate the walk reached.
+const MAX_REPORTED_CANDIDATE_ERRORS: usize = 32;
 
 /// The whole enumeration's clock.
 ///
@@ -537,6 +554,72 @@ fn quarantine_if_process_failure(
     }
 }
 
+/// `text` cut to [`MAX_SCAN_ERROR_TEXT_BYTES`] on a character boundary, with
+/// the marker appended when anything was cut.
+fn bounded_scan_error_text(text: &str) -> String {
+    if text.len() <= MAX_SCAN_ERROR_TEXT_BYTES {
+        return text.to_string();
+    }
+    let kept = &text[..text.floor_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES)];
+    format!("{kept}{TRUNCATED_SCAN_ERROR_MARKER}")
+}
+
+/// The folder-walk and candidate failures one scan reports: each candidate's
+/// text bounded, the first [`MAX_REPORTED_CANDIDATE_ERRORS`] by name and the rest counted.
+#[derive(Default)]
+struct CandidateErrors {
+    reported: Vec<String>,
+    omitted: usize,
+}
+
+impl CandidateErrors {
+    /// A candidate whose helper failed, its failure text bounded.
+    fn record(&mut self, path: &Path, error: &ScanFailure) {
+        self.push(|| {
+            format!(
+                "{}: {}",
+                path.display(),
+                bounded_scan_error_text(&error.to_string())
+            )
+        });
+    }
+
+    /// A candidate that changed while the helper read it.
+    fn record_changed_file(&mut self, path: &Path) {
+        self.push(|| {
+            format!(
+                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
+                path.display()
+            )
+        });
+    }
+
+    /// A row the folder walk produced, already worded. It shares the candidate
+    /// cap so the user's one list has one limit and one closing summary.
+    fn record_walk_row(&mut self, row: String) {
+        self.push(|| row);
+    }
+
+    /// The row is built only when it will be reported.
+    fn push(&mut self, row: impl FnOnce() -> String) {
+        if self.reported.len() >= MAX_REPORTED_CANDIDATE_ERRORS {
+            self.omitted += 1;
+            return;
+        }
+        self.reported.push(row());
+    }
+
+    /// The entries in report order, the omitted count last.
+    fn into_entries(self) -> impl Iterator<Item = String> {
+        let summary = match self.omitted {
+            0 => None,
+            1 => Some("1 more plugin scan error was not listed".to_string()),
+            omitted => Some(format!("{omitted} more plugin scan errors were not listed")),
+        };
+        self.reported.into_iter().chain(summary)
+    }
+}
+
 /// Apply one instance-pass outcome to its descriptor row.
 ///
 /// Success fills in parameters and capabilities. Failure always leaves the
@@ -612,16 +695,61 @@ async fn scan_plugins_with_policy(
     scan_policy: PluginScanPolicy,
     state: &AppState,
 ) -> Result<ScanResult, String> {
+    let descriptor_store = Arc::clone(&state.plugin_registry_store);
+    let instance_store = Arc::clone(&state.plugin_registry_store);
     scan_plugins_with_backend(
         paths,
         retry_quarantined,
         scan_policy,
         PRODUCTION_SCAN_BUDGET,
         state,
-        plugin_scan_worker::scan_descriptor_metadata,
-        plugin_scan_worker::scan_instance_metadata,
+        move |format, path, timeout| {
+            remembering_scan_consumption(&descriptor_store, path, |recorded_consumption| {
+                plugin_scan_worker::scan_descriptor_metadata(
+                    format,
+                    path,
+                    timeout,
+                    recorded_consumption,
+                )
+            })
+        },
+        move |format, path, plugin_id, timeout| {
+            remembering_scan_consumption(&instance_store, path, |recorded_consumption| {
+                plugin_scan_worker::scan_instance_metadata(
+                    format,
+                    path,
+                    plugin_id,
+                    timeout,
+                    recorded_consumption,
+                )
+            })
+        },
     )
     .await
+}
+
+/// Run one scan helper for the binary at `path` with the most free space a
+/// recent earlier run of it consumed, and remember what this run consumed
+/// against it.
+///
+/// The helper attributes a full disk after an exit 3 to the plugin when a
+/// recent run of the binary itself consumed a gibibyte (#6943), so a plugin
+/// cannot fill most of the volume on one scan that exits 0 and the rest on the
+/// next. The consumption is recorded before the next helper of the same scan
+/// runs, so the descriptor pass's run covers the instance passes after it. A
+/// process-lifetime cache would lose it on restart and let the plugin escape
+/// on the first scan after every launch, so it lives in the registry file.
+fn remembering_scan_consumption<T>(
+    registry_store: &PluginRegistryStore,
+    path: &Path,
+    scan: impl FnOnce(Option<u64>) -> ScanAttempt<T>,
+) -> Result<T, ScanFailure> {
+    let now_ms = quarantine_timestamp_ms();
+    let attempt = scan(registry_store.recent_scan_consumption(path, now_ms));
+    if let Some(consumed) = attempt.consumed_bytes {
+        registry_store.record_scan_consumption(path, consumed, now_ms);
+    }
+    attempt.result
 }
 
 /// `budget` and `scan_descriptor`/`scan_instance` are parameters so a test can
@@ -677,15 +805,20 @@ async fn scan_plugins_with_backend(
             let mut candidates = Vec::new();
             let mut notices = Vec::new();
             let mut scan_complete = true;
+            let mut reported_errors = CandidateErrors::default();
             for path in scan_roots {
                 let root_begins_at = candidates.len();
+                let mut walk_errors = Vec::new();
                 let root_completed = scanner::scan_directory_bounded(
                     &path,
                     &mut candidates,
-                    &mut scan_errors,
+                    &mut walk_errors,
                     &mut notices,
                     (MAX_SCAN_CANDIDATES, deadline),
                 );
+                for row in walk_errors {
+                    reported_errors.record_walk_row(row);
+                }
                 // Sorted within the root and never across roots. Directory order
                 // is whatever the filesystem hands back, so a root has to be
                 // sorted to scan the same way twice; the roots themselves are
@@ -807,18 +940,16 @@ async fn scan_plugins_with_backend(
                             }
                             // Not quarantined: nothing about the helper
                             // failed, and the next scan reads the file afresh.
-                            None => scan_errors.push(format!(
-                                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
-                                candidate.path.display()
-                            )),
+                            None => reported_errors.record_changed_file(&candidate.path),
                         }
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
-                        scan_errors.push(format!("{}: {error}", candidate.path.display()))
+                        reported_errors.record(&candidate.path, &error);
                     }
                 }
             }
+            scan_errors.extend(reported_errors.into_entries());
             retain_first_plugin_per_identity(&mut plugins);
             // Deliberately not `publish_scan_results_in_registry`'s predicate:
             // that one drops every registry entry under a scanned root and
@@ -1057,10 +1188,43 @@ fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) 
 /// fingerprint or taken a fresh one, and the load compares it once more
 /// immediately before the plugin's code is opened
 /// ([`construct_runtime_on_ui_thread`]).
+///
+/// A load records the one it opened on the instance it creates
+/// (`EnginePluginInstanceData::load_resolution`), so an offline render that
+/// rebuilds the instance opens the very file the load vetted, re-vetted against
+/// the same fingerprint, rather than resolving the plugin by name again.
 #[derive(Clone, Debug)]
-struct VettedRegistryEntry {
-    entry: PluginRegistryEntry,
-    fingerprint: FileFingerprint,
+pub(crate) struct VettedRegistryEntry {
+    pub(crate) entry: PluginRegistryEntry,
+    pub(crate) fingerprint: FileFingerprint,
+}
+
+#[cfg(test)]
+impl VettedRegistryEntry {
+    /// A resolution for a test record no load produced: a CLAP effect at a path
+    /// nothing exists at, so any construction from it is refused by the vetting.
+    pub(crate) fn fixture() -> Self {
+        Self {
+            entry: PluginRegistryEntry {
+                path: "/nonexistent/Fixture.clap".to_string(),
+                stable_id: "fixture".to_string(),
+                descriptor_id: "com.sourdaw.fixture".to_string(),
+                format: "clap".to_string(),
+                name: "Fixture".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: false,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+            fingerprint: FileFingerprint {
+                size_bytes: 0,
+                modified_ms: 0,
+                identity: crate::host::plugin_registry_store::FileIdentity { device: 0, file: 0 },
+            },
+        }
+    }
 }
 
 /// What one pass of registry resolution produced.
@@ -1502,6 +1666,7 @@ fn lock_registry(
 /// user was actually using, and that row is returned; guessing the bundle's
 /// first plugin would load a different plugin and hand it the sibling's state.
 fn rescan_plugin_file(
+    registry_store: &PluginRegistryStore,
     format: &str,
     path: &Path,
     plugin_id: &str,
@@ -1512,8 +1677,17 @@ fn rescan_plugin_file(
     // would let a rename decide which extractor loads the file.
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| RescanFailure::Verdict(format!("Unknown plugin format: {format}")))?;
-    let bundle =
-        plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
+    // A targeted rescan never quarantines, but its helper runs the plugin like
+    // any other, so its consumption joins the binary's history: a fill begun here
+    // is still attributed on the next full scan.
+    let bundle = remembering_scan_consumption(registry_store, path, |recorded_consumption| {
+        plugin_scan_worker::scan_descriptor_metadata(
+            format,
+            path,
+            TARGETED_RESCAN_TIMEOUT,
+            recorded_consumption,
+        )
+    })?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -1601,7 +1775,7 @@ async fn resolve_plugin_registry_entry(
 /// stays exhaustive: adding a backend adds an arm the compiler demands be
 /// written, instead of a string somebody remembers to add to a `match`.
 #[derive(Clone, Copy)]
-enum HostBackend {
+pub(crate) enum HostBackend {
     /// `ClapWrapper`.
     Clap,
     /// `Vst3Wrapper`.
@@ -1630,7 +1804,7 @@ impl HostBackend {
 /// they are given for refusing to activate it — see
 /// `.agents/decisions/0031-native-plugin-format-strategy.md`. A name that is not
 /// a format at all is not something that decision covers, so it says only that.
-fn host_backend(format: &str) -> Result<HostBackend, String> {
+pub(crate) fn host_backend(format: &str) -> Result<HostBackend, String> {
     let Some(recognised) = PluginFormat::from_wire_name(format) else {
         return Err(format!("Unknown plugin format: {format}"));
     };
@@ -1718,18 +1892,22 @@ fn native_activation_sample_rate(state: &AppState) -> Result<f64, String> {
 /// Everything after it — the latency query, the notifier, the engine
 /// registration, the instance record — is written against
 /// `HostedRuntime` and does not know which format it is holding.
-fn create_hosted_runtime(
+///
+/// `mode` is how the instance will be driven: a live load is `Realtime`, and an
+/// offline render's own instance is `Offline` (`commands::offline_plugins`).
+pub(crate) fn create_hosted_runtime(
     backend: HostBackend,
     path: &str,
     descriptor_id: &str,
     sample_rate: f64,
+    mode: ProcessMode,
 ) -> Result<HostedRuntime, String> {
     match backend {
-        HostBackend::Clap => {
-            ClapWrapper::new(path, descriptor_id, sample_rate).map(HostedRuntime::from)
-        }
+        HostBackend::Clap => ClapWrapper::new_with_mode(path, descriptor_id, sample_rate, mode)
+            .map(HostedRuntime::from),
         HostBackend::Vst3 => {
-            Vst3Wrapper::new(Path::new(path), descriptor_id, sample_rate).map(HostedRuntime::from)
+            Vst3Wrapper::new_with_mode(Path::new(path), descriptor_id, sample_rate, mode)
+                .map(HostedRuntime::from)
         }
     }
 }
@@ -1761,14 +1939,15 @@ fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
 /// How a load builds its runtime: [`create_hosted_runtime`] in production, a
 /// fixture in a test. `Send + 'static` because it runs on the shell's UI thread,
 /// not on the worker that took the load.
-trait RuntimeConstructor:
-    FnOnce(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String> + Send + 'static
+pub(crate) trait RuntimeConstructor:
+    FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String> + Send + 'static
 {
 }
 
 impl<Constructor> RuntimeConstructor for Constructor where
-    Constructor:
-        FnOnce(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String> + Send + 'static
+    Constructor: FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String>
+        + Send
+        + 'static
 {
 }
 
@@ -1803,12 +1982,13 @@ impl<Constructor> RuntimeConstructor for Constructor where
 /// own open: CFBundle, `dlopen` and `LoadLibrary` all take a path rather than a
 /// descriptor, so no check this side of them can be made against the very file
 /// they open.
-fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
+pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
     ui: &Ui,
     backend: HostBackend,
     scan_policy: PluginScanPolicy,
     vetted: VettedRegistryEntry,
     sample_rate: f64,
+    mode: ProcessMode,
     create_runtime: impl RuntimeConstructor,
 ) -> Result<HostedRuntime, String> {
     call_on_ui_thread(ui, move || {
@@ -1834,7 +2014,13 @@ fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
                 entry.name, entry.path
             ));
         }
-        create_runtime(backend, &entry.path, &entry.descriptor_id, sample_rate)
+        create_runtime(
+            backend,
+            &entry.path,
+            &entry.descriptor_id,
+            sample_rate,
+            mode,
+        )
     })?
 }
 
@@ -1863,13 +2049,16 @@ pub async fn load_plugin(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
+    let registry_store = Arc::clone(&state.plugin_registry_store);
     load_plugin_with_backend(
         plugin_id,
         instance_id,
         windows_host,
         state,
         PluginScanPolicy::production(),
-        rescan_plugin_file,
+        move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            rescan_plugin_file(&registry_store, format, path, plugin_id, descriptor_id)
+        },
         create_hosted_runtime,
     )
     .await
@@ -2008,8 +2197,9 @@ async fn load_plugin_under_runtime_gate(
         windows_host,
         backend,
         scan_policy,
-        vetted,
+        vetted.clone(),
         sample_rate,
+        ProcessMode::Realtime,
         create_runtime,
     )?;
     let name = wrapper.get_name().to_string();
@@ -2126,6 +2316,7 @@ async fn load_plugin_under_runtime_gate(
                     parameters: &params,
                     has_gui,
                     chain_kind: entry.chain_kind,
+                    load_resolution: &vetted,
                 },
             ) {
                 Ok(registration) => EngineHandover::Registered(registration),
@@ -2189,6 +2380,7 @@ async fn load_plugin_under_runtime_gate(
                     parameters: params.clone(),
                     has_gui,
                     chain_kind: entry.chain_kind,
+                    load_resolution: vetted,
                 },
             );
             None
@@ -2299,7 +2491,7 @@ const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// a caller that matched on one of them would miss the other. The format is
 /// behind both: `create_hosted_runtime` was the last step that knew one, so this
 /// names the plugin rather than its backend.
-fn activation_refusal_reason(name: &str) -> String {
+pub(crate) fn activation_refusal_reason(name: &str) -> String {
     format!("plugin '{name}' failed to activate for engine-owned runtime")
 }
 
@@ -2489,6 +2681,7 @@ struct RegisteredPlugin<'a> {
     parameters: &'a [PluginParameter],
     has_gui: bool,
     chain_kind: DeviceKind,
+    load_resolution: &'a VettedRegistryEntry,
 }
 
 /// Hand one runtime to a running engine: reserve its id, record the instance,
@@ -2522,6 +2715,7 @@ fn register_runtime_with_engine(
         parameters,
         has_gui,
         chain_kind,
+        load_resolution,
     } = plugin;
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
@@ -2558,7 +2752,7 @@ fn register_runtime_with_engine(
     // thread's own refusal is a counter it cannot return to the user, leaving a
     // plugin in the rack that passes dry audio forever.
     if let Err(reason) = engine.ensure_effect_table_headroom(1) {
-        return Err(RegistrationRefusal::parked(reason, runtime));
+        return Err(RegistrationRefusal::parked(reason.to_string(), runtime));
     }
 
     let id = engine.reserve_plugin_id();
@@ -2593,6 +2787,7 @@ fn register_runtime_with_engine(
             has_gui,
             chain_kind,
             parameter_events,
+            load_resolution: load_resolution.clone(),
         },
     ) {
         return Err(RegistrationRefusal::recovered(reason, shared_plugin, state));
@@ -2623,7 +2818,11 @@ fn register_runtime_with_engine(
                 ));
             }
         }
-        return Err(RegistrationRefusal::recovered(error, shared_plugin, state));
+        return Err(RegistrationRefusal::recovered(
+            error.to_string(),
+            shared_plugin,
+            state,
+        ));
     }
 
     // Past the registration, on the same control-thread visit that read the
@@ -2806,6 +3005,7 @@ fn attach_one_dormant_plugin(
         parameters,
         has_gui,
         chain_kind,
+        load_resolution,
     } = dormant;
 
     let registration = {
@@ -2824,6 +3024,7 @@ fn attach_one_dormant_plugin(
                     parameters: &parameters,
                     has_gui,
                     chain_kind,
+                    load_resolution: &load_resolution,
                 },
             ),
             None => Err(RegistrationRefusal::parked(
@@ -2860,6 +3061,7 @@ fn attach_one_dormant_plugin(
                             parameters,
                             has_gui,
                             chain_kind,
+                            load_resolution,
                         },
                     );
             }
@@ -3053,7 +3255,9 @@ fn release_then_retire_engine_plugin(
         }
     }
 
-    engine.remove_plugin(engine_plugin_id)?;
+    engine
+        .remove_plugin(engine_plugin_id)
+        .map_err(|error| error.to_string())?;
     Ok(reports)
 }
 
@@ -3309,7 +3513,10 @@ pub async fn get_plugin_parameters(
 /// order (command-owned instances first, then engine-owned runtimes) changing
 /// with it. The instance lookup is the authorization gate: plugin state is keyed
 /// by instance id, not addressed by path, so no filesystem allowlist applies.
-fn read_plugin_state_chunk(instance_id: &str, state: &AppState) -> Result<Vec<u8>, String> {
+pub(crate) fn read_plugin_state_chunk(
+    instance_id: &str,
+    state: &AppState,
+) -> Result<Vec<u8>, String> {
     {
         let plugins = state
             .plugins
@@ -3447,22 +3654,24 @@ pub async fn send_plugin_midi(
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
-    engine.send_midi_note(
-        engine_plugin_id,
-        MidiNoteEvent {
-            note,
-            velocity,
-            channel,
-            is_note_on,
-            probability_cutoff: daw_engine::midi_fx::PROBABILITY_CUTOFF_RANGE,
-            project_probability_seed: 0,
-            clip_id_hash: 0,
-            event_id_hash: 0,
-            absolute_occurrence_index: 0,
-            frame_offset: 0,
-            articulation_id: None,
-        },
-    )
+    engine
+        .send_midi_note(
+            engine_plugin_id,
+            MidiNoteEvent {
+                note,
+                velocity,
+                channel,
+                is_note_on,
+                probability_cutoff: daw_engine::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+                articulation_id: None,
+            },
+        )
+        .map_err(|error| error.to_string())
 }
 
 /// Resolve the engine plugin id an instance was registered under.
@@ -3503,7 +3712,9 @@ pub async fn set_plugin_bypass(
         .map_err(|e| format!("Failed to lock engine: {}", e))?;
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
-    engine.set_bypass(engine_plugin_id, bypassed)
+    engine
+        .set_bypass(engine_plugin_id, bypassed)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -3646,6 +3857,7 @@ mod tests {
                 has_gui: true,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
     }
@@ -3732,6 +3944,7 @@ mod tests {
                 parameters: &[],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
+                load_resolution: &VettedRegistryEntry::fixture(),
             },
         )
         .err()
@@ -3778,7 +3991,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, sample_rate| {
+            move |_backend, _path, _descriptor_id, sample_rate, _mode| {
                 *observed.lock().expect("observed rate lock is free") = Some(sample_rate);
                 let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                     "Caller Supplies No Rate",
@@ -3956,6 +4169,7 @@ mod tests {
             has_gui: true,
             chain_kind: DeviceKind::Effect,
             parameter_events: None,
+            load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
         }
     }
 
@@ -4512,6 +4726,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             }
         }
 
@@ -4584,6 +4799,7 @@ mod tests {
                 parameters: &[],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
+                load_resolution: &VettedRegistryEntry::fixture(),
             },
         )
         .err()
@@ -4650,6 +4866,7 @@ mod tests {
                 parameters: &[],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
+                load_resolution: &VettedRegistryEntry::fixture(),
             },
         );
         let Ok(registration) = registration else {
@@ -4716,7 +4933,7 @@ mod tests {
             {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     // The ceiling is crossed here, after the load read it and before
                     // the registration reads it again.
                     for index in 0..HOSTED_PLUGIN_RESERVE {
@@ -4816,7 +5033,7 @@ mod tests {
             {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                         "Editor Ask Unanswered",
                         Vec::new(),
@@ -4908,7 +5125,7 @@ mod tests {
                 let observed_state = Arc::clone(&state);
                 let installs = Arc::clone(&installs);
                 let engine_free = Arc::clone(&engine_free_at_install);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                         "Wake Loaded",
                         Vec::new(),
@@ -4969,7 +5186,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper = ClapWrapper::new_engine_owned_command_fixture(
                     "Synth Fixture",
                     Vec::new(),
@@ -5022,6 +5239,7 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: false,
                     chain_kind: DeviceKind::Generator,
+                    load_resolution: VettedRegistryEntry::fixture(),
                 },
             );
 
@@ -5132,6 +5350,7 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
+                    load_resolution: VettedRegistryEntry::fixture(),
                 },
             );
 
@@ -5259,7 +5478,7 @@ mod tests {
             unexpected_rescan,
             {
                 let lease_held = Arc::clone(&lease_held_at_teardown);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                         "Never Activated",
                         Vec::new(),
@@ -5352,7 +5571,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -5389,7 +5608,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5437,7 +5656,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -5465,7 +5684,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5533,7 +5752,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -5561,7 +5780,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5818,7 +6037,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 slot.lock()
                     .expect("fixture runtime slot")
                     .take()
@@ -5925,7 +6144,7 @@ mod tests {
                 &state,
                 plugins.scan_policy(),
                 unexpected_rescan,
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     log.lock()
                         .expect("construction log")
                         .push(std::thread::current().id());
@@ -5966,7 +6185,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| Ok(runtime),
         ))
         .expect("the fixture plugin should load");
         let reply = crate::block_on_test(unload_plugin(
@@ -6007,7 +6226,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| Ok(runtime),
         ))
         .expect_err("a plugin that never activated must not load");
 
@@ -6037,7 +6256,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| Ok(runtime),
         ))
         .expect_err("a plugin that never activated must not load");
 
@@ -6124,7 +6343,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 slot.lock()
                     .expect("fixture runtime slot")
                     .take()
@@ -6431,7 +6650,11 @@ mod tests {
     /// an activated fixture runtime.
     fn recording_construction(log: &VettingLog) -> impl RuntimeConstructor {
         let log = Arc::clone(log);
-        move |_backend: HostBackend, path: &str, _descriptor_id: &str, _sample_rate: f64| {
+        move |_backend: HostBackend,
+              path: &str,
+              _descriptor_id: &str,
+              _sample_rate: f64,
+              _mode: ProcessMode| {
             log.lock()
                 .expect("vetting log")
                 .push(("construct", path.to_string()));
@@ -6990,6 +7213,7 @@ mod tests {
             plugins.scan_policy(),
             VettedRegistryEntry { entry, fingerprint },
             48_000.0,
+            ProcessMode::Realtime,
             recording_construction(&log),
         )
         .err()
@@ -8477,6 +8701,322 @@ mod tests {
             recording_instance_scan(Arc::clone(instance_calls)),
         ))
         .expect("a scan over an authorized fixture root should succeed")
+    }
+
+    /// A scan over `count` fixture candidates whose descriptor helper reports
+    /// `error_text` as its `Err` — the plugin's own bytes.
+    fn scan_with_failing_candidates(
+        test_name: &str,
+        count: usize,
+        error_text: String,
+    ) -> ScanResult {
+        scan_fixture_candidates(test_name, count, move |_path| {
+            Err(ScanFailure::Refused(error_text.clone()))
+        })
+    }
+
+    /// A scan over `count` fixture candidates whose descriptor pass answers
+    /// with `outcome` for each path.
+    fn scan_fixture_candidates(
+        test_name: &str,
+        count: usize,
+        outcome: impl Fn(&Path) -> Result<Vec<ScannedDescriptor>, ScanFailure> + Send + 'static,
+    ) -> ScanResult {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        for index in 0..count {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, _timeout| outcome(path),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan whose candidates fail still answers");
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// A descriptor answer for a file that is then changed in place, as a
+    /// write landing while the helper read it would.
+    fn changed_while_scanned(path: &Path) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
+        std::fs::write(path, b"a different, longer plugin file").expect("fixture rewritten");
+        Ok(vec![descriptor_for(path)])
+    }
+
+    const CHANGED_FILE_ROW_SUFFIX: &str = ": the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.";
+
+    /// The file-changed row is a candidate error like any other: it counts
+    /// under the same cap and the same closing summary. Mutation this
+    /// catches: pushing it straight into `scan_errors`.
+    #[test]
+    fn file_changed_rows_count_under_the_candidate_error_cap() {
+        let scan = scan_fixture_candidates(
+            "scan-many-changed",
+            MAX_REPORTED_CANDIDATE_ERRORS + 5,
+            changed_while_scanned,
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(CHANGED_FILE_ROW_SUFFIX)));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("5 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Process failures and file-changed rows share one cap, not one each.
+    #[test]
+    fn helper_failures_and_file_changed_rows_share_one_cap() {
+        let scan = scan_fixture_candidates(
+            "scan-mixed-errors",
+            MAX_REPORTED_CANDIDATE_ERRORS + 8,
+            |path| {
+                let index: usize = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .and_then(|stem| stem.strip_prefix("Broken"))
+                    .and_then(|index| index.parse().ok())
+                    .expect("fixture names carry their index");
+                if index.is_multiple_of(2) {
+                    Err(ScanFailure::ExitedUnsuccessfully {
+                        path: path.to_path_buf(),
+                    })
+                } else {
+                    changed_while_scanned(path)
+                }
+            },
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        let listed = &scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS];
+        assert!(listed
+            .iter()
+            .any(|entry| entry.ends_with(CHANGED_FILE_ROW_SUFFIX)));
+        assert!(listed
+            .iter()
+            .any(|entry| entry.contains("Plugin scan helper exited unsuccessfully")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("8 more plugin scan errors were not listed")
+        );
+    }
+
+    /// A scan over a root holding `unreadable` subdirectories the walk cannot
+    /// open and `failing` candidates whose descriptor pass fails.
+    #[cfg(unix)]
+    fn scan_root_with_unreadable_directories(
+        test_name: &str,
+        unreadable: usize,
+        failing: usize,
+    ) -> ScanResult {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root(test_name);
+        let locked: Vec<PathBuf> = (0..unreadable)
+            .map(|index| root.join(format!("Locked{index:03}")))
+            .collect();
+        for dir in &locked {
+            std::fs::create_dir(dir).expect("fixture directory created");
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o000))
+                .expect("fixture directory locked");
+        }
+        for index in 0..failing {
+            std::fs::write(root.join(format!("Broken{index:03}.clap")), b"not a plugin")
+                .expect("fixture written");
+        }
+        let state = state_with_registry_file(&root);
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            |_format, _path, _timeout| Err(ScanFailure::Refused("bad".to_string())),
+            fake_successful_instance_scan,
+        ))
+        .expect("a scan over unreadable folders still answers");
+        for dir in &locked {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755))
+                .expect("fixture directory unlocked");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        scan
+    }
+
+    /// #6937: the folder walk's rows count under the one cap, with one
+    /// closing summary. Mutation this catches: pushing the walk's rows
+    /// straight into `scan_errors`.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_directory_rows_are_capped_with_one_summary() {
+        let scan = scan_root_with_unreadable_directories(
+            "scan-many-unreadable",
+            MAX_REPORTED_CANDIDATE_ERRORS + 5,
+            0,
+        );
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.starts_with("Cannot read ")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("5 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Walk rows and candidate failures draw on the same cap and close with
+    /// one summary counting both.
+    #[cfg(unix)]
+    #[test]
+    fn walk_rows_and_candidate_failures_share_one_cap() {
+        let scan = scan_root_with_unreadable_directories("scan-mixed-walk-and-candidates", 20, 20);
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        let listed = &scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS];
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.starts_with("Cannot read "))
+                .count(),
+            20
+        );
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|entry| entry.ends_with(": bad"))
+                .count(),
+            MAX_REPORTED_CANDIDATE_ERRORS - 20
+        );
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("8 more plugin scan errors were not listed")
+        );
+    }
+
+    /// Exactly the cap lists every failure with no summary; one past it
+    /// lists the cap and counts the one.
+    #[test]
+    fn the_candidate_error_cap_is_exact_at_its_boundary() {
+        let at_cap = scan_with_failing_candidates(
+            "scan-errors-at-cap",
+            MAX_REPORTED_CANDIDATE_ERRORS,
+            "bad".to_string(),
+        );
+        assert_eq!(at_cap.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS);
+        assert!(at_cap.errors.iter().all(|entry| entry.ends_with(": bad")));
+
+        let past_cap = scan_with_failing_candidates(
+            "scan-errors-past-cap",
+            MAX_REPORTED_CANDIDATE_ERRORS + 1,
+            "bad".to_string(),
+        );
+        assert_eq!(past_cap.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert_eq!(
+            past_cap.errors.last().map(String::as_str),
+            Some("1 more plugin scan error was not listed")
+        );
+    }
+
+    /// Text of exactly the bound is kept whole and unmarked; one byte more
+    /// is cut, on a character boundary, and marked. The 513-byte text ends in
+    /// a two-byte character spanning the bound, so a byte cut would split it.
+    #[test]
+    fn the_error_text_bound_is_exact_at_its_boundary() {
+        let at_bound = "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES);
+        assert_eq!(bounded_scan_error_text(&at_bound), at_bound);
+
+        let past_bound = format!("{}é", "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES - 1));
+        assert_eq!(past_bound.len(), MAX_SCAN_ERROR_TEXT_BYTES + 1);
+        assert_eq!(
+            bounded_scan_error_text(&past_bound),
+            format!(
+                "{}{TRUNCATED_SCAN_ERROR_MARKER}",
+                "a".repeat(MAX_SCAN_ERROR_TEXT_BYTES - 1)
+            )
+        );
+    }
+
+    /// #6661: a helper's `Err` text is bounded before it is reported. The cut
+    /// falls inside a two-byte character, so a byte cut would split it; the
+    /// entry keeps the whole characters before it and is marked. Mutation
+    /// this catches: pushing the text whole, or cutting at the byte bound.
+    #[test]
+    fn a_huge_helper_error_is_reported_bounded_on_a_character_boundary() {
+        let text = format!("a{}", "é".repeat(512 * 1024));
+        assert!(
+            !text.is_char_boundary(MAX_SCAN_ERROR_TEXT_BYTES),
+            "the fixture's cut point must fall inside a character"
+        );
+
+        let scan = scan_with_failing_candidates("scan-huge-error", 1, text.clone());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!(
+                "one failing candidate reports one entry: {:?}",
+                scan.errors.len()
+            );
+        };
+        let (_path, reported) = entry
+            .split_once(": ")
+            .expect("an entry names its candidate first");
+        assert!(
+            reported.ends_with(TRUNCATED_SCAN_ERROR_MARKER),
+            "{reported}"
+        );
+        let kept = reported
+            .strip_suffix(TRUNCATED_SCAN_ERROR_MARKER)
+            .expect("the marker was just found");
+        assert!(
+            kept.len() <= MAX_SCAN_ERROR_TEXT_BYTES,
+            "{} bytes kept",
+            kept.len()
+        );
+        assert_eq!(kept, &text[..MAX_SCAN_ERROR_TEXT_BYTES - 1]);
+    }
+
+    /// Text within the bound is reported as the helper wrote it, unmarked.
+    #[test]
+    fn a_short_helper_error_is_reported_whole() {
+        let scan = scan_with_failing_candidates("scan-short-error", 1, "bad entry".to_string());
+
+        let [entry] = scan.errors.as_slice() else {
+            panic!("one failing candidate reports one entry: {:?}", scan.errors);
+        };
+        assert!(entry.ends_with(": bad entry"), "{entry}");
+    }
+
+    /// #6661: a folder of broken bundles reports the first failures by name
+    /// and counts the rest in one closing entry. Mutation this catches:
+    /// dropping the cap, or the summary's count.
+    #[test]
+    fn many_failing_candidates_report_a_capped_list_and_the_omitted_count() {
+        let failing = MAX_REPORTED_CANDIDATE_ERRORS + 9;
+
+        let scan = scan_with_failing_candidates("scan-many-errors", failing, "bad".to_string());
+
+        assert_eq!(scan.errors.len(), MAX_REPORTED_CANDIDATE_ERRORS + 1);
+        assert!(scan.errors[..MAX_REPORTED_CANDIDATE_ERRORS]
+            .iter()
+            .all(|entry| entry.ends_with(": bad")));
+        assert_eq!(
+            scan.errors.last().map(String::as_str),
+            Some("9 more plugin scan errors were not listed")
+        );
     }
 
     /// A candidate replaced after its helper read it, while the walk was still
@@ -10243,6 +10783,7 @@ mod tests {
                 has_gui: true,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
     }
@@ -11595,5 +12136,46 @@ mod tests {
             parameter_metadata_reason: None,
             capabilities: None,
         }
+    }
+
+    /// #6943: what one helper run consumed reaches the next run for the same
+    /// binary, and only that binary. Mutation this catches: not recording the
+    /// consumption, or not handing it to the next helper.
+    #[test]
+    fn a_runs_consumption_reaches_the_next_helper_run_for_the_same_binary() {
+        let store = PluginRegistryStore::in_memory_only();
+        let filler = Path::new("/plugins/Filler.clap");
+        let filled = 64_u64 << 30;
+        let ran = |consumed_bytes| ScanAttempt {
+            result: Ok(()),
+            consumed_bytes,
+        };
+
+        let mut first_recorded = Some(0);
+        remembering_scan_consumption(&store, filler, |recorded_consumption| {
+            first_recorded = recorded_consumption;
+            ran(Some(filled))
+        })
+        .expect("the stand-in run succeeds");
+        let mut next_recorded = None;
+        remembering_scan_consumption(&store, filler, |recorded_consumption| {
+            next_recorded = recorded_consumption;
+            ran(Some(0))
+        })
+        .expect("the stand-in run succeeds");
+        let mut other_recorded = Some(0);
+        remembering_scan_consumption(
+            &store,
+            Path::new("/plugins/Other.clap"),
+            |recorded_consumption| {
+                other_recorded = recorded_consumption;
+                ran(None)
+            },
+        )
+        .expect("the stand-in run succeeds");
+
+        assert_eq!(first_recorded, None);
+        assert_eq!(next_recorded, Some(filled));
+        assert_eq!(other_recorded, None);
     }
 }

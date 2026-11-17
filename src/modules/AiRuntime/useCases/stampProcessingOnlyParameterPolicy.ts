@@ -1,4 +1,5 @@
-import { type AppAction, type AppActionType, type AutomationRecordingPolicy } from '#/utils/handlerContract';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 type Stamp = { readonly [Type in AppActionType]: (action: ActionOf<Type>) => AppAction };

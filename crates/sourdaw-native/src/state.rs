@@ -1,3 +1,4 @@
+use crate::commands::plugins::VettedRegistryEntry;
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_registry_store::FileFingerprint;
 use crate::host::ui_thread::{release_on_ui_thread, UiThread};
@@ -45,6 +46,9 @@ pub struct PluginInstanceData {
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
     pub chain_kind: DeviceKind,
+    /// The registry entry the load opened, with the fingerprint it vetted,
+    /// carried through the attach onto `EnginePluginInstanceData`.
+    pub(crate) load_resolution: VettedRegistryEntry,
 }
 
 impl PluginInstanceData {
@@ -63,6 +67,7 @@ impl PluginInstanceData {
             parameters: plugin.get_parameters(),
             has_gui: plugin.has_gui(),
             chain_kind: DeviceKind::Effect,
+            load_resolution: VettedRegistryEntry::fixture(),
             plugin,
         }
     }
@@ -89,6 +94,13 @@ pub struct EnginePluginInstanceData {
     /// it would trade a knob's latency for a dropout. `None` for a backend that
     /// reports no plugin-side edits.
     pub parameter_events: Option<Arc<PluginParameterEventQueue>>,
+    /// The registry entry the load opened and the fingerprint it vetted,
+    /// recorded at load the way `chain_kind` is. An offline render rebuilds
+    /// this instance from exactly that file, re-vetted against exactly that
+    /// fingerprint (`commands::offline_plugins`), and never resolves the plugin
+    /// by name again: a rescan since the load may have moved the name to a
+    /// different file.
+    pub(crate) load_resolution: VettedRegistryEntry,
 }
 
 /// The signal one editor teardown completes on.
@@ -336,6 +348,10 @@ pub struct AppState {
     /// every method on it touches the filesystem. See
     /// `host::plugin_registry_store`.
     pub plugin_registry_store: Arc<crate::host::plugin_registry_store::PluginRegistryStore>,
+    /// The offline renders in flight, by the id their caller named, and the
+    /// cancels that arrived before their render did. See
+    /// `commands::offline_plugins::OfflineRenders`.
+    pub offline_renders: Arc<Mutex<crate::commands::offline_plugins::OfflineRenders>>,
 }
 
 /// One registered piece of timeline material: planar stereo PCM and the rate
@@ -658,13 +674,16 @@ impl AppState {
     /// builds an `AppState` must not read — or rewrite — the developer's own
     /// scanned plugin database, and a default that reaches the real file would
     /// make every such test do exactly that.
-    pub fn with_persisted_plugin_registry() -> Self {
-        Self {
+    ///
+    /// Refused when the runtime scope selection was: a store at the legacy
+    /// location would read and rewrite the unscoped registry.
+    pub fn with_persisted_plugin_registry() -> Result<Self, String> {
+        Ok(Self {
             plugin_registry_store: Arc::new(
-                crate::host::plugin_registry_store::PluginRegistryStore::at_default_location(),
+                crate::host::plugin_registry_store::PluginRegistryStore::at_default_location()?,
             ),
             ..Self::default()
-        }
+        })
     }
 }
 
@@ -690,6 +709,9 @@ impl Default for AppState {
             plugin_registry_store: Arc::new(
                 crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
             ),
+            offline_renders: Arc::new(Mutex::new(
+                crate::commands::offline_plugins::OfflineRenders::default(),
+            )),
         }
     }
 }
@@ -1432,6 +1454,7 @@ mod tests {
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
                     parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
         assert!(

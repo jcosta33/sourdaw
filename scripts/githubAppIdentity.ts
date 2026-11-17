@@ -630,10 +630,13 @@ export type OrchestratorAuthenticationInput = {
 
 export type OrchestratorAuthentication = { minted: { actorNodeId: string }; session: GhSession };
 
-export async function authenticateOrchestrator(
+export function authenticateOrchestrator(
     input: OrchestratorAuthenticationInput = {}
 ): Promise<OrchestratorAuthentication> {
-    return authenticateOrchestratorSession(input);
+    // The executor runs synchronously, so a refused credential still rejects rather than throws.
+    return new Promise((resolve) => {
+        resolve(authenticateOrchestratorSession(input));
+    });
 }
 
 /**

@@ -4,9 +4,9 @@ import {
     type ClipSatelliteEntrySnapshot,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
-    type MidiClipDataActionSnapshot,
     type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+} from '#/modules/Arrangement/events';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 
 import { validateVersionedCommandArguments } from '../versionedCommandArgumentKeys';
 

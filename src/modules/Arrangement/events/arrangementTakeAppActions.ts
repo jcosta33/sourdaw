@@ -1,17 +1,19 @@
-import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
 import {
-    type ClipStateSnapshot,
-    type CompAudioSourceInputProof,
-    type CompAudioSourceOwnerSnapshot,
     type MidiCcSnapshot,
     type MidiClipCcSnapshot,
     type MidiClipNoteSnapshot,
     type MidiClipPitchBendSnapshot,
     type MidiNotesSnapshot,
     type MidiPitchBendSnapshot,
+} from '#/modules/MIDI/events';
+import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
+
+import {
+    type CompAudioSourceInputProof,
+    type CompAudioSourceOwnerSnapshot,
     type OriginalMidiTakeRowCopy,
-    type RetiredTakeLaneSnapshot,
-} from '#/utils/handlerContract';
+} from './arrangementClipSnapshots';
+import { type ClipStateSnapshot, type RetiredTakeLaneSnapshot } from './arrangementClipStateSnapshots';
 
 export type CompAudioSourcePromotionSnapshot = {
     readonly expected: CompAudioSourceOwnerSnapshot;

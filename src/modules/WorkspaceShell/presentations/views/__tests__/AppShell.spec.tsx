@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
 import {
@@ -12,6 +13,7 @@ import {
     type Track,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
+import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
@@ -31,6 +33,7 @@ import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { type ActiveDevicePanel } from '../../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../../hooks/useAppEventHandlers';
 import { useProjectState } from '../../hooks/useProjectState';
+import { useShellTrackFacts } from '../../hooks/useShellTrackFacts';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
@@ -50,6 +53,23 @@ const arrangementMinimumHeightMock = vi.hoisted(() => ({ value: 0 }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
 }));
+
+// The shell must read the tracks only through this hook, so the spec serves the hook's facts from
+// its fixture and lets the store-call assertions below see only the shell's own subscriptions.
+vi.mock('../../hooks/useShellTrackFacts', () => ({
+    useShellTrackFacts: vi.fn(),
+}));
+
+// The shell reads its track and AI facts through selectors; the spec drives them from its own
+// fixtures and leaves every other store to the real hook.
+const realStoreSelector = vi.hoisted(() => ({
+    use: null as typeof import('#/infra/store/useStoreSelector').useStoreSelector | null,
+}));
+vi.mock('#/infra/store/useStoreSelector', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/store/useStoreSelector')>();
+    realStoreSelector.use = actual.useStoreSelector;
+    return { useStoreSelector: vi.fn() };
+});
 
 vi.mock('../../hooks/useWorkspaceState', () => ({
     useWorkspaceState: vi.fn(),
@@ -366,6 +386,7 @@ let projectLoadFailureState: ProjectLoadFailureState | null;
 let alphaNoticeDismissed: boolean;
 let onboardingState: typeof defaultOnboardingState;
 let trackStoreState: TrackStoreState;
+let trackValueSpy: { mockRestore: () => void } | null = null;
 let selectedClipIdState: string | null;
 let workspaceState: WorkspaceState;
 let agentProjectRepairState: AgentProjectRepairState | null;
@@ -390,6 +411,32 @@ describe('AppShell', () => {
         selectedClipIdState = null;
         agentProjectRepairState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
+        // The Takes-lane effect reads the store directly, so serve it the same fixture.
+        vi.mocked(useShellTrackFacts).mockImplementation((selectedClipId) => ({
+            isAudioClipSelected:
+                selectedClipId !== null &&
+                trackStoreState.tracks.some((track) =>
+                    track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
+                ),
+            takesTabAvailable: hasVariationLanes(trackStoreState.tracks),
+            variationLanesShown: detectVariationLaneEnabling(null, trackStoreState.tracks).shown,
+        }));
+        trackValueSpy = vi.spyOn(trackStore, 'value', 'get').mockImplementation(() => trackStoreState);
+        vi.mocked(useStoreSelector).mockImplementation((store, selector, equalityFn) => {
+            if (store === trackStore) {
+                return selector(trackStoreState);
+            }
+            if (store === aiStore) {
+                return selector({ tasks: [], isPanelOpen: false });
+            }
+            if (store === workspaceStore) {
+                return selector(workspaceState);
+            }
+            if (realStoreSelector.use === null) {
+                throw new Error('The real useStoreSelector must be loaded');
+            }
+            return realStoreSelector.use(store, selector, equalityFn);
+        });
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === trackStore) {
                 return trackStoreState;
@@ -436,6 +483,8 @@ describe('AppShell', () => {
     });
 
     afterEach(() => {
+        trackValueSpy?.mockRestore();
+        trackValueSpy = null;
         vi.useRealTimers();
     });
 
@@ -533,6 +582,40 @@ describe('AppShell', () => {
         sidebarPanelActions.current?.revealDevice('device-1');
 
         expect(revealDeviceInInspectorMock).toHaveBeenCalledExactlyOnceWith('device-1');
+    });
+
+    it('reads the tracks only through useShellTrackFacts, never by following the whole store', () => {
+        selectedClipIdState = 'clip-1';
+        // Child panels follow the track store themselves; only a subscription made while the
+        // shell's own body runs belongs to the shell, and that body is the caller on the stack.
+        const shellTrackSubscriptions: string[] = [];
+        let shellBodyCalls = 0;
+        const recordShellCall = (store: unknown): void => {
+            if (!/at AppShell \(/.test(new Error('caller probe').stack ?? '')) {
+                return;
+            }
+            shellBodyCalls += 1;
+            if (store === trackStore) {
+                shellTrackSubscriptions.push('AppShell');
+            }
+        };
+        const useStoreImplementation = vi.mocked(useStore).getMockImplementation();
+        const useStoreSelectorImplementation = vi.mocked(useStoreSelector).getMockImplementation();
+        vi.mocked(useStore).mockImplementation((store, defaultValue) => {
+            recordShellCall(store);
+            return useStoreImplementation?.(store, defaultValue);
+        });
+        vi.mocked(useStoreSelector).mockImplementation((store, selector, equalityFn) => {
+            recordShellCall(store);
+            return useStoreSelectorImplementation?.(store, selector, equalityFn);
+        });
+
+        render(<AppShell>Content</AppShell>);
+
+        expect(useShellTrackFacts).toHaveBeenCalledWith('clip-1');
+        // Without a sighting of the shell's own body, an empty list could mean the frame was renamed.
+        expect(shellBodyCalls).toBeGreaterThan(0);
+        expect(shellTrackSubscriptions).toEqual([]);
     });
 
     it('preserves falsy defaults for unlisted stores', () => {
