@@ -283,7 +283,7 @@ function leavesRejectionObservable(context, call) {
     const returnsBinding = (value) =>
         isIdentifier(value, original.name) && definitions(context, value)[0]?.node === binding.node;
     function retainsRejectingValue(expression) {
-        const value = unwrap(expression);
+        const value = unwrappedReturnedValue(expression);
         if (returnsBinding(value)) {
             return true;
         }
@@ -292,17 +292,31 @@ function leavesRejectionObservable(context, call) {
         }
         return safePromiseContinuation(context, value) && retainsRejectingValue(value.callee.object);
     }
+    function interceptedAwait(node) {
+        if (node.type !== 'AwaitExpression') {
+            return false;
+        }
+        const value = unwrappedReturnedValue(node.argument);
+        const joined = promiseArrayArguments(context, value, 'all');
+        if (!retainsRejectingValue(value) && !joined?.elements.some(retainsRejectingValue)) {
+            return false;
+        }
+        return !completionReachesCaller(context, node, {
+            handlerIntercepts: (handler) => !catchEndsByThrowing(handler),
+        });
+    }
     function returnsOriginal(statement) {
         const argument = statement.argument;
         if (
             !argument ||
             hasCapturedWrite ||
             laterWrites.some((reference) => reference.identifier.range[0] < argument.range[1]) ||
-            !completionReachesCaller(context, statement)
+            !completionReachesCaller(context, statement) ||
+            hasSameFunctionNode(context, argument, interceptedAwait)
         ) {
             return false;
         }
-        const value = unwrap(argument);
+        const value = unwrappedReturnedValue(argument);
         if (value?.type === 'ObjectExpression') {
             return [...literalObjectFields(value).values()].some(retainsRejectingValue);
         }
@@ -340,7 +354,7 @@ const noSilentCatch = rule(
     }
 );
 
-function successRuntimeValue(node) {
+function unwrappedReturnedValue(node) {
     let value = unwrap(node);
     while (value?.type === 'TSAsExpression' || value?.type === 'TSTypeAssertion') {
         value = unwrap(value.expression);
@@ -349,12 +363,12 @@ function successRuntimeValue(node) {
 }
 
 const isTrue = (node) => {
-    const value = successRuntimeValue(node);
+    const value = unwrappedReturnedValue(node);
     return value?.type === 'Literal' && value.value === true;
 };
 
 function isSuccessValue(node) {
-    const value = successRuntimeValue(node);
+    const value = unwrappedReturnedValue(node);
     if (value?.type !== 'ObjectExpression') {
         return false;
     }

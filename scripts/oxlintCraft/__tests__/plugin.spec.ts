@@ -198,8 +198,46 @@ runCraftRule('no-silent-catch', {
         'function defer(promise, replacement) { void promise.catch(() => {}); return { ...{ task: replacement }, task: promise }; }',
         'function defer(promise, other) { void promise.catch(() => {}); return { ...other, ...{ ["task"]: promise } }; }',
         'function restoreNestedWrite(promise, other) { void promise.catch(() => {}); return { ...{ task: null, ...other }, task: promise }; }',
+        'async function deferred(promise) { void promise.catch(() => {}); return await promise; }',
+        'async function deferred(promise) { try { void promise.catch(() => {}); return await promise; } catch (error) { console.error(error); throw error; } }',
+        'async function deferred(promise) { try { void promise.catch(() => {}); return promise; } catch (error) { console.error(error); } }',
+        'async function deferred(promise) { try { void promise.catch(() => {}); return await Promise.allSettled([promise]); } catch (error) { console.error(error); } }',
+        'async function awaitsPackedObject(promise) { try { void promise.catch(() => {}); return await { promise }; } catch (error) { console.error(error); } }',
+        'function deferred(promise) { void promise.catch(() => {}); return { ...{ task: null }, task: promise } as const; }',
     ],
     invalid: [
+        {
+            code: 'async function deferred(promise) { try { void promise.catch(() => {}); return await promise; } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function deferred(promise) { try { void promise.catch(() => {}); return { value: await promise }; } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function deferred(promise) { try { void promise.catch(() => {}); return { promise, value: await promise }; } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function deferred(promise) { try { void promise.catch(() => {}); return Promise.all([await promise]); } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function deferred(promise) { try { void promise.catch(() => {}); return await Promise.all([promise]); } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function awaitsResolve(promise) { try { void promise.catch(() => {}); return await Promise.resolve(promise); } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function awaitsChain(promise) { try { void promise.catch(() => {}); return await promise.then(transform).finally(cleanup); } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'async function awaitsBeforeSettling(promise) { try { void promise.catch(() => {}); return await Promise.allSettled([await promise]); } catch (error) { console.error(error); } }',
+            errors: [{ message: /empty handler discards/ }],
+        },
         {
             code: 'function defer(promise, replacement) { void promise.catch(() => {}); return { promise, ...{ promise: replacement } }; }',
             errors: [{ message: /empty handler discards/ }],

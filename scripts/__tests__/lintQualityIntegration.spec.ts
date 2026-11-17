@@ -67,7 +67,24 @@ describe('production quality lint', () => {
                 }
                 export function restoresObservedPromise(promise: Promise<void>) {
                     void promise.catch(() => {});
-                    return { ...{ promise: Promise.resolve() }, promise };
+                    return { ...{ promise: Promise.resolve() }, promise } as const;
+                }
+                export async function interceptsAwaitedPromise(promise: Promise<void>) {
+                    try {
+                        void promise.catch(() => {}); // awaited rejection is handled locally
+                        return await promise;
+                    } catch (error) {
+                        console.error(error);
+                    }
+                }
+                export async function rethrowsAwaitedPromise(promise: Promise<void>) {
+                    try {
+                        void promise.catch(() => {});
+                        return await promise;
+                    } catch (error) {
+                        console.error(error);
+                        throw error;
+                    }
                 }
                 export function returnsFailure(run: () => { ok: boolean }) {
                     try { return run(); } catch { return { ok: true, ...{ ok: false } }; }
@@ -318,8 +335,11 @@ describe('production quality lint', () => {
             expect(diagnosticLines(runTime, 'sourdaw-craft/no-failed-operation-success')).toEqual(
                 expect.arrayContaining(['try { return run(); } catch { return { ok: false, ...{ ok: true } }; }'])
             );
-            expect(diagnosticLines(runTime, 'sourdaw-craft/no-silent-catch')).toContain(
-                'void promise.catch(() => {}); // original promise is discarded'
+            expect(diagnosticLines(runTime, 'sourdaw-craft/no-silent-catch')).toEqual(
+                expect.arrayContaining([
+                    'void promise.catch(() => {}); // original promise is discarded',
+                    'void promise.catch(() => {}); // awaited rejection is handled locally',
+                ])
             );
             expect(diagnosticLines(browser, 'sourdaw-craft/no-conditional-playwright-admission')).toEqual(
                 expect.arrayContaining([
@@ -341,6 +361,7 @@ describe('production quality lint', () => {
                     ['typed.ts', 'sourdaw-craft/no-external-data-assertion'],
                     ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
                     ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
+                    ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
                     ['typed.ts', 'sourdaw-craft/no-useless-clone-spread'],
