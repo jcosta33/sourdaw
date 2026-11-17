@@ -1434,6 +1434,9 @@ for (const projectScale of [false, true]) {
             expect(populated.projected).toHaveLength(ATTACKS.length + 1);
             const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
             expect(retained).toHaveLength(2);
+            if (projectScale) {
+                await observeProspectiveRequests(page, info);
+            }
             const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
             await armPopulatedMeasurement(page, 'click');
             await panel.getByTestId('elastic-detect-button').click();
@@ -1803,7 +1806,7 @@ async function assertPopulatedMeasurement(
     trace: ElasticTaskTrace,
     projectScale: boolean
 ): Promise<void> {
-    const measured = await page.evaluate(async (projectScale) => {
+    const measured = await page.evaluate(async () => {
         const target = window as Window & {
             populatedElasticMeasurement?: Promise<{
                 start: number;
@@ -1822,19 +1825,16 @@ async function assertPopulatedMeasurement(
         if (!inputMark) {
             throw new Error('Measured Detect omitted its input clock mark');
         }
-        let prospectiveRequests: ProspectiveObservation[] | null = null;
-        if (!projectScale) {
-            const observed = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
-                .elasticProspectiveObservation;
-            if (!observed) {
-                throw new Error('Actual prospective request observation missing');
-            }
-            prospectiveRequests = observed.requests.filter(
-                (request) => request.requested >= measurement.start && request.requested < measurement.end
-            );
+        const observed = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
+            .elasticProspectiveObservation;
+        if (!observed) {
+            throw new Error('Actual prospective request observation missing');
         }
+        const prospectiveRequests = observed.requests.filter(
+            (request) => request.requested >= measurement.start && request.requested < measurement.end
+        );
         return { ...measurement, inputMarkStart: inputMark.startTime, prospectiveRequests };
-    }, projectScale);
+    });
     await trace.stop();
     const gaps = measured.frames
         .slice(1)
@@ -1880,14 +1880,7 @@ async function assertPopulatedMeasurement(
     });
     await trace.attach();
     assertMaterializationTaskSpans(result.nativePhases);
-    if (projectScale) {
-        assertMaterializationAttempts(measured.measures);
-    } else {
-        if (!measured.prospectiveRequests) {
-            throw new Error('Required ordinary prospective request census missing');
-        }
-        assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
-    }
+    assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
     const after = await sourceState(page);
     expect(after.raw).toEqual(after.projected);
     expect(after.pcm).toEqual(before.pcm);
