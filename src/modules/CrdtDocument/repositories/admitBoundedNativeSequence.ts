@@ -69,8 +69,8 @@ function yieldToHost(signal: AbortSignal): Promise<void> {
     });
 }
 
-function measure(name: string, start: number, end: number, index?: number): void {
-    performance.measure(name, { start, end, detail: { sequenceIndex: index } });
+function measure(name: string, start: number, end: number, primaryKey: string, index?: number): void {
+    performance.measure(name, { start, end, detail: { primaryKey, sequenceIndex: index } });
     performance.clearMeasures(name);
 }
 
@@ -249,10 +249,10 @@ function admitSequenceChunk<TDoc>(
         } else if (phase === 'apply') {
             applyEnded = ended;
         }
-        measure('automerge-prospective-response-task', started, responseEnded, index);
-        measure('automerge-prospective-apply-task', responseEnded, applyEnded, index);
-        measure('automerge-prospective-authority-task', applyEnded, ended, index);
-        measure('automerge-prospective-sequence-slice-task', started, ended, index);
+        measure('automerge-prospective-response-task', started, responseEnded, input.key, index);
+        measure('automerge-prospective-apply-task', responseEnded, applyEnded, input.key, index);
+        measure('automerge-prospective-authority-task', applyEnded, ended, input.key, index);
+        measure('automerge-prospective-sequence-slice-task', started, ended, input.key, index);
     }
 }
 
@@ -291,7 +291,7 @@ export async function admitBoundedNativeSequence<TDoc>(input: Input<TDoc>): Prom
         state.startOp = history.reduce((maximum, entry) => Math.max(maximum, entry.maxOp), 0) + 1;
         state.previousOwnHash = latestOwn?.hash;
         assertCurrent();
-        measure('automerge-prospective-sequence-planning-task', planningStarted, performance.now());
+        measure('automerge-prospective-sequence-planning-task', planningStarted, performance.now(), input.key);
         for (const [index, bytes] of changes.entries()) {
             await yieldToHost(input.signal);
             admitSequenceChunk(input, state, bytes, index, sequence.operationCount, assertCurrent);

@@ -146,13 +146,13 @@ function classifyRequest(attempt: Attempt, data: unknown, targetClipId: string):
     attempt.preparationPolicy = typeof data.preparationPolicy === 'string' ? data.preparationPolicy : null;
     attempt.capturedHeads = stringArray(data.heads);
     attempt.role = 'other-prospective';
-    if (data.mutation.kind !== 'canonical-json-slot-v1') {
+    if (data.mutation.kind !== 'canonical-json-slot-v1' || attempt.preparationPolicy !== 'bounded-native-sequence-v1') {
         return;
     }
-    if (attempt.primaryKey === 'warpStates' && attempt.preparationPolicy === null) {
+    if (attempt.primaryKey === 'warpStates') {
         attempt.role = 'detect';
         attempt.expectedTargetWarpState = structuredClone(targetWarpState(data.mutation.value, targetClipId));
-    } else if (attempt.primaryKey === 'arrangements' && attempt.preparationPolicy === 'bounded-native-sequence-v1') {
+    } else if (attempt.primaryKey === 'arrangements') {
         attempt.role = 'save-arrangements';
     }
 }

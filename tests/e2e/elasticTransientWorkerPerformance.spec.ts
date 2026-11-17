@@ -69,6 +69,7 @@ type PreparationMeasure = {
 };
 type ProspectiveObservation = {
     primaryKey: string;
+    preparationPolicy: string | null;
     requested: number;
     posted: boolean;
     heads: string[];
@@ -178,59 +179,76 @@ function assertMaterializationTaskSpans(phases: ReturnType<typeof materializatio
 function measureDetail(measure: PreparationMeasure): Record<string, unknown> {
     return isRecord(measure.detail) ? measure.detail : {};
 }
-function isSequenceMeasure(measure: PreparationMeasure): boolean {
-    return typeof measureDetail(measure).sequenceIndex === 'number';
+
+const SEQUENCE_PLANNING_NAME = 'automerge-prospective-sequence-planning-task';
+const SEQUENCE_SLICE_NAME = 'automerge-prospective-sequence-slice-task';
+const SEQUENCE_PHASE_NAMES: readonly string[] = [
+    'automerge-prospective-response-task',
+    'automerge-prospective-apply-task',
+    'automerge-prospective-authority-task',
+    SEQUENCE_SLICE_NAME,
+];
+
+function nativeSequencePhases(measures: PreparationMeasure[]): PreparationMeasure[] {
+    return measures.filter(
+        (entry) => entry.name === SEQUENCE_PLANNING_NAME || SEQUENCE_PHASE_NAMES.includes(entry.name)
+    );
 }
+
 function storageRole(measure: PreparationMeasure, key: string): boolean {
     const detail = measureDetail(measure);
-    const policy = key === 'arrangements' ? 'bounded-native-sequence-v1' : undefined;
-    return detail.primaryKey === key && detail.preparationPolicy === policy;
+    return detail.primaryKey === key && detail.preparationPolicy === 'bounded-native-sequence-v1';
 }
-function assertMaterializationAttempts(
-    measures: PreparationMeasure[],
-    overlap?: Awaited<ReturnType<typeof attachSaveOverlap>>
-): void {
-    const responses = measures.filter(
-        (entry) => entry.name === 'automerge-prospective-response-task' && !isSequenceMeasure(entry)
-    );
-    expect(responses.length).toBeGreaterThan(0);
-    if (overlap) {
-        const detect = overlap.attempts.filter((attempt) => attempt.role === 'detect');
-        expect(detect.length).toBeGreaterThan(0);
-        for (const attempt of detect) {
-            expect(attempt.status, 'Every Detect attempt needs an actual complete native reply').toBe('complete');
-            expect(attempt.replies).toHaveLength(1);
-            expect(attempt.forwarded).not.toBeNull();
-            expect(attempt.terminated).not.toBeNull();
-        }
-        const completed = detect.filter((attempt) => attempt.status === 'complete' && attempt.forwarded !== null);
-        expect(responses).toHaveLength(completed.length);
-        expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
-            detect.length
-        );
-        expect(
-            measures.filter(
-                (entry) =>
-                    entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'warpStates')
-            )
-        ).toHaveLength(detect.length);
-        return;
-    }
+
+function assertDetectMaterializationAttempts(measures: PreparationMeasure[], count: number): void {
     expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
-        responses.length
+        count
     );
     expect(
         measures.filter(
             (entry) =>
                 entry.name === 'automerge-storage-materialization-handoff-task' && storageRole(entry, 'warpStates')
         )
-    ).toHaveLength(responses.length);
+    ).toHaveLength(count);
 }
+
+function assertCompletedSequence(
+    phases: PreparationMeasure[],
+    changeCount: number,
+    workerTerminated: number,
+    end: number
+): number {
+    expect(phases).toHaveLength(1 + SEQUENCE_PHASE_NAMES.length * changeCount);
+    const planning = phases.filter((entry) => entry.name === SEQUENCE_PLANNING_NAME);
+    expect(planning).toHaveLength(1);
+    expect(measureDetail(planning[0]).sequenceIndex).toBeUndefined();
+    expect(planning[0].startTime).toBeGreaterThanOrEqual(workerTerminated);
+    const indices = Array.from({ length: changeCount }, (_, index) => index);
+    for (const name of SEQUENCE_PHASE_NAMES) {
+        const measured = phases.filter((entry) => entry.name === name);
+        expect(
+            measured.map((entry) => measureDetail(entry).sequenceIndex),
+            `Incomplete or ambiguous ${name} census`
+        ).toEqual(indices);
+    }
+    const planningEnd = planning[0].startTime + planning[0].duration;
+    for (const phase of phases) {
+        expect(phase.startTime).toBeGreaterThanOrEqual(workerTerminated);
+        expect(phase.startTime + phase.duration).toBeLessThanOrEqual(end);
+    }
+    let sliceEnd = planningEnd;
+    for (const slice of phases.filter((entry) => entry.name === SEQUENCE_SLICE_NAME)) {
+        expect(slice.startTime).toBeGreaterThanOrEqual(sliceEnd);
+        sliceEnd = slice.startTime + slice.duration;
+    }
+    return sliceEnd;
+}
+
 function assertSequenceCensus(
     measures: PreparationMeasure[],
     overlap: NonNullable<Awaited<ReturnType<typeof attachSaveOverlap>>>
 ): void {
-    const attempts = overlap.attempts.filter((attempt) => attempt.preparationPolicy === 'bounded-native-sequence-v1');
+    const attempts = overlap.attempts.filter((attempt) => attempt.role === 'save-arrangements');
     expect(attempts, 'Controlled stale Save must make exactly one fresh retry').toHaveLength(2);
     const stale = attempts.at(0);
     const fresh = attempts.at(1);
@@ -264,26 +282,28 @@ function assertSequenceCensus(
     expect(stale.terminatedState.identity).toBe(overlap.armed.identity);
     const baseline: unknown = JSON.parse(overlap.baselineTargetWarpState);
     expect(matchesJsonFingerprint(baseline, stale.targetWarpStateAtRequest)).toBe(true);
-    const detect = overlap.attempts.find((attempt) => attempt.held && attempt.role === 'detect');
-    if (!detect) {
+    const detectAttempts = overlap.attempts.filter((attempt) => attempt.role === 'detect');
+    expect(detectAttempts).toHaveLength(1);
+    const detect = detectAttempts.at(0);
+    if (!detect?.held || detect.terminated === null || detect.forwarded === null || detect.changeCount === null) {
         throw new Error('Save replan requires the real held Detect request');
     }
     expect(matchesJsonFingerprint(detect.expectedTargetWarpState, stale.targetWarpStateAtRequest)).toBe(false);
     expect(matchesJsonFingerprint(detect.expectedTargetWarpState, fresh.targetWarpStateAtRequest)).toBe(true);
     expect(fresh.requested).toBeGreaterThanOrEqual(stale.terminatedState.time);
     expect(fresh.capturedHeads.toSorted()).not.toEqual(stale.capturedHeads.toSorted());
-    const owned = measures.filter(
-        (entry) => entry.name === 'automerge-prospective-sequence-planning-task' || isSequenceMeasure(entry)
-    );
-    const names = [
-        'automerge-prospective-response-task',
-        'automerge-prospective-apply-task',
-        'automerge-prospective-authority-task',
-        'automerge-prospective-sequence-slice-task',
-    ];
+    expect(detect.preparationPolicy).toBe('bounded-native-sequence-v1');
+    expect(detect.changeCount).toBeGreaterThan(1);
+    assertDetectMaterializationAttempts(measures, detectAttempts.length);
+    const phases = nativeSequencePhases(measures);
+    const detectPhases = phases.filter((entry) => measureDetail(entry).primaryKey === 'warpStates');
+    const owned = phases.filter((entry) => measureDetail(entry).primaryKey === 'arrangements');
+    expect(detectPhases.length + owned.length, 'Unattributed bounded phases cannot be discounted').toBe(phases.length);
+    assertCompletedSequence(detectPhases, detect.changeCount, detect.terminated, publication.state.time);
     let assigned = 0;
     for (const [index, attempt] of attempts.entries()) {
-        expect(attempt.role, 'Sequence role must come from the actual request').toBe('save-arrangements');
+        expect(attempt.primaryKey).toBe('arrangements');
+        expect(attempt.preparationPolicy).toBe('bounded-native-sequence-v1');
         expect(attempt.status).toBe('complete');
         expect(attempt.replies).toHaveLength(1);
         expect(attempt.changeCount).toBeGreaterThan(0);
@@ -312,37 +332,12 @@ function assertSequenceCensus(
             expect(publications, 'Stale Save must never publish').toEqual([]);
             continue;
         }
-        const planning = window.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task');
-        expect(planning).toHaveLength(1);
-        expect(planning[0].startTime).toBeGreaterThanOrEqual(fresh.terminated);
-        const indexed = window.filter(isSequenceMeasure);
-        expect(indexed).toHaveLength(names.length * (attempt.changeCount ?? 0));
-        const expected = Array.from({ length: attempt.changeCount ?? 0 }, (_, sequenceIndex) => sequenceIndex);
-        for (const name of names) {
-            const phases = indexed.filter((entry) => entry.name === name);
-            expect(
-                phases.map((entry) => measureDetail(entry).sequenceIndex),
-                `Incomplete or ambiguous ${name} census`
-            ).toEqual(expected);
-        }
-        for (const phase of window) {
-            expect(phase.startTime).toBeGreaterThanOrEqual(fresh.forwarded);
-            expect(phase.startTime + phase.duration).toBeLessThanOrEqual(end);
-        }
-        const slices = indexed.filter((entry) => entry.name === 'automerge-prospective-sequence-slice-task');
-        expect(slices[0].startTime).toBeGreaterThanOrEqual(planning[0].startTime + planning[0].duration);
-        for (const [sliceIndex, slice] of slices.entries()) {
-            const previous = slices.at(sliceIndex - 1);
-            if (sliceIndex > 0 && previous) {
-                expect(slice.startTime).toBeGreaterThanOrEqual(previous.startTime + previous.duration);
-            }
-        }
-        expect(publications).toHaveLength(1);
-        const finalSlice = slices.at(-1);
-        if (!finalSlice) {
+        if (fresh.changeCount === null) {
             throw new Error('Accepted Save publication requires a nonempty actual sequence');
         }
-        expect(publications[0].startTime).toBeGreaterThanOrEqual(finalSlice.startTime + finalSlice.duration);
+        const finalSliceEnd = assertCompletedSequence(window, fresh.changeCount, fresh.terminated, end);
+        expect(publications).toHaveLength(1);
+        expect(publications[0].startTime).toBeGreaterThanOrEqual(finalSliceEnd);
     }
     expect(assigned, 'Unattributed bounded phases cannot be discounted').toBe(owned.length);
     const handoffs = measures.filter(
@@ -451,32 +446,50 @@ function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>
     }
     return count;
 }
-function assertProspectiveObservations(measures: PreparationMeasure[], requests: ProspectiveObservation[]): void {
+function assertProspectiveObservations(
+    measures: PreparationMeasure[],
+    requests: ProspectiveObservation[],
+    completion: number
+): void {
     expect(requests.length, 'Native request census must be independent of phase emission').toBeGreaterThan(0);
-    for (const request of requests) {
+    const phases = nativeSequencePhases(measures);
+    let assigned = 0;
+    let completed = 0;
+    for (const [index, request] of requests.entries()) {
         expect(request.primaryKey, 'Other prospective roles cannot be silently attributed to Detect').toBe(
             'warpStates'
         );
+        expect(request.preparationPolicy).toBe('bounded-native-sequence-v1');
         expect(request.posted).toBe(true);
-        expect(request.terminated).not.toBeNull();
         expect(request.replies.length).toBeLessThanOrEqual(1);
-        for (const reply of request.replies) {
-            expect(reply.status).toBe('complete');
-            expect(reply.changeCount).not.toBeNull();
+        const end = requests.at(index + 1)?.requested ?? completion;
+        const window = phases.filter(
+            (entry) =>
+                measureDetail(entry).primaryKey === 'warpStates' &&
+                entry.startTime >= request.requested &&
+                entry.startTime < end
+        );
+        assigned += window.length;
+        if (request.terminated === null) {
+            throw new Error('Every observed prospective Worker must terminate');
         }
+        const reply = request.replies.at(0);
+        if (!reply) {
+            expect(window, 'An attempt without a reply has no native preparation phases').toEqual([]);
+            continue;
+        }
+        expect(reply.status).toBe('complete');
+        if (reply.changeCount === null) {
+            throw new Error('Every completed Detect reply must carry actual native changes');
+        }
+        expect(reply.changeCount).toBeGreaterThan(1);
+        expect(request.terminated).toBeGreaterThanOrEqual(reply.received);
+        assertCompletedSequence(window, reply.changeCount, request.terminated, end);
+        completed += 1;
     }
-    const completed = requests.flatMap((request) => request.replies);
-    const responses = measures.filter((entry) => entry.name === 'automerge-prospective-response-task');
-    const applies = measures.filter((entry) => entry.name === 'automerge-prospective-apply-task');
-    const authorities = measures.filter((entry) => entry.name === 'automerge-prospective-authority-task');
-    expect(responses).toHaveLength(completed.length);
-    expect(applies.length).toBeGreaterThan(0);
-    expect(applies.length).toBeLessThanOrEqual(completed.length);
-    expect(authorities).toHaveLength(applies.length);
-    // A reply can be discarded before materialize; termination is not admission or publication.
-    expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
-        requests.length
-    );
+    expect(completed).toBeGreaterThan(0);
+    expect(assigned, 'Unattributed bounded phases cannot be discounted').toBe(phases.length);
+    assertDetectMaterializationAttempts(measures, requests.length);
     expect(measures.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')).toHaveLength(
         requests.length
     );
@@ -518,6 +531,10 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
             }
             return {
                 primaryKey: data.mutation.key,
+                preparationPolicy:
+                    'preparationPolicy' in data && typeof data.preparationPolicy === 'string'
+                        ? data.preparationPolicy
+                        : null,
                 requested: performance.now(),
                 posted: false,
                 heads: data.heads.filter((head: unknown): head is string => typeof head === 'string'),
@@ -1712,7 +1729,7 @@ for (const projectScale of [false, true]) {
                 ...measured,
                 union,
                 sequenceAttributionLimit:
-                    'Controlled Save stale-before-planning requires an exact native Detect publication witness; the fresh Save requires a complete request-bound census. Partial prefixes or interleaved jobs refuse attribution. This schedule does not force Detect replanning.',
+                    'Each native phase is matched to its primary slot and actual Worker request. The stale Save stops before planning after the witnessed Detect publication. The completed Detect and fresh Save each require a full sequence census. The controlled schedule exercises one Detect request.',
                 persistenceEncodingObservation: overlap?.incrementalRequests.length
                     ? 'Actual incremental Worker requests recorded'
                     : 'No incremental Worker request observed; no incremental-route acceptance claim',
@@ -1763,13 +1780,11 @@ for (const projectScale of [false, true]) {
                 expect(union.longTasks).toEqual([]);
             }
             assertMaterializationTaskSpans(result.nativePhases);
-            if (projectScale) {
-                assertMaterializationAttempts(measured.measures, overlap);
-            } else {
+            if (!projectScale) {
                 if (!measured.prospectiveRequests) {
                     throw new Error('Required ordinary prospective request census missing');
                 }
-                assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
+                assertProspectiveObservations(measured.measures, measured.prospectiveRequests, measured.end);
             }
             if (overlap) {
                 assertSequenceCensus(measured.measures, overlap);
@@ -2246,7 +2261,10 @@ async function assertPopulatedMeasurement(
     const longTasks = measured.tasks.filter(
         (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
     );
-    const preparationTasks = measured.measures.filter((entry) => MATERIALIZATION_PHASE_NAMES.includes(entry.name));
+    const preparationTasks = measured.measures.filter(
+        (entry) =>
+            MATERIALIZATION_PHASE_NAMES.includes(entry.name) || entry.name.startsWith('automerge-prospective-sequence-')
+    );
     const preparedPublications = measured.measures.filter(
         (entry) =>
             entry.name === 'automerge-storage-prepared-publication' &&
@@ -2275,7 +2293,7 @@ async function assertPopulatedMeasurement(
     });
     await trace.attach();
     assertMaterializationTaskSpans(result.nativePhases);
-    assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
+    assertProspectiveObservations(measured.measures, measured.prospectiveRequests, measured.end);
     const after = await sourceState(page);
     expect(after.raw).toEqual(after.projected);
     expect(after.pcm).toEqual(before.pcm);
