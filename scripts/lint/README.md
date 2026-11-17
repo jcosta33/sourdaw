@@ -63,7 +63,8 @@ predicate or policy. The boundary rule follows direct JSON parsing, a response w
 local `fetch` or `Response` provenance, and the imported desktop bridge. Assigning the
 result to `unknown` keeps the validation step explicit. Playwright admission checks
 locally visible guards that would let the case finish without an assertion. Fixed test
-sleeps include Playwright's timeout and directly awaited timer promises. Tests that
+sleeps include Playwright's timeout, directly awaited timer promises and test helpers that
+return only a delay. Tests that
 measure a real observation window can use a line-scoped reason for the duration.
 
 The stock Vitest conditional-expect rule runs only on Vitest specs. The local assertion

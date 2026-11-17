@@ -273,6 +273,7 @@ runCraftRule('no-fixed-test-sleep', {
         'await page.clock.runFor(500);',
         'setTimeout(expire, 500);',
         'await Promise.race([completed, new Promise((resolve) => setTimeout(resolve, 500))]);',
+        'function deadline(work) { return Promise.race([work, new Promise((resolve) => setTimeout(resolve, 500))]); }',
         'import { setTimeout as sleep } from "./fakeClock"; await sleep(500);',
         'const setTimeout = makeFakeTimer(); await new Promise((resolve) => setTimeout(resolve, 500));',
     ],
@@ -288,6 +289,14 @@ runCraftRule('no-fixed-test-sleep', {
         },
         {
             code: 'import { setTimeout as sleep } from "node:timers/promises"; await sleep(50);',
+            errors: [{ message: /observable outcome/ }],
+        },
+        {
+            code: 'const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));',
+            errors: [{ message: /observable outcome/ }],
+        },
+        {
+            code: 'import { setTimeout as timer } from "node:timers/promises"; function wait(ms: number) { return timer(ms); }',
             errors: [{ message: /observable outcome/ }],
         },
     ],

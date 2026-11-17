@@ -67,6 +67,8 @@
         {
             "files": [
                 "**/*.{spec,test}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+                "**/__tests__/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+                "src/**/testing/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
                 "tests/e2e/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"
             ],
             "rules": {

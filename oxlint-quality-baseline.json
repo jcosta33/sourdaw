@@ -1,4 +1,14 @@
 {
+    "electron/__tests__/mainWindowTeardown.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
+    "electron/__tests__/pluginGui.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
     "electron/__tests__/scan.spec.ts": {
         "sourdaw-craft/no-silent-catch": {
             "count": 2
@@ -189,6 +199,11 @@
     "scripts/__tests__/faustCorrespondingSource.spec.ts": {
         "sourdaw-craft/no-external-data-assertion": {
             "count": 3
+        }
+    },
+    "scripts/__tests__/fixtures/resourceGuardSignalHarness.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
         }
     },
     "scripts/__tests__/gitCheckpoint.spec.ts": {
@@ -1109,6 +1124,11 @@
     },
     "src/components/ui/DragResizeHandle.tsx": {
         "sourdaw-craft/no-silent-catch": {
+            "count": 1
+        }
+    },
+    "src/helpers/__tests__/offlineWorkletRenderHarness.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
             "count": 1
         }
     },
@@ -4426,10 +4446,7 @@
     },
     "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": {
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 3
-        },
-        "sourdaw-craft/no-silent-catch": {
-            "count": 9
+            "count": 2
         }
     },
     "src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts": {
@@ -4598,6 +4615,16 @@
             "count": 1
         }
     },
+    "src/modules/AudioEngine/repositories/webAudioEngine/createSendRouting.ts": {
+        "sourdaw-craft/no-silent-catch": {
+            "count": 4
+        }
+    },
+    "src/modules/AudioEngine/repositories/webAudioEngine/createSidechainRouting.ts": {
+        "sourdaw-craft/no-silent-catch": {
+            "count": 5
+        }
+    },
     "src/modules/AudioEngine/services/__tests__/deviceTailConformance.spec.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
@@ -4641,6 +4668,9 @@
     "src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts": {
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 2
+        },
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
         },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 1
@@ -4789,6 +4819,16 @@
             "count": 1
         }
     },
+    "src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.stopGesture.integration.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
+    "src/modules/AudioEngine/useCases/audioRecorder/__tests__/syncAutoInputMonitoring.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
     "src/modules/AudioEngine/useCases/audition.ts": {
         "sourdaw-craft/no-silent-catch": {
             "count": 2
@@ -4837,6 +4877,9 @@
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 1
         },
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 1
         }
@@ -4847,6 +4890,9 @@
         }
     },
     "src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        },
         "vitest/no-conditional-expect": {
             "count": 6
         }
@@ -5793,6 +5839,9 @@
         "sourdaw-craft/no-external-data-assertion": {
             "count": 1
         },
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        },
         "sourdaw-craft/no-silent-catch": {
             "count": 1
         },
@@ -5982,6 +6031,11 @@
     "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts": {
         "vitest/no-conditional-expect": {
             "count": 3
+        }
+    },
+    "src/modules/Command/useCases/__tests__/createUserAppActionRefusalEpisodes.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
         }
     },
     "src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts": {
@@ -6278,7 +6332,22 @@
             "count": 2
         }
     },
+    "src/modules/CommandInterface/useCases/commands/__tests__/ClipCommands.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
     "src/modules/CommandInterface/useCases/commands/__tests__/ProjectCommands.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
+    "src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
+    "src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
             "count": 1
         }
@@ -6439,6 +6508,9 @@
     },
     "src/modules/CrdtDocument/repositories/__tests__/branchStateHarness.ts": {
         "sourdaw-craft/no-external-data-assertion": {
+            "count": 1
+        },
+        "sourdaw-craft/no-fixed-test-sleep": {
             "count": 1
         }
     },
@@ -6689,7 +6761,17 @@
             "count": 1
         }
     },
+    "src/modules/Crumbs/useCases/__tests__/initCrumbsDeviceStatePersistence.refusal.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
     "src/modules/Crumbs/useCases/__tests__/initCrumbsDeviceStateRefusal.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
+    "src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
             "count": 1
         }
@@ -6995,6 +7077,11 @@
             "count": 1
         }
     },
+    "src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
     "src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 3
@@ -7126,7 +7213,7 @@
     },
     "src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
-            "count": 3
+            "count": 5
         },
         "sourdaw-craft/no-silent-catch": {
             "count": 17
@@ -7924,6 +8011,11 @@
             "count": 1
         }
     },
+    "src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        }
+    },
     "src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts": {
         "sourdaw-craft/no-json-parse-stringify": {
             "count": 2
@@ -8573,7 +8665,7 @@
     },
     "src/modules/Toaster/useCases/__tests__/initToasterKitPersistence.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
-            "count": 1
+            "count": 2
         }
     },
     "src/modules/Toaster/useCases/__tests__/patternMorph.spec.ts": {
@@ -8669,6 +8761,11 @@
     "src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 4
+        }
+    },
+    "src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.autoMonitoring.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
         }
     },
     "src/modules/Transport/useCases/__tests__/replaceMasterGain.spec.ts": {
@@ -8912,9 +9009,19 @@
             "count": 1
         }
     },
+    "src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 2
+        }
+    },
     "src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
             "count": 6
+        }
+    },
+    "src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingAutoMonitoring.integration.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
         }
     },
     "src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts": {
@@ -8964,6 +9071,9 @@
         }
     },
     "src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
+            "count": 1
+        },
         "sourdaw-craft/no-silent-catch": {
             "count": 8
         }
@@ -9008,6 +9118,11 @@
     },
     "src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx": {
         "sourdaw-craft/no-useless-clone-spread": {
+            "count": 1
+        }
+    },
+    "src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx": {
+        "sourdaw-craft/no-fixed-test-sleep": {
             "count": 1
         }
     },
@@ -9316,6 +9431,11 @@
     },
     "src/styles/testing/mainStylesheetRules.ts": {
         "sourdaw-craft/no-control-flow-ternary": {
+            "count": 1
+        }
+    },
+    "src/utils/UI/__tests__/resolveToken.spec.ts": {
+        "sourdaw-craft/no-fixed-test-sleep": {
             "count": 1
         }
     },

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -13,10 +13,15 @@ describe('production quality lint', () => {
     it('observes typed, Vitest and Playwright failures from one real CLI pass', () => {
         const scripts = mkdtempSync(join(root, 'scripts/lint-quality-probe-'));
         const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-probe-'));
+        const source = mkdtempSync(join(root, 'src/lint-quality-probe-'));
         try {
             const runTime = join(scripts, 'typed.ts');
             const unit = join(scripts, 'unit.spec.ts');
             const browser = join(e2e, 'browser.spec.ts');
+            const unitHelper = join(scripts, '__tests__/unitHelper.ts');
+            const sourceHelper = join(source, 'testing/sourceHelper.ts');
+            mkdirSync(join(scripts, '__tests__'));
+            mkdirSync(join(source, 'testing'));
             writeFileSync(
                 runTime,
                 `
@@ -41,6 +46,9 @@ describe('production quality lint', () => {
                 }
                 export async function runtimeTimer() {
                     await new Promise<void>((complete) => setTimeout(complete, 10));
+                }
+                export function runtimeTimerPromise(ms: number) {
+                    return new Promise<void>((complete) => setTimeout(complete, ms));
                 }
                 export function catchesQuietly(run: () => void) {
                     try { run(); } catch { /* ignore */ }
@@ -120,7 +128,19 @@ describe('production quality lint', () => {
                 });
             `
             );
-            const argv = buildQualityLintArgv([runTime, unit, browser]).slice(2);
+            writeFileSync(
+                unitHelper,
+                `export const pause = (ms: number) => new Promise<void>((complete) => setTimeout(complete, ms));\n` +
+                    `export function deadline<T>(work: Promise<T>) {\n` +
+                    '    return Promise.race([work, new Promise((_, reject) => setTimeout(reject, 50))]);\n' +
+                    '}\n'
+            );
+            writeFileSync(
+                sourceHelper,
+                "import { setTimeout as timer } from 'node:timers/promises';\n" +
+                    'export function pause(ms: number) { return timer(ms); }\n'
+            );
+            const argv = buildQualityLintArgv([runTime, unit, browser, unitHelper, sourceHelper]).slice(2);
             const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), argv, {
                 cwd: root,
                 encoding: 'utf8',
@@ -129,10 +149,11 @@ describe('production quality lint', () => {
             expect(result.error).toBeUndefined();
             expect(result.status, result.stdout + result.stderr).toBe(1);
             const report = parseQualityReport(result.stdout, root);
-            expect(report.fileCount).toBe(3);
+            expect(report.fileCount).toBe(5);
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
+                    ['sourceHelper.ts', 'sourdaw-craft/no-fixed-test-sleep'],
                     ['typed.ts', 'sourdaw-craft/no-external-data-assertion'],
                     ['typed.ts', 'sourdaw-craft/no-failed-operation-success'],
                     ['typed.ts', 'sourdaw-craft/no-silent-catch'],
@@ -142,11 +163,13 @@ describe('production quality lint', () => {
                     ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
                     ['unit.spec.ts', 'sourdaw-craft/no-invalid-vitest-expect'],
                     ['unit.spec.ts', 'vitest/no-conditional-expect'],
+                    ['unitHelper.ts', 'sourdaw-craft/no-fixed-test-sleep'],
                 ].toSorted()
             );
         } finally {
             rmSync(scripts, { recursive: true, force: true });
             rmSync(e2e, { recursive: true, force: true });
+            rmSync(source, { recursive: true, force: true });
         }
     }, 75_000);
 

@@ -378,8 +378,11 @@ function isInlineTimeout(context, expression) {
     if (!isFunction(executor) || executor.params[0]?.type !== 'Identifier') {
         return false;
     }
-    const body = executor.body;
-    const call = body.type === 'BlockStatement' && body.body.length === 1 ? body.body[0].expression : body;
+    let call = executor.body;
+    if (call.type === 'BlockStatement' && call.body.length === 1) {
+        const statement = call.body[0];
+        call = statement.type === 'ReturnStatement' ? statement.argument : statement.expression;
+    }
     if (call?.type !== 'CallExpression' || call.arguments.length < 2) {
         return false;
     }
@@ -409,6 +412,25 @@ const noFixedTestSleep = rule(
                 node,
                 message: 'Wait for an observable outcome instead of sleeping for a fixed duration.',
             });
+        function checkTimer(node, expression) {
+            // An explicit await in a return or arrow is checked by the await visitor.
+            if (expression?.type === 'AwaitExpression') {
+                return;
+            }
+            const value = unwrap(expression);
+            if (
+                isInlineTimeout(context, value) ||
+                (value?.type === 'CallExpression' &&
+                    isNamedImport(
+                        context,
+                        value.callee,
+                        'setTimeout',
+                        (source) => source === 'node:timers/promises' || source === 'timers/promises'
+                    ))
+            ) {
+                report(node);
+            }
+        }
         return {
             CallExpression(node) {
                 if (calledMember(node, 'waitForTimeout')) {
@@ -416,19 +438,13 @@ const noFixedTestSleep = rule(
                 }
             },
             AwaitExpression(node) {
-                const value = unwrap(node.argument);
-                if (
-                    isInlineTimeout(context, value) ||
-                    (value?.type === 'CallExpression' &&
-                        isNamedImport(
-                            context,
-                            value.callee,
-                            'setTimeout',
-                            (source) => source === 'node:timers/promises' || source === 'timers/promises'
-                        ))
-                ) {
-                    report(node);
-                }
+                checkTimer(node, node.argument);
+            },
+            ReturnStatement(node) {
+                checkTimer(node, node.argument);
+            },
+            ArrowFunctionExpression(node) {
+                checkTimer(node, node.body);
             },
         };
     }
