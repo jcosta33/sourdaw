@@ -29,10 +29,8 @@ test.describe('Crust attack time knob — aria-valuenow changes on keyboard inpu
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Crust$/ }).click();
-        await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
-        await page.waitForTimeout(800);
         const detail = page
             .getByRole('dialog', { name: 'Crust', exact: true })
             .getByRole('group', { name: 'Effect control detail' });
@@ -55,13 +53,7 @@ test.describe('Crust attack time knob — aria-valuenow changes on keyboard inpu
         // Default patch.attack is 0 (CrustPatch.ts) → aria-valuenow "0".
         await expect(attackSlider).toHaveAttribute('aria-valuenow', '0');
 
-        // ArrowUp increments by step (0.5 ms). Keyboard input bypasses the
-        // pointer-overlap hazard (timing row sits under the waveform card) that
-        // affects click-based interactions in this panel.
         await attackSlider.press('ArrowUp');
-        await page.waitForTimeout(300);
-
-        const after = await attackSlider.getAttribute('aria-valuenow');
-        expect(Number(after)).toBeGreaterThan(0);
+        await expect(attackSlider).toHaveAttribute('aria-valuenow', '0.5');
     });
 });
