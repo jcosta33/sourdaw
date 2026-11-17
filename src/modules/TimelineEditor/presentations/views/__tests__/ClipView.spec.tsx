@@ -260,7 +260,9 @@ describe('ClipView', () => {
         fireEvent.click(screen.getByText('select-note'));
         const selected = readPianoRollSelection();
         expect(selected).toMatchObject({ clipId: 'clip-midi', viewIds: ['note-a'] });
-        for (const notify of clipSelectionMocks.store.listeners) notify();
+        for (const notify of clipSelectionMocks.store.listeners) {
+            notify();
+        }
         expect(readPianoRollSelection().token).not.toBe(selected.token);
         expect(readPianoRollSelection().clipId).toBeNull();
         fireEvent.click(screen.getByText('select-note'));

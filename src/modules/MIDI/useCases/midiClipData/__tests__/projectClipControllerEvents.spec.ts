@@ -19,7 +19,9 @@ describe('projectClipControllerEvents', () => {
     it('reports source, carried and closing controller provenance without changing playback rows', () => {
         const read: unknown = Reflect.get(controllerProjection, 'projectClipControllerEventsWithProvenance');
         expect(typeof read).toBe('function');
-        if (typeof read !== 'function') throw new Error('Controller provenance reader unavailable');
+        if (typeof read !== 'function') {
+            throw new TypeError('Controller provenance reader unavailable');
+        }
         const input = {
             controlChanges: [controller('a', 0, 127), controller('b', 2, 127), controller('c', 5, 0)],
             clip: { startBeat: 4, endBeat: 8, midiOffsetBeats: 1 },

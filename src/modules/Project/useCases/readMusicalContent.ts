@@ -24,9 +24,13 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
     }
     const track = trackStore.value?.tracks.find((candidate) => candidate.clips.some((clip) => clip.id === stableId));
     const clip = track?.clips.find((candidate) => candidate.id === stableId);
-    if (!track || !clip || clip.type !== 'midi') throw new Error('MIDI clip not found');
+    if (!track || !clip || clip.type !== 'midi') {
+        throw new Error('MIDI clip not found');
+    }
     const midi = midiStore.value;
-    if (!midi) throw new Error('MIDI content unavailable');
+    if (!midi) {
+        throw new Error('MIDI content unavailable');
+    }
     const projection = projectPianoRollTakeNotes(
         clip,
         track.id,
@@ -42,13 +46,15 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
         }
     );
     const rows: SemanticQueryItem[] = [];
-    const addRow = (row: SemanticQueryItem): void => {
-        if (rows.length >= 512) throw new Error('Musical content row budget exceeded');
+    function addRow(row: SemanticQueryItem): void {
+        if (rows.length >= 512) {
+            throw new Error('Musical content row budget exceeded');
+        }
         if (Object.values(row).some((value) => typeof value === 'string' && value.length > 2_048)) {
             throw new Error('Musical content text exceeds receipt limit');
         }
         rows.push(row);
-    };
+    }
     addRow({
         id: clip.id,
         kind: 'musical-window',
@@ -67,7 +73,7 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
         noteSelection: targetIsOpen && selection.status === 'resolved' ? 'available' : 'unavailable',
     });
     type SourceNote = NonNullable<typeof midi>['notesByClipId'][string][number];
-    const addNote = (
+    function addNote(
         original: SourceNote,
         viewId: string,
         ownerClipId: string,
@@ -76,7 +82,7 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
         projectedVelocity: number,
         takeId: string | null,
         occurrenceIndex: number
-    ): void => {
+    ): void {
         addRow({
             id: JSON.stringify([ownerClipId, takeId, occurrenceIndex, viewId, timelineStart, timelineDuration]),
             kind: 'note',
@@ -123,7 +129,7 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
                 });
             }
         }
-    };
+    }
     for (const occurrence of projection.baseOccurrences) {
         addNote(
             occurrence.row,
@@ -138,7 +144,9 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
     }
     for (const displayed of projection.notes) {
         const frozen = projection.ownersByViewId.get(displayed.id);
-        if (!frozen) throw new Error('Frozen MIDI note owner unavailable');
+        if (!frozen) {
+            throw new Error('Frozen MIDI note owner unavailable');
+        }
         const timelineStart = clip.startBeat + displayed.startBeat - (clip.midiOffsetBeats ?? 0);
         addNote(
             frozen.row,
@@ -226,10 +234,14 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
         });
     }
     const chords = chordTrackStore.value?.events ?? [];
-    if (chords.length > 16_384) throw new Error('Musical content chord budget exceeded');
+    if (chords.length > 16_384) {
+        throw new Error('Musical content chord budget exceeded');
+    }
     let hasHarmony = false;
     for (const chord of chords) {
-        if (chord.beat >= endBeat || chord.beat + chord.duration <= startBeat) continue;
+        if (chord.beat >= endBeat || chord.beat + chord.duration <= startBeat) {
+            continue;
+        }
         hasHarmony = true;
         addRow({
             id: chord.id,
@@ -242,6 +254,8 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
             provenance: 'chord-track',
         });
     }
-    if (!hasHarmony) addRow({ id: 'harmony-unknown', kind: 'harmony', provenance: 'unknown' });
+    if (!hasHarmony) {
+        addRow({ id: 'harmony-unknown', kind: 'harmony', provenance: 'unknown' });
+    }
     return rows;
 }

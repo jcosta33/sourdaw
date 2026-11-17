@@ -18,18 +18,25 @@ export function resolveMusicalContentReadScope(
     clipIds: readonly string[]
 ) {
     settlePendingProjectWritesAndCaptureRevision();
-    if (!projectRevisionMatchesLiveIgnoringSaveWrites(binding.expectedRevision))
+    if (!projectRevisionMatchesLiveIgnoringSaveWrites(binding.expectedRevision)) {
         throw new Error('Stale musical content revision');
+    }
     const selection = readPianoRollSelection();
-    if (selection.token !== binding.selectionToken) throw new Error('Stale musical selection');
-    if (clipIds.length === 0 || clipIds.length > 32 || new Set(clipIds).size !== clipIds.length)
+    if (selection.token !== binding.selectionToken) {
+        throw new Error('Stale musical selection');
+    }
+    if (clipIds.length === 0 || clipIds.length > 32 || new Set(clipIds).size !== clipIds.length) {
         throw new Error('Musical read scope unavailable');
+    }
     const tracks = trackStore.value?.tracks ?? [];
-    if (tracks.length > 16_384 || tracks.reduce((count, track) => count + track.clips.length, 0) > 16_384)
+    if (tracks.length > 16_384 || tracks.reduce((count, track) => count + track.clips.length, 0) > 16_384) {
         throw new Error('Musical read scope unavailable');
+    }
     let scans = 0;
     const midi = midiStore.value;
-    if (!midi) throw new Error('Musical read scope unavailable');
+    if (!midi) {
+        throw new Error('Musical read scope unavailable');
+    }
     const windows: Array<{ clipId: string; startBeat: number; endBeat: number; owners: typeof selection.owners }> = [];
     for (const clipId of clipIds) {
         const track = tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
@@ -41,23 +48,29 @@ export function resolveMusicalContentReadScope(
             !Number.isFinite(clip.startBeat) ||
             !Number.isFinite(clip.endBeat) ||
             clip.endBeat <= clip.startBeat
-        )
+        ) {
             throw new Error('Musical read scope unavailable');
-        if (selection.clipIds.includes(clipId) && selection.viewIds.length > 0 && selection.status !== 'resolved')
+        }
+        if (selection.clipIds.includes(clipId) && selection.viewIds.length > 0 && selection.status !== 'resolved') {
             throw new Error('Musical selection ownership unavailable');
+        }
         const owners = selection.owners.filter((owner) => owner.clipId === clipId);
         if (owners.length === 0) {
             windows.push({ clipId, startBeat: clip.startBeat, endBeat: clip.endBeat, owners: [] });
             continue;
         }
         const sourceRows = midi.notesByClipId[clipId] ?? [];
-        if (sourceRows.length > 16_384 || owners.length > 32) throw new Error('Musical read scope unavailable');
+        if (sourceRows.length > 16_384 || owners.length > 32) {
+            throw new Error('Musical read scope unavailable');
+        }
         for (const owner of owners) {
             const source = sourceRows.find((row) => row.id === owner.storedNoteId);
             const candidates = locatePianoRollSelectionWindows(clip, owner, source);
             let found = false;
             for (const candidate of candidates) {
-                if (++scans > 32) throw new Error('Selected musical source unavailable in bounded windows');
+                if (++scans > 32) {
+                    throw new Error('Selected musical source unavailable in bounded windows');
+                }
                 const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, sourceRows, {
                     fromBeat: candidate.startBeat,
                     toBeat: candidate.endBeat,
@@ -81,18 +94,25 @@ export function resolveMusicalContentReadScope(
                             projectedOwner.occurrenceIndex === owner.occurrenceIndex
                         );
                     });
-                if (!found) continue;
+                if (!found) {
+                    continue;
+                }
                 const existing = windows.find(
                     (window) =>
                         window.clipId === clipId &&
                         window.startBeat === candidate.startBeat &&
                         window.endBeat === candidate.endBeat
                 );
-                if (existing) existing.owners.push(owner);
-                else windows.push({ clipId, ...candidate, owners: [owner] });
+                if (existing) {
+                    existing.owners.push(owner);
+                } else {
+                    windows.push({ clipId, ...candidate, owners: [owner] });
+                }
                 break;
             }
-            if (!found) throw new Error('Selected musical source unavailable in bounded windows');
+            if (!found) {
+                throw new Error('Selected musical source unavailable in bounded windows');
+            }
         }
     }
     return windows;

@@ -17,14 +17,18 @@ export function createMusicalReadPrerequisite(
     authority: CreativeRequestAuthority,
     binding: ReturnType<typeof captureMusicalContentBinding>
 ) {
-    if (authority.mode !== 'edit' || !authority.editDimensions.includes('midi-content')) return null;
+    if (authority.mode !== 'edit' || !authority.editDimensions.includes('midi-content')) {
+        return null;
+    }
     if (
         authority.targets.every((target) => target.objectType === 'track') &&
         authority.creationSlots.some((slot) => slot.objectType === 'notes' || slot.objectType === 'clip')
-    )
+    ) {
         return null;
-    if (authority.targets.length === 0 || authority.targets.some((target) => target.objectType === 'track'))
+    }
+    if (authority.targets.length === 0 || authority.targets.some((target) => target.objectType === 'track')) {
         throw new Error('Musical read target unavailable');
+    }
     const clipIds = [...new Set(authority.targets.flatMap((target) => target.objectIds))];
     const windows = resolveMusicalContentReadScope(binding, clipIds);
     let index = 0;
@@ -35,14 +39,18 @@ export function createMusicalReadPrerequisite(
     return {
         hint() {
             const window = windows[index];
-            return window
-                ? {
-                      clipId: window.clipId,
-                      startBeat: window.startBeat,
-                      endBeat: window.endBeat,
-                      ...(cursor ? { cursor } : {}),
-                  }
-                : null;
+            if (!window) {
+                return null;
+            }
+            const hint: { clipId: string; startBeat: number; endBeat: number; cursor?: string } = {
+                clipId: window.clipId,
+                startBeat: window.startBeat,
+                endBeat: window.endBeat,
+            };
+            if (cursor) {
+                hint.cursor = cursor;
+            }
+            return hint;
         },
         current() {
             return musicalContentBindingIsCurrent(binding);
@@ -69,8 +77,9 @@ export function createMusicalReadPrerequisite(
                 typeof admitted.data.page.total !== 'number' ||
                 !Array.isArray(admitted.data.items) ||
                 (total !== undefined && total !== admitted.data.page.total)
-            )
+            ) {
                 return;
+            }
             const items = admitted.data.items;
             const next = admitted.data.nextCursor;
             if (
@@ -78,11 +87,14 @@ export function createMusicalReadPrerequisite(
                 offset + items.length > admitted.data.page.total ||
                 (next === null && offset + items.length !== admitted.data.page.total) ||
                 (next !== null && items.length === 0)
-            )
+            ) {
                 return;
+            }
             total = admitted.data.page.total;
             for (const item of items) {
-                if (!record(item) || item.kind !== 'note' || item.selected !== true) continue;
+                if (!record(item) || item.kind !== 'note' || item.selected !== true) {
+                    continue;
+                }
                 for (const owner of window.owners) {
                     if (
                         item.viewId === owner.viewId &&
@@ -90,8 +102,9 @@ export function createMusicalReadPrerequisite(
                         item.noteId === owner.storedNoteId &&
                         (item.takeId ?? undefined) === owner.takeId &&
                         (owner.occurrenceIndex === undefined || item.occurrenceIndex === owner.occurrenceIndex)
-                    )
+                    ) {
                         found.add(owner.viewId);
+                    }
                 }
             }
             offset += items.length;
@@ -99,7 +112,9 @@ export function createMusicalReadPrerequisite(
                 cursor = next;
                 return;
             }
-            if (found.size !== window.owners.length) return;
+            if (found.size !== window.owners.length) {
+                return;
+            }
             index++;
             cursor = undefined;
             offset = 0;

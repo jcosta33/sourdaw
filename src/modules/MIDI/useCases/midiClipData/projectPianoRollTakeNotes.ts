@@ -58,13 +58,15 @@ function queryBudget(window: QueryWindow) {
     return {
         charge(amount: number) {
             work += amount;
-            if (!Number.isSafeInteger(work) || work > window.maxWork)
+            if (!Number.isSafeInteger(work) || work > window.maxWork) {
                 throw new Error('MIDI projection work budget exceeded');
+            }
         },
         emit(amount: number) {
             output += amount;
-            if (!Number.isSafeInteger(output) || output > window.maxOutput)
+            if (!Number.isSafeInteger(output) || output > window.maxOutput) {
                 throw new Error('MIDI projection output budget exceeded');
+            }
         },
     };
 }
@@ -312,10 +314,14 @@ function projectBaseOccurrences(
     const gaps: { startBeat: number; endBeat: number }[] = [];
     let cursor = clip.startBeat;
     for (const region of [...covered].sort((a, b) => a.startBeat - b.startBeat)) {
-        if (region.startBeat > cursor) gaps.push({ startBeat: cursor, endBeat: region.startBeat });
+        if (region.startBeat > cursor) {
+            gaps.push({ startBeat: cursor, endBeat: region.startBeat });
+        }
         cursor = Math.max(cursor, region.endBeat);
     }
-    if (cursor < clip.endBeat) gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
+    if (cursor < clip.endBeat) {
+        gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
+    }
     const occurrences: Array<PianoRollTakeNotes['baseOccurrences'][number]> = [];
     for (let index = first; index < last; index++) {
         const events = projectClipMidiEvents({
@@ -331,11 +337,15 @@ function projectBaseOccurrences(
         });
         for (const event of events) {
             const row = baseRows.find((candidate) => candidate.id === event.id);
-            if (!row) throw new Error('Projected MIDI note has no source row');
+            if (!row) {
+                throw new Error('Projected MIDI note has no source row');
+            }
             for (const gap of gaps) {
                 const start = Math.max(event.startBeat, gap.startBeat);
                 const end = Math.min(event.startBeat + event.duration, gap.endBeat);
-                if (end <= start || start >= window.toBeat || end <= window.fromBeat) continue;
+                if (end <= start || start >= window.toBeat || end <= window.fromBeat) {
+                    continue;
+                }
                 let viewId = row.id;
                 for (const [candidateViewId, candidate] of base.ownersByViewId) {
                     const at = clip.startBeat + candidate.displayedStartBeat - (clip.midiOffsetBeats ?? 0);
@@ -370,7 +380,9 @@ export function projectPianoRollTakeNotes(
     window?: QueryWindow
 ): PianoRollTakeNotes {
     const budget = window ? queryBudget(window) : undefined;
-    if (budget) chargeNotes(budget, baseRows);
+    if (budget) {
+        chargeNotes(budget, baseRows);
+    }
     const regions = selectedRegions(clip, trackId, laneState, budget);
     const notes: MidiNote[] = [];
     const ownersByViewId = new Map<string, FrozenPianoRollNoteOwner>();
@@ -380,7 +392,9 @@ export function projectPianoRollTakeNotes(
         const { source } = region;
         const fromBeat = window ? Math.max(window.fromBeat, region.startBeat) : region.startBeat;
         const toBeat = window ? Math.min(window.toBeat, region.endBeat) : region.endBeat;
-        if (fromBeat >= toBeat) continue;
+        if (fromBeat >= toBeat) {
+            continue;
+        }
         if (budget) {
             const expansion = projectClipLoopExpansion({
                 clipDurationBeats: region.endBeat - region.startBeat,
@@ -407,20 +421,21 @@ export function projectPianoRollTakeNotes(
                 source.readStartBeat ?? -Infinity
             );
             const firstHead = source.phaseHeadBeat + first * expansion.loopLengthBeats;
-            if (firstHead + expansion.loopLengthBeats <= firstHead)
+            if (firstHead + expansion.loopLengthBeats <= firstHead) {
                 throw new Error('MIDI projection work budget exceeded');
-            const depth =
-                Number.isFinite(floor) && region.fragment.loopEnabled
-                    ? Math.max(
-                          0,
-                          Math.ceil(
-                              (Math.min(region.endBeat, region.startBeat + (first + 1) * expansion.loopLengthBeats) -
-                                  (firstHead - source.sourceEntryBeat) -
-                                  floor) /
-                                  expansion.loopLengthBeats
-                          )
-                      )
-                    : 0;
+            }
+            let depth = 0;
+            if (Number.isFinite(floor) && region.fragment.loopEnabled) {
+                depth = Math.max(
+                    0,
+                    Math.ceil(
+                        (Math.min(region.endBeat, region.startBeat + (first + 1) * expansion.loopLengthBeats) -
+                            (firstHead - source.sourceEntryBeat) -
+                            floor) /
+                            expansion.loopLengthBeats
+                    )
+                );
+            }
             const finalAnchor = firstHead + (depth + 1) * expansion.loopLengthBeats;
             if (!Number.isFinite(finalAnchor) || finalAnchor + expansion.loopLengthBeats <= finalAnchor) {
                 throw new Error('MIDI projection work budget exceeded');
@@ -449,50 +464,48 @@ export function projectPianoRollTakeNotes(
             fromBeat,
             toBeat
         )) {
-            const projected = projectFrozenMidiTakeWindow({
+            type WindowInput = Parameters<typeof projectFrozenMidiTakeWindow>[0];
+            const projectionInput: { -readonly [Key in keyof WindowInput]: WindowInput[Key] } = {
                 source,
                 fragment: region.fragment,
                 recordingPassIndex: region.recordingPassIndex,
                 absoluteOccurrenceIndex: occurrenceIndex,
                 fromBeat: region.startBeat,
                 toBeat: region.endBeat,
-                ...(window
-                    ? {
-                          collectController: (
-                              entry: Parameters<
-                                  NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectController']>
-                              >[0]
-                          ) => {
-                              if (
-                                  entry.row.beat >= window.fromBeat &&
-                                  (entry.row.beat < window.toBeat ||
-                                      (entry.origin === 'closing' && entry.row.beat === window.toBeat))
-                              ) {
-                                  frozenControllers.push({
-                                      ...entry,
-                                      ownerClipId: source.sourceClipId,
-                                      takeId: region.takeId,
-                                      occurrenceIndex,
-                                  });
-                              }
-                          },
-                          collectBend: (
-                              entry: Parameters<
-                                  NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectBend']>
-                              >[0]
-                          ) => {
-                              if (entry.row.beat >= window.fromBeat && entry.row.beat < window.toBeat) {
-                                  frozenPitchBends.push({
-                                      ...entry,
-                                      ownerClipId: source.sourceClipId,
-                                      takeId: region.takeId,
-                                      occurrenceIndex,
-                                  });
-                              }
-                          },
-                      }
-                    : {}),
-            });
+            };
+            if (window) {
+                projectionInput.collectController = (
+                    entry: Parameters<
+                        NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectController']>
+                    >[0]
+                ) => {
+                    if (
+                        entry.row.beat >= window.fromBeat &&
+                        (entry.row.beat < window.toBeat ||
+                            (entry.origin === 'closing' && entry.row.beat === window.toBeat))
+                    ) {
+                        frozenControllers.push({
+                            ...entry,
+                            ownerClipId: source.sourceClipId,
+                            takeId: region.takeId,
+                            occurrenceIndex,
+                        });
+                    }
+                };
+                projectionInput.collectBend = (
+                    entry: Parameters<NonNullable<Parameters<typeof projectFrozenMidiTakeWindow>[0]['collectBend']>>[0]
+                ) => {
+                    if (entry.row.beat >= window.fromBeat && entry.row.beat < window.toBeat) {
+                        frozenPitchBends.push({
+                            ...entry,
+                            ownerClipId: source.sourceClipId,
+                            takeId: region.takeId,
+                            occurrenceIndex,
+                        });
+                    }
+                };
+            }
+            const projected = projectFrozenMidiTakeWindow(projectionInput);
             if (!projected) {
                 throw new Error('Invalid frozen MIDI take window');
             }
@@ -506,8 +519,9 @@ export function projectPianoRollTakeNotes(
                 segmentsByRowId.set(note.id, segmentIndex + 1);
                 const id = viewId(region, occurrenceIndex, regionIndex, note.id, segmentIndex);
                 const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-                if (window && (note.startBeat >= window.toBeat || note.startBeat + note.duration <= window.fromBeat))
+                if (window && (note.startBeat >= window.toBeat || note.startBeat + note.duration <= window.fromBeat)) {
                     continue;
+                }
                 const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
                 const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
                 notes.push(display);
@@ -548,8 +562,9 @@ export function projectPianoRollTakeNotes(
         );
         budget.charge(passBound * sourceCount * Math.max(1, sourceCount + 3));
         budget.emit(passBound * sourceCount * 3);
-        const uncovered = (beat: number) =>
-            !coveredWindows.some((region) => beat >= region.startBeat && beat < region.endBeat);
+        function uncovered(beat: number): boolean {
+            return !coveredWindows.some((region) => beat >= region.startBeat && beat < region.endBeat);
+        }
         baseControllers = projectClipControllerEventsWithProvenance({
             controlChanges: controllers,
             clip,

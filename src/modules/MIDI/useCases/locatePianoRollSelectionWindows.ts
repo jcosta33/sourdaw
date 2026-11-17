@@ -20,13 +20,16 @@ export function locatePianoRollSelectionWindows(
     source: MidiNote | undefined
 ) {
     const displayBeat = clip.startBeat + owner.displayedStartBeat - (clip.midiOffsetBeats ?? 0);
-    if (!Number.isFinite(displayBeat) || !Number.isFinite(owner.displayedDuration) || owner.displayedDuration <= 0)
+    if (!Number.isFinite(displayBeat) || !Number.isFinite(owner.displayedDuration) || owner.displayedDuration <= 0) {
         return [];
+    }
     const beats: number[] = [];
     if (owner.takeId !== undefined) {
         beats.push(displayBeat);
     } else {
-        if (!source) return [];
+        if (!source) {
+            return [];
+        }
         const expansion = projectClipLoopExpansion({
             clipDurationBeats: clip.endBeat - clip.startBeat,
             configuredLoopLengthBeats: clip.loopLength,
@@ -41,16 +44,21 @@ export function locatePianoRollSelectionWindows(
             iterationCount: expansion.iterationCount,
         });
         const atDisplay = Math.floor((displayBeat - grid.firstPassStartBeat) / expansion.loopLengthBeats);
-        if (!Number.isSafeInteger(atDisplay)) return [];
+        if (!Number.isSafeInteger(atDisplay)) {
+            return [];
+        }
         const passes = new Set([0, atDisplay - 1, atDisplay, atDisplay + 1]);
         for (const pass of passes) {
-            if (pass < 0 || pass >= grid.passCount) continue;
+            if (pass < 0 || pass >= grid.passCount) {
+                continue;
+            }
             const iterationStartBeat = grid.firstPassStartBeat + pass * expansion.loopLengthBeats;
             if (
                 !Number.isFinite(iterationStartBeat) ||
                 iterationStartBeat + expansion.loopLengthBeats <= iterationStartBeat
-            )
+            ) {
                 return [];
+            }
             for (const event of projectClipMidiEvents({
                 events: [source],
                 clipId: clip.id,
@@ -66,13 +74,13 @@ export function locatePianoRollSelectionWindows(
             }
         }
     }
-    return [
-        ...new Set(
+    return Array.from(
+        new Set(
             beats
                 .filter((beat) => Number.isFinite(beat) && beat < clip.endBeat)
                 .map((beat) => Math.max(clip.startBeat, Math.floor(beat / 4) * 4))
-        ),
-    ]
+        )
+    )
         .map((startBeat) => ({ startBeat, endBeat: Math.min(clip.endBeat, startBeat + 4) }))
         .filter((window) => window.endBeat > window.startBeat);
 }

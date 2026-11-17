@@ -239,7 +239,9 @@ describe('semantic project queries', () => {
 
     it('retires note selection across a real root replacement and restoration', () => {
         const originalRoot = getCrdtDoc('root');
-        if (!originalRoot) throw new Error('Expected a project root');
+        if (!originalRoot) {
+            throw new Error('Expected a project root');
+        }
         setPianoRollSelection('phrase-a', ['note-a']);
         const original = readPianoRollSelection();
         createCrdtDoc('root');
@@ -293,11 +295,13 @@ describe('semantic project queries', () => {
                 {
                     type: 'musical-content',
                     filters: { stableId: clip.id, startBeat: 0, endBeat: 4 },
-                    page: { limit: 50, ...(cursor ? { cursor } : {}) },
+                    page: { limit: 50, cursor },
                 },
                 binding
             );
-            if (parsed.status !== 'valid') throw new Error('Dense query was refused');
+            if (parsed.status !== 'valid') {
+                throw new Error('Dense query was refused');
+            }
             const receipt = querySemanticProject(parsed.input);
             items.push(...receipt.items);
             cursor = receipt.nextCursor ?? undefined;
@@ -359,7 +363,9 @@ describe('semantic project queries', () => {
             { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 8 } },
             captureMusicalContentBinding()
         );
-        if (parsed.status !== 'valid') throw new Error('Loop query was refused');
+        if (parsed.status !== 'valid') {
+            throw new Error('Loop query was refused');
+        }
         const rows = querySemanticProject(parsed.input).items.filter((item) => item.kind === 'note');
         expect(rows.map((row) => [row.noteId, row.timelineStartBeat, row.selected])).toEqual([
             ['shared-note', 0, true],
@@ -372,7 +378,9 @@ describe('semantic project queries', () => {
             { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 4 } },
             captureMusicalContentBinding()
         );
-        if (closed.status !== 'valid') throw new Error('Closed editor query was refused');
+        if (closed.status !== 'valid') {
+            throw new Error('Closed editor query was refused');
+        }
         const closedRows = querySemanticProject(closed.input).items;
         expect(closedRows).toEqual(
             expect.arrayContaining([
@@ -449,7 +457,9 @@ describe('semantic project queries', () => {
             { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 4 } },
             captureMusicalContentBinding()
         );
-        if (parsed.status !== 'valid') throw new Error('Frozen query was refused');
+        if (parsed.status !== 'valid') {
+            throw new Error('Frozen query was refused');
+        }
         expect(querySemanticProject(parsed.input).items).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -529,7 +539,9 @@ describe('semantic project queries', () => {
         function select(clipId: string, selectedId: string, opened: string[] = [clipId]): void {
             const projections = opened.map((id) => {
                 const clip = track.clips.find((entry) => entry.id === id);
-                if (!clip) throw new Error('Expected MIDI clip');
+                if (!clip) {
+                    throw new Error('Expected MIDI clip');
+                }
                 return {
                     clipId: id,
                     projection: projectPianoRollTakeNotes(
@@ -554,9 +566,11 @@ describe('semantic project queries', () => {
                     filters: { stableId: clipId, startBeat: 8, endBeat: 12 },
                     expectedRevision,
                     selectionToken,
-                    page: { limit: 2, ...(cursor ? { cursor } : {}) },
+                    page: { limit: 2, cursor },
                 });
-                if (parsed.status !== 'valid') throw new Error('Musical query was refused');
+                if (parsed.status !== 'valid') {
+                    throw new Error('Musical query was refused');
+                }
                 const receipt = querySemanticProject(parsed.input);
                 expect(receipt.revisionToken).toBe(querySemanticProject({ type: 'project-summary' }).revisionToken);
                 expect(receipt.page.limit).toBe(2);
@@ -623,7 +637,9 @@ describe('semantic project queries', () => {
             },
             captureMusicalContentBinding()
         );
-        if (secondary.status !== 'valid') throw new Error('Bound secondary query was refused');
+        if (secondary.status !== 'valid') {
+            throw new Error('Bound secondary query was refused');
+        }
         expect(querySemanticProject(secondary.input).items).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({ kind: 'note', noteId: 'b1', ownerClipId: 'phrase-b', selected: true }),
@@ -637,7 +653,9 @@ describe('semantic project queries', () => {
             selectionToken: readPianoRollSelection().token,
             page: { limit: 1 },
         });
-        if (parsed.status !== 'valid') throw new Error('Musical query was refused');
+        if (parsed.status !== 'valid') {
+            throw new Error('Musical query was refused');
+        }
         const firstPage = querySemanticProject(parsed.input);
         expect(firstPage.nextCursor).not.toBeNull();
         select('phrase-b', 'b2');
@@ -661,13 +679,17 @@ describe('semantic project queries', () => {
             status: 'invalid',
         });
         select('phrase-b', 'b1');
-        if (bound.status !== 'valid') throw new Error('Bound query was refused');
+        if (bound.status !== 'valid') {
+            throw new Error('Bound query was refused');
+        }
         expect(() => querySemanticProject(bound.input)).toThrow('Stale musical selection');
 
         setNotesForClip('phrase-a', [{ id: 'b1', pitch: 67, startBeat: 0, duration: 1, velocity: 78 }]);
         select('phrase-a', 'b1', ['phrase-a', 'phrase-b']);
         const ambiguous = bindMusicalContentQuery(modelQuery, captureMusicalContentBinding());
-        if (ambiguous.status !== 'valid') throw new Error('Bound query was refused');
+        if (ambiguous.status !== 'valid') {
+            throw new Error('Bound query was refused');
+        }
         expect(() => querySemanticProject(ambiguous.input)).toThrow('Ambiguous piano roll selection');
 
         midiStore.hydrate();
@@ -698,7 +720,9 @@ describe('semantic project queries', () => {
             },
         });
         const pendingQuery = bindMusicalContentQuery(modelQuery, settledBinding);
-        if (pendingQuery.status !== 'valid') throw new Error('Bound query was refused');
+        if (pendingQuery.status !== 'valid') {
+            throw new Error('Bound query was refused');
+        }
         const settledRevision = captureProjectRevision();
         const history = structuredClone(actionHistoryStore.value);
         expect(querySemanticProject(pendingQuery.input).items).toEqual(

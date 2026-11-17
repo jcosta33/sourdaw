@@ -166,7 +166,7 @@ export const PianoRoll = ({
             change,
             takeProjections.size > 256
                 ? []
-                : [...takeProjections].map(([id, projection]) => ({ clipId: id, projection }))
+                : Array.from(takeProjections, ([id, projection]) => ({ clipId: id, projection }))
         );
     const [gridSnap, setGridSnap] = useState(0.25);
 
