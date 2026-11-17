@@ -269,10 +269,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when one source is responsible for the buildup.',
             'Skip when the mix already reads thin through the lower mids on a reference system.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'rms', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
         source: 'When every source contributes a little energy between 250 Hz and 400 Hz the sum reads muddy even though no track does, and that is the only case a master cut answers honestly. A moderate Q clears the region without notching out the body of the mix.',
     },
     {

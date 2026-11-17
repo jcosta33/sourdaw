@@ -985,7 +985,7 @@ export class AssetTransfer {
     /** Resume target-keyed owner handoffs only while the exact persisted project load stays authoritative. */
     async resumeDurableOwnerRebindsAfterProjectLoad(authority: DurableOwnerRecoveryAuthority): Promise<void> {
         try {
-            await this.runOwnerOperation(async () => undefined, {
+            await this.runOwnerOperation(() => Promise.resolve(undefined), {
                 resumeOwnerRebinds: true,
                 resumeRecoveries: true,
                 recoveryAuthority: authority,

@@ -1,10 +1,10 @@
-import { type AudioSourceTile } from '#/utils/audioSourceTime';
 import {
     type TempoAudioClipFieldsSnapshot,
     type TempoAudioSourcePresenceSnapshot,
     type TempoAudioSourcePromotionSnapshot,
     type TempoAudioTakeFieldsSnapshot,
-} from '#/utils/handlerContract';
+} from '#/modules/Transport/events';
+import { type AudioSourceTile } from '#/utils/audioSourceTime';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';

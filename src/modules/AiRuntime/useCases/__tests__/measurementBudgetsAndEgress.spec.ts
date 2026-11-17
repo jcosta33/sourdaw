@@ -79,9 +79,7 @@ import { chatStore } from '../../stores/chatStore';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
-import { streamExplainChatResponse } from '../agentRequestOrchestration/streamExplainChatResponse';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
@@ -1515,12 +1513,47 @@ describe('no sample data reaches a hosted provider', () => {
             named: withTargetField(project, { samples: [0.25] }),
             typed: withTargetField(project, { levels: channel }),
             encoded: withTargetField(project, { levels: 'A'.repeat(512) }),
+            commaText: withTargetField(project, { note: `Levels were ${samples.slice(0, 8).join(',')} in dB.` }),
+            spacedText: withTargetField(project, { note: `Levels ${samples.slice(0, 8).join(' ')} in dB` }),
+            numericStrings: withTargetField(project, { levels: samples.slice(0, 8).map(String) }),
+            siblingArrays: withTargetField(project, { levels: [samples.slice(0, 4), samples.slice(4, 8)] }),
+            keyedChannels: withTargetField(project, {
+                levels: Object.fromEntries(samples.slice(0, 8).map((sample, index) => [`ch${String(index)}`, sample])),
+            }),
+            wrappedBase64: withTargetField(project, { levels: `${'A'.repeat(76)}\n`.repeat(4) }),
         };
 
         for (const [carrier, receipt] of Object.entries(poisoned)) {
             const bodies = await buildWireBodies(historyOf(receipt));
             expect({ carrier, flagged: containsSampleData(bodies[dialect]) }).toEqual({ carrier, flagged: true });
         }
+    });
+
+    // Red when the detector flags a figure list, prose or token that carries no sample series.
+    it.each([
+        ['a seven-number list', 'Levels 1, 2, 3, 4, 5, 6, 7 in dB'],
+        ['a seven-element array of numeric strings', ['1', '2', '3', '4', '5', '6', '7']],
+        [
+            'prose with a tempo, bar numbers and dB figures',
+            'At 120 bpm the chorus runs bars 17 to 24, about -6.5 dB under the verse.',
+        ],
+        ['a 255-character base64-looking token', 'A'.repeat(255)],
+        ['a 255-character base64 run wrapped at 76 characters', `${'A'.repeat(76)}\n`.repeat(3) + 'A'.repeat(27)],
+        [
+            'seven numbers across two sibling arrays',
+            {
+                levels: [
+                    [1, 2, 3, 4],
+                    [5, 6, 7],
+                ],
+            },
+        ],
+        [
+            'a band map beside other fields',
+            { bands: { low: 1, mid: 2 }, label: 'Drums', gain: 3, pan: 4, tempo: 5, bars: 6, depth: 7 },
+        ],
+    ])('does not flag %s', (_name, body) => {
+        expect(containsSampleData(body)).toBe(false);
     });
 
     // Red when the entry check stops rejecting a metric whose value is a series.
@@ -1834,8 +1867,15 @@ function textFor(injection: Injection, clean: string): string {
  * asserts the body the transport received; the red case feeds a 1024-sample series through the same
  * entry and expects the detector to flag the body.
  */
+/**
+ * The slowest builder measured about 0.5 s on a CI unit shard and each row awaits only mocked
+ * transports, so the default 5 s left no room for the multi-second runner stalls seen in loaded
+ * shards: a 1 ms row timed out inside one.
+ */
+const EGRESS_ROW_TIMEOUT_MS = 20_000;
+
 function describeNoSampleData(title: string, builders: Readonly<Record<string, ComposedBodyBuilder>>): void {
-    describe(title, () => {
+    describe(title, { timeout: EGRESS_ROW_TIMEOUT_MS }, () => {
         const named = Object.entries(builders);
         const injectable = named.filter(([, builder]) => builder.injectable !== false);
 
@@ -1874,35 +1914,6 @@ function describeNoSampleData(title: string, builders: Readonly<Record<string, C
 
 const EXPLAIN_QUESTION = 'how loud is the mix';
 
-function provideEarlierConversation(): void {
-    chatStore.set({
-        messages: [
-            { id: 'earlier-user', role: 'user', content: 'earlier question about the low end', timestamp: 1 },
-            { id: 'earlier-assistant', role: 'assistant', content: 'earlier answer about the low end', timestamp: 2 },
-        ],
-        isGenerating: false,
-        enableReasoning: true,
-        chatMode: 'chat',
-    });
-}
-
-async function claimProviderLease() {
-    const claimed = agentRunWorkLease.claim({
-        runId: RUN_ID,
-        workId: 'provider-explain',
-        ownerKind: 'provider',
-        cleanupOwner: 'provider-adapter',
-        idempotencyKey: 'provider:explain',
-        receiptIdentity: 'provider:explain',
-        idempotent: false,
-        retriable: true,
-    });
-    if (claimed.status !== 'claimed') {
-        throw new Error(`Expected the provider lease to be claimed: ${claimed.status}`);
-    }
-    return claimed.lease;
-}
-
 const EXPLAIN_CASE = 'no sample data reaches a hosted provider through an Explain request';
 const MIX_HEALTH_CASE = 'no sample data reaches a hosted provider through Mix Health';
 const AI_GENERATION_CASE = 'no sample data reaches a hosted provider through AI MIDI generation';
@@ -1929,24 +1940,6 @@ describeNoSampleData(EXPLAIN_CASE, {
             await selectHostedDialect(dialect);
             chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'chat' });
             return recordHostedBodies(() => sendChatMessage(textFor(injection, EXPLAIN_QUESTION), { mode: 'explain' }));
-        },
-    },
-    'the answer stream run by streamExplainChatResponse': {
-        carries: 'earlier question about the low end',
-        build: async (dialect, injection) => {
-            await selectHostedDialect(dialect);
-            provideEarlierConversation();
-            const providerLease = await claimProviderLease();
-            return recordHostedBodies(() =>
-                streamExplainChatResponse({
-                    userText: textFor(injection, EXPLAIN_QUESTION),
-                    runId: RUN_ID,
-                    backend: 'cloud',
-                    providerLease,
-                    providerReceiptIdentity: 'provider:explain',
-                    providerWorkId: 'provider-explain',
-                })
-            );
         },
     },
 });
@@ -2167,10 +2160,6 @@ const HOSTED_BODY_COVERAGE: Readonly<Record<string, CoverageRow>> = {
     [`${USE_CASES}/aiRuntimeQueries/streamCloudChatCompletion.ts`]: {
         kind: 'forwards',
         via: [`${USE_CASES}/streamHostedModelText.ts`],
-    },
-    [`${USE_CASES}/agentRequestOrchestration/streamExplainChatResponse.ts`]: {
-        kind: 'composes',
-        cases: [EXPLAIN_CASE],
     },
     [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`]: {
         kind: 'composes',

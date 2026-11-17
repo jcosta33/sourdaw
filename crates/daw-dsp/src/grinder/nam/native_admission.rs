@@ -4,8 +4,8 @@
 //! The bounded scan, the structural plan and its memory envelope live in
 //! `admission_plan`, shared with the WASM parser; this file adds the rate
 //! check, the per-sample work policy and the instance ledger.
-pub use super::admission_plan::NativeNamPlan;
 use super::admission_plan::{add, mul, refuse, Scan, ScannedModel, MIB};
+pub use super::admission_plan::{NamAdmissionError, NativeNamPlan};
 use super::{parse_nam_model, NamModel};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -18,7 +18,7 @@ impl NativeNamPlan {
     pub fn sample_rate(&self) -> u64 {
         self.rate
     }
-    pub fn capture_rate(text: &str) -> Result<f32, String> {
+    pub fn capture_rate(text: &str) -> Result<f32, NamAdmissionError> {
         if text.len() > MIB as usize {
             return Err(refuse("model byte limit"));
         }
@@ -32,7 +32,7 @@ impl NativeNamPlan {
         }
     }
 
-    pub fn inspect(text: &str, sample_rate: f32) -> Result<Self, String> {
+    pub fn inspect(text: &str, sample_rate: f32) -> Result<Self, NamAdmissionError> {
         if text.len() > MIB as usize
             || !sample_rate.is_finite()
             || sample_rate < 1.0
@@ -101,26 +101,26 @@ impl NativeNamLease {
         self.retire();
     }
 }
-pub fn next_native_nam_request() -> Result<u64, String> {
+pub fn next_native_nam_request() -> Result<u64, NamAdmissionError> {
     NEXT_REQUEST
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
         .map_err(|_| refuse("request identity exhausted"))
 }
 pub struct NativeNamTransaction;
 impl NativeNamTransaction {
-    pub fn begin(bytes: usize, count: usize) -> Result<Self, String> {
+    pub fn begin(bytes: usize, count: usize) -> Result<Self, NamAdmissionError> {
         if bytes > 8 * MIB as usize || count > 16 || count == 0 {
             return Err(refuse("transaction payload limit"));
         }
         PREPARING
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .map_err(|_| refuse("preparation already active"))?;
+            .map_err(|_| NamAdmissionError::PreparationActive)?;
         Ok(Self)
     }
     pub fn reserve(
         &self,
         requests: &[NativeNamReservation],
-    ) -> Result<Vec<Arc<NativeNamLease>>, String> {
+    ) -> Result<Vec<Arc<NativeNamLease>>, NamAdmissionError> {
         if requests.len() > 16 {
             return Err(refuse("pending instance limit"));
         }
@@ -216,18 +216,18 @@ impl NativePreparedNam {
         plan: &NativeNamPlan,
         lease: Arc<NativeNamLease>,
         content_hash: [u8; 32],
-    ) -> Result<Self, String> {
+    ) -> Result<Self, NamAdmissionError> {
         if !lease.is_current() {
-            return Err(refuse("superseded preparation"));
+            return Err(NamAdmissionError::Superseded);
         }
-        let mut model = Box::new(parse_nam_model(text).map_err(|e| refuse(&e.to_string()))?);
+        let mut model = Box::new(parse_nam_model(text).map_err(NamAdmissionError::model)?);
         model.reset_state();
         if model.prewarm_samples().div_ceil(64) as u64 * 64 != plan.prewarm {
             return Err(refuse("preflight/runtime prewarm disagreement"));
         }
         for _ in 0..plan.prewarm / 64 {
             if !lease.is_current() {
-                return Err(refuse("superseded preparation"));
+                return Err(NamAdmissionError::Superseded);
             }
             for _ in 0..64 {
                 if !model.process(0.0).is_finite() {
@@ -312,6 +312,7 @@ mod tests {
         assert!(NativeNamPlan::inspect(&linear(u64::MAX, 1), 48_000.0).is_err());
         assert!(NativeNamPlan::inspect(&linear(1, 65_537), 48_000.0)
             .unwrap_err()
+            .to_string()
             .contains("weight limit"));
         assert!(NativeNamPlan::inspect(&linear(1, 1), 44_100.0).is_err());
         let mut metadata: Value = serde_json::from_str(&linear(1, 1)).unwrap();
@@ -320,6 +321,7 @@ mod tests {
         }
         assert!(NativeNamPlan::inspect(&metadata.to_string(), 48_000.0)
             .unwrap_err()
+            .to_string()
             .contains("metadata"));
         let mut poisoned: Value =
             serde_json::from_str(&super::super::read_fixture("convnet_synthetic.nam")).unwrap();
@@ -330,6 +332,7 @@ mod tests {
         poisoned["weights"][24] = serde_json::json!(1.0e-38);
         assert!(NativeNamPlan::inspect(&poisoned.to_string(), 48_000.0)
             .unwrap_err()
+            .to_string()
             .contains("batchnorm"));
     }
 

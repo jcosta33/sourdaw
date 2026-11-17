@@ -19,6 +19,8 @@ const {
     mockFinalizeReset,
     mockStartCrdtAutoSave,
     mockUnloadLoadedExternalPlugins,
+    mockUnloadPlugin,
+    mockSettleProjectSwitchPluginTeardown,
     mockEnsureTrackStrips,
     mockStopPlayback,
     mockNotifyUser,
@@ -53,6 +55,8 @@ const {
     mockFinalizeReset: vi.fn(),
     mockStartCrdtAutoSave: vi.fn(() => 'auto-save-handle'),
     mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
+    mockUnloadPlugin: vi.fn(() => Promise.resolve()),
+    mockSettleProjectSwitchPluginTeardown: vi.fn<(outcome: 'switched' | 'refused') => void>(),
     mockEnsureTrackStrips: vi.fn(),
     mockStopPlayback: vi.fn(() => Promise.resolve()),
     mockNotifyUser: vi.fn(),
@@ -114,7 +118,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    unloadPlugin: mockUnloadLoadedExternalPlugins,
+    settleProjectSwitchPluginTeardown: mockSettleProjectSwitchPluginTeardown,
+    unloadPlugin: mockUnloadPlugin,
+    unloadPluginsBeforeProjectSwitch: mockUnloadLoadedExternalPlugins,
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
@@ -200,6 +206,11 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
         signal,
         ...transactionOverrides,
     };
+}
+
+/** The outcomes the replacement settled the plugin teardown's carries with, in order. */
+function settledPluginTeardowns(): string[] {
+    return mockSettleProjectSwitchPluginTeardown.mock.calls.map(([outcome]) => outcome);
 }
 
 describe('replaceProjectData', () => {
@@ -370,6 +381,9 @@ describe('replaceProjectData', () => {
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
         expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce();
+        // The outgoing carries end at the switch itself, never at the teardown.
+        expect(mockUnloadPlugin).not.toHaveBeenCalled();
+        expect(settledPluginTeardowns()).toEqual(['switched']);
         // Second argument is the point-of-no-return callback the abort path
         // uses to tell a recoverable failure from an unrecoverable one; the third
         // is the transport check the reset makes at the switch.
@@ -459,6 +473,13 @@ describe('replaceProjectData', () => {
         await expect(replacement).resolves.toEqual({ status: 'aborted' });
         expect(mockResetCrdtProject).not.toHaveBeenCalled();
         expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+        // The rebuild reactivates the outgoing plugins from the live state the
+        // teardown carried, which the unkeyed unload would have dropped.
+        expect(mockUnloadPlugin).not.toHaveBeenCalled();
+        expect(settledPluginTeardowns()).toEqual(['refused']);
+        expect(mockSettleProjectSwitchPluginTeardown.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            mockEnsureTrackStrips.mock.invocationCallOrder[0]!
+        );
         // The player stays in the old project, whose graph is rebuilt above, so
         // a damper still held must survive the abandoned load.
         expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
@@ -681,6 +702,10 @@ describe('replaceProjectData', () => {
 
         expect(result).toEqual({ status: 'aborted' });
         expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+        // A refusal at the reset keeps the outgoing project's carries, removal
+        // carries included, for the graph rebuilt above.
+        expect(mockUnloadPlugin).not.toHaveBeenCalled();
+        expect(settledPluginTeardowns()).toEqual(['refused']);
         expect(mockAutoSaveHandle.setAutoSaveHandle).toHaveBeenCalledOnce();
         expect(mockCompactProject).not.toHaveBeenCalled();
         expect(mockFinalizeReset).not.toHaveBeenCalled();

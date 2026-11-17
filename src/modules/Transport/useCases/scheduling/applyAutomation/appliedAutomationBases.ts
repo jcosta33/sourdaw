@@ -46,15 +46,3 @@ export function clearAppliedAutomationBases(): void {
  * cleared per tick: a reader that skips a tick must still see the write.
  */
 export const appliedAutomationWriteSequences = new Map<string, Map<string, number>>();
-
-let lastWriteSequence = 0;
-
-export function recordAppliedAutomationWrite(deviceId: string, parameterId: string): void {
-    let byParameter = appliedAutomationWriteSequences.get(deviceId);
-    if (!byParameter) {
-        byParameter = new Map<string, number>();
-        appliedAutomationWriteSequences.set(deviceId, byParameter);
-    }
-    lastWriteSequence += 1;
-    byParameter.set(parameterId, lastWriteSequence);
-}

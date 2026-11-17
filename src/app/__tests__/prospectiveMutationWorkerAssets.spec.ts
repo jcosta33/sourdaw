@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-import { change, clone, free, from, getChanges, getHeads, load, save } from '@automerge/automerge';
+import { applyChanges, change, clone, free, from, getBackend, getChanges, getHeads, save } from '@automerge/automerge';
 import { build, createLogger, createServer, loadConfigFromFile } from 'vite';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -232,97 +232,118 @@ describe('shipping prospective Worker public WASM assets', () => {
         );
 
         type Reply =
-            | { status: 'complete'; bytes: Uint8Array<ArrayBuffer>; heads: string[] }
+            | { status: 'complete'; changes: Uint8Array<ArrayBuffer>[]; heads: string[] }
             | { status: 'failed'; message: string };
         for (const origin of ['https://example.test/subdirectory/', 'app://sourdaw/']) {
-            const postMessage = vi.fn<(reply: Reply, transfer?: ArrayBuffer[]) => void>();
-            const scope: {
-                location: { href: string };
-                postMessage: typeof postMessage;
-                onmessage?: (event: { data: unknown }) => Promise<void>;
-            } = {
-                location: { href: new URL(worker.fileName, origin).href },
-                postMessage,
-            };
-            const fetchBinary = vi.fn(async (url: string) => {
-                expect(url).toBe(new URL(binary.fileName, origin).href);
-                return new Response(Uint8Array.from(bytes), { headers: { 'Content-Type': 'application/wasm' } });
-            });
-            const context = vm.createContext({
-                self: scope,
-                fetch: fetchBinary,
-                crypto: webcrypto,
-                WebAssembly,
-                TextEncoder,
-                TextDecoder,
-                Uint8Array,
-                ArrayBuffer,
-                URL,
-                Request,
-                Response,
-                console,
-                performance,
-            });
-            vm.runInContext(code, context, { timeout: 1000 });
-            expect(fetchBinary).not.toHaveBeenCalled();
-            if (!scope.onmessage) {
-                throw new Error('Actual emitted Worker handler missing');
-            }
-            const actor = 'aaaaaaaaaaaaaaaa';
-            const original = from({ slot: { count: 0 } }, { actor });
-            const encoding = clone(original, { actor });
-            let seed: Uint8Array<ArrayBuffer>;
-            try {
-                seed = Uint8Array.from(save(encoding));
-            } finally {
-                free(encoding);
-            }
-            try {
-                // Browser messaging rehomes JSON records into the Worker realm; VM calls do not.
-                Reflect.set(context, 'suppliedSeed', seed);
-                Reflect.set(
-                    context,
-                    'suppliedJson',
-                    JSON.stringify({
-                        heads: getHeads(original),
-                        actor,
-                        message: 'Detect',
-                        time: 7,
-                        mutation: {
-                            kind: 'canonical-json-slot-v1',
-                            key: 'slot',
-                            baseValue: { count: 0 },
-                            value: { count: 1 },
-                            documentPresence: { slot: { count: 0 } },
-                        },
-                    })
-                );
-                const data: unknown = vm.runInContext('({ ...JSON.parse(suppliedJson), seed: suppliedSeed })', context);
-                await scope.onmessage({ data });
-                expect(fetchBinary).toHaveBeenCalledTimes(1);
-                expect(postMessage).toHaveBeenCalledTimes(1);
-                const reply = postMessage.mock.calls[0]![0];
-                if (reply.status !== 'complete') {
-                    throw new Error(reply.message);
+            for (const encodingKind of ['compressed', 'uncompressed']) {
+                const postMessage = vi.fn<(reply: Reply, transfer?: ArrayBuffer[]) => void>();
+                const scope: {
+                    location: { href: string };
+                    postMessage: typeof postMessage;
+                    onmessage?: (event: { data: unknown }) => Promise<void>;
+                } = {
+                    location: { href: new URL(worker.fileName, origin).href },
+                    postMessage,
+                };
+                const fetchBinary = vi.fn(async (url: string) => {
+                    expect(url).toBe(new URL(binary.fileName, origin).href);
+                    return new Response(Uint8Array.from(bytes), { headers: { 'Content-Type': 'application/wasm' } });
+                });
+                const context = vm.createContext({
+                    self: scope,
+                    fetch: fetchBinary,
+                    crypto: webcrypto,
+                    WebAssembly,
+                    TextEncoder,
+                    TextDecoder,
+                    Uint8Array,
+                    ArrayBuffer,
+                    URL,
+                    Request,
+                    Response,
+                    console,
+                    performance,
+                });
+                vm.runInContext(code, context, { timeout: 1000 });
+                expect(fetchBinary).not.toHaveBeenCalled();
+                if (!scope.onmessage) {
+                    throw new Error('Actual emitted Worker handler missing');
                 }
-                const actual = load<{ slot: { count: number } }>(reply.bytes, { actor });
+                const actor = 'aaaaaaaaaaaaaaaa';
+                const original = from({ slot: { count: 0 } }, { actor });
+                const encoding = clone(original, { actor });
+                let seed: Uint8Array<ArrayBuffer>;
                 try {
-                    expect(actual.slot.count).toBe(1);
-                    expect(getHeads(actual)).toEqual(reply.heads);
-                    const expected = change(clone(original, { actor }), { message: 'Detect', time: 7 }, (draft) => {
-                        draft.slot.count = 1;
-                    });
-                    try {
-                        expect(getChanges(original, actual)).toEqual(getChanges(original, expected));
-                    } finally {
-                        free(expected);
-                    }
-                    expect(postMessage.mock.calls[0]![1]).toEqual([reply.bytes.buffer]);
+                    seed = Uint8Array.from(
+                        encodingKind === 'compressed' ? save(encoding) : getBackend(encoding).saveNoCompress()
+                    );
                 } finally {
-                    free(actual);
+                    free(encoding);
                 }
-            } finally {
-                free(original);
+                try {
+                    // Browser messaging rehomes JSON records into the Worker realm; VM calls do not.
+                    Reflect.set(context, 'suppliedSeed', seed);
+                    Reflect.set(
+                        context,
+                        'suppliedJson',
+                        JSON.stringify({
+                            heads: getHeads(original),
+                            actor,
+                            message: 'Detect',
+                            time: 7,
+                            mutation: {
+                                kind: 'canonical-json-slot-v1',
+                                key: 'slot',
+                                baseValue: { count: 0 },
+                                value: { count: 1 },
+                                documentPresence: { slot: { count: 0 } },
+                            },
+                        })
+                    );
+                    const data: unknown = vm.runInContext(
+                        '({ ...JSON.parse(suppliedJson), seed: suppliedSeed })',
+                        context
+                    );
+                    await scope.onmessage({ data });
+                    expect(fetchBinary).toHaveBeenCalledTimes(1);
+                    expect(postMessage).toHaveBeenCalledTimes(1);
+                    const reply = postMessage.mock.calls[0]![0];
+                    if (reply.status !== 'complete') {
+                        throw new Error(reply.message);
+                    }
+                    expect(reply.changes).toHaveLength(1);
+                    for (const bytes of reply.changes) {
+                        expect(bytes).toBeInstanceOf(Uint8Array);
+                        expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+                        expect(bytes.byteLength).toBeGreaterThan(0);
+                        expect(bytes.byteOffset).toBe(0);
+                        expect(bytes.byteLength).toBe(bytes.buffer.byteLength);
+                    }
+                    const transfer = postMessage.mock.calls[0]![1];
+                    expect(transfer).toHaveLength(reply.changes.length);
+                    for (const [index, bytes] of reply.changes.entries()) {
+                        expect(transfer?.[index]).toBe(bytes.buffer);
+                    }
+                    const [actual] = applyChanges(clone(original, { actor }), reply.changes);
+                    try {
+                        expect(actual.slot.count).toBe(1);
+                        expect(getHeads(actual)).toEqual(reply.heads);
+                        const expected = change(clone(original, { actor }), { message: 'Detect', time: 7 }, (draft) => {
+                            draft.slot.count = 1;
+                        });
+                        try {
+                            expect(actual).toEqual(expected);
+                            expect(getChanges(original, actual)).toEqual(getChanges(original, expected));
+                        } finally {
+                            free(expected);
+                        }
+                        expect(original.slot.count).toBe(0);
+                    } finally {
+                        free(actual);
+                    }
+                } finally {
+                    free(original);
+                }
             }
         }
     }, 30_000);

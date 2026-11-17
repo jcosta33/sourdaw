@@ -23,6 +23,27 @@ export type BatchLocalBindingProducerName = (typeof BATCH_LOCAL_BINDING_PRODUCER
 export const BATCH_LOCAL_BINDING_PRODUCER_NAMES: ReadonlySet<string> = new Set(BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST);
 
 /**
+ * The noun a request names each producer's object by ("a delay bus", "a new track"). The plan-created
+ * object route reads a call's creation in the request through it, and the creative catalog reads a
+ * role-family word inside such a phrase as the object being made, never an existing one to edit.
+ */
+export const CREATED_OBJECT_NOUNS: Readonly<Record<BatchLocalBindingProducerName, RegExp>> = {
+    addAutomationLane: /\b(?:automation )?lanes?\b/u,
+    addClip: /\bclips?\b/u,
+    addDevice: /\b(?:devices?|plugins?|effects?)\b/u,
+    addTrack: /\btracks?\b/u,
+    createBus: /\bbus(?:es)?\b/u,
+};
+
+/** Any noun of an object the plan-created object route can make, as one pattern. */
+export const CREATED_OBJECT_NOUN = new RegExp(
+    Object.values(CREATED_OBJECT_NOUNS)
+        .map((noun) => noun.source)
+        .join('|'),
+    'u'
+);
+
+/**
  * The only commands the plan-created object route may admit. Membership is about what a command
  * changes, not what it targets: every effect of these lands inside the object being created.
  * A command that merely accepts a batch-local target can still reach the rest of the project

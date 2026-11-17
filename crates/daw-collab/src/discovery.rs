@@ -22,13 +22,55 @@ pub struct NearbySession {
     pub port: u16,
 }
 
+/// Why an mDNS discovery operation failed.
+///
+/// `Display` is the message the renderer receives through the LAN discovery
+/// commands, so rewording a variant changes what TypeScript sees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiscoveryError {
+    /// The mDNS daemon could not start.
+    Start(mdns_sd::Error),
+    /// The advertised service description is malformed.
+    CreateServiceInfo(mdns_sd::Error),
+    /// The daemon refused to register the service.
+    Register(mdns_sd::Error),
+    /// The daemon refused to unregister the service.
+    Unregister(mdns_sd::Error),
+    /// The daemon refused to start browsing.
+    Browse(mdns_sd::Error),
+    /// The daemon refused to stop browsing.
+    StopBrowsing(mdns_sd::Error),
+    /// The daemon refused to shut down.
+    Shutdown(mdns_sd::Error),
+}
+
+impl std::fmt::Display for DiscoveryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Start(error) => write!(formatter, "Failed to start mDNS: {error}"),
+            Self::CreateServiceInfo(error) => {
+                write!(formatter, "Failed to create service info: {error}")
+            }
+            Self::Register(error) => write!(formatter, "Failed to register mDNS service: {error}"),
+            Self::Unregister(error) => {
+                write!(formatter, "Failed to unregister mDNS service: {error}")
+            }
+            Self::Browse(error) => write!(formatter, "Failed to browse mDNS: {error}"),
+            Self::StopBrowsing(error) => write!(formatter, "Failed to stop mDNS browsing: {error}"),
+            Self::Shutdown(error) => write!(formatter, "Failed to shutdown mDNS: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for DiscoveryError {}
+
 /// The registration half of the mDNS daemon.
 ///
 /// Isolated behind a trait so the advertise/retire bookkeeping — the part that
 /// leaked registrations — can be exercised without binding real sockets.
 trait ServiceRegistrar {
-    fn register(&self, service: ServiceInfo) -> Result<(), String>;
-    fn unregister(&self, fullname: &str) -> Result<(), String>;
+    fn register(&self, service: ServiceInfo) -> Result<(), DiscoveryError>;
+    fn unregister(&self, fullname: &str) -> Result<(), DiscoveryError>;
 }
 
 /// Every daemon-side operation the teardown sequence drives.
@@ -37,35 +79,35 @@ trait ServiceRegistrar {
 /// the daemon down — is the part that peers observe, and it is only reachable
 /// through this trait, so a test can pin it without binding real sockets.
 trait DiscoveryDaemon: ServiceRegistrar {
-    fn stop_browsing(&self) -> Result<(), String>;
-    fn shutdown(&self) -> Result<(), String>;
+    fn stop_browsing(&self) -> Result<(), DiscoveryError>;
+    fn shutdown(&self) -> Result<(), DiscoveryError>;
 }
 
 impl ServiceRegistrar for ServiceDaemon {
-    fn register(&self, service: ServiceInfo) -> Result<(), String> {
+    fn register(&self, service: ServiceInfo) -> Result<(), DiscoveryError> {
         ServiceDaemon::register(self, service)
             .map(|_| ())
-            .map_err(|e| format!("Failed to register mDNS service: {}", e))
+            .map_err(DiscoveryError::Register)
     }
 
-    fn unregister(&self, fullname: &str) -> Result<(), String> {
+    fn unregister(&self, fullname: &str) -> Result<(), DiscoveryError> {
         ServiceDaemon::unregister(self, fullname)
             .map(|_| ())
-            .map_err(|e| format!("Failed to unregister mDNS service: {}", e))
+            .map_err(DiscoveryError::Unregister)
     }
 }
 
 impl DiscoveryDaemon for ServiceDaemon {
-    fn stop_browsing(&self) -> Result<(), String> {
+    fn stop_browsing(&self) -> Result<(), DiscoveryError> {
         ServiceDaemon::stop_browse(self, SERVICE_TYPE)
             .map(|_| ())
-            .map_err(|e| format!("Failed to stop mDNS browsing: {}", e))
+            .map_err(DiscoveryError::StopBrowsing)
     }
 
-    fn shutdown(&self) -> Result<(), String> {
+    fn shutdown(&self) -> Result<(), DiscoveryError> {
         ServiceDaemon::shutdown(self)
             .map(|_| ())
-            .map_err(|e| format!("Failed to shutdown mDNS: {}", e))
+            .map_err(DiscoveryError::Shutdown)
     }
 }
 
@@ -79,7 +121,7 @@ fn retire(
     daemon: &impl DiscoveryDaemon,
     advertisement: &mut Advertisement,
     browsing: bool,
-) -> Result<(), String> {
+) -> Result<(), DiscoveryError> {
     let advertising = advertisement.stop(daemon);
     let browsing = if browsing {
         daemon.stop_browsing()
@@ -109,7 +151,7 @@ impl Advertisement {
         &mut self,
         registrar: &impl ServiceRegistrar,
         service: ServiceInfo,
-    ) -> Result<(), String> {
+    ) -> Result<(), DiscoveryError> {
         self.stop(registrar)?;
 
         let fullname = service.get_fullname().to_string();
@@ -125,7 +167,7 @@ impl Advertisement {
     /// registered on the network with nothing left that could name it: the
     /// struct believed it was advertising nothing, so neither a later stop nor
     /// a re-advertise could ever retire it.
-    fn stop(&mut self, registrar: &impl ServiceRegistrar) -> Result<(), String> {
+    fn stop(&mut self, registrar: &impl ServiceRegistrar) -> Result<(), DiscoveryError> {
         let Some(fullname) = self.fullname.take() else {
             return Ok(());
         };
@@ -156,8 +198,8 @@ pub struct LanDiscovery {
 }
 
 impl LanDiscovery {
-    pub fn new() -> Result<Self, String> {
-        let daemon = ServiceDaemon::new().map_err(|e| format!("Failed to start mDNS: {}", e))?;
+    pub fn new() -> Result<Self, DiscoveryError> {
+        let daemon = ServiceDaemon::new().map_err(DiscoveryError::Start)?;
         Ok(Self {
             daemon,
             advertisement: Advertisement::default(),
@@ -174,7 +216,7 @@ impl LanDiscovery {
         project_name: &str,
         port: u16,
         approval_required: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), DiscoveryError> {
         let instance_name = format!("{} — {}", host_name, project_name);
 
         let mut properties = HashMap::new();
@@ -197,18 +239,18 @@ impl LanDiscovery {
             port,
             properties,
         )
-        .map_err(|e| format!("Failed to create service info: {}", e))?;
+        .map_err(DiscoveryError::CreateServiceInfo)?;
 
         self.advertisement.register(&self.daemon, service)
     }
 
     /// Stop advertising the current session.
-    pub fn stop_advertising(&mut self) -> Result<(), String> {
+    pub fn stop_advertising(&mut self) -> Result<(), DiscoveryError> {
         self.advertisement.stop(&self.daemon)
     }
 
     /// Start browsing for nearby sessions. Discovered sessions are stored internally.
-    pub fn start_browsing(&mut self) -> Result<(), String> {
+    pub fn start_browsing(&mut self) -> Result<(), DiscoveryError> {
         if self.browsing {
             return Ok(());
         }
@@ -216,7 +258,7 @@ impl LanDiscovery {
         let receiver = self
             .daemon
             .browse(SERVICE_TYPE)
-            .map_err(|e| format!("Failed to browse mDNS: {}", e))?;
+            .map_err(DiscoveryError::Browse)?;
 
         let discovered = self.discovered.clone();
 
@@ -268,7 +310,7 @@ impl LanDiscovery {
     }
 
     /// Stop browsing for nearby sessions and clear stale discovery results.
-    pub fn stop_browsing(&mut self) -> Result<(), String> {
+    pub fn stop_browsing(&mut self) -> Result<(), DiscoveryError> {
         if !self.browsing {
             return Ok(());
         }
@@ -297,7 +339,7 @@ impl LanDiscovery {
     /// daemon without unregistering leaves peers seeing a joinable session that
     /// nothing is listening for until the record's TTL expires. A step that
     /// fails does not cancel the ones after it — see [`retire`].
-    pub fn shutdown(mut self) -> Result<(), String> {
+    pub fn shutdown(mut self) -> Result<(), DiscoveryError> {
         let outcome = retire(&self.daemon, &mut self.advertisement, self.browsing);
 
         // The daemon is gone either way, so the `Drop` backstop must not chase
@@ -330,11 +372,21 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::{
-        retire, Advertisement, DiscoveryDaemon, ServiceInfo, ServiceRegistrar, SERVICE_TYPE,
+        retire, Advertisement, DiscoveryDaemon, DiscoveryError, ServiceInfo, ServiceRegistrar,
+        SERVICE_TYPE,
     };
 
-    const UNREGISTER_REFUSED: &str = "Failed to unregister mDNS service: daemon refused";
-    const STOP_BROWSING_REFUSED: &str = "Failed to stop mDNS browsing: daemon refused";
+    fn daemon_refused() -> mdns_sd::Error {
+        mdns_sd::Error::Msg("daemon refused".to_string())
+    }
+
+    fn unregister_refused() -> DiscoveryError {
+        DiscoveryError::Unregister(daemon_refused())
+    }
+
+    fn stop_browsing_refused() -> DiscoveryError {
+        DiscoveryError::StopBrowsing(daemon_refused())
+    }
 
     /// Records what the daemon would have been asked to do. No sockets, no
     /// daemon thread — the leak was in the bookkeeping, and this is the
@@ -370,34 +422,34 @@ mod tests {
     }
 
     impl ServiceRegistrar for RecordingRegistrar {
-        fn register(&self, service: ServiceInfo) -> Result<(), String> {
+        fn register(&self, service: ServiceInfo) -> Result<(), DiscoveryError> {
             self.calls
                 .borrow_mut()
                 .push(format!("register {}", service.get_fullname()));
             Ok(())
         }
 
-        fn unregister(&self, fullname: &str) -> Result<(), String> {
+        fn unregister(&self, fullname: &str) -> Result<(), DiscoveryError> {
             self.calls
                 .borrow_mut()
                 .push(format!("unregister {}", fullname));
             if Self::refuse(&self.unregister_refusals) {
-                return Err(UNREGISTER_REFUSED.to_string());
+                return Err(unregister_refused());
             }
             Ok(())
         }
     }
 
     impl DiscoveryDaemon for RecordingRegistrar {
-        fn stop_browsing(&self) -> Result<(), String> {
+        fn stop_browsing(&self) -> Result<(), DiscoveryError> {
             self.calls.borrow_mut().push("stop browsing".to_string());
             if Self::refuse(&self.stop_browsing_refusals) {
-                return Err(STOP_BROWSING_REFUSED.to_string());
+                return Err(stop_browsing_refused());
             }
             Ok(())
         }
 
-        fn shutdown(&self) -> Result<(), String> {
+        fn shutdown(&self) -> Result<(), DiscoveryError> {
             self.calls.borrow_mut().push("shutdown daemon".to_string());
             Ok(())
         }
@@ -509,7 +561,7 @@ mod tests {
             advertisement
                 .stop(&registrar)
                 .expect_err("the daemon refuses the first unregister"),
-            UNREGISTER_REFUSED
+            unregister_refused()
         );
         advertisement
             .stop(&registrar)
@@ -601,7 +653,7 @@ mod tests {
         let error = retire(&daemon, &mut advertisement, true)
             .expect_err("a refused step must still be reported");
 
-        assert_eq!(error, UNREGISTER_REFUSED);
+        assert_eq!(error, unregister_refused());
         assert_eq!(
             daemon.calls.into_inner(),
             vec![
@@ -625,5 +677,45 @@ mod tests {
             daemon.calls.into_inner(),
             vec!["shutdown daemon".to_string()]
         );
+    }
+
+    /// The renderer receives these messages verbatim through the LAN discovery
+    /// commands, so each variant's text is pinned byte for byte.
+    #[test]
+    fn errors_print_the_messages_the_renderer_receives() {
+        let cases = [
+            (
+                DiscoveryError::Start(daemon_refused()),
+                "Failed to start mDNS: daemon refused",
+            ),
+            (
+                DiscoveryError::CreateServiceInfo(daemon_refused()),
+                "Failed to create service info: daemon refused",
+            ),
+            (
+                DiscoveryError::Register(daemon_refused()),
+                "Failed to register mDNS service: daemon refused",
+            ),
+            (
+                DiscoveryError::Unregister(daemon_refused()),
+                "Failed to unregister mDNS service: daemon refused",
+            ),
+            (
+                DiscoveryError::Browse(daemon_refused()),
+                "Failed to browse mDNS: daemon refused",
+            ),
+            (
+                DiscoveryError::StopBrowsing(daemon_refused()),
+                "Failed to stop mDNS browsing: daemon refused",
+            ),
+            (
+                DiscoveryError::Shutdown(daemon_refused()),
+                "Failed to shutdown mDNS: daemon refused",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
     }
 }

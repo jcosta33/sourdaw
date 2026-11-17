@@ -1,5 +1,5 @@
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { getMidiStoreState } from '#/modules/MIDI/useCases';
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 /** A clip-bounded read; absent buckets remain distinct from present empty rows. */
 export function readClipMidiSnapshot(clipId: string): MidiClipDataActionSnapshot {

@@ -8,7 +8,8 @@
 //
 // A file leaves this list only once it complies with all four rules at their
 // configured limits. No file is ever added — new code is held to the ceilings
-// from the start. Keep the list sorted and free of duplicates; a moved or
+// from the start, and scripts/checkSizeBaselineShrinks.ts refuses any path absent
+// from the merge base's list. Keep the list sorted and free of duplicates; a moved or
 // deleted file must be removed here too, or scripts/__tests__/lintSizeBaseline.spec.ts
 // fails.
 export const sizeBaselineFiles = [
@@ -112,7 +113,6 @@ export const sizeBaselineFiles = [
     'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedBatchOutcome.ts',
     'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts',
     'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleVerifiedBatchReplay.ts',
-    'src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts',
     'src/modules/AiRuntime/useCases/agentRunLifecycle.ts',
     'src/modules/AiRuntime/useCases/agentToolCatalog.ts',
     'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts',
@@ -545,5 +545,4 @@ export const sizeBaselineFiles = [
     'src/modules/Yeast/workers/processors/GrooveModule.ts',
     'src/modules/Yeast/workers/yeastWorker.ts',
     'src/utils/automationCurve.ts',
-    'src/utils/handlerContract.ts',
 ];

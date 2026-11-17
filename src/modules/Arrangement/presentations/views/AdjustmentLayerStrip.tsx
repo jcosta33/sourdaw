@@ -1,4 +1,5 @@
 import {
+    type KeyboardEvent as ReactKeyboardEvent,
     type ReactElement,
     type MouseEvent as ReactMouseEvent,
     useEffect,
@@ -10,6 +11,7 @@ import {
 import { Layers, Plus, Power, Settings2, Trash2, X } from 'lucide-react';
 
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -18,6 +20,7 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureGestureBeat } from '#/modules/Transport/stores';
 import { cn } from '#/utils/Styles/cn';
 
 import {
@@ -30,6 +33,14 @@ import {
 } from '../../stores/adjustmentLayer';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 
+import {
+    handleLayerRowKeyDown,
+    handleRegionEdgeKeyDown,
+    handleRegionKeyDown,
+    MIN_REGION_BEATS,
+    type RegionEdge,
+} from './adjustmentLayerKeyboard';
+import { AdjustmentRegionBand, type FadePreview } from './AdjustmentRegionBand';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 type AdjustmentLayerStripProps = {
@@ -75,8 +86,6 @@ type DragState =
       }
     | null;
 
-type FadePreview = { regionId: string; fadeInBeats: number; fadeOutBeats: number };
-
 const ROW_HEIGHT = 20;
 const MIN_DRAG_PX = 3;
 
@@ -110,6 +119,8 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
         null
     );
     const [fadePreview, setFadePreview] = useState<FadePreview | null>(null);
+    // The layer row that holds the strip's single tab stop; arrows move it.
+    const [focusedLayerId, setFocusedLayerId] = useState<string | null>(null);
     const dragStateRef = useRef<DragState>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const addMenuRef = useRef<HTMLDivElement>(null);
@@ -152,8 +163,17 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 setContextMenu({ kind: 'none' });
             }
         };
+        const handleEscape = (e: globalThis.KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setContextMenu({ kind: 'none' });
+            }
+        };
         window.addEventListener('mousedown', handleClick);
-        return () => window.removeEventListener('mousedown', handleClick);
+        window.addEventListener('keydown', handleEscape);
+        return () => {
+            window.removeEventListener('mousedown', handleClick);
+            window.removeEventListener('keydown', handleEscape);
+        };
     }, [contextMenu.kind]);
 
     useEffect(() => {
@@ -206,9 +226,9 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 nextStart = Math.max(0, origStart + deltaBeats);
                 nextEnd = nextStart + (origEnd - origStart);
             } else if (kind === 'resizeStart') {
-                nextStart = Math.max(0, Math.min(origStart + deltaBeats, origEnd - 0.25));
+                nextStart = Math.max(0, Math.min(origStart + deltaBeats, origEnd - MIN_REGION_BEATS));
             } else {
-                nextEnd = Math.max(origStart + 0.25, origEnd + deltaBeats);
+                nextEnd = Math.max(origStart + MIN_REGION_BEATS, origEnd + deltaBeats);
             }
             lastPreview = { regionId: region.id, startBeat: nextStart, endBeat: nextEnd };
             setDragPreview(lastPreview);
@@ -397,7 +417,39 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
         setInspector({ layerId: layer.id });
     };
 
+    // ── Keyboard ──────────────────────────────────────────────────────
+    const onLayerRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, layer: AdjustmentLayer) =>
+        handleLayerRowKeyDown(event, {
+            openMenu: (position) => setContextMenu({ kind: 'layer', ...position, layer }),
+            // The key press is the gesture: its beat is stamped by the gesture clock.
+            addRegionAtPlayhead: () => addRegionAtBeat(layer.id, captureGestureBeat()),
+        });
+
+    const moveRegion = (regionId: string, startBeat: number, endBeat: number) => {
+        void executeUserAppAction({ type: 'moveAdjustmentRegion', payload: { regionId, startBeat, endBeat } });
+    };
+
+    const onRegionKeyDown = (
+        event: ReactKeyboardEvent<HTMLButtonElement>,
+        layer: AdjustmentLayer,
+        region: AdjustmentRegion
+    ) =>
+        handleRegionKeyDown(event, region, {
+            openMenu: (position) => setContextMenu({ kind: 'region', ...position, layer, region }),
+            openInspector: () => setInspector({ layerId: layer.id }),
+            remove: () => removeRegion(layer.id, region.id),
+            move: (startBeat, endBeat) => moveRegion(region.id, startBeat, endBeat),
+        });
+
+    const onRegionEdgeKeyDown = (
+        event: ReactKeyboardEvent<HTMLDivElement>,
+        region: AdjustmentRegion,
+        edge: RegionEdge
+    ) =>
+        handleRegionEdgeKeyDown(event, region, edge, (startBeat, endBeat) => moveRegion(region.id, startBeat, endBeat));
+
     const inspectorLayer = inspector ? (layers.find((l) => l.id === inspector.layerId) ?? null) : null;
+    const tabStopLayerId = layers.some((layer) => layer.id === focusedLayerId) ? focusedLayerId : layers[0]?.id;
 
     return (
         <TimelineChromeSurface
@@ -425,30 +477,38 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 </Button>
             </Row>
 
-            {layers.map((layer, idx) => {
-                const yOffset = ROW_HEIGHT + idx * ROW_HEIGHT;
-                return (
-                    <AdjustmentLayerRow
-                        key={layer.id}
-                        layer={layer}
-                        yOffset={yOffset}
-                        pixelsPerBeat={pixelsPerBeat}
-                        scrollX={scrollX}
-                        laneWidth={stripWidth}
-                        dragPreview={dragPreview}
-                        fadePreview={fadePreview}
-                        onLaneClick={handleLaneClick}
-                        onLayerContextMenu={handleLayerContextMenu}
-                        onRegionContextMenu={handleRegionContextMenu}
-                        onRegionDoubleClick={handleRegionDoubleClick}
-                        onRegionDragStart={startRegionDrag}
-                        onFadeDragStart={startFadeDrag}
-                        onToggleEnabled={() => toggleLayer(layer.id)}
-                        onRemoveLayer={() => removeLayer(layer.id)}
-                        onOpenAffectedTracks={() => setTracksPicker({ layerId: layer.id })}
-                    />
-                );
-            })}
+            {/* Static wrapper: the rows stay positioned against the strip surface. */}
+            <div role="grid" aria-label="Adjustment layer lanes">
+                {layers.map((layer, idx) => {
+                    const yOffset = ROW_HEIGHT + idx * ROW_HEIGHT;
+                    return (
+                        <AdjustmentLayerRow
+                            key={layer.id}
+                            layer={layer}
+                            yOffset={yOffset}
+                            pixelsPerBeat={pixelsPerBeat}
+                            scrollX={scrollX}
+                            laneWidth={stripWidth}
+                            dragPreview={dragPreview}
+                            fadePreview={fadePreview}
+                            isTabStop={layer.id === tabStopLayerId}
+                            onRowFocus={() => setFocusedLayerId(layer.id)}
+                            onLaneClick={handleLaneClick}
+                            onLayerContextMenu={handleLayerContextMenu}
+                            onLayerRowKeyDown={onLayerRowKeyDown}
+                            onRegionContextMenu={handleRegionContextMenu}
+                            onRegionDoubleClick={handleRegionDoubleClick}
+                            onRegionKeyDown={onRegionKeyDown}
+                            onRegionEdgeKeyDown={onRegionEdgeKeyDown}
+                            onRegionDragStart={startRegionDrag}
+                            onFadeDragStart={startFadeDrag}
+                            onToggleEnabled={() => toggleLayer(layer.id)}
+                            onRemoveLayer={() => removeLayer(layer.id)}
+                            onOpenAffectedTracks={() => setTracksPicker({ layerId: layer.id })}
+                        />
+                    );
+                })}
+            </div>
 
             {addMenuOpen ? (
                 <div
@@ -466,11 +526,13 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             ) : null}
 
             {contextMenu.kind !== 'none' ? (
-                <div
+                <DawContextMenuSurface
                     ref={menuRef}
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    onClose={() => setContextMenu({ kind: 'none' })}
                     data-testid="adjustment-layer-context-menu"
-                    className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md p-1"
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    className="min-w-[180px] p-1"
                     role="menu"
                 >
                     {contextMenu.kind === 'layer' ? (
@@ -556,7 +618,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                             </DawMenuButton>
                         </>
                     ) : null}
-                </div>
+                </DawContextMenuSurface>
             ) : null}
 
             {inspectorLayer ? (
@@ -589,10 +651,19 @@ type AdjustmentLayerRowProps = {
     laneWidth: number;
     dragPreview: { regionId: string; startBeat: number; endBeat: number } | null;
     fadePreview: FadePreview | null;
+    isTabStop: boolean;
+    onRowFocus: () => void;
     onLaneClick: (e: ReactMouseEvent<HTMLDivElement>, layer: AdjustmentLayer) => void;
     onLayerContextMenu: (e: ReactMouseEvent, layer: AdjustmentLayer) => void;
+    onLayerRowKeyDown: (e: ReactKeyboardEvent<HTMLDivElement>, layer: AdjustmentLayer) => void;
     onRegionContextMenu: (e: ReactMouseEvent, layer: AdjustmentLayer, region: AdjustmentRegion) => void;
     onRegionDoubleClick: (e: ReactMouseEvent, layer: AdjustmentLayer) => void;
+    onRegionKeyDown: (
+        e: ReactKeyboardEvent<HTMLButtonElement>,
+        layer: AdjustmentLayer,
+        region: AdjustmentRegion
+    ) => void;
+    onRegionEdgeKeyDown: (e: ReactKeyboardEvent<HTMLDivElement>, region: AdjustmentRegion, edge: RegionEdge) => void;
     onRegionDragStart: (
         e: ReactMouseEvent,
         layer: AdjustmentLayer,
@@ -618,10 +689,15 @@ const AdjustmentLayerRow = ({
     laneWidth,
     dragPreview,
     fadePreview,
+    isTabStop,
+    onRowFocus,
     onLaneClick,
     onLayerContextMenu,
+    onLayerRowKeyDown,
     onRegionContextMenu,
     onRegionDoubleClick,
+    onRegionKeyDown,
+    onRegionEdgeKeyDown,
     onRegionDragStart,
     onFadeDragStart,
     onToggleEnabled,
@@ -632,12 +708,26 @@ const AdjustmentLayerRow = ({
 
     return (
         <div
-            className={cn('absolute left-0 right-0 border-b border-border/20', layer.enabled ? '' : 'opacity-40')}
+            role="row"
+            tabIndex={isTabStop ? 0 : -1}
+            aria-label={`${layer.name} adjustment layer`}
+            aria-keyshortcuts="Enter ContextMenu Shift+F10"
+            className={cn(
+                'absolute left-0 right-0 border-b border-border/20 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-focus/70',
+                layer.enabled ? '' : 'opacity-40'
+            )}
             style={{ top: yOffset, height: ROW_HEIGHT }}
             onClick={(e) => onLaneClick(e, layer)}
             onContextMenu={(e) => onLayerContextMenu(e, layer)}
+            onKeyDown={(e) => onLayerRowKeyDown(e, layer)}
+            onFocus={(e) => {
+                if (e.target === e.currentTarget) {
+                    onRowFocus();
+                }
+            }}
         >
             <Row
+                role="gridcell"
                 gap={1}
                 className="absolute left-0 top-0 z-10 border-r border-border/40 px-1 py-0.5"
                 style={{ height: ROW_HEIGHT, backgroundColor: 'var(--color-surface-base)' }}
@@ -719,43 +809,37 @@ const AdjustmentLayerRow = ({
                     return null;
                 }
                 const isSentinel = region === EMPTY_RANGE_SENTINEL;
+                const bandStyle = {
+                    left: Math.max(110, left),
+                    width: Math.max(4, width),
+                    backgroundColor: `${layer.color}66`,
+                    borderColor: layer.color,
+                };
+                if (isSentinel) {
+                    return (
+                        <div
+                            key={`${layer.id}-full`}
+                            className="pointer-events-none absolute top-0 bottom-0 rounded-sm border opacity-50"
+                            style={bandStyle}
+                        />
+                    );
+                }
                 return (
-                    <div
-                        key={isSentinel ? `${layer.id}-full` : region.id}
-                        className={cn(
-                            'absolute top-0 bottom-0 rounded-sm border',
-                            isSentinel ? 'pointer-events-none opacity-50' : 'cursor-grab active:cursor-grabbing'
-                        )}
-                        style={{
-                            left: Math.max(110, left),
-                            width: Math.max(4, width),
-                            backgroundColor: `${layer.color}66`,
-                            borderColor: layer.color,
-                        }}
-                        onMouseDown={(e) => (isSentinel ? undefined : onRegionDragStart(e, layer, region, 'move'))}
-                        onContextMenu={(e) => (isSentinel ? undefined : onRegionContextMenu(e, layer, region))}
+                    <AdjustmentRegionBand
+                        key={region.id}
+                        region={region}
+                        liveRegion={liveRegion}
+                        style={bandStyle}
+                        pixelsPerBeat={pixelsPerBeat}
+                        width={Math.max(4, width)}
+                        fadePreview={fadePreview}
+                        onContextMenu={(e) => onRegionContextMenu(e, layer, region)}
                         onDoubleClick={(e) => onRegionDoubleClick(e, layer)}
-                    >
-                        {isSentinel ? null : (
-                            <>
-                                <div
-                                    className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40"
-                                    onMouseDown={(e) => onRegionDragStart(e, layer, region, 'resizeStart')}
-                                />
-                                <div
-                                    className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40"
-                                    onMouseDown={(e) => onRegionDragStart(e, layer, region, 'resizeEnd')}
-                                />
-                                <FadeTriangles
-                                    region={region}
-                                    pixelsPerBeat={pixelsPerBeat}
-                                    width={Math.max(4, width)}
-                                    fadePreview={fadePreview}
-                                    onFadeDragStart={(e, kind) => onFadeDragStart(e, layer, region, kind)}
-                                />
-                            </>
-                        )}
-                    </div>
+                        onDragStart={(e, kind) => onRegionDragStart(e, layer, region, kind)}
+                        onFadeDragStart={(e, kind) => onFadeDragStart(e, layer, region, kind)}
+                        onKeyDown={(e) => onRegionKeyDown(e, layer, region)}
+                        onEdgeKeyDown={(e, edge) => onRegionEdgeKeyDown(e, region, edge)}
+                    />
                 );
             })}
         </div>
@@ -874,89 +958,6 @@ const AdjustmentLayerParamEditor = ({
                 </Stack>
             </DialogContent>
         </Dialog>
-    );
-};
-
-type FadeTrianglesProps = {
-    region: AdjustmentRegion;
-    pixelsPerBeat: number;
-    width: number;
-    fadePreview: FadePreview | null;
-    onFadeDragStart: (e: ReactMouseEvent, kind: 'fadeIn' | 'fadeOut') => void;
-};
-
-const FADE_HANDLE_SIZE = 8;
-
-const FadeTriangles = ({
-    region,
-    pixelsPerBeat,
-    width,
-    fadePreview,
-    onFadeDragStart,
-}: FadeTrianglesProps): ReactElement => {
-    const liveFade =
-        fadePreview && fadePreview.regionId === region.id
-            ? { fadeInBeats: fadePreview.fadeInBeats, fadeOutBeats: fadePreview.fadeOutBeats }
-            : { fadeInBeats: region.fadeInBeats, fadeOutBeats: region.fadeOutBeats };
-    const fadeInPx = Math.max(0, Math.min(width, liveFade.fadeInBeats * pixelsPerBeat));
-    const fadeOutPx = Math.max(0, Math.min(width, liveFade.fadeOutBeats * pixelsPerBeat));
-
-    return (
-        <>
-            {fadeInPx > 0 ? (
-                <svg
-                    className="pointer-events-none absolute left-0 top-0 h-full"
-                    width={fadeInPx}
-                    height="100%"
-                    viewBox={`0 0 ${fadeInPx} 20`}
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                >
-                    <polygon points={`0,20 ${fadeInPx},20 ${fadeInPx},0`} fill="rgba(255,255,255,0.18)" />
-                </svg>
-            ) : null}
-            {fadeOutPx > 0 ? (
-                <svg
-                    className="pointer-events-none absolute top-0 h-full"
-                    style={{ right: 0 }}
-                    width={fadeOutPx}
-                    height="100%"
-                    viewBox={`0 0 ${fadeOutPx} 20`}
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                >
-                    <polygon points={`0,20 ${fadeOutPx},20 0,0`} fill="rgba(255,255,255,0.18)" />
-                </svg>
-            ) : null}
-            <div
-                role="slider"
-                aria-label="Fade in"
-                aria-valuenow={liveFade.fadeInBeats}
-                tabIndex={-1}
-                className="absolute top-0 cursor-col-resize bg-white/80"
-                style={{
-                    left: Math.max(0, fadeInPx - FADE_HANDLE_SIZE / 2),
-                    width: FADE_HANDLE_SIZE,
-                    height: FADE_HANDLE_SIZE,
-                    clipPath: 'polygon(0 0, 100% 0, 100% 100%)',
-                }}
-                onMouseDown={(e) => onFadeDragStart(e, 'fadeIn')}
-            />
-            <div
-                role="slider"
-                aria-label="Fade out"
-                aria-valuenow={liveFade.fadeOutBeats}
-                tabIndex={-1}
-                className="absolute top-0 cursor-col-resize bg-white/80"
-                style={{
-                    right: Math.max(0, fadeOutPx - FADE_HANDLE_SIZE / 2),
-                    width: FADE_HANDLE_SIZE,
-                    height: FADE_HANDLE_SIZE,
-                    clipPath: 'polygon(0 0, 100% 0, 0 100%)',
-                }}
-                onMouseDown={(e) => onFadeDragStart(e, 'fadeOut')}
-            />
-        </>
     );
 };
 

@@ -43,6 +43,7 @@ type BadgeModelInfo = {
     downloadSize: string;
     ramUsage: string;
     parameterCount: string;
+    licenceNotice?: string;
 };
 
 type OfferedModelInfo = BadgeModelInfo & { id: string };
@@ -342,6 +343,49 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             </span>
         );
     }
+    const needsLicenceNotice =
+        backend === 'webllm' &&
+        offeredModels.find((model) => model.id === selectedModelId)?.licenceNotice !== undefined;
+    // A licensed model's notice sits beside every offer to download it, so its retry opens the setup panel.
+    if (needsLicenceNotice) {
+        return (
+            <Popover open={showPanel} onOpenChange={setShowPanel}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        size="xs"
+                        type="button"
+                        className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                        title={status.message}
+                    >
+                        Retry Model Download
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="end"
+                    sideOffset={8}
+                    aria-label="AI Model Retry"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
+                >
+                    <ModelSetupPanel
+                        backend={backend}
+                        backendLabel={backendLabel}
+                        tierKey={tierKey}
+                        modelInfo={modelInfo}
+                        selectedModelId={selectedModelId}
+                        refusalMessage={status.message}
+                        onSelectModel={setWantedModelId}
+                        offeredModels={offeredModels}
+                        machineMemory={machineMemory}
+                        onLoad={(modelId) => {
+                            setShowPanel(false);
+                            onLoad(modelId);
+                        }}
+                    />
+                </PopoverContent>
+            </Popover>
+        );
+    }
     return (
         <Button
             variant="outline"
@@ -366,7 +410,11 @@ function describeNoFittingModel(machineMemory: MachineMemoryReading): string {
     if (machineMemory.state !== 'known') {
         return 'No local model fits this machine.';
     }
-    return `This machine has ${(machineMemory.totalBytes / 1e9).toFixed(1)} GB of memory, and no local model fits. Use a hosted model.`;
+    const { totalBytes, gpuBudgetBytes } = machineMemory;
+    if (gpuBudgetBytes !== null && gpuBudgetBytes < totalBytes) {
+        return `This machine's GPU can hold ${(gpuBudgetBytes / 1e9).toFixed(1)} GB, and no local model fits. Use a hosted model.`;
+    }
+    return `This machine has ${(totalBytes / 1e9).toFixed(1)} GB of memory, and no local model fits. Use a hosted model.`;
 }
 
 // ── Model setup panel ───────────────────────────────────────────────────
@@ -399,6 +447,7 @@ const ModelSetupPanel = ({
 }: ModelSetupPanelProps): ReactElement => {
     const selectedName = offeredModels.find((model) => model.id === selectedModelId)?.displayName ?? 'Model';
     const nothingFits = backend === 'webllm' && offeredModels.length === 0;
+    const licenceNotice = offeredModels.find((model) => model.id === selectedModelId)?.licenceNotice;
     return (
         <>
             <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
@@ -460,7 +509,21 @@ const ModelSetupPanel = ({
                         {backend === 'webllm' && !nothingFits ? (
                             <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
                                 Downloads and verifies this model for private use in this browser.
+                                {licenceNotice === undefined
+                                    ? null
+                                    : ` ${licenceNotice} Its use follows the licence’s Acceptable Use Policy; both texts are in the legal notices.`}
                             </p>
+                        ) : null}
+                        {backend === 'webllm' && !nothingFits && licenceNotice !== undefined ? (
+                            <Button
+                                variant="link"
+                                size="xs"
+                                type="button"
+                                className="h-auto justify-start px-1 text-[10px]"
+                                onClick={() => window.open('/legal/THIRD-PARTY-NOTICES.md', '_blank')}
+                            >
+                                Legal notices
+                            </Button>
                         ) : null}
                         {nothingFits ? null : (
                             <Button
@@ -512,5 +575,10 @@ const ModelOption = ({ model, isSelected, onSelect }: ModelOptionProps): ReactEl
                 {model.ramUsage}
             </Row>
         </Row>
+        {model.licenceNotice === undefined ? null : (
+            <span className="mt-1 block text-[9px] leading-relaxed text-muted-foreground/70">
+                {model.licenceNotice}
+            </span>
+        )}
     </DawChooserCard>
 );

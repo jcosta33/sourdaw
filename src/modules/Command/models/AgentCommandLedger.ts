@@ -235,6 +235,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['scaleAllVelocities', 'midi', 'MIDI'],
     ['setAllVelocities', 'midi', 'MIDI'],
     ['extractGroove', 'midi', 'MIDI', 'getMidiGrooveHandlers'],
+    ['applyGroove', 'midi', 'MIDI', 'getMidiGrooveHandlers'],
 
     // Transport — project-timeline
     ['setTempo', 'project-timeline', 'Transport'],
@@ -433,11 +434,10 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'midi',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'MIDI edits with no executable descriptor yet. applyGroove names a groove template id that no target capability grounds, so a provider could name a template the project lacks; the packet adds groove-template grounding before registering it.',
+        reason: 'MIDI edits with no executable descriptor yet.',
         actionTypes: [
             'humanizeNotes',
             'scaleVelocities',
-            'applyGroove',
             'enableMpe',
             'disableMpe',
             'audioToMidi',

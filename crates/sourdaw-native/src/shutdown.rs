@@ -242,7 +242,10 @@ fn remove_runtimes_from_scheduler(
 /// scheduler's, and the report names it if the wait expires. Swallowing the
 /// refusal silently would leave the one case that produces an abandoned
 /// instance — the scheduler keeping its `Arc` forever — with no trace at all.
-fn report_refused_scheduler_removal(removal: Result<(), String>, plugin_name: &str) {
+fn report_refused_scheduler_removal(
+    removal: Result<(), daw_engine::CommandError>,
+    plugin_name: &str,
+) {
     if let Err(error) = removal {
         eprintln!("[Shutdown] scheduler removal refused for '{plugin_name}': {error}");
     }
@@ -460,6 +463,7 @@ mod tests {
                     has_gui: true,
                     chain_kind: DeviceKind::Effect,
                     parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
         processing

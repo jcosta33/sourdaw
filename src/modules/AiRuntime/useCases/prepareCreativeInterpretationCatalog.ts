@@ -13,13 +13,22 @@ import {
     getCreativeSelectionSnapshot,
 } from '../models/CreativeInterpretation';
 import { type ProjectContext, type ProjectContextClip } from '../models/ProjectContext';
-import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
+import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES, type SemanticCommandListRoleFamily } from '../models/SemanticCommandList';
+import { findIntroducedObjectRanges } from '../transformers/promptParser/hasHighLevelCreationEvidence';
+import { maskQuotedTextContents, scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
+import { CREATED_OBJECT_NOUN } from './agentReference/batchLocalBindingProducers';
+import { findNamedRoleFamilies } from './agentReference/findNamedRoleFamilies';
 import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
 import { getExplicitClipProtection } from './agentReference/getExplicitlyProtectedClips';
+import { hasExplicitTrackSelection } from './agentReference/hasExplicitTrackSelection';
 import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { protectionSlots, type Range } from './agentReference/readProtectionSlots';
+import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
+import { findPlannableTrackExclusion } from './findPlannableTrackExclusion';
+import { maskTrackReferences } from './maskTrackReferences';
+import { readBriefProtectedTrackIds } from './readBriefProtectedTrackIds';
 
 /**
  * Provisional ceilings on what one admitted creation slot may produce. They sit below the
@@ -160,6 +169,139 @@ function collectExplicitTargets(prompt: string, context: ProjectContext): Creati
     return targets;
 }
 
+type RoleFamilyReading = {
+    /** Families the request asks to change ("tighten up the drums"). */
+    named: SemanticCommandListRoleFamily[];
+    /**
+     * The request points at its object without naming a family to edit: the selection ("this bass
+     * track"), an object it creates ("add a delay bus") or a noun a family word only modifies ("add a
+     * drum machine"). Either way the agent decides no target.
+     */
+    pointsAtObject: boolean;
+};
+
+/**
+ * The role families the request's own words name, with quotations and track names blanked so a
+ * quoted "bass" or the track "Drum Bus" names no family. Protection clauses are blanked too, so a
+ * family one keeps ("leave the drums alone") names no target; the shared protection reader protects
+ * that family's tracks. A family inside an object the request creates ("add a new bass track") names
+ * that new object rather than the family's tracks. A request pointing at the selection ("this bass
+ * track") names none.
+ */
+function readNamedRoleFamilies(positivePrompt: string, context: ProjectContext): RoleFamilyReading {
+    if (hasExplicitTrackSelection(positivePrompt)) {
+        return { named: [], pointsAtObject: true };
+    }
+    const slotRanges = protectionSlots
+        .read(scanPromptQuotedText(positivePrompt).maskedText)
+        .map((slot) => slot.completeRange ?? { start: slot.start, end: slot.end });
+    const unnamed = maskTrackReferences(positivePrompt, context, ' ');
+    const createdObjects = findIntroducedObjectRanges(unnamed, CREATED_OBJECT_NOUN);
+    const uncreated = maskRanges(unnamed, createdObjects);
+    const outsideProtections = maskRanges(uncreated, slotRanges);
+    const outside = findNamedRoleFamilies(outsideProtections, SEMANTIC_COMMAND_LIST_ROLE_FAMILIES);
+    return {
+        named: outside.named,
+        pointsAtObject: createdObjects.length > 0 || outside.modifying.length > 0,
+    };
+}
+
+const SELECTION_POINTER =
+    /\b(?:(?:selected|current|this|these) (?:(?:audio|midi|bus|folder) )?(?:tracks?|clips?|regions?|notes?|selection)|the selection)\b/u;
+
+/** A request pointing at what is selected or current ("brighten the selected clip", "make this clip warmer"), whatever the object. */
+function pointsAtSelection(positivePrompt: string): boolean {
+    return SELECTION_POINTER.test(normalizeAgentReferenceText(maskQuotedTextContents(positivePrompt)));
+}
+
+function resolveRoleFamilyTrackIds(context: ProjectContext, family: SemanticCommandListRoleFamily): string[] {
+    return resolveWorkflowTrackIds(context, `creative-role-${family}`, { all: [{ roleFamily: family }] });
+}
+
+/**
+ * One target per track of each role family the request names ("tighten up the drums"), resolved by
+ * the shared selector resolver the structured command list uses, so a family means the same tracks
+ * here as in a `roleFamily` predicate. A track the brief protects is left out of its family, as a
+ * whole-project vibe run leaves it out; a request naming that track still reaches it and meets the
+ * brief's own refusal. Each track is its own candidate because a creation slot names
+ * one parent object: a family candidate holding several tracks could carry a device to its first only.
+ */
+function collectRoleTargets(
+    families: readonly SemanticCommandListRoleFamily[],
+    context: ProjectContext
+): CreativeTargetCandidate[] {
+    const briefProtectedIds = readBriefProtectedTrackIds(context);
+    const targets: CreativeTargetCandidate[] = [];
+    for (const family of families) {
+        for (const trackId of resolveRoleFamilyTrackIds(context, family).filter((id) => !briefProtectedIds.has(id))) {
+            targets.push({
+                candidateId: `target-${String(targets.length + 1)}`,
+                provenance: 'role-reference',
+                objectType: 'track',
+                objectIds: [trackId],
+                parentTrackId: null,
+                label: context.tracks.find((track) => track.id === trackId)?.name ?? trackId,
+            });
+        }
+    }
+    return targets;
+}
+
+/**
+ * Every track a whole-project vibe run could plan, offered when the request names no object, no role
+ * family and nothing is selected ("polish the low end"). The catalog cannot tell a perceptual request
+ * from any other, so it offers them for every such request, and admission keeps one only beside a
+ * perceptual or comparative metric intent. The request's protections, a role family's tracks among
+ * them, and the brief's are never offered.
+ */
+function collectAgentDecidedTargets(
+    context: ProjectContext,
+    protectedIds: ReadonlySet<string>
+): CreativeTargetCandidate[] {
+    const excluded = new Set([...protectedIds, ...readBriefProtectedTrackIds(context)]);
+    return context.tracks
+        .filter((track) => findPlannableTrackExclusion(track, excluded) === null)
+        .map((track, index) => ({
+            candidateId: `target-${String(index + 1)}`,
+            provenance: 'agent-decided' as const,
+            objectType: 'track' as const,
+            objectIds: [track.id],
+            parentTrackId: null,
+            label: track.name,
+        }));
+}
+
+/**
+ * The targets a request reaches, strongest reference first: named objects alone, else the tracks of
+ * the role families it names, else the selection, else, when it names no family and points at no
+ * object of its own, every plannable source the request and the brief do not protect.
+ */
+function collectRequestTargets(
+    positivePrompt: string,
+    context: ProjectContext,
+    protectedIds: ReadonlySet<string>
+): CreativeTargetCandidate[] {
+    const explicitTargets = collectExplicitTargets(positivePrompt, context);
+    if (explicitTargets.length > 0) {
+        return explicitTargets;
+    }
+    const families = readNamedRoleFamilies(positivePrompt, context);
+    const roleTargets = collectRoleTargets(families.named, context);
+    if (roleTargets.length > 0) {
+        return roleTargets;
+    }
+    const contextualTargets = collectContextualTargets(context, protectedIds);
+    if (
+        contextualTargets.length > 0 ||
+        families.named.length > 0 ||
+        families.pointsAtObject ||
+        pointsAtSelection(positivePrompt)
+    ) {
+        return contextualTargets;
+    }
+    return collectAgentDecidedTargets(context, protectedIds);
+}
+
 /**
  * Selection only speaks when the request named nothing. A plural clip selection publishes one
  * `clip-set`, never a scalar clip derived from it, so an admitted authority can never narrow a
@@ -290,10 +432,11 @@ function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): Crea
         },
     ];
     const nextId = () => `slot-${String(slots.length + 1)}`;
-    const trackCandidate = targets.find((target) => target.objectType === 'track');
+    // Every target gets slots of its own: a slot names one parent object, so a request touching
+    // several tracks (a comparison's subject beside its reference) needs one under each.
     // Pushed one at a time: `nextId` counts what the list already holds, so minting several ids in
     // one push call would hand every slot in it the same id and make all but the first unselectable.
-    if (trackCandidate !== undefined) {
+    for (const trackCandidate of targets.filter((target) => target.objectType === 'track')) {
         slots.push({
             candidateId: nextId(),
             objectType: 'clip',
@@ -313,8 +456,7 @@ function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): Crea
             budget: DEVICE_CREATION_BUDGET,
         });
     }
-    const clipCandidate = targets.find((target) => target.objectType === 'clip');
-    if (clipCandidate !== undefined) {
+    for (const clipCandidate of targets.filter((target) => target.objectType === 'clip')) {
         slots.push({
             candidateId: nextId(),
             objectType: 'notes',
@@ -358,7 +500,6 @@ export function prepareCreativeInterpretationCatalog(input: {
     const catalogId = `creative-${digest({ requestDigest, revision: projectRevision, selection }).slice(0, 16)}`;
 
     const protections = readMutationProtections(trimmedPrompt, context);
-    const explicitTargets = collectExplicitTargets(protections.positivePrompt, context);
     const knownNames = new Set(
         [...context.tracks.map((track) => track.name), ...collectClips(context).map(({ clip }) => clip.name)].map(
             (name) => normalizeAgentReferenceText(name)
@@ -397,7 +538,7 @@ export function prepareCreativeInterpretationCatalog(input: {
         };
     }
 
-    const candidates = explicitTargets.length > 0 ? explicitTargets : collectContextualTargets(context, protectedIds);
+    const candidates = collectRequestTargets(protections.positivePrompt, context, protectedIds);
     const targets = withoutProtectedTargets(candidates, protectedIds, context);
     const creationSlots = collectCreationSlots(targets);
     // `edit` needs a target to be admissible at all, so a catalog without one does not publish it:

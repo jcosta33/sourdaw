@@ -40,6 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     unloadPlugin: vi.fn(() => Promise.resolve()),
+    unloadPluginsBeforeProjectSwitch: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
@@ -50,7 +51,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../../saveProject/captureExternalPluginStates', () => ({
-    captureExternalPluginStates: vi.fn(() => Promise.resolve()),
+    captureExternalPluginStates: vi.fn(() => Promise.resolve({ rejectedPlugins: [] })),
 }));
 
 import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';

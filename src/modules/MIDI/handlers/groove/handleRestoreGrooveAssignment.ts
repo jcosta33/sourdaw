@@ -1,10 +1,64 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type GrooveTemplateState } from '../../models/GrooveTemplateState';
+import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
+import { getGrooveAssignment } from '../../useCases/grooveTemplates/getGrooveAssignment';
+import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
 import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
+import { projectGrooveTemplateState } from '../../useCases/grooveTemplates/projectGrooveTemplateState';
 import { restoreGrooveAssignment } from '../../useCases/grooveTemplates/restoreGrooveAssignment';
 
+type RestoreGrooveAssignmentAction = Extract<AppAction, { type: 'restoreGrooveAssignment' }>;
+
+/**
+ * Why a guarded restore (an undo) must not run against the assignments its batch's earlier actions
+ * leave, or null when it may: an assignment changed since the action it undoes is a later edit the
+ * undo must not overwrite.
+ */
+function findRestoreConflict(action: RestoreGrooveAssignmentAction, context: HandlerValidationContext): string | null {
+    const { consumerType, consumerId, expectedAssignment } = action.payload;
+    if (expectedAssignment === undefined) {
+        return null;
+    }
+    const liveState = grooveTemplateStore.value;
+    if (!liveState) {
+        return 'The groove pool is unavailable';
+    }
+    const state = projectGrooveTemplateState(liveState, context.actions.slice(0, context.actionIndex));
+    const current = getGrooveAssignment({ consumerType, consumerId }, state) ?? null;
+    if (!valuesEqual(current, expectedAssignment)) {
+        return `The groove assignment of ${consumerType} "${consumerId}" changed after the edit this restores`;
+    }
+    return findMissingRestoredTemplate(action, state);
+}
+
+/**
+ * Why a guarded restore would leave its consumer pointing at a template the pool no longer holds
+ * (a collaborator deleted it after the edit this undoes), or null when the template is there.
+ */
+function findMissingRestoredTemplate(
+    action: RestoreGrooveAssignmentAction,
+    state: GrooveTemplateState | null = grooveTemplateStore.value
+): string | null {
+    const { assignment, expectedAssignment } = action.payload;
+    if (expectedAssignment === undefined || assignment === null || getGrooveTemplate(assignment.templateId, state)) {
+        return null;
+    }
+    return `Groove template "${assignment.templateId}" this restores is no longer in the groove pool`;
+}
+
 export const handleRestoreGrooveAssignment = createHandler<'restoreGrooveAssignment'>({
+    validate: (action, context) => findRestoreConflict(action, context) === null,
+    validationRefusalReason: findRestoreConflict,
+    // Only a restore guarded by the assignment it expects can be replayed after divergence.
+    canReapplyAfterDivergence: (action) => action.payload.expectedAssignment !== undefined,
     execute: (action) => {
+        const missingTemplate = findMissingRestoredTemplate(action);
+        if (missingTemplate !== null) {
+            return { status: 'conflict', reason: missingTemplate };
+        }
         const result = restoreGrooveAssignment(action.payload);
         if (result.status === 'no-write') {
             return { status: 'no-write' };

@@ -12,6 +12,7 @@ import {
     validateReleaseInventory,
     type ReleaseInventory,
 } from '../checkReleaseInventory';
+import { licenceInputDigest } from '../dependencyLicenseInputProjection';
 import {
     DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
@@ -22,6 +23,7 @@ import {
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
 import { writeDependencyLicenseArtifacts } from '../generateDependencyLicenseReport';
+import { LICENCE_PROJECTED_SNAPSHOT_PATHS } from '../releaseInventoryLicenceSnapshots';
 import {
     RELEASE_INVENTORY_PATH,
     restampDependencyBump,
@@ -94,6 +96,19 @@ function fixtureSurface(id: string, digests: string[]): ReleaseInventory['surfac
     };
 }
 
+function snapshotEntry(root: string, path: string): ReleaseInventory['snapshots'][number] {
+    if (LICENCE_PROJECTED_SNAPSHOT_PATHS.includes(path)) {
+        return { path, ...licenceInputDigest(path, readFileSync(join(root, path))) };
+    }
+    return { path, sha256: digestOf(root, path) };
+}
+
+/** The projected snapshots must parse as the manifests they are, so their fixtures are real ones. */
+const PROJECTED_SNAPSHOT_FIXTURES: Readonly<Record<string, string>> = {
+    'package.json': '{\n    "license": "Apache-2.0",\n    "scripts": { "build": "vite build" }\n}\n',
+    'Cargo.toml': '[workspace]\nmembers = ["crates/demo"]\nresolver = "2"\n',
+};
+
 function currentInventory(root: string): ReleaseInventory {
     const contract = projectLicenseDistributionReleaseInventoryContract(root);
     return {
@@ -112,7 +127,7 @@ function currentInventory(root: string): ReleaseInventory {
                 `tracked-set-sha256:${digestOf(root, GRAND_BOULE_DIGEST_PATH)}:${GRAND_BOULE_DIGEST_PATH}`,
             ]),
         ],
-        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) => ({ path, sha256: digestOf(root, path) })),
+        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) => snapshotEntry(root, path)),
         externalReferences: [],
         marks: [],
     };
@@ -140,7 +155,7 @@ function writeProofs(root: string, packages: Record<string, DependencyLicensePro
         DEPENDENCY_LICENSE_PROOFS_PATH,
         `${JSON.stringify(
             {
-                schemaVersion: 4,
+                schemaVersion: 5,
                 cargoRuntimeInventory: {
                     cargoLockSha256: digestOf(root, 'Cargo.lock'),
                     sourceInputs: [],
@@ -160,7 +175,7 @@ function createFixture(packages: Record<string, DependencyLicenseProof> = {}): s
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-restamp-'));
     roots.push(root);
     for (const path of REQUIRED_SNAPSHOT_PATHS) {
-        write(root, path, `${path} fixture\n`);
+        write(root, path, PROJECTED_SNAPSHOT_FIXTURES[path] ?? `${path} fixture\n`);
     }
     write(root, 'LICENSE', 'fixture license\n');
     write(root, 'NOTICE', 'fixture notice\n');
@@ -245,7 +260,7 @@ describe('restamp dependency bump', () => {
     it('rewrites a path-addressed digest it owns and leaves every other one alone', () => {
         const root = createFixture();
         write(root, SERVER_THIRD_PARTY_NOTICES_PATH, 'regenerated server notices\n');
-        write(root, 'Cargo.toml', 'bumped workspace manifest\n');
+        write(root, 'Cargo.toml', '[workspace]\nmembers = ["crates/demo", "crates/bumped"]\nresolver = "2"\n');
         const staleCargoToml = readInventory(root).surfaces.find((surface) => surface.id === 'javascript-dependencies')
             ?.digests[3];
 
@@ -259,6 +274,12 @@ describe('restamp dependency bump', () => {
         );
         expect(digests).toContain(staleCargoToml);
         expect(digests).not.toContain(`sha256:${digestOf(root, 'Cargo.toml')}:Cargo.toml`);
+        expect(readInventory(root).snapshots.find((entry) => entry.path === 'Cargo.toml')).toEqual({
+            path: 'Cargo.toml',
+            projection: 'cargo-manifest-licence-graph',
+            sha256: licenceInputDigest('Cargo.toml', readFileSync(join(root, 'Cargo.toml'))).sha256,
+        });
+        expect(digestDriftErrors(root)).not.toContain('Cargo.toml: snapshot drifted');
     });
 
     it('refreshes shared public dependency notices without changing protected provenance', () => {
@@ -473,7 +494,7 @@ describe('restamp dependency bump', () => {
 
         expect(result.ok).toBe(false);
         expect(result.output.split('\n')[0]).toBe(UNRESTAMPED_DIGEST_CLASSES);
-        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule tracked-set');
+        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('Grand Boule content-pinned tracked-set');
         expect(result.output).toContain('grand-boule: tracked-set digest drifted');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(recorded);
     });

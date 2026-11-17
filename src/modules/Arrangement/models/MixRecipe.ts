@@ -135,6 +135,12 @@ export type MixRecipeBand = (typeof MIX_RECIPE_BANDS)[number];
  * meaningful only for `frequencyBandEnergy`. `hold` states that the recipe is
  * expected to leave the metric where it was, which is a claim a planner can
  * falsify just as readily as a direction.
+ *
+ * An expectation names the measurement the descriptor is judged by, not a side effect of the move.
+ * A planner may stack recipes for several descriptors on one source and hold each expectation
+ * across all of them, so a by-product another recipe's move can outweigh (the broadband level a mud
+ * cut lowers and a warm lift raises) is a claim the stack cannot keep. A corrective recipe claims
+ * the band its fault lives in: mud is low-mid energy.
  */
 export type MixRecipeMetricExpectation = {
     metric: MixRecipeMetricId;
@@ -179,18 +185,8 @@ export type MixRecipeOrigin = {
     tags: readonly string[];
 };
 
-/**
- * One mixing move.
- *
- * `prerequisites` are the conditions the source must already satisfy,
- * `contraindications` the conditions under which the move makes the mix worse,
- * and `source` the engineering rationale for the windows chosen. A recipe with
- * no `origin` is authored in the catalog files.
- */
-export type MixRecipe = {
+type MixRecipeBody = {
     id: string;
-    origin?: MixRecipeOrigin;
-    descriptor: MixRecipeDescriptor;
     roles: readonly MixRecipeRole[];
     title: string;
     steps: readonly MixRecipeStep[];
@@ -199,6 +195,21 @@ export type MixRecipe = {
     metrics: readonly MixRecipeMetricExpectation[];
     source: string;
 };
+
+/**
+ * One mixing move.
+ *
+ * `prerequisites` are the conditions the source must already satisfy,
+ * `contraindications` the conditions under which the move makes the mix worse,
+ * and `source` the engineering rationale for the windows chosen. A recipe with
+ * no `origin` is authored in the catalog files and always names its descriptor.
+ * A recipe published from a factory preset names a descriptor only when the
+ * preset's own tags do; otherwise its `descriptor` is null, it claims no
+ * perceptual character, and it carries no metric expectation.
+ */
+export type MixRecipe =
+    | (MixRecipeBody & { origin?: undefined; descriptor: MixRecipeDescriptor })
+    | (MixRecipeBody & { origin: MixRecipeOrigin; descriptor: MixRecipeDescriptor | null });
 
 /**
  * Catalog schema version.

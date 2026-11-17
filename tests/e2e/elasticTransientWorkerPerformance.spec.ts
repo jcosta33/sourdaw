@@ -52,8 +52,20 @@ type CapturedLongTask = {
     attribution: TaskAttribution[];
 };
 type AttributedPerformanceEntry = PerformanceEntry & { attribution?: readonly TaskAttribution[] };
-type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]> };
+type MainThreadTask = { startFromInputMs: number; durationMs: number };
+type PreparationMeasure = { name: string; duration: number; startTime: number };
+type ProspectiveObservation = {
+    primaryKey: string;
+    requested: number;
+    posted: boolean;
+    heads: string[];
+    replies: { received: number; status: string | null; changeCount: number | null }[];
+    terminated: number | null;
+};
+type BrowserProspectiveObservation = { requests: ProspectiveObservation[]; failures: string[]; restore(): void };
+type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]>; tasks(): MainThreadTask[] };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
+const elasticProspectiveObserverPages = new WeakMap<TestInfo, Page>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
     'devtools.timeline',
@@ -87,9 +99,12 @@ function readElasticTraceInterval(events: readonly Record<string, unknown>[]): T
     return { pid: input.pid, tid: input.tid, startUs: input.ts, endUs: completion.ts };
 }
 
-function countElasticIntervalTasks(events: readonly Record<string, unknown>[], interval: TraceInterval): number {
-    return events.filter(
-        (event) =>
+function readElasticIntervalTasks(
+    events: readonly Record<string, unknown>[],
+    interval: TraceInterval
+): MainThreadTask[] {
+    return events.flatMap((event) => {
+        if (
             event.name === 'RunTask' &&
             event.pid === interval.pid &&
             event.tid === interval.tid &&
@@ -98,7 +113,201 @@ function countElasticIntervalTasks(events: readonly Record<string, unknown>[], i
             event.dur > 0 &&
             event.ts < interval.endUs &&
             event.ts + event.dur > interval.startUs
-    ).length;
+        ) {
+            return [{ startFromInputMs: (event.ts - interval.startUs) / 1000, durationMs: event.dur / 1000 }];
+        }
+        return [];
+    });
+}
+const MATERIALIZATION_PHASE_NAMES: readonly string[] = [
+    'elastic-transient-plan-task',
+    'elastic-transient-clone-task',
+    'automerge-prospective-response-task',
+    'automerge-prospective-apply-task',
+    'automerge-prospective-authority-task',
+    'elastic-transient-change-task',
+    'automerge-storage-materialization-handoff-task',
+];
+function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart: number, tasks: MainThreadTask[]) {
+    return measures
+        .filter(
+            (measure) =>
+                MATERIALIZATION_PHASE_NAMES.includes(measure.name) ||
+                measure.name === 'automerge-storage-prepared-publication'
+        )
+        .map((phase) => {
+            const start = phase.startTime - inputMarkStart;
+            const end = start + phase.duration;
+            // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
+            const task = tasks.find(
+                (candidate) =>
+                    candidate.startFromInputMs <= start + 0.002 &&
+                    candidate.startFromInputMs + candidate.durationMs >= end - 0.002
+            );
+            return { ...phase, enclosingTask: task };
+        });
+}
+function assertMaterializationTaskSpans(phases: ReturnType<typeof materializationTaskSpans>): void {
+    for (const name of MATERIALIZATION_PHASE_NAMES) {
+        expect(phases.filter((phase) => phase.name === name).length, `Missing native phase: ${name}`).toBeGreaterThan(
+            0
+        );
+    }
+    for (const phase of phases) {
+        expect(phase.enclosingTask, `Native phase has no complete enclosing RunTask: ${phase.name}`).toBeDefined();
+    }
+}
+function assertProspectiveObservations(measures: PreparationMeasure[], requests: ProspectiveObservation[]): void {
+    expect(requests.length, 'Native request census must be independent of phase emission').toBeGreaterThan(0);
+    for (const request of requests) {
+        expect(request.primaryKey, 'Other prospective roles cannot be silently attributed to Detect').toBe(
+            'warpStates'
+        );
+        expect(request.posted).toBe(true);
+        expect(request.terminated).not.toBeNull();
+        expect(request.replies.length).toBeLessThanOrEqual(1);
+        for (const reply of request.replies) {
+            expect(reply.status).toBe('complete');
+            expect(reply.changeCount).not.toBeNull();
+        }
+    }
+    const completed = requests.flatMap((request) => request.replies);
+    const responses = measures.filter((entry) => entry.name === 'automerge-prospective-response-task');
+    const applies = measures.filter((entry) => entry.name === 'automerge-prospective-apply-task');
+    const authorities = measures.filter((entry) => entry.name === 'automerge-prospective-authority-task');
+    expect(responses).toHaveLength(completed.length);
+    expect(applies.length).toBeGreaterThan(0);
+    expect(applies.length).toBeLessThanOrEqual(completed.length);
+    expect(authorities).toHaveLength(applies.length);
+    // A reply can be discarded before materialize; termination is not admission or publication.
+    expect(measures.filter((entry) => entry.name === 'elastic-transient-materialization-worker-wall')).toHaveLength(
+        requests.length
+    );
+    expect(measures.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')).toHaveLength(
+        requests.length
+    );
+}
+
+async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<void> {
+    await page.evaluate(() => {
+        const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
+        if (target.elasticProspectiveObservation) {
+            throw new Error('Prospective observations already installed');
+        }
+        const prototype = Worker.prototype;
+        const postDescriptor = Object.getOwnPropertyDescriptor(prototype, 'postMessage');
+        const terminateDescriptor = Object.getOwnPropertyDescriptor(prototype, 'terminate');
+        if (!postDescriptor || !terminateDescriptor) {
+            throw new Error('Native Worker descriptors are required for passive observation');
+        }
+        const requests: ProspectiveObservation[] = [];
+        const failures: string[] = [];
+        const pending = new WeakMap<Worker, ProspectiveObservation>();
+        const cleanups: (() => void)[] = [];
+        function describeRequest(data: unknown): ProspectiveObservation | undefined {
+            if (
+                typeof data !== 'object' ||
+                data === null ||
+                !('mutation' in data) ||
+                typeof data.mutation !== 'object' ||
+                data.mutation === null ||
+                !('kind' in data.mutation) ||
+                data.mutation.kind !== 'canonical-json-slot-v1' ||
+                !('key' in data.mutation) ||
+                typeof data.mutation.key !== 'string' ||
+                !('seed' in data) ||
+                !(data.seed instanceof Uint8Array) ||
+                !('heads' in data) ||
+                !Array.isArray(data.heads)
+            ) {
+                return undefined;
+            }
+            return {
+                primaryKey: data.mutation.key,
+                requested: performance.now(),
+                posted: false,
+                heads: data.heads.filter((head: unknown): head is string => typeof head === 'string'),
+                replies: [],
+                terminated: null,
+            };
+        }
+        const post = new Proxy(prototype.postMessage, {
+            apply(original, receiver: Worker, args: unknown[]): unknown {
+                if (!(receiver instanceof Worker)) {
+                    return Reflect.apply(original, receiver, args);
+                }
+                const observation = describeRequest(args[0]);
+                if (observation) {
+                    requests.push(observation);
+                }
+                const returned: unknown = Reflect.apply(original, receiver, args);
+                if (observation) {
+                    observation.posted = true;
+                    pending.set(receiver, observation);
+                    const receive = (event: MessageEvent<unknown>): void => {
+                        const reply = event.data;
+                        let status: string | null = null;
+                        let changeCount: number | null = null;
+                        if (typeof reply === 'object' && reply !== null && 'status' in reply) {
+                            status = typeof reply.status === 'string' ? reply.status : null;
+                            if ('changes' in reply && Array.isArray(reply.changes)) {
+                                changeCount = reply.changes.length;
+                            }
+                        }
+                        observation.replies.push({ received: performance.now(), status, changeCount });
+                    };
+                    const error = (): void => {
+                        failures.push('Actual prospective Worker emitted a native error');
+                    };
+                    receiver.addEventListener('message', receive, { capture: true });
+                    receiver.addEventListener('error', error);
+                    receiver.addEventListener('messageerror', error);
+                    cleanups.push(() => {
+                        receiver.removeEventListener('message', receive, { capture: true });
+                        receiver.removeEventListener('error', error);
+                        receiver.removeEventListener('messageerror', error);
+                    });
+                }
+                return returned;
+            },
+        });
+        const terminate = new Proxy(prototype.terminate, {
+            apply(original, receiver: Worker, args: unknown[]): unknown {
+                const returned: unknown = Reflect.apply(original, receiver, args);
+                const observation = pending.get(receiver);
+                if (observation) {
+                    observation.terminated = performance.now();
+                }
+                return returned;
+            },
+        });
+        Object.defineProperty(prototype, 'postMessage', { ...postDescriptor, value: post });
+        Object.defineProperty(prototype, 'terminate', { ...terminateDescriptor, value: terminate });
+        target.elasticProspectiveObservation = {
+            requests,
+            failures,
+            restore() {
+                try {
+                    for (const cleanup of cleanups) {
+                        cleanup();
+                    }
+                } finally {
+                    if (prototype.postMessage === post) {
+                        Object.defineProperty(prototype, 'postMessage', postDescriptor);
+                    } else {
+                        failures.push('Native Worker postMessage descriptor changed during passive observation');
+                    }
+                    if (prototype.terminate === terminate) {
+                        Object.defineProperty(prototype, 'terminate', terminateDescriptor);
+                    } else {
+                        failures.push('Native Worker terminate descriptor changed during passive observation');
+                    }
+                    delete target.elasticProspectiveObservation;
+                }
+            },
+        };
+    });
+    elasticProspectiveObserverPages.set(info, page);
 }
 
 function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
@@ -199,6 +408,7 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
     let dataLossOccurred = false;
     let interval: TraceInterval | null = null;
     let taskCount = 0;
+    let mainThreadTasks: MainThreadTask[] = [];
     let cpuSampleCount = 0;
     let started = false;
     let stopping: Promise<void> | undefined;
@@ -206,6 +416,7 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
         session.once('Tracing.tracingComplete', resolve);
     });
     const capture = {
+        tasks: (): MainThreadTask[] => mainThreadTasks,
         stop(): Promise<void> {
             stopping ??= (async () => {
                 try {
@@ -216,7 +427,7 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     let timeout: ReturnType<typeof setTimeout> | undefined;
                     const ended = await Promise.race([
                         completion,
-                        new Promise<never>((_, reject) => {
+                        new Promise<never>((_resolve, reject) => {
                             timeout = setTimeout(() => reject(new Error('Elastic trace completion timed out')), 5000);
                         }),
                     ]).finally(() => clearTimeout(timeout));
@@ -250,7 +461,8 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     if (!interval) {
                         throw new Error('Elastic trace omitted a complete same-page measured interval');
                     }
-                    taskCount = countElasticIntervalTasks(records, interval);
+                    mainThreadTasks = readElasticIntervalTasks(records, interval);
+                    taskCount = mainThreadTasks.length;
                     cpuSampleCount = countElasticIntervalCpuSamples(records, interval);
                     if (dataLossOccurred || taskCount === 0 || cpuSampleCount === 0) {
                         throw new Error('Elastic trace lost events or omitted measured-interval task/CPU attribution');
@@ -323,6 +535,29 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
 
 test.afterEach(async ({ page: _page }, info) => {
     const failures: string[] = [];
+    const observerPage = elasticProspectiveObserverPages.get(info);
+    if (observerPage) {
+        try {
+            const observation = await observerPage.evaluate(() => {
+                const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
+                const current = target.elasticProspectiveObservation;
+                if (!current) {
+                    throw new Error('Installed prospective observations are missing during cleanup');
+                }
+                current.restore();
+                return { requests: current.requests, failures: current.failures };
+            });
+            failures.push(...observation.failures);
+            await info.attach('elastic-prospective-native-requests.json', {
+                body: JSON.stringify(observation),
+                contentType: 'application/json',
+            });
+        } catch (error) {
+            failures.push(String(error));
+        } finally {
+            elasticProspectiveObserverPages.delete(info);
+        }
+    }
     for (const capture of elasticTaskTraces.get(info) ?? []) {
         try {
             failures.push(...(await capture.attach()));
@@ -452,13 +687,16 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(before.projected).toEqual([]);
     await page.getByLabel('Timeline editor surface').click({ position: { x: 30, y: 20 } });
     const dock = page.getByTestId('toggle-bottom-dock');
-    if ((await dock.getAttribute('aria-pressed')) !== 'true') await dock.click();
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+        await dock.click();
+    }
     await page.locator('#bottom-dock-tab-elastic').click();
     const panel = page.getByTestId('elastic-editor-panel');
     await expect(panel).toBeVisible();
     await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
+    await observeProspectiveRequests(page, info);
     const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
         type Metrics = {
@@ -473,16 +711,20 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         const target = window as Window & { elasticMeasurement?: Promise<Metrics> };
         const button = document.querySelector('[data-testid="elastic-detect-button"]');
         const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
-        if (!button || !status) throw new Error('Required Detect entry and completion status must be mounted');
+        if (!button || !status) {
+            throw new Error('Required Detect entry and completion status must be mounted');
+        }
         let stop = false;
         const frame = (time: number): void => {
             metrics.frames.push(time);
             metrics.observedFrames.push(performance.now());
-            if (!stop) requestAnimationFrame(frame);
+            if (!stop) {
+                requestAnimationFrame(frame);
+            }
         };
         requestAnimationFrame(frame);
-        const tasks = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries())
+        const collectTasks = (entries: PerformanceEntryList): void => {
+            for (const entry of entries) {
                 metrics.tasks.push({
                     start: entry.startTime,
                     duration: entry.duration,
@@ -495,28 +737,38 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                         containerName: value.containerName,
                     })),
                 });
-        });
+            }
+        };
+        const tasks = new PerformanceObserver((list) => collectTasks(list.getEntries()));
         tasks.observe({ type: 'longtask', buffered: false });
-        const measures = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries())
+        const collectMeasures = (entries: PerformanceEntryList): void => {
+            for (const entry of entries) {
                 if (
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
-                    entry.name === 'automerge-storage-materialization-handoff-task'
-                )
+                    entry.name === 'automerge-storage-materialization-handoff-task' ||
+                    entry.name.startsWith('automerge-prospective-')
+                ) {
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
-        });
+                }
+            }
+        };
+        const measures = new PerformanceObserver((list) => collectMeasures(list.getEntries()));
         measures.observe({ type: 'measure', buffered: false });
         target.elasticMeasurement = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 stop = true;
                 observer.disconnect();
+                collectTasks(tasks.takeRecords());
+                collectMeasures(measures.takeRecords());
                 tasks.disconnect();
                 measures.disconnect();
                 reject(new Error('Real Detect did not complete'));
             }, 10_000);
             const observer = new MutationObserver(() => {
-                if (status.textContent !== 'Detection complete') return;
+                if (status.textContent !== 'Detection complete') {
+                    return;
+                }
                 metrics.end = performance.now();
                 performance.mark('elastic-detect-dom-complete');
                 observer.disconnect();
@@ -527,6 +779,8 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                         metrics.frames.push(tailTime);
                         metrics.observedFrames.push(performance.now());
                         stop = true;
+                        collectTasks(tasks.takeRecords());
+                        collectMeasures(measures.takeRecords());
                         tasks.disconnect();
                         measures.disconnect();
                         clearTimeout(timeout);
@@ -558,18 +812,33 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                 measures: { name: string; duration: number; startTime: number }[];
             }>;
         };
-        if (!target.elasticMeasurement) throw new Error('Measurement was not installed');
-        return target.elasticMeasurement;
+        if (!target.elasticMeasurement) {
+            throw new Error('Measurement was not installed');
+        }
+        const measurement = await target.elasticMeasurement;
+        const observed = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
+            .elasticProspectiveObservation;
+        const input = performance.getEntriesByName('elastic-detect-input-start').at(-1);
+        if (!observed || !input) {
+            throw new Error('Actual prospective request observation or input mark missing');
+        }
+        return {
+            ...measurement,
+            inputMarkStart: input.startTime,
+            prospectiveRequests: observed.requests.filter(
+                (request) => request.requested >= measurement.start && request.requested < measurement.end
+            ),
+        };
     });
     await coldTrace.stop();
     const after = await sourceState(page);
     const gaps = measured.frames.slice(1).flatMap((time, index) => {
-        const previous = measured.frames[index]!;
+        const previous = measured.frames[index];
         return time >= measured.start ? [time - previous] : [];
     });
     const observedGaps = measured.observedFrames
         .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]!] : []));
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
     const commit = measured.measures.filter((entry) => entry.name === 'elastic-transient-commit');
     const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
     const commitTasks = measured.measures.filter(
@@ -585,6 +854,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             'elastic-transient-plan-task',
             'elastic-transient-clone-task',
             'elastic-transient-change-task',
+            'automerge-prospective-response-task',
+            'automerge-prospective-apply-task',
+            'automerge-prospective-authority-task',
             'automerge-storage-materialization-handoff-task',
         ].includes(entry.name)
     );
@@ -594,6 +866,8 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const result = {
         ...measured,
         preparationTasks,
+        mainThreadTasks: coldTrace.tasks(),
+        nativePhases: materializationTaskSpans(measured.measures, measured.inputMarkStart, coldTrace.tasks()),
         workerMaterializationWall: measured.measures.filter(
             (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
         ),
@@ -627,17 +901,18 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(after.pcm).toEqual(before.pcm);
     expect(after.raw).toEqual(after.projected);
     expect(after.projected).toHaveLength(ATTACKS.length);
-    for (const [index, marker] of after.projected.entries())
+    for (const [index, marker] of after.projected.entries()) {
         expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
+    }
     expect(commit).toHaveLength(1);
     expect(copy.length).toBeGreaterThan(1);
     expect(gaps.length).toBeGreaterThan(1);
     expect(preparedPublications).toHaveLength(1);
-    expect(result.workerMaterializationWall).toHaveLength(1);
+    assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
+    assertMaterializationTaskSpans(result.nativePhases);
+    expect(result.mainThreadTasks.length).toBeGreaterThan(0);
+    expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
     expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-    expect(
-        preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
-    ).toHaveLength(1);
     // 60 Hz design budget per task is recorded above; the hard gate is the
     // jank ceiling — see JANK_TASK_CEILING_MS.
     expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
@@ -655,8 +930,10 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
     const canvas = panel.getByTestId('elastic-waveform-canvas');
-    const firstMarker = after.projected[0];
-    if (!firstMarker) throw new Error('Expected first detected onset');
+    const firstMarker = after.projected.at(0);
+    if (!firstMarker) {
+        throw new Error('Expected first detected onset');
+    }
     await panel.getByTestId('elastic-tool-lock-marker').click();
     await canvas.click({ position: { x: firstMarker.warpedBeat * 40, y: 30 } });
     await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 locked');
@@ -771,7 +1048,9 @@ async function importPreferenceClip(page: Page, name: string): Promise<string> {
         )
         .toBe(true);
     const state = await sourceState(page, true);
-    if (!state.clipId) throw new Error('Imported new clip is missing');
+    if (!state.clipId) {
+        throw new Error('Imported new clip is missing');
+    }
     await page.evaluate(async (clipId) => {
         const { executeAppAction } = await import('/src/modules/Command/useCases/index.ts');
         const { selectClip } = await import('/src/modules/Arrangement/useCases/index.ts');
@@ -779,7 +1058,9 @@ async function importPreferenceClip(page: Page, name: string): Promise<string> {
         await executeAppAction({ type: 'openElasticEditor', payload: { clipId } });
     }, state.clipId);
     const dock = page.getByTestId('toggle-bottom-dock');
-    if ((await dock.getAttribute('aria-pressed')) !== 'true') await dock.click();
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+        await dock.click();
+    }
     await page.locator('#bottom-dock-tab-elastic').click();
     await expect(page.getByTestId('elastic-editor-panel')).toBeVisible();
     return state.clipId;
@@ -794,7 +1075,9 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
     const firstClip = await importPreferenceClip(page, 'preference-original.wav');
     const slider = page.getByRole('slider', { name: 'Transient detection sensitivity' });
     await slider.press('End');
-    for (let count = 0; count < 18; count++) await slider.press('ArrowLeft');
+    for (let count = 0; count < 18; count++) {
+        await slider.press('ArrowLeft');
+    }
     await expect(slider).toHaveAttribute('aria-valuenow', '82');
     await expect
         .poll(async () =>
@@ -834,7 +1117,9 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
             .flatMap((track) => track.clips)
             .find((candidate) => candidate.id === clipId);
         const source = clip?.audioBufferId ? audioBufferCache.get(clip.audioBufferId) : undefined;
-        if (!source || source.numberOfChannels !== 1) throw new Error('Expected imported mono PCM');
+        if (!source || source.numberOfChannels !== 1) {
+            throw new Error('Expected imported mono PCM');
+        }
         return {
             saved: preferencesStore.value?.elasticTransientSensitivity,
             high: detectTransients(source.getChannelData(0), source.sampleRate, 0.82),
@@ -898,17 +1183,21 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                 : '[data-testid="elastic-editor-panel"] [role="slider"][aria-label="Transient detection sensitivity"]'
         );
         const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
-        if (!control || !status) throw new Error('Required production control and completion state are missing');
+        if (!control || !status) {
+            throw new Error('Required production control and completion state are missing');
+        }
         let stop = false;
         let sawPending = false;
         const frame = (time: number): void => {
             metrics.frames.push(time);
             metrics.observedFrames.push(performance.now());
-            if (!stop) requestAnimationFrame(frame);
+            if (!stop) {
+                requestAnimationFrame(frame);
+            }
         };
         requestAnimationFrame(frame);
-        const tasks = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries())
+        const collectTasks = (entries: PerformanceEntryList): void => {
+            for (const entry of entries) {
                 metrics.tasks.push({
                     start: entry.startTime,
                     duration: entry.duration,
@@ -921,34 +1210,45 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                         containerName: value.containerName,
                     })),
                 });
-        });
+            }
+        };
+        const tasks = new PerformanceObserver((list) => collectTasks(list.getEntries()));
         tasks.observe({ type: 'longtask', buffered: false });
-        const measures = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries())
+        const collectMeasures = (entries: PerformanceEntryList): void => {
+            for (const entry of entries) {
                 if (
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
-                    entry.name === 'automerge-storage-materialization-handoff-task'
-                )
+                    entry.name === 'automerge-storage-materialization-handoff-task' ||
+                    entry.name.startsWith('automerge-prospective-')
+                ) {
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
-        });
+                }
+            }
+        };
+        const measures = new PerformanceObserver((list) => collectMeasures(list.getEntries()));
         measures.observe({ type: 'measure', buffered: false });
         target.populatedElasticMeasurement = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 stop = true;
                 observer.disconnect();
+                collectTasks(tasks.takeRecords());
+                collectMeasures(measures.takeRecords());
                 tasks.disconnect();
                 measures.disconnect();
                 reject(new Error('Populated real Detect did not complete'));
             }, 10_000);
             const observer = new MutationObserver(() => {
-                if (status.textContent === 'Detecting…') sawPending = true;
+                if (status.textContent === 'Detecting…') {
+                    sawPending = true;
+                }
                 if (
                     !metrics.start ||
                     !sawPending ||
                     status.textContent !== (route === 'click' ? 'Detection complete' : '')
-                )
+                ) {
                     return;
+                }
                 metrics.end = performance.now();
                 performance.mark('elastic-detect-dom-complete');
                 observer.disconnect();
@@ -959,6 +1259,8 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                         metrics.frames.push(tail);
                         metrics.observedFrames.push(performance.now());
                         stop = true;
+                        collectTasks(tasks.takeRecords());
+                        collectMeasures(measures.takeRecords());
                         tasks.disconnect();
                         measures.disconnect();
                         clearTimeout(timeout);
@@ -999,16 +1301,31 @@ async function assertPopulatedMeasurement(
                 measures: { name: string; duration: number; startTime: number }[];
             }>;
         };
-        if (!target.populatedElasticMeasurement) throw new Error('Measurement is missing');
-        return target.populatedElasticMeasurement;
+        if (!target.populatedElasticMeasurement) {
+            throw new Error('Measurement is missing');
+        }
+        const measurement = await target.populatedElasticMeasurement;
+        const observed = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
+            .elasticProspectiveObservation;
+        const input = performance.getEntriesByName('elastic-detect-input-start').at(-1);
+        if (!observed || !input) {
+            throw new Error('Actual prospective request observation or input mark missing');
+        }
+        return {
+            ...measurement,
+            inputMarkStart: input.startTime,
+            prospectiveRequests: observed.requests.filter(
+                (request) => request.requested >= measurement.start && request.requested < measurement.end
+            ),
+        };
     });
     await trace.stop();
     const gaps = measured.frames
         .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]!] : []));
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]] : []));
     const observedGaps = measured.observedFrames
         .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]!] : []));
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
     const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
     const commitTasks = measured.measures.filter(
         (entry) =>
@@ -1023,6 +1340,9 @@ async function assertPopulatedMeasurement(
             'elastic-transient-plan-task',
             'elastic-transient-clone-task',
             'elastic-transient-change-task',
+            'automerge-prospective-response-task',
+            'automerge-prospective-apply-task',
+            'automerge-prospective-authority-task',
             'automerge-storage-materialization-handoff-task',
         ].includes(entry.name)
     );
@@ -1032,6 +1352,8 @@ async function assertPopulatedMeasurement(
     const result = {
         ...measured,
         preparationTasks,
+        mainThreadTasks: trace.tasks(),
+        nativePhases: materializationTaskSpans(measured.measures, measured.inputMarkStart, trace.tasks()),
         workerMaterializationWall: measured.measures.filter(
             (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
         ),
@@ -1055,14 +1377,15 @@ async function assertPopulatedMeasurement(
     expect(after.projected.filter((marker) => marker.locked || marker.origin === 'user')).toEqual(retained);
     const onsets = after.projected.filter((marker) => marker.origin === 'transient-auto');
     expect(onsets).toHaveLength(ATTACKS.length);
-    for (const [index, marker] of onsets.entries())
+    for (const [index, marker] of onsets.entries()) {
         expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
+    }
     expect(preparedPublications).toHaveLength(1);
-    expect(result.workerMaterializationWall).toHaveLength(1);
+    assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
+    assertMaterializationTaskSpans(result.nativePhases);
+    expect(result.mainThreadTasks.length).toBeGreaterThan(0);
+    expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
     expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-    expect(
-        preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
-    ).toHaveLength(1);
     // 60 Hz design budget per task is recorded above; the hard gate is the
     // jank ceiling — see JANK_TASK_CEILING_MS.
     expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);

@@ -17,11 +17,12 @@ import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
-import { loadedExternalInstances } from './loadedExternalInstances';
+import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 
 export function forgetPluginInstance(instanceId: string): void {
     externalPluginStateCaptureAuthority.invalidate(instanceId);
     loadedExternalInstances.delete(instanceId);
+    loadedExternalInstancePluginIds.delete(instanceId);
     externalLatencyReporters.delete(instanceId);
     externalPluginActivationTasks.delete(instanceId);
     externalPluginActivationOutcomes.delete(instanceId);

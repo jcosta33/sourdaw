@@ -1,5 +1,7 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { AdjustmentLayerStrip, EMPTY_RANGE_SENTINEL, DEFAULT_FULL_RANGE_REGION } from '../AdjustmentLayerStrip';
 
@@ -27,6 +29,12 @@ const mocks = vi.hoisted(() => ({
     layers: [] as MockLayer[],
     tracks: [] as Array<{ id: string; name: string }>,
     executeUserAppAction: vi.fn(),
+    captureGestureBeat: vi.fn(() => 0),
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    captureGestureBeat: mocks.captureGestureBeat,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -77,6 +85,12 @@ describe('AdjustmentLayerStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.layers = [];
+    });
+
+    // The drag cases stub `window.addEventListener`; without restoring it the
+    // stub outlives them and swallows every later window listener.
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     const renderStrip = () => render(<AdjustmentLayerStrip pixelsPerBeat={20} scrollX={0} />);
@@ -302,12 +316,8 @@ describe('AdjustmentLayerStrip', () => {
         });
     });
 
-    const findRegionElement = (): HTMLElement => {
-        // The region band hosts the fade-in/out sliders; walk up from one to the
-        // region container that owns the double-click / context-menu handlers.
-        const fadeSlider = screen.getByRole('slider', { name: 'Fade in' });
-        return fadeSlider.closest('div.cursor-grab') as unknown as HTMLElement;
-    };
+    // The region body is the button that owns the drag, double-click and context-menu handlers.
+    const findRegionElement = (): HTMLElement => screen.getByRole('button', { name: /^Adjustment region/ });
 
     it('opens the parameter inspector on region double-click', () => {
         mocks.layers = [layerWithRegion()];
@@ -494,6 +504,212 @@ describe('AdjustmentLayerStrip', () => {
                 (EMPTY_RANGE_SENTINEL as { startBeat: number }).startBeat = 999;
             }).toThrow(TypeError);
             expect(EMPTY_RANGE_SENTINEL.startBeat).toBe(0);
+        });
+    });
+
+    describe('keyboard operation', () => {
+        const secondLayer = (): MockLayer => ({ ...layerWithRegion(), id: 'L2', name: 'Pan Layer', regions: [] });
+        const getLayerRow = (name: string) => screen.getByRole('row', { name: `${name} adjustment layer` });
+        const getEdge = (name: 'Region start' | 'Region end') => screen.getByRole('separator', { name });
+
+        beforeEach(() => {
+            playheadPositionRef.current = 0;
+            mocks.captureGestureBeat.mockReturnValue(0);
+        });
+
+        it('lays the layer rows out as a grid with one tab stop that arrows move', () => {
+            mocks.layers = [layerWithRegion(), secondLayer()];
+            renderStrip();
+
+            expect(screen.getByRole('grid', { name: 'Adjustment layer lanes' })).toContainElement(
+                getLayerRow('EQ Layer')
+            );
+            expect(getLayerRow('EQ Layer')).toHaveAttribute('tabindex', '0');
+            expect(getLayerRow('Pan Layer')).toHaveAttribute('tabindex', '-1');
+
+            getLayerRow('EQ Layer').focus();
+            expect(fireEvent.keyDown(getLayerRow('EQ Layer'), { key: 'ArrowDown' })).toBe(false);
+
+            expect(getLayerRow('Pan Layer')).toHaveFocus();
+            expect(getLayerRow('Pan Layer')).toHaveAttribute('tabindex', '0');
+            expect(getLayerRow('EQ Layer')).toHaveAttribute('tabindex', '-1');
+        });
+
+        it('adds a region at the key press’s gesture beat on Enter and leaves Space to the transport', () => {
+            mocks.layers = [layerWithRegion()];
+            // The latest-value channel holds another beat than the press; the
+            // region must start where the gesture clock stamps the press.
+            playheadPositionRef.current = 2.25;
+            mocks.captureGestureBeat.mockReturnValue(6.5);
+            renderStrip();
+
+            expect(fireEvent.keyDown(getLayerRow('EQ Layer'), { key: ' ' })).toBe(true);
+            expect(fireEvent.keyDown(getLayerRow('EQ Layer'), { key: 'Enter' })).toBe(false);
+
+            expect(findCall('addAdjustmentRegion')).toEqual({
+                type: 'addAdjustmentRegion',
+                payload: { layerId: 'L1', startBeat: 6, endBeat: 10, blend: 1 },
+            });
+        });
+
+        it('opens the layer menu from the keyboard with focus inside it, and Escape closes it', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            expect(fireEvent.keyDown(getLayerRow('EQ Layer'), { key: 'F10', shiftKey: true })).toBe(false);
+
+            const menu = screen.getByTestId('adjustment-layer-context-menu');
+            expect(menu).toHaveAttribute('role', 'menu');
+            expect(menu).toContainElement(document.activeElement as HTMLElement);
+            expect(within(menu).getByText('Disable Layer')).toBeInTheDocument();
+
+            fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+            expect(screen.queryByTestId('adjustment-layer-context-menu')).not.toBeInTheDocument();
+        });
+
+        it('opens the region menu on the menu key and the inspector on Enter', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            expect(fireEvent.keyDown(findRegionElement(), { key: 'ContextMenu' })).toBe(false);
+            expect(
+                within(screen.getByTestId('adjustment-layer-context-menu')).getByText('Remove Region')
+            ).toBeInTheDocument();
+
+            fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+            expect(fireEvent.keyDown(findRegionElement(), { key: 'Enter' })).toBe(false);
+            expect(screen.getByRole('dialog', { name: /adjustment layer: eq layer/i })).toBeInTheDocument();
+        });
+
+        it.each([
+            { key: 'ArrowRight', shiftKey: false, startBeat: 2.25, endBeat: 8.25 },
+            { key: 'ArrowLeft', shiftKey: true, startBeat: 1, endBeat: 7 },
+        ])(
+            'moves the region by $key (shift: $shiftKey), keeping its length',
+            ({ key, shiftKey, startBeat, endBeat }) => {
+                mocks.layers = [layerWithRegion()];
+                renderStrip();
+
+                expect(fireEvent.keyDown(findRegionElement(), { key, shiftKey })).toBe(false);
+
+                expect(findCall('moveAdjustmentRegion')).toEqual({
+                    type: 'moveAdjustmentRegion',
+                    payload: { regionId: 'r1', startBeat, endBeat },
+                });
+            }
+        );
+
+        it('keeps the region cell out of click focus so a click on its border lands on the layer row', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+            const cell = findRegionElement().closest('[role="gridcell"]');
+            if (!(cell instanceof HTMLElement)) {
+                throw new TypeError('region cell not found');
+            }
+
+            // A pointer-down focuses the nearest focusable ancestor, so a cell that can take focus
+            // would keep the row's onFocus from firing.
+            cell.focus();
+
+            expect(cell).not.toHaveAttribute('tabindex');
+            expect(cell).not.toHaveFocus();
+        });
+
+        it('draws the region border on the handler-carrying band, never on the handler-free cell', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+            const band = findRegionElement();
+            const cell = band.closest('[role="gridcell"]');
+
+            expect(cell).not.toHaveClass('border');
+            expect(band).toHaveClass('border');
+            // The band covers the cell's whole box, so no drawn pixel of the region lacks the handlers.
+            expect(band).toHaveClass('inset-0');
+            expect(band.style.borderColor).not.toBe('');
+            fireEvent.contextMenu(band, { clientX: 100, clientY: 100 });
+            expect(screen.getByText('Remove Region')).toBeInTheDocument();
+        });
+
+        it('opens the region menu, not the layer menu, on a right-click of a region edge', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            fireEvent.contextMenu(getEdge('Region start'), { clientX: 100, clientY: 100 });
+
+            const menu = screen.getByTestId('adjustment-layer-context-menu');
+            expect(within(menu).getByText('Remove Region')).toBeInTheDocument();
+            expect(within(menu).queryByText('Remove Layer')).not.toBeInTheDocument();
+        });
+
+        it('opens the inspector on a double-click of a fade handle', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            fireEvent.doubleClick(screen.getByRole('slider', { name: 'Fade in' }));
+
+            expect(screen.getByRole('dialog', { name: /adjustment layer: eq layer/i })).toBeInTheDocument();
+        });
+
+        it('removes the focused region on Delete', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            expect(fireEvent.keyDown(findRegionElement(), { key: 'Delete' })).toBe(false);
+
+            expect(findCall('removeAdjustmentRegion')).toEqual({
+                type: 'removeAdjustmentRegion',
+                payload: { layerId: 'L1', regionId: 'r1' },
+            });
+        });
+
+        it('exposes each edge as a focusable separator carrying its beat', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            expect(getEdge('Region start')).toHaveAttribute('tabindex', '0');
+            expect(getEdge('Region start')).toHaveAttribute('aria-valuenow', '2');
+            expect(getEdge('Region start')).toHaveAttribute('aria-valuemax', '7.75');
+            expect(getEdge('Region end')).toHaveAttribute('aria-valuenow', '8');
+            expect(getEdge('Region end')).toHaveAttribute('aria-valuemin', '2.25');
+        });
+
+        it.each([
+            { edge: 'Region start' as const, key: 'ArrowRight', shiftKey: false, startBeat: 2.25, endBeat: 8 },
+            { edge: 'Region start' as const, key: 'ArrowLeft', shiftKey: true, startBeat: 1, endBeat: 8 },
+            { edge: 'Region end' as const, key: 'ArrowLeft', shiftKey: false, startBeat: 2, endBeat: 7.75 },
+            { edge: 'Region end' as const, key: 'ArrowRight', shiftKey: true, startBeat: 2, endBeat: 9 },
+        ])('resizes from $edge on $key (shift: $shiftKey)', ({ edge, key, shiftKey, startBeat, endBeat }) => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            expect(fireEvent.keyDown(getEdge(edge), { key, shiftKey })).toBe(false);
+
+            expect(findCall('moveAdjustmentRegion')).toEqual({
+                type: 'moveAdjustmentRegion',
+                payload: { regionId: 'r1', startBeat, endBeat },
+            });
+        });
+
+        it('never resizes a region below its minimum length from either edge', () => {
+            mocks.layers = [
+                {
+                    ...layerWithRegion(),
+                    regions: [{ id: 'r1', startBeat: 10, endBeat: 10.5, blend: 1, fadeInBeats: 0, fadeOutBeats: 0 }],
+                },
+            ];
+            renderStrip();
+
+            fireEvent.keyDown(getEdge('Region start'), { key: 'ArrowRight', shiftKey: true });
+            fireEvent.keyDown(getEdge('Region end'), { key: 'ArrowLeft', shiftKey: true });
+
+            const actions = mocks.executeUserAppAction.mock.calls.map(
+                (call) => call[0] as { type: string; payload: unknown }
+            );
+            const moves = actions.filter((action) => action.type === 'moveAdjustmentRegion');
+            expect(moves.map((action) => action.payload)).toEqual([
+                { regionId: 'r1', startBeat: 10.25, endBeat: 10.5 },
+                { regionId: 'r1', startBeat: 10, endBeat: 10.25 },
+            ]);
         });
     });
 });

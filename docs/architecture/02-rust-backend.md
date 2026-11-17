@@ -771,13 +771,18 @@ Backend errors should be translated at the bridge boundary.
 
 ### Rule
 
-A function returns a typed error enum when any caller, Rust or TypeScript through the IPC message,
-distinguishes failure kinds. The enum is hand-written with `Display` and `std::error::Error`; its
-`Display` is the message the frontend receives, and classification is a method on the enum, never a
-prefix match on text. A failure that only propagates to the bridge or a log stays `String`.
+A fallible function returns a typed error enum, one per module boundary, never `Result<_, String>`.
+The enum is hand-written with `Display` and `std::error::Error`, not derived with `thiserror`: a
+derive crate is a new proc-macro dependency in crates that sit in wasm package closures, and it
+changes nothing a caller can observe. Its `Display` is the message the frontend receives,
+byte-identical to the text it replaced, and classification is a variant match or a method on the
+enum, never a prefix match on text. A variant carries a data field only where its message
+interpolates a value, and wraps a source error where the message prints one.
 
-Do not leak raw internal error chains directly to the frontend as your API contract. `String` is the
-wire form at the napi and wasm-bindgen edges, and real-time paths never build an owned error. See
+Do not leak raw internal error chains directly to the frontend as your API contract. `String`
+survives only at the edges where an error leaves Rust: a napi command body or a wasm-bindgen
+`JsError` converts the typed error with `to_string()` there, and nowhere else. Real-time paths never
+build an owned error. See
 [ADR 0059](../../.agents/decisions/0059-type-rust-errors-where-callers-distinguish-them.md).
 
 ---

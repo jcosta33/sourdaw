@@ -316,6 +316,9 @@ function lookupSidechainInvalidation<Type extends RuntimeActionType>(
     action: ActionOf<Type>,
     plan: SidechainPlan
 ): boolean {
+    if (!Object.hasOwn(sidechainInvalidationByActionType, action.type)) {
+        return neverInvalidates();
+    }
     return sidechainInvalidationByActionType[action.type](action, plan);
 }
 

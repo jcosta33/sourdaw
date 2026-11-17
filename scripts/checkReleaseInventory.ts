@@ -32,7 +32,13 @@ import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
+import { licenceInputDigest, type LicenceInputProjection } from './dependencyLicenseInputProjection.ts';
 import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import {
+    curatedDependencyLicenseProofsDigest,
+    LICENCE_PROJECTED_SNAPSHOT_PATHS,
+    licenceSnapshotError,
+} from './releaseInventoryLicenceSnapshots.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -229,7 +235,7 @@ type ExternalReference = {
 export type ReleaseInventory = {
     schemaVersion: number;
     surfaces: ReleaseSurface[];
-    snapshots: Array<{ path: string; sha256: string }>;
+    snapshots: Array<{ path: string; projection?: LicenceInputProjection; sha256: string }>;
     externalReferences: Array<ExternalReference & { surface: string }>;
     marks: Array<{ value: string; paths: string[] }>;
 };
@@ -238,6 +244,8 @@ export type RepositorySnapshot = {
     releaseFiles: string[];
     externalReferences: ExternalReference[];
     fileDigests: Record<string, string>;
+    /** The digest of each `LICENCE_PROJECTED_SNAPSHOT_PATHS` file's licence-input projection. */
+    snapshotProjectionDigests: Record<string, string>;
     markPaths: Record<string, string[]>;
 };
 
@@ -1560,7 +1568,7 @@ export function projectLicenseDistributionReleaseInventoryContract(root: string)
             `sha256:${fileSha256(resolve(root, 'LICENSE'))}:LICENSE`,
             `sha256:${fileSha256(resolve(root, 'NOTICE'))}:NOTICE`,
             `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
-            `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
+            curatedDependencyLicenseProofsDigest(root),
         ],
         licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
@@ -1582,6 +1590,13 @@ type GrandBouleReleaseBoundary = {
     excludedPaths?: readonly string[];
     gitPathspecs: readonly string[];
     digestLabel: string;
+    /**
+     * Content-pins the boundary's bytes as `tracked-set-sha256:<hex>:<label>`. Only the admitted
+     * Grand Boule DSP source and its admission record set it (ADR 0036). Every other boundary
+     * records `tracked-set:<label>` and is checked only for tracked, readable files, so edits to
+     * shared app files never move the inventory.
+     */
+    pinsAdmittedBytes?: true;
 };
 
 export const GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS = [
@@ -1603,11 +1618,13 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             paths: ['crates/daw-dsp/src/grand_boule/**'],
             gitPathspecs: ['crates/daw-dsp/src/grand_boule'],
             digestLabel: 'grand-boule-native-rust',
+            pinsAdmittedBytes: true,
         },
         {
             paths: ['.agents/decisions/0036-readmit-grand-boule.md'],
             gitPathspecs: ['.agents/decisions/0036-readmit-grand-boule.md'],
             digestLabel: 'grand-boule-admission-decision',
+            pinsAdmittedBytes: true,
         },
         {
             paths: [
@@ -1646,6 +1663,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/AudioEngine/models/AudioEngineState.ts',
                 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
                 'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/repositories/webAudioEngine/**',
                 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
                 'src/modules/AudioEngine/worklets/grandBoule*.ts',
                 'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
@@ -1656,6 +1674,9 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/AudioEngine/models/AudioEngineState.ts',
                 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
                 'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                // The engine's concern units hash with the composer; their specs reach no artifact.
+                'src/modules/AudioEngine/repositories/webAudioEngine',
+                ':(exclude,glob)src/modules/AudioEngine/repositories/webAudioEngine/**/__tests__/**',
                 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
                 ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
                 'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
@@ -1790,10 +1811,13 @@ export function grandBouleReleaseInventoryContract(
             'current tracked live host, scheduling, action, hydration, and offline boundaries',
             'current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners',
         ],
-        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
-            ({ gitPathspecs, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs, readFile, budget)}:${digestLabel}`
-        ),
+        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(({ gitPathspecs, digestLabel, pinsAdmittedBytes }) => {
+            // Hashing is also the readability check: it refuses an empty, missing, or unsafe tracked set.
+            const digest = trackedSetSha256(root, gitPathspecs, readFile, budget);
+            return pinsAdmittedBytes === true
+                ? `tracked-set-sha256:${digest}:${digestLabel}`
+                : `tracked-set:${digestLabel}`;
+        }),
         licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
@@ -2574,7 +2598,7 @@ function digestEntryLabel(entry: string): string {
     return entry.slice(entry.lastIndexOf(':') + 1);
 }
 
-// Only Grand Boule's boundaries currently produce `tracked-set-sha256:` digests,
+// Only Grand Boule's boundaries currently produce tracked-set entries,
 // so this is the one place a differing label can resolve to a tracked set of
 // paths worth printing; every other surface's digests stay unannotated.
 function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly string[] | undefined {
@@ -2626,8 +2650,8 @@ function describeUnlabeledDigestsDifference(recordedEntries: readonly string[], 
 }
 
 // A `digests` mismatch on its own names neither the offending boundary nor the
-// remedy, and a `tracked-set-sha256` value differs from an unrelated file's
-// `sha256` digest by nothing a caller can eyeball, so `field does not match
+// remedy, and a stale entry differs from a current one by nothing a caller
+// can eyeball in a long list, so `field does not match
 // provenance` alone leaves whoever hits it grepping the boundary registry by
 // hand. Pairing recorded and current entries by their trailing label instead
 // names exactly what drifted and where to fix it.
@@ -2664,7 +2688,7 @@ function formatDigestsMismatch(recorded: unknown, current: readonly string[], la
         lines.push(...describeUnlabeledDigestsDifference(recordedEntries, current));
     }
     lines.push(
-        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes.`
+        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a content-pinned tracked-set digest changes when a file in its boundary changes (run pnpm release:restamp:tracked-set), and a label-only tracked-set entry changes only when the boundary registry's labels change.`
     );
     return lines.join('\n');
 }
@@ -3018,8 +3042,11 @@ export function validateReleaseInventory(
                 errors.push(`${entry.path}: snapshot path must be tracked`);
             } else if (!/^[0-9a-f]{64}$/.test(entry.sha256)) {
                 errors.push(`${entry.path}: snapshot must be a SHA-256 digest`);
-            } else if (snapshot.fileDigests[entry.path] !== entry.sha256) {
-                errors.push(`${entry.path}: snapshot drifted`);
+            } else {
+                const error = licenceSnapshotError(entry, snapshot);
+                if (error !== undefined) {
+                    errors.push(error);
+                }
             }
         }
     }
@@ -3179,6 +3206,19 @@ export function loadRepositorySnapshot(
             }
         })
     );
+    const snapshotProjectionDigests = Object.fromEntries(
+        LICENCE_PROJECTED_SNAPSHOT_PATHS.filter(isSafeTrackedPath).map((path) => {
+            try {
+                const bytes = readRepositoryRegularBuffer(rootRealPath, resolve(root, path), readFile, readBudget);
+                return [path, licenceInputDigest(path, bytes).sha256];
+            } catch (error) {
+                if (error instanceof RepositoryFileReadLimitError) {
+                    throw error;
+                }
+                return [path, 'missing'];
+            }
+        })
+    );
     const markPaths = Object.fromEntries(
         (inventory.marks ?? []).map((mark) => [
             mark.value,
@@ -3197,6 +3237,7 @@ export function loadRepositorySnapshot(
             return { file: file ?? '', value: value ?? '', ...(templateSha256 && { templateSha256 }) };
         }),
         fileDigests,
+        snapshotProjectionDigests,
         markPaths,
     };
 }

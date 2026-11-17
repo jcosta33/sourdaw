@@ -50,6 +50,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    coherent PCM geometry and the real analysis before setting a case-specific deadline for required work; retain
    programme and gating windows and every functional assertion (#6311, #6350). Do not use global timeouts or
    retries.
+   #6407 missed launch admission before the layout budget; require the existing launch-ready signal
+   before starting that assertion budget. Trace each diagnostic marker to its producer: a React DOM
+   evaluation banner is not a render, an initSync warning can precede failed WASM initialization, a
+   capability log is not completed bootstrap, and an unwritten heartbeat attribute cannot establish a phase.
    Static scanners need a deterministic work bound as well as semantic verdicts. #1572 introduced
    per-spec barrel-mock graph walks without a unique-resolution bound; #5231's investigation after
    #6419's hook timeout found repeated resolution work, without proving the Linux timeout's cause.
@@ -96,6 +100,11 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
    authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
    until the unchanged whole-task/frame gates pass.
+   [#6514](https://github.com/jcosta33/sourdaw/pull/6514) split the Worker-built complete-document parse from
+   later root materialization; its fresh-project Detect case passed, yet a later sensitivity response occupied
+   a full renderer task in native `prepareLoad`. Attribute the receiving Worker message and its Promise
+   continuations as well as publication, and bound the native parse and enclosing task through unchanged
+   completion gates on cold and repeated routes. A phase split alone does not bound either task.
    A fresh-project green does not establish project-scale coverage: build a realistic current document and
    retained native history through real actions, then assert both from authoritative state. Record fixture
    size and history depth outside the measured interval without warming worker or replica state on the route.

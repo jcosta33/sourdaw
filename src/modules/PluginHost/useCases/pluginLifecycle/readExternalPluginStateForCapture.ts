@@ -6,22 +6,14 @@ import { externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { preservationReason } from './preservationReason';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
-function preservationReason(instanceId: string): 'restore-failed' | 'restore-pending' | 'not-loaded' | null {
-    if (externalPluginRestoreFailures.has(instanceId)) {
-        return 'restore-failed';
-    }
-    if (externalPluginActivationTasks.has(instanceId)) {
-        return 'restore-pending';
-    }
-    if (!loadedExternalInstances.has(instanceId)) {
-        return 'not-loaded';
-    }
-    return null;
-}
-
-/** Read host state together with the exact native-instance generation that produced it. */
+/**
+ * Read host state together with the exact native-instance generation that produced it.
+ * `unreadable` is a loaded, settled instance whose read failed: it may hold edits the
+ * stored chunk lacks, so a caller must not treat its stored chunk as current.
+ */
 export function readExternalPluginStateForCapture(instanceId: string): Promise<
     | Readonly<{
           status: 'captured';
@@ -31,8 +23,9 @@ export function readExternalPluginStateForCapture(instanceId: string): Promise<
       }>
     | Readonly<{
           status: 'preserve';
-          reason: 'restore-pending' | 'restore-failed' | 'not-loaded' | 'empty' | 'read-failed';
+          reason: 'restore-pending' | 'restore-failed' | 'not-loaded' | 'empty';
       }>
+    | Readonly<{ status: 'unreadable'; authorityToken: object }>
     | Readonly<{ status: 'stale'; authorityToken: object }>
 > {
     return serializePluginLifecycle(instanceId, async () => {
@@ -52,7 +45,7 @@ export function readExternalPluginStateForCapture(instanceId: string): Promise<
             if (externalPluginActivationTasks.has(instanceId)) {
                 return { status: 'preserve' as const, reason: 'restore-pending' as const };
             }
-            return { status: 'preserve' as const, reason: 'read-failed' as const };
+            return { status: 'unreadable' as const, authorityToken };
         }
 
         const afterRead = preservationReason(instanceId);

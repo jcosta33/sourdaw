@@ -155,6 +155,11 @@
 use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
 use crate::commands::levain::LevainBankStore;
+use crate::commands::offline_plugins::{
+    build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
+    OfflinePluginSeams,
+};
+use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_dsp::grinder::nam::native_admission::{
     next_native_nam_request, NativeGrinderModelRequest, NativeNamLease, NativeNamPlan,
@@ -240,6 +245,11 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// material it accepts, so an unbounded payload is an unbounded allocation
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
+
+/// The sample rates an offline render accepts, in Hz. A plugin is activated at
+/// the export rate, so a rate no plugin supports is refused before any state is
+/// read or any instance is built, rather than handed to the plugin.
+pub(crate) const OFFLINE_RENDER_SAMPLE_RATES: std::ops::RangeInclusive<f64> = 8_000.0..=384_000.0;
 
 /// Create-*-strip plus set-track-output, then the per-strip send, device, and
 /// clip slots a maximal topology batch fills.
@@ -1531,7 +1541,7 @@ fn prepare_native_grinders(
             return Err("Native NAM target generation mismatch".into());
         }
         let (authority, request, applied) = if input.initial {
-            let request = next_native_nam_request()?;
+            let request = next_native_nam_request().map_err(|error| error.to_string())?;
             (Arc::new(AtomicU64::new(request)), request, None)
         } else {
             let command = mapped
@@ -1569,7 +1579,10 @@ fn prepare_native_grinders(
         metadata.push((device.native_effect_id, authority, request, applied));
     }
     // Reserve the whole atomic transaction before the first parser/constructor.
-    let mut leases = transaction.reserve(&reservations)?.into_iter();
+    let mut leases = transaction
+        .reserve(&reservations)
+        .map_err(|error| error.to_string())?
+        .into_iter();
     let mut receipts = Vec::with_capacity(inputs.len());
     for ((input, plan), (effect, authority, request, applied)) in
         inputs.iter().zip(plans).zip(metadata)
@@ -1583,7 +1596,10 @@ fn prepare_native_grinders(
                     .next()
                     .ok_or_else(|| "Native NAM reservation absent".to_string())?;
                 witness = Some(Arc::downgrade(&lease));
-                Some(NativePreparedNam::build(text, plan, lease, hash)?)
+                Some(
+                    NativePreparedNam::build(text, plan, lease, hash)
+                        .map_err(|error| error.to_string())?,
+                )
             }
             (None, None) => None,
             _ => return Err("Native NAM preflight plan absent".into()),
@@ -2811,12 +2827,11 @@ fn builtin_parameter(
 /// comparison the layer-routing law makes.
 ///
 /// An address the engine names itself belongs to no instrument's vocabulary,
-/// and [`BuiltinParamName::parse`] admits no empty name, so the empty string
-/// can never be read as a routing key.
-fn addressed_parameter_name(param: &DeviceParam) -> &str {
+/// so it spells no name and can never be read as a routing key.
+fn addressed_parameter_name(param: &DeviceParam) -> Option<&str> {
     match param {
         DeviceParam::BuiltinNamed(name) => name.as_str(),
-        _ => "",
+        _ => None,
     }
 }
 
@@ -2874,9 +2889,173 @@ fn immediate_device_parameters(
 /// lookup only ever needs a snapshot of the two numbers, never the instance
 /// itself.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct EngineOwnedDevice {
-    engine_plugin_id: usize,
-    chain_kind: DeviceKind,
+pub(crate) struct EngineOwnedDevice {
+    pub(crate) engine_plugin_id: usize,
+    pub(crate) chain_kind: DeviceKind,
+}
+
+/// Which graph a batch's hosted devices are bound into, which decides what a
+/// device naming an attached instance becomes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum HostedBindingLaw {
+    /// The live engine's graph: a device splices the very instance the engine
+    /// holds, wherever it sits, because that instance runs whether or not a
+    /// strip sounds.
+    #[default]
+    Engine,
+    /// An offline render's graph: a device on a sounding strip gets an
+    /// independent offline instance of the effect the live one is, built for
+    /// this render alone, under the live instance's own engine plugin id
+    /// (`commands::offline_plugins`). A device on a strip that contributes
+    /// nothing is omitted, so no instance is built for silence, and an
+    /// instrument refuses by name, because no offline instance of a hosted
+    /// instrument is built yet.
+    Offline,
+}
+
+/// The hosted plugin instances a batch's devices may bind to, under one
+/// [`HostedBindingLaw`], and — offline — the ones the batch bound.
+///
+/// The one decision for both offline seams: `render_graph_offline` builds
+/// instances for exactly what [`Self::bound`] answers after mapping, and
+/// `map_graph_batch` maps against the same selection and discards the ops, so
+/// the probe admits and refuses exactly what the render does.
+#[derive(Debug, Default)]
+pub(crate) struct HostedInstances {
+    law: HostedBindingLaw,
+    instances: HashMap<String, HostedInstance>,
+    /// Instance id → the first device that bound it. Offline only.
+    bound: BTreeMap<String, String>,
+}
+
+/// One instance a device may bind to: where it splices, and the plugin's name
+/// for the refusals that are about it.
+#[derive(Clone, Debug)]
+struct HostedInstance {
+    device: EngineOwnedDevice,
+    plugin_name: String,
+}
+
+/// One instance an offline render bound, as the render builds it, with the
+/// identity it was mapped under: the build refuses a live record that no longer
+/// carries it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BoundHostedInstance {
+    pub(crate) instance_id: String,
+    /// The first device that named it, for refusals.
+    pub(crate) device_id: String,
+    pub(crate) plugin_name: String,
+    pub(crate) engine_plugin_id: usize,
+    pub(crate) chain_kind: DeviceKind,
+}
+
+impl HostedInstances {
+    /// The live engine's own instances.
+    fn engine(instances: HashMap<String, EngineOwnedDevice>) -> Self {
+        Self {
+            law: HostedBindingLaw::Engine,
+            instances: instances
+                .into_iter()
+                .map(|(instance_id, device)| {
+                    (
+                        instance_id,
+                        HostedInstance {
+                            device,
+                            plugin_name: String::new(),
+                        },
+                    )
+                })
+                .collect(),
+            bound: BTreeMap::new(),
+        }
+    }
+
+    /// The instances attached to the engine, as an offline render rebinds
+    /// them. Read off `engine_plugins` once, before the batch maps.
+    pub(crate) fn offline(state: &AppState) -> Result<Self, String> {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
+        Ok(Self {
+            law: HostedBindingLaw::Offline,
+            instances: engine_plugins
+                .iter()
+                .map(|(instance_id, instance)| {
+                    (
+                        instance_id.clone(),
+                        HostedInstance {
+                            device: EngineOwnedDevice {
+                                engine_plugin_id: instance.engine_plugin_id,
+                                chain_kind: instance.chain_kind,
+                            },
+                            plugin_name: instance.name.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            bound: BTreeMap::new(),
+        })
+    }
+
+    /// What a device naming `instance_id` splices as, or `None` when it is
+    /// omitted from its chain.
+    ///
+    /// A miss refuses a sounding strip and omits the device from a silent one
+    /// under either law: a strip built only to keep the routing graph faithful
+    /// contributes silence, and the device's absence is what its report says.
+    fn bind(
+        &mut self,
+        device_id: &str,
+        instance_id: &str,
+        contributes_audio: bool,
+    ) -> Result<Option<EngineOwnedDevice>, String> {
+        let Some(instance) = self.instances.get(instance_id) else {
+            if contributes_audio {
+                return Err(format!(
+                    "device '{device_id}' names hosted plugin instance '{instance_id}', which is \
+                     not attached to the engine"
+                ));
+            }
+            return Ok(None);
+        };
+        match self.law {
+            HostedBindingLaw::Engine => Ok(Some(instance.device)),
+            HostedBindingLaw::Offline => {
+                if !contributes_audio {
+                    return Ok(None);
+                }
+                if instance.device.chain_kind != DeviceKind::Effect {
+                    return Err(format!(
+                        "device '{device_id}' hosts the plugin '{}', an instrument: hosted \
+                         instruments do not render offline yet",
+                        instance.plugin_name
+                    ));
+                }
+                self.bound
+                    .entry(instance_id.to_string())
+                    .or_insert_with(|| device_id.to_string());
+                Ok(Some(instance.device))
+            }
+        }
+    }
+
+    /// Every instance an offline mapping bound, in instance-id order.
+    pub(crate) fn bound(&self) -> Vec<BoundHostedInstance> {
+        self.bound
+            .iter()
+            .filter_map(|(instance_id, device_id)| {
+                let instance = self.instances.get(instance_id)?;
+                Some(BoundHostedInstance {
+                    instance_id: instance_id.clone(),
+                    device_id: device_id.clone(),
+                    plugin_name: instance.plugin_name.clone(),
+                    engine_plugin_id: instance.device.engine_plugin_id,
+                    chain_kind: instance.device.chain_kind,
+                })
+            })
+            .collect()
+    }
 }
 
 /// The project's device type for the Crumbs sampler.
@@ -2934,7 +3113,7 @@ struct MappedDevice {
 /// banks the batch attaches, and the ops the batch is building.
 struct MapEnv<'a> {
     sample_rate: f32,
-    engine_owned_devices: &'a HashMap<String, EngineOwnedDevice>,
+    hosted: &'a mut HostedInstances,
     attached_crumbs: &'a mut AttachedCrumbs,
     levain_banks: &'a mut LevainBankStore,
     ops: &'a mut Vec<GraphCommand>,
@@ -2948,7 +3127,7 @@ fn map_device(
 ) -> Result<Option<MappedDevice>, String> {
     let MapEnv {
         sample_rate,
-        engine_owned_devices,
+        hosted,
         attached_crumbs,
         levain_banks,
         ops,
@@ -2983,23 +3162,11 @@ fn map_device(
     }
 
     if let Some(instance_id) = device.external_instance_id.as_deref() {
-        let Some(&EngineOwnedDevice {
+        let Some(EngineOwnedDevice {
             engine_plugin_id: effect_id,
             chain_kind,
-        }) = engine_owned_devices.get(instance_id)
+        }) = hosted.bind(&device.id, instance_id, contributes_audio)?
         else {
-            let reason = format!(
-                "device '{}' names hosted plugin instance '{instance_id}', which is not attached \
-                 to the engine",
-                device.id
-            );
-            if contributes_audio {
-                return Err(reason);
-            }
-            // Same degradation law as any device with no body: a strip built
-            // only to keep the routing graph faithful contributes silence, so
-            // the device is omitted and its absence is what the strip report
-            // says.
             return Ok(None);
         };
         charge_chain_slot(registry, &device.id)?;
@@ -3259,7 +3426,8 @@ fn map_device(
         })
         .and_then(|patch| {
             Ok((
-                PluginCore::transient_shaper_with_patch(sample_rate, &patch)?,
+                PluginCore::transient_shaper_with_patch(sample_rate, &patch)
+                    .map_err(|error| error.to_string())?,
                 Vec::new(),
             ))
         }),
@@ -3312,7 +3480,11 @@ fn map_device(
         },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
-                .and_then(|writes| Ok((PluginCore::builtin(builtin, sample_rate)?, writes)))
+                .and_then(|writes| {
+                    let core = PluginCore::builtin(builtin, sample_rate)
+                        .map_err(|error| error.to_string())?;
+                    Ok((core, writes))
+                })
         }
     };
     let Some((core, param_writes)) = refuse_or_degrade(resolved, contributes_audio)? else {
@@ -3553,25 +3725,24 @@ pub(crate) fn strip_reports(
 /// nothing built here may be applied and the clone is discarded — including
 /// the queue ledger, which is written back onto the clone only on success.
 ///
-/// `engine_owned_devices` is instance id → engine plugin id and chain splice
-/// kind for every hosted plugin the engine owns, read once on the control
-/// thread before the batch is mapped. It is empty for every offline path:
-/// those render with no live engine, so no instance exists for a device to
-/// bind to and an external device on a sounding strip refuses there exactly
-/// as it did before binding existed.
+/// `hosted` is the hosted plugin instances a device may bind to, read once on
+/// the control thread before the batch is mapped, under the law of the graph
+/// the batch is for ([`HostedInstances`]): the live engine's own instances, or
+/// the attached effects an offline render rebuilds. It comes back carrying the
+/// instances an offline mapping bound.
 ///
 /// `attached_crumbs` is the Crumbs instances the engine holds, and it comes
 /// back carrying the ones this batch named ([`AttachedCrumbs`]). Kept apart
-/// from `engine_owned_devices` rather than merged into it: the two are
+/// from `hosted` rather than merged into it: the two are
 /// different id spaces — a hosted plugin's instance id against a Crumbs
 /// device's own id — and a miss in each carries its own reason. It is empty for
-/// every offline path, for the same reason the hosted lookup is.
+/// every offline path: an offline render builds no Crumbs instance.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    hosted: &mut HostedInstances,
     attached_crumbs: &mut AttachedCrumbs,
     levain_banks: &mut LevainBankStore,
 ) -> Result<MappedBatch, String> {
@@ -3628,7 +3799,7 @@ fn map_batch(
             batch.timeline_lease.as_deref(),
             MapEnv {
                 sample_rate,
-                engine_owned_devices,
+                hosted: &mut *hosted,
                 attached_crumbs: &mut *attached_crumbs,
                 levain_banks: &mut *levain_banks,
                 ops: &mut ops,
@@ -3701,7 +3872,7 @@ fn map_command(
 ) -> Result<(), String> {
     let MapEnv {
         sample_rate,
-        engine_owned_devices,
+        hosted,
         attached_crumbs,
         levain_banks,
         ops,
@@ -3764,7 +3935,7 @@ fn map_command(
                     *contributes_audio,
                     MapEnv {
                         sample_rate,
-                        engine_owned_devices,
+                        hosted: &mut *hosted,
                         attached_crumbs: &mut *attached_crumbs,
                         levain_banks: &mut *levain_banks,
                         ops: &mut *ops,
@@ -3875,7 +4046,7 @@ fn map_command(
                     *contributes_audio,
                     MapEnv {
                         sample_rate,
-                        engine_owned_devices,
+                        hosted: &mut *hosted,
                         attached_crumbs: &mut *attached_crumbs,
                         levain_banks: &mut *levain_banks,
                         ops: &mut *ops,
@@ -4085,7 +4256,7 @@ fn map_command(
                 strip.contributes_audio,
                 MapEnv {
                     sample_rate,
-                    engine_owned_devices,
+                    hosted: &mut *hosted,
                     attached_crumbs: &mut *attached_crumbs,
                     levain_banks: &mut *levain_banks,
                     ops: &mut *ops,
@@ -4323,7 +4494,7 @@ fn map_command(
                 timeline_lease,
                 MapEnv {
                     sample_rate,
-                    engine_owned_devices,
+                    hosted: &mut *hosted,
                     attached_crumbs: &mut *attached_crumbs,
                     levain_banks: &mut *levain_banks,
                     ops: &mut *ops,
@@ -4331,7 +4502,7 @@ fn map_command(
                 budgets,
                 touched,
             )?;
-            let request = next_native_nam_request()?;
+            let request = next_native_nam_request().map_err(|error| error.to_string())?;
             ops.push(GraphCommand::SetGrinderModel {
                 effect_id,
                 request: Box::new(NativeGrinderModelRequest {
@@ -5220,7 +5391,9 @@ pub async fn apply_graph_commands(
             .sum();
         match NativeNamTransaction::begin(bytes, native_inputs.len()) {
             Ok(transaction) => Some(transaction),
-            Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+            Err(reason) => {
+                return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+            }
         }
     };
     // Bounded semantic preflight precedes every graph/engine critical section
@@ -5234,7 +5407,9 @@ pub async fn apply_graph_commands(
                 .and_then(|rate| NativeNamPlan::inspect(text, rate))
             {
                 Ok(plan) => Some(plan),
-                Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+                Err(reason) => {
+                    return result_json(&GraphApplyResultPayload::rejected(reason.to_string()))
+                }
             },
         };
         native_plans.push(plan);
@@ -5354,21 +5529,23 @@ pub async fn apply_graph_commands(
     // lookup and binds on the *next* batch instead. That one-batch lag is the
     // cost of never reporting an engine-owned plugin on a rejected result, and
     // the producer resends its topology on every play.
-    let engine_owned_devices: HashMap<String, EngineOwnedDevice> = state
-        .engine_plugins
-        .lock()
-        .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
-        .iter()
-        .map(|(instance_id, instance)| {
-            (
-                instance_id.clone(),
-                EngineOwnedDevice {
-                    engine_plugin_id: instance.engine_plugin_id,
-                    chain_kind: instance.chain_kind,
-                },
-            )
-        })
-        .collect();
+    let mut hosted = HostedInstances::engine(
+        state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
+            .iter()
+            .map(|(instance_id, instance)| {
+                (
+                    instance_id.clone(),
+                    EngineOwnedDevice {
+                        engine_plugin_id: instance.engine_plugin_id,
+                        chain_kind: instance.chain_kind,
+                    },
+                )
+            })
+            .collect(),
+    );
 
     // The Crumbs instances a device may be spliced onto, read here for the
     // same reason. Unlike hosted plugins, the attach that can add to this
@@ -5428,7 +5605,7 @@ pub async fn apply_graph_commands(
         &mut working,
         &samples,
         engine.sample_rate(),
-        &engine_owned_devices,
+        &mut hosted,
         &mut attached_crumbs,
         &mut levain_banks,
     ) {
@@ -5547,7 +5724,7 @@ pub async fn apply_graph_commands(
             // rejection. The attach's own registration went onto the ring
             // ahead of it, so the report still belongs to this answer.
             return result_json(
-                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                &GraphApplyResultPayload::rejected(reason.to_string()).reporting_attached_crumbs(
                     attached_crumbs.named_with(&attached_crumbs_this_batch),
                 ),
             );
@@ -5761,6 +5938,7 @@ fn replay_prior_commands(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
+    hosted: &mut HostedInstances,
     levain_banks: &mut LevainBankStore,
 ) -> Result<(), String> {
     while !commands.is_empty() {
@@ -5781,7 +5959,7 @@ fn replay_prior_commands(
             registry,
             samples,
             sample_rate,
-            &HashMap::new(),
+            &mut *hosted,
             &mut AttachedCrumbs::default(),
             levain_banks,
         )
@@ -5886,6 +6064,12 @@ pub async fn map_graph_batch(
         None => None,
     };
 
+    // The same selection the render binds against, so the probe admits and
+    // refuses exactly the hosted devices the render will. Its engine plugin
+    // ids reach no engine: the ops this maps are discarded. Read before the
+    // sample locks and released at once, the order the render takes them in.
+    let mut hosted = HostedInstances::offline(state)?;
+
     // Lock order, here and in `apply_graph_commands` and
     // `render_graph_offline`: timeline samples first, then levain banks. All
     // three sites take both, and a site that took them the other way round
@@ -5910,6 +6094,7 @@ pub async fn map_graph_batch(
                     &mut registry,
                     &samples,
                     sample_rate as f32,
+                    &mut hosted,
                     &mut levain_banks,
                 )?;
             }
@@ -5925,14 +6110,12 @@ pub async fn map_graph_batch(
     let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
-    // No live engine on this seam, so no instance can be bound: the same
-    // empty lookup `render_graph_offline` maps against.
     let mapped = map_batch(
         &batch,
         &mut registry,
         &samples,
         sample_rate as f32,
-        &HashMap::new(),
+        &mut hosted,
         &mut AttachedCrumbs::default(),
         &mut levain_banks,
     );
@@ -5968,29 +6151,34 @@ pub async fn map_graph_batch(
 }
 
 /// Map one self-contained batch for an offline render: fresh registry, no
-/// live engine.
+/// live engine, and `hosted` carrying back the instances it bound.
 ///
 /// The caller holds the sample-pool and bank-store locks only across this call
 /// — mapping clones the material each clip plays into its command and builds
 /// each sampler's instance here, so the render itself runs without either lock.
+///
+/// A bound hosted device keeps the live instance's engine plugin id, and the
+/// render registers its offline instance under that id. Those ids come from
+/// the engine's plugin allocator, which starts far below the graph's own
+/// (`FIRST_GRAPH_EFFECT_ID`), so they cannot collide with the built-ins this
+/// fresh registry allocates — the same disjointness the live table relies on.
 fn map_offline_batch(
     batch: &GraphBatchPayload,
     samples: &TimelineSamplePool,
     levain_banks: &mut LevainBankStore,
     sample_rate: f32,
+    hosted: &mut HostedInstances,
 ) -> Result<Vec<GraphCommand>, String> {
     if batch.schema_version == 2 || !native_grinder_inputs(batch)?.is_empty() {
         return Err("Imported native NAM is live-only; offline NAM remains gated".into());
     }
     let mut registry = GraphRegistry::default();
-    // An offline render has no engine and therefore no hosted plugin instances:
-    // an external device on a sounding strip refuses here, as it always has.
     Ok(map_batch(
         batch,
         &mut registry,
         samples,
         sample_rate,
-        &HashMap::new(),
+        hosted,
         &mut AttachedCrumbs::default(),
         levain_banks,
     )?
@@ -5998,33 +6186,67 @@ fn map_offline_batch(
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
-/// the engine did not take whole.
+/// the engine did not take whole, one a hosted instance missed a block of, or
+/// one cancelled before its last block.
+///
+/// The renderer is built and dropped inside this call, so it — and with it the
+/// scheduler's clone of every hosted slot — is gone before the caller's
+/// `plugins` releases the instances, on every path out, an unwinding panic
+/// included.
 fn render_offline_ops(
     ops: Vec<GraphCommand>,
     frames: usize,
     sample_rate: f32,
+    plugins: Option<&OfflinePluginInstances<'_>>,
+    render: &InFlightRender<'_>,
 ) -> Result<(Vec<f32>, Vec<f32>), String> {
+    let plugin_commands = plugins.map_or(0, OfflinePluginInstances::command_count);
     // A render is playback by construction: the transport rolls from frame 0
     // unless the batch itself says otherwise (its own set-transport commands
     // are mapped after this preamble and override it).
-    let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1);
-    renderer.push(GraphCommand::SetTransportPlayback {
-        is_playing: true,
-        song_pos_seconds: 0.0,
-    })?;
+    let mut renderer = OfflineRenderer::new(sample_rate, ops.len() + 1 + plugin_commands);
+    renderer
+        .push(GraphCommand::SetTransportPlayback {
+            is_playing: true,
+            song_pos_seconds: 0.0,
+        })
+        .map_err(|error| error.to_string())?;
+    // Ahead of the batch: its splices name these ids, and the graph refuses an
+    // id its table does not hold yet.
+    if let Some(plugins) = plugins {
+        plugins.register(&mut renderer)?;
+    }
     for op in ops {
-        renderer.push(op)?;
+        renderer.push(op).map_err(|error| error.to_string())?;
     }
 
-    let rendered = renderer.render(frames);
+    // This thread processes every block, so it is every instance's audio
+    // thread, and the one that leaves their processing state — taken before
+    // the first block so no way out of the loop can skip it.
+    let leaving_processing = leaves_processing_on_drop(plugins);
+    let rendered = renderer.render_controlled(frames, render.control());
+    drop(leaving_processing);
+    let Ok(rendered) = rendered else {
+        return Err(render.cancelled());
+    };
+    if let Some(plugins) = plugins {
+        plugins.ensure_every_block_processed()?;
+    }
 
     // Belt and braces under refuse-don't-drop: `map_batch` refuses anything
     // the graph's fixed capacities could not take, so these counters stay
     // zero — but a nonzero counter means the engine dropped part of the
     // admitted batch, and success here would launder that drop into a clean
-    // render.
+    // render. `pdc_max_arrival_frames` is the one field that is no refusal:
+    // it states the deepest latency the graph compensates, which a render
+    // carrying a latent hosted effect has. A clamped route still refuses,
+    // because that print would sound misaligned.
     let diagnostics = renderer.timeline_diagnostics();
-    if diagnostics != TimelineRtDiagnosticsSnapshot::default() {
+    let refusals = TimelineRtDiagnosticsSnapshot {
+        pdc_max_arrival_frames: 0,
+        ..diagnostics
+    };
+    if refusals != TimelineRtDiagnosticsSnapshot::default() {
         return Err(format!(
             "offline-render-dropped-commands: the engine refused part of the batch after \
              admission ({diagnostics:?}); the output is not the batch and is discarded"
@@ -6045,8 +6267,20 @@ fn render_offline_batch(
     frames: usize,
     sample_rate: f32,
 ) -> Result<Vec<f32>, String> {
-    let ops = map_offline_batch(batch, samples, levain_banks, sample_rate)?;
-    let (left, right) = render_offline_ops(ops, frames, sample_rate)?;
+    let ops = map_offline_batch(
+        batch,
+        samples,
+        levain_banks,
+        sample_rate,
+        &mut HostedInstances::default(),
+    )?;
+    let (left, right) = render_offline_ops(
+        ops,
+        frames,
+        sample_rate,
+        None,
+        &InFlightRender::uncancellable(),
+    )?;
     let mut interleaved = Vec::with_capacity(frames * 2);
     for index in 0..frames {
         interleaved.push(left[index]);
@@ -6062,15 +6296,53 @@ fn render_offline_batch(
 /// little-endian bytes; a refused batch is an error carrying the same
 /// per-command reasons `apply_graph_commands` reports, and nothing is
 /// rendered from it.
+///
+/// Every engine-attached hosted effect a sounding strip names renders through
+/// an offline instance of its own (`commands::offline_plugins`), built on
+/// `ui` and released there however the render ends.
+///
+/// `render_id` names the render so `cancel_graph_offline` can stop it between
+/// blocks; a cancelled render answers an error starting
+/// `offline-render-cancelled`. It runs on the calling worker, never on `ui`,
+/// which is only ever asked to build and tear down instances.
 pub async fn render_graph_offline(
     batch: Value,
     frames: u32,
     sample_rate: f64,
+    render_id: Option<String>,
+    ui: &dyn UiThread,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
+    render_graph_offline_with(
+        batch,
+        frames,
+        sample_rate,
+        render_id,
+        ui,
+        state,
+        &OfflinePluginSeams::production(),
+    )
+    .await
+}
+
+/// [`render_graph_offline`] over chosen plugin seams.
+pub(crate) async fn render_graph_offline_with(
+    batch: Value,
+    frames: u32,
+    sample_rate: f64,
+    render_id: Option<String>,
+    ui: &dyn UiThread,
+    state: &AppState,
+    seams: &OfflinePluginSeams,
+) -> Result<Vec<u8>, String> {
     let batch = parse_batch(batch)?;
-    if !(sample_rate.is_finite() && sample_rate > 0.0) {
-        return Err("Sample rate must be a positive, finite number".to_string());
+    if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
+        return Err(format!(
+            "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
+             {} to {} Hz",
+            OFFLINE_RENDER_SAMPLE_RATES.start(),
+            OFFLINE_RENDER_SAMPLE_RATES.end()
+        ));
     }
     let frames = frames as usize;
     if frames == 0 {
@@ -6081,6 +6353,9 @@ pub async fn render_graph_offline(
             "Frame count {frames} exceeds the offline render ceiling of {MAX_OFFLINE_RENDER_FRAMES}"
         ));
     }
+
+    let render = InFlightRender::begin(state, render_id)?;
+    let mut hosted = HostedInstances::offline(state)?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
     // into its clip command there and every sampler's instance is built there,
@@ -6099,9 +6374,26 @@ pub async fn render_graph_offline(
             .levain_banks
             .lock()
             .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
-        map_offline_batch(&batch, &samples, &mut levain_banks, sample_rate as f32)?
+        map_offline_batch(
+            &batch,
+            &samples,
+            &mut levain_banks,
+            sample_rate as f32,
+            &mut hosted,
+        )?
     };
-    let (left, right) = render_offline_ops(ops, frames, sample_rate as f32)?;
+    // A render cancelled before it starts builds no plugin instance.
+    if render.control().is_cancelled() {
+        return Err(render.cancelled());
+    }
+    #[cfg(test)]
+    if let Some(after_mapping) = &seams.after_mapping {
+        after_mapping(state);
+    }
+    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams).await?;
+    let (left, right) =
+        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
+    drop(plugins);
 
     // Interleave straight into the byte payload; the render's planar pair is
     // the only f32 copy of the output this function holds.
@@ -6118,6 +6410,7 @@ mod tests {
     use super::*;
     use crate::block_on_test;
     use crate::commands::plugins::serialize_against_exclusive_gate_holds;
+    use crate::host::plugin_window::NoWindowHost;
     use serde_json::json;
 
     #[test]
@@ -6485,7 +6778,7 @@ mod tests {
             registry,
             samples,
             sample_rate,
-            engine_owned_devices,
+            &mut HostedInstances::engine(engine_owned_devices.clone()),
             &mut AttachedCrumbs::default(),
             &mut LevainBankStore::default(),
         )
@@ -6506,7 +6799,7 @@ mod tests {
             registry,
             samples,
             sample_rate,
-            &HashMap::new(),
+            &mut HostedInstances::default(),
             &mut AttachedCrumbs::new(attached_crumbs.clone()),
             &mut LevainBankStore::default(),
         )
@@ -9284,6 +9577,8 @@ mod tests {
             json!({"schemaVersion":2,"commands":commands}),
             64,
             48_000.0,
+            None,
+            &NoWindowHost,
             &state
         ))
         .is_err());
@@ -9529,6 +9824,7 @@ mod tests {
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
                     parameter_events,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
         }
@@ -14144,22 +14440,153 @@ mod tests {
         );
     }
 
-    /// An offline render has no engine, so it has no instances: the binding
-    /// path cannot open there, and an external device on a sounding strip
-    /// refuses exactly as it did before binding existed.
-    #[test]
-    fn an_offline_render_still_refuses_a_hosted_plugin_on_a_sounding_strip() {
-        let Err(refusal) = map_offline_batch(
-            &batch(hosted_plugin_strip(true, false)),
+    /// A state whose engine holds one hosted instance, as a load records it.
+    fn state_attaching(instance_id: &str, engine_plugin_id: usize, kind: DeviceKind) -> AppState {
+        let state = AppState::default();
+        let runtime: daw_plugin_host::HostedRuntime =
+            daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                "Pro-Q Fixture",
+                vec![],
+                false,
+            )
+            .into();
+        state.engine_plugins.lock().unwrap().insert(
+            instance_id.to_string(),
+            crate::state::EnginePluginInstanceData {
+                engine_plugin_id,
+                runtime: Arc::new(crate::host::native_bridge::SharedHostedPlugin::new(runtime)),
+                name: "Pro-Q Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                chain_kind: kind,
+                parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
+            },
+        );
+        state
+    }
+
+    fn map_offline_against(
+        batch: &GraphBatchPayload,
+        state: &AppState,
+    ) -> Result<(Vec<GraphCommand>, Vec<BoundHostedInstance>), String> {
+        let mut hosted = HostedInstances::offline(state)?;
+        let ops = map_offline_batch(
+            batch,
             &sample_pool(),
             &mut LevainBankStore::default(),
             48_000.0,
+            &mut hosted,
+        )?;
+        Ok((ops, hosted.bound()))
+    }
+
+    /// The offline law's refusal side: an instance the engine does not hold
+    /// still refuses a sounding strip, and an attached instrument refuses by
+    /// device and plugin name, because no offline instance of one is built.
+    #[test]
+    fn an_offline_render_refuses_an_unattached_instance_and_a_hosted_instrument_by_name() {
+        let Err(unattached) = map_offline_against(
+            &batch(hosted_plugin_strip(true, false)),
+            &AppState::default(),
         ) else {
-            panic!("an offline render holds no plugin instance to bind");
+            panic!("an instance the engine does not hold has nothing to rebuild");
         };
         assert!(
-            refusal.contains("not attached to the engine"),
-            "the offline refusal is the unbound one, got: {refusal}"
+            unattached.contains("'d-plugin'") && unattached.contains("not attached to the engine"),
+            "{unattached}"
+        );
+
+        let Err(instrument) = map_offline_against(
+            &batch(hosted_plugin_strip(true, false)),
+            &state_attaching("inst-1", 1_007, DeviceKind::Generator),
+        ) else {
+            panic!("a hosted instrument must not render offline yet");
+        };
+        assert!(
+            instrument.contains("'d-plugin'")
+                && instrument.contains("'Pro-Q Fixture'")
+                && instrument.contains("hosted instruments do not render offline yet"),
+            "{instrument}"
+        );
+    }
+
+    /// The offline law's admission side: an attached effect on a sounding
+    /// strip is spliced under the live instance's own engine plugin id and
+    /// reported bound; the same device on a silent strip is omitted, and
+    /// nothing is bound for it, so no instance is built for silence.
+    #[test]
+    fn an_offline_render_binds_an_attached_effect_on_a_sounding_strip_only() {
+        let state = state_attaching("inst-1", 1_007, DeviceKind::Effect);
+
+        let Ok((ops, bound)) =
+            map_offline_against(&batch(hosted_plugin_strip(true, false)), &state)
+        else {
+            panic!("an attached effect on a sounding strip is admitted");
+        };
+        assert_eq!(inserted_effect_ids(&ops), vec![1_007]);
+        assert_eq!(
+            bound,
+            vec![BoundHostedInstance {
+                instance_id: "inst-1".to_string(),
+                device_id: "d-plugin".to_string(),
+                plugin_name: "Pro-Q Fixture".to_string(),
+                engine_plugin_id: 1_007,
+                chain_kind: DeviceKind::Effect,
+            }]
+        );
+
+        let Ok((ops, bound)) =
+            map_offline_against(&batch(hosted_plugin_strip(false, false)), &state)
+        else {
+            panic!("a silent strip omits the device");
+        };
+        assert!(inserted_effect_ids(&ops).is_empty());
+        assert!(bound.is_empty(), "no instance is built for a silent strip");
+    }
+
+    /// One decision for both offline seams: the probe `map_graph_batch`
+    /// admits and refuses exactly the hosted devices the render's mapping
+    /// does, with the same reason. Mutation: map the probe against an empty
+    /// lookup again — the attached-effect rows diverge.
+    #[test]
+    fn the_offline_probe_admits_and_refuses_exactly_what_the_render_maps() {
+        let cases = [
+            (hosted_plugin_strip(true, false), AppState::default()),
+            (
+                hosted_plugin_strip(true, false),
+                state_attaching("inst-1", 1_007, DeviceKind::Effect),
+            ),
+            (
+                hosted_plugin_strip(false, false),
+                state_attaching("inst-1", 1_007, DeviceKind::Effect),
+            ),
+            (
+                hosted_plugin_strip(true, false),
+                state_attaching("inst-1", 1_007, DeviceKind::Generator),
+            ),
+        ];
+        let mut admitted = 0;
+        for (commands, state) in cases {
+            let render = map_offline_against(&batch(commands.clone()), &state).map(|_| ());
+            let probe = block_on_test(map_graph_batch(
+                json!([]),
+                json!({ "schemaVersion": 1, "commands": commands }),
+                48_000.0,
+                None,
+                &state,
+            ))
+            .expect("the probe answers");
+            let probe = match probe["acceptance"].as_str() {
+                Some("accepted") => Ok(()),
+                _ => Err(probe["reason"].as_str().unwrap_or_default().to_string()),
+            };
+            assert_eq!(probe, render, "the probe and the render decide alike");
+            admitted += usize::from(probe.is_ok());
+        }
+        assert_eq!(
+            admitted, 2,
+            "both the attached effect and its silent strip map"
         );
     }
 
@@ -14685,7 +15112,7 @@ mod tests {
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
-            &HashMap::new(),
+            &mut HostedInstances::default(),
             &mut AttachedCrumbs::default(),
             &mut banks,
         )
@@ -14793,6 +15220,7 @@ mod tests {
             &sample_pool(),
             &mut LevainBankStore::default(),
             SAMPLE_RATE,
+            &mut HostedInstances::default(),
         ) else {
             panic!("a store holding no bank must refuse the device");
         };
@@ -14803,7 +15231,14 @@ mod tests {
 
         let mut banks = state.levain_banks.lock().expect("the bank lock opens");
         assert!(
-            map_offline_batch(&sounding, &sample_pool(), &mut banks, SAMPLE_RATE).is_ok(),
+            map_offline_batch(
+                &sounding,
+                &sample_pool(),
+                &mut banks,
+                SAMPLE_RATE,
+                &mut HostedInstances::default()
+            )
+            .is_ok(),
             "the committed bank this process holds must build the device"
         );
 
@@ -16410,7 +16845,7 @@ mod tests {
             true,
             MapEnv {
                 sample_rate: 48_000.0,
-                engine_owned_devices: &HashMap::new(),
+                hosted: &mut HostedInstances::default(),
                 attached_crumbs: &mut AttachedCrumbs::default(),
                 levain_banks: &mut LevainBankStore::default(),
                 ops: &mut ops,
@@ -17422,7 +17857,7 @@ mod tests {
             assert_eq!(
                 record
                     .iter()
-                    .map(|(name, value)| (name.as_str(), *value))
+                    .map(|(name, value)| (name.as_str().unwrap(), *value))
                     .collect::<Vec<_>>(),
                 vec![
                     ("dither_bits", expected),
@@ -17477,7 +17912,7 @@ mod tests {
         let live =
             immediate_device_parameters(BuiltinEffectType::Proof, &values, "d-proof").unwrap();
         assert_eq!(live.len(), 1, "only runtime A/B is a live DSP target");
-        assert_eq!(addressed_parameter_name(&live[0].0), "ab_bypass");
+        assert_eq!(addressed_parameter_name(&live[0].0), Some("ab_bypass"));
         for bad in [
             json!({"eq_band0Xfreq":400}),
             json!({"dither_mode":0.25}),
@@ -18227,7 +18662,7 @@ mod tests {
         }
         let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": commands});
         // Exercise the public production render body before holding a real mapped reader.
-        let output = render_graph_offline(wire.clone(), 200, 48000.0, &state)
+        let output = render_graph_offline(wire.clone(), 200, 48000.0, None, &NoWindowHost, &state)
             .await
             .unwrap();
         let decoded: Vec<_> = output
@@ -18241,8 +18676,14 @@ mod tests {
         let batch = parse_batch(wire).unwrap();
         let ops = {
             let samples = state.timeline_samples.lock().unwrap();
-            let ops = map_offline_batch(&batch, &samples, &mut LevainBankStore::default(), 48000.0)
-                .unwrap();
+            let ops = map_offline_batch(
+                &batch,
+                &samples,
+                &mut LevainBankStore::default(),
+                48000.0,
+                &mut HostedInstances::default(),
+            )
+            .unwrap();
             let sample = samples
                 .resolve_timeline_sample(Some(lease), "take", Some("v1"))
                 .unwrap();
@@ -18262,6 +18703,8 @@ mod tests {
             json!({"schemaVersion": 1, "timelineLease": lease, "commands": []}),
             1,
             48000.0,
+            None,
+            &NoWindowHost,
             &state
         )
         .await
@@ -18276,7 +18719,8 @@ mod tests {
             .unwrap_err()
             .contains("budget"));
         // These are the actual mapped clips, consumed by the existing scheduler.
-        let (left, right) = render_offline_ops(ops, 200, 48000.0).unwrap();
+        let (left, right) =
+            render_offline_ops(ops, 200, 48000.0, None, &InFlightRender::uncancellable()).unwrap();
         assert!(left.iter().chain(&right).all(|value| value.is_finite()));
         let complete =
             timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
@@ -18349,7 +18793,7 @@ mod tests {
             {"kind": "schedule-clip", "playback": {"trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v2"},
                 "startTime": 4.0 / 48000.0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}}}
         ]});
-        let output = render_graph_offline(wire, 8, 48000.0, &state)
+        let output = render_graph_offline(wire, 8, 48000.0, None, &NoWindowHost, &state)
             .await
             .unwrap();
         let first = f32::from_le_bytes(output[0..4].try_into().unwrap());

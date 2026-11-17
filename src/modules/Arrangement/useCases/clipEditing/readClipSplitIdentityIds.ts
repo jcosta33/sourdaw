@@ -4,7 +4,9 @@ import { isRecord } from '#/utils/structuralEquality';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 
-import type { AppAction, ClipAutomationLaneSnapshot, ClipSnapshot } from '#/utils/handlerContract';
+import type { AppAction } from '#/utils/handlerContract';
+import type { ClipSnapshot } from '../../events/arrangementClipSnapshots';
+import type { ClipAutomationLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 
 function withoutClipKeys(value: unknown, retiredClipIds: ReadonlySet<string>): unknown {
     if (!isRecord(value)) {

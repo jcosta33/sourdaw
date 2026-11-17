@@ -1,5 +1,5 @@
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
-import { isTempoAudioSourcePromotion, tempoSourcePromotionsEqual } from '#/utils/tempoAudioSourcePromotion';
+import { type TempoAudioSourcePromotionSnapshot } from '#/modules/Transport/events';
+import { isTempoAudioSourcePromotion, tempoSourcePromotionsEqual } from '#/modules/Transport/stores';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';

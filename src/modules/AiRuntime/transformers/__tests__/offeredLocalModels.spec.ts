@@ -15,25 +15,47 @@ const models: Model[] = [
 ];
 const ids = (offered: readonly Model[]): string[] => offered.map((model) => model.id).sort();
 
+const RAM_64_GB = 64_000_000_000;
+
 describe('offeredLocalModels', () => {
     it.each([
-        { totalBytes: 40_000_000_000, expected: ['large', 'light', 'pro', 'standard'] },
-        { totalBytes: 39_999_999_999, expected: ['light', 'pro', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 48_000_000_000, expected: ['large', 'light', 'pro', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 40_000_000_000, expected: ['large', 'light', 'pro', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 39_999_999_999, expected: ['light', 'pro', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 10_300_000_000, expected: ['light', 'pro', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 10_299_999_999, expected: ['light', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 8_000_000_000, expected: ['light', 'standard'] },
+        { totalBytes: 64_000_000_000, gpuBudgetBytes: 2_699_999_999, expected: [] },
+    ])(
+        'offers what a $gpuBudgetBytes byte GPU budget clears on 64 GB of RAM',
+        ({ gpuBudgetBytes, totalBytes, expected }) => {
+            expect(ids(offeredLocalModels(models, { state: 'known', totalBytes, gpuBudgetBytes }))).toEqual(expected);
+        }
+    );
+
+    it.each([
+        { totalBytes: 10_299_999_999, expected: ['light', 'standard'] },
+        { totalBytes: 2_699_999_999, expected: [] },
+    ])(
+        'hides what $totalBytes bytes of RAM cannot hold even when the GPU budget clears it',
+        ({ totalBytes, expected }) => {
+            const reading = { state: 'known', totalBytes, gpuBudgetBytes: 48_000_000_000 } as const;
+            expect(ids(offeredLocalModels(models, reading))).toEqual(expected);
+        }
+    );
+
+    it.each([
+        { totalBytes: RAM_64_GB, expected: ['light', 'pro', 'standard'] },
         { totalBytes: 10_300_000_000, expected: ['light', 'pro', 'standard'] },
         { totalBytes: 10_299_999_999, expected: ['light', 'standard'] },
-        { totalBytes: 2_700_000_000, expected: ['light'] },
         { totalBytes: 2_699_999_999, expected: [] },
-    ])('offers what $totalBytes bytes clears', ({ totalBytes, expected }) => {
-        expect(ids(offeredLocalModels(models, { state: 'known', totalBytes }))).toEqual(expected);
-    });
-
-    it('offers the large tier only with a known figure that clears it', () => {
-        const withoutFigure = ids(offeredLocalModels(models, { state: 'unavailable' }));
-        const withFigure = ids(offeredLocalModels(models, { state: 'known', totalBytes: 64_000_000_000 }));
-
-        expect(withoutFigure).not.toContain('large');
-        expect(withFigure).toContain('large');
-    });
+    ])(
+        'offers up to Pro and never Large by RAM alone when the GPU budget is unknown ($totalBytes bytes)',
+        ({ totalBytes, expected }) => {
+            const reading = { state: 'known', totalBytes, gpuBudgetBytes: null } as const;
+            expect(ids(offeredLocalModels(models, reading))).toEqual(expected);
+        }
+    );
 
     it.each([{ state: 'unread' } as const, { state: 'unavailable' } as const])(
         'offers every tier up to Pro and hides the larger ones when the reading is $state',

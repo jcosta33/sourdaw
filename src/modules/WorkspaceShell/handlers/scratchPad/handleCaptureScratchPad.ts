@@ -1,3 +1,4 @@
+import { type ScratchPadSectionSnapshot } from '#/modules/Arrangement/events';
 import { markerStore, scratchPadStore } from '#/modules/Arrangement/stores';
 import {
     captureArrangementToScratchPad,
@@ -5,7 +6,7 @@ import {
     isScratchPadCaptureSectionIds,
 } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type ScratchPadSectionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { workspaceStore } from '../../stores/workspaceStore';
 
@@ -26,13 +27,23 @@ function hasValidSectionIds(action: CaptureScratchPadAction): boolean {
 
 // The pad section ids are drawn into the payload before the capture runs, so the
 // dispatched and recorded action names exactly the ids the capture writes and a
-// replayed macro can map them onto the ids its own capture draws. The draw is
+// replayed macro can map them onto the ids its own capture draws. A supplied list
+// shorter than the markers keeps its ids and is extended with fresh ones, since the
+// capture would otherwise write ids the action never names. A longer list is kept
+// whole, which replay relies on when the arrangement lost sections. The draw is
 // counted from the live markers, so it runs at execution, after the snapshot wait.
 function ensureCapturedSectionIds(action: CaptureScratchPadAction): void {
-    if (action.payload?.sectionIds !== undefined) {
+    const supplied: unknown = action.payload?.sectionIds;
+    // A malformed list is left for `validate` and `execute` to refuse, never extended.
+    if (supplied !== undefined && !Array.isArray(supplied)) {
         return;
     }
-    action.payload = { ...action.payload, sectionIds: createScratchPadCaptureSectionIds() };
+    const suppliedIds: readonly string[] = supplied ?? [];
+    const drawn = createScratchPadCaptureSectionIds();
+    if (suppliedIds.length >= drawn.length && supplied !== undefined) {
+        return;
+    }
+    action.payload = { ...action.payload, sectionIds: [...suppliedIds, ...drawn.slice(suppliedIds.length)] };
 }
 
 // The post-capture pad is only knowable after the capture runs. `describe()` runs before

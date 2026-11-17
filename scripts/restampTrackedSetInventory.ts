@@ -24,9 +24,16 @@ function trackedSetDigestLabel(entry: string): string {
     return entry.slice(entry.lastIndexOf(':') + 1);
 }
 
-/** The tracked-set pathspecs the checker hashes, read from its own registry. */
+const CONTENT_PINNED_ENTRY_PREFIX = 'tracked-set-sha256:';
+
+/**
+ * The tracked-set pathspecs whose bytes the inventory pins, read from the checker's own registry.
+ * Label-only boundaries record no content, so edits inside them are never this command's concern.
+ */
 function trackedSetPathspecs(): readonly string[] {
-    return GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ gitPathspecs }) => [...gitPathspecs]);
+    return GRAND_BOULE_RELEASE_REGISTRY.boundaries
+        .filter(({ pinsAdmittedBytes }) => pinsAdmittedBytes === true)
+        .flatMap(({ gitPathspecs }) => [...gitPathspecs]);
 }
 
 /**
@@ -81,7 +88,8 @@ export function assertTrackedSetChangesCommitted(root: string): void {
 
 /**
  * The exact digest entries a restamp would move, or `undefined` when every recorded entry already
- * matches the checker's computation. Only same-label drift is a restamp's to fix; a missing or
+ * matches the checker's computation. Only same-label drift of a content-pinned entry is a
+ * restamp's to fix: a label-only `tracked-set:<label>` entry is never rewritten, and a missing or
  * extra label is a surface shape change the checker names for a person.
  */
 export function trackedSetRestampPlan(
@@ -93,7 +101,7 @@ export function trackedSetRestampPlan(
     for (const recorded of recordedDigests) {
         const label = trackedSetDigestLabel(recorded);
         const expected = expectedByLabel.get(label);
-        if (expected !== undefined && recorded !== expected) {
+        if (expected !== undefined && expected.startsWith(CONTENT_PINNED_ENTRY_PREFIX) && recorded !== expected) {
             digestChanges.push({ label, from: recorded, to: expected });
         }
     }

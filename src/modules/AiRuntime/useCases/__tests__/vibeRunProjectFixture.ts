@@ -121,44 +121,59 @@ const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
     ];
 };
 
-const proposeBrief: ScriptedPlanningTurn = () => [
-    {
-        id: 'brief-proposal',
-        name: 'command.batch.propose',
-        arguments: {
-            commands: [],
-            compiledCallIds: ['brief-compile'],
-            plan: {
-                semantic: { classification: 'simple', uncertainty: [] },
-                objective: 'Record the project intent the request describes.',
-                constraints: [],
-                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                capabilityIds: [],
-                assetIds: [],
-                alternatives: [],
-                validationStrategy: ['Compare the brief revision before writing.'],
-                stoppingConditions: ['Stop if the brief changes before Confirm.'],
-            },
-        },
-    },
-];
-
-/** The provider admits a brief, compiles it with these characters, and proposes it. */
-export function scriptVibeBriefRoute(input: { descriptors: readonly string[] }): void {
-    const compile: ScriptedPlanningTurn = () => [
+const proposeBrief =
+    (protectedTargetIds: readonly string[]): ScriptedPlanningTurn =>
+    () => [
         {
-            id: 'brief-compile',
-            name: 'brief.compile',
+            id: 'brief-proposal',
+            name: 'command.batch.propose',
             arguments: {
-                vision: 'A chosen sound',
-                mixIntent: {
-                    catalogId: getBriefMixIntentCatalog().catalogId,
-                    requestedDescriptors: [...input.descriptors],
+                commands: [],
+                compiledCallIds: ['brief-compile'],
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Record the project intent the request describes.',
+                    constraints: [],
+                    scope: {
+                        targetIds: [],
+                        targetRanges: [],
+                        protectedTargetIds: [...protectedTargetIds],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: [],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Compare the brief revision before writing.'],
+                    stoppingConditions: ['Stop if the brief changes before Confirm.'],
                 },
             },
         },
     ];
-    const turns = [briefIntake, compile, proposeBrief];
+
+/**
+ * The provider admits a brief, compiles it with these characters and track roles, and proposes it,
+ * stating the objects the request protects as the application-owned scope it must echo.
+ */
+export function scriptVibeBriefRoute(input: {
+    descriptors: readonly string[];
+    protectedTargetIds?: readonly string[];
+    /** Roles the compiled brief states for tracks that have none. */
+    trackRoles?: ReadonlyArray<{ trackId: string; role: string }>;
+}): void {
+    const compileArguments: Record<string, unknown> = {
+        vision: 'A chosen sound',
+        mixIntent: {
+            catalogId: getBriefMixIntentCatalog().catalogId,
+            requestedDescriptors: [...input.descriptors],
+        },
+    };
+    if (input.trackRoles !== undefined) {
+        compileArguments.trackRoles = structuredClone(input.trackRoles);
+    }
+    const compile: ScriptedPlanningTurn = () => [
+        { id: 'brief-compile', name: 'brief.compile', arguments: structuredClone(compileArguments) },
+    ];
+    const turns = [briefIntake, compile, proposeBrief(input.protectedTargetIds ?? [])];
     let calls = 0;
     vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
         const turn = turns[calls];

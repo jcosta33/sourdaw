@@ -42,7 +42,11 @@
 //! each of those defects leaves behind, so a change that lands under it has
 //! stopped Shimmer being audible and the number is not the thing to move.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use proof_chamber::ProofChamberInstance;
 

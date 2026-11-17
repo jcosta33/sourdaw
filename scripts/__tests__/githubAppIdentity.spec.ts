@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import {
     chmodSync,
+    copyFileSync,
     existsSync,
     mkdtempSync,
     mkdirSync,
@@ -2073,6 +2074,35 @@ describe('token-bearing gh children start their git outside every repository', (
             expect(observed.toplevel).toBe('');
             expect(observed.marker).toBe('');
         }, 'gh.exe');
+    });
+
+    it.each([
+        ['the gh command', (_f: { root: string }) => 'gh'],
+        ['its absolute trusted path', (f: { root: string }) => join(f.root, 'bin', 'trusted-cli')],
+    ])(
+        'moves a token-bearing gh child out of the repository when the trusted gh path names a file not called gh, reached through %s',
+        (_label, command) => {
+            withGhFixture((f) => {
+                spawnCapture(command(f), ['api', 'repos/jcosta33/sourdaw'], { cwd: f.repository, env: f.tokenEnv });
+
+                const observed = f.observed();
+                expect(observed.token).toBe(sentinel);
+                expect(observed.cwd).not.toBe(f.repository);
+                expect(observed.toplevel).toBe('');
+                expect(observed.marker).toBe('');
+            }, 'trusted-cli');
+        }
+    );
+
+    it('leaves a token-bearing child that is neither gh nor the trusted gh path in the directory its caller names', () => {
+        withGhFixture((f) => {
+            const other = join(f.root, 'bin', 'other-cli');
+            copyFileSync(join(f.root, 'bin', 'trusted-cli'), other);
+            chmodSync(other, 0o755);
+            spawnCapture(other, ['api', 'repos/jcosta33/sourdaw'], { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed().cwd).toBe(realpathSync(f.repository));
+        }, 'trusted-cli');
     });
 
     it('keeps the gh child out of the repository when the temporary directory lies inside it and the caller names its git dir', () => {

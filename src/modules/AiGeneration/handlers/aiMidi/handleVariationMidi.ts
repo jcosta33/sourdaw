@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 import { createMidiNote, setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createMidiGenerationSourceGuard } from './createMidiGenerationSourceGuard';

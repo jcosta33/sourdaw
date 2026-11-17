@@ -25,6 +25,8 @@ import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useC
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { grooveTemplateStore } from '#/modules/MIDI/stores';
+import { createGrooveTemplate } from '#/modules/MIDI/useCases';
 import { defaultPluginScanState, pluginScanStore, type PluginScanState } from '#/modules/PluginHost/stores';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { libraryStore, type LibraryState } from '#/modules/SampleLibrary/stores';
@@ -338,7 +340,22 @@ const DOMAIN_PROBES: DomainProbe[] = [
             registerCapabilityCatalog(['query:diff']);
         },
     },
+    {
+        domain: 'groove',
+        publishedIds: () => (grooveTemplateStore.value?.templates ?? []).map((template) => template.id),
+        changeProducer: () => {
+            createGrooveTemplate(DISCOVERY_PROJECT_GROOVE);
+        },
+    },
 ];
+
+const DISCOVERY_PROJECT_GROOVE = {
+    id: 'groove-discovery-probe',
+    name: 'Discovery Probe Groove',
+    subdivision: '1/16' as const,
+    slots: [{ index: 1, timingOffset: 0.02, dynamicsOffset: -0.1 }],
+    provenance: { type: 'user' as const, sourceId: 'discovery-probe' },
+};
 
 describe('agent domain query conformance', () => {
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
@@ -846,6 +863,39 @@ describe('agent domain query conformance', () => {
 
         expect(filtered.items.map((item) => item.id)).toEqual(['buffer-bass']);
         expect(filtered.page.total).toBe(1);
+    });
+
+    it('names the built-in and project groove templates the pool holds and nothing it invented', () => {
+        createGrooveTemplate(DISCOVERY_PROJECT_GROOVE);
+
+        const receipt = expectReceipt(queryAgentDiscovery({ domain: 'groove', page: { limit: 50 } }));
+        const ids = receipt.items.map((item) => item.id);
+
+        expect(ids).toContain('swing-light');
+        expect(ids).toContain('mpc-60');
+        expect(ids).toContain(DISCOVERY_PROJECT_GROOVE.id);
+        expect(ids.toSorted()).toEqual(
+            (grooveTemplateStore.value?.templates ?? []).map((template) => template.id).toSorted()
+        );
+        expect(receipt.items.find((item) => item.id === DISCOVERY_PROJECT_GROOVE.id)).toMatchObject({
+            name: DISCOVERY_PROJECT_GROOVE.name,
+            availability: 'available',
+            evidence: { source: 'groove-pool', subdivision: '1/16', provenance: 'user' },
+        });
+    });
+
+    it('reports an unloaded groove pool as unavailable rather than empty', () => {
+        const pool = grooveTemplateStore.value;
+        grooveTemplateStore.set(null);
+        try {
+            expect(queryAgentDiscovery({ domain: 'groove' })).toEqual({
+                status: 'unavailable',
+                domain: 'groove',
+                reason: 'groove-pool-unavailable',
+            });
+        } finally {
+            grooveTemplateStore.set(pool);
+        }
     });
 
     it('publishes discovery on its own protocol contract, leaving the semantic query types alone', () => {

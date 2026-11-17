@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type MidiClipNoteSnapshot } from '#/modules/MIDI/events';
 
 import { handleReplayGeneratedMidi } from '../handleReplayGeneratedMidi';
 

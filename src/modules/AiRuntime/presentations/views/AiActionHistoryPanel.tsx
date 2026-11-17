@@ -10,6 +10,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { clearActionHistory, getActionReplayStatus, revertAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
@@ -51,14 +52,22 @@ type HistoryItem = { kind: 'ai'; group: AiActionGroupView } | { kind: 'action'; 
  * User actions show individually with non-linear revert when an inverse exists.
  */
 export const AiActionHistoryPanel = (): ReactElement | null => {
+    // Closed, the panel shows nothing, so it must not follow the history stores a committed
+    // action writes; only the open flag decides whether the list below mounts and subscribes.
+    const panelOpen = useStoreSelector(aiActionHistoryStore, (state) => state?.panelOpen ?? false);
+
+    if (!panelOpen) {
+        return null;
+    }
+
+    return <AiActionHistoryList />;
+};
+
+const AiActionHistoryList = (): ReactElement => {
     const aiState = useStore(aiActionHistoryStore, defaultAiState);
     const historyState = useStore(actionHistoryStore, defaultHistoryState);
     const replay_revision = useStore(actionReplayRevisionStore, 0);
     const [clear_error, setClearError] = useState<string | null>(null);
-
-    if (!aiState.panelOpen) {
-        return null;
-    }
 
     const items: HistoryItem[] = [];
 

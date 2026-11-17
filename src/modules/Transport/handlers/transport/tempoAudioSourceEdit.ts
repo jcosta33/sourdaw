@@ -9,15 +9,15 @@ import {
     type HandlerMaterializationContext,
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+
+import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import {
     isTempoAudioSourcePromotion,
     projectTempoSourceClock,
     type TempoSourceClock,
     type TempoScalarTransition,
     type TempoSourceClockPath,
-} from '#/utils/tempoAudioSourcePromotion';
-
-import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats } from '../../models/TempoMap';
+} from '../../stores/tempoAudioSourcePromotion';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { runWithTempoSourcePreservation } from '../../stores/tempoWriteIntent';
 import { transportStore } from '../../stores/transportStore';

@@ -167,6 +167,13 @@ pub struct ClapWrapper {
     /// thread, which may not allocate or take the I/O lock, and read by the
     /// control path, which is the only thread that may report it.
     process_refused: bool,
+    /// Whether a block passed through untouched because the plugin was not in
+    /// the processing state while the host wanted it there — its start was
+    /// refused. A requested stop is not this. Raised by the audio thread, read
+    /// by the control path, like the process-failure latch above. The block is
+    /// still passed through: only a caller that needs every block processed
+    /// (an offline print) refuses on it.
+    processing_start_refused: bool,
     /// Whether that refusal has already been reported. A plugin that fails every
     /// block would otherwise print once per control visit for the rest of the
     /// session.
@@ -417,17 +424,17 @@ unsafe extern "C" fn empty_events_get(
 
 // ── Plugin → host output events ─────────────────────────────────────────
 
-/// Build the output list the plugin writes its own events into.
+/// Build the output list for a call that hands the plugin no parameter values,
+/// so that every event it emits is its own.
 ///
 /// The list is a two-field struct built on the caller's stack, and its `ctx` is
 /// the queue's address — an `Arc` allocation made at load, whose address never
-/// moves. Nothing here allocates, which is what lets `process_audio_internal`
-/// build one per block on the audio thread.
+/// moves. Nothing here allocates.
 ///
 /// # Safety
 /// The returned list borrows `queue`, and the plugin may only write through it
-/// during the `process`/`flush` call it is handed to. Both callers pass it by
-/// reference into one call and drop it there.
+/// during the `flush` call it is handed to. The caller passes it by reference
+/// into one call and drops it there.
 fn capture_output_events(queue: &PluginParameterEventQueue) -> clap_output_events {
     clap_output_events {
         ctx: queue as *const PluginParameterEventQueue as *mut c_void,
@@ -477,22 +484,55 @@ unsafe extern "C" fn output_events_try_push(
     let event = unsafe { &*event };
     // SAFETY: CLAP's output-list contract is that `event` heads an allocation of
     // `event.size` bytes, which is `capture_header`'s precondition.
-    unsafe { capture_header(queue, event, None) }
+    unsafe { capture_header(queue, event, &[]) }
 }
 
-/// The context a host-initiated write hands its capture list.
+/// The parameter values one `process` block hands the plugin, by raw parts.
 ///
-/// Lives on the caller's stack for the duration of one `flush` call, like the
-/// input event it accompanies. Nothing here is allocated.
+/// Raw because the values live in the wrapper's own `parameter_scratch`, which
+/// `process_audio_internal`'s `&mut self` forbids borrowing alongside it —
+/// the same reason the input list's `EventListCtx` holds raw pointers.
+#[derive(Clone, Copy)]
+struct BlockHostWrites {
+    events: *const clap_event_param_value,
+    count: usize,
+}
+
+impl BlockHostWrites {
+    /// A block that carries no host writes.
+    const NONE: Self = Self {
+        events: ptr::null(),
+        count: 0,
+    };
+
+    /// # Safety
+    /// Unless `count` is zero, `events` must point at `count` initialised
+    /// values that stay unmodified for `'a`.
+    unsafe fn as_slice<'a>(self) -> &'a [clap_event_param_value] {
+        if self.count == 0 {
+            return &[];
+        }
+        // SAFETY: non-empty, so this function's own contract holds for the parts.
+        unsafe { std::slice::from_raw_parts(self.events, self.count) }
+    }
+}
+
+/// The context a call that may carry host writes hands its capture list.
+///
+/// Lives on the caller's stack for the duration of one `flush` or `process`
+/// call, like the input events it accompanies. Nothing here is allocated.
 struct HostWriteCapture<'a> {
     queue: &'a PluginParameterEventQueue,
-    /// The parameter the host just wrote. A `CLAP_EVENT_PARAM_VALUE` the plugin
-    /// emits for it during this same call is the plugin repeating back what it
-    /// was told, not an edit the user made.
-    written_param_id: u32,
+    /// The parameter values the host handed the plugin on this call: the one
+    /// `set_parameter` writes, or a block's automation, or none. A
+    /// `CLAP_EVENT_PARAM_VALUE` the plugin emits for one of these ids during
+    /// this same call is the plugin repeating back what it was told, not an
+    /// edit the user made.
+    written: &'a [clap_event_param_value],
 }
 
-/// Build the output list for a **host-initiated** parameter write.
+/// Build the output list for a call that may hand the plugin **host-written**
+/// parameter values — `set_parameter`'s `flush`, and every `process` block.
 ///
 /// A plugin is free to echo an applied value straight back as an output event —
 /// wrapper-generated plugins routinely do — and the ordinary capture list cannot
@@ -501,18 +541,20 @@ struct HostWriteCapture<'a> {
 /// played back, which is the same echo the VST3 half avoids by writing host
 /// values through a queue the observers never see.
 ///
-/// So the write's own parameter is dropped for the length of that one call.
-/// Every other parameter still passes: a plugin whose macro moves three
+/// So each written parameter's value is dropped for the length of that one
+/// call. Every other parameter still passes: a plugin whose macro moves three
 /// dependent controls is reporting three real changes, and those are the events
-/// this capture exists for.
+/// this capture exists for. The suppression never outlives the call, because a
+/// user edit of the same control on the next block is a real one.
 ///
 /// # Accepted bound
-/// A plugin that clamps, quantises or otherwise *corrects* the value it was
-/// handed reports that correction on this same call, and it is dropped with the
-/// echo. The host's recorded value is then the one it wrote until the plugin's
-/// next edit or a parameter rescan re-reads the contract. Distinguishing a
-/// correction from an echo needs a comparison the CLAP event carries no basis
-/// for — the plugin reports the value, never whether it changed it.
+/// A plugin that clamps, quantises or otherwise *corrects* a value it was
+/// handed — by `set_parameter` or by a block's automation — reports that
+/// correction on this same call, and it is dropped with the echo. The host's
+/// recorded value is then the one it wrote until the plugin's next edit or a
+/// parameter rescan re-reads the contract. Distinguishing a correction from an
+/// echo needs a comparison the CLAP event carries no basis for — the plugin
+/// reports the value, never whether it changed it.
 fn capture_host_write_events(capture: &mut HostWriteCapture) -> clap_output_events {
     clap_output_events {
         ctx: capture as *mut HostWriteCapture as *mut c_void,
@@ -520,11 +562,10 @@ fn capture_host_write_events(capture: &mut HostWriteCapture) -> clap_output_even
     }
 }
 
-/// Take one event the plugin produced while answering a host write.
+/// Take one event the plugin produced during a call that may carry host writes.
 ///
-/// Same real-time contract as [`output_events_try_push`] — this runs on whatever
-/// thread called `set_parameter`, which is the control path today, and is held
-/// to the audio-thread rules anyway so the two lists cannot drift apart.
+/// Same real-time contract as [`output_events_try_push`]: it runs on the audio
+/// thread inside `process`, and on whatever thread called `set_parameter`.
 unsafe extern "C" fn host_write_try_push(
     list: *const clap_output_events,
     event: *const clap_event_header,
@@ -533,27 +574,27 @@ unsafe extern "C" fn host_write_try_push(
         return false;
     }
     // SAFETY: `list` is non-null (checked above) and is the list
-    // `capture_host_write_events` built for the current `flush` call.
+    // `capture_host_write_events` built for the current `flush` or `process` call.
     let capture = unsafe { (*list).ctx } as *const HostWriteCapture;
     if capture.is_null() {
         return true;
     }
 
     // SAFETY: `ctx` is the caller's stack `HostWriteCapture`, which outlives the
-    // single `flush` call the list was handed to.
+    // single `flush` or `process` call the list was handed to.
     let capture = unsafe { &*capture };
     // SAFETY: `event` is non-null (checked above) and CLAP requires it to point at a
     // live event header for the duration of `try_push`.
     let event = unsafe { &*event };
     // SAFETY: CLAP's output-list contract is that `event` heads an allocation of
     // `event.size` bytes, which is `capture_header`'s precondition.
-    unsafe { capture_header(capture.queue, event, Some(capture.written_param_id)) }
+    unsafe { capture_header(capture.queue, event, capture.written) }
 }
 
-/// Decode one header and store it, unless it is the echo of `written_param_id`.
+/// Decode one header and store it, unless it echoes one of the `written` values.
 ///
 /// Shared by both capture lists so the two can never decode differently: the
-/// only thing that separates them is which parameter, if any, is suppressed.
+/// only thing that separates them is which parameters, if any, are suppressed.
 ///
 /// # Safety
 /// `header` must point at a live `clap_event_header` whose `size` describes the
@@ -561,7 +602,7 @@ unsafe extern "C" fn host_write_try_push(
 unsafe fn capture_header(
     queue: &PluginParameterEventQueue,
     header: &clap_event_header,
-    written_param_id: Option<u32>,
+    written: &[clap_event_param_value],
 ) -> bool {
     if header.space_id != CLAP_CORE_EVENT_SPACE_ID {
         return true;
@@ -574,7 +615,7 @@ unsafe fn capture_header(
 
     // Absorbed rather than refused: the plugin did nothing wrong, and telling it
     // the push failed would have it re-send an event the host will drop again.
-    if is_echo_of_host_write(&captured, written_param_id) {
+    if is_echo_of_host_write(&captured, written) {
         return true;
     }
 
@@ -586,9 +627,12 @@ unsafe fn capture_header(
 /// Only a value event can be an echo. A gesture boundary is the plugin
 /// reporting that a user took hold of the control, which a host write never
 /// produces and which must reach the host even for the written parameter.
-fn is_echo_of_host_write(event: &PluginParameterEvent, written_param_id: Option<u32>) -> bool {
+///
+/// A linear scan on the audio thread: `written` is at most
+/// `MAX_PARAMETER_EVENTS` long, and nothing here allocates.
+fn is_echo_of_host_write(event: &PluginParameterEvent, written: &[clap_event_param_value]) -> bool {
     matches!(event.kind, PluginParameterEventKind::Value)
-        && written_param_id == Some(event.param_id)
+        && written.iter().any(|value| value.param_id == event.param_id)
 }
 
 /// Read one core-space header as an event this host models, or `None`.
@@ -1051,6 +1095,7 @@ impl ClapWrapper {
             steady_time: 0,
             tail_mode_reported: false,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             audio,
             is_instrument,
@@ -1098,6 +1143,7 @@ impl ClapWrapper {
             steady_time: 0,
             tail_mode_reported: false,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             audio: AudioBusLayout::portless(),
             is_instrument: false,
@@ -2109,7 +2155,13 @@ impl ClapWrapper {
             || self.plugin.is_null()
             || (midi_events.is_empty() && parameter_updates.is_empty())
         {
-            self.process_audio_internal(inputs, outputs, num_samples, &EMPTY_INPUT_EVENTS);
+            self.process_audio_internal(
+                inputs,
+                outputs,
+                num_samples,
+                &EMPTY_INPUT_EVENTS,
+                BlockHostWrites::NONE,
+            );
             return;
         }
 
@@ -2208,7 +2260,11 @@ impl ClapWrapper {
             get: Some(event_list_get),
         };
 
-        self.process_audio_internal(inputs, outputs, num_samples, &input_events);
+        let host_writes = BlockHostWrites {
+            events: parameter_events_ptr,
+            count: parameter_events_count as usize,
+        };
+        self.process_audio_internal(inputs, outputs, num_samples, &input_events, host_writes);
     }
 
     /// The processing gate shared with this plugin's runtime owner. Clone it to
@@ -2311,6 +2367,9 @@ impl ClapWrapper {
 
     /// Internal process method that accepts a custom input events list.
     ///
+    /// `host_writes` names the parameter values `in_events` carries, so their
+    /// echoes are not captured as plugin edits.
+    ///
     /// RT-safe: uses preallocated `input_scratch`/`output_scratch`. Stack-allocates pointer
     /// arrays. No heap allocation on the hot path.
     fn process_audio_internal(
@@ -2319,6 +2378,7 @@ impl ClapWrapper {
         outputs: &mut [&mut [f32]],
         num_samples: usize,
         in_events: &clap_input_events,
+        host_writes: BlockHostWrites,
     ) {
         if !self.activated || self.plugin.is_null() {
             copy_inputs_to_outputs(inputs, outputs, num_samples);
@@ -2334,6 +2394,9 @@ impl ClapWrapper {
         if !self.processing.is_processing() {
             // Either the plugin refused to start, or a stop has been requested
             // and performed. Either way it must not be handed a block.
+            if self.processing.wants_processing() {
+                self.processing_start_refused = true;
+            }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
         }
@@ -2354,7 +2417,14 @@ impl ClapWrapper {
                 } else {
                     ptr::null()
                 };
-                let out_events = capture_output_events(&self.parameter_events);
+                // SAFETY: `host_writes` describes `parameter_scratch` or nothing, and
+                // nothing touches `parameter_scratch` while this block runs.
+                let written = unsafe { host_writes.as_slice() };
+                let mut capture = HostWriteCapture {
+                    queue: &self.parameter_events,
+                    written,
+                };
+                let out_events = capture_host_write_events(&mut capture);
                 let process_data = clap_process {
                     steady_time: self.steady_time,
                     frames_count: n_samp as u32,
@@ -2417,7 +2487,14 @@ impl ClapWrapper {
             ptr::null()
         };
 
-        let out_events = capture_output_events(&self.parameter_events);
+        // SAFETY: `host_writes` describes `parameter_scratch` or nothing, and
+        // nothing touches `parameter_scratch` while this block runs.
+        let written = unsafe { host_writes.as_slice() };
+        let mut capture = HostWriteCapture {
+            queue: &self.parameter_events,
+            written,
+        };
+        let out_events = capture_host_write_events(&mut capture);
         let process_data = clap_process {
             steady_time: self.steady_time,
             frames_count: n_samp as u32,
@@ -3078,7 +3155,13 @@ impl ClapWrapper {
 
 impl AudioPlugin for ClapWrapper {
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        self.process_audio_internal(inputs, outputs, num_samples, &EMPTY_INPUT_EVENTS);
+        self.process_audio_internal(
+            inputs,
+            outputs,
+            num_samples,
+            &EMPTY_INPUT_EVENTS,
+            BlockHostWrites::NONE,
+        );
     }
 
     fn set_parameter(&mut self, param_id: u32, value: f64) {
@@ -3122,7 +3205,7 @@ impl AudioPlugin for ClapWrapper {
             // parameter's own value is not — see `capture_host_write_events`.
             let mut capture = HostWriteCapture {
                 queue: &self.parameter_events,
-                written_param_id: param_id,
+                written: std::slice::from_ref(&ctx.event),
             };
             let out_events = capture_host_write_events(&mut capture);
             // SAFETY: the extension's `flush`, matched as `Some`, on the live non-null
@@ -3458,6 +3541,14 @@ impl HostedPluginRuntime for ClapWrapper {
 
     fn report_plugin_observations(&mut self) {
         ClapWrapper::report_plugin_observations(self)
+    }
+
+    fn has_failed_a_process_call(&self) -> bool {
+        self.process_refused
+    }
+
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        self.processing_start_refused
     }
 }
 
@@ -3910,6 +4001,7 @@ mod tests {
             steady_time: 0,
             tail_mode_reported: false,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             audio,
             // Derived from the stub's own descriptor, the way the loader
@@ -7076,9 +7168,10 @@ mod tests {
     #[test]
     fn the_host_write_list_refuses_a_null_event_or_list_rather_than_dereferencing_it() {
         let queue = PluginParameterEventQueue::default();
+        let written = [param_value_event(1, 0.0)];
         let mut capture = HostWriteCapture {
             queue: &queue,
-            written_param_id: 1,
+            written: &written,
         };
         let list = capture_host_write_events(&mut capture);
         let value = param_value_event(2, 0.1);
@@ -7257,6 +7350,148 @@ mod tests {
             captured_events(&wrapper),
             vec![PluginParameterEvent::value(8, 0.90)]
         );
+    }
+
+    /// A stub `process` that behaves like a wrapper-generated plugin: every
+    /// parameter value it is handed as an input event comes straight back as an
+    /// output event for the same id, followed by whatever the test staged.
+    unsafe extern "C" fn stub_process_echoing_inputs(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        // SAFETY: the host hands a live process struct for the length of this call.
+        let in_events = unsafe { (*process).in_events };
+        // SAFETY: as above — the live process struct.
+        let out_events = unsafe { (*process).out_events };
+        // SAFETY: the host's live input list for this `process` call.
+        let size = unsafe { (*in_events).size };
+        // SAFETY: as above — the live input list.
+        let get = unsafe { (*in_events).get };
+        // SAFETY: the host's live output list for this `process` call.
+        let try_push = unsafe { (*out_events).try_push };
+        let (Some(size), Some(get), Some(try_push)) = (size, get, try_push) else {
+            return CLAP_PROCESS_ERROR;
+        };
+        // SAFETY: the list's own `size`, on the live list.
+        let count = unsafe { size(in_events) };
+        for index in 0..count {
+            // SAFETY: the list's own `get`, on the live list, with `index < size`.
+            let header = unsafe { get(in_events, index) };
+            // SAFETY: a non-null header the host's list returned is live for the call.
+            if header.is_null() || unsafe { (*header).type_ } != CLAP_EVENT_PARAM_VALUE {
+                continue;
+            }
+            // SAFETY: a PARAM_VALUE header heads a `clap_event_param_value`.
+            let input = unsafe { &*(header as *const clap_event_param_value) };
+            let echo = param_value_event(input.param_id, input.value);
+            // SAFETY: the list's own `try_push`, on the live list, with a header
+            // heading a correctly sized stack event.
+            unsafe { try_push(out_events, &echo.header) };
+        }
+        // SAFETY: the host's live output list for this `process` call.
+        unsafe { emit_staged_events(out_events) };
+        CLAP_PROCESS_CONTINUE
+    }
+
+    fn echoing_plugin_ptr() -> *const clap_plugin {
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_echoing_inputs);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    /// Drive one block carrying `updates` through the entry point the engine
+    /// uses for automation.
+    fn process_one_block_with_updates(wrapper: &mut ClapWrapper, updates: &[HostParameterUpdate]) {
+        let left = [0.0f32; 8];
+        let right = [0.0f32; 8];
+        let mut out_l = [0.0f32; 8];
+        let mut out_r = [0.0f32; 8];
+        let inputs: [&[f32]; 2] = [&left, &right];
+        let mut outputs: [&mut [f32]; 2] = [&mut out_l, &mut out_r];
+        wrapper.process_with_parameter_updates(&inputs, &mut outputs, 8, updates);
+    }
+
+    /// Automation reaches a CLAP plugin as input events on `process`, and the
+    /// plugin's echo of it is no more a user edit than the one `set_parameter`
+    /// drops. Captured, every automated block marks the project dirty. Both
+    /// `process` branches build their own output list, so both are driven.
+    #[test]
+    fn the_value_a_plugin_echoes_back_from_automation_on_process_is_not_reported_as_an_edit() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        for layout in [AudioBusLayout::portless(), stereo_layout()] {
+            stage_emitted_events(vec![PluginParameterEvent::value(9, 0.10)]);
+            let mut wrapper = stub_wrapper_over(layout, echoing_plugin_ptr());
+
+            process_one_block_with_updates(
+                &mut wrapper,
+                &[HostParameterUpdate {
+                    param_id: 8,
+                    value: 0.44,
+                }],
+            );
+
+            assert_eq!(
+                captured_events(&wrapper),
+                vec![PluginParameterEvent::value(9, 0.10)],
+                "the automated parameter's echo is dropped and an unrelated edit still passes"
+            );
+        }
+    }
+
+    /// A block that carries no automation suppresses nothing: the same value
+    /// for the same id is then the user's own edit in the plugin's editor.
+    #[test]
+    fn a_value_emitted_on_a_block_without_host_writes_still_reaches_the_host() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        for layout in [AudioBusLayout::portless(), stereo_layout()] {
+            stage_emitted_events(vec![PluginParameterEvent::value(8, 0.44)]);
+            let mut wrapper = stub_wrapper_over(layout, echoing_plugin_ptr());
+
+            process_one_block(&mut wrapper);
+
+            assert_eq!(
+                captured_events(&wrapper),
+                vec![PluginParameterEvent::value(8, 0.44)]
+            );
+        }
+    }
+
+    /// Only a value can be an echo on `process` too. A gesture on an automated
+    /// parameter is a user taking hold of it — the start of an automation
+    /// override — and swallowing it would leave the boundary unpaired.
+    #[test]
+    fn a_gesture_on_an_automated_parameter_during_process_still_reaches_the_host() {
+        let _guard = EMIT_TEST_LOCK.lock().unwrap();
+        for layout in [AudioBusLayout::portless(), stereo_layout()] {
+            stage_emitted_events(vec![
+                PluginParameterEvent::gesture_begin(8),
+                PluginParameterEvent::gesture_end(8),
+            ]);
+            let mut wrapper = stub_wrapper_over(layout, echoing_plugin_ptr());
+
+            process_one_block_with_updates(
+                &mut wrapper,
+                &[HostParameterUpdate {
+                    param_id: 8,
+                    value: 0.44,
+                }],
+            );
+
+            assert_eq!(
+                captured_events(&wrapper),
+                vec![
+                    PluginParameterEvent::gesture_begin(8),
+                    PluginParameterEvent::gesture_end(8),
+                ]
+            );
+        }
     }
 
     /// The rescan ask has to survive from the plugin's callback to the control

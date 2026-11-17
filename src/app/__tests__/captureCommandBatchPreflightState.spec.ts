@@ -77,6 +77,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
     actionHistoryStore: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
     captureProjectIdentity: mocks.captureProjectIdentity,
+    captureProjectRootIdentity: vi.fn(() => 'root-identity-a'),
     setSemanticContext: vi.fn(),
     clearSemanticContext: vi.fn(),
 }));

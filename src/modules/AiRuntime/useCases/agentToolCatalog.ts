@@ -134,7 +134,7 @@ function getProjectDiscoverySchema(): ToolSchema {
     const domains = getProjectProtocolContracts().discovery.operations.map((operation) => operation.name);
     return tool(
         PROJECT_DISCOVERY_TOOL_NAME,
-        'Discover the devices, presets, samples, assets and capabilities their owners publish, as one bounded revision-bearing page.',
+        'Discover the devices, presets, samples, assets, capabilities and groove templates their owners publish, as one bounded revision-bearing page.',
         {
             domain: { type: 'string', enum: domains },
             filters: {
@@ -208,7 +208,7 @@ function getRecipeDiscoverySchema(): ToolSchema {
     const roles = getMixRecipeCatalog().roles;
     return tool(
         RECIPE_DISCOVERY_TOOL_NAME,
-        "Find mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range. A candidate with an origin is a factory chain preset: its descriptor and roles are the preset author's tags, and each range is the single value the preset stores.",
+        "Find mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range. A candidate with an origin is a factory chain preset: its descriptor (null when its tags name none) and roles are the preset author's tags, and each range is the single value the preset stores. With no terms it lists factory presets.",
         {
             descriptors: {
                 type: 'array',
@@ -216,11 +216,18 @@ function getRecipeDiscoverySchema(): ToolSchema {
                 maxItems: 4,
                 items: { type: 'string', minLength: 1, maxLength: 48 },
             },
+            presetTerms: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 4,
+                items: { type: 'string', minLength: 1, maxLength: 48 },
+                description: 'Factory preset name or tag words.',
+            },
             targetId: { type: 'string', minLength: 1, maxLength: 256 },
             role: { type: 'string', enum: [...roles] },
             limit: { type: 'integer', minimum: 1, maximum: 8 },
         },
-        ['descriptors']
+        []
     );
 }
 

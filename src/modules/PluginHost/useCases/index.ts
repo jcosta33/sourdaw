@@ -14,7 +14,11 @@ export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
 export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
+export { unloadPluginCarryingLiveState } from './pluginLifecycle/unloadPluginCarryingLiveState';
+export { unloadPluginsBeforeProjectSwitch } from './pluginLifecycle/unloadPluginsBeforeProjectSwitch';
+export { settleProjectSwitchPluginTeardown } from './pluginLifecycle/settleProjectSwitchPluginTeardown';
 export { forgetRetiredPluginInstances } from './pluginLifecycle/forgetRetiredPluginInstances';
+export { readExternalPluginStatesBeforeEngineRetire } from './pluginLifecycle/readExternalPluginStatesBeforeEngineRetire';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { closePluginGui } from './pluginLifecycle/closePluginGui';
 export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';

@@ -6,9 +6,7 @@ import type { ProjectInspectionModule } from './directProjectSetupContract';
 type PreviewPcm = { sampleRate: number; channels: Float32Array[] };
 
 declare global {
-    interface Window {
-        presetPreviewStarts: PreviewPcm[];
-    }
+    var presetPreviewStarts: PreviewPcm[];
 }
 
 test.describe('Preset sound audition', () => {
@@ -94,7 +92,7 @@ test.describe('Preset sound audition', () => {
                 })
                 .toBe(index + 1);
             const pcm = await page.evaluate((startIndex) => {
-                const start = window.presetPreviewStarts[startIndex];
+                const start = window.presetPreviewStarts.at(startIndex);
                 if (!start) {
                     throw new Error('No live preset buffer started');
                 }
@@ -157,7 +155,10 @@ test.describe('Preset sound audition', () => {
             expect(await inspect()).toEqual(baseline);
         }
         console.log('Preset PCM measurements:', JSON.stringify(measurements));
-        const [acid, pad, plate, eq] = measurements;
+        const acid = measurements.at(0);
+        const pad = measurements.at(1);
+        const plate = measurements.at(2);
+        const eq = measurements.at(3);
         if (!acid || !pad || !plate || !eq) {
             throw new Error('All four real catalog previews are required');
         }

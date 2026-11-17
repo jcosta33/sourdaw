@@ -36,6 +36,12 @@ const TRAILING_PUNCTUATION = /[^\p{L}\p{M}\p{N}]+$/u;
  */
 const NAME_WORD_SPACE = /^[\p{Zs}\t_-]$/u;
 
+/**
+ * How much of the text past a joint is read for a sibling name starting there: the longest sibling's length plus
+ * room for the punctuation a joiner may run to between its words, so the read never scans to the end of the text.
+ */
+const FAR_SIDE_JOINER_SLACK = 256;
+
 /** A run of the text between two words of a name, which the reading then accepts or refuses. */
 const ANY_JOINER = '([^\\p{L}\\p{N}]+)';
 
@@ -277,10 +283,16 @@ export function findAgentReferenceNameSpans(
     const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
     const needle = words.map((word, index) => (index === 0 ? `(${word})` : `${ANY_JOINER}(${word})`)).join('');
     const pattern = new RegExp(`${WORD_BOUNDARY_BEFORE}${needle}${WORD_BOUNDARY_AFTER}`, 'gu');
+    const firstWordForms = tokens.length > 1 ? tokens.slice(0, 1) : finalForms;
+    const foldedForPresence = foldCharacters(text);
+    if (!firstWordForms.some((form) => foldedForPresence.includes(form))) {
+        return [];
+    }
     const { transformed: folded, offsets } = transformWithOffsets(text, foldCharacters);
     const toTextOffset = (foldedOffset: number): number => offsets[foldedOffset] ?? text.length;
     const nameSeparators = getNameSeparators(name);
     const otherNames = siblingNames.filter((sibling) => normalizeName(sibling) !== tokens.join(' '));
+    const farSideLength = Math.max(0, ...otherNames.map((sibling) => sibling.length)) + FAR_SIDE_JOINER_SLACK;
     const continuesName = (match: RegExpExecArray): boolean => {
         const start = toTextOffset(match.index);
         return getNameJoints(match, nameSeparators).every((joint) => {
@@ -288,7 +300,8 @@ export function findAgentReferenceNameSpans(
                 return true;
             }
             const nearSide = text.slice(start, toTextOffset(joint.joinerStart));
-            const farSide = text.slice(toTextOffset(joint.restStart));
+            const farSideStart = toTextOffset(joint.restStart);
+            const farSide = text.slice(farSideStart, farSideStart + farSideLength);
             return !(isAnyName(nearSide, otherNames, forms) && startsWithAnyName(farSide, otherNames, forms));
         });
     };

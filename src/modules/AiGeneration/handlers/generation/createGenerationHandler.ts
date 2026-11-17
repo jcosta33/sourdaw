@@ -1,6 +1,7 @@
+import { type GeneratedMidiStateGuard } from '#/modules/Arrangement/events';
 import { addTrack, getTrackStoreState, selectClipWithFocus } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type GeneratedMidiStateGuard, type HandlerDescribeResult } from '#/utils/handlerContract';
+import { type AppAction, type HandlerDescribeResult } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 

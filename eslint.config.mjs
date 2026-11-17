@@ -2,15 +2,14 @@
 /// <reference path="./scripts/types/eslint-plugin-promise.d.ts" />
 // @ts-check
 // Oxlint executes supported public JS plugins in .oxlint-plugins.json.
-// These rules retain ESLint's parser services, resolver functions or core semantics.
+// These rules retain ESLint's parser services or core semantics.
 import { readFileSync } from 'node:fs';
 
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
 import eslintPluginQuery from '@tanstack/eslint-plugin-query';
-import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
-import eslintPluginImport, { createNodeResolver } from 'eslint-plugin-import-x';
+import eslintPluginImport from 'eslint-plugin-import-x';
 import eslintPluginJsxA11yX from 'eslint-plugin-jsx-a11y-x';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import eslintPluginPromise from 'eslint-plugin-promise';
@@ -18,7 +17,6 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
 import sourdawPlugin from './scripts/lint/sourdaw.mjs';
 
 const jsxA11yPlugin = eslintPluginJsxA11yX.configs.recommended.plugins['jsx-a11y-x'];
@@ -105,15 +103,6 @@ function movedFixConfig() {
     return configs;
 }
 
-/** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
-const sizeBaselineConfig = [];
-if (sizeBaselineFiles.length > 0) {
-    sizeBaselineConfig.push({
-        files: sizeBaselineFiles,
-        rules: { 'max-lines': 'warn', 'max-lines-per-function': 'warn', 'max-depth': 'warn', complexity: 'warn' },
-    });
-}
-
 export default tseslint.config(
     eslintPluginComments.recommended,
     // Counted bulk suppressions are an ESLint CLI contract. These promoted
@@ -167,6 +156,7 @@ export default tseslint.config(
             '@tanstack/query': eslintPluginQuery,
             '@typescript-eslint': tseslint.plugin,
             'import-x': eslintPluginImport,
+            'import-x-js': eslintPluginImport,
             'promise-js': eslintPluginPromise,
             promise: eslintPluginPromise,
             'jsx-a11y-x-js': jsxA11yPlugin,
@@ -191,7 +181,6 @@ export default tseslint.config(
         settings: {
             ...eslintPluginReact.configs['recommended-type-checked'].settings,
             react: { version: 'detect' },
-            'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()],
         },
     },
     {
@@ -205,7 +194,10 @@ export default tseslint.config(
         files: ['server/**/*.ts'],
         languageOptions: {
             globals: globals.node,
-            parserOptions: { project: './server/tsconfig.json', tsconfigRootDir: import.meta.dirname },
+            parserOptions: {
+                project: ['./server/tsconfig.json', './server/__tests__/tsconfig.json'],
+                tsconfigRootDir: import.meta.dirname,
+            },
         },
     },
     {
@@ -215,7 +207,6 @@ export default tseslint.config(
     },
     {
         rules: {
-            '@tanstack/query/no-rest-destructuring': 'warn',
             '@tanstack/query/no-void-query-fn': 'error',
         },
     },
@@ -229,37 +220,10 @@ export default tseslint.config(
         rules: {
             'consistent-return': 'error',
             'no-invalid-this': 'error',
-            'no-octal': 'error',
-            'preserve-caught-error': 'error',
-            'no-useless-computed-key': 'error',
             'no-void': [
                 'error',
                 {
                     allowAsStatement: true,
-                },
-            ],
-            'import-x/order': [
-                'error',
-                {
-                    groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],
-                    pathGroups: [
-                        {
-                            pattern: 'react',
-                            group: 'external',
-                            position: 'before',
-                        },
-                        {
-                            pattern: 'src/**',
-                            group: 'internal',
-                            position: 'before',
-                        },
-                    ],
-                    pathGroupsExcludedImportTypes: ['react'],
-                    'newlines-between': 'always',
-                    alphabetize: {
-                        order: 'asc',
-                        caseInsensitive: true,
-                    },
                 },
             ],
         },
@@ -342,31 +306,6 @@ export default tseslint.config(
         },
     },
     {
-        files: ['**/*.{ts,tsx,mts,cts}'],
-        rules: {
-            'max-lines': [
-                'error',
-                {
-                    max: 600,
-                    skipBlankLines: true,
-                    skipComments: true,
-                },
-            ],
-            'max-lines-per-function': [
-                'error',
-                {
-                    max: 100,
-                    skipBlankLines: true,
-                    skipComments: true,
-                    IIFEs: true,
-                },
-            ],
-            'max-depth': ['error', 4],
-            complexity: ['error', 20],
-        },
-    },
-    ...sizeBaselineConfig,
-    {
         files: ['**/*.{tsx,jsx}'],
         rules: {
             '@eslint-react/no-leaked-conditional-rendering': 'error',
@@ -385,6 +324,8 @@ export default tseslint.config(
         files: ['**/*.{ts,mts,cts}'],
         ignores: [
             '**/*.spec.ts',
+            // Browser end-to-end helpers seed and read page storage the way a spec does.
+            'tests/e2e/**/*.ts',
             'src/infra/store/storage/createLocalStorage.ts',
             'src/infra/store/storage/createPlainJsonLocalStorage.ts',
             'src/modules/Command/stores/undoSessionMirror.ts',
@@ -462,22 +403,9 @@ export default tseslint.config(
         rules: {
             'id-length': 'off',
             '@typescript-eslint/naming-convention': 'off',
-            'max-lines': 'off',
-            'max-lines-per-function': 'off',
-            'max-depth': 'off',
-            complexity: 'off',
         },
     },
     ...movedFixConfig(),
-    {
-        files: ['tests/e2e/**/*.ts'],
-        rules: {
-            'max-lines': 'off',
-            'max-lines-per-function': 'off',
-            'max-depth': 'off',
-            complexity: 'off',
-        },
-    },
     {
         files: ['scripts/**/*.{js,mjs,cjs}', 'crates/daw-dsp/benches/wasm/**/*.{js,mjs,d.mts}'],
         extends: [tseslint.configs.disableTypeChecked, eslintPluginReact.configs['disable-type-checked']],

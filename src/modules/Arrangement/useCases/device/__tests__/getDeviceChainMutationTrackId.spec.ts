@@ -67,6 +67,50 @@ describe('getDeviceChainMutationTrackId', () => {
         );
     });
 
+    it('reads the payload track of a restored, reordered or preset-loaded device chain', () => {
+        const deviceSnapshot = { id: 'device-1', name: 'EQ', type: 'eq', bypassed: false, parameterValues: {} };
+        const expectedBefore = { id: 'track-9', kind: 'midi' as const, devices: [] };
+        expect(
+            getDeviceChainMutationTrackId(
+                { type: 'restoreDevice', payload: { trackId: 'track-9', deviceSnapshot, deviceIndex: 0 } },
+                track
+            )
+        ).toBe('track-9');
+        expect(
+            getDeviceChainMutationTrackId(
+                {
+                    type: 'reorderDevices',
+                    payload: { trackId: 'track-9', deviceId: 'device-1', targetIndex: 0, expectedBefore },
+                },
+                track
+            )
+        ).toBe('track-9');
+        expect(
+            getDeviceChainMutationTrackId(
+                {
+                    type: 'loadPreset',
+                    payload: {
+                        presetId: 'preset-1',
+                        trackId: 'track-9',
+                        expectedBefore,
+                        expectedFrozen: false,
+                        devices: [],
+                    },
+                },
+                track
+            )
+        ).toBe('track-9');
+        expect(
+            getDeviceChainMutationTrackId(
+                {
+                    type: 'restorePresetDeviceChain',
+                    payload: { trackId: 'track-9', expectedBefore, expectedFrozen: false, replacementDevices: [] },
+                },
+                track
+            )
+        ).toBe('track-9');
+    });
+
     it('names no track for an action outside the device chain', () => {
         expect(getDeviceChainMutationTrackId({ type: 'selectTrack', payload: { trackId: 'track-1' } }, track)).toBe(
             undefined
