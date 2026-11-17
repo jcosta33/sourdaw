@@ -9,6 +9,7 @@ export type GetDeviceChainTailSecondsInput = {
         parameterValues: Record<string, number>;
         deviceState?: unknown;
         bypassed: boolean;
+        externalInstanceId?: string;
     }>;
     tailForDeviceType: (deviceType: string) => TailDeclarationLike | undefined;
     automationLanes?: ReadonlyArray<{ parameterId: string; enabled?: boolean }>;
