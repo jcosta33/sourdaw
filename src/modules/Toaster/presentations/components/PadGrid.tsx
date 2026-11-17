@@ -46,6 +46,7 @@ export const PadGrid = ({
     const [flashingPads, setFlashingPads] = useState<Set<number>>(new Set());
     const flashTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
     const pressedPadRef = useRef<number | null>(null);
+    const pressedKeyRef = useRef<{ index: number; key: string } | null>(null);
     const handledActivationRef = useRef(false);
 
     function triggerFlash(index: number): void {
@@ -93,8 +94,15 @@ export const PadGrid = ({
         };
     }, []);
 
+    function releaseKey(index: number): void {
+        if (pressedKeyRef.current?.index === index) {
+            pressedKeyRef.current = null;
+            onReleasePad?.(index);
+        }
+    }
+
     return (
-        <Grid cols={4} gap={1.5}>
+        <Grid cols={4} gap={1.5} className="@container">
             {pads.slice(0, TOASTER_PAD_COUNT).map((pad, index) => {
                 const targetPad = pads[selectedIndex] ?? pads[0];
                 const activeColor = sixteenLevelsTarget ? (targetPad?.color ?? pad.color) : pad.color;
@@ -114,7 +122,7 @@ export const PadGrid = ({
                         key={pad.id}
                         type="button"
                         data-testid={`toaster-pad-${index}`}
-                        className="relative aspect-square min-w-0 rounded-[16px] border transition-all select-none"
+                        className="relative min-h-[clamp(64px,18cqw,96px)] min-w-0 items-stretch rounded-[16px] border whitespace-normal transition-all select-none"
                         aria-label={ariaLabel}
                         title={ariaLabel}
                         aria-pressed={sixteenLevelsTarget ? undefined : isSelected}
@@ -173,38 +181,42 @@ export const PadGrid = ({
                                 if (event.repeat) {
                                     return;
                                 }
+                                pressedKeyRef.current = { index, key: event.key };
                                 handledActivationRef.current = true;
                                 onTriggerPad(index);
                                 triggerFlash(index);
                             }
                         }}
                         onKeyUp={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                                onReleasePad?.(index);
+                            if (pressedKeyRef.current?.key === event.key) {
+                                releaseKey(index);
+                            }
+                        }}
+                        onBlur={() => {
+                            if (pressedKeyRef.current?.index === index) {
+                                handledActivationRef.current = false;
+                                releaseKey(index);
                             }
                         }}
                     >
                         <div className="absolute inset-[1px] rounded-[14px] bg-black/30" />
-                        <Stack
-                            justify="between"
-                            className="relative z-10 h-full w-full min-w-0 overflow-hidden px-2 py-2"
-                        >
+                        <Stack justify="between" className="relative z-10 min-w-0 flex-1 px-2 py-2 text-left">
                             <Row align="start" justify="between" gap={1}>
                                 {sixteenLevelsTarget && levelText ? (
                                     <Stack gap={0.5} className="min-w-0 flex-1">
                                         <span
-                                            className="min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight tracking-[0.02em]"
+                                            className="min-w-0 flex-1 wrap-anywhere text-[11px] font-semibold leading-tight"
                                             style={{ color: isFlashing ? '#fff' : `${activeColor}ee` }}
                                         >
                                             {levelText}
                                         </span>
-                                        <span className="truncate text-[8px] leading-tight text-white/50">
+                                        <span className="wrap-anywhere text-caption leading-tight text-white/60">
                                             {effectivePadName}
                                         </span>
                                     </Stack>
                                 ) : (
                                     <span
-                                        className="min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight tracking-[0.02em]"
+                                        className="min-w-0 flex-1 wrap-anywhere text-[11px] font-semibold leading-tight"
                                         style={{ color: isFlashing ? '#fff' : `${activeColor}ee` }}
                                     >
                                         {pad.name}
@@ -212,7 +224,7 @@ export const PadGrid = ({
                                 )}
                                 {!sixteenLevelsTarget && pad.chokeGroup > 0 ? (
                                     <span
-                                        className="shrink-0 rounded-full border px-1 py-0.5 text-[7px] font-medium text-white/55"
+                                        className="shrink-0 rounded-full border px-1 py-0.5 text-[8px] font-medium text-white/60"
                                         style={{ borderColor: `${activeColor}55` }}
                                     >
                                         C{pad.chokeGroup}
@@ -221,10 +233,15 @@ export const PadGrid = ({
                             </Row>
 
                             <Stack gap={1} className="min-w-0">
+                                {!sixteenLevelsTarget && pad.muted ? (
+                                    <span className="self-start rounded bg-black/75 px-1 text-[8px] font-semibold uppercase text-white/80">
+                                        Mute
+                                    </span>
+                                ) : null}
                                 <Row
                                     justify="between"
                                     gap={1}
-                                    className="text-[7px] uppercase tracking-[0.18em] text-white/45"
+                                    className="text-[8px] uppercase tracking-wide text-white/55"
                                 >
                                     <span
                                         className="min-w-0 flex-1 truncate"
@@ -262,14 +279,6 @@ export const PadGrid = ({
                                 </div>
                             </Stack>
                         </Stack>
-
-                        {!sixteenLevelsTarget && pad.muted ? (
-                            <Row justify="center" className="absolute inset-0 z-20 rounded-[16px] bg-black/56">
-                                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/55">
-                                    Mute
-                                </span>
-                            </Row>
-                        ) : null}
                     </Button>
                 );
             })}

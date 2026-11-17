@@ -392,8 +392,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     return (
-        <div className="toaster-faceplate flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-[26px] p-3">
-            <Row justify="end" gap={2}>
+        <div className="toaster-faceplate @container flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-[26px] p-3">
+            <Row justify="end" gap={2} shrink={false}>
                 <label htmlFor={`toaster-view-${deviceId}`} className="text-[10px] text-muted-foreground">
                     View
                 </label>
@@ -413,18 +413,18 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                 </DawCompactSelect>
             </Row>
             <div
-                className={
+                className={cn(
+                    'grid min-h-0 flex-1 content-start items-start gap-3 overflow-y-auto overscroll-contain px-0.5 pb-1',
                     viewLevel === 'full'
-                        ? 'grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3'
-                        : 'grid min-h-0 flex-1 grid-cols-[minmax(10rem,0.8fr)_minmax(0,1fr)_17rem] grid-rows-[minmax(0,1fr)] gap-3'
-                }
+                        ? '@[42rem]:grid-cols-[minmax(19rem,1fr)_minmax(0,1.25fr)] @[66rem]:grid-cols-[minmax(19rem,1fr)_minmax(0,1.25fr)_minmax(15rem,0.7fr)]'
+                        : '@[40rem]:grid-cols-[minmax(0,0.75fr)_minmax(19rem,1fr)] @[60rem]:grid-cols-[minmax(0,0.68fr)_minmax(19rem,1.3fr)_minmax(15rem,0.8fr)]'
+                )}
+                role="region"
+                aria-label="Toaster controls"
+                tabIndex={0}
             >
-                <Stack as="aside" gap={3} className={viewLevel === 'full' ? 'overflow-y-auto pr-1' : 'contents'}>
-                    <SectionCard
-                        title="Kit shelf"
-                        detail="Grab a kit, then keep the active pad right below it."
-                        className={viewLevel === 'simple' ? 'h-full overflow-hidden' : undefined}
-                    >
+                <Stack gap={3} className={viewLevel === 'full' ? 'min-w-0' : 'contents'}>
+                    <SectionCard title="Kit shelf" detail="Find and load a kit.">
                         <Row as="label" gap={2} className="toaster-window px-3 py-2">
                             <input
                                 value={presetQuery}
@@ -434,7 +434,13 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 aria-label="Search Toaster kits"
                             />
                         </Row>
-                        <Stack grow gap={2} className="overflow-y-auto pr-1">
+                        <Stack
+                            gap={2}
+                            className="max-h-48 overflow-y-auto p-0.5"
+                            role="region"
+                            aria-label="Kit results"
+                            tabIndex={0}
+                        >
                             {visiblePresets.map((preset) => {
                                 const active = preset.name === kit.name;
                                 return (
@@ -445,18 +451,18 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         type="button"
                                         aria-pressed={active}
                                         aria-label={`Load kit ${preset.name}`}
-                                        className={`toaster-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
+                                        className={`toaster-window flex flex-col items-start gap-1 px-3 py-2 text-left whitespace-normal wrap-anywhere transition-all ${
                                             active
                                                 ? 'border-white/18 bg-white/[0.03]'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
                                         onClick={() => handleLoadPreset(preset.id)}
                                     >
-                                        <Row justify="between" gap={2} className="w-full">
+                                        <Row justify="between" align="baseline" wrap gap={2} className="w-full">
                                             <span className="text-[11px] font-medium text-foreground">
                                                 {preset.name}
                                             </span>
-                                            <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/45">
+                                            <span className="text-[8px] uppercase tracking-wide text-muted-foreground/60">
                                                 {preset.tags[1] ?? 'kit'}
                                             </span>
                                         </Row>
@@ -469,12 +475,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         </Stack>
                     </SectionCard>
 
-                    <SectionCard
-                        title="Pad bay"
-                        detail="Pads stay chunky, the active hit stays obvious, and the quick shaping lives right here."
-                        className={viewLevel === 'simple' ? 'h-full overflow-hidden' : undefined}
-                    >
-                        <Row justify="between" align="center" gap={2} className="mb-2">
+                    <SectionCard title="Pad bay">
+                        <Row justify="between" wrap gap={2}>
                             <Row align="center" gap={1.5}>
                                 <DawPluginToggle
                                     pressed={is16Levels}
@@ -530,19 +532,15 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 ) : null}
                             </Row>
                         </Row>
-                        <div className={viewLevel === 'full' ? 'contents' : 'min-h-0 flex-1 [container-type:size]'}>
-                            <div className={viewLevel === 'full' ? 'contents' : 'mx-auto size-[min(100cqw,100cqh)]'}>
-                                <PadGrid
-                                    pads={kit.pads}
-                                    selectedIndex={selectedPadIndex}
-                                    onSelectPad={(index) => selectPad(deviceId, index)}
-                                    onTriggerPad={triggerPad}
-                                    sixteenLevelsTarget={is16Levels ? sixteenLevelsTarget : null}
-                                    targetPadName={selectedPad?.name}
-                                    onReleasePad={releasePad}
-                                />
-                            </div>
-                        </div>
+                        <PadGrid
+                            pads={kit.pads}
+                            selectedIndex={selectedPadIndex}
+                            onSelectPad={(index) => selectPad(deviceId, index)}
+                            onTriggerPad={triggerPad}
+                            sixteenLevelsTarget={is16Levels ? sixteenLevelsTarget : null}
+                            targetPadName={selectedPad?.name}
+                            onReleasePad={releasePad}
+                        />
 
                         {viewLevel === 'full' ? (
                             <>
@@ -562,10 +560,10 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         </span>
                                     </Row>
                                     <div className="min-w-0">
-                                        <div className="truncate text-[12px] font-semibold text-foreground">
+                                        <div className="wrap-anywhere text-[12px] font-semibold text-foreground">
                                             {selectedPad.name}
                                         </div>
-                                        <div className="truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground/45">
+                                        <div className="wrap-anywhere text-[9px] uppercase tracking-wide text-muted-foreground/60">
                                             {selectedPad.engineType.replaceAll('-', ' ')}
                                         </div>
                                     </div>
@@ -655,8 +653,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                 </Stack>
 
                 {viewLevel === 'full' ? (
-                    <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
-                        <Row align="start" justify="between" gap={3}>
+                    <Stack as="section" gap={3} className="min-w-0">
+                        <Row align="start" justify="between" wrap gap={3}>
                             <Stack gap={2}>
                                 <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
                                     Pattern story
@@ -844,20 +842,20 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                 ) : null}
 
                 <Stack
-                    as="aside"
                     gap={3}
-                    className={
+                    className={cn(
+                        'min-w-0',
                         viewLevel === 'full'
-                            ? 'overflow-y-auto pr-1'
-                            : 'grid grid-rows-[auto_minmax(0,1fr)] overflow-hidden'
-                    }
+                            ? '@[42rem]:col-span-2 @[66rem]:col-span-1'
+                            : '@[40rem]:col-span-2 @[40rem]:grid @[40rem]:grid-cols-2 @[60rem]:col-span-1 @[60rem]:flex'
+                    )}
                 >
                     <SectionCard
                         title="Transport"
                         detail="Keep the rhythm tools tight and ready."
                         className={viewLevel === 'simple' ? 'gap-1.5' : undefined}
                     >
-                        <Row gap={2}>
+                        <Row wrap gap={2}>
                             <DawPluginChip
                                 active={isPlaying}
                                 disabled={!isGrooveAvailable}
@@ -923,7 +921,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 title="Fill tools"
                                 detail="Euclid stays playful instead of turning into a spreadsheet."
                             >
-                                <Row gap={2}>
+                                <Row wrap gap={2}>
                                     <Input
                                         type="number"
                                         value={eucHits}
@@ -1008,9 +1006,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                     <SectionCard
                         title="Macros"
                         detail="Master motion and room stay within reach."
-                        className={viewLevel === 'simple' ? 'overflow-y-auto gap-1.5' : undefined}
+                        className={viewLevel === 'simple' ? 'gap-1.5' : undefined}
                     >
-                        <Grid cols={viewLevel === 'full' ? 2 : 3} gapX={2} gapY={viewLevel === 'full' ? 3 : 1.5}>
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 value={kit.swing}
                                 onChange={(value) => setToasterKitParam(deviceId, 'swing', value)}

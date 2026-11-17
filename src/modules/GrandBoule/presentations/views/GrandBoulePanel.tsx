@@ -1,6 +1,6 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
-import { Power } from 'lucide-react';
+import { ChevronDown, Power } from 'lucide-react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
@@ -158,6 +158,8 @@ const TEMPERAMENT_OPTIONS = [
     { value: 5 as TemperamentIndex, label: 'Meantone ¼' },
 ] as const;
 
+type Visualization = 'piano' | 'strings' | 'spectrum';
+
 const MICROPHONE_POSITIONS = [
     { value: 0, label: 'Close' },
     { value: 1, label: 'Player' },
@@ -179,6 +181,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lastVelocity, setLastVelocity] = useState(0);
+    const [openVisualizations, setOpenVisualizations] = useState<Visualization[]>([]);
+    const visualizationId = useId();
 
     // The pedal subscriber dispatches through use cases that need the live
     // engine/store. Both are recomputed each render (engine is a fresh handle,
@@ -324,10 +328,110 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         velocityCurveReadout = 'hard';
     }
 
+    const visualizations = [
+        {
+            id: 'piano',
+            label: 'Piano keyboard',
+            content: (
+                <>
+                    <p className="text-caption text-muted-foreground">
+                        {engineReady ? 'Click the piano keys to audition notes.' : 'Piano audio is unavailable.'}
+                    </p>
+                    <PianoModel3D
+                        key={deviceId}
+                        activeNotes={activeNotes}
+                        sustainPedal={pedals.sustain}
+                        lidPosition={config.lidPosition}
+                        onNoteOn={handleNoteOn}
+                        onNoteOff={handleNoteOff}
+                        className="h-48 w-full"
+                    />
+                </>
+            ),
+        },
+        {
+            id: 'strings',
+            label: 'String activity',
+            content: (
+                <>
+                    <p className="text-caption text-muted-foreground">
+                        Estimated string motion from note activity.
+                        {activeNotes.size === 0 ? ' No notes are sounding.' : ''}
+                    </p>
+                    <StringVibrationView activeNotes={activeNotes} className="h-24 w-full" />
+                </>
+            ),
+        },
+        {
+            id: 'spectrum',
+            label: 'Spectrum history',
+            content: (
+                <>
+                    <p className="text-caption text-muted-foreground">
+                        {analyser
+                            ? 'Recent frequency activity at the track output. The display stays dark during silence.'
+                            : 'No track analyser is available.'}
+                    </p>
+                    {analyser ? (
+                        <SpectralWaterfall analyser={analyser} sampleRate={engineSampleRate} className="h-36 w-full" />
+                    ) : null}
+                </>
+            ),
+        },
+    ] as const;
+
     return (
-        <div className="grand-boule-faceplate h-full min-h-[440px] rounded-[26px] p-3">
-            <div className="grid h-full min-h-[440px] grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3">
-                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
+        <div
+            className="grand-boule-faceplate @container flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-[26px] p-3"
+            role="region"
+            aria-label="Grand Boule controls"
+            tabIndex={0}
+        >
+            <Row justify="between" wrap gap={2} shrink={false}>
+                <Row wrap gap={1.5}>
+                    {visualizations.map(({ id, label }) => {
+                        const expanded = openVisualizations.includes(id);
+                        return (
+                            <DawPluginChip
+                                key={id}
+                                caps={false}
+                                className="gap-1"
+                                aria-expanded={expanded}
+                                aria-controls={`${visualizationId}-${id}`}
+                                onClick={() =>
+                                    setOpenVisualizations((current) =>
+                                        current.includes(id) ? current.filter((open) => open !== id) : [...current, id]
+                                    )
+                                }
+                            >
+                                {label}
+                                <ChevronDown aria-hidden="true" className={expanded ? 'size-3 rotate-180' : 'size-3'} />
+                            </DawPluginChip>
+                        );
+                    })}
+                </Row>
+                <DawPluginMetricTile
+                    className="grand-boule-window"
+                    label="Engine"
+                    value={engineReady ? 'ready' : 'idle'}
+                    detail="WASM"
+                />
+            </Row>
+            {visualizations.map(({ id, content }) => {
+                const expanded = openVisualizations.includes(id);
+                return (
+                    <div id={`${visualizationId}-${id}`} key={id} hidden={!expanded} className="shrink-0">
+                        {expanded ? (
+                            <Stack gap={2} className="grand-boule-window p-2">
+                                {content}
+                            </Stack>
+                        ) : null}
+                    </div>
+                );
+            })}
+
+            <div className="grid shrink-0 items-start gap-3 @[36rem]:grid-cols-2 @[54rem]:grid-cols-3">
+                <Stack gap={3} className="min-w-0">
                     <SectionCard title="Preset shelf" detail="Signature Grand Boule voicings.">
                         <Stack gap={1}>
                             {presets.map((preset) => {
@@ -338,10 +442,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         size="bare"
                                         key={preset.id}
                                         type="button"
+                                        aria-pressed={active}
                                         onClick={() =>
                                             loadGrandBoulePreset({ deviceId, engine, store, presetId: preset.id })
                                         }
-                                        className={`grand-boule-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
+                                        className={`grand-boule-window flex flex-col items-start gap-1 whitespace-normal wrap-anywhere px-3 py-2 text-left transition-all ${
                                             active
                                                 ? 'border-neutral-400/40 bg-neutral-300/10'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
@@ -379,7 +484,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         }
                         onEnabledChange={(enabled) => setGrandBouleMorphEnabled({ deviceId, engine, store, enabled })}
                     />
-
+                </Stack>
+                <Stack gap={3} className="min-w-0">
                     <SectionCard title="Mix" detail="Master, soundboard, sympathetic.">
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
@@ -433,7 +539,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </Grid>
                     </SectionCard>
                     <SectionCard title="Radiation" detail="Audible lid transfer and microphone perspective.">
-                        <Grid cols={2} gap={3} className="items-end">
+                        <Grid cols={2} gap={2} className="items-center">
                             <Knob
                                 value={config.lidPosition}
                                 onChange={(value, isTransient) =>
@@ -456,12 +562,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <Stack
                                 as="label"
                                 gap={1}
-                                className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60"
+                                className="min-w-0 items-start text-caption text-muted-foreground"
                             >
                                 Microphone
                                 <DawCompactSelect
                                     aria-label="Microphone position"
-                                    className="grand-boule-window min-h-8 bg-black/20 px-2 font-mono text-dense text-foreground"
+                                    className="max-w-full"
                                     value={config.micPosition}
                                     onChange={(event) =>
                                         setGrandBouleRadiationParam({
@@ -552,63 +658,22 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         )}
                     </SectionCard>
 
-                    <SectionCard title="MIDI Calibration" detail="Controller tuning.">
-                        <MidiCalibrationPanel
-                            calibration={liveState.midiCalibration}
-                            lastVelocity={lastVelocity}
-                            onVelocityCurveExponentChange={(value) => setVelocityCurveExponent({ store, value })}
-                            onVelocityFloorChange={(value) => setVelocityFloor({ store, value })}
-                            onVelocityCeilingChange={(value) => setVelocityCeiling({ store, value })}
-                            onCcSmoothingMsChange={(value) => setCcSmoothingMs({ engine, store, value })}
-                            onSustainThresholdChange={(value) => setSustainThreshold({ engine, store, value })}
-                            onReset={() => resetMidiCalibration({ engine, store })}
-                        />
-                    </SectionCard>
+                    <MidiCalibrationPanel
+                        calibration={liveState.midiCalibration}
+                        lastVelocity={lastVelocity}
+                        onVelocityCurveExponentChange={(value) => setVelocityCurveExponent({ store, value })}
+                        onVelocityFloorChange={(value) => setVelocityFloor({ store, value })}
+                        onVelocityCeilingChange={(value) => setVelocityCeiling({ store, value })}
+                        onCcSmoothingMsChange={(value) => setCcSmoothingMs({ engine, store, value })}
+                        onSustainThresholdChange={(value) => setSustainThreshold({ engine, store, value })}
+                        onReset={() => resetMidiCalibration({ engine, store })}
+                    />
                 </Stack>
 
-                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
-                    <Row align="start" justify="between" gap={3}>
-                        <Stack gap={2}>
-                            <div className="text-micro uppercase tracking-[0.26em] text-neutral-400/80">
-                                Grand Boule
-                            </div>
-                            <div className="text-[16px] font-semibold text-foreground">Physical Modeling Piano</div>
-                        </Stack>
-                        <Row align="stretch" justify="end" wrap gap={2}>
-                            <DawPluginMetricTile
-                                className="grand-boule-window min-w-[94px]"
-                                label="Engine"
-                                value={engine.isReady() ? 'ready' : 'idle'}
-                                detail="WASM"
-                            />
-                        </Row>
-                    </Row>
-
-                    <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 280 }}>
-                        <PianoModel3D
-                            activeNotes={activeNotes}
-                            sustainPedal={pedals.sustain}
-                            lidPosition={config.lidPosition}
-                            onNoteOn={handleNoteOn}
-                            onNoteOff={handleNoteOff}
-                            className="h-full w-full"
-                        />
-                    </div>
-
-                    <div className="grand-boule-window min-h-0 flex-1 overflow-hidden p-2">
-                        <StringVibrationView activeNotes={activeNotes} className="h-full w-full" />
-                    </div>
-
-                    <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 160 }}>
-                        <SpectralWaterfall
-                            analyser={analyser}
-                            sampleRate={engineSampleRate}
-                            className="h-full w-full"
-                        />
-                    </div>
-                </Stack>
-
-                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
+                <Stack
+                    gap={3}
+                    className="min-w-0 @[36rem]:col-span-2 @[36rem]:grid @[36rem]:grid-cols-2 @[54rem]:col-span-1 @[54rem]:flex"
+                >
                     <SectionCard title="Pedals" detail="Sustain, una corda, sostenuto.">
                         <Stack gap={3}>
                             <Knob
@@ -690,7 +755,13 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <Knob
                             value={parameters.velocityCurve}
                             onChange={(value, isTransient) =>
-                                setGrandBouleVelocityCurve({ deviceId, engine, store, exponent: value, isTransient })
+                                setGrandBouleVelocityCurve({
+                                    deviceId,
+                                    engine,
+                                    store,
+                                    exponent: value,
+                                    isTransient,
+                                })
                             }
                             label="Curve"
                             min={0.5}

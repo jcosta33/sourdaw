@@ -197,12 +197,38 @@ describe('GrandBoulePanel', () => {
         expect(screen.getByText('idle')).toBeInTheDocument();
     });
 
-    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
-        const { container } = render(<GrandBoulePanel deviceId="dev-1" />);
-        const faceplate = container.querySelector<HTMLElement>('.grand-boule-faceplate');
-        expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[440px]');
-        expect(faceplate?.className).not.toContain('overflow-hidden');
+    it('opens controls-first and mounts each optional visualization only when revealed', () => {
+        render(<GrandBoulePanel deviceId="dev-1" />);
+
+        expect(screen.getByRole('region', { name: 'Grand Boule controls' })).toHaveAttribute('tabindex', '0');
+        const piano = screen.getByRole('button', { name: 'Piano keyboard' });
+        const strings = screen.getByRole('button', { name: 'String activity' });
+        const spectrum = screen.getByRole('button', { name: 'Spectrum history' });
+        for (const button of [piano, strings, spectrum]) {
+            expect(button).toHaveAttribute('aria-expanded', 'false');
+        }
+        expect(screen.queryByLabelText('Grand Boule interactive piano')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Grand Boule string vibration visualisation')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Grand Boule spectral waterfall')).not.toBeInTheDocument();
+        expect(screen.queryByText('No track analyser is available.')).not.toBeInTheDocument();
+
+        fireEvent.click(piano);
+        expect(piano).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText('Piano audio is unavailable.')).toBeVisible();
+        expect(screen.getByLabelText('Grand Boule interactive piano')).toBeVisible();
+        fireEvent.click(strings);
+        expect(strings).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText(/No notes are sounding/)).toBeVisible();
+        expect(screen.getByLabelText('Grand Boule string vibration visualisation')).toBeVisible();
+        fireEvent.click(spectrum);
+        expect(spectrum).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText('No track analyser is available.')).toBeVisible();
+
+        fireEvent.click(piano);
+        expect(piano).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByLabelText('Grand Boule interactive piano')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Grand Boule string vibration visualisation')).toBeVisible();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('applies shrink-0 to Grand Boule section cards including MorphPanel', () => {
@@ -217,8 +243,9 @@ describe('GrandBoulePanel', () => {
         expect(morphSection).not.toBeNull();
         expect(morphSection).toHaveClass('shrink-0');
 
-        const sections = document.querySelectorAll('aside > section.grand-boule-window');
-        expect(sections.length).toBe(11);
+        const sections = document.querySelectorAll('section.grand-boule-window.shrink-0');
+        expect(sections.length).toBe(10);
+        expect(screen.getByText('MIDI Calibration', { exact: true })).toBeInTheDocument();
         for (const section of sections) {
             expect(section).toHaveClass('shrink-0');
         }

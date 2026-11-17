@@ -20,6 +20,7 @@ import { createDefaultKit } from '../../../models/ToasterKit';
 import { fromToasterKitState, toToasterKitState } from '../../../models/ToasterKitState';
 import { registerToasterDevice, resetToasterDeviceLifecycleState, toasterStore } from '../../../stores/toasterStore';
 import { initToasterKitPersistence } from '../../../useCases/initToasterKitPersistence';
+import { activeNoteRepeatSessions } from '../../../useCases/noteRepeatState';
 import { stopSequencer } from '../../../useCases/stopSequencer';
 import { ToasterPanel } from '../ToasterPanel';
 
@@ -368,6 +369,35 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         fireEvent.mouseUp(screen.getByTestId('toaster-pad-2'));
         expect(current.noteOn).toHaveBeenCalledExactlyOnceWith(2, 100);
         expect(other.noteOn).not.toHaveBeenCalled();
+    });
+    it('ends the held keyboard repeat on blur and close while the pattern keeps playing', () => {
+        const { unmount } = render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play', exact: true }));
+        const releasesAtPlay = current.allNotesOff.mock.calls.length;
+        fireEvent.click(screen.getByRole('button', { name: 'Note repeat mode' }));
+        const pad = screen.getByTestId('toaster-pad-2');
+        const viewControl = screen.getByRole('combobox', { name: 'Toaster view' });
+
+        act(() => pad.focus());
+        fireEvent.keyDown(pad, { key: ' ' });
+        expect(current.noteOn).toHaveBeenCalledExactlyOnceWith(2, 100);
+        expect(activeNoteRepeatSessions.get(DEVICE_ID)?.padIndex).toBe(2);
+
+        act(() => viewControl.focus());
+        expect(viewControl).toHaveFocus();
+        expect(activeNoteRepeatSessions.has(DEVICE_ID)).toBe(false);
+        expect(selectedState().isPlaying).toBe(true);
+
+        act(() => pad.focus());
+        fireEvent.keyDown(pad, { key: ' ' });
+        expect(activeNoteRepeatSessions.get(DEVICE_ID)?.padIndex).toBe(2);
+
+        unmount();
+        expect(activeNoteRepeatSessions.has(DEVICE_ID)).toBe(false);
+        expect(current.allNotesOff).toHaveBeenCalledTimes(releasesAtPlay);
+        expect(other.allNotesOff).not.toHaveBeenCalled();
+        expect(other.noteOn).not.toHaveBeenCalled();
+        expect(selectedState().isPlaying).toBe(true);
     });
     it('stops a held pad fader drag from writing after Full unmounts', async () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);

@@ -53,6 +53,37 @@ describe('PadGrid (Toaster)', () => {
         expect(onTriggerPad).toHaveBeenCalledWith(1);
     });
 
+    it('releases a held keyboard pad once when focus moves to another control', () => {
+        const onTriggerPad = vi.fn();
+        const onReleasePad = vi.fn();
+        render(
+            <>
+                <PadGrid
+                    pads={[makePad(0), makePad(1)]}
+                    selectedIndex={0}
+                    onSelectPad={vi.fn()}
+                    onTriggerPad={onTriggerPad}
+                    onReleasePad={onReleasePad}
+                />
+                <button type="button">Another control</button>
+            </>
+        );
+        const pad = screen.getByRole('button', { name: 'Trigger P1' });
+        act(() => pad.focus());
+        fireEvent.keyDown(pad, { key: ' ' });
+        expect(onTriggerPad.mock.calls).toEqual([[1]]);
+
+        const nextControl = screen.getByRole('button', { name: 'Another control' });
+        act(() => nextControl.focus());
+        expect(nextControl).toHaveFocus();
+        expect(onReleasePad.mock.calls).toEqual([[1]]);
+
+        fireEvent.keyUp(nextControl, { key: ' ' });
+        fireEvent.keyUp(pad, { key: ' ' });
+        fireEvent.keyUp(screen.getByRole('button', { name: 'Trigger P0' }), { key: ' ' });
+        expect(onReleasePad.mock.calls).toEqual([[1]]);
+    });
+
     it('should not re-trigger on a held key repeat', () => {
         const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
@@ -121,7 +152,7 @@ describe('PadGrid — selection and aria', () => {
 });
 
 describe('PadGrid — pad state display', () => {
-    it('keeps a complete pad name available when its compact label is truncated', () => {
+    it('keeps the complete pad name and its voice metadata available', () => {
         const name = 'Closed hi-hat with a long name';
         const pads = [makePad(0, { name, engineType: 'hihat-closed', chokeGroup: 1 })];
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);

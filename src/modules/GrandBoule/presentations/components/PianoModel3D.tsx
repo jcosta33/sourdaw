@@ -249,6 +249,12 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
     return null;
 }
 
+function releasePreview(pressed: Map<number, () => void>, pointerId: number): void {
+    const release = pressed.get(pointerId);
+    pressed.delete(pointerId);
+    release?.();
+}
+
 export const PianoModel3D = ({
     activeNotes,
     sustainPedal,
@@ -258,11 +264,9 @@ export const PianoModel3D = ({
     className,
 }: PianoModel3DProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    // Map of active pointerId -> MIDI note. A Map (not a single ref) lets
-    // multiple simultaneous pointers each hold their own note, so multi-touch
-    // chords release independently instead of one pointer-down stomping the
-    // prior note's pending release.
-    const pressedNotesRef = useRef<Map<number, number>>(new Map());
+    // A held pointer retains the release route that belonged to its Note On,
+    // even if the panel subsequently resolves a different engine handle.
+    const pressedNotesRef = useRef<Map<number, () => void>>(new Map());
     const animRef = useRef<KeyAnim[]>(
         Array.from({ length: NUM_KEYS }, () => ({
             hammerT: 0,
@@ -283,10 +287,6 @@ export const PianoModel3D = ({
     activeNotesRef.current = activeNotes;
     const sustainPedalRef = useRef(sustainPedal);
     sustainPedalRef.current = sustainPedal;
-    // Keep the latest onNoteOff reachable from the window-level fallback
-    // listener without re-subscribing it on every render.
-    const onNoteOffRef = useRef(onNoteOff);
-    onNoteOffRef.current = onNoteOff;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -540,28 +540,30 @@ export const PianoModel3D = ({
         rafId = requestAnimationFrame(render);
         return () => {
             cancelAnimationFrame(rafId);
+            gl.deleteBuffer(vbo);
+            gl.deleteVertexArray(vao);
+            gl.deleteProgram(prog);
         };
     }, []);
 
-    // Fallback release path: if setPointerCapture silently no-ops, the canvas
-    // never sees pointerup and the note would hang. A window-level listener
-    // releases any pointer still recorded as held, guaranteeing every
-    // pointer-down is eventually matched by a release.
+    // Window events cover interrupted gestures and browsers where pointer
+    // capture is unavailable. Closing the view drains only its own previews.
     useEffect(() => {
         const pressed = pressedNotesRef.current;
-        const releaseFromWindow = (e: PointerEvent): void => {
-            const note = pressed.get(e.pointerId);
-            if (note === undefined) {
-                return;
+        const releaseFromWindow = (event: PointerEvent): void => releasePreview(pressed, event.pointerId);
+        const releaseHeldPreviews = (): void => {
+            for (const pointerId of pressed.keys()) {
+                releasePreview(pressed, pointerId);
             }
-            pressed.delete(e.pointerId);
-            onNoteOffRef.current?.(note);
         };
         window.addEventListener('pointerup', releaseFromWindow);
         window.addEventListener('pointercancel', releaseFromWindow);
+        window.addEventListener('blur', releaseHeldPreviews);
         return () => {
             window.removeEventListener('pointerup', releaseFromWindow);
             window.removeEventListener('pointercancel', releaseFromWindow);
+            window.removeEventListener('blur', releaseHeldPreviews);
+            releaseHeldPreviews();
         };
     }, []);
 
@@ -577,7 +579,7 @@ export const PianoModel3D = ({
     };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-        if (onNoteOn === undefined) {
+        if (onNoteOn === undefined || pressedNotesRef.current.has(e.pointerId)) {
             return;
         }
         const canvas = canvasRef.current;
@@ -588,32 +590,21 @@ export const PianoModel3D = ({
         // never receives pointerup, so the window-level fallback listener
         // installed in the effect below releases the note instead.
         try {
-            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+            e.currentTarget.setPointerCapture(e.pointerId);
         } catch {
             // Capture unsupported/failed — fallback listener covers release.
         }
         const [px, py] = canvasToPixel(e.clientX, e.clientY);
         const midi = hitTestKey(px, py, canvas.width, canvas.height);
         if (midi !== null) {
-            pressedNotesRef.current.set(e.pointerId, midi);
+            pressedNotesRef.current.set(e.pointerId, () => onNoteOff?.(midi));
             onNoteOn(midi, 0.8);
         }
     };
 
-    const releasePointer = (pointerId: number): void => {
-        const note = pressedNotesRef.current.get(pointerId);
-        if (note === undefined) {
-            return;
-        }
-        pressedNotesRef.current.delete(pointerId);
-        onNoteOff?.(note);
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        releasePreview(pressedNotesRef.current, event.pointerId);
     };
-
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-        releasePointer(e.pointerId);
-    };
-
-    const handlePointerLeave = handlePointerUp;
 
     return (
         <>
@@ -626,7 +617,8 @@ export const PianoModel3D = ({
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
-                onPointerLeave={handlePointerLeave}
+                onPointerLeave={handlePointerUp}
+                onLostPointerCapture={handlePointerUp}
             />
             {/* The canvas itself is opaque to assistive tech; announce the
                 currently sounding notes through a polite live region. */}

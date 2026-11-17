@@ -41,6 +41,8 @@ function makeGlMock(): WebGL2RenderingContext {
         getUniformLocation: vi.fn(() => ({})),
         createVertexArray: vi.fn(() => ({})),
         createBuffer: vi.fn(() => ({})),
+        deleteVertexArray: vi.fn(),
+        deleteBuffer: vi.fn(),
         bindVertexArray: vi.fn(),
         bindBuffer: vi.fn(),
         enableVertexAttribArray: vi.fn(),

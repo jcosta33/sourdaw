@@ -119,6 +119,41 @@ describe('PianoModel3D', () => {
         expect(onNoteOff).toHaveBeenCalledTimes(1);
     });
 
+    it.each(['blur', 'unmount'] as const)('releases only the two held previews once on %s', (interruption) => {
+        const onNoteOn = vi.fn<(midi: number, velocity: number) => void>();
+        const onNoteOff = vi.fn<(midi: number) => void>();
+        const replacementNoteOff = vi.fn<(midi: number) => void>();
+        const props = {
+            activeNotes: new Map([[60, 0.5]]),
+            sustainPedal: 0,
+            lidPosition: 0.5,
+            onNoteOn,
+            onNoteOff,
+        };
+        const { container, rerender, unmount } = render(<PianoModel3D {...props} />);
+        const canvas = container.querySelector('canvas')!;
+        fireEvent.pointerDown(canvas, { pointerId: 4, clientX: KEY_A.x, clientY: KEY_A.y });
+        fireEvent.pointerDown(canvas, { pointerId: 5, clientX: KEY_B.x, clientY: KEY_B.y });
+        expect(onNoteOn.mock.calls).toHaveLength(2);
+        const heldNotes = onNoteOn.mock.calls.map(([note]) => note);
+        expect(new Set(heldNotes).size).toBe(2);
+        expect(heldNotes).not.toContain(60);
+
+        rerender(<PianoModel3D {...props} onNoteOff={replacementNoteOff} />);
+        if (interruption === 'blur') {
+            fireEvent.blur(window);
+        } else {
+            unmount();
+        }
+        expect(onNoteOff.mock.calls).toEqual(heldNotes.map((note) => [note]));
+        expect(replacementNoteOff).not.toHaveBeenCalled();
+
+        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 4 }));
+        window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 5 }));
+        expect(onNoteOff.mock.calls).toEqual(heldNotes.map((note) => [note]));
+        expect(replacementNoteOff).not.toHaveBeenCalled();
+    });
+
     it('announces the currently playing notes through a live region', () => {
         const activeNotes = new Map<number, number>([
             [60, 0.8],
