@@ -97,16 +97,22 @@ Use one observer per PR. Require the whole exact-head `Health gates` workflow to
 From the primary, run `pnpm review:prepare <pr>` and use the printed bundle path. It binds the
 head, base and merge base and includes merge-base contracts. Re-prepare when context changes.
 
-Derive the review plan under root [Review](../../../AGENTS.md#review), including its human
-three-stance minimum and tiny, harmless exception as well as the machine floor.
-[Risk classes](references/review-records.md#risk-classes)
+Read `manifest.json` and use `contracts/AGENTS.md` as the root policy. When a source it references
+is absent from `contracts/`, resolve the link from the referring file's original repository path
+and read `git show <baseSha>:<repo-relative-path>` using the manifest's merge-base SHA. Follow any
+nested references at that same revision. Use the bundle's `diff.patch` and
+`git show <headSha>:<repo-relative-path>` for the code and proposed guidance under review.
+
+Apply the pinned Review rules to derive the stances, including the human minimum and its
+exception. Use the bundle's `risk-plan.json` with the pinned risk-class rules to determine the
+machine floor. The risk-class table is in the merge-base delivery guidance or the reference it names.
 
 Dispatch blind reviewers with the [reviewer brief](#reviewer-brief). Review the whole exact head
 yourself before reading any stance report.
 
 ### g. Validate findings
 
-Apply root [Review](../../../AGENTS.md#evidence-and-adjudication) against the live code.
+Apply the pinned Review rules against the exact reviewed head.
 Reproduce blockers, record discards privately, and combine duplicate findings into one comment
 whose `sources` names every draw that independently detected it. A global-only blocker needs
 blind reproduction before publication. Hold approval when an unresolved concern leaves the
@@ -114,8 +120,8 @@ head unfit.
 
 ### h. Write `review.json`
 
-Write the round's only caller document in the bundle. Use the
-[schema and worked examples](references/review-records.md#review-document-formats).
+Write the round's only caller document in the bundle. Read the schema and worked examples from
+the merge-base delivery guidance and its references.
 `REQUEST_CHANGES` carries blocker comments on changed lines. `APPROVE` carries compact
 head-bound evidence, a short reviewer-written body and no inline comments.
 Keep credentials, private reviewer prose and sensitive logs out of the record.
@@ -124,15 +130,15 @@ Keep credentials, private reviewer prose and sensitive logs out of the record.
 
 - Require `SUCCESS` for the whole exact-head `Health gates` workflow, `MERGEABLE` and
   zero unresolved threads, including CodeQL. Use [repair](#k-repair) to clear eligible findings.
-- Confirm the exact head still passes your global review and the round meets root
-  [Review policy](../../../AGENTS.md#review). Keep the compact body within 600 Unicode code points.
+- Confirm the exact head still passes your global review and the round meets the pinned Review
+  policy from [step f](#f-review-round). Keep the compact body within 600 Unicode code points.
 
 ### j. Publish the review
 
 From the primary, run `pnpm review:publish <pr>`. It posts as the reviewer App on the bound head.
 **Post `REQUEST_CHANGES` before any repair dispatch.** A clean APPROVE records current-head
 delivery authorization. A new push starts fresh CI and requires fresh review.
-[Publication, replay and refusal rules](references/review-records.md#review-bundles-and-publication)
+Find the publication, replay and refusal rules in the merge-base review-records reference.
 
 ### k. Repair
 
@@ -232,23 +238,22 @@ it to obtain green. Diagnostic retries never replace the original failure or aut
 
 - Give the printed bundle path, exact head, one failure mode as the stance, and the neutral
   acceptance and check conditions from the request and governing contract. Include only the
-  most specific matching [stance reference](../review-stances/README.md) when one exists.
-- Apply root [Review](../../../AGENTS.md#review). Try to break the change. Establish what should
-  make each check fail, and verify with a targeted revert or mutation and its named spec if given
-  [exclusive handoff](../review-stances/README.md#reviewer-isolation) of the clean, committed author
-  lane. Read the fixed commit with `git show <sha>:<path>` and the bundle. Never create a worktree
+  most specific matching stance reference from the merge base when one exists.
+- Use the same [pinned sources](#f-review-round). Read `contracts/AGENTS.md`, the selected stance
+  reference and any review instructions it links at `baseSha`, and the proposed changes at
+  `headSha`. Try to break the change. Establish what should make each check fail, and verify
+  through a targeted revert or mutation and its named spec if given exclusive handoff of the
+  clean, committed author lane under the pinned reviewer isolation rules. Never create a worktree
   or clone or install dependencies. For an unrun probe, return the mutation, spec and limitation.
 - Return the strongest surviving findings with `path`, `line`, `side`, `defect`, `consequence`,
   `done` and reproduction with observed result, or report clean with probe results. Return
   reports only to the orchestrator. Discard hedged findings without a concrete break.
-- Choose the model under root [Review policy](../../../AGENTS.md#stances-and-models). If the harness
-  cannot choose subagent models, follow
-  [headless reviewer dispatch](references/review-records.md#headless-reviewer-dispatch).
+- Choose the model under the pinned Review policy. If the harness cannot choose subagent models,
+  read the merge-base review-records reference for headless reviewer dispatch.
 
 ## Freeze
 
-Follow root [Review](../../../AGENTS.md#publication-and-repair) and the
-[freeze and replay procedures](references/review-records.md#review-bundles-and-publication).
+Follow the Review policy and freeze and replay procedures from the [pinned sources](#f-review-round).
 
 ## References
 

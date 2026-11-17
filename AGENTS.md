@@ -166,6 +166,16 @@ only write-disjoint tasks within a lane and follow [Delivery](#delivery) for ove
 
 ## Review
 
+### Governing revision
+
+Use the bundle's `manifest.json` to distinguish the governing merge base (`baseSha`) from the
+reviewed head (`headSha`). Start with `contracts/AGENTS.md` and the other bundled contract copies.
+For a referenced source absent from the bundle, resolve its path relative to the referring file's
+original repository path and read `git show <baseSha>:<repo-relative-path>`. Use that same
+revision at every hop, including nested references. Apply those sources to stance selection,
+evidence and approval. Inspect the proposed changes in `diff.patch` and read product code and
+proposed guidance at `headSha`.
+
 ### Stances and models
 
 Keep each reviewer blind. Give them the fixed head, bundle and one stance. Exclude other reports,
