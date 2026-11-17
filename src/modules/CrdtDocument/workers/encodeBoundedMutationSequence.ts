@@ -11,6 +11,7 @@ import {
     type ChangeMetadata,
 } from '@automerge/automerge/slim';
 
+import { encodeExactNativeChange } from '../models/encodeExactNativeChange';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
     NATIVE_SEQUENCE_MAX_OPERATIONS,
@@ -76,20 +77,20 @@ export function encodeBoundedMutationSequence(
             }
             dependencies = [previousHash];
         }
-        const bytes = Uint8Array.from(
-            encodeChange({
+        const { bytes, hash } = encodeExactNativeChange(
+            {
                 ...template,
                 seq: decoded.seq + index,
                 startOp: decoded.startOp + offset,
                 deps: dependencies,
                 ops: decoded.ops.slice(offset, offset + NATIVE_SEQUENCE_MAX_OPERATIONS),
-            })
+            },
+            { encodeChange, decodeChange }
         );
         if (bytes.length > NATIVE_SEQUENCE_MAX_BYTES || bytes[8] !== 1) {
             throw new Error('Native sequence change exceeds its uncompressed bound');
         }
-        const encoded = decodeChange(bytes);
-        previousHash = encoded.hash;
+        previousHash = hash;
         bounded.push(bytes);
     }
     if (!previousHash) {

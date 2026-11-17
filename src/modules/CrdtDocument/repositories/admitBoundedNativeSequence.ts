@@ -13,6 +13,7 @@ import {
     getMissingDeps,
 } from '@automerge/automerge';
 
+import { encodeExactNativeChange } from '../models/encodeExactNativeChange';
 import { sameNativeHeads } from '../models/NativeIncrementalEncoding';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
@@ -119,7 +120,7 @@ function assertDecodedAuthority(
     }
     // The decoded operation stream must also survive canonical re-encoding unchanged.
     const { hash, ...canonical } = decoded;
-    if (decodeChange(encodeChange(canonical)).hash !== hash) {
+    if (encodeExactNativeChange(canonical, { encodeChange, decodeChange }).hash !== hash) {
         throw new Error('Native sequence contains unsupported opaque metadata');
     }
     return operationCount;
