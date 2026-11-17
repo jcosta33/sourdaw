@@ -55,11 +55,11 @@ function useDevicePanelFocus(
     onClose: () => void,
     otherSurfaceOwnsEscape: FloatingDevicePanelProps['otherSurfaceOwnsEscape']
 ) {
-    const dialog = useRef<HTMLDivElement>(null);
-    const opener = useRef<HTMLElement | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const openerRef = useRef<HTMLElement | null>(null);
 
     function restoreFocus(): void {
-        const trigger = opener.current;
+        const trigger = openerRef.current;
         if (trigger?.isConnected) {
             trigger.focus({ preventScroll: true });
             if (document.activeElement === trigger) {
@@ -71,8 +71,8 @@ function useDevicePanelFocus(
 
     useLayoutEffect(() => {
         const focused = document.activeElement;
-        opener.current = focused instanceof HTMLElement && focused !== document.body ? focused : null;
-        const panel = dialog.current;
+        openerRef.current = focused instanceof HTMLElement && focused !== document.body ? focused : null;
+        const panel = dialogRef.current;
         panel?.focus({ preventScroll: true });
         return () => {
             // On replacement, an outside control may already own focus and be the new opener.
@@ -96,7 +96,7 @@ function useDevicePanelFocus(
             if (
                 !isPlainEscapePress(event) ||
                 isDragGestureActive() ||
-                otherSurfaceOwnsEscape(dialog.current, event.target)
+                otherSurfaceOwnsEscape(dialogRef.current, event.target)
             ) {
                 return;
             }
@@ -118,7 +118,7 @@ function useDevicePanelFocus(
         };
     }, [onClose, otherSurfaceOwnsEscape]);
 
-    return { dialog, dismiss };
+    return { dialogRef, dismiss };
 }
 
 /** Capture has already succeeded. Keep a counted Escape owner until this exact drag ends. */
@@ -158,25 +158,25 @@ function useTitleMovement(
     area: Size,
     setGeometry: FloatingDevicePanelProps['setGeometry']
 ) {
-    const drag = useRef<{ id: number; x: number; y: number; start: DevicePanelGeometry; finish: () => void } | null>(
+    const dragRef = useRef<{ id: number; x: number; y: number; start: DevicePanelGeometry; finish: () => void } | null>(
         null
     );
 
-    useLayoutEffect(() => () => drag.current?.finish(), []);
+    useLayoutEffect(() => () => dragRef.current?.finish(), []);
 
     function startMove(event: ReactPointerEvent<HTMLButtonElement>): void {
-        if (event.button !== 0 || drag.current !== null) {
+        if (event.button !== 0 || dragRef.current !== null) {
             return;
         }
         event.currentTarget.setPointerCapture(event.pointerId);
         const finish = watchTitleDrag(event.currentTarget, event.pointerId, () => {
-            drag.current = null;
+            dragRef.current = null;
         });
-        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, start: bounds, finish };
+        dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, start: bounds, finish };
     }
 
     function move(event: ReactPointerEvent<HTMLButtonElement>): void {
-        const gesture = drag.current;
+        const gesture = dragRef.current;
         if (!gesture || gesture.id !== event.pointerId) {
             return;
         }
@@ -193,8 +193,8 @@ function useTitleMovement(
     }
 
     function endMove(event: ReactPointerEvent<HTMLButtonElement>): void {
-        if (drag.current?.id === event.pointerId) {
-            drag.current.finish();
+        if (dragRef.current?.id === event.pointerId) {
+            dragRef.current.finish();
         }
     }
 
@@ -234,14 +234,14 @@ export function FloatingDevicePanel({
     children,
 }: FloatingDevicePanelProps): ReactElement {
     const titleId = useId();
-    const workspace = useRef<HTMLDivElement>(null);
+    const workspaceRef = useRef<HTMLDivElement>(null);
     const [area, setArea] = useState<Size>({ width: 0, height: 0 });
     const bounds = fitGeometry(geometry, area);
 
     useLayoutEffect(() => {
-        const element = workspace.current;
+        const element = workspaceRef.current;
         if (!element) {
-            return;
+            return undefined;
         }
         const measure = (): void => setArea({ width: element.clientWidth, height: element.clientHeight });
         measure();
@@ -250,7 +250,7 @@ export function FloatingDevicePanel({
         return () => observer.disconnect();
     }, []);
 
-    const { dialog, dismiss } = useDevicePanelFocus(onClose, otherSurfaceOwnsEscape);
+    const { dialogRef, dismiss } = useDevicePanelFocus(onClose, otherSurfaceOwnsEscape);
     const titleMovement = useTitleMovement(bounds, area, setGeometry);
 
     function resize(axis: keyof Size, delta: number): void {
@@ -263,9 +263,9 @@ export function FloatingDevicePanel({
     }
 
     return (
-        <div ref={workspace} className="pointer-events-none absolute inset-[16px] z-30">
+        <div ref={workspaceRef} className="pointer-events-none absolute inset-[16px] z-30">
             <DawUtilityPanel
-                ref={dialog}
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="false"
                 data-device-editor=""
