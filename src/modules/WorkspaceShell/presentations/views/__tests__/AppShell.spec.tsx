@@ -1754,7 +1754,7 @@ describe('AppShell', () => {
         ['sampler', 'Sampler', 'CrumbsPanel'],
         ['grandBoule', 'Grand Boule', 'GrandBoulePanel'],
     ] as const)('routes %s to the correct view and device instance', (kind, label, view) => {
-        const deviceId = 'bound-' + kind;
+        const deviceId = `bound-${kind}`;
         activeDevicePanelStateMock.activePanel = { kind, deviceId, trackId: 'track-1' };
         render(<AppShell>Content</AppShell>);
         expect(within(screen.getByRole('dialog', { name: label })).getByTestId(view)).toHaveTextContent(deviceId);
