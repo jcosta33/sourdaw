@@ -114,6 +114,10 @@ function leavesRejectionObservable(context, call) {
                 (property) => property.type === 'Property' && property.kind === 'init' && returnsBinding(property.value)
             );
         }
+        const joined = promiseAllArguments(context, value);
+        if (joined) {
+            return joined.elements.some(returnsBinding);
+        }
         return returnsBinding(value);
     });
 }
@@ -142,13 +146,21 @@ const noSilentCatch = rule(
     }
 );
 
+function successRuntimeValue(node) {
+    let value = unwrap(node);
+    while (value?.type === 'TSAsExpression' || value?.type === 'TSTypeAssertion') {
+        value = unwrap(value.expression);
+    }
+    return value;
+}
+
 const isTrue = (node) => {
-    const value = node?.type === 'TSAsExpression' ? node.expression : node;
+    const value = successRuntimeValue(node);
     return value?.type === 'Literal' && value.value === true;
 };
 
 function isSuccessValue(node) {
-    const value = unwrap(node);
+    const value = successRuntimeValue(node);
     return (
         value?.type === 'ObjectExpression' &&
         value.properties.some(
@@ -284,6 +296,27 @@ function playwrightTestCallback(context, call) {
     return isFunction(callback) && callback.body.type === 'BlockStatement' ? callback : undefined;
 }
 
+function enclosingFunction(node) {
+    let parent = node.parent;
+    while (parent && !isFunction(parent) && parent.type !== 'FunctionDeclaration') {
+        parent = parent.parent;
+    }
+    return parent;
+}
+
+function isAwaitedPlaywrightStep(context, callback) {
+    if (!isFunction(callback)) {
+        return false;
+    }
+    const call = callback.parent;
+    return (
+        calledMember(call, 'step') &&
+        call.arguments[1] === callback &&
+        call.parent?.type === 'AwaitExpression' &&
+        playwrightBinding(context, call.callee.object, 'test')
+    );
+}
+
 function visibilityCondition(context, test) {
     const value = unwrap(test);
     const negated = value?.type === 'UnaryExpression' && value.operator === '!';
@@ -327,11 +360,11 @@ const noConditionalPlaywrightAdmission = rule(
         const assertionsByCallback = new Map();
 
         function recordAssertion(node) {
-            let parent = node.parent;
-            while (parent && !isFunction(parent) && parent.type !== 'FunctionDeclaration') {
-                parent = parent.parent;
+            let owner = enclosingFunction(node);
+            while (isAwaitedPlaywrightStep(context, owner)) {
+                owner = enclosingFunction(owner);
             }
-            assertionsByCallback.get(parent)?.push(node);
+            assertionsByCallback.get(owner)?.push(node);
         }
 
         return {

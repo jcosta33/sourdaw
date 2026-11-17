@@ -175,6 +175,8 @@ runCraftRule('no-silent-catch', {
         'pending.catch((error) => { throw error; });',
         'pending.catch(() => recover());',
         'function deferred() { const { promise, resolve } = Promise.withResolvers(); void promise.catch(() => undefined); register(); return { promise, resolve }; }',
+        'function deferred(promise: Promise<string>) { void promise.catch(() => {}); return promise; }',
+        'function deferred(promise: Promise<string>) { void promise.catch(() => {}); return Promise.all([promise]); }',
         'function cancelled(promise) { if (aborted) { void promise.catch(() => {}); throw abortReason(); } return promise; }',
     ],
     invalid: [
@@ -184,6 +186,22 @@ runCraftRule('no-silent-catch', {
         { code: 'await work().catch(() => undefined);', errors: [{ message: /empty handler discards/ }] },
         { code: 'work()["catch"](() => { return; });', errors: [{ message: /empty handler discards/ }] },
         { code: 'void work().catch(() => void 0);', errors: [{ message: /empty handler discards/ }] },
+        {
+            code: 'function deferred(promise) { void promise.catch(() => {}); return Promise.all([promise.catch(() => undefined)]); }',
+            errors: [{ message: /empty handler discards/ }, { message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, other) { void promise.catch(() => {}); return Promise.all([other]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise, Promise) { void promise.catch(() => {}); return Promise.all([promise]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
+        {
+            code: 'function deferred(promise) { void promise.catch(() => {}); return Promise.allSettled([promise]); }',
+            errors: [{ message: /empty handler discards/ }],
+        },
     ],
 });
 
@@ -196,6 +214,7 @@ runCraftRule('no-failed-operation-success', {
         'async function load() { return await request().catch(() => retry()); }',
         'function save() { try { create(); } catch (error) { if (isAlreadySaved(error)) { return true; } throw error; } }',
         'function save() { try { create(); } catch { repair(); return { ok: true }; } }',
+        'function save() { try { return create(); } catch { return { ok: false } as Result; } }',
     ],
     invalid: [
         {
@@ -205,6 +224,18 @@ runCraftRule('no-failed-operation-success', {
         { code: 'work().catch(() => ({ success: true }));', errors: [{ message: /unconditionally return success/ }] },
         {
             code: 'work().catch((error) => { console.warn(error); return { ok: true }; });',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+        {
+            code: 'function save() { try { return create(); } catch { return { ok: true } as Result; } }',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+        {
+            code: 'work().catch(() => <Result>({ success: true }));',
+            errors: [{ message: /unconditionally return success/ }],
+        },
+        {
+            code: 'work().catch(() => ({ ok: (true as const) satisfies true } satisfies Result));',
             errors: [{ message: /unconditionally return success/ }],
         },
     ],
@@ -249,6 +280,8 @@ runCraftRule('no-conditional-playwright-admission', {
         "import { test, expect } from './e2eTest'; async function helper() { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } } test('name', async () => { await helper(); });",
         "import { test, expect } from 'vitest'; test('name', async () => { if (await locator.isVisible()) { expect(value).toBe(1); } });",
         "import { test, expect } from '@playwright/test'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } else { throw new Error('missing'); } });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { if (!(await locator.isVisible())) { await setup(); } await test.step('required', async () => { await expect(locator).toBeVisible(); }); });",
+        "import { test, expect } from './e2eTest'; test('name', async () => { const helper = async () => { if (await locator.isVisible()) { await test.step('unused', async () => { await expect(locator).toBeVisible(); }); } }; await setup(); });",
     ],
     invalid: [
         {
@@ -261,6 +294,18 @@ runCraftRule('no-conditional-playwright-admission', {
         },
         {
             code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { if (!(await locator.isVisible())) { return; } await verify(locator).toBeVisible(); });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test as scenario, expect as verify } from '@playwright/test'; scenario('name', async () => { if (await locator.isVisible()) { await scenario.step('outer', async () => { await scenario.step('inner', async () => { await verify(locator).toBeVisible(); }); }); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } { const test = unrelated; await test.step('outside', async () => { await expect(locator).toBeVisible(); }); } });",
+            errors: [{ message: /test can finish without asserting/ }],
+        },
+        {
+            code: "import { test, expect } from './e2eTest'; test('name', async () => { if (await locator.isVisible()) { await expect(locator).toBeVisible(); } await customStep('outside', async () => { await expect(locator).toBeVisible(); }); });",
             errors: [{ message: /test can finish without asserting/ }],
         },
     ],

@@ -112,17 +112,25 @@ describe('production quality lint', () => {
             writeFileSync(
                 browser,
                 `
-                import { test, expect } from '../e2eTest';
-                test('required entry', async ({ page }) => {
+                import { test as scenario, expect } from '../e2eTest';
+                scenario('required entry', async ({ page }) => {
                     const entry = page.getByRole('button');
                     if (await entry.isVisible().catch(() => false)) {
                         await expect(entry).toBeVisible();
                     }
                 });
-                test('conditionally retry', async ({ page }) => {
+                scenario('required step entry', async ({ page }) => {
+                    const entry = page.getByRole('button');
+                    if (await entry.isVisible()) {
+                        await scenario.step('mandatory', async () => {
+                            await expect(entry).toBeVisible();
+                        });
+                    }
+                });
+                scenario('conditionally retry', async ({ page }) => {
                     const entry = page.getByRole('button');
                     if (!(await entry.isVisible())) { await page.reload(); }
-                    await expect(entry).toBeVisible();
+                    await scenario.step('mandatory', async () => { await expect(entry).toBeVisible(); });
                     // oxlint-disable-next-line sourdaw-craft/no-fixed-test-sleep -- Observe a real absence window.
                     await page.waitForTimeout(25);
                 });
@@ -152,6 +160,7 @@ describe('production quality lint', () => {
             expect(report.fileCount).toBe(5);
             expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
                 [
+                    ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['sourceHelper.ts', 'sourdaw-craft/no-fixed-test-sleep'],
                     ['typed.ts', 'sourdaw-craft/no-external-data-assertion'],
