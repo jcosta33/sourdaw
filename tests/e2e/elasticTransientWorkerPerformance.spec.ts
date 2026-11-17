@@ -11,6 +11,7 @@ import {
     wait_for_console_marker,
     wait_for_console_marker_after,
 } from './firstPaintDiagnostics';
+import { type createElasticNativeApplyReference } from './helpers/elasticNativeApplyReference';
 
 /**
  * The 60 Hz frame budget (16.667 ms) remains the design target, recorded per task
@@ -52,7 +53,7 @@ type CapturedLongTask = {
     attribution: TaskAttribution[];
 };
 type AttributedPerformanceEntry = PerformanceEntry & { attribution?: readonly TaskAttribution[] };
-type MainThreadTask = { startFromInputMs: number; durationMs: number };
+type MainThreadTask = { startFromInputMs: number; durationMs: number; threadDurationMs: number | null };
 type PreparationMeasure = { name: string; duration: number; startTime: number };
 type ProspectiveObservation = {
     primaryKey: string;
@@ -62,7 +63,12 @@ type ProspectiveObservation = {
     replies: { received: number; status: string | null; changeCount: number | null }[];
     terminated: number | null;
 };
-type BrowserProspectiveObservation = { requests: ProspectiveObservation[]; failures: string[]; restore(): void };
+type BrowserProspectiveObservation = {
+    requests: ProspectiveObservation[];
+    failures: string[];
+    nativeReference: ReturnType<typeof createElasticNativeApplyReference>;
+    restore(): void;
+};
 type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]>; tasks(): MainThreadTask[] };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
 const elasticProspectiveObserverPages = new WeakMap<TestInfo, Page>();
@@ -80,18 +86,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 type TraceInterval = { pid: number; tid: number; startUs: number; endUs: number };
+type TraceMarks = { start: string; end: string };
+const DETECT_TRACE_MARKS: TraceMarks = {
+    start: 'elastic-detect-input-start',
+    end: 'elastic-detect-dom-complete',
+};
+const REFERENCE_TRACE_MARKS: TraceMarks = {
+    start: 'elastic-native-apply-reference-start',
+    end: 'elastic-native-apply-reference-end',
+};
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
-function readElasticTraceInterval(events: readonly Record<string, unknown>[]): TraceInterval | null {
-    const input = events.find((event) => event.name === 'elastic-detect-input-start');
+function readElasticTraceInterval(events: readonly Record<string, unknown>[], marks: TraceMarks): TraceInterval | null {
+    const input = events.find((event) => event.name === marks.start);
     if (!input || !isFiniteNumber(input.pid) || !isFiniteNumber(input.tid) || !isFiniteNumber(input.ts)) {
         return null;
     }
     const completion = events.find(
-        (event) => event.name === 'elastic-detect-dom-complete' && event.pid === input.pid && event.tid === input.tid
+        (event) => event.name === marks.end && event.pid === input.pid && event.tid === input.tid
     );
     if (!completion || !isFiniteNumber(completion.ts) || completion.ts <= input.ts) {
         return null;
@@ -114,7 +129,13 @@ function readElasticIntervalTasks(
             event.ts < interval.endUs &&
             event.ts + event.dur > interval.startUs
         ) {
-            return [{ startFromInputMs: (event.ts - interval.startUs) / 1000, durationMs: event.dur / 1000 }];
+            return [
+                {
+                    startFromInputMs: (event.ts - interval.startUs) / 1000,
+                    durationMs: event.dur / 1000,
+                    threadDurationMs: isFiniteNumber(event.tdur) ? event.tdur / 1000 : null,
+                },
+            ];
         }
         return [];
     });
@@ -123,11 +144,28 @@ const MATERIALIZATION_PHASE_NAMES: readonly string[] = [
     'elastic-transient-plan-task',
     'elastic-transient-clone-task',
     'automerge-prospective-response-task',
+    'automerge-prospective-vendor-decode-task',
     'automerge-prospective-apply-task',
+    'automerge-prospective-vendor-apply-task',
     'automerge-prospective-authority-task',
     'elastic-transient-change-task',
     'automerge-storage-materialization-handoff-task',
 ];
+function enclosingTask(
+    phase: { startTime: number; duration: number },
+    inputMarkStart: number,
+    tasks: MainThreadTask[]
+): MainThreadTask | undefined {
+    const start = phase.startTime - inputMarkStart;
+    const end = start + phase.duration;
+    // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
+    return tasks.find(
+        (candidate) =>
+            candidate.startFromInputMs <= start + 0.002 &&
+            candidate.startFromInputMs + candidate.durationMs >= end - 0.002
+    );
+}
+
 function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart: number, tasks: MainThreadTask[]) {
     return measures
         .filter(
@@ -135,17 +173,7 @@ function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart
                 MATERIALIZATION_PHASE_NAMES.includes(measure.name) ||
                 measure.name === 'automerge-storage-prepared-publication'
         )
-        .map((phase) => {
-            const start = phase.startTime - inputMarkStart;
-            const end = start + phase.duration;
-            // Trace timestamps are integer microseconds; performance.now retains sub-microsecond fractions.
-            const task = tasks.find(
-                (candidate) =>
-                    candidate.startFromInputMs <= start + 0.002 &&
-                    candidate.startFromInputMs + candidate.durationMs >= end - 0.002
-            );
-            return { ...phase, enclosingTask: task };
-        });
+        .map((phase) => ({ ...phase, enclosingTask: enclosingTask(phase, inputMarkStart, tasks) }));
 }
 function assertMaterializationTaskSpans(phases: ReturnType<typeof materializationTaskSpans>): void {
     for (const name of MATERIALIZATION_PHASE_NAMES) {
@@ -189,7 +217,7 @@ function assertProspectiveObservations(measures: PreparationMeasure[], requests:
 }
 
 async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<void> {
-    await page.evaluate(() => {
+    await page.evaluate(async (referenceUrl) => {
         const target = window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation };
         if (target.elasticProspectiveObservation) {
             throw new Error('Prospective observations already installed');
@@ -200,6 +228,8 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
         if (!postDescriptor || !terminateDescriptor) {
             throw new Error('Native Worker descriptors are required for passive observation');
         }
+        const referenceModule: typeof import('./helpers/elasticNativeApplyReference') = await import(referenceUrl);
+        const nativeReference = referenceModule.createElasticNativeApplyReference();
         const requests: ProspectiveObservation[] = [];
         const failures: string[] = [];
         const pending = new WeakMap<Worker, ProspectiveObservation>();
@@ -244,6 +274,11 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                 if (observation) {
                     observation.posted = true;
                     pending.set(receiver, observation);
+                    const request = args[0];
+                    const observeReply =
+                        typeof request === 'object' && request !== null && 'actor' in request && 'heads' in request
+                            ? nativeReference.observeRequest({ actor: request.actor, heads: request.heads })
+                            : undefined;
                     const receive = (event: MessageEvent<unknown>): void => {
                         const reply = event.data;
                         let status: string | null = null;
@@ -255,6 +290,7 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                             }
                         }
                         observation.replies.push({ received: performance.now(), status, changeCount });
+                        observeReply?.(reply);
                     };
                     const error = (): void => {
                         failures.push('Actual prospective Worker emitted a native error');
@@ -286,11 +322,13 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
         target.elasticProspectiveObservation = {
             requests,
             failures,
+            nativeReference,
             restore() {
                 try {
                     for (const cleanup of cleanups) {
                         cleanup();
                     }
+                    nativeReference.dispose();
                 } finally {
                     if (prototype.postMessage === post) {
                         Object.defineProperty(prototype, 'postMessage', postDescriptor);
@@ -306,8 +344,52 @@ async function observeProspectiveRequests(page: Page, info: TestInfo): Promise<v
                 }
             },
         };
-    });
+    }, '/tests/e2e/helpers/elasticNativeApplyReference.ts');
     elasticProspectiveObserverPages.set(info, page);
+}
+
+async function captureNativeReferencePhase(page: Page, step: 'arm' | 'finish', phase: string): Promise<void> {
+    await page.evaluate(
+        ({ step, phase }) => {
+            const observation = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
+                .elasticProspectiveObservation;
+            if (!observation) {
+                throw new Error('Native Detect reference requires the actual Worker observer');
+            }
+            observation.nativeReference[step](phase);
+        },
+        { step, phase }
+    );
+}
+
+async function attachNativeApplyReference(page: Page, info: TestInfo): Promise<void> {
+    const trace = await startElasticTaskTrace(page, info, 'native-apply-reference', REFERENCE_TRACE_MARKS);
+    const reference = await page
+        .evaluate(() => {
+            const observation = (window as Window & { elasticProspectiveObservation?: BrowserProspectiveObservation })
+                .elasticProspectiveObservation;
+            if (!observation) {
+                throw new Error('Native Detect reference requires the actual Worker observer');
+            }
+            return observation.nativeReference.measure();
+        })
+        .finally(() => trace.stop());
+    const tasks = trace.tasks();
+    const phases = reference.phases.map((phase) => ({
+        ...phase,
+        samples: phase.samples.map((sample) => ({
+            ...sample,
+            enclosingTask: enclosingTask(sample, reference.startTime, tasks),
+        })),
+    }));
+    await info.attach('elastic-native-apply-reference.json', {
+        body: JSON.stringify({ ...reference, phases, tasks }, null, 2),
+        contentType: 'application/json',
+    });
+    expect(phases.map((phase) => phase.phase)).toEqual(['cold-detect', 're-detect-populated', 'sensitivity-populated']);
+    const sampleTasks = phases.flatMap((phase) => phase.samples.map((sample) => sample.enclosingTask));
+    expect(sampleTasks.every((task) => task !== undefined && task.threadDurationMs !== null)).toBe(true);
+    expect(new Set(sampleTasks).size).toBe(sampleTasks.length);
 }
 
 function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
@@ -399,7 +481,12 @@ function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>
     return count;
 }
 
-async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string): Promise<ElasticTaskTrace> {
+async function startElasticTaskTrace(
+    page: Page,
+    info: TestInfo,
+    phase: string,
+    marks = DETECT_TRACE_MARKS
+): Promise<ElasticTaskTrace> {
     const session = await page.context().newCDPSession(page);
     const failures: string[] = [];
     const chunks: Buffer[] = [];
@@ -457,7 +544,7 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     }
                     const events: readonly unknown[] = trace.traceEvents;
                     const records = events.filter(isRecord);
-                    interval = readElasticTraceInterval(records);
+                    interval = readElasticTraceInterval(records, marks);
                     if (!interval) {
                         throw new Error('Elastic trace omitted a complete same-page measured interval');
                     }
@@ -697,6 +784,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
     await observeProspectiveRequests(page, info);
+    await captureNativeReferencePhase(page, 'arm', 'cold-detect');
     const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
         type Metrics = {
@@ -831,6 +919,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         };
     });
     await coldTrace.stop();
+    await captureNativeReferencePhase(page, 'finish', 'cold-detect');
     const after = await sourceState(page);
     const gaps = measured.frames.slice(1).flatMap((time, index) => {
         const previous = measured.frames[index];
@@ -881,6 +970,12 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         copy,
         longTasks,
         workers,
+        sourceEvidence: {
+            pcmBefore: before.pcm,
+            pcmAfter: after.pcm,
+            rawMarkerCount: after.raw.length,
+            projectedMarkerCount: after.projected.length,
+        },
         machine: {
             cpu: cpus()[0]?.model,
             platform: platform(),
@@ -910,19 +1005,21 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(preparedPublications).toHaveLength(1);
     assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
     assertMaterializationTaskSpans(result.nativePhases);
-    expect(result.mainThreadTasks.length).toBeGreaterThan(0);
-    expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
-    expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-    // 60 Hz design budget per task is recorded above; the hard gate is the
-    // jank ceiling — see JANK_TASK_CEILING_MS.
-    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
-    expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(commitTasks).toHaveLength(2);
-    expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(longTasks).toEqual([]);
+    const assertColdTiming = (): void => {
+        expect(result.mainThreadTasks.length).toBeGreaterThan(0);
+        expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
+        expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+        // 60 Hz design budget per task is recorded above; the hard gate is the
+        // jank ceiling — see JANK_TASK_CEILING_MS.
+        expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+        expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
+        expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+        expect(commitTasks).toHaveLength(2);
+        expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+        expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+        expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+        expect(longTasks).toEqual([]);
+    };
     await page.keyboard.press(`${modifier}+z`);
     await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
     await page.keyboard.press(`${modifier}+Shift+z`);
@@ -947,10 +1044,18 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
     expect(retained).toHaveLength(2);
 
+    await captureNativeReferencePhase(page, 'arm', 're-detect-populated');
     const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
     await armPopulatedMeasurement(page, 'click');
     await panel.getByTestId('elastic-detect-button').click();
-    await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained, repeatedTrace);
+    const assertRepeatedTiming = await assertPopulatedMeasurement(
+        page,
+        info,
+        're-detect-populated',
+        populated,
+        retained,
+        repeatedTrace
+    );
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
     const redetected = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
@@ -958,10 +1063,18 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await page.keyboard.press(`${modifier}+Shift+z`);
     await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
 
+    await captureNativeReferencePhase(page, 'arm', 'sensitivity-populated');
     const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
     await armPopulatedMeasurement(page, 'sensitivity');
     await panel.getByRole('slider', { name: 'Transient detection sensitivity' }).press('End');
-    await assertPopulatedMeasurement(page, info, 'sensitivity-populated', populated, retained, sensitivityTrace);
+    const assertSensitivityTiming = await assertPopulatedMeasurement(
+        page,
+        info,
+        'sensitivity-populated',
+        populated,
+        retained,
+        sensitivityTrace
+    );
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
     const sensitive = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
@@ -969,6 +1082,12 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await page.keyboard.press(`${modifier}+Shift+z`);
     await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
+
+    // Reference work follows every product route so it cannot warm the measured SDK calls.
+    await attachNativeApplyReference(page, info);
+    assertColdTiming();
+    assertRepeatedTiming();
+    assertSensitivityTiming();
 });
 
 /** Same five-amplitude pulse fixture as the accepted Elastic sensitivity integration. */
@@ -1289,7 +1408,7 @@ async function assertPopulatedMeasurement(
     before: Awaited<ReturnType<typeof sourceState>>,
     retained: Awaited<ReturnType<typeof sourceState>>['projected'],
     trace: ElasticTaskTrace
-): Promise<void> {
+): Promise<() => void> {
     const measured = await page.evaluate(async () => {
         const target = window as Window & {
             populatedElasticMeasurement?: Promise<{
@@ -1320,6 +1439,8 @@ async function assertPopulatedMeasurement(
         };
     });
     await trace.stop();
+    await captureNativeReferencePhase(page, 'finish', phase);
+    const after = await sourceState(page);
     const gaps = measured.frames
         .slice(1)
         .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]] : []));
@@ -1365,12 +1486,18 @@ async function assertPopulatedMeasurement(
         copy,
         commitTasks,
         longTasks,
+        sourceEvidence: {
+            pcmBefore: before.pcm,
+            pcmAfter: after.pcm,
+            rawMarkerCount: after.raw.length,
+            projectedMarkerCount: after.projected.length,
+            preservedMarkerIds: retained.map((marker) => marker.id),
+        },
     };
     await info.attach(`elastic-120-second-${phase}.json`, {
         body: JSON.stringify(result, null, 2),
         contentType: 'application/json',
     });
-    const after = await sourceState(page);
     expect(after.raw).toEqual(after.projected);
     expect(after.pcm).toEqual(before.pcm);
     expect(after.projected).toHaveLength(ATTACKS.length + 1);
@@ -1383,18 +1510,20 @@ async function assertPopulatedMeasurement(
     expect(preparedPublications).toHaveLength(1);
     assertProspectiveObservations(measured.measures, measured.prospectiveRequests);
     assertMaterializationTaskSpans(result.nativePhases);
-    expect(result.mainThreadTasks.length).toBeGreaterThan(0);
-    expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
-    expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
-    // 60 Hz design budget per task is recorded above; the hard gate is the
-    // jank ceiling — see JANK_TASK_CEILING_MS.
-    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
-    expect(copy.length).toBeGreaterThan(1);
-    expect(commitTasks).toHaveLength(2);
-    expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(longTasks).toEqual([]);
+    return () => {
+        expect(result.mainThreadTasks.length).toBeGreaterThan(0);
+        expect(Math.max(...result.mainThreadTasks.map((task) => task.durationMs))).toBeLessThan(JANK_TASK_CEILING_MS);
+        expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+        // 60 Hz design budget per task is recorded above; the hard gate is the
+        // jank ceiling — see JANK_TASK_CEILING_MS.
+        expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+        expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
+        expect(copy.length).toBeGreaterThan(1);
+        expect(commitTasks).toHaveLength(2);
+        expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+        expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
+        expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+        expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
+        expect(longTasks).toEqual([]);
+    };
 }

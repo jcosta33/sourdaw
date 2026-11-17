@@ -2,6 +2,7 @@ import {
     type ChangeMetadata,
     type Doc,
     type Heads,
+    type Patch,
     applyChanges,
     free,
     getActorId,
@@ -92,6 +93,24 @@ function assertDefaultNativeAuthority<TDoc>(
     assertCurrent();
 }
 
+function assertOwnedPatches(patches: readonly Patch[], key: string | undefined): void {
+    let ownedSlotChanged = false;
+    let retiredEvidence = false;
+    for (const patch of patches) {
+        const retiresEvidence =
+            patch.action === 'del' && patch.path.length === 1 && patch.path[0] === '_storagePublicationEvidence';
+        if (patch.path[0] !== key && !retiresEvidence) {
+            throw new Error('Prospective mutation Worker changed an unowned slot');
+        }
+        ownedSlotChanged ||= patch.path[0] === key;
+        retiredEvidence ||= retiresEvidence;
+    }
+    // Native patch order need not place the owned slot before metadata retirement.
+    if (retiredEvidence && !ownedSlotChanged) {
+        throw new Error('Prospective mutation Worker changed an unowned slot');
+    }
+}
+
 /** The ordinary one-change adoption path, with its existing native and slot authority checks. */
 export function adoptProspectiveMutationChanges<TDoc>({
     candidate,
@@ -114,26 +133,22 @@ export function adoptProspectiveMutationChanges<TDoc>({
         try {
             if (changes.length > 0) {
                 // TypeScript does not track writes to captured locals through the native callback.
-                const application = { ownedSlotChanged: false, retiredEvidence: false };
-                [loaded] = applyChanges(loaded, changes, {
-                    patchCallback: (patches) => {
-                        for (const patch of patches) {
-                            const retiresEvidence =
-                                patch.action === 'del' &&
-                                patch.path.length === 1 &&
-                                patch.path[0] === '_storagePublicationEvidence';
-                            if (patch.path[0] !== key && !retiresEvidence) {
-                                throw new Error('Prospective mutation Worker changed an unowned slot');
-                            }
-                            application.ownedSlotChanged ||= patch.path[0] === key;
-                            application.retiredEvidence ||= retiresEvidence;
-                        }
-                    },
-                });
-                // Native patch order need not place the owned slot before metadata retirement.
-                if (application.retiredEvidence && !application.ownedSlotChanged) {
-                    throw new Error('Prospective mutation Worker changed an unowned slot');
+                const application: { patches: readonly Patch[] } = { patches: [] };
+                const vendorStarted = performance.now();
+                try {
+                    [loaded] = applyChanges(loaded, changes, {
+                        patchCallback: (patches) => {
+                            application.patches = patches;
+                        },
+                    });
+                } finally {
+                    performance.measure('automerge-prospective-vendor-apply-task', {
+                        start: vendorStarted,
+                        end: performance.now(),
+                    });
+                    performance.clearMeasures('automerge-prospective-vendor-apply-task');
                 }
+                assertOwnedPatches(application.patches, key);
             }
         } finally {
             performance.measure('automerge-prospective-apply-task', {
