@@ -385,12 +385,12 @@ describe('thread context for the planner', () => {
                         ],
                     })
                 );
-                const result =
-                    status === 'proposed'
-                        ? thread?.pendingProposal
-                        : status === 'executed'
-                          ? thread?.lastCommit
-                          : thread?.lastCancelled;
+                const results = {
+                    proposed: thread?.pendingProposal,
+                    executed: thread?.lastCommit,
+                    cancelled: thread?.lastCancelled,
+                };
+                const result = results[status];
                 expect(result).not.toBeNull();
                 expect(result).not.toHaveProperty('creativeInterpretation');
             }
