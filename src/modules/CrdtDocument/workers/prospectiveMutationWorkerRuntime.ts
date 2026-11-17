@@ -1,4 +1,4 @@
-import { change, free, getHeads, getMissingDeps, load, save, type Doc } from '@automerge/automerge/slim';
+import { change, free, getChangesSince, getHeads, getMissingDeps, load, type Doc } from '@automerge/automerge/slim';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
@@ -27,7 +27,7 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
             throw new Error('Prospective mutation candidate has missing dependencies');
         }
         return {
-            bytes: Uint8Array.from(save(document)),
+            changes: getChangesSince(document, [...input.heads]).map((bytes) => Uint8Array.from(bytes)),
             heads: getHeads(document),
         };
     } finally {

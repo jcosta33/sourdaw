@@ -2,15 +2,14 @@
 /// <reference path="./scripts/types/eslint-plugin-promise.d.ts" />
 // @ts-check
 // Oxlint executes supported public JS plugins in .oxlint-plugins.json.
-// These rules retain ESLint's parser services, resolver functions or core semantics.
+// These rules retain ESLint's parser services or core semantics.
 import { readFileSync } from 'node:fs';
 
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
 import eslintPluginQuery from '@tanstack/eslint-plugin-query';
-import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
-import eslintPluginImport, { createNodeResolver } from 'eslint-plugin-import-x';
+import eslintPluginImport from 'eslint-plugin-import-x';
 import eslintPluginJsxA11yX from 'eslint-plugin-jsx-a11y-x';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import eslintPluginPromise from 'eslint-plugin-promise';
@@ -157,6 +156,7 @@ export default tseslint.config(
             '@tanstack/query': eslintPluginQuery,
             '@typescript-eslint': tseslint.plugin,
             'import-x': eslintPluginImport,
+            'import-x-js': eslintPluginImport,
             'promise-js': eslintPluginPromise,
             promise: eslintPluginPromise,
             'jsx-a11y-x-js': jsxA11yPlugin,
@@ -181,7 +181,6 @@ export default tseslint.config(
         settings: {
             ...eslintPluginReact.configs['recommended-type-checked'].settings,
             react: { version: 'detect' },
-            'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()],
         },
     },
     {
@@ -221,35 +220,10 @@ export default tseslint.config(
         rules: {
             'consistent-return': 'error',
             'no-invalid-this': 'error',
-            'no-octal': 'error',
             'no-void': [
                 'error',
                 {
                     allowAsStatement: true,
-                },
-            ],
-            'import-x/order': [
-                'error',
-                {
-                    groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],
-                    pathGroups: [
-                        {
-                            pattern: 'react',
-                            group: 'external',
-                            position: 'before',
-                        },
-                        {
-                            pattern: 'src/**',
-                            group: 'internal',
-                            position: 'before',
-                        },
-                    ],
-                    pathGroupsExcludedImportTypes: ['react'],
-                    'newlines-between': 'always',
-                    alphabetize: {
-                        order: 'asc',
-                        caseInsensitive: true,
-                    },
                 },
             ],
         },

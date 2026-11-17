@@ -105,46 +105,102 @@ it('reports filtered skipped cases as ready without claiming their bodies ran', 
     }
 }, 30_000);
 
-it('records production setup before a blocked test module can be collected', async () => {
-    const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
-    const spec = join(fixture, 'blocked.spec.ts');
-    const entered = join(fixture, 'entered');
-    writeFileSync(
-        spec,
-        `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(entered)}, 'entered'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);\n`
-    );
-    const child = spawn(process.execPath, [join(root, 'scripts/runVitestZeroTestGuard.ts'), spec], {
-        cwd: root,
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture },
-    });
-    const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
-    try {
-        await vi.waitFor(
-            () => {
-                const journal = readdirSync(fixture).find((name) => name.startsWith('vitest-progress-'));
-                expect(journal).toBeDefined();
-                const files = readdirSync(join(fixture, journal!));
-                expect(readFileSync(entered, 'utf8')).toBe('entered');
-                expect(files).toContain('worker-setup.json');
-                expect(files).toContain('module-queued.json');
-                expect(files).not.toContain('module-collected.json');
-            },
-            { timeout: 20_000 }
+it.skipIf(process.platform === 'win32')(
+    'records production setup before a blocked test module can be collected',
+    async () => {
+        const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
+        const spec = join(fixture, 'blocked.spec.ts');
+        const entered = join(fixture, 'entered');
+        writeFileSync(
+            spec,
+            `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(entered)}, 'entered'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);\n`
         );
-    } finally {
-        if (child.pid !== undefined) {
-            try {
-                process.kill(-child.pid, 'SIGKILL');
-            } catch {
-                /* Already exited. */
+        const child = spawn(process.execPath, [join(root, 'scripts/runVitestZeroTestGuard.ts'), spec], {
+            cwd: root,
+            detached: true,
+            stdio: 'ignore',
+            env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture },
+        });
+        const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+        try {
+            await vi.waitFor(
+                () => {
+                    const journal = readdirSync(fixture).find((name) => name.startsWith('vitest-progress-'));
+                    expect(journal).toBeDefined();
+                    const files = readdirSync(join(fixture, journal!));
+                    expect(readFileSync(entered, 'utf8')).toBe('entered');
+                    expect(files).toContain('worker-setup.json');
+                    expect(files).toContain('module-queued.json');
+                    expect(files).not.toContain('module-collected.json');
+                },
+                { timeout: 20_000 }
+            );
+        } finally {
+            if (child.pid !== undefined) {
+                try {
+                    process.kill(-child.pid, 'SIGKILL');
+                } catch {
+                    /* Already exited. */
+                }
             }
+            await closed;
+            rmSync(fixture, { recursive: true, force: true });
         }
-        await closed;
-        rmSync(fixture, { recursive: true, force: true });
-    }
-}, 30_000);
+    },
+    30_000
+);
+
+it.skipIf(process.platform === 'win32')(
+    'reports a failed case before a later case finishes',
+    async () => {
+        const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
+        const spec = join(fixture, 'early-failure.spec.ts');
+        const entered = join(fixture, 'entered');
+        writeFileSync(
+            spec,
+            `import { writeFileSync } from 'node:fs'; import { it } from 'vitest';
+it('first case', () => { throw new Error('unique-early-failure-sentinel'); });
+it('held case', async () => { writeFileSync(${JSON.stringify(entered)}, 'entered'); await new Promise(() => {}); }, 120_000);
+`
+        );
+        const child = spawn(process.execPath, [join(root, 'scripts/runVitestZeroTestGuard.ts'), spec], {
+            cwd: root,
+            detached: true,
+            env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture },
+        });
+        let output = '';
+        child.stdout.on('data', (chunk: Buffer) => {
+            output += chunk.toString();
+        });
+        child.stderr.on('data', (chunk: Buffer) => {
+            output += chunk.toString();
+        });
+        const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+        try {
+            await vi.waitFor(
+                () => {
+                    expect(readFileSync(entered, 'utf8')).toBe('entered');
+                    expect(child.exitCode).toBeNull();
+                    expect(output).toContain('vitest case failure: first case');
+                    expect(output).toContain('Error: unique-early-failure-sentinel');
+                    expect(output).toContain('early-failure.spec.ts:');
+                },
+                { timeout: 20_000 }
+            );
+        } finally {
+            if (child.pid !== undefined) {
+                try {
+                    process.kill(-child.pid, 'SIGKILL');
+                } catch {
+                    /* Already exited. */
+                }
+            }
+            await closed;
+            rmSync(fixture, { recursive: true, force: true });
+        }
+    },
+    30_000
+);
 
 it('keeps builtin spawn interception available after production worker setup', () => {
     const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));

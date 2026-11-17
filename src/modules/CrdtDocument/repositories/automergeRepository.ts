@@ -2,10 +2,8 @@ import {
     type Doc,
     type ChangeFn,
     type Heads,
-    type ChangeMetadata,
     init,
     load,
-    prepareLoad,
     save,
     saveIncremental,
     saveSince,
@@ -37,6 +35,8 @@ import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutat
 import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 import { advanceRootIdentityEpoch, readRootIdentityEpoch } from '../stores/rootIdentityEpoch';
 
+import { adoptProspectiveMutationChanges } from './adoptProspectiveMutationChanges';
+import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
 
@@ -80,35 +80,6 @@ type DecodedBundle = {
 type MergeBundleOptions = {
     shouldCommit?: () => boolean;
 };
-
-/** Only a complete document may enter checked load; trailing changes use native incremental insertion. */
-function assertCompleteCanonicalDocument(bytes: Uint8Array<ArrayBuffer>): void {
-    if (
-        bytes.length < 10 ||
-        bytes[0] !== 0x85 ||
-        bytes[1] !== 0x6f ||
-        bytes[2] !== 0x4a ||
-        bytes[3] !== 0x83 ||
-        bytes[8] !== 0
-    ) {
-        throw new Error('Prospective mutation Worker returned an invalid document envelope');
-    }
-    let length = 0n;
-    for (let index = 0; index < 10; index++) {
-        const byte = bytes[9 + index];
-        if (byte === undefined || (index === 9 && byte > 1)) {
-            break;
-        }
-        length |= BigInt(byte & 0x7f) << BigInt(index * 7);
-        if ((byte & 0x80) === 0) {
-            if ((index > 0 && byte === 0) || length !== BigInt(bytes.length - 10 - index)) {
-                break;
-            }
-            return;
-        }
-    }
-    throw new Error('Prospective mutation Worker returned an invalid document length');
-}
 
 function createMissingRootError(): Error {
     return new Error('[AutomergeRepository] Non-empty bundle is missing the exact root document');
@@ -619,14 +590,11 @@ class AutomergeRepository {
         let cloneConsumed = false;
         let workerRequested = false;
         let workerResult: ProspectiveMutationWorkerResult | undefined;
-        let pendingLoad: ReturnType<typeof prepareLoad<TDoc>> | undefined;
         let removeMaterializationAbortListener: (() => void) | undefined;
         const controller = new AbortController();
         const releaseClone = (): void => {
             removeMaterializationAbortListener?.();
             removeMaterializationAbortListener = undefined;
-            pendingLoad?.discard();
-            pendingLoad = undefined;
             if (candidate) {
                 free(candidate);
                 candidate = undefined;
@@ -670,17 +638,19 @@ class AutomergeRepository {
                             }
                             const started = performance.now();
                             try {
-                                assertCompleteCanonicalDocument(result.bytes);
-                                // The caller yields a frame after this request. Keep JS-root
-                                // materialization in the later synchronous adoption phase.
-                                pendingLoad = prepareLoad<TDoc>(result.bytes, { actor });
+                                if (result.changes.length > 1) {
+                                    throw new Error('Prospective mutation Worker changed native authorship');
+                                }
+                                for (const bytes of result.changes) {
+                                    assertCompleteCanonicalChange(bytes);
+                                }
                                 workerResult = result;
                             } finally {
-                                performance.measure('automerge-prospective-parse-task', {
+                                performance.measure('automerge-prospective-response-task', {
                                     start: started,
                                     end: performance.now(),
                                 });
-                                performance.clearMeasures('automerge-prospective-parse-task');
+                                performance.clearMeasures('automerge-prospective-response-task');
                             }
                         })
                         .catch((error: unknown) => {
@@ -715,73 +685,25 @@ class AutomergeRepository {
                 }
                 let updated: Doc<TDoc>;
                 if (workerRequested) {
-                    let loaded: Doc<TDoc> | undefined;
-                    try {
-                        if (!workerResult || !candidate || !pendingLoad) {
-                            throw new Error('Prospective mutation Worker has not completed');
-                        }
-                        const { heads } = workerResult;
-                        workerResult = undefined;
-                        loaded = pendingLoad.materialize();
-                        pendingLoad = undefined;
-                        // A checked complete document has an empty change queue; missing heads
-                        // therefore detect an absent applied frontier without exporting operations.
-                        if (getMissingDeps(loaded, previousHeads).length > 0) {
-                            throw new Error('Prospective mutation Worker lost the native frontier');
-                        }
-                        const additions = getChangesMetaSince(loaded, previousHeads);
-                        if (additions.length > 1) {
-                            throw new Error('Prospective mutation Worker changed native authorship');
-                        }
-                        const addition = additions[0];
-                        if (addition) {
-                            const previousOwnChange = getChangesMetaSince(doc, []).reduce<ChangeMetadata | undefined>(
-                                (latest, entry) =>
-                                    entry.actor === actor && (!latest || entry.seq > latest.seq) ? entry : latest,
-                                undefined
-                            );
-                            const nextSequence = (previousOwnChange?.seq ?? 0) + 1;
-                            const expectedDependencies = new Set(previousHeads);
-                            // Native transactions also name this actor's last change when it is no longer a head.
-                            if (previousOwnChange) {
-                                expectedDependencies.add(previousOwnChange.hash);
-                            }
-                            const dependencies = new Set(addition.deps);
-                            if (
-                                addition.actor !== actor ||
-                                addition.seq !== nextSequence ||
-                                addition.message !== (message || null) ||
-                                addition.deps.length !== dependencies.size ||
-                                dependencies.size !== expectedDependencies.size ||
-                                addition.deps.some((head) => !expectedDependencies.has(head))
-                            ) {
-                                throw new Error('Prospective mutation Worker changed native authority');
-                            }
-                        }
-                        const expectedHeads = addition ? [addition.hash] : previousHeads;
-                        const installedHeads = getHeads(loaded);
-                        if (
-                            heads.length !== expectedHeads.length ||
-                            heads.some((head) => !expectedHeads.includes(head)) ||
-                            installedHeads.length !== expectedHeads.length ||
-                            installedHeads.some((head) => !expectedHeads.includes(head))
-                        ) {
-                            throw new Error('Prospective mutation Worker changed native heads');
-                        }
-                        if (getActorId(loaded) !== actor || getMissingDeps(loaded, []).length > 0) {
-                            throw new Error('Prospective mutation Worker left missing native dependencies');
-                        }
-                        authority.assertCurrent();
+                    if (!workerResult || !candidate) {
                         releaseClone();
-                        updated = loaded;
-                        loaded = undefined;
-                    } catch (error) {
-                        if (loaded) {
-                            free(loaded);
-                        }
-                        releaseClone();
-                        throw error;
+                        throw new Error('Prospective mutation Worker has not completed');
                     }
+                    const result = workerResult;
+                    workerResult = undefined;
+                    const retained = candidate;
+                    candidate = undefined;
+                    updated = adoptProspectiveMutationChanges({
+                        candidate: retained,
+                        doc,
+                        result,
+                        actor,
+                        previousHeads,
+                        message,
+                        key: canonicalMutation?.key,
+                        assertCurrent: authority.assertCurrent,
+                        releaseClone,
+                    });
                 } else {
                     if (!candidate) {
                         throw new Error('Prospective clone is unavailable');
