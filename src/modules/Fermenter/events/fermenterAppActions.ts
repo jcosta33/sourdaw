@@ -1,4 +1,4 @@
-import { type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
+import { type DeviceStateChunkSnapshot } from '#/modules/Arrangement/events';
 
 export type DevicePatchStateSnapshot = {
     deviceState: DeviceStateChunkSnapshot | null;

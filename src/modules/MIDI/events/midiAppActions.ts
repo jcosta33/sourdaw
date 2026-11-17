@@ -1,4 +1,4 @@
-import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type MidiClipNoteSnapshot } from './midiClipDataSnapshots';
 
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
 export type GrooveTemplateActionSnapshot = {

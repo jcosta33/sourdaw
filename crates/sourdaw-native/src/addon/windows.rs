@@ -124,6 +124,27 @@ pub type EditorWindowResizableFn = ThreadsafeFunction<
     true,
 >;
 
+/// The shell's window callbacks, by name, as `registerPluginWindowHost` takes
+/// them.
+///
+/// Read-only from JS: the threadsafe functions cannot be handed back, so the
+/// object only ever crosses inward. Each field keeps the type the callback had
+/// as a positional argument, so converting the object builds the same weak
+/// threadsafe functions, on the same registering thread.
+#[napi(object, object_to_js = false)]
+pub struct PluginWindowHostCallbacks<'env> {
+    pub create_editor_window: CreateEditorWindowFn,
+    pub editor_window_exists: EditorWindowExistsFn,
+    /// A plain function: it is referenced, not made threadsafe, for the reason
+    /// [`EditorWindowSizeCallback`] gives.
+    pub set_editor_window_size: Function<'env, EditorWindowSizeRequest, ()>,
+    pub set_editor_window_resizable: EditorWindowResizableFn,
+    pub show_and_focus_editor_window: EditorWindowLabelFn,
+    pub destroy_editor_window: EditorWindowLabelFn,
+    pub hide_editor_window: EditorWindowLabelFn,
+    pub show_editor_window: EditorWindowLabelFn,
+}
+
 /// The shell's resize callback, kept as a reference rather than a threadsafe
 /// function: it is only ever called on the main thread, and calling it there is
 /// the whole point — a threadsafe call would queue behind the turn of the loop

@@ -1,17 +1,16 @@
-import { type AutomationMode } from '#/modules/Automation/events';
+import { type AutomationMode, type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { type MidiCcSnapshot, type MidiNotesSnapshot, type MidiPitchBendSnapshot } from '#/modules/MIDI/events';
-import {
-    type AutomationRecordingPolicy,
-    type ClipAutomationLaneSnapshot,
-    type ClipSatelliteEntrySnapshot,
-    type CompTakeLaneSnapshot,
-} from '#/utils/handlerContract';
 
 import {
     type ClipSnapshot,
     type GeneratedMidiStateGuard,
     type StemImportTrackSnapshot,
 } from './arrangementClipSnapshots';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSatelliteEntrySnapshot,
+    type CompTakeLaneSnapshot,
+} from './arrangementClipStateSnapshots';
 import {
     type FreezeStateSnapshot,
     type RestoreTrackPayloadSnapshot,

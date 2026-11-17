@@ -5,9 +5,9 @@ import {
 } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { decodeMidiClipDataSnapshots, removeMidiClipData, restoreMidiClipData } from '#/modules/MIDI/useCases';
-import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type ClipAutomationLaneSnapshot } from '../../events/arrangementClipStateSnapshots';
 import {
     type PositionedClipAutomationLaneSnapshot,
     type PositionedTakeLaneSnapshot,

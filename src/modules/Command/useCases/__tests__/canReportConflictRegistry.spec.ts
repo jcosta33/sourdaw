@@ -7,6 +7,7 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type DeviceStateChunkSnapshot } from '#/modules/Arrangement/events';
 import {
     defaultTrackState,
     persistDeviceParam,
@@ -42,7 +43,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
-import { type AppAction, type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';

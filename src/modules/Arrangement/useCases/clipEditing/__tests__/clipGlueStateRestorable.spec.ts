@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';

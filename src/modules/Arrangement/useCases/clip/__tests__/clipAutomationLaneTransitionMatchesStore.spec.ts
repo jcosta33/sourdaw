@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
+import { type ClipAutomationLaneSnapshot } from '../../../events/arrangementClipStateSnapshots';
 
 const mocks = vi.hoisted(() => ({
     getAutomationLanes: vi.fn<() => ClipAutomationLaneSnapshot[]>(),

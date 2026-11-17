@@ -6,8 +6,6 @@ import {
 } from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
-import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { runAllAsyncEffects, runAllEffects } from '#/utils/runEffects';
 
@@ -36,7 +34,6 @@ import {
     type RuntimeGraphTrackStripInitializationDelta,
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
-import { createAudioPreviewIntents } from '../services/audioPreview/createAudioPreviewIntents';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
 
@@ -46,8 +43,23 @@ import { createOfflineDeviceNode } from './deviceNodeFactory';
 import { addCountByType } from './webAudioEngine/addCountByType';
 import { addDeviceResources } from './webAudioEngine/addDeviceResources';
 import { countDeviceRuntimeResources } from './webAudioEngine/countDeviceRuntimeResources';
+import { createAudioPreview, type AudioPreview } from './webAudioEngine/createAudioPreview';
 import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/createEmptyGraphSlotResourcesByLoadState';
+import { createMasterSection, type MasterMeterNode, type MasterSection } from './webAudioEngine/createMasterSection';
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
+import { createScheduledSources, type ScheduledSources } from './webAudioEngine/createScheduledSources';
+import { createSendRouting, type SendRouting } from './webAudioEngine/createSendRouting';
+import {
+    createSidechainRouting,
+    type SidechainKeyDelayResolver,
+    type SidechainRouting,
+} from './webAudioEngine/createSidechainRouting';
+import {
+    createToasterPadRouting,
+    type ToasterPadBinding,
+    type ToasterPadRoute,
+    type ToasterPadRouting,
+} from './webAudioEngine/createToasterPadRouting';
 import { createTransportClock, type TransportClock } from './webAudioEngine/createTransportClock';
 import { getChromePlaybackStats } from './webAudioEngine/getChromePlaybackStats';
 import { readPlaybackStats } from './webAudioEngine/readPlaybackStats';
@@ -96,56 +108,6 @@ const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
     },
 };
 
-export type NoopMeterNode = {
-    connect(): void;
-    disconnect(): void;
-    port: { postMessage(message: unknown): void };
-};
-
-type SidechainConnection = {
-    sourceTrackId: string;
-    targetTrackId: string;
-    targetDeviceId: string;
-    sourceNode: AudioNode;
-    /** FX-5 — key alignment line sitting between the tap and the route gain. */
-    keyDelayNode: DelayNode;
-    /** Last value written to {@link keyDelayNode}, so a per-tick refresh that
-     *  resolves the same alignment schedules nothing at all. */
-    appliedKeyDelaySec: number;
-    gainNode: GainNode;
-};
-
-/** Resolves the seconds of key delay a wired sidechain route currently needs.
- *  Supplied by the use-case layer (`refreshSidechainAlignment`) so the engine
- *  never reaches into project state for it. */
-export type SidechainKeyDelayResolver = (route: {
-    sourceTrackId: string;
-    targetTrackId: string;
-    targetDeviceId: string;
-}) => number;
-
-type ToasterPadBinding = Readonly<{
-    toasterParentTrackId: string;
-    padIndex: number;
-}>;
-
-export type ToasterPadRoute = ToasterPadBinding & {
-    destinationNode: GainNode | null;
-    controls: ToasterDeviceControls | null;
-};
-
-type ToasterPadRouteSnapshot = Readonly<{
-    toasterParentTrackId: string;
-    padIndex: number;
-    destinationNode: GainNode | null;
-    controls: ToasterDeviceControls | null;
-    dryRouted: boolean;
-}>;
-
-type ToasterPadOutputControls = ToasterDeviceControls & {
-    connectPadOutput: NonNullable<ToasterDeviceControls['connectPadOutput']>;
-};
-
 /**
  * Why a strip is torn down. Only a strip whose track left the project takes its
  * devices out of the project. A deactivated strip's track keeps its devices
@@ -165,42 +127,6 @@ type RuntimeGraphMutationReceipt<TValue> = Readonly<{
     runtimeRevision: number;
 }>;
 
-function hasToasterPadOutputControls(
-    controls: ToasterDeviceControls | undefined | null
-): controls is ToasterPadOutputControls {
-    return typeof controls?.connectPadOutput === 'function';
-}
-
-/**
- * Equal-time crossfade duration (seconds) for a live pre/post-fader send-tap
- * handoff. The old tap's send gain ramps to 0 while a freshly-built gain on the
- * new tap ramps up over the same window, so the bus never sees the block of
- * silence a hard disconnect/reconnect produced. ~10ms is short enough to feel
- * instant yet long enough to span a render quantum at any sample rate.
- */
-const SEND_TAP_CROSSFADE_SECONDS = 0.01;
-
-/** Extra margin (seconds) before the faded-out old send node is disconnected. */
-const SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS = 0.02;
-
-/**
- * Ceiling (seconds) on a sidechain key alignment line. PDC values are single-
- * digit milliseconds to low tens; a `DelayNode` allocates its ring buffer from
- * this maximum, so it is generous enough that no realistic chain is clipped and
- * small enough that the buffer stays trivial.
- */
-const SIDECHAIN_KEY_MAX_DELAY_SECONDS = 1;
-
-/** Glide span (seconds) for a key-alignment change — one scheduler grain, the
- *  same span the automation ramps use. Stepping `delayTime` resamples the key
- *  and clicks; a short a-rate ramp does not. */
-const SIDECHAIN_KEY_DELAY_RAMP_SECONDS = 0.01;
-
-/** Below this (seconds, well under a sample at any rate) a re-resolved key
- *  alignment counts as unchanged and schedules nothing — the alignment refresh
- *  runs every scheduler tick and must not churn AudioParam events. */
-const SIDECHAIN_KEY_DELAY_EPSILON_SECONDS = 1e-6;
-
 /**
  * Repository-internal view of engine state for repository specs and the
  * topology test harness. Never exported from a contract barrel. Collections are
@@ -218,7 +144,7 @@ export type WebAudioEngineInternals = {
     readonly pendingDevicePromises: Set<Promise<unknown>>;
     readonly scheduledNodes: AudioScheduledSourceNode[];
     readonly deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-    readonly masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
+    readonly masterMeterNode: MasterMeterNode | undefined;
     readonly monitorMonoNode: GainNode;
     readonly monitorDimNode: GainNode;
     readonly masterStereoSplitter: ChannelSplitterNode;
@@ -255,127 +181,77 @@ class AudioEngineImpl implements AudioEngine {
                 return engine.busNodes;
             },
             get sendNodes() {
-                return engine.sendNodes;
+                return engine.sends.sendNodes;
             },
             get toasterPadRoutes() {
-                return engine.toasterPadRoutes;
+                return engine.toasterPads.routes;
             },
             get pendingSidechainRoutes() {
-                return engine.pendingSidechainRoutes;
+                return engine.sidechains.pendingRoutes;
             },
             get pendingDevicePromises() {
                 return engine.pendingDevicePromises;
             },
             get scheduledNodes() {
-                return engine.scheduledNodes;
+                return engine.scheduledSources.nodes();
             },
             get deviceReadinessDiagnostics() {
                 return engine.deviceReadinessDiagnostics;
             },
             get masterMeterNode() {
-                return engine.masterMeterNode;
+                return engine.master.meterNode();
             },
             get monitorMonoNode() {
-                return engine.monitorMonoNode;
+                return engine.master.monitorMonoNode;
             },
             get monitorDimNode() {
-                return engine.monitorDimNode;
+                return engine.master.monitorDimNode;
             },
             get masterStereoSplitter() {
-                return engine.masterStereoSplitter;
+                return engine.master.stereoSplitter;
             },
             get masterStereoTapSink() {
-                return engine.masterStereoTapSink;
+                return engine.master.stereoTapSink;
             },
             addDeviceToStrip: engine.addDeviceToStrip.bind(engine),
             removeDeviceFromStrip: engine.removeDeviceFromStrip.bind(engine),
             reconnectRoutingForTrack: engine.reconnectRoutingForTrack.bind(engine),
-            reconcileToasterParent: engine.reconcileToasterParent.bind(engine),
-            handleDeviceRemoved: engine.handleDeviceRemoved.bind(engine),
-            crossfadeSendTap: engine.crossfadeSendTap.bind(engine),
+            reconcileToasterParent: engine.toasterPads.reconcileParent,
+            handleDeviceRemoved: engine.toasterPads.handleDeviceRemoved,
+            crossfadeSendTap: engine.sends.crossfadeSendTap,
             waitForDevices: engine.waitForDevices.bind(engine),
         };
     }
 
     public context!: AudioContext;
-    public masterGainNode!: GainNode;
-    public masterAnalyser!: AnalyserNode;
-    /**
-     * Stereo analysis tap: {@link masterAnalyser}'s pass-through output fans
-     * out through `masterStereoSplitter` into one analyser per channel. Kept
-     * off `masterGainNode` deliberately — {@link wireMasterMeter} disconnects
-     * `masterGainNode` wholesale on every (re-)initialize, which would drop a
-     * tap rooted there. Rooting on `masterAnalyser` instead survives that
-     * rewiring untouched.
-     */
-    private masterStereoSplitter!: ChannelSplitterNode;
-    public masterAnalyserLeft!: AnalyserNode;
-    public masterAnalyserRight!: AnalyserNode;
-    /**
-     * The control-room listening insert, sitting strictly downstream of the
-     * programme: masterAnalyser (and through it the fader, the master meter and
-     * the stereo analysis tap) carries the mix itself, so a monitoring gesture
-     * changes what the musician hears and nothing an export, an offline render
-     * or a meter reads. `monitorMonoNode` folds the feed to mono by the Web
-     * Audio channel-count idiom — an explicit single-channel count downmixes
-     * stereo per the speakers interpretation, (L+R)/2, and the mono result
-     * upmixes back onto both output channels; 'max' returns it to pass-through.
-     * `monitorDimNode` is the dim attenuation.
-     */
-    private monitorMonoNode!: GainNode;
-    private monitorDimNode!: GainNode;
-    /**
-     * The programme reaches the listening output through this edge, and its
-     * connection is the exclusive-preview gate. A gain write made now cannot
-     * reach the frame `currentTime` names when its quotient sits above that
-     * frame (Chromium clamps it to `currentTime` and applies it a sample late),
-     * whereas a disconnect or connect takes effect from the first frame of the
-     * next render quantum, suspended or running.
-     */
-    private previewProgrammeGate!: GainNode;
-    private previewProgrammeOpen = true;
-    private previewRestoration: Promise<void> | null = null;
-    /**
-     * Silent (gain 0) sink the stereo tap analysers connect through to the
-     * destination. Web Audio only pulls nodes with a path to the destination,
-     * so a dead-end analyser branch never processes a render quantum — routing
-     * it through a zero-gain node keeps it live without adding anything to the
-     * audible mix.
-     */
-    private masterStereoTapSink!: GainNode;
-    public masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
+    /** The master chain, its meter tap and the control-room listening insert. */
+    private master!: MasterSection;
+
+    public get masterGainNode(): GainNode {
+        return this.master.gainNode;
+    }
+
+    public get masterAnalyser(): AnalyserNode {
+        return this.master.analyser;
+    }
+
+    public get masterAnalyserLeft(): AnalyserNode {
+        return this.master.analyserLeft;
+    }
+
+    public get masterAnalyserRight(): AnalyserNode {
+        return this.master.analyserRight;
+    }
 
     private trackNodes = new Map<string, TrackNode>();
     /** Tracks the native engine currently carries audibly; see
      *  {@link setNativeCarriedTracks}. Strips created later read it too. */
     private nativeCarriedTrackIds: ReadonlySet<string> = new Set();
     private busNodes = new Map<string, BusNode>();
-    private sendNodes = new Map<string, SendNode>();
-    private sidechainConnections = new Map<string, SidechainConnection>();
-    private toasterPadRoutes = new Map<string, ToasterPadRoute>();
-    /**
-     * Sidechain routes requested while the engine could not wire them (fallback
-     * mode — no live AudioContext). Keyed by `${sourceTrackId}→${targetDeviceId}`
-     * so an unwire request can cancel a still-pending wire. These are replayed
-     * the next time wireSidechainRoute runs outside fallback mode, so a route
-     * requested before the engine was usable is not silently lost (the store
-     * keeps the route but the live graph would otherwise diverge with no
-     * recovery).
-     */
-    private pendingSidechainRoutes = new Map<
-        string,
-        { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
-    >();
-    private scheduledNodes: AudioScheduledSourceNode[] = [];
-    /**
-     * View onto the master metering-processor's SAB, or `null` when no meter tap
-     * is wired (before initialize(), after a failed initialize(), after dispose(),
-     * in fallback mode, or without AudioWorklet/SharedArrayBuffer). `null` is load
-     * bearing: {@link getMasterPeakLevel} returns it verbatim so callers can tell
-     * "no measurement" apart from "measured silence". It must never be an inert
-     * buffer nothing writes — that reads back as a plausible 0.
-     */
-    private masterMeterBuffer: Float32Array | null = null;
+    private readonly sends: SendRouting;
+    private readonly sidechains: SidechainRouting;
+    private readonly toasterPads: ToasterPadRouting;
+    private readonly scheduledSources: ScheduledSources;
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private withheldDeviceNotices = new Set<string>();
     private workletReady = false;
@@ -400,8 +276,7 @@ class AudioEngineImpl implements AudioEngine {
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
     private disposed = false;
-    private previewIntents = createAudioPreviewIntents();
-    private previewResetDepth = 0;
+    private readonly preview: AudioPreview;
     private disposalPromise: Promise<void> | null = null;
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
@@ -428,44 +303,7 @@ class AudioEngineImpl implements AudioEngine {
                     latencyHint: this.latencyHint ?? getAudioContextLatencyHint(DEFAULT_AUDIO_LATENCY_PROFILE),
                     sampleRate: 48_000,
                 });
-            this.masterGainNode = this.context.createGain();
-            this.masterGainNode.gain.value = 0.8;
-
-            this.masterAnalyser = this.context.createAnalyser();
-            this.masterAnalyser.fftSize = 256;
-            this.masterAnalyser.smoothingTimeConstant = 0.8;
-
-            this.monitorMonoNode = this.context.createGain();
-            this.monitorDimNode = this.context.createGain();
-            this.previewProgrammeGate = this.context.createGain();
-
-            this.masterGainNode.connect(this.masterAnalyser);
-            // The listening leg runs through the control-room insert; the
-            // programme (everything upstream of this edge) stays untouched by it.
-            this.masterAnalyser.connect(this.previewProgrammeGate);
-            this.previewProgrammeGate.connect(this.monitorMonoNode);
-            this.monitorMonoNode.connect(this.monitorDimNode);
-            this.monitorDimNode.connect(this.context.destination);
-
-            // Genuine stereo tap: branch off masterAnalyser's pass-through output
-            // (it forwards audio unchanged; only its own analysis reads are
-            // down-mixed to mono) into a ChannelSplitterNode(2), then one analyser
-            // per channel. Route both through a silent sink to the destination so
-            // they are pulled every render quantum without touching the mix.
-            this.masterStereoSplitter = this.context.createChannelSplitter(2);
-            this.masterAnalyserLeft = this.context.createAnalyser();
-            this.masterAnalyserLeft.fftSize = 256;
-            this.masterAnalyserRight = this.context.createAnalyser();
-            this.masterAnalyserRight.fftSize = 256;
-            this.masterStereoTapSink = this.context.createGain();
-            this.masterStereoTapSink.gain.value = 0;
-
-            this.masterAnalyser.connect(this.masterStereoSplitter);
-            this.masterStereoSplitter.connect(this.masterAnalyserLeft, 0);
-            this.masterStereoSplitter.connect(this.masterAnalyserRight, 1);
-            this.masterAnalyserLeft.connect(this.masterStereoTapSink);
-            this.masterAnalyserRight.connect(this.masterStereoTapSink);
-            this.masterStereoTapSink.connect(this.context.destination);
+            this.master = createMasterSection({ context: this.context, mode: 'live' });
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
             notifyUser(
@@ -475,6 +313,46 @@ class AudioEngineImpl implements AudioEngine {
             this.fallbackMode = true;
             this.setupNoopContext();
         }
+
+        this.scheduledSources = createScheduledSources({
+            readContext: () => this.context,
+            readMasterGain: () => this.master.gainNode,
+            assertActive: () => this.assertActive(),
+            isFallback: () => this.fallbackMode,
+        });
+
+        this.preview = createAudioPreview({
+            readContext: () => this.context,
+            readProgrammeGate: () => this.master.previewProgrammeGate,
+            readMonitorMono: () => this.master.monitorMonoNode,
+            isDisposed: () => this.disposed,
+            isFallback: () => this.fallbackMode,
+        });
+
+        this.sends = createSendRouting({
+            readContext: () => this.context,
+            isFallback: () => this.fallbackMode,
+            readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
+            ensureBusStrip: (busId) => this.ensureBusStripInGraph(busId),
+            scheduleTrackSendAutomation: (sourceTrackId, busId, level, time) =>
+                this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time),
+            mutateRuntimeGraph: (mutation) => {
+                this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
+            },
+        });
+
+        this.toasterPads = createToasterPadRouting({
+            readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
+        });
+
+        this.sidechains = createSidechainRouting({
+            readContext: () => this.context,
+            isFallback: () => this.fallbackMode,
+            readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
+            mutateRuntimeGraph: (mutation) => {
+                this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
+            },
+        });
 
         this.adjustmentRuntime = createAdjustmentLayerRuntime({
             getContext: () => this.context ?? null,
@@ -486,21 +364,7 @@ class AudioEngineImpl implements AudioEngine {
 
     private setupNoopContext() {
         this.context = createNoopAudioContext();
-        this.masterGainNode = this.context.createGain();
-        this.masterGainNode.gain.value = 0;
-        this.monitorMonoNode = this.context.createGain();
-        this.monitorDimNode = this.context.createGain();
-        this.previewProgrammeGate = this.context.createGain();
-        this.masterMeterNode = {
-            connect: () => {},
-            disconnect: () => {},
-            port: { postMessage: () => {} },
-        };
-        this.masterAnalyser = this.context.createAnalyser();
-        this.masterStereoSplitter = this.context.createChannelSplitter(2);
-        this.masterAnalyserLeft = this.context.createAnalyser();
-        this.masterAnalyserRight = this.context.createAnalyser();
-        this.masterStereoTapSink = this.context.createGain();
+        this.master = createMasterSection({ context: this.context, mode: 'fallback' });
     }
 
     private assertActive(): void {
@@ -731,7 +595,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         const existing = this.trackNodes.get(sourcePlan.id);
         if (existing) {
-            const existingPadBinding = this.toasterPadRoutes.get(sourcePlan.id);
+            const existingPadBinding = this.toasterPads.routes.get(sourcePlan.id);
             const matchesPadBinding = delta.output.padBinding
                 ? existingPadBinding?.toasterParentTrackId === delta.output.padBinding.toasterParentTrackId &&
                   existingPadBinding.padIndex === delta.output.padBinding.padIndex
@@ -883,68 +747,9 @@ class AudioEngineImpl implements AudioEngine {
         // constructor — the master nodes are built before any worklet module is
         // loaded (initialize() runs later), exactly like the per-track meter
         // which is built once metering-processor is available.
-        this.wireMasterMeter();
+        this.master.wireMeter();
         this.workletReady = true;
         this.lastInitError = null;
-    }
-
-    /**
-     * Insert a SAB-backed metering-processor into the master chain so
-     * getMasterPeakLevel reflects real output level. Mirrors the per-track meter
-     * wiring in {@link TrackNode}: a 4-byte SharedArrayBuffer holds one peak the
-     * worklet writes (Math.max across the block) and the UI read-and-resets.
-     *
-     * Chain before: masterGainNode → masterAnalyser → destination.
-     * Chain after:  masterGainNode → masterMeterNode → masterAnalyser → destination.
-     * The metering-processor passes audio straight through, so the audible signal
-     * is unchanged — it only taps the peak. Idempotent: a second initialize()
-     * (e.g. after dispose()) replaces the existing meter node rather than
-     * stacking a second tap.
-     */
-    private wireMasterMeter(): void {
-        // `this.fallbackMode` is deliberately *not* tested here. initialize()
-        // returns early on fallback, before loadWorklets() — the sole caller of
-        // this method — so the disjunct could only ever evaluate false, and a
-        // branch with one reachable verdict is not a guard. Fallback mode reaches
-        // the same verdict by construction instead: setupNoopContext never assigns
-        // masterMeterBuffer, so it stays null and getMasterPeakLevel reports
-        // unavailable. That path is guarded separately (fallbackMode spec, M9).
-        if (typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
-            // No worklet support or no SAB: there is no tap to read. Clear the
-            // buffer so getMasterPeakLevel reports `null` ("unavailable") rather
-            // than a fabricated 0 — which the status bar renders as "-∞ dB",
-            // indistinguishable from a silent mix while audio is playing
-            // (ADR 0012: a downgrade must never be silent).
-            this.masterMeterBuffer = null;
-            logger.warn(
-                '[audio-engine] master meter not wired ' +
-                    `(AudioWorkletNode=${String(typeof AudioWorkletNode !== 'undefined')}, ` +
-                    `SharedArrayBuffer=${String(hasSharedArrayBuffer())}) — ` +
-                    'the master level readout reports unavailable until it is.'
-            );
-            return;
-        }
-        // Tear down a previously-wired meter node so a re-initialize does not
-        // leave a stale tap summing into the analyser.
-        const previous = this.masterMeterNode;
-        if (previous && typeof AudioWorkletNode !== 'undefined' && previous instanceof AudioWorkletNode) {
-            try {
-                previous.disconnect();
-            } catch {
-                // already disconnected
-            }
-        }
-
-        const meterSab = new SharedArrayBuffer(4);
-        const meterNode = new AudioWorkletNode(this.context, 'metering-processor');
-        meterNode.port.postMessage({ type: 'init', sab: meterSab });
-        this.masterMeterNode = meterNode;
-        this.masterMeterBuffer = new Float32Array(meterSab);
-
-        // Re-route the master chain through the meter node.
-        this.masterGainNode.disconnect();
-        this.masterGainNode.connect(meterNode);
-        meterNode.connect(this.masterAnalyser);
     }
 
     public getHealth(): AudioEngineHealth {
@@ -1062,7 +867,7 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
 
-        const masterMeterWorklets = this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+        const masterMeterWorklets = this.master.meterNode() instanceof AudioWorkletNode ? 1 : 0;
         const adjustmentDiagnostics = this.adjustmentRuntime.getDiagnostics();
         processorLifecycle.unmanaged += adjustmentDiagnostics.audioWorkletProcessors;
         const graphAudioWorkletProcessors =
@@ -1079,8 +884,8 @@ class AudioEngineImpl implements AudioEngine {
                 // A bus owns a backing TrackNode; keep the public counters disjoint.
                 trackStrips: this.trackNodes.size - this.busNodes.size,
                 busStrips: this.busNodes.size,
-                sends: this.sendNodes.size,
-                sidechains: this.sidechainConnections.size,
+                sends: this.sends.sendNodes.size,
+                sidechains: this.sidechains.connectionCount(),
                 deviceInstances,
                 pendingDeviceInstances,
                 failedDeviceInstances,
@@ -1100,7 +905,7 @@ class AudioEngineImpl implements AudioEngine {
                 adjustmentLayerAudioWorkletProcessors: adjustmentDiagnostics.audioWorkletProcessors,
             },
             runtime: {
-                trackedAudioScheduledSources: this.scheduledNodes.length,
+                trackedAudioScheduledSources: this.scheduledSources.nodes().length,
                 processorLifecycle,
             },
         };
@@ -1150,34 +955,21 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.masterGainNode.gain.setTargetAtTime(
-            Math.max(0, Math.min(FADER_MAX_GAIN, value)),
-            this.context.currentTime,
-            0.01
-        );
+        this.master.setGain(value);
     }
 
     public getMasterGain(): number {
         if (this.fallbackMode) {
             return 0;
         }
-        return this.masterGainNode.gain.value;
+        return this.master.getGain();
     }
 
     public setControlRoomMonitoring(monitoring: ControlRoomMonitoring): void {
         if (this.fallbackMode) {
             return;
         }
-        if (monitoring.monoActive) {
-            // Explicit single-channel count + speakers interpretation is the
-            // spec's (L+R)/2 fold; the mono result upmixes onto both outputs.
-            this.monitorMonoNode.channelCount = 1;
-            this.monitorMonoNode.channelCountMode = 'explicit';
-            this.monitorMonoNode.channelInterpretation = 'speakers';
-        } else {
-            this.monitorMonoNode.channelCountMode = 'max';
-        }
-        this.monitorDimNode.gain.setTargetAtTime(Math.max(0, monitoring.dimGain), this.context.currentTime, 0.01);
+        this.master.setControlRoomMonitoring(monitoring);
     }
 
     public getState(): AudioEngineState {
@@ -1196,7 +988,7 @@ class AudioEngineImpl implements AudioEngine {
             isReady: this.context.state === 'running' || this.workletReady,
             sampleRate: this.context.sampleRate,
             state: this.context.state,
-            masterGain: this.masterGainNode.gain.value,
+            masterGain: this.master.gainNode.gain.value,
             currentTime: this.context.currentTime,
             baseLatency: this.context.baseLatency ?? 0,
             outputLatency: this.context.outputLatency ?? 0,
@@ -1402,144 +1194,8 @@ class AudioEngineImpl implements AudioEngine {
         if (!strip) {
             return;
         }
-        for (const send of this.sendNodes.values()) {
-            if (send.sourceTrackId !== trackId) {
-                continue;
-            }
-            const sourceNode = send.preFader ? strip.preFaderSendGate : strip.carrierGate;
-            try {
-                send.sourceNode.disconnect(send.gainNode);
-            } catch {
-                // A wider rebuild may already have removed the prior source edge.
-            }
-            sourceNode.connect(send.gainNode);
-            send.sourceNode = sourceNode;
-        }
-        for (const connection of this.sidechainConnections.values()) {
-            if (connection.sourceTrackId !== trackId) {
-                continue;
-            }
-            // The tap stays post-fader (`analyserNode`); the key alignment line
-            // sits between it and the route gain, so a rebuild re-attaches the
-            // tap to the delay rather than straight to the gain.
-            const sourceNode = strip.analyserNode;
-            try {
-                connection.sourceNode.disconnect(connection.keyDelayNode);
-            } catch {
-                // A wider rebuild may already have removed the prior source edge.
-            }
-            sourceNode.connect(connection.keyDelayNode);
-            connection.sourceNode = sourceNode;
-        }
-    }
-
-    private getToasterPadControls(toasterParentTrackId: string): ToasterPadOutputControls | undefined {
-        const controls = this.trackNodes
-            .get(toasterParentTrackId)
-            ?.strip.deviceNodes.find((candidate) => candidate.toasterControls?.connectPadOutput)?.toasterControls;
-        return hasToasterPadOutputControls(controls) ? controls : undefined;
-    }
-
-    private isValidToasterPadBinding(padBinding: ToasterPadBinding | undefined): padBinding is ToasterPadBinding {
-        return (
-            padBinding !== undefined &&
-            Number.isInteger(padBinding.padIndex) &&
-            padBinding.padIndex >= 0 &&
-            padBinding.padIndex < 16
-        );
-    }
-
-    private snapshotToasterPadRoute(trackId: string): ToasterPadRouteSnapshot | undefined {
-        const route = this.toasterPadRoutes.get(trackId);
-        if (!route) {
-            return undefined;
-        }
-        return Object.freeze({
-            toasterParentTrackId: route.toasterParentTrackId,
-            padIndex: route.padIndex,
-            destinationNode: route.destinationNode,
-            controls: route.controls,
-            dryRouted: route.destinationNode !== null && route.controls !== null,
-        });
-    }
-
-    private restoreToasterPadRouteState(trackId: string, snapshot: ToasterPadRouteSnapshot | undefined): void {
-        if (!snapshot) {
-            this.toasterPadRoutes.delete(trackId);
-            return;
-        }
-        this.toasterPadRoutes.set(trackId, {
-            toasterParentTrackId: snapshot.toasterParentTrackId,
-            padIndex: snapshot.padIndex,
-            destinationNode: snapshot.destinationNode,
-            controls: snapshot.controls,
-        });
-    }
-
-    private clearToasterPadOutput(controls: ToasterDeviceControls, padIndex: number, destinationNode: GainNode): void {
-        try {
-            controls.disconnectPadOutput?.(padIndex, destinationNode);
-        } finally {
-            controls.setPadDryRouted(padIndex, false);
-        }
-    }
-
-    private restoreToasterPadBinding(
-        trackId: string,
-        sourceDestinationNode: GainNode,
-        snapshot: ToasterPadRouteSnapshot | undefined,
-        attemptedBinding: ToasterPadBinding | undefined
-    ): void {
-        const targets: Array<
-            Readonly<{ controls: ToasterDeviceControls; padIndex: number; destinationNode: GainNode }>
-        > = [];
-        const addTarget = (controls: ToasterDeviceControls, padIndex: number, destinationNode: GainNode): void => {
-            if (
-                targets.some(
-                    (target) =>
-                        target.controls === controls &&
-                        target.padIndex === padIndex &&
-                        target.destinationNode === destinationNode
-                )
-            ) {
-                return;
-            }
-            targets.push({ controls, padIndex, destinationNode });
-        };
-        const current = this.toasterPadRoutes.get(trackId);
-        if (current?.controls && current.destinationNode) {
-            addTarget(current.controls, current.padIndex, current.destinationNode);
-        }
-        if (this.isValidToasterPadBinding(attemptedBinding)) {
-            const attemptedControls = this.getToasterPadControls(attemptedBinding.toasterParentTrackId);
-            if (attemptedControls) {
-                addTarget(attemptedControls, attemptedBinding.padIndex, sourceDestinationNode);
-            }
-        }
-
-        const clearErrors: unknown[] = [];
-        for (const target of targets) {
-            try {
-                this.clearToasterPadOutput(target.controls, target.padIndex, target.destinationNode);
-            } catch (error) {
-                clearErrors.push(error);
-            }
-        }
-        this.restoreToasterPadRouteState(trackId, snapshot);
-        if (clearErrors.length > 0) {
-            throw clearErrors.length === 1
-                ? clearErrors[0]
-                : new AggregateError(clearErrors, 'Toaster pad route cleanup failed during transaction restoration');
-        }
-        if (!snapshot?.dryRouted || !snapshot.controls || !snapshot.destinationNode) {
-            return;
-        }
-        const controls = snapshot.controls;
-        if (!hasToasterPadOutputControls(controls)) {
-            throw new Error('Toaster pad route snapshot has no connect output control');
-        }
-        controls.connectPadOutput(snapshot.padIndex, snapshot.destinationNode);
-        controls.setPadDryRouted(snapshot.padIndex, true);
+        this.sends.reconnectTrack(trackId, strip);
+        this.sidechains.reconnectTrack(trackId, strip);
     }
 
     private restoreTrackOutput(trackNode: TrackNode, previousOutputId: string | undefined): void {
@@ -1555,15 +1211,15 @@ class AudioEngineImpl implements AudioEngine {
         padBinding: ToasterPadBinding | undefined
     ): RuntimeGraphMutation<void> {
         const previousOutputId = trackNode.strip.outputId;
-        const padSnapshot = this.snapshotToasterPadRoute(trackNode.trackId);
+        const padSnapshot = this.toasterPads.snapshotRoute(trackNode.trackId);
         const outputChanged = trackNode.setOutput(outputId);
         try {
-            const padBindingChanged = this.updateToasterPadBinding(trackNode.trackId, padBinding);
+            const padBindingChanged = this.toasterPads.updateBinding(trackNode.trackId, padBinding);
             return { value: undefined, changed: outputChanged || padBindingChanged };
         } catch (error) {
             const rollbackErrors: unknown[] = [];
             try {
-                this.restoreToasterPadBinding(trackNode.trackId, trackNode.strip.gainNode, padSnapshot, padBinding);
+                this.toasterPads.restoreBinding(trackNode.trackId, trackNode.strip.gainNode, padSnapshot, padBinding);
             } catch (rollbackError) {
                 rollbackErrors.push(rollbackError);
             }
@@ -1593,86 +1249,6 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    private detachToasterPadRoute(trackId: string, forgetRoute: boolean): boolean {
-        const route = this.toasterPadRoutes.get(trackId);
-        if (!route) {
-            return false;
-        }
-        if (route.destinationNode) {
-            try {
-                route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
-            } finally {
-                route.controls?.setPadDryRouted(route.padIndex, false);
-            }
-        }
-        route.destinationNode = null;
-        route.controls = null;
-        if (forgetRoute) {
-            this.toasterPadRoutes.delete(trackId);
-        }
-        return true;
-    }
-
-    private reconcileToasterParent(toasterParentTrackId: string): void {
-        const controls = this.getToasterPadControls(toasterParentTrackId);
-        if (!controls) {
-            return;
-        }
-        for (const [trackId, route] of this.toasterPadRoutes) {
-            if (route.toasterParentTrackId !== toasterParentTrackId || route.controls === controls) {
-                continue;
-            }
-            if (route.destinationNode) {
-                this.detachToasterPadRoute(trackId, false);
-            }
-            const destinationNode = this.trackNodes.get(trackId)?.strip.gainNode;
-            if (!destinationNode) {
-                continue;
-            }
-            controls.connectPadOutput(route.padIndex, destinationNode);
-            controls.setPadDryRouted(route.padIndex, true);
-            route.destinationNode = destinationNode;
-            route.controls = controls;
-        }
-    }
-
-    private handleDeviceRemoved(trackId: string, device: BuiltinDeviceNode): void {
-        if (device.type !== 'toaster') {
-            return;
-        }
-        for (const [sourceTrackId, route] of this.toasterPadRoutes) {
-            if (route.toasterParentTrackId !== trackId) {
-                continue;
-            }
-            if (route.controls && route.controls !== device.toasterControls) {
-                continue;
-            }
-            this.detachToasterPadRoute(sourceTrackId, false);
-        }
-        this.reconcileToasterParent(trackId);
-    }
-
-    private updateToasterPadBinding(trackId: string, padBinding: ToasterPadBinding | undefined): boolean {
-        if (!this.isValidToasterPadBinding(padBinding)) {
-            return this.detachToasterPadRoute(trackId, true);
-        }
-        const existing = this.toasterPadRoutes.get(trackId);
-        const changedOwner =
-            existing &&
-            (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
-                existing.padIndex !== padBinding.padIndex);
-        if (changedOwner) {
-            this.detachToasterPadRoute(trackId, true);
-        }
-        if (!this.toasterPadRoutes.has(trackId)) {
-            this.toasterPadRoutes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
-            this.reconcileToasterParent(padBinding.toasterParentTrackId);
-            return true;
-        }
-        this.reconcileToasterParent(padBinding.toasterParentTrackId);
-        return false;
-    }
-
     private createTrackNode(trackId: string): TrackNode {
         this.assertActive();
         if (this.fallbackMode) {
@@ -1691,19 +1267,18 @@ class AudioEngineImpl implements AudioEngine {
         }
         return new TrackNode(trackId, {
             context: this.context,
-            masterGainNode: this.masterGainNode,
+            masterGainNode: this.master.gainNode,
             getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
             getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
-            getSendsForTrack: (tId) =>
-                Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
+            getSendsForTrack: (tId) => this.sends.sendsForTrack(tId),
             pendingDevicePromises: this.pendingDevicePromises,
             readinessDiagnostics: this.deviceReadinessDiagnostics,
             collaborators: this.deviceCollaborators,
             transportSAB: this.transportClock.sharedBuffer() ?? undefined,
             getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
-            onDeviceLoaded: (id) => this.reconcileToasterParent(id),
-            onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
+            onDeviceLoaded: (id) => this.toasterPads.reconcileParent(id),
+            onDeviceRemoved: (id, device) => this.toasterPads.handleDeviceRemoved(id, device),
             onAsyncRuntimeGraphMutation: (mutation) => this.recordRuntimeGraphMutation(mutation),
         });
     }
@@ -1735,21 +1310,8 @@ class AudioEngineImpl implements AudioEngine {
         // Fallback-mode wiring can queue routes without ever materializing a
         // source or target strip. Purge endpoint ownership before the node guard
         // so removing either absent endpoint cannot leave a replayable route.
-        for (const [key, route] of this.pendingSidechainRoutes) {
-            const belongsToRemovedStrip =
-                route.sourceTrackId === trackId ||
-                route.targetTrackId === trackId ||
-                removedDeviceIds.has(route.targetDeviceId);
-            if (belongsToRemovedStrip) {
-                this.pendingSidechainRoutes.delete(key);
-            }
-        }
-        this.detachToasterPadRoute(trackId, true);
-        for (const [sourceTrackId, route] of this.toasterPadRoutes) {
-            if (route.toasterParentTrackId === trackId) {
-                this.detachToasterPadRoute(sourceTrackId, true);
-            }
-        }
+        this.sidechains.forgetPendingRoutesOf(trackId, removedDeviceIds);
+        this.toasterPads.forgetRoutesOfRemovedStrip(trackId);
         if (!node) {
             return false;
         }
@@ -1758,16 +1320,8 @@ class AudioEngineImpl implements AudioEngine {
         // removeBusStrip's busId sweep. Without this, the send/sidechain GainNodes
         // for the removed track survive in the maps — still wired into their bus /
         // target device, leaking nodes and (for sends) re-summing a ghost tap.
-        for (const send of Array.from(this.sendNodes.values())) {
-            if (send.sourceTrackId === trackId) {
-                this.removeSendFromGraph(send.sourceTrackId, send.busId);
-            }
-        }
-        for (const [key, connection] of this.sidechainConnections) {
-            if (connection.sourceTrackId === trackId || removedDeviceIds.has(connection.targetDeviceId)) {
-                this.removeLiveSidechainConnection(key);
-            }
-        }
+        this.sends.removeSendsFromTrack(trackId);
+        this.sidechains.removeConnectionsOf(trackId, removedDeviceIds);
         // A track-to-track output is a live edge into the target strip. Preserve
         // the remaining source strips and make the fallback explicit: `hw_out`
         // routes through TrackNode's masterGainNode destination.
@@ -1910,15 +1464,7 @@ class AudioEngineImpl implements AudioEngine {
      * status bar show "-∞ dB" over a mix that was audibly playing.
      */
     public getMasterPeakLevel(): number | null {
-        if (!this.masterMeterBuffer) {
-            return null;
-        }
-        // Read-and-reset of a single f32, deliberately without Atomics (audit
-        // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
-        // Rationale in the module header of worklets/meteringProcessor.ts.
-        const peak = this.masterMeterBuffer[0]!;
-        this.masterMeterBuffer[0] = 0;
-        return peak;
+        return this.master.readPeak();
     }
 
     private ensureBusStripInGraph(busId: string): RuntimeGraphMutation<BusStrip> {
@@ -1946,11 +1492,7 @@ class AudioEngineImpl implements AudioEngine {
         if (!node) {
             return false;
         }
-        for (const send of Array.from(this.sendNodes.values())) {
-            if (send.busId === busId) {
-                this.removeSendFromGraph(send.sourceTrackId, send.busId);
-            }
-        }
+        this.sends.removeSendsToBus(busId);
         const removedTrack = this.removeTrackStripFromGraph(busId, teardown);
         node.dispose();
         this.busNodes.delete(busId);
@@ -2136,119 +1678,15 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
-        if (this.fallbackMode) {
-            return;
-        }
-        this.mutateRuntimeGraph(() => {
-            const trackNode = this.trackNodes.get(sourceTrackId);
-            if (!trackNode) {
-                return { value: undefined, changed: false };
-            }
-            const busMutation = this.ensureBusStripInGraph(busId);
-            const key = `${sourceTrackId}→${busId}`;
-            const clampedLevel = Math.max(0, Math.min(1, level));
-            const existing = this.sendNodes.get(key);
-            if (existing) {
-                if (existing.preFader !== preFader) {
-                    this.crossfadeSendTap(existing, busMutation.value, preFader, clampedLevel);
-                    return { value: undefined, changed: true };
-                }
-                existing.gainNode.gain.setTargetAtTime(clampedLevel, this.context.currentTime, 0.01);
-                return { value: undefined, changed: busMutation.changed };
-            }
-
-            const sendGain = this.context.createGain();
-            sendGain.gain.value = clampedLevel;
-            const tap = preFader ? trackNode.strip.preFaderSendGate : trackNode.strip.carrierGate;
-            tap.connect(sendGain);
-            sendGain.connect(busMutation.value.gainNode);
-            this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
-            return { value: undefined, changed: true };
-        });
+        this.sends.setSend(sourceTrackId, busId, level, preFader);
     }
 
     public scheduleSendAutomation(sourceTrackId: string, busId: string, level: number, time: number): void {
-        if (this.fallbackMode) {
-            return;
-        }
-        this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time);
-    }
-
-    /**
-     * Switch a live send between the pre- and post-fader tap without a gap of
-     * silence on the bus. A hard `disconnect()` then `connect()` left the bus with
-     * no input for one render quantum (~2.7ms at 48k) — audible on a pumping bus.
-     * Instead we build a fresh gain on the new tap and equal-time-crossfade: the
-     * new gain ramps 0→level while the old gain ramps level→0 over the same
-     * window, so the bus is continuously fed. After the ramp the old node is torn
-     * down. The teardown is deferred on the control thread (`setTimeout`), never
-     * on the audio thread, so the RT graph is untouched by the cleanup.
-     */
-    private crossfadeSendTap(existing: SendNode, busStrip: BusStrip, preFader: boolean, clampedLevel: number): void {
-        const now = this.context.currentTime;
-        const end = now + SEND_TAP_CROSSFADE_SECONDS;
-
-        const sourceStrip = this.trackNodes.get(existing.sourceTrackId)?.strip;
-        if (!sourceStrip) {
-            return;
-        }
-        const newTap = preFader ? sourceStrip.preFaderSendGate : sourceStrip.carrierGate;
-        const newGain = this.context.createGain();
-        newGain.gain.setValueAtTime(0, now);
-        newGain.gain.linearRampToValueAtTime(clampedLevel, end);
-        newTap.connect(newGain);
-        newGain.connect(busStrip.gainNode);
-
-        // Ramp the outgoing gain to silence over the same window. Pin its current
-        // value first so the ramp starts from where it is, not from a stale
-        // scheduled value.
-        const oldGain = existing.gainNode;
-        const oldSource = existing.sourceNode;
-        oldGain.gain.cancelScheduledValues(now);
-        oldGain.gain.setValueAtTime(oldGain.gain.value, now);
-        oldGain.gain.linearRampToValueAtTime(0, end);
-
-        // Promote the new node to the live send and tear the old one down after
-        // the crossfade completes (plus a small margin) on the control thread.
-        existing.gainNode = newGain;
-        existing.sourceNode = newTap;
-        existing.preFader = preFader;
-        const teardownMs = (SEND_TAP_CROSSFADE_SECONDS + SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS) * 1000;
-        setTimeout(() => {
-            try {
-                oldSource.disconnect(oldGain);
-            } catch {
-                // The old source edge may already be gone after wider teardown.
-            }
-            try {
-                oldGain.disconnect();
-            } catch {
-                // removeSend or resetGraph may already have torn down the gain.
-            }
-        }, teardownMs);
-    }
-
-    private removeSendFromGraph(sourceTrackId: string, busId: string): boolean {
-        const key = `${sourceTrackId}→${busId}`;
-        const send = this.sendNodes.get(key);
-        if (!send) {
-            return false;
-        }
-        try {
-            send.sourceNode.disconnect(send.gainNode);
-        } catch {
-            // The source edge may already be gone after a graph rebuild.
-        }
-        send.gainNode.disconnect();
-        this.sendNodes.delete(key);
-        return true;
+        this.sends.scheduleSendAutomation(sourceTrackId, busId, level, time);
     }
 
     public removeSend(sourceTrackId: string, busId: string): void {
-        this.mutateRuntimeGraph(() => ({
-            value: undefined,
-            changed: this.removeSendFromGraph(sourceTrackId, busId),
-        }));
+        this.sends.removeSend(sourceTrackId, busId);
     }
 
     public setTrackOutput(trackId: string, outputId: string, padBinding?: ToasterPadBinding): void {
@@ -2363,202 +1801,30 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
-        const key = `${sourceTrackId}→${targetDeviceId}`;
-        if (this.fallbackMode) {
-            // No live AudioContext to wire into. Queue the route instead of
-            // dropping it, so the next time wiring runs outside fallback mode the
-            // route is replayed rather than lost (the store keeps the route, so
-            // silently no-op'ing here would diverge the live graph with no
-            // recovery path).
-            this.pendingSidechainRoutes.set(key, { sourceTrackId, targetTrackId, targetDeviceId });
-            return;
-        }
-        // Recovery: drain any routes queued while the engine was in fallback mode
-        // before honoring this request, so a route requested before the engine
-        // was usable is now wired up.
-        this.mutateRuntimeGraph(() => {
-            const replayed = this.replayPendingSidechainRoutes();
-            const applied = this.applySidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
-            return { value: undefined, changed: replayed || applied };
-        });
+        this.sidechains.wireRoute(sourceTrackId, targetTrackId, targetDeviceId);
     }
 
-    /**
-     * Re-attempt every sidechain route queued during fallback mode. Routes that
-     * still cannot be wired (e.g. the target strip/device is not present yet) are
-     * dropped from the queue by applySidechainRoute's own guards — they are no
-     * longer recoverable through this path and the caller owns re-requesting.
-     */
-    private replayPendingSidechainRoutes(): boolean {
-        if (this.pendingSidechainRoutes.size === 0) {
-            return false;
-        }
-        const queued = Array.from(this.pendingSidechainRoutes.values());
-        this.pendingSidechainRoutes.clear();
-        let changed = false;
-        for (const route of queued) {
-            changed =
-                this.applySidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId) || changed;
-        }
-        return changed;
-    }
-
-    private applySidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): boolean {
-        const sourceStrip = this.trackNodes.get(sourceTrackId)?.strip;
-        const targetStrip = this.trackNodes.get(targetTrackId)?.strip;
-        if (!sourceStrip || !targetStrip) {
-            return false;
-        }
-
-        const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
-        if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
-            return false;
-        }
-
-        const key = `${sourceTrackId}→${targetDeviceId}`;
-        if (this.sidechainConnections.has(key)) {
-            return false;
-        }
-
-        const scGain = this.context.createGain();
-        scGain.gain.value = 1;
-        // FX-5 — the key is tapped post-fader, so it reaches the detector on the
-        // source track's clock, not the detector's. The alignment line goes
-        // between the tap and the route gain: after the metering/sends tap (which
-        // must keep reading the un-delayed signal) and before the detector input.
-        // It starts at zero and is filled in by refreshSidechainAlignment, which
-        // owns every write to it so there is exactly one place the value lands.
-        const keyDelayNode = this.context.createDelay(SIDECHAIN_KEY_MAX_DELAY_SECONDS);
-        keyDelayNode.delayTime.value = 0;
-        const sourceNode = sourceStrip.analyserNode;
-        sourceNode.connect(keyDelayNode);
-        keyDelayNode.connect(scGain);
-        scGain.connect(deviceNode.inputNode, 0, 1);
-        this.sidechainConnections.set(key, {
-            sourceTrackId,
-            targetTrackId,
-            targetDeviceId,
-            sourceNode,
-            keyDelayNode,
-            appliedKeyDelaySec: 0,
-            gainNode: scGain,
-        });
-        return true;
-    }
-
-    /**
-     * FX-5 — re-resolve every wired route's key alignment and glide the delay
-     * lines onto it. Called on wire and once per scheduler tick, so a mid-session
-     * latency push (a native plugin reporting a new lookahead, a device added or
-     * bypassed) lands within one grain instead of holding a stale alignment for
-     * the rest of the session. Nothing is cached across calls beyond the value
-     * last written, which exists purely to keep an unchanged alignment from
-     * scheduling AudioParam events every tick.
-     */
     public refreshSidechainAlignment(keyDelayFor: SidechainKeyDelayResolver): void {
-        if (this.fallbackMode || this.sidechainConnections.size === 0) {
-            return;
-        }
-        const now = this.context.currentTime;
-        for (const connection of this.sidechainConnections.values()) {
-            const resolved = keyDelayFor({
-                sourceTrackId: connection.sourceTrackId,
-                targetTrackId: connection.targetTrackId,
-                targetDeviceId: connection.targetDeviceId,
-            });
-            const nextSeconds = Math.min(Math.max(resolved, 0), SIDECHAIN_KEY_MAX_DELAY_SECONDS);
-            if (Math.abs(nextSeconds - connection.appliedKeyDelaySec) < SIDECHAIN_KEY_DELAY_EPSILON_SECONDS) {
-                continue;
-            }
-            // Same anchor-then-ramp idiom the automation writes use: a stepped
-            // delayTime resamples the key and clicks, so re-anchor at the live
-            // value, drop stale future events, and glide over one grain.
-            const param = connection.keyDelayNode.delayTime;
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(param.value, now);
-            param.linearRampToValueAtTime(nextSeconds, now + SIDECHAIN_KEY_DELAY_RAMP_SECONDS);
-            connection.appliedKeyDelaySec = nextSeconds;
-        }
-    }
-
-    private removeLiveSidechainConnection(key: string): boolean {
-        const connection = this.sidechainConnections.get(key);
-        if (!connection) {
-            return false;
-        }
-        try {
-            connection.sourceNode.disconnect(connection.keyDelayNode);
-        } catch {
-            // The source edge was already detached by a wider graph teardown.
-        }
-        try {
-            connection.keyDelayNode.disconnect();
-        } catch {
-            // The alignment line was already detached by a wider graph teardown.
-        }
-        try {
-            connection.gainNode.disconnect();
-        } catch {
-            // The target edge was already detached by a wider graph teardown.
-        }
-        this.sidechainConnections.delete(key);
-        return true;
+        this.sidechains.refreshAlignment(keyDelayFor);
     }
 
     public unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
-        const key = `${sourceTrackId}→${targetDeviceId}`;
-        // Cancel a still-pending (queued-in-fallback) wire so an unwire issued
-        // before recovery does not get replayed back into the live graph.
-        this.pendingSidechainRoutes.delete(key);
-        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeLiveSidechainConnection(key) }));
+        this.sidechains.unwireRoute(sourceTrackId, targetDeviceId);
     }
 
     public scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
-        this.assertActive();
-        if (this.fallbackMode) {
-            return;
-        }
-        const osc = this.context.createOscillator();
-        const env = this.context.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = frequency;
-        env.gain.setValueAtTime(0, startTime);
-        env.gain.linearRampToValueAtTime(gain, startTime + 0.005);
-        env.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-        osc.connect(env);
-        env.connect(this.masterGainNode);
-        osc.start(startTime);
-        osc.stop(startTime + duration);
-        this.scheduledNodes.push(osc);
-        osc.onended = () => {
-            const idx = this.scheduledNodes.indexOf(osc);
-            if (idx >= 0) {
-                this.scheduledNodes.splice(idx, 1);
-            }
-            env.disconnect();
-        };
+        this.scheduledSources.scheduleOscillator(frequency, startTime, duration, gain);
     }
 
     public scheduleClick(time: number, accent: boolean, volume = 1): void {
-        const freq = accent ? 1500 : 1000;
-        const dur = accent ? 0.04 : 0.03;
-        const baseVol = accent ? 0.4 : 0.25;
-        this.scheduleOscillator(freq, time, dur, baseVol * volume);
+        this.scheduledSources.scheduleClick(time, accent, volume);
     }
 
     public stopAllScheduled(): void {
         if (this.fallbackMode) {
             return;
         }
-        const now = this.context.currentTime;
-        for (const node of [...this.scheduledNodes]) {
-            try {
-                node.stop(now);
-            } catch {
-                // ignore
-            }
-        }
-        this.scheduledNodes.length = 0;
+        this.scheduledSources.stopAll();
 
         // Release held notes on every device that can hold one, through the
         // generic `controller.allNotesOff` every instrument descriptor already
@@ -2582,164 +1848,39 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public registerScheduledSource(node: AudioScheduledSourceNode): void {
-        this.assertActive();
-        if (this.fallbackMode) {
-            return;
-        }
-        // Built-in synth and kit voices are bare oscillators written straight
-        // into the strip; the scheduled path discarded the handle, so a stop or
-        // a panic could not silence them and they rang on for the rest of their
-        // programmed duration (audit MD-6). Tracking them here puts them under
-        // the same `stopAllScheduled` sweep as the metronome.
-        this.scheduledNodes.push(node);
-        node.addEventListener('ended', () => {
-            const index = this.scheduledNodes.indexOf(node);
-            if (index >= 0) {
-                this.scheduledNodes.splice(index, 1);
-            }
-        });
+        this.scheduledSources.register(node);
     }
 
     public beginAudioPreviewIntent() {
-        const intent = this.previewIntents.beginOrdinary();
-        if (this.previewRestoration === null) {
-            return intent;
-        }
-        return { ...intent, ready: this.previewRestoration };
+        return this.preview.beginOrdinaryIntent();
     }
 
     public beginExclusiveAudioPreviewIntent() {
-        // A suspended context must resume with programme already closed, in
-        // the gesture itself, before any asynchronous native admission.
-        this.setAudioPreviewProgrammeSuppressed(true);
-        return this.previewIntents.beginExclusive();
+        return this.preview.beginExclusiveIntent();
     }
 
     public get audioPreviewOutput(): AudioNode {
-        return this.monitorMonoNode;
+        return this.master.monitorMonoNode;
     }
 
     public setAudioPreviewProgrammeSuppressed(suppressed: boolean): void {
-        if (this.disposed || this.fallbackMode || (!suppressed && this.previewIntents.hasExclusive())) {
-            return;
-        }
-        const open = !suppressed;
-        if (this.previewProgrammeOpen === open) {
-            return;
-        }
-        if (open) {
-            this.previewProgrammeGate.connect(this.monitorMonoNode);
-        } else {
-            this.previewProgrammeGate.disconnect(this.monitorMonoNode);
-        }
-        this.previewProgrammeOpen = open;
+        this.preview.setProgrammeSuppressed(suppressed);
     }
 
-    /**
-     * Ordinary previews wait only while a restoration is in flight. A rejected one is not
-     * latched: its owner retries the restore, and the programme gate stays closed until then.
-     */
     public holdAudioPreviewRestoration(restoration: Promise<void>): void {
-        this.previewRestoration = restoration;
-        const release = () => {
-            if (this.previewRestoration === restoration) {
-                this.previewRestoration = null;
-            }
-        };
-        void restoration.then(release, release);
+        this.preview.holdRestoration(restoration);
     }
 
     public playAudioPreviewTone(frequency: number, durationSeconds: number, intent: AudioPreviewIntent) {
-        if (!Number.isFinite(frequency) || !Number.isFinite(durationSeconds) || durationSeconds < 0) {
-            throw new RangeError('Preview tone frequency and duration must be finite.');
-        }
-        if (!intent.isCurrent()) {
-            return null;
-        }
-        let oscillator: OscillatorNode;
-        let gain: GainNode;
-        try {
-            oscillator = this.context.createOscillator();
-            try {
-                gain = this.context.createGain();
-            } catch (error) {
-                oscillator.disconnect();
-                throw error;
-            }
-        } catch (error) {
-            intent.release();
-            throw error;
-        }
-        let ended = false;
-        let started = false;
-        const finish = (stopSource: boolean) => {
-            if (ended) {
-                return;
-            }
-            ended = true;
-            oscillator.onended = null;
-            intent.signal.removeEventListener('abort', stop);
-            runAllEffects([
-                () => gain.gain.setValueAtTime(0, this.context.currentTime),
-                () => {
-                    if (stopSource && started) {
-                        oscillator.stop();
-                    }
-                },
-                () => oscillator.disconnect(),
-                () => gain.disconnect(),
-                () => intent.release(),
-            ]);
-        };
-        const stop = () => finish(true);
-        try {
-            oscillator.type = 'sine';
-            oscillator.frequency.value = frequency;
-            oscillator.connect(gain);
-            gain.connect(this.context.destination);
-            oscillator.onended = () => finish(false);
-            intent.signal.addEventListener('abort', stop, { once: true });
-        } catch (error) {
-            finish(false);
-            throw error;
-        }
-        const start = () => {
-            if (ended || !intent.isCurrent()) {
-                return;
-            }
-            const now = this.context.currentTime;
-            gain.gain.setValueAtTime(0.4, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + durationSeconds);
-            started = true;
-            oscillator.start();
-            oscillator.stop(now + durationSeconds);
-        };
-        try {
-            if (intent.ready === undefined) {
-                start();
-            }
-        } catch (error) {
-            stop();
-            throw error;
-        }
-        const ready = intent.ready === undefined ? Promise.resolve() : intent.ready.then(start);
-        void ready.catch((error: unknown) => {
-            stop();
-            logger.warn(new Error('Preview tone could not restore its listening output', { cause: error }));
-        });
-        return { stop, ready };
+        return this.preview.playTone(frequency, durationSeconds, intent);
     }
 
     public resetGraph(): void {
-        this.previewResetDepth++;
+        this.preview.beginReset();
         try {
-            runAllEffects([() => this.previewIntents.dispose(), () => this.resetProjectGraph()]);
+            runAllEffects([() => this.preview.disposeIntents(), () => this.resetProjectGraph()]);
         } finally {
-            this.previewResetDepth--;
-            // Nested teardown and its callbacks cannot reopen the outgoing preview lifetime.
-            if (this.previewResetDepth === 0 && !this.disposed) {
-                this.previewIntents = createAudioPreviewIntents();
-            }
+            this.preview.endReset();
         }
     }
 
@@ -2761,51 +1902,29 @@ class AudioEngineImpl implements AudioEngine {
                     !this.fallbackMode &&
                     (this.trackNodes.size > 0 ||
                         this.busNodes.size > 0 ||
-                        this.sendNodes.size > 0 ||
-                        this.sidechainConnections.size > 0 ||
+                        this.sends.sendNodes.size > 0 ||
+                        this.sidechains.connectionCount() > 0 ||
                         this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
-                        Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
+                        this.toasterPads.hasLiveRoute());
                 // Reset retires the whole graph, so it must not reroute doomed
                 // peers through ordinary transactional strip removal. Snapshot
                 // each owner once and keep retiring after an independent fault.
                 runAllEffects([
                     () => this.stopAllScheduled(),
                     () => this.adjustmentRuntime.reset(),
-                    ...Array.from(this.sidechainConnections.values()).flatMap((connection) => [
-                        () => {
-                            try {
-                                connection.sourceNode.disconnect(connection.keyDelayNode);
-                            } catch {
-                                // The source edge may already be detached by wider teardown.
-                            }
-                        },
-                        () => connection.keyDelayNode.disconnect(),
-                        () => connection.gainNode.disconnect(),
-                    ]),
-                    ...Array.from(this.sendNodes.values(), (send) => () => {
-                        this.removeSendFromGraph(send.sourceTrackId, send.busId);
-                    }),
-                    ...Array.from(this.toasterPadRoutes.values()).flatMap((route) => {
-                        const { controls, destinationNode, padIndex } = route;
-                        if (!destinationNode) {
-                            return [];
-                        }
-                        return [
-                            () => controls?.disconnectPadOutput?.(padIndex, destinationNode),
-                            () => controls?.setPadDryRouted(padIndex, false),
-                        ];
-                    }),
+                    ...this.sidechains.resetEffects(),
+                    ...this.sends.resetEffects(),
+                    ...this.toasterPads.resetEffects(),
                     ...Array.from(this.busNodes.values(), (node) => () => node.dispose()),
                     ...Array.from(this.trackNodes.values(), (node) => () => node.dispose()),
                     () => {
                         // Retired ownership must not replay into the next project,
                         // even when a physical disconnect or disposal reported a fault.
-                        this.sidechainConnections.clear();
-                        this.pendingSidechainRoutes.clear();
-                        this.sendNodes.clear();
+                        this.sidechains.clear();
+                        this.sends.clear();
                         this.busNodes.clear();
                         this.trackNodes.clear();
-                        this.toasterPadRoutes.clear();
+                        this.toasterPads.clear();
                         this.pendingDevicePromises.clear();
                     },
                     () => this.deviceReadinessDiagnostics.reset(),
@@ -2852,23 +1971,7 @@ class AudioEngineImpl implements AudioEngine {
                 runAllEffects([
                     () => this.postShutdownToWorklets(),
                     () => this.resetGraph(),
-                    () => this.masterGainNode.disconnect(),
-                    () => {
-                        const meter = this.masterMeterNode;
-                        this.masterMeterNode = undefined;
-                        this.masterMeterBuffer = null;
-                        if (typeof AudioWorkletNode !== 'undefined' && meter instanceof AudioWorkletNode) {
-                            meter.disconnect();
-                        }
-                    },
-                    () => this.masterAnalyser.disconnect(),
-                    () => this.previewProgrammeGate.disconnect(),
-                    () => this.monitorMonoNode.disconnect(),
-                    () => this.monitorDimNode.disconnect(),
-                    () => this.masterStereoSplitter.disconnect(),
-                    () => this.masterAnalyserLeft.disconnect(),
-                    () => this.masterAnalyserRight.disconnect(),
-                    () => this.masterStereoTapSink.disconnect(),
+                    ...this.master.disposeEffects(),
                     () => this.transportClock.release(),
                 ]),
             () => this.context.close(),
@@ -2878,9 +1981,7 @@ class AudioEngineImpl implements AudioEngine {
     private postShutdownToWorklets(): void {
         const shutdown = { type: 'shutdown' as const };
         const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
-        if (hasWorkletNode && this.masterMeterNode instanceof AudioWorkletNode) {
-            this.masterMeterNode.port.postMessage(shutdown);
-        }
+        this.master.postShutdown(shutdown);
         for (const [, trackNode] of this.trackNodes) {
             trackNode.strip.meterNode?.port.postMessage(shutdown);
             for (const dn of trackNode.strip.deviceNodes) {

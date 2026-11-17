@@ -102,7 +102,18 @@ function pinExtraction(action: ExtractGrooveAction): void {
     action.payload = { ...action.payload, proposal: result.template, sourceRevision: result.sourceRevision };
 }
 
+/** Why an extraction cannot run against the project, or null when it creates, finds or needs no template. */
+function findExtractionRefusal(action: ExtractGrooveAction): string | null {
+    const plan = planExtractGroove(action);
+    if (plan.outcome === 'failure') {
+        return plan.error.message;
+    }
+    return plan.outcome === 'diverged' ? plan.code : null;
+}
+
 export const handleExtractGroove = createHandler<'extractGroove'>({
+    validate: (action) => findExtractionRefusal(action) === null,
+    validationRefusalReason: (action) => findExtractionRefusal(action),
     validateSessionEntry: isExtractGrooveSessionEntry,
     validateMaterializedCommandArguments: isMaterializedExtractGroovePayload,
     materializeCommandArguments: (action) => {

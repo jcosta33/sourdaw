@@ -80,7 +80,7 @@ function installPicker({
     }
     Object.defineProperty(window, priorPickerKey, { configurable: true, value: { descriptor, owner } });
     const callBinding = (name: string, ...args: unknown[]): Promise<unknown> => {
-        const binding = Reflect.get(window, name);
+        const binding: unknown = Reflect.get(window, name);
         if (typeof binding !== 'function') {
             throw new TypeError(`Missing test file picker binding: ${name}`);
         }
@@ -204,7 +204,7 @@ export async function installFilePickerCapture(
 
     try {
         registrations.push(
-            await page.exposeBinding(names.pickerRequestBinding, async (_source, suggestedName: unknown) => {
+            await page.exposeBinding(names.pickerRequestBinding, (_source, suggestedName: unknown) => {
                 requests += 1;
                 if (
                     captureFailed ||
@@ -221,7 +221,7 @@ export async function installFilePickerCapture(
             })
         );
         registrations.push(
-            await page.exposeBinding(names.writableBinding, async () => {
+            await page.exposeBinding(names.writableBinding, () => {
                 writableRequests += 1;
                 if (captureFailed || fileClosed || requests !== 1 || writableRequests !== 1) {
                     const error = new Error('The app must request one writable for this file picker.');

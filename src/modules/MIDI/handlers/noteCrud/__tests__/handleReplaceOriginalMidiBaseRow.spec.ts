@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type MidiClipNoteSnapshot } from '../../../events/midiClipDataSnapshots';
 import { midiStore } from '../../../stores/midiStore';
 import { handleReplaceOriginalMidiBaseRow } from '../handleReplaceOriginalMidiBaseRow';
 

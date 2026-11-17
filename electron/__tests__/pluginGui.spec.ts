@@ -20,7 +20,7 @@ import {
     type EditorWindow,
     type EditorWindowBounds,
     type EditorWindowOptions,
-    type PluginWindowHost,
+    type PluginWindowHostCallbacks,
     type PluginWindowHostDeps,
     type PreventableEditorEvent,
 } from '../pluginGui.js';
@@ -1499,11 +1499,20 @@ describe('createIntervalRunLoopPump', () => {
     });
 });
 
+/** The callbacks object a registration handed the addon's `registerPluginWindowHost`. */
+const registeredCallbacks = (register: ReturnType<typeof vi.fn>): PluginWindowHostCallbacks => {
+    const [callbacks] = (register.mock.calls[0] ?? []) as [PluginWindowHostCallbacks?];
+    if (callbacks === undefined) {
+        throw new Error('the addon was never handed its window callbacks');
+    }
+    return callbacks;
+};
+
 describe('registerPluginWindowHost', () => {
-    it('hands the addon the eight callbacks in the order it consumes them', () => {
+    it('hands the addon the eight callbacks under the names it reads them by', () => {
         // Four of the callbacks share the type `(label: string) => void`, so a
-        // transposition typechecks; each slot is therefore driven by index and
-        // pinned to its discriminating effect on the window.
+        // swapped name typechecks; each field is therefore pinned to its
+        // discriminating effect on the window.
         const register = vi.fn();
         const windows: FakeWindow[] = [];
         const registered = registerPluginWindowHost(
@@ -1515,18 +1524,28 @@ describe('registerPluginWindowHost', () => {
             })
         );
         expect(registered).toBeDefined();
-        expect(register.mock.calls[0]).toHaveLength(8);
-        const [create, exists, setSize, setResizable, showAndFocus, destroy, hide, show] = (register.mock.calls[0] ??
-            []) as [
-            PluginWindowHost['create'],
-            PluginWindowHost['exists'],
-            PluginWindowHost['setSize'],
-            PluginWindowHost['setResizable'],
-            PluginWindowHost['showAndFocus'],
-            PluginWindowHost['destroy'],
-            PluginWindowHost['hide'],
-            PluginWindowHost['show'],
-        ];
+        expect(register.mock.calls[0]).toHaveLength(1);
+        const callbacks = registeredCallbacks(register);
+        expect(Object.keys(callbacks).sort()).toEqual([
+            'createEditorWindow',
+            'destroyEditorWindow',
+            'editorWindowExists',
+            'hideEditorWindow',
+            'setEditorWindowResizable',
+            'setEditorWindowSize',
+            'showAndFocusEditorWindow',
+            'showEditorWindow',
+        ]);
+        const {
+            createEditorWindow: create,
+            editorWindowExists: exists,
+            setEditorWindowSize: setSize,
+            setEditorWindowResizable: setResizable,
+            showAndFocusEditorWindow: showAndFocus,
+            destroyEditorWindow: destroy,
+            hideEditorWindow: hide,
+            showEditorWindow: show,
+        } = callbacks;
 
         expect(create(request()).error).toBeNull();
         const window = onlyWindow(windows);
@@ -1570,7 +1589,7 @@ describe('registerPluginWindowHost', () => {
                 return window;
             })
         );
-        const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
+        const create = registeredCallbacks(register).createEditorWindow;
 
         create(request());
         windows[0]?.emitClosed();
@@ -1602,7 +1621,7 @@ describe('registerPluginWindowHost', () => {
                 return window;
             })
         );
-        const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
+        const create = registeredCallbacks(register).createEditorWindow;
         create(request());
         const window = onlyWindow(windows);
 
@@ -1667,7 +1686,7 @@ describe('registerPluginWindowHost', () => {
                 shellDeps(createFakeWindow)
             )
         );
-        const create = register.mock.calls[0]?.[0] as (req: CreateEditorWindowRequest) => unknown;
+        const create = registeredCallbacks(register).createEditorWindow;
 
         create(request());
         vi.advanceTimersByTime(64);

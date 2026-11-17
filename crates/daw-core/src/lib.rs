@@ -1,6 +1,10 @@
 #![cfg_attr(
     test,
-    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        reason = "tests assert by unwrapping"
+    )
 )]
 
 pub mod ids;

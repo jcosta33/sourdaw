@@ -1,6 +1,6 @@
-import { type AutomationPointSnapshot } from '#/utils/handlerContract';
-
 import { type SendAutomationRangeSnapshot } from '../models/SendAutomationRangeSnapshot';
+
+import { type AutomationPointSnapshot } from './automationSnapshots';
 
 export type AutomationAppAction =
     | { type: 'addModulator'; payload: { modulator: Omit<ModulatorSnapshot, 'id'>; modulatorId?: string } }

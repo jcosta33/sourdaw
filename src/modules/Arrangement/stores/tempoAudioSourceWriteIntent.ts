@@ -2,21 +2,19 @@ import {
     AutomergeStorageWriteConflictError,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type TempoAudioSourcePromotionSnapshot } from '#/modules/Transport/events';
 import {
-    withoutDeferredTempoRecordingSources,
-    type DeferredTempoRecordingSources,
-} from '#/utils/deferredTempoRecordingSources';
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
-import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
-import {
+    captureTempoSourceOwnerValue,
     normalizeTempoSourceClockContext,
     normalizeTempoSourceOwnerContext,
-    captureTempoSourceOwnerValue,
     readTempoSourceClockValue,
+    tempoAudioSourceCoverageMatches,
+    withoutDeferredTempoRecordingSources,
+    type DeferredTempoRecordingSources,
     type TempoSourceClockPath,
     type TempoSourceOwnerWitness,
-} from '#/utils/tempoAudioSourcePromotion';
+} from '#/modules/Transport/stores';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { observeTempoMapRowPlan, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
 
 import { type CompAudioSourceInputProof } from '../events/arrangementClipSnapshots';

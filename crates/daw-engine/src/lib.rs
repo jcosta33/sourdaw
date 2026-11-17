@@ -2,6 +2,7 @@
     test,
     allow(
         clippy::unwrap_used,
+        clippy::expect_used,
         clippy::unreachable,
         clippy::panic,
         reason = "tests assert by unwrapping and fail by panicking"
@@ -35,7 +36,9 @@ pub mod scheduler;
 pub mod timeline;
 pub mod transport_map;
 
+pub use audio_thread::AudioThreadError;
 use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
+use daw_dsp::toaster::transient::TransientShaperError;
 use engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
 use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
@@ -74,14 +77,141 @@ use timeline::{
 /// Generic over the attempt rather than written inline in [`EngineHandle::new`]
 /// so this control flow — one attempt on success, two on failure, both errors in
 /// the merged message — is testable without an audio device.
-fn spawn_with_fallback<T>(mut spawn: impl FnMut(bool) -> Result<T, String>) -> Result<T, String> {
+fn spawn_with_fallback<T, E>(
+    mut spawn: impl FnMut(bool) -> Result<T, E>,
+) -> Result<T, DefaultPeriodRetryError<E>> {
     match spawn(false) {
         Ok(handle) => Ok(handle),
-        Err(negotiated_error) => spawn(true).map_err(|default_error| {
-            format!(
-                "{negotiated_error} (retrying with the device default period also failed: {default_error})"
-            )
+        Err(negotiated) => spawn(true).map_err(|default_period| DefaultPeriodRetryError {
+            negotiated,
+            default_period,
         }),
+    }
+}
+
+/// Both engine start attempts failed: the one on the negotiated buffer period
+/// and the retry on the device default period. See [`spawn_with_fallback`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct DefaultPeriodRetryError<E> {
+    /// The failure of the attempt the user's settings asked for.
+    pub negotiated: E,
+    /// The failure of the retry without the negotiated period.
+    pub default_period: E,
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for DefaultPeriodRetryError<E> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} (retrying with the device default period also failed: {})",
+            self.negotiated, self.default_period
+        )
+    }
+}
+
+impl<E: std::error::Error> std::error::Error for DefaultPeriodRetryError<E> {}
+
+/// Why [`EngineHandle::new`] could not start the engine.
+pub type EngineBootError = DefaultPeriodRetryError<EngineStartError>;
+
+/// Why one engine start attempt failed.
+#[derive(Debug)]
+pub enum EngineStartError {
+    /// The process has handed out every engine instance identity.
+    IdentityExhausted,
+    /// The audio thread or its output stream did not start.
+    AudioThread(AudioThreadError),
+}
+
+impl core::fmt::Display for EngineStartError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::IdentityExhausted => f.write_str("Native engine instance identity exhausted"),
+            Self::AudioThread(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for EngineStartError {}
+
+impl From<AudioThreadError> for EngineStartError {
+    fn from(error: AudioThreadError) -> Self {
+        Self::AudioThread(error)
+    }
+}
+
+/// Why the engine refused a graph command before it reached the ring.
+///
+/// Built on the control thread only: every refusal here is decided before a
+/// command crosses to the callback, which counts its own refusals and never
+/// reports one through this type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandError {
+    /// The command ring has no free slot.
+    QueueFull,
+    /// The effect table already holds [`EFFECT_TABLE_CAPACITY`] entries.
+    EffectTableFull,
+    /// The captured input already feeds [`CRUMBS_CAPTURE_RESERVE`] consumers.
+    CaptureBusFull,
+    /// The plugin already receives the captured input.
+    CaptureConsumerRegistered { plugin_id: usize },
+    /// The retirement reclaimer a grown command channel needs is gone.
+    ReclaimerGone,
+    /// The callback did not drain the ring while a channel swap waited.
+    ChannelSwapStalled,
+    /// No built-in effect has this wire name.
+    UnknownEffectType(String),
+    /// The named built-in sounds notes and cannot sit on the master chain.
+    NoteSinkOnMasterChain(&'static str),
+    /// No built-in parameter has this wire name.
+    UnknownParameter(String),
+    /// The built-in body refused the engine's sample rate.
+    Builtin(TransientShaperError),
+}
+
+impl core::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::QueueFull => f.write_str("Audio command queue full"),
+            Self::EffectTableFull => write!(
+                f,
+                "effect-table-full: the engine already holds its maximum of \
+                 {EFFECT_TABLE_CAPACITY} native devices and plugins"
+            ),
+            Self::CaptureBusFull => write!(
+                f,
+                "capture-bus-full: the engine's captured input already feeds its maximum of \
+                 {CRUMBS_CAPTURE_RESERVE} consumers"
+            ),
+            Self::CaptureConsumerRegistered { plugin_id } => write!(
+                f,
+                "capture-consumer-registered: plugin {plugin_id} already receives the engine's \
+                 captured input"
+            ),
+            Self::ReclaimerGone => {
+                f.write_str("engine-not-running: the retirement reclaimer is gone")
+            }
+            Self::ChannelSwapStalled => f.write_str(
+                "command-queue-full: the engine did not drain its command ring while a channel \
+                 swap waited",
+            ),
+            Self::UnknownEffectType(name) => write!(f, "unknown built-in effect type '{name}'"),
+            Self::NoteSinkOnMasterChain(name) => write!(
+                f,
+                "built-in '{name}' sounds notes and belongs on a track chain, not the master \
+                 insert chain"
+            ),
+            Self::UnknownParameter(name) => write!(f, "unknown built-in parameter '{name}'"),
+            Self::Builtin(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+impl From<TransientShaperError> for CommandError {
+    fn from(error: TransientShaperError) -> Self {
+        Self::Builtin(error)
     }
 }
 
@@ -92,7 +222,7 @@ fn spawn_with_fallback<T>(mut spawn: impl FnMut(bool) -> Result<T, String>) -> R
 #[derive(Debug)]
 pub enum GraphBatchError {
     /// The batch was refused whole; nothing was pushed.
-    Refused(String),
+    Refused(CommandError),
     /// `pushed` of `total` commands were queued before a push failed.
     ///
     /// Unreachable by construction — admission verifies the whole batch fits
@@ -101,15 +231,15 @@ pub enum GraphBatchError {
     Partial {
         pushed: usize,
         total: usize,
-        error: String,
+        error: CommandError,
     },
 }
 
 static NEXT_ENGINE_INSTANCE: AtomicU64 = AtomicU64::new(1);
 
-fn reserve_engine_instance_id(next: &AtomicU64) -> Result<u64, String> {
+fn reserve_engine_instance_id(next: &AtomicU64) -> Result<u64, EngineStartError> {
     next.try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-        .map_err(|_| "Native engine instance identity exhausted".to_string())
+        .map_err(|_| EngineStartError::IdentityExhausted)
 }
 
 pub struct EngineHandle {
@@ -257,7 +387,7 @@ impl EngineHandle {
     ///
     /// Two attempts, the second without the negotiated buffer period — see
     /// [`spawn_with_fallback`] for why the retry exists and what it reports.
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, EngineBootError> {
         spawn_with_fallback(Self::spawn)
     }
 
@@ -272,7 +402,7 @@ impl EngineHandle {
     /// `EngineHandle` is the only place that owns both halves of all three
     /// channels, which is why the retry lives here rather than inside
     /// `spawn_audio_thread`.
-    fn spawn(force_default_buffer: bool) -> Result<Self, String> {
+    fn spawn(force_default_buffer: bool) -> Result<Self, EngineStartError> {
         // Reserve before opening a stream. Failed construction burns an id;
         // retirement or a fallback start can never reuse an old receipt.
         let instance_id = reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)?;
@@ -655,7 +785,7 @@ impl EngineHandle {
     /// — preserving the arithmetic behind the boot-time
     /// `RETIREMENT_QUEUE_CAPACITY` at every size, which is what lets the
     /// drain's batch fence never defer an admitted batch for good.
-    fn provision_command_channel(&mut self, needed: usize) -> Result<(), String> {
+    fn provision_command_channel(&mut self, needed: usize) -> Result<(), CommandError> {
         const SWAP_PUSH_ATTEMPTS: usize = 500;
         const SWAP_PUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2);
 
@@ -664,7 +794,7 @@ impl EngineHandle {
         let (retired_tx, retired_rx) = RingBuffer::new(capacity + 1);
         self.retired_adoption_tx
             .send(retired_rx)
-            .map_err(|_| "engine-not-running: the retirement reclaimer is gone".to_string())?;
+            .map_err(|_| CommandError::ReclaimerGone)?;
 
         // The swap fence needs one slot on the old ring. The callback drains
         // the ring every device period, so a full ring frees within
@@ -690,11 +820,7 @@ impl EngineHandle {
                 }
             }
         }
-        Err(
-            "command-queue-full: the engine did not drain its command ring while a channel swap \
-             waited"
-                .to_string(),
-        )
+        Err(CommandError::ChannelSwapStalled)
     }
 
     /// Read the latest fixed numeric MIDI diagnostics outside the audio
@@ -874,15 +1000,11 @@ impl EngineHandle {
     /// A built-in that sounds notes is refused here too: the master insert
     /// chain this method registers onto is effects-only, so an instrument
     /// body belongs on a track chain's generator pass instead of here.
-    pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
+    pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), CommandError> {
         let plugin_type = BuiltinEffectType::from_name(plugin_type)
-            .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
+            .ok_or_else(|| CommandError::UnknownEffectType(plugin_type.to_string()))?;
         if plugin_type.sounds_notes() {
-            let name = plugin_type.name();
-            return Err(format!(
-                "built-in '{name}' sounds notes and belongs on a track chain, not the master \
-                 insert chain"
-            ));
+            return Err(CommandError::NoteSinkOnMasterChain(plugin_type.name()));
         }
         // A built-in that sounds notes was already refused above, so a
         // built-in reaching this push never sounds notes and carries no
@@ -897,9 +1019,14 @@ impl EngineHandle {
     /// Update an effect parameter natively. The name resolves to a fixed-size
     /// address on the control side, for the reason given on
     /// [`Self::add_effect`].
-    pub fn set_effect_param(&mut self, id: usize, param: &str, value: f32) -> Result<(), String> {
+    pub fn set_effect_param(
+        &mut self,
+        id: usize,
+        param: &str,
+        value: f32,
+    ) -> Result<(), CommandError> {
         let param = DeviceParam::from_name(param)
-            .ok_or_else(|| format!("unknown built-in parameter '{param}'"))?;
+            .ok_or_else(|| CommandError::UnknownParameter(param.to_string()))?;
         self.push(GraphCommand::SetParam(id, param, value))
     }
 
@@ -910,13 +1037,13 @@ impl EngineHandle {
     /// processing: the signal passes through the device's own latency, and
     /// MIDI queued while bypassed is discarded rather than banked into a burst
     /// of stale note-ons at the moment it is re-enabled.
-    pub fn set_bypass(&mut self, id: usize, bypassed: bool) -> Result<(), String> {
+    pub fn set_bypass(&mut self, id: usize, bypassed: bool) -> Result<(), CommandError> {
         self.push(GraphCommand::SetBypass(id, bypassed))
     }
 
     /// Add a native plugin (CLAP/VST3) to the audio thread's processing chain.
     /// Returns the assigned plugin ID for future reference.
-    pub fn add_plugin(&mut self, plugin: Box<dyn NativePlugin>) -> Result<usize, String> {
+    pub fn add_plugin(&mut self, plugin: Box<dyn NativePlugin>) -> Result<usize, CommandError> {
         let id = self.reserve_plugin_id();
         self.add_plugin_with_id(id, plugin)?;
         Ok(id)
@@ -938,7 +1065,7 @@ impl EngineHandle {
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::AddPlugin(id, plugin, None))
     }
 
@@ -957,7 +1084,7 @@ impl EngineHandle {
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::AddHostedPlugin(
             id,
             plugin,
@@ -966,7 +1093,7 @@ impl EngineHandle {
     }
 
     /// Remove a native plugin from the audio thread.
-    pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
+    pub fn remove_plugin(&mut self, id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::RemovePlugin(id))
     }
 
@@ -979,7 +1106,7 @@ impl EngineHandle {
         &mut self,
         effect_id: usize,
         latency_frames: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::SetEffectLatency {
             effect_id,
             latency_frames,
@@ -999,7 +1126,7 @@ impl EngineHandle {
     /// The plugin need not be on the graph yet. One batch may carry the
     /// registration ahead of the `AddPlugin` that answers it, and until the id
     /// resolves the callback skips it.
-    pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+    pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), CommandError> {
         self.prepare_capture_consumer_registration(plugin_id)?
             .commit()
             .map(|_| ())
@@ -1011,15 +1138,15 @@ impl EngineHandle {
     pub fn prepare_capture_consumer_registration(
         &mut self,
         plugin_id: usize,
-    ) -> Result<PreparedCaptureRegistration<'_>, String> {
+    ) -> Result<PreparedCaptureRegistration<'_>, CommandError> {
         if self.capture_consumers.contains(&plugin_id) {
-            return Err(capture_consumer_registered_error(plugin_id));
+            return Err(CommandError::CaptureConsumerRegistered { plugin_id });
         }
         if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
-            return Err(capture_bus_full_error());
+            return Err(CommandError::CaptureBusFull);
         }
         if self.command_tx.slots() == 0 {
-            return Err("Audio command queue full".to_string());
+            return Err(CommandError::QueueFull);
         }
         self.prepare_capture_period();
         let period = self.capture_period.clone();
@@ -1038,7 +1165,7 @@ impl EngineHandle {
     pub fn adopt_capture_completion_service(
         &self,
         service: Box<dyn CaptureCompletionService>,
-    ) -> Result<(), String> {
+    ) -> Result<(), AudioThreadError> {
         self.audio_thread.adopt_capture_completion_service(service)
     }
 
@@ -1048,7 +1175,7 @@ impl EngineHandle {
     /// failed push leaves the callback still feeding that consumer, and a
     /// ledger that freed the slot anyway would admit a registration the
     /// callback then refuses where nobody can hear it.
-    pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+    pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
     }
 
@@ -1074,7 +1201,7 @@ impl EngineHandle {
         &mut self,
         plugin_id: usize,
         event: plugin_slot::MidiNoteEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::SendMidiNote(plugin_id, event))
     }
 
@@ -1114,7 +1241,7 @@ impl EngineHandle {
         &mut self,
         plugin_id: usize,
         mut notes: Box<[TimedMidiNote]>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         notes.sort_by_key(|note| note.at_frame);
         self.push(GraphCommand::ScheduleMidiNotes { plugin_id, notes })
     }
@@ -1136,7 +1263,7 @@ impl EngineHandle {
         plugin_id: usize,
         from_frame: u64,
         to_frame: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::ClearMidiNotes {
             plugin_id,
             from_frame,
@@ -1149,26 +1276,26 @@ impl EngineHandle {
     /// The track is built here, on the control thread, with every buffer it
     /// will ever need already sized, because the audio thread that installs it
     /// may not allocate.
-    pub fn add_track(&mut self, id: usize) -> Result<(), String> {
+    pub fn add_track(&mut self, id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::AddTrack(TimelineTrack::new(id)))
     }
 
     /// Remove a track. It leaves the audio thread over the retirement channel
     /// with every clip it owns; its devices stay loaded but stop processing
     /// until they are placed on another track or removed.
-    pub fn remove_track(&mut self, id: usize) -> Result<(), String> {
+    pub fn remove_track(&mut self, id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::RemoveTrack(id))
     }
 
     /// Route a track's output at the master, a bus, or another track.
-    pub fn set_track_output(&mut self, id: usize, target: RouteTarget) -> Result<(), String> {
+    pub fn set_track_output(&mut self, id: usize, target: RouteTarget) -> Result<(), CommandError> {
         self.push(GraphCommand::SetTrackOutput(id, target))
     }
 
     /// Mute a track. The mute sits after the fader and before the panner, so a
     /// pre-fader send keeps feeding its bus — the behaviour a cue or monitor
     /// mix depends on.
-    pub fn set_track_mute(&mut self, id: usize, muted: bool) -> Result<(), String> {
+    pub fn set_track_mute(&mut self, id: usize, muted: bool) -> Result<(), CommandError> {
         self.push(GraphCommand::SetTrackMute(id, muted))
     }
 
@@ -1176,7 +1303,7 @@ impl EngineHandle {
     /// the tracks the engineer is not soloing. It sits ahead of the send taps,
     /// so a gated track stops feeding its cue and return buses too, which is
     /// what mute deliberately does not do.
-    pub fn set_track_solo_gate(&mut self, id: usize, gated: bool) -> Result<(), String> {
+    pub fn set_track_solo_gate(&mut self, id: usize, gated: bool) -> Result<(), CommandError> {
         self.push(GraphCommand::SetTrackSoloGate(id, gated))
     }
 
@@ -1190,7 +1317,7 @@ impl EngineHandle {
         track_id: usize,
         entry: ChainEntry,
         index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::InsertTrackDevice {
             track_id,
             entry,
@@ -1204,7 +1331,11 @@ impl EngineHandle {
     /// instrument body run nowhere until a chain takes them again, because a
     /// hosted plugin belongs to the load that created it and the master chain
     /// runs effects only.
-    pub fn remove_track_device(&mut self, track_id: usize, effect_id: usize) -> Result<(), String> {
+    pub fn remove_track_device(
+        &mut self,
+        track_id: usize,
+        effect_id: usize,
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::RemoveTrackDevice {
             track_id,
             effect_id,
@@ -1219,7 +1350,7 @@ impl EngineHandle {
         bus_id: usize,
         entry: ChainEntry,
         index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::InsertBusDevice {
             bus_id,
             entry,
@@ -1228,7 +1359,11 @@ impl EngineHandle {
         })
     }
 
-    pub fn remove_bus_device(&mut self, bus_id: usize, effect_id: usize) -> Result<(), String> {
+    pub fn remove_bus_device(
+        &mut self,
+        bus_id: usize,
+        effect_id: usize,
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::RemoveBusDevice { bus_id, effect_id })
     }
 
@@ -1242,7 +1377,7 @@ impl EngineHandle {
         bus_id: usize,
         tap: SendTap,
         level: f32,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::AddSend {
             track_id,
             bus_id,
@@ -1252,32 +1387,32 @@ impl EngineHandle {
         })
     }
 
-    pub fn remove_send(&mut self, track_id: usize, bus_id: usize) -> Result<(), String> {
+    pub fn remove_send(&mut self, track_id: usize, bus_id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::RemoveSend { track_id, bus_id })
     }
 
     /// Add a bus. A bus may feed the master, another bus, or a track.
-    pub fn add_bus(&mut self, id: usize) -> Result<(), String> {
+    pub fn add_bus(&mut self, id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::AddBus(TimelineBus::new(id)))
     }
 
-    pub fn remove_bus(&mut self, id: usize) -> Result<(), String> {
+    pub fn remove_bus(&mut self, id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::RemoveBus(id))
     }
 
-    pub fn set_bus_output(&mut self, id: usize, target: RouteTarget) -> Result<(), String> {
+    pub fn set_bus_output(&mut self, id: usize, target: RouteTarget) -> Result<(), CommandError> {
         self.push(GraphCommand::SetBusOutput(id, target))
     }
 
     /// Mute a bus. The mute sits after the fader and before the panner, the
     /// same place it sits on a track.
-    pub fn set_bus_mute(&mut self, id: usize, muted: bool) -> Result<(), String> {
+    pub fn set_bus_mute(&mut self, id: usize, muted: bool) -> Result<(), CommandError> {
         self.push(GraphCommand::SetBusMute(id, muted))
     }
 
     /// Close or open a bus's pre-fader solo gate — the same law as
     /// [`EngineHandle::set_track_solo_gate`].
-    pub fn set_bus_solo_gate(&mut self, id: usize, gated: bool) -> Result<(), String> {
+    pub fn set_bus_solo_gate(&mut self, id: usize, gated: bool) -> Result<(), CommandError> {
         self.push(GraphCommand::SetBusSoloGate(id, gated))
     }
 
@@ -1293,14 +1428,14 @@ impl EngineHandle {
         right: Arc<[f32]>,
         placement: ClipPlacement,
         playback: ClipPlayback,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::AddClip(
             track_id,
             TimelineClip::new(clip_id, left, right, placement, playback),
         ))
     }
 
-    pub fn remove_clip(&mut self, track_id: usize, clip_id: usize) -> Result<(), String> {
+    pub fn remove_clip(&mut self, track_id: usize, clip_id: usize) -> Result<(), CommandError> {
         self.push(GraphCommand::RemoveClip(track_id, clip_id))
     }
 
@@ -1310,7 +1445,7 @@ impl EngineHandle {
         track_id: usize,
         clip_id: usize,
         placement: ClipPlacement,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::SetClipPlacement(track_id, clip_id, placement))
     }
 
@@ -1321,12 +1456,12 @@ impl EngineHandle {
         track_id: usize,
         clip_id: usize,
         playback: ClipPlayback,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::SetClipPlayback(track_id, clip_id, playback))
     }
 
     /// Place the playhead at an absolute timeline frame.
-    pub fn seek_frames(&mut self, frame: u64) -> Result<(), String> {
+    pub fn seek_frames(&mut self, frame: u64) -> Result<(), CommandError> {
         self.push(GraphCommand::SeekFrames(frame))
     }
 
@@ -1338,7 +1473,7 @@ impl EngineHandle {
         &mut self,
         target: AutomationTarget,
         write: AutomationWrite,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::AutomateParam { target, write })
     }
 
@@ -1350,7 +1485,7 @@ impl EngineHandle {
         param: DeviceParam,
         value: f32,
         at_frame: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         self.push(GraphCommand::AutomateDeviceParam {
             effect_id,
             param: DeviceParamTarget::Builtin(param),
@@ -1381,13 +1516,13 @@ impl EngineHandle {
     /// added: a release build wraps a large request back under the ceiling and
     /// admits it. An overflowing request is a request the table can never hold,
     /// so it reads as the refusal it is.
-    pub fn ensure_effect_table_headroom(&self, additional: usize) -> Result<(), String> {
+    pub fn ensure_effect_table_headroom(&self, additional: usize) -> Result<(), CommandError> {
         let requested = self
             .effect_registrations
             .checked_add(additional)
-            .ok_or_else(effect_table_full_error)?;
+            .ok_or(CommandError::EffectTableFull)?;
         if requested > EFFECT_TABLE_CAPACITY {
-            return Err(effect_table_full_error());
+            return Err(CommandError::EffectTableFull);
         }
         Ok(())
     }
@@ -1400,13 +1535,13 @@ impl EngineHandle {
     /// not, and the callback applies the batch in exactly this order. Pure
     /// check — [`EngineHandle::push`] commits each delta as its command goes
     /// onto the ring, so counting here as well would double the ledger.
-    fn admit_effect_registrations(&self, ops: &[GraphCommand]) -> Result<(), String> {
+    fn admit_effect_registrations(&self, ops: &[GraphCommand]) -> Result<(), CommandError> {
         let mut count = self.effect_registrations;
         for op in ops {
             match op.effect_table_delta() {
                 delta if delta > 0 => {
                     if count + delta as usize > EFFECT_TABLE_CAPACITY {
-                        return Err(effect_table_full_error());
+                        return Err(CommandError::EffectTableFull);
                     }
                     count += delta as usize;
                 }
@@ -1433,16 +1568,16 @@ impl EngineHandle {
     /// [`EngineHandle::admit_effect_registrations`]; the walk carries the
     /// batch's own unregistrations and removals so a batch that frees a slot
     /// before reusing it is admitted, exactly as the callback will apply it.
-    fn admit_capture_registrations(&self, ops: &[GraphCommand]) -> Result<(), String> {
+    fn admit_capture_registrations(&self, ops: &[GraphCommand]) -> Result<(), CommandError> {
         let mut held = self.capture_consumers.clone();
         for op in ops {
             match capture_ledger_effect(op) {
                 Some(CaptureLedgerEffect::Register(id)) => {
                     if held.contains(&id) {
-                        return Err(capture_consumer_registered_error(id));
+                        return Err(CommandError::CaptureConsumerRegistered { plugin_id: id });
                     }
                     if held.len() >= CRUMBS_CAPTURE_RESERVE {
-                        return Err(capture_bus_full_error());
+                        return Err(CommandError::CaptureBusFull);
                     }
                     held.push(id);
                 }
@@ -1479,10 +1614,10 @@ impl EngineHandle {
     /// of their own, exactly as [`Self::register_capture_consumer`] does;
     /// all three rely on this push as the ceiling, regardless of whether a
     /// caller checked first.
-    fn push(&mut self, command: GraphCommand) -> Result<(), String> {
+    fn push(&mut self, command: GraphCommand) -> Result<(), CommandError> {
         let delta = command.effect_table_delta();
         if delta > 0 && self.effect_registrations + delta as usize > EFFECT_TABLE_CAPACITY {
-            return Err(effect_table_full_error());
+            return Err(CommandError::EffectTableFull);
         }
         // Read before the command is moved onto the ring, applied only once it
         // is: both ledgers follow what actually crossed. Every route onto the
@@ -1491,15 +1626,15 @@ impl EngineHandle {
         let capture_effect = capture_ledger_effect(&command);
         if let Some(CaptureLedgerEffect::Register(id)) = capture_effect {
             if self.capture_consumers.contains(&id) {
-                return Err(capture_consumer_registered_error(id));
+                return Err(CommandError::CaptureConsumerRegistered { plugin_id: id });
             }
             if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
-                return Err(capture_bus_full_error());
+                return Err(CommandError::CaptureBusFull);
             }
         }
         self.command_tx
             .push(command)
-            .map_err(|_| "Audio command queue full".to_string())?;
+            .map_err(|_| CommandError::QueueFull)?;
         match capture_effect {
             // The refusals above proved the id absent and the reserve unspent,
             // so this never duplicates an entry nor grows past the capacity
@@ -1550,20 +1685,11 @@ impl PreparedCaptureRegistration<'_> {
         &self.period
     }
 
-    pub fn commit(self) -> Result<CapturePeriodObservation, String> {
+    pub fn commit(self) -> Result<CapturePeriodObservation, CommandError> {
         self.engine
             .push(GraphCommand::RegisterCaptureConsumer(self.plugin_id))?;
         Ok(self.period)
     }
-}
-
-/// The one wording for a refusal against the shared effect table, so the batch
-/// path, the plugin path and the crumbs path all report the same ceiling.
-fn effect_table_full_error() -> String {
-    format!(
-        "effect-table-full: the engine already holds its maximum of {EFFECT_TABLE_CAPACITY} \
-         native devices and plugins"
-    )
 }
 
 /// The effect a command finally drops, if it drops one.
@@ -1604,24 +1730,6 @@ fn capture_ledger_effect(command: &GraphCommand) -> Option<CaptureLedgerEffect> 
     }
 }
 
-/// The one wording for a refusal against the engine's input tap, so the control
-/// ledger and any later producer report the same ceiling.
-fn capture_bus_full_error() -> String {
-    format!(
-        "capture-bus-full: the engine's captured input already feeds its maximum of \
-         {CRUMBS_CAPTURE_RESERVE} consumers"
-    )
-}
-
-/// The one wording for an id the input tap already carries, so the typed path
-/// and the batch path report a duplicate the same way.
-fn capture_consumer_registered_error(plugin_id: usize) -> String {
-    format!(
-        "capture-consumer-registered: plugin {plugin_id} already receives the engine's captured \
-         input"
-    )
-}
-
 /// Assemble a fixture `EngineHandle` around channel ends a caller already
 /// built.
 ///
@@ -1650,7 +1758,7 @@ fn engine_handle_fixture(
     capture_refusal: Arc<AtomicU8>,
     rendering: Arc<AtomicBool>,
     output_stream_fault: Arc<AtomicU8>,
-) -> Result<EngineHandle, String> {
+) -> Result<EngineHandle, EngineStartError> {
     Ok(EngineHandle {
         instance_id: reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)?,
         command_tx,
@@ -1701,7 +1809,9 @@ pub type CommandCaptureFixture = (
 /// does not exercise: a command's whole journey is the ring between this handle
 /// and [`scheduler::AudioScheduler`], which a test can drive directly.
 #[cfg(any(test, feature = "command-capture-fixture"))]
-pub fn engine_handle_for_command_capture(capacity: usize) -> Result<CommandCaptureFixture, String> {
+pub fn engine_handle_for_command_capture(
+    capacity: usize,
+) -> Result<CommandCaptureFixture, EngineStartError> {
     let (command_tx, command_rx) = RingBuffer::new(capacity);
     let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
@@ -1738,7 +1848,7 @@ pub fn engine_handle_for_command_capture(capacity: usize) -> Result<CommandCaptu
 pub fn capture_lifecycle_fixture(
     capacity: usize,
     refuse_input: bool,
-) -> Result<(EngineHandle, CaptureLifecycleDriver), String> {
+) -> Result<(EngineHandle, CaptureLifecycleDriver), EngineStartError> {
     let (command_tx, commands) = RingBuffer::new(capacity);
     let (retired_tx, retired_rx) = RingBuffer::new(scheduler::RETIREMENT_QUEUE_CAPACITY);
     let (retired_adoption_tx, retired_adoptions) = std::sync::mpsc::channel();
@@ -1793,7 +1903,8 @@ pub fn capture_lifecycle_fixture(
 mod tests {
     use super::{
         engine_handle_fixture, engine_handle_for_command_capture, reserve_engine_instance_id,
-        spawn_with_fallback, GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+        spawn_with_fallback, CommandError, DefaultPeriodRetryError, EngineStartError,
+        GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_thread::{observed_audio_thread_handle, OwnerCommand};
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
@@ -1823,7 +1934,10 @@ mod tests {
         let (next, _, _) = engine_handle_for_command_capture(8).unwrap();
         assert!(next.instance_id() > id);
         let exhausted = std::sync::atomic::AtomicU64::new(u64::MAX);
-        assert!(reserve_engine_instance_id(&exhausted).is_err());
+        assert!(matches!(
+            reserve_engine_instance_id(&exhausted),
+            Err(EngineStartError::IdentityExhausted)
+        ));
         assert_eq!(
             exhausted.load(std::sync::atomic::Ordering::Relaxed),
             u64::MAX
@@ -2031,8 +2145,9 @@ mod tests {
         let error = engine
             .add_effect(7, "fermenter")
             .expect_err("a note-sink built-in must not register on the master chain");
+        assert_eq!(error, CommandError::NoteSinkOnMasterChain("fermenter"));
         assert!(
-            error.contains("master insert chain"),
+            error.to_string().contains("master insert chain"),
             "the error must name why the built-in was refused, got: {error}"
         );
         assert_eq!(
@@ -2077,10 +2192,10 @@ mod tests {
             .register_capture_consumer(0)
             .expect_err("the bus already holds this id");
 
-        assert!(full.starts_with("capture-bus-full:"), "{full}");
-        assert!(
-            duplicate.starts_with("capture-consumer-registered:"),
-            "{duplicate}"
+        assert_eq!(full, CommandError::CaptureBusFull);
+        assert_eq!(
+            duplicate,
+            CommandError::CaptureConsumerRegistered { plugin_id: 0 }
         );
         assert_eq!(
             command_rx.slots(),
@@ -2509,7 +2624,7 @@ mod tests {
             .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
             .expect_err("the batch took every slot, so the typed path has none");
 
-        assert!(refusal.starts_with("capture-bus-full:"), "{refusal}");
+        assert_eq!(refusal, CommandError::CaptureBusFull);
         assert_eq!(
             command_rx.slots(),
             0,
@@ -2534,7 +2649,10 @@ mod tests {
             )
             .expect_err("one registration past the reserve refuses the batch");
         assert!(
-            matches!(&overrun, GraphBatchError::Refused(error) if error.starts_with("capture-bus-full:")),
+            matches!(
+                &overrun,
+                GraphBatchError::Refused(CommandError::CaptureBusFull)
+            ),
             "{overrun:?}"
         );
 
@@ -2545,7 +2663,10 @@ mod tests {
             ])
             .expect_err("a batch may not register one id twice");
         assert!(
-            matches!(&duplicate, GraphBatchError::Refused(error) if error.starts_with("capture-consumer-registered:")),
+            matches!(
+                &duplicate,
+                GraphBatchError::Refused(CommandError::CaptureConsumerRegistered { plugin_id: 4 })
+            ),
             "{duplicate:?}"
         );
 
@@ -2575,6 +2696,97 @@ mod tests {
         engine
             .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
             .expect("the freed slot takes the next consumer");
+    }
+
+    /// The text each command refusal carries to a host, pinned exactly:
+    /// renderer code and specs match several of these prefixes.
+    #[test]
+    fn command_errors_print_their_messages() {
+        let cases = [
+            (
+                CommandError::QueueFull,
+                "Audio command queue full".to_string(),
+            ),
+            (
+                CommandError::EffectTableFull,
+                format!(
+                    "effect-table-full: the engine already holds its maximum of \
+                     {EFFECT_TABLE_CAPACITY} native devices and plugins"
+                ),
+            ),
+            (
+                CommandError::CaptureBusFull,
+                format!(
+                    "capture-bus-full: the engine's captured input already feeds its maximum \
+                     of {CRUMBS_CAPTURE_RESERVE} consumers"
+                ),
+            ),
+            (
+                CommandError::CaptureConsumerRegistered { plugin_id: 42 },
+                "capture-consumer-registered: plugin 42 already receives the engine's captured \
+                 input"
+                    .to_string(),
+            ),
+            (
+                CommandError::ReclaimerGone,
+                "engine-not-running: the retirement reclaimer is gone".to_string(),
+            ),
+            (
+                CommandError::ChannelSwapStalled,
+                "command-queue-full: the engine did not drain its command ring while a channel \
+                 swap waited"
+                    .to_string(),
+            ),
+            (
+                CommandError::UnknownEffectType("wobble".to_string()),
+                "unknown built-in effect type 'wobble'".to_string(),
+            ),
+            (
+                CommandError::NoteSinkOnMasterChain("fermenter"),
+                "built-in 'fermenter' sounds notes and belongs on a track chain, not the master \
+                 insert chain"
+                    .to_string(),
+            ),
+            (
+                CommandError::UnknownParameter("wobble".to_string()),
+                "unknown built-in parameter 'wobble'".to_string(),
+            ),
+            (
+                CommandError::Builtin(
+                    daw_dsp::toaster::transient::TransientShaperError::InvalidSampleRate,
+                ),
+                "Transient Shaper requires a positive finite sample rate".to_string(),
+            ),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+        assert_eq!(
+            EngineStartError::IdentityExhausted.to_string(),
+            "Native engine instance identity exhausted"
+        );
+        assert_eq!(
+            EngineStartError::from(crate::AudioThreadError::StartupTimedOut).to_string(),
+            "Timed out waiting for audio stream startup"
+        );
+    }
+
+    /// The wire names reach the variant that names them, so a caller reading
+    /// the refusal sees the name it sent.
+    #[test]
+    fn unknown_wire_names_are_refused_with_the_name_sent() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16).unwrap();
+
+        assert_eq!(
+            engine.add_effect(1, "wobble"),
+            Err(CommandError::UnknownEffectType("wobble".to_string()))
+        );
+        assert_eq!(
+            engine.set_effect_param(1, "wobble", 0.5),
+            Err(CommandError::UnknownParameter("wobble".to_string()))
+        );
+        assert!(command_rx.pop().is_err(), "a refused name crosses nothing");
     }
 
     #[test]
@@ -2627,11 +2839,17 @@ mod tests {
         // rejected period invisible.
         assert_eq!(
             started,
-            Err(concat!(
+            Err(DefaultPeriodRetryError {
+                negotiated: "requested period unsupported".to_string(),
+                default_period: "no output device available".to_string(),
+            })
+        );
+        assert_eq!(
+            started.unwrap_err().to_string(),
+            concat!(
                 "requested period unsupported (retrying with the device default ",
                 "period also failed: no output device available)"
             )
-            .to_string())
         );
         assert_eq!(*requests.borrow(), vec![false, true]);
     }
@@ -2686,8 +2904,11 @@ mod tests {
         let refused = engine
             .ensure_effect_table_headroom(1)
             .expect_err("a table filled by devices must refuse the next plugin");
+        assert_eq!(refused, CommandError::EffectTableFull);
         assert!(
-            refused.contains(&EFFECT_TABLE_CAPACITY.to_string()),
+            refused
+                .to_string()
+                .contains(&EFFECT_TABLE_CAPACITY.to_string()),
             "the refusal must name the ceiling it hit, got: {refused}"
         );
 
@@ -2846,8 +3067,11 @@ mod tests {
         let refused = engine
             .ensure_effect_table_headroom(usize::MAX)
             .expect_err("a request too large to count must be refused, not wrapped");
+        assert_eq!(refused, CommandError::EffectTableFull);
         assert!(
-            refused.contains(&EFFECT_TABLE_CAPACITY.to_string()),
+            refused
+                .to_string()
+                .contains(&EFFECT_TABLE_CAPACITY.to_string()),
             "the refusal must name the ceiling it hit, got: {refused}"
         );
         drained(&mut command_rx);

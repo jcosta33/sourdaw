@@ -4190,10 +4190,8 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     let (read_end, write_end) = (ends[0], ends[1]);
 
     // SAFETY: `raw` borrows a live handler this test owns.
-    assert_eq!(
-        unsafe { run_loop.registerEventHandler(raw, read_end) },
-        kResultOk
-    );
+    let registered = unsafe { run_loop.registerEventHandler(raw, read_end) };
+    assert_eq!(registered, kResultOk);
 
     assert!(
         !wait_briefly(|| handler.wakes.load(Ordering::Acquire) > 0),
@@ -4201,10 +4199,8 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     );
 
     // SAFETY: one byte from a live buffer onto an open descriptor.
-    assert_eq!(
-        unsafe { libc::write(write_end, b"x".as_ptr().cast(), 1) },
-        1
-    );
+    let written = unsafe { libc::write(write_end, b"x".as_ptr().cast(), 1) };
+    assert_eq!(written, 1);
     assert!(
         wait_until(|| handler.wakes.load(Ordering::Acquire) > 0),
         "a readable descriptor must reach its handler"

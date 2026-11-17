@@ -1,11 +1,11 @@
+import { type AppAction } from '#/utils/handlerContract';
+
 import {
-    type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipSatelliteGainEnvelopeSnapshot,
     type ClipSatelliteWarpMarkerSnapshot,
     type ClipSatelliteWarpStateSnapshot,
-} from '#/utils/handlerContract';
-
+} from '../events/arrangementClipStateSnapshots';
 import { decodePersistedStretchMode, type WarpMarker, type WarpState } from '../models/WarpMarker';
 
 import { getClipSatelliteReplacements } from './clipSatelliteReplacementByActionType';

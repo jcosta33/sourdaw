@@ -6,7 +6,11 @@
 //! equivalent gap for FDN-8, FDN-16, Spring, and Reverse at both product sample
 //! rates.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use proof_chamber::ProofChamberInstance;
 

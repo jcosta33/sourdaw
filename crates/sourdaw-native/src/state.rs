@@ -674,13 +674,16 @@ impl AppState {
     /// builds an `AppState` must not read — or rewrite — the developer's own
     /// scanned plugin database, and a default that reaches the real file would
     /// make every such test do exactly that.
-    pub fn with_persisted_plugin_registry() -> Self {
-        Self {
+    ///
+    /// Refused when the runtime scope selection was: a store at the legacy
+    /// location would read and rewrite the unscoped registry.
+    pub fn with_persisted_plugin_registry() -> Result<Self, String> {
+        Ok(Self {
             plugin_registry_store: Arc::new(
-                crate::host::plugin_registry_store::PluginRegistryStore::at_default_location(),
+                crate::host::plugin_registry_store::PluginRegistryStore::at_default_location()?,
             ),
             ..Self::default()
-        }
+        })
     }
 }
 

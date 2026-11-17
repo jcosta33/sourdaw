@@ -7,9 +7,17 @@
  */
 
 import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
-import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBrief } from './ProductionBrief';
+
+/** MIDI's take-source wire value, read off a take-lane action because a model may not import `events/`. */
+type MidiTakeSourceSnapshot = NonNullable<
+    Extract<
+        AppAction,
+        { type: 'restoreAudioClipSlip' }
+    >['payload']['before']['lanes'][number]['takes'][number]['midiSource']
+>;
 
 /**
  * The schema version written into every new `.sourdaw` file by the current

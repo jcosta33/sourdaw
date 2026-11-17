@@ -438,7 +438,7 @@ jobs:
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
       - name: Test the native crate
-        run: cargo test --package sourdaw-native
+        run: cargo test --package sourdaw-native --features napi-addon
 
   native-windows:
     name: Native audio backend (Windows)
