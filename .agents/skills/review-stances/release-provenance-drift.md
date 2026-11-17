@@ -51,6 +51,13 @@ limitation, never as passed.
    inventory step on the merge head. When resolving shared inventory, keep the union of curated external-reference
    assignments: compare the resolved file's assignments with both merge parents (`git show <parent>:<path>`) and
    require every assignment either side carried to survive, and the census to pass against the merged tree.
+6. **A shared filename blocks independent deterministic updates (#4997).** The review checked for collisions
+   and caught an allowance that admitted measured pins. It missed a probe for independent generated fields.
+   Compare a dependency-license restamp and an ADR 0036 tracked-set restamp. They may proceed in separate
+   lanes when their inputs and inventory fields are independent. Then check two changes feeding the same
+   digest and edits to a curated record or measured baseline in the shared file. Those require sequencing
+   or a stack with a real dependency. If independent updates conflict, check the regenerated fields against
+   the merged inputs and verify the curated evidence survives.
 
 ## Relocated
 
