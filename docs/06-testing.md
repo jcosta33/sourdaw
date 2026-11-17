@@ -972,7 +972,9 @@ The existing four isolated PR unit shards collect V8 coverage. The coverage job 
 reports belong to the current run attempt and tested revision, merges them into one production
 report and contributes its result to the required `Gate`. The unit coverage artifact contains
 the HTML report, exact covered/total counts, the uncovered changed file and line list in
-`gate.json`, and shard wall-clock durations. The nightly unit commands retain their existing scope.
+`gate.json`, and shard wall-clock durations. The coverage shards use a 15-second default test
+timeout to accommodate V8 instrumentation of CPU-intensive tests. Explicit per-test timeouts
+and performance assertions still apply.
 
 Coverage applies to production TypeScript and TSX under `src/`. It excludes declarations, test
 specs and test helpers, the test setup and the app bootstrap entry point. Files the shards never

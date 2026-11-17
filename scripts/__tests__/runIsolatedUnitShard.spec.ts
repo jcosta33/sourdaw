@@ -407,18 +407,20 @@ describe('required unit account isolation', () => {
         expect(write).toHaveBeenCalledTimes(1);
     });
 
-    it('enables JSON coverage only for the PR shard through the existing guarded test command', () => {
+    it('adds JSON coverage and its test budget only to the PR shard through the existing guarded test command', () => {
         const { ports, run } = runtimePorts();
         expect(runUnitPhase(context, 'coverage-shard', '2/4', ports)).toBe(0);
         for (const [file, args] of run.mock.calls.slice(0, 3)) {
             expect(file).toBe(context.pnpm);
             expect(args).not.toContain('--coverage');
+            expect(args).not.toContain('--testTimeout=15000');
         }
         expect(run.mock.calls[3]?.[1]).toEqual(
             expect.arrayContaining([
                 'test:run',
                 '--shard=2/4',
                 '--coverage',
+                '--testTimeout=15000',
                 '--coverage.reporter=json',
                 `--coverage.reportsDirectory=${context.temp}/unit-coverage-shard`,
             ])

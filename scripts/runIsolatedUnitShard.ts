@@ -492,6 +492,7 @@ export function runUnitPhase(
     if (reportsCoverage) {
         args.push(
             '--coverage',
+            '--testTimeout=15000',
             '--coverage.reporter=json',
             `--coverage.reportsDirectory=${join(context.temp, unitCoverageShardDirectory)}`
         );
