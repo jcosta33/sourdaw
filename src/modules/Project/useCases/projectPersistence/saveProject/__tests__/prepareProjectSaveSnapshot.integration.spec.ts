@@ -1,4 +1,6 @@
-import { performance as nativePerformance } from 'node:perf_hooks';
+import { Blob as NativeBlob } from 'node:buffer';
+import { writeFileSync } from 'node:fs';
+import { performance as nativePerformance, PerformanceObserver } from 'node:perf_hooks';
 import { MessageChannel } from 'node:worker_threads';
 
 import * as A from '@automerge/automerge';
@@ -17,7 +19,9 @@ import { getWarpState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack, hydrateClipWarpStates, renameTrack } from '#/modules/Arrangement/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    exportSdawFile,
     getCrdtDoc,
+    getCrdtDocIds,
     projectCrdtToStores,
     registerCrdtStorageRuntime,
     replaceCrdtDoc,
@@ -27,9 +31,10 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type HandlerExecutionResult } from '#/utils/handlerContract';
-import { isRecord } from '#/utils/structuralEquality';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
+import { seedDenseProject } from '../../../../__tests__/seedDenseProject';
 import { arrangementStore } from '../../../../stores/arrangementStore';
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { getSettledProjectId, projectStore } from '../../../../stores/projectStore';
@@ -608,4 +613,215 @@ describe('private Project Save preparation with real native storage', () => {
         await expect(prepareProjectSaveSnapshot()).rejects.toThrow('requires an open owning transaction');
         expect(requests).toEqual([]);
     });
+
+    it('prepares and later commits the existing dense native project through the private Save owner', async () => {
+        seedDenseProject();
+        finishLoadedProjection();
+        vi.stubGlobal('Blob', NativeBlob);
+        const original = root();
+        const originalTruth = A.toJS(original);
+        const history = A.getChangesMetaSince(original, []);
+        const heads = A.getHeads(original);
+        const actor = A.getActorId(original);
+        expect(history.length).toBeGreaterThanOrEqual(2048);
+        expect(trackStore.value?.tracks).toHaveLength(32);
+        expect(trackStore.value?.tracks.flatMap((track) => track.clips)).toHaveLength(256);
+        expect(Object.values(requireValue(midiStore.value).notesByClipId).flat()).toHaveLength(8192);
+        for (let index = 0; index < 8; index++) {
+            expect(getWarpState(`scale-clip-${index + 1}-0`).markers).toHaveLength(120);
+        }
+        const state = requireValue(arrangementStore.value);
+        const intended: unknown = JSON.parse(
+            JSON.stringify({
+                ...state,
+                arrangements: state.arrangements.map((snapshot) =>
+                    snapshot.id === state.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+                ),
+            })
+        );
+        const control = A.clone(original);
+        const cursor = A.saveIncremental(control);
+        A.free(control);
+        expect(cursor.byteLength).toBeGreaterThan(0);
+        const updatedAt = requireValue(projectStore.value).updatedAt + 1;
+        vi.spyOn(Date, 'now').mockReturnValue(updatedAt);
+        const cancellation = new AbortController();
+        const timings: { name: string; duration: number; detail?: unknown }[] = [];
+        const report: {
+            timings: typeof timings;
+            totalWallMs?: number;
+            nativePublications: number;
+            nativePublicationsAtCommit?: number;
+            nativeChunkCount?: number;
+            reached: string[];
+            failure?: string;
+        } = { timings, nativePublications: 0, reached: ['fixture-and-source-controls'] };
+        const collect = (entries: readonly PerformanceEntry[]): void => {
+            for (const entry of entries) {
+                if (entry.name.startsWith('automerge-')) {
+                    timings.push({
+                        name: entry.name,
+                        duration: entry.duration,
+                        detail: 'detail' in entry ? entry.detail : undefined,
+                    });
+                    if (
+                        (entry.name.includes('prospective-') || entry.name.includes('materialization-handoff')) &&
+                        entry.duration >= 50
+                    ) {
+                        cancellation.abort(new Error(`Actual native preparation phase exceeded50ms: ${entry.name}`));
+                    }
+                }
+            }
+        };
+        const observer = new PerformanceObserver((list) => collect(list.getEntries()));
+        observer.observe({ entryTypes: ['measure'] });
+        const projectedHeads: string[][] = [];
+        const unsubscribe = subscribeToCrdtChanges(() => {
+            report.nativePublications += 1;
+        });
+        const unstore = arrangementStore.subscribe(() => projectedHeads.push(A.getHeads(root())));
+        const wallStarted = performance.now();
+        const prefixStarted = performance.now();
+        const transaction = startPreparation(cancellation.signal);
+        const prefixMs = performance.now() - prefixStarted;
+        timings.push({ name: 'actual-helper-synchronous-prefix', duration: prefixMs });
+        try {
+            expect(requests).toEqual([{ key: 'arrangements', policy: 'bounded-native-sequence-v1' }]);
+            if (prefixMs >= 50) {
+                cancellation.abort(new Error('Actual private Save synchronous prefix exceeded50ms'));
+                await transaction.value.catch(() => undefined);
+            }
+            expect(prefixMs, 'Actual private Save synchronous prefix').toBeLessThan(50);
+            report.reached.push('prefix-bound');
+            const result = await transaction.value;
+            collect(observer.takeRecords());
+            cancellation.signal.throwIfAborted();
+            expect(root()).toBe(original);
+            expect(report.nativePublications).toBe(0);
+            expect(projectedHeads.length).toBeGreaterThan(0);
+            expect(projectedHeads.every((value) => valuesEqual(value, heads))).toBe(true);
+            registerValidation(transaction, result);
+            const commitStarted = performance.now();
+            transaction.commit();
+            const commitMs = performance.now() - commitStarted;
+            report.nativePublicationsAtCommit = report.nativePublications;
+            timings.push({ name: 'actual-storage-commit-with-validators-and-subscribers', duration: commitMs });
+            report.totalWallMs = performance.now() - wallStarted;
+            expect(commitMs, 'Actual private Save storage commit').toBeLessThan(50);
+            collect(observer.takeRecords());
+            cancellation.signal.throwIfAborted();
+            report.reached.push('native-admission-and-commit-bounds');
+            expect(report.nativePublications).toBe(1);
+            const updated = root();
+            expect(A.toJS(updated)).toEqual({
+                ...originalTruth,
+                arrangements: intended,
+                projectMeta: { ...originalTruth.projectMeta, updatedAt },
+            });
+            expect(A.getActorId(updated)).toBe(actor);
+            expect(A.getChangesMetaSince(updated, []).slice(0, history.length)).toEqual(history);
+            expect(A.saveIncremental(original)).toEqual(cursor);
+            const additions = A.getChangesMetaSince(updated, heads);
+            expect(additions.length).toBeGreaterThan(1);
+            const supplemental = requireValue(additions.at(-1));
+            const supplementalBytes = A.getChangesSince(updated, supplemental.deps);
+            expect(supplementalBytes).toHaveLength(1);
+            expect(A.decodeChange(requireValue(supplementalBytes[0])).ops).toEqual([
+                expect.objectContaining({
+                    action: 'set',
+                    obj: requireValue(A.getObjectId(updated.projectMeta)),
+                    key: 'updatedAt',
+                    value: updatedAt,
+                }),
+            ]);
+            report.nativeChunkCount = additions.length - 1;
+            const expectedIndices = Array.from({ length: report.nativeChunkCount }, (_, index) => index);
+            for (const name of [
+                'automerge-prospective-response-task',
+                'automerge-prospective-apply-task',
+                'automerge-prospective-authority-task',
+                'automerge-prospective-sequence-slice-task',
+            ]) {
+                const records = timings.filter((entry) => entry.name === name);
+                expect(records, name).toHaveLength(report.nativeChunkCount);
+                expect(
+                    records.map(({ detail }) => {
+                        if (!isRecord(detail)) {
+                            throw new Error(`Missing actual native sequence detail: ${name}`);
+                        }
+                        return detail.sequenceIndex;
+                    })
+                ).toEqual(expectedIndices);
+            }
+            expect(
+                timings.filter((entry) => entry.name === 'automerge-prospective-sequence-planning-task')
+            ).toHaveLength(1);
+            for (const name of [
+                'automerge-storage-materialization-handoff-task',
+                'automerge-storage-prepared-publication',
+            ]) {
+                const records = timings.filter((entry) => entry.name === name);
+                expect(records, name).toHaveLength(1);
+                expect(records[0]?.detail).toEqual({
+                    preparationPolicy: 'bounded-native-sequence-v1',
+                    primaryKey: 'arrangements',
+                });
+            }
+            report.reached.push('complete-native-truth-history-cursor-and-phase-census');
+            const actorSequence = requireValue(
+                A.getChangesMetaSince(updated, [])
+                    .filter((entry) => entry.actor === actor)
+                    .at(-1)
+            ).seq;
+            renameTrack('scale-track-0', 'Later dense owner edit');
+            flushAutomergeStorageWrites();
+            const later = root();
+            const laterTruth = A.toJS(later);
+            const laterHistory = A.getChangesMetaSince(later, []);
+            const laterChanges = A.getChangesMetaSince(later, A.getHeads(updated));
+            expect(laterChanges).toHaveLength(1);
+            expect(laterChanges[0]).toMatchObject({ actor, seq: actorSequence + 1 });
+            expect(trackStore.value?.tracks[0]?.name).toBe('Later dense owner edit');
+            const exportStarted = performance.now();
+            const blob = exportSdawFile();
+            const binary = await blob.arrayBuffer();
+            timings.push({
+                name: 'diagnostic-public-SDAW-export-and-Blob-arrayBuffer',
+                duration: performance.now() - exportStarted,
+                detail: { bytes: binary.byteLength, documents: getCrdtDocIds() },
+            });
+            expect(binary.byteLength).toBeGreaterThan(0);
+            const encoding = A.clone(later);
+            let bytes: Uint8Array;
+            try {
+                bytes = A.save(encoding);
+            } finally {
+                A.free(encoding);
+            }
+            const reloaded = A.load<NativeRoot>(bytes);
+            try {
+                expect(A.toJS(reloaded)).toEqual(laterTruth);
+                expect(A.getHeads(reloaded)).toEqual(A.getHeads(later));
+                expect(A.getChangesMetaSince(reloaded, [])).toEqual(laterHistory);
+            } finally {
+                A.free(reloaded);
+            }
+            report.reached.push('later-owner-edit-public-export-and-independent-native-reload');
+        } catch (error) {
+            report.failure = error instanceof Error ? error.message : String(error);
+            throw error;
+        } finally {
+            report.totalWallMs ??= performance.now() - wallStarted;
+            cancellation.abort();
+            await transaction.value.catch(() => undefined);
+            transaction.abort();
+            unstore();
+            unsubscribe();
+            collect(observer.takeRecords());
+            observer.disconnect();
+            if (process.env.SOURDAW_DENSE_SAVE_DIAGNOSTIC) {
+                writeFileSync(process.env.SOURDAW_DENSE_SAVE_DIAGNOSTIC, JSON.stringify(report, null, 2));
+            }
+        }
+    }, 70_000);
 });
