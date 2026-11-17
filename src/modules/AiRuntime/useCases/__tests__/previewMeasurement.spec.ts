@@ -2101,7 +2101,18 @@ describe('real caller sequential measurement opportunity', () => {
             let improvedLevel = Number.NaN;
             let firstError = Number.NaN;
             vi.mocked(generateToolPlanningOutcome).mockImplementationOnce(
-                async (_system, _user, _schemas, _a, _b, _c, _d, _e, _f, options) => {
+                async (
+                    _system,
+                    _user,
+                    _schemas,
+                    _a,
+                    _b,
+                    _c,
+                    _d,
+                    _e,
+                    _f,
+                    options: Parameters<typeof generateToolPlanningOutcome>[9]
+                ) => {
                     const receipt = options?.history
                         .flatMap((turn) => turn.receipts)
                         .find((entry) => entry.callId === 'poor');
@@ -2272,7 +2283,11 @@ describe('real caller sequential measurement opportunity', () => {
             expect(baseline?.buffer).not.toBe(candidate?.buffer);
             expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({ status: 'executed' });
             expect(drumsLevel()).toBeCloseTo(improvedLevel, 4);
-            expect(undoHistoryStore.value.past).toHaveLength(1);
+            const history = undoHistoryStore.value;
+            if (history === null) {
+                throw new TypeError('Expected undo history');
+            }
+            expect(history.past).toHaveLength(1);
             expect(await undo()).toMatchObject({ headConsumed: true });
             expect(trackStore.value).toEqual(before.tracks);
             expect(projectStore.value).toEqual(projectBefore);
