@@ -41,7 +41,9 @@ function commit(root: string): string {
 const rootScript = join(dirname(fileURLToPath(import.meta.url)), '../unitCoverageGate.ts');
 const dependencies = join(dirname(rootScript), '../node_modules');
 const vitestBin = join(dependencies, 'vitest/vitest.mjs');
-const floors = { version: 1, lines: 4000, statements: 4000, branches: 4000, functions: 4000 };
+const floors = { version: 1, lines: 4000, statements: 4000, branches: 4000, functions: 4000 } satisfies ReturnType<
+    typeof readCoverageFloors
+>;
 
 const location = { start: { line: 1, column: 0 }, end: { line: 1, column: 1 } };
 const coveredStructures = {

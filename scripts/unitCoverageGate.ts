@@ -439,14 +439,12 @@ export async function mergeUnitCoverage(
             elapsedMs: integer(packet.elapsedMs, 'coverage shard duration', 1),
         };
     });
-    const runner = await createVitest(
-        {
-            root: checkout,
-            watch: false,
-            coverage: { enabled: true, provider: 'v8', reportsDirectory: output, reporter: ['json', 'html'] },
-        },
-        { configFile: false }
-    );
+    const runner = await createVitest({
+        config: false,
+        root: checkout,
+        watch: false,
+        coverage: { enabled: true, provider: 'v8', reportsDirectory: output, reporter: ['json', 'html'] },
+    });
     try {
         const provider = await v8.getProvider();
         if (provider.mergeReports === undefined) {
