@@ -227,7 +227,7 @@ function fileTotals(
         spanStart(fn.decl, restoreEndColumn);
         spanStart(fn.loc, restoreEndColumn);
         if (typeof fn.name !== 'string') {
-            throw new Error('Invalid coverage function name');
+            throw new TypeError('Invalid coverage function name');
         }
         addCounter(overall.functions, hit);
     });
@@ -448,8 +448,8 @@ export async function mergeUnitCoverage(
         { configFile: false }
     );
     try {
-        const provider = await v8.getProvider?.();
-        if (provider?.mergeReports === undefined) {
+        const provider = await v8.getProvider();
+        if (provider.mergeReports === undefined) {
             throw new Error('Vitest coverage provider cannot merge shard reports');
         }
         await provider.initialize(runner);
@@ -541,7 +541,7 @@ async function main(): Promise<number> {
     );
     if (production.size > 0) {
         throw new Error(
-            `Merged coverage omitted production files: ${[...production].map((path) => JSON.stringify(path)).join(', ')}`
+            `Merged coverage omitted production files: ${Array.from(production, (path) => JSON.stringify(path)).join(', ')}`
         );
     }
     const previous = floorsAt(root, firstParent);

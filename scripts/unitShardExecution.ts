@@ -6,7 +6,7 @@ import { unitAccessBootstrap } from './unitExecutionCopy.ts';
 
 export const systemPath = '/usr/local/bin:/usr/bin:/bin';
 
-export function safeEnvironment(context: UnitIsolationContext): NodeJS.ProcessEnv {
+export function safeEnvironment(context: UnitIsolationContext): Record<string, string> {
     return {
         HOME: context.home,
         PATH: `${dirname(context.node)}:${dirname(context.pnpm)}:${systemPath}`,
@@ -21,7 +21,7 @@ export function safeEnvironment(context: UnitIsolationContext): NodeJS.ProcessEn
     };
 }
 
-function envArguments(env: NodeJS.ProcessEnv): string[] {
+function envArguments(env: Record<string, string>): string[] {
     return Object.entries(env).map(([key, value]) => `${key}=${value}`);
 }
 

@@ -16,7 +16,7 @@ function temporaryRoot(): string {
     return root;
 }
 
-function command(cwd: string, executable: string, args: string[]): string {
+function command(cwd: string, executable: string, args: [string, ...string[]]): string {
     const result = spawnSync(executable, args, { cwd, encoding: 'utf8', timeout: 30_000 });
     if (result.status !== 0) {
         throw new Error(`${executable} ${args[0]} failed: ${result.stderr || result.stdout}`);
