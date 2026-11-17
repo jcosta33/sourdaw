@@ -23,7 +23,7 @@ type CapturedTake = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
-    midiSource?: import('../../src/utils/handlerContract').MidiTakeSourceSnapshot;
+    midiSource?: import('../../src/modules/MIDI/events').MidiTakeSourceSnapshot;
 };
 type OscillatorStart = {
     frequency: number;
@@ -593,8 +593,9 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         expect(followingInterval).not.toContain(64);
         expect(followingInterval).not.toContain(67);
     });
-    test('frozen selected MIDI source survives named save, recent load, and malformed import refusal', async ({}, testInfo) => {
+    test('frozen selected MIDI source survives named save, recent load, and malformed import refusal', async () => {
         test.setTimeout(120_000);
+        const testInfo = test.info();
         const page = acceptancePage;
         const recorded = await capture(page, recordedTrackId);
         const secondPass = recorded.takes.find((take) => take.recordingPassIndex === 1);

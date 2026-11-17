@@ -1,5 +1,6 @@
-import { type AppAction, type ClipStateSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type ClipStateSnapshot } from '../../events/arrangementClipStateSnapshots';
 import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 
 import { capturedClip } from './capturedClip';

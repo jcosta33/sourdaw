@@ -33,10 +33,9 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::runtime_scope::RuntimeScope;
 use crate::NativeSingletons;
 
-use windows::{
-    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowResizableFn,
-    EditorWindowSizeRequest, JsWindowCallbacks, JsWindowHost,
-};
+pub use gpu::gpu_memory_budget;
+
+use windows::{JsWindowCallbacks, JsWindowHost, PluginWindowHostCallbacks};
 
 use daw_core::{PluginId, PluginInstanceId};
 
@@ -129,32 +128,33 @@ impl SourdawNative {
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Result<Self> {
         reason(RuntimeScope::select(None))?;
-        Ok(Self::build(on_event))
+        reason(Self::build(on_event))
     }
 
     /// Main-process-only selection. A legacy constructor cannot accept this contract.
     #[napi(factory)]
     pub fn with_runtime_scope_v1(on_event: EventEmitter, root: String) -> Result<Self> {
         reason(RuntimeScope::select(Some(std::path::Path::new(&root))))?;
-        Ok(Self::build(on_event))
+        reason(Self::build(on_event))
     }
 
     #[napi]
-    pub fn runtime_scope_info_v1(&self) -> Value {
-        serde_json::json!({
+    pub fn runtime_scope_info_v1(&self) -> Result<Value> {
+        let path = |relative| reason(RuntimeScope::path(relative));
+        Ok(serde_json::json!({
             "version": 1,
-            "root": RuntimeScope::root(),
-            "data": RuntimeScope::path("native/data"),
-            "private": RuntimeScope::path("native/data/private"),
-            "cache": RuntimeScope::path("native/cache"),
-            "ipc": RuntimeScope::path("native/ipc"),
-            "projects": RuntimeScope::path("native/projects"),
-            "scanResponses": RuntimeScope::path("native/data/private/scan-responses"),
+            "root": reason(RuntimeScope::root())?,
+            "data": path("native/data")?,
+            "private": path("native/data/private")?,
+            "cache": path("native/cache")?,
+            "ipc": path("native/ipc")?,
+            "projects": path("native/projects")?,
+            "scanResponses": path("native/data/private/scan-responses")?,
             "exportStateAvailable": self.export_files.is_ok(),
-        })
+        }))
     }
 
-    fn build(on_event: EventEmitter) -> Self {
+    fn build(on_event: EventEmitter) -> std::result::Result<Self, String> {
         // Before any command can be dispatched. `ensure_allowed_root` answers
         // an application-data path from the built-in roots without touching
         // the grant registry, so a private directory created lazily by the
@@ -163,12 +163,14 @@ impl SourdawNative {
         // has nothing to correct the caller's spelling against.
         commands::filesystem::ensure_private_state_directory();
         let export_files = commands::filesystem::private_state_directory()
-            .ok_or_else(|| "Private export state is unavailable".to_string())
+            .and_then(|directory| {
+                directory.ok_or_else(|| "Private export state is unavailable".to_string())
+            })
             .and_then(|directory| commands::filesystem::ExportFileRegistry::open(&directory))
             .map(Mutex::new);
 
         let events: Arc<dyn EventSink> = Arc::new(TsfnEventSink { emit: on_event });
-        let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events)));
+        let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events))?);
 
         crate::host::latency_watcher::start(
             Arc::clone(&events),
@@ -185,13 +187,13 @@ impl SourdawNative {
             Arc::clone(&singletons.app_state.engine_plugins),
         );
 
-        Self {
+        Ok(Self {
             singletons,
             export_files,
             // Until the shell registers its window host this refuses rather
             // than pretends.
             windows: RwLock::new(Arc::new(NoWindowHost)),
-        }
+        })
     }
 
     /// The current window host, cloned out so no caller holds the lock.
@@ -220,26 +222,19 @@ impl SourdawNative {
     pub fn register_plugin_window_host(
         &self,
         env: &Env,
-        create_editor_window: CreateEditorWindowFn,
-        editor_window_exists: EditorWindowExistsFn,
-        set_editor_window_size: Function<'_, EditorWindowSizeRequest, ()>,
-        set_editor_window_resizable: EditorWindowResizableFn,
-        show_and_focus_editor_window: EditorWindowLabelFn,
-        destroy_editor_window: EditorWindowLabelFn,
-        hide_editor_window: EditorWindowLabelFn,
-        show_editor_window: EditorWindowLabelFn,
+        callbacks: PluginWindowHostCallbacks<'_>,
     ) -> Result<()> {
         let host = JsWindowHost::new(
             env,
             JsWindowCallbacks {
-                create: create_editor_window,
-                exists: editor_window_exists,
-                set_size: set_editor_window_size.create_ref()?,
-                set_resizable: set_editor_window_resizable,
-                show_and_focus: show_and_focus_editor_window,
-                destroy: destroy_editor_window,
-                hide: hide_editor_window,
-                show: show_editor_window,
+                create: callbacks.create_editor_window,
+                exists: callbacks.editor_window_exists,
+                set_size: callbacks.set_editor_window_size.create_ref()?,
+                set_resizable: callbacks.set_editor_window_resizable,
+                show_and_focus: callbacks.show_and_focus_editor_window,
+                destroy: callbacks.destroy_editor_window,
+                hide: callbacks.hide_editor_window,
+                show: callbacks.show_editor_window,
             },
         )?;
         *self

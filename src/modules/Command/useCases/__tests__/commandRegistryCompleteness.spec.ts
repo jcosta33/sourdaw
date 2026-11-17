@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vites
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
-import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import {

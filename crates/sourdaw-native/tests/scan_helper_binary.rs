@@ -5,7 +5,11 @@
 //! owns the contract these assert against; this only proves the standalone
 //! `sourdaw-plugin-scan-helper` binary actually runs it.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use std::process::Command;
 use std::time::{Duration, Instant};

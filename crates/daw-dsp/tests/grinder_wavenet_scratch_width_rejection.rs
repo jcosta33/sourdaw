@@ -1,5 +1,6 @@
 #![allow(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     reason = "tests assert by unwrapping and fail by panicking"
 )]
@@ -123,7 +124,9 @@ fn stock_capture(first_channels: usize, first_head: usize, second_channels: usiz
 
 fn load(capture: &str) -> (GrinderEngine, Result<(), String>) {
     let mut engine = GrinderEngine::new(48_000.0);
-    let result = engine.load_neural_model(capture);
+    let result = engine
+        .load_neural_model(capture)
+        .map_err(|error| error.to_string());
     (engine, result)
 }
 
@@ -154,7 +157,10 @@ fn assert_admitted_everywhere(label: &str, capture: &str) {
 fn assert_refused_everywhere(label: &str, capture: &str, reason: &str) {
     match NativeNamPlan::inspect(capture, 48_000.0) {
         Ok(_) => panic!("{label}: native admission must refuse this shape"),
-        Err(error) => assert!(error.contains(reason), "{label}: native: {error}"),
+        Err(error) => assert!(
+            error.to_string().contains(reason),
+            "{label}: native: {error}"
+        ),
     }
     let (engine, result) = load(capture);
     match result {
@@ -247,6 +253,7 @@ fn the_per_sample_work_ceilings_stay_native_only() {
     let capture = stock_capture(16, 8, 8);
     assert!(NativeNamPlan::inspect(&capture, 48_000.0)
         .unwrap_err()
+        .to_string()
         .contains(MEMORY_POLICY));
     let (engine, result) = load(&capture);
     result.expect("the standard shape must load in the browser");
@@ -1009,7 +1016,10 @@ fn the_weight_ceiling_admits_exactly_65536_weights_in_the_browser() {
 fn assert_admitted_in_the_browser_only(label: &str, capture: &str) {
     let error = NativeNamPlan::inspect(capture, 48_000.0)
         .expect_err(&format!("{label}: native must refuse this shape's work"));
-    assert!(error.contains(MEMORY_POLICY), "{label}: native: {error}");
+    assert!(
+        error.to_string().contains(MEMORY_POLICY),
+        "{label}: native: {error}"
+    );
     let (mut engine, result) = load(capture);
     if let Err(error) = result {
         panic!("{label}: must load in the browser: {error}");

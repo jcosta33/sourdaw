@@ -2929,31 +2929,32 @@ describe('release inventory', () => {
 
     // The admitted DSP source and its admission record stay content-pinned (ADR 0036).
     // Setting `pinsAdmittedBytes` false on either boundary turns this red.
-    it('moves only the pinned digest when an admitted Grand Boule byte changes (ADR 0036)', () => {
+    // Measured 0.7-0.8 s per run with one shared fixture (1.1-1.5 s with four); the timeout keeps load from failing it.
+    it('moves only the pinned digest when an admitted Grand Boule byte changes (ADR 0036)', { timeout: 15_000 }, () => {
         const cases = [
             { path: 'crates/daw-dsp/src/grand_boule/engine.rs', label: 'grand-boule-native-rust' },
             { path: '.agents/decisions/0036-readmit-grand-boule.md', label: 'grand-boule-admission-decision' },
         ];
-        for (const { path, label } of cases) {
-            const base = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-pinned-digests-'));
-            const first = join(base, 'first');
-            const second = join(base, 'second');
-            try {
-                writeGrandBouleReleaseFixture(first);
-                writeGrandBouleReleaseFixture(second);
-                writeFileSync(join(second, path), `${readFileSync(join(second, path), 'utf8')}\n// edited`);
-
-                const firstDigests = grandBouleReleaseInventoryContract(first).digests;
-                const secondDigests = grandBouleReleaseInventoryContract(second).digests;
+        // One fixture serves both cases: the digest reads working-tree bytes of tracked files, so each
+        // edit is measured against the unedited baseline and restored before the next.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-pinned-digests-'));
+        try {
+            writeGrandBouleReleaseFixture(root);
+            const firstDigests = grandBouleReleaseInventoryContract(root).digests;
+            for (const { path, label } of cases) {
+                const original = readFileSync(join(root, path), 'utf8');
+                writeFileSync(join(root, path), `${original}\n// edited`);
+                const secondDigests = grandBouleReleaseInventoryContract(root).digests;
+                writeFileSync(join(root, path), original);
                 expect(
                     secondDigests.flatMap((digest, index) =>
                         digest === firstDigests[index] ? [] : [digestLabelFromEntry(digest)]
                     )
                 ).toEqual([label]);
                 expect(findDigestByLabel(secondDigests, label)).toMatch(/^tracked-set-sha256:[0-9a-f]{64}:/u);
-            } finally {
-                removeTemporaryDirectory(base);
             }
+        } finally {
+            removeTemporaryDirectory(root);
         }
     });
 

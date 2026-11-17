@@ -1,5 +1,4 @@
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
-
+import { type MidiClipDataActionSnapshot } from '../../events/midiClipDataSnapshots';
 import { type MidiStoreState } from '../../stores/midiStore';
 
 /**

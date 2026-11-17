@@ -19,6 +19,11 @@ impl ScopeSelection {
             _ => Err("Native runtime scope was already selected differently".to_string()),
         }
     }
+
+    /// The selection, settling on the legacy layout when none was made.
+    fn root(&self) -> Result<Option<PathBuf>, String> {
+        self.0.get_or_init(|| Ok(None)).clone()
+    }
 }
 
 pub struct RuntimeScope;
@@ -148,17 +153,15 @@ impl RuntimeScope {
         Ok(())
     }
 
-    pub fn root() -> Option<PathBuf> {
-        PROCESS_SCOPE
-            .0
-            .get_or_init(|| Ok(None))
-            .as_ref()
-            .expect("An invalid native scope cannot fall back to legacy state")
-            .clone()
+    /// The selected scope root, `None` for the legacy unscoped layout, or the
+    /// selection's refusal. A refused selection never answers `None`: that
+    /// would send the caller to legacy state the scope was chosen to avoid.
+    pub fn root() -> Result<Option<PathBuf>, String> {
+        PROCESS_SCOPE.root()
     }
 
-    pub fn path(relative: &str) -> Option<PathBuf> {
-        Self::root().map(|root| root.join(relative))
+    pub fn path(relative: &str) -> Result<Option<PathBuf>, String> {
+        Ok(Self::root()?.map(|root| root.join(relative)))
     }
 
     #[cfg(test)]
@@ -180,12 +183,30 @@ impl RuntimeScope {
     /// Real global resolver tests each get a new process. The selector is never reset.
     #[cfg(test)]
     pub(crate) fn test_in_process(name: &str, test: impl FnOnce(&Path)) {
-        let name = name.strip_prefix("sourdaw_native::").unwrap_or(name);
-        const CHILD: &str = "SOURDAW_RUNTIME_SCOPE_TEST_CHILD";
-        if std::env::var(CHILD).as_deref() == Ok(name) {
+        Self::in_child_process(name, || {
             let fixture = Self::test_root();
             Self::select(Some(&fixture.root)).unwrap();
             test(&fixture.root);
+        });
+    }
+
+    /// `test` in a new process whose scope selection was refused, so every
+    /// resolver answers the refusal.
+    #[cfg(test)]
+    pub(crate) fn test_in_refused_process(name: &str, test: impl FnOnce()) {
+        Self::in_child_process(name, || {
+            assert!(Self::select(Some(Path::new(""))).is_err());
+            assert!(Self::root().is_err());
+            test();
+        });
+    }
+
+    #[cfg(test)]
+    fn in_child_process(name: &str, child: impl FnOnce()) {
+        let name = name.strip_prefix("sourdaw_native::").unwrap_or(name);
+        const CHILD: &str = "SOURDAW_RUNTIME_SCOPE_TEST_CHILD";
+        if std::env::var(CHILD).as_deref() == Ok(name) {
+            child();
             return;
         }
         let output = std::process::Command::new(std::env::current_exe().unwrap())
@@ -229,6 +250,19 @@ mod tests {
         let selection = ScopeSelection::default();
         assert!(selection.select(Some(Path::new(""))).is_err());
         assert!(selection.select(None).is_err());
+    }
+
+    #[test]
+    fn invalid_selection_answers_its_refusal_rather_than_the_legacy_layout() {
+        let selection = ScopeSelection::default();
+        assert!(selection.select(Some(Path::new(""))).is_err());
+        assert_eq!(
+            selection.root(),
+            Err(
+                "Native runtime scope must be an existing canonical UUID directory in the reserved namespace"
+                    .to_string()
+            )
+        );
     }
 
     #[test]
@@ -280,7 +314,7 @@ mod tests {
         let fixture = RuntimeScope::test_root();
         std::fs::write(fixture.root.join("native"), b"occupied").unwrap();
         assert!(RuntimeScope::select(Some(&fixture.root)).is_err());
-        assert_eq!(RuntimeScope::root(), Some(fixture.root.clone()));
+        assert_eq!(RuntimeScope::root(), Ok(Some(fixture.root.clone())));
         assert!(RuntimeScope::select(None).is_err());
         #[cfg(unix)]
         {

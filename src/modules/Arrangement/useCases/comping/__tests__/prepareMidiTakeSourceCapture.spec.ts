@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { type MidiClipDataActionSnapshot } from '#/modules/MIDI/events';
 import { frozenMidiTakeRepeatAt, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTake } from '../../../models/TakeLane';

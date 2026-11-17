@@ -590,6 +590,31 @@ describe('TrackListView', () => {
         window.removeEventListener('keydown', windowKeyDown);
     });
 
+    it('leaves a click on empty list space unfocused, so Enter and Delete still reach the window shortcut layer', async () => {
+        // A focusable grid would take focus on that click and claim Enter (clip mode
+        // instead of stop) and Delete (the track confirm instead of the clips).
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        const grid = screen.getByRole('grid');
+
+        fireEvent.mouseDown(grid);
+        grid.focus();
+        fireEvent.click(grid);
+        const focused = document.activeElement ?? document.body;
+        fireEvent.keyDown(focused, { key: 'Enter' });
+        fireEvent.keyDown(focused, { key: 'Delete' });
+
+        expect(grid.hasAttribute('tabindex')).toBe(false);
+        expect(focused).not.toBe(grid);
+        expect(setWorkspaceMode).not.toHaveBeenCalled();
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(windowKeyDown).toHaveBeenCalledTimes(2);
+        window.removeEventListener('keydown', windowKeyDown);
+    });
+
     it('removes the selected track on Delete after user confirmation', async () => {
         const { removeTrack } = await import('../../../useCases/removeTrack');
         const { executeUserAppAction } = await import('#/modules/Command/useCases');

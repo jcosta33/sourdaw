@@ -224,6 +224,22 @@ describe('creative catalog role-family targets', () => {
         }
     );
 
+    it.each([
+        { prompt: 'make the bass-heavy guitars brighter', family: 'guitar' as const },
+        { prompt: 'make the drum-like vocals warmer', family: 'vocal' as const },
+        { prompt: 'make the vocal-like drums punchier', family: 'drums' as const },
+    ])(
+        'publishes only the $family family for "$prompt", whose hyphenated compound names none',
+        ({ prompt, family }) => {
+            const context = fixtureContext();
+            const familyIds = resolveWorkflowTrackIds(context, 'expected-family', { all: [{ roleFamily: family }] });
+
+            expect(familyIds.length).toBeGreaterThan(0);
+            expect(provenances(prepare(prompt, context))).toEqual(['role-reference']);
+            expect(targetIds(prepare(prompt, context))).toEqual(familyIds.map((id) => [id]));
+        }
+    );
+
     it('publishes only the track the request names when it also names a family', () => {
         const catalog = prepare('make the kick punchier and tighten up the bass');
 

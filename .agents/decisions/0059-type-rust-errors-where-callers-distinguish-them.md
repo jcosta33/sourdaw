@@ -1,7 +1,7 @@
 ---
 type: adr
 id: 0059
-title: Type Rust errors where a caller distinguishes them
+title: Type Rust errors at every module boundary
 status: accepted
 date: 2026-11-14
 owner: The Sourdaw team
@@ -15,7 +15,7 @@ sources:
     - src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
 ---
 
-# 0059 - Type Rust errors where a caller distinguishes them
+# 0059 - Type Rust errors at every module boundary
 
 ## Context
 
@@ -44,14 +44,21 @@ process paths already use typed or `Copy` refusals. The house pattern for typed 
 hand-written `Display` and `std::error::Error` impl (`TuningParseError` in `daw-core`,
 `TimeStretchError` in `daw-dsp`). No crate depends on `thiserror` directly.
 
+An earlier position kept every error no caller classifies as `String`. That position is reversed:
+a caller that later needs to tell two failures apart finds only text, and is pushed back into the
+prefix matching this decision removes.
+
 ## Decision
 
-1. **A function returns a typed error enum when any caller distinguishes failure kinds.** The caller
-   may be Rust, or TypeScript through the IPC message. The enum's `Display` carries today's text
-   byte-identically, and classification is a method on the enum, never a prefix match.
-2. **A failure that only propagates to the napi edge or to a log stays `String`.** Converting such
-   leaf command bodies wholesale is rejected: it adds an enum per command with no caller that
-   matches it, churns hundreds of signatures, and moves wasm manifests for no behaviour.
+1. **The enum carries the message and the kind.** Its `Display` prints the text the `String` carried,
+   byte-identically, because TypeScript receives that text through the IPC message. A caller, Rust
+   or TypeScript, classifies a failure by matching a variant or calling a method on the enum, never
+   by a prefix match on text.
+2. **No signature below the edge returns `Result<_, String>`.** Each module boundary exposes one
+   typed enum, so a caller that later needs to tell two failures apart matches a variant rather
+   than discovering that only text exists. A `napi` command body, or a wasm-bindgen export building
+   its `JsError`, converts the typed error with `to_string()` there, and those are the only places
+   `String` is built from it.
 3. **Errors are hand-written enums with `Display` and `std::error::Error`; no `thiserror`.** It
    would add a direct proc-macro dependency to crates in wasm closures and change nothing a caller
    can observe.
@@ -59,9 +66,11 @@ hand-written `Display` and `std::error::Error` impl (`TuningParseError` in `daw-
    structured code instead of text is a separate IPC contract change and is out of scope here.
 5. **Real-time paths never build an owned error.** A variant constructed on a callback carries no
    heap data.
-6. **Rollout.** Slice 1 types the plugin-scan classification. Later slices type the graph and Crumbs
-   families TypeScript matches, then the remaining library-crate boundaries a caller matches.
-   `clippy::result_unit_err` and `clippy::result_large_err` stay under #6525.
+6. **Rollout.** The first slices typed the errors TypeScript matches: plugin-scan classification,
+   the graph and Crumbs families, and the sample-library filesystem refusals. #6784 then converts
+   the library crates one wave at a time, starting with `daw-core` and `daw-io`, and ends with the
+   `sourdaw-native` command families. `clippy::result_unit_err` and `clippy::result_large_err` stay
+   under #6525.
 
 ## Consequences
 
@@ -70,5 +79,5 @@ hand-written `Display` and `std::error::Error` impl (`TuningParseError` in `daw-
   kind is a new variant, and every `match` over it must say what it means.
 - A message that two failure kinds share is no longer a classification hazard, because no caller
   reads the text to decide.
-- Most `Result<_, String>` signatures stay as they are, deliberately. The count is a measure of
-  where the work could go, not of work owed.
+- A wave that touches a crate in a wasm package's closure rebuilds that package, because any source
+  edit there moves its manifest hash; hand-written impls keep that the only cost.

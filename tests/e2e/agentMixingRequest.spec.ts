@@ -203,26 +203,26 @@ type SourceStart = {
     expectedFrames: number;
 };
 declare global {
-    interface Window {
-        measuredAuditionProbe?: {
-            blocks: ProbeBlock[];
-            starts: SourceStart[];
-            reset: () => void;
-            close: () => void;
-            holdResume: () => Promise<void>;
-            releaseResume: () => void;
-            resumeFrame: () => number | null;
-            gateCuts: () => { toPreviewOutput: boolean; time: number; calledAt: number; stack: string }[];
-            resumeCalls: () => { time: number; frame: number; calledAt: number; stack: string }[];
-            residual: () => {
-                residual: number;
-                outputEnergy: number;
-                upstreamEnergy: number;
-                count: number;
-                windowEndFrame: number;
-            } | null;
-        };
-    }
+    var measuredAuditionProbe:
+        | {
+              blocks: ProbeBlock[];
+              starts: SourceStart[];
+              reset: () => void;
+              close: () => void;
+              holdResume: () => Promise<void>;
+              releaseResume: () => void;
+              resumeFrame: () => number | null;
+              gateCuts: () => { toPreviewOutput: boolean; time: number; calledAt: number; stack: string }[];
+              resumeCalls: () => { time: number; frame: number; calledAt: number; stack: string }[];
+              residual: () => {
+                  residual: number;
+                  outputEnergy: number;
+                  upstreamEnergy: number;
+                  count: number;
+                  windowEndFrame: number;
+              } | null;
+          }
+        | undefined;
 }
 
 /**
