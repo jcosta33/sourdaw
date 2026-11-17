@@ -8,7 +8,14 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import { takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    clearClipSelection,
+    createTrack,
+    getArrangementHandlers,
+    selectClip,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     clearHandlerRegistry,
@@ -22,6 +29,7 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -136,8 +144,8 @@ async function sendChatMessage(prompt: string, options?: { mode: 'preview' }): P
 
 function getConfirmationId(): string {
     return (
-        chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)?.pendingActionConfirmationId ??
-        ''
+        chatStore.value?.messages.findLast((message) => message.pendingActionConfirmationId)
+            ?.pendingActionConfirmationId ?? ''
     );
 }
 
@@ -200,6 +208,7 @@ async function commitBluesSong(): Promise<PendingAppActionConfirmation> {
 
 const PHRASE_TASK =
     'Reshape the selected MIDI notes in the Lead Motif clip into a blues phrase, with the opening intact and the same instrument sound.';
+const SPARSE_PHRASE_TASK = 'Make the lick less busy with the same instrument sound.';
 const PHRASE_CLIP_ID = 'existing-midi-motif';
 const PHRASE_TRACK_ID = 'existing-motif-track';
 const PHRASE_SIBLING_ID = 'existing-midi-sibling';
@@ -234,6 +243,23 @@ function durablePhraseNotes() {
     return getCrdtDoc<{ midi?: NonNullable<typeof midiStore.value> }>('root')?.midi?.notesByClipId[PHRASE_CLIP_ID];
 }
 
+function durablePhraseDevices() {
+    return getCrdtDoc<{ tracks?: { tracks: Track[] } }>('root')?.tracks?.tracks.find(
+        (track) => track.id === PHRASE_TRACK_ID
+    )?.devices;
+}
+
+function selectPhraseNotes(noteIds: string[]) {
+    const track = trackStore.value?.tracks.find(({ id }) => id === PHRASE_TRACK_ID);
+    const clip = track?.clips.find(({ id }) => id === PHRASE_CLIP_ID);
+    const notes = midiStore.value?.notesByClipId[PHRASE_CLIP_ID];
+    if (!track || !clip || !notes) {
+        throw new Error('Expected a live motif to select');
+    }
+    const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, notes);
+    setPianoRollSelection(clip.id, noteIds, [], [{ clipId: clip.id, projection }]);
+}
+
 function seedMidiPhrase() {
     projectStore.set(defaultProjectStoreState);
     const track = createTrack({ id: PHRASE_TRACK_ID, kind: 'midi', name: 'Electric piano' });
@@ -265,8 +291,7 @@ function seedMidiPhrase() {
             [PHRASE_SIBLING_ID]: [{ id: 'sibling-note', pitch: 72, duration: 1, startBeat: 2, velocity: 90 }],
         },
     });
-    const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, PHRASE_NOTES);
-    setPianoRollSelection(clip.id, [THIRD.id, FILLER.id], [], [{ clipId: clip.id, projection }]);
+    selectPhraseNotes([THIRD.id, FILLER.id]);
 }
 
 function scriptMidiPhraseEdit(
@@ -274,6 +299,8 @@ function scriptMidiPhraseEdit(
         clipId?: string;
         operations?: unknown[];
         read?: boolean | 'partial';
+        selectedNoteIds?: string[];
+        canInsert?: boolean;
         changeDuringRead?: () => void;
         plain?: boolean;
     } = {}
@@ -319,7 +346,7 @@ function scriptMidiPhraseEdit(
             modeId: 'edit',
             targetObjectIds: [PHRASE_CLIP_ID],
             dimensions: ['midi-content'],
-            creationSlotObjectTypes: ['notes'],
+            creationSlotObjectTypes: options.canInsert === false ? [] : ['notes'],
         }),
     ];
     if (options.read !== false) {
@@ -344,10 +371,11 @@ function scriptMidiPhraseEdit(
                     data: {
                         queryType: 'musical-content',
                         nextCursor: null,
-                        items: expect.arrayContaining([
-                            expect.objectContaining({ noteId: THIRD.id, selected: true }),
-                            expect.objectContaining({ noteId: FILLER.id, selected: true }),
-                        ]),
+                        items: expect.arrayContaining(
+                            (options.selectedNoteIds ?? [THIRD.id, FILLER.id]).map((noteId) =>
+                                expect.objectContaining({ noteId, selected: true })
+                            )
+                        ),
                     },
                 });
             }
@@ -416,6 +444,7 @@ describe('high-level intent execution', () => {
     });
 
     afterEach(async () => {
+        clearClipSelection();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
@@ -562,6 +591,103 @@ describe('high-level intent execution', () => {
         expect(messages[0]).not.toContain('expectedNotes');
         expect(messages[0]).not.toContain('selectionToken');
         expect(messages[0]).not.toContain(ENDING.id);
+    });
+
+    it('follows an accepted motif edit with fresh authority to simplify only its notes and preserve its tone', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const first = requireConfirmation();
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        const firstBatch = first.approvalSnapshot.commandBatch;
+        if (!firstBatch) {
+            throw new Error('Expected a versioned Command batch on the accepted motif');
+        }
+        const parsed = parseVersionedCommandBatchEnvelope(firstBatch.serialized, firstBatch.authority);
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        const { batchId } = parsed.envelope;
+        const receipt = agentRunLifecycle.get(first.runId)?.receipts.find(({ workId }) => workId === batchId);
+        const acceptedNotes = structuredClone(durablePhraseNotes());
+        const acceptedDevices = structuredClone(durablePhraseDevices());
+        const acceptedRevision = captureProjectRevision();
+        const pickup = acceptedNotes?.find(({ pitch, startBeat }) => pitch === 58 && startBeat === 3.25);
+        if (!receipt || !acceptedNotes || !acceptedDevices || !pickup) {
+            throw new Error('Expected an accepted, receipted motif and its generated pickup');
+        }
+        expect(acceptedDevices[0]?.parameterValues).toMatchObject({ filterCutoff: 1_720, filterResonance: 2.8 });
+        expect(receipt).toMatchObject({ workId: batchId, receiptIdentity: expect.any(String) });
+        const firstUndo = structuredClone(undoStore.value?.past ?? []);
+        expect(firstUndo).toHaveLength(1);
+
+        const selectedNoteIds = [THIRD.id, pickup.id];
+        selectClip(PHRASE_CLIP_ID);
+        selectPhraseNotes(selectedNoteIds);
+        const operations = [
+            { type: 'patch', noteId: THIRD.id, patch: { duration: 0.5 } },
+            { type: 'delete', noteId: pickup.id },
+        ];
+        const requests = scriptMidiPhraseEdit({ selectedNoteIds, canInsert: false, operations });
+        await sendChatMessage(SPARSE_PHRASE_TASK);
+        const section = /^thread_context:\n(?<payload>.+)$/mu.exec(requests[0] ?? '')?.groups?.payload;
+        if (!section) {
+            throw new Error('Expected the prior accepted result in the next actual provider request');
+        }
+        const thread: unknown = JSON.parse(section);
+        expect(thread).toMatchObject({
+            requests: [{ value: PHRASE_TASK, trust: 'untrusted_user_string', truncated: false }],
+            pendingProposal: null,
+            lastCommit: {
+                runId: first.runId,
+                receiptIds: [receipt.receiptIdentity],
+                standing: 'standing',
+                commands: [{ name: 'editMidiNotes', arguments: { clipId: PHRASE_CLIP_ID } }],
+            },
+        });
+        for (const privateField of ['expectedNotes', 'guard', 'scope', 'selectionToken', 'authorityId']) {
+            expect(section).not.toContain(`"${privateField}"`);
+        }
+        expect(section).not.toContain(pickup.id);
+        expect(section).not.toContain(OPENING.id);
+        expect(section).not.toContain(ENDING.id);
+
+        const second = requireConfirmation();
+        expect(second.id, chatStore.value?.messages.at(-1)?.content).not.toBe(first.id);
+        expect(second.runId).not.toBe(first.runId);
+        expect(second.projectRevision).toBe(acceptedRevision);
+        expect(second.projectRevision).not.toBe(first.projectRevision);
+        expect(second.actions).toMatchObject([
+            {
+                type: 'editMidiNotes',
+                payload: {
+                    clipId: PHRASE_CLIP_ID,
+                    operations,
+                    guard: {
+                        trackId: PHRASE_TRACK_ID,
+                        expectedNotes: acceptedNotes,
+                        scope: {
+                            allowedNoteIds: selectedNoteIds,
+                            protectedNoteIds: [OPENING.id, ENDING.id],
+                            insertionBudget: 0,
+                        },
+                    },
+                },
+            },
+        ]);
+        expect(durablePhraseNotes()).toEqual(acceptedNotes);
+        await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
+        expect(durablePhraseNotes()).toEqual(
+            acceptedNotes
+                .filter(({ id }) => id !== pickup.id)
+                .map((note) => (note.id === THIRD.id ? { ...note, duration: 0.5 } : note))
+        );
+        expect(durablePhraseDevices()).toEqual(acceptedDevices);
+        expect(undoStore.value?.past).toEqual([...firstUndo, expect.any(Object)]);
+        await undo();
+        expect(durablePhraseNotes()).toEqual(acceptedNotes);
+        expect(durablePhraseDevices()).toEqual(acceptedDevices);
+        expect(undoStore.value?.past).toEqual(firstUndo);
     });
 
     it('previews a blues song without touching the project or the undo history', async () => {
