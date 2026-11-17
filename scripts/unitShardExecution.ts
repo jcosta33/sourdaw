@@ -1,8 +1,9 @@
 import { dirname, isAbsolute, join } from 'node:path';
 
-import type { UnitIsolationContext, UnitIsolationPorts } from './runIsolatedUnitShard.ts';
 import { maxUnitCoverageShardBytes, unitCoverageJson, unitCoverageShardDirectory } from './unitCoveragePaths.ts';
 import { unitAccessBootstrap } from './unitExecutionCopy.ts';
+
+import type { UnitIsolationContext, UnitIsolationPorts } from './runIsolatedUnitShard.ts';
 
 export const systemPath = '/usr/local/bin:/usr/bin:/bin';
 
