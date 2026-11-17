@@ -329,20 +329,24 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         velocityCurveReadout = 'hard';
     }
 
+    const pianoVisible = openVisualizations.includes('piano');
     const visualizations = [
         {
             id: 'piano',
             label: 'Piano keyboard',
             content: (
                 <>
-                    <p className="text-caption text-muted-foreground">
-                        {engineReady ? 'Click the piano keys to audition notes.' : 'Piano audio is unavailable.'}
-                    </p>
+                    {pianoVisible ? (
+                        <p className="text-caption text-muted-foreground">
+                            {engineReady ? 'Click the piano keys to audition notes.' : 'Piano audio is unavailable.'}
+                        </p>
+                    ) : null}
                     <PianoModel3D
                         key={deviceId}
                         activeNotes={activeNotes}
                         sustainPedal={pedals.sustain}
                         lidPosition={config.lidPosition}
+                        visible={pianoVisible}
                         onNoteOn={handleNoteOn}
                         onNoteOff={handleNoteOff}
                         onPreviewHoldChange={setPianoPreviewHeld}
@@ -427,7 +431,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 const expanded = openVisualizations.includes(id);
                 return (
                     <div id={`${visualizationId}-${id}`} key={id} hidden={!expanded} className="shrink-0">
-                        {expanded ? (
+                        {/* A late preview release can still arrive after the canvas is hidden. */}
+                        {expanded || id === 'piano' ? (
                             <Stack gap={2} className="grand-boule-window p-2">
                                 {content}
                             </Stack>

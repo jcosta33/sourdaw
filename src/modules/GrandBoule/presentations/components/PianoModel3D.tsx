@@ -51,6 +51,7 @@ type PianoModel3DProps = {
     activeNotes: ReadonlyMap<number, number>;
     sustainPedal: number;
     lidPosition: number;
+    visible?: boolean;
     onNoteOn?: (midiNote: number, velocity: number) => void;
     onNoteOff?: (midiNote: number) => void;
     onPreviewHoldChange?: (held: boolean) => void;
@@ -280,32 +281,20 @@ export const PianoModel3D = ({
     activeNotes,
     sustainPedal,
     lidPosition,
+    visible = true,
     onNoteOn,
     onNoteOff,
     onPreviewHoldChange,
     className,
-}: PianoModel3DProps): ReactElement => {
+}: PianoModel3DProps): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     // A gesture can stop blocking the disclosure before its captured Note Off route is used.
     const gesturesRef = useRef<PreviewGestures>({ heldPointers: new Set(), releases: new Map() });
     const previewHoldChangeRef = useRef(onPreviewHoldChange);
     previewHoldChangeRef.current = onPreviewHoldChange;
-    const animRef = useRef<KeyAnim[]>(
-        Array.from({ length: NUM_KEYS }, () => ({
-            hammerT: 0,
-            hammerVel: 0,
-            keyDepress: 0,
-            damperLift: 0,
-            stringVib: 0,
-        }))
-    );
-    const prevNotesRef = useRef<ReadonlyMap<number, number>>(new Map());
     const lidRef = useRef(lidPosition);
     lidRef.current = lidPosition;
-    // The rAF render loop is created once in a []-deps effect, so it would
-    // otherwise close over the first-render activeNotes/sustainPedal forever.
-    // Mirror both changing inputs into refs and read *.current inside the loop
-    // (same pattern as StringVibrationView's notesRef).
+    // Mirror changing inputs so the visible renderer can read them without restarting.
     const activeNotesRef = useRef(activeNotes);
     activeNotesRef.current = activeNotes;
     const sustainPedalRef = useRef(sustainPedal);
@@ -313,7 +302,7 @@ export const PianoModel3D = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (canvas === null) {
+        if (!visible || canvas === null) {
             return undefined;
         }
 
@@ -346,6 +335,15 @@ export const PianoModel3D = ({
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+        const anims: KeyAnim[] = Array.from({ length: NUM_KEYS }, () => ({
+            hammerT: 0,
+            hammerVel: 0,
+            keyDepress: 0,
+            damperLift: 0,
+            stringVib: 0,
+        }));
+        let previousNotes: ReadonlyMap<number, number> = new Map();
+
         // Vertex scratch reused across frames. Truncating with `length = 0`
         // keeps the V8 backing store, so per-frame array growth amortises
         // to zero allocation once the maximum vertex count is reached.
@@ -363,8 +361,6 @@ export const PianoModel3D = ({
             gl.clearColor(0.07, 0.07, 0.07, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
-            const anims = animRef.current;
-
             // Read the latest props through their refs so the loop reflects
             // live play instead of the mount-time snapshot.
             const currentNotes = activeNotesRef.current;
@@ -378,7 +374,7 @@ export const PianoModel3D = ({
                 const isHeld = vel !== undefined;
 
                 // Hammer: snap up on new note-on, decay back
-                if (isHeld && !prevNotesRef.current.has(midi)) {
+                if (isHeld && !previousNotes.has(midi)) {
                     a.hammerT = 1.0;
                     a.hammerVel = vel;
                 }
@@ -401,7 +397,7 @@ export const PianoModel3D = ({
                     a.stringVib = 0;
                 }
             }
-            prevNotesRef.current = currentNotes;
+            previousNotes = currentNotes;
 
             // --- Layout constants (pixel coords) ---
             const margin = W * 0.04;
@@ -567,7 +563,7 @@ export const PianoModel3D = ({
             gl.deleteVertexArray(vao);
             gl.deleteProgram(prog);
         };
-    }, []);
+    }, [visible]);
 
     // Window events cover ordinary gesture endings when capture is unavailable.
     useEffect(() => {
@@ -645,6 +641,10 @@ export const PianoModel3D = ({
     const handleLostPointerCapture = (event: React.PointerEvent<HTMLCanvasElement>): void => {
         retirePreviewHold(gesturesRef.current.heldPointers, event.pointerId, onPreviewHoldChange);
     };
+
+    if (!visible) {
+        return null;
+    }
 
     return (
         <>
