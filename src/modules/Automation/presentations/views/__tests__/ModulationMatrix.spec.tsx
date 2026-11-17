@@ -136,6 +136,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
+    isAppActionCommittedError: () => false,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
@@ -323,6 +324,7 @@ describe('ModulationMatrix', () => {
             throw new Error('Expected creation with a stable source identity');
         }
         mocks.modState.modulators.push({ ...makeModulatorWithMapping(0.4), id: action.payload.modulatorId });
+        vi.mocked(executeUserAppAction).mock.calls[0]![1]?.onCommitted?.();
         await act(async () => pending.resolve());
         expect(trigger).toHaveAttribute('aria-expanded', 'false');
         expect(trigger).toHaveFocus();
@@ -419,6 +421,33 @@ describe('ModulationMatrix', () => {
             },
             expect.anything()
         );
+    });
+
+    it('identifies a tuned destination, closes on an admitted duplicate and retains the picker on a lock', async () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(-0.37)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+        const trigger = screen.getByRole('button', { name: 'Add Mapping' });
+        fireEvent.click(trigger);
+        expect(screen.getByRole('status')).toHaveTextContent(/already mapped.*-0.37/i);
+        // A production lock resolves without reaching the materialized-action observer.
+        vi.mocked(executeUserAppAction).mockResolvedValueOnce();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(/locks/i);
+        expect(screen.getByLabelText('Target parameter')).toHaveValue('cutoff');
+
+        // Admitted no-ops notify this observer, but never the committed observer.
+        vi.mocked(executeUserAppAction).mockImplementationOnce(async (action, options) => {
+            options?.observeMaterializedAction?.(action);
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
+        expect(screen.queryByLabelText('Target parameter')).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+        expect(screen.getByLabelText(/Amount for LFO 1/)).toHaveValue('-0.37');
     });
 
     it('keeps the chosen mapping target when its dispatch rejects', async () => {

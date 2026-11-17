@@ -22,7 +22,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 
 import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../../models/Modulator';
@@ -195,26 +195,29 @@ function useModulationSubmission(onClose: () => void) {
         setError('');
         const subject = action.type === 'addModulator' ? 'modulator' : 'mapping';
         const available = () => mounted.current && authority.isCurrent() && hasTarget();
-        const alreadyPresent = isSettled();
-        let committed = false;
+        let accepted = false;
         let failure = 'The target may be unavailable or the project may have locks';
         try {
             await executeUserAppAction(action, {
                 shouldExecute: available,
                 shouldCommit: available,
+                // Admission precedes the handler's no-op check. A locked dispatch
+                // resolves without ever reaching this observer.
+                observeMaterializedAction: () => {
+                    accepted = action.type === 'addMapping' && isSettled();
+                },
                 onCommitted: () => {
-                    committed = true;
+                    accepted = true;
                 },
             });
         } catch (cause) {
+            accepted = isAppActionCommittedError(cause);
             failure = cause instanceof Error ? cause.message : 'The edit failed';
         } finally {
             inFlight.current = false;
             setPending(false);
         }
-        // A refusal can resolve, and post-commit bookkeeping can reject.
-        // A pre-existing duplicate alone cannot witness this dispatch.
-        if (available() && isSettled() && (committed || !alreadyPresent)) {
+        if (accepted && available() && isSettled()) {
             onClose();
             return;
         }
@@ -408,12 +411,13 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
 };
 
 type AddMappingPickerProps = {
-    modulatorId: string;
+    modulator: Modulator;
     tracks: TrackRef[];
     onClose: () => void;
 };
 
-const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProps): ReactElement => {
+const AddMappingPicker = ({ modulator, tracks, onClose }: AddMappingPickerProps): ReactElement => {
+    const modulatorId = modulator.id;
     const initialTrackId = tracks[0]?.id ?? '';
     const [trackId, setTrackId] = useState(initialTrackId);
     const selectedTrack = tracks.find((t) => t.id === trackId);
@@ -447,6 +451,14 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
     const { error, pending, submit } = useModulationSubmission(onClose);
     const canAdd = automatable.some((param) => param.id === paramId);
 
+    const selectedDestination = (source: Modulator | undefined) =>
+        source?.mappings.find(
+            (mapping) =>
+                mapping.targetTrackId === trackId &&
+                mapping.targetDeviceId === deviceId &&
+                mapping.targetParamId === paramId
+        );
+    const existingMapping = selectedDestination(modulator);
     const handleAdd = (): void => {
         const mapping = { targetTrackId: trackId, targetDeviceId: deviceId, targetParamId: paramId, amount: 0.5 };
         const source = () => modulationStore.value?.modulators.find((modulator) => modulator.id === modulatorId);
@@ -462,10 +474,7 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
         void submit(
             { type: 'addMapping', payload: { modulatorId, mapping } },
             hasTarget,
-            () =>
-                source()?.mappings.some(
-                    (m) => m.targetTrackId === trackId && m.targetDeviceId === deviceId && m.targetParamId === paramId
-                ) === true
+            () => selectedDestination(source()) !== undefined
         );
     };
 
@@ -525,6 +534,11 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
             <Button variant="ghost" size="xs" onClick={onClose}>
                 Cancel
             </Button>
+            {existingMapping ? (
+                <p role="status" className="text-xs text-muted-foreground">
+                    Already mapped at {existingMapping.amount.toFixed(2)}. Adjust Amount in the mappings list.
+                </p>
+            ) : null}
             {error ? (
                 <p role="alert" className="text-xs text-destructive">
                     {error}
@@ -793,7 +807,7 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                     <Trash2 className="size-3.5" />
                 </Button>
             </Row>
-            {pickerOpen ? <AddMappingPicker modulatorId={modulator.id} tracks={tracks} onClose={closePicker} /> : null}
+            {pickerOpen ? <AddMappingPicker modulator={modulator} tracks={tracks} onClose={closePicker} /> : null}
         </Stack>
     );
 };
