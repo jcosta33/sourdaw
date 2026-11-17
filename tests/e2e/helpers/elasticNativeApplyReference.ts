@@ -1,4 +1,13 @@
-import { type Doc, applyChanges, clone, free, getActorId, getHeads, getMissingDeps } from '@automerge/automerge';
+import {
+    type Doc,
+    applyChanges,
+    clone,
+    decodeChange,
+    free,
+    getActorId,
+    getHeads,
+    getMissingDeps,
+} from '@automerge/automerge';
 
 import { getCrdtDoc } from '../../../src/modules/CrdtDocument/useCases';
 
@@ -100,6 +109,20 @@ async function hashChange(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function measureDecodeSample(change: PublishedChange) {
+    const bytes = change.changes[0];
+    await nextTask();
+    const startTime = performance.now();
+    const { hash } = decodeChange(bytes);
+    const duration = performance.now() - startTime;
+    await nextTask();
+    const checksum = Array.from(bytes.subarray(4, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    if (change.heads.length !== 1 || change.heads[0] !== hash || !hash.startsWith(checksum)) {
+        throw new Error('Reference decode did not produce the Worker change hash and checksum');
+    }
+    return { startTime, duration };
+}
+
 async function measureApplySample(predecessor: PhaseCapture['predecessor'], change: PublishedChange) {
     let candidate = clone(predecessor, { actor: change.actor });
     try {
@@ -169,7 +192,9 @@ export function createElasticNativeApplyReference() {
                 const bytes = change.changes[0];
                 const sha256 = await hashChange(bytes);
                 const samples = [];
+                const decodeSamples = [];
                 for (let index = 0; index < REFERENCE_SAMPLE_COUNT; index++) {
+                    decodeSamples.push(await measureDecodeSample(change));
                     samples.push(await measureApplySample(capture.predecessor, change));
                 }
                 if ((await hashChange(bytes)) !== sha256) {
@@ -182,6 +207,7 @@ export function createElasticNativeApplyReference() {
                     bytes: bytes.byteLength,
                     sha256,
                     samples,
+                    decodeSamples,
                 });
             }
             performance.mark(REFERENCE_END);

@@ -381,13 +381,23 @@ async function attachNativeApplyReference(page: Page, info: TestInfo): Promise<v
             ...sample,
             enclosingTask: enclosingTask(sample, reference.startTime, tasks),
         })),
+        decodeSamples: phase.decodeSamples.map((sample) => ({
+            ...sample,
+            enclosingTask: enclosingTask(sample, reference.startTime, tasks),
+        })),
     }));
     await info.attach('elastic-native-apply-reference.json', {
         body: JSON.stringify({ ...reference, phases, tasks }, null, 2),
         contentType: 'application/json',
     });
     expect(phases.map((phase) => phase.phase)).toEqual(['cold-detect', 're-detect-populated', 'sensitivity-populated']);
-    const sampleTasks = phases.flatMap((phase) => phase.samples.map((sample) => sample.enclosingTask));
+    for (const phase of phases) {
+        expect(phase.samples).toHaveLength(5);
+        expect(phase.decodeSamples).toHaveLength(5);
+    }
+    const sampleTasks = phases.flatMap((phase) =>
+        [...phase.samples, ...phase.decodeSamples].map((sample) => sample.enclosingTask)
+    );
     expect(sampleTasks.every((task) => task !== undefined && task.threadDurationMs !== null)).toBe(true);
     expect(new Set(sampleTasks).size).toBe(sampleTasks.length);
 }
