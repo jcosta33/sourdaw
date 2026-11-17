@@ -143,6 +143,7 @@ export const indirectMutationByActionType: {
     setAutomationLaneEnabled: indirectMutationRules.none,
     addAutomationPoint: indirectMutationRules.none,
     quantizeNotes: indirectMutationRules.none,
+    editMidiNotes: indirectMutationRules.none,
     removeShortMidiOverlaps: indirectMutationRules.none,
     createDrumPreviewBranches: indirectMutationRules.none,
     deleteDrumPreviewBranches: indirectMutationRules.none,

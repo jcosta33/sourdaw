@@ -166,6 +166,7 @@ export const masterGainProjectionByActionType: {
     setAutomationLaneEnabled: keepMasterPercent,
     addAutomationPoint: keepMasterPercent,
     quantizeNotes: keepMasterPercent,
+    editMidiNotes: keepMasterPercent,
     removeShortMidiOverlaps: keepMasterPercent,
     createDrumPreviewBranches: keepMasterPercent,
     deleteDrumPreviewBranches: keepMasterPercent,

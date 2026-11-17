@@ -101,7 +101,14 @@ function parseRevision(normalizedRevision: string) {
 }
 
 function commandAffectedIds(command: VersionedCommandEnvelope): string[] {
+    const editedNoteIds =
+        command.operation === 'editMidiNotes'
+            ? command.objectReferences
+                  .filter(({ argument }) => /^operations\[\d+\]\.noteId$/.test(argument))
+                  .map(({ id }) => id)
+            : [];
     return [
+        ...editedNoteIds,
         ...getVersionedCommandTargetReferences(command).map(({ id }) => id),
         ...command.applicationAssignedIds.map(({ value }) => value),
     ]

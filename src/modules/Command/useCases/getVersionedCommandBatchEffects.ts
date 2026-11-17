@@ -55,15 +55,19 @@ function getDeletedObjectCount(command: VersionedCommandEnvelope): number {
     if (effect.deletedObjects !== undefined) {
         return effect.deletedObjects(command.arguments);
     }
-    return effect.delete ? 1 : 0;
+    return typeof effect.delete === 'function' ? effect.delete(command.arguments) : effect.delete ? 1 : 0;
+}
+
+function requiresGrant(grant: true | CommandBatchCountReader | undefined, command: VersionedCommandEnvelope): boolean {
+    return typeof grant === 'function' ? grant(command.arguments) > 0 : grant === true;
 }
 
 function addRequiredGrants(command: VersionedCommandEnvelope, requiredGrants: Set<CommandGrant>): void {
     const effect = commandBatchEffectByActionType[command.operation];
-    if (effect.create) {
+    if (requiresGrant(effect.create, command)) {
         requiredGrants.add('create');
     }
-    if (effect.delete) {
+    if (requiresGrant(effect.delete, command)) {
         requiredGrants.add('delete');
     }
     if (effect.routing) {

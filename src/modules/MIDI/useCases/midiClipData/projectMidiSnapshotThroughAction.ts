@@ -1,5 +1,7 @@
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { projectMidiNoteWrite } from '../midiNoteTransforms/projectMidiNoteWrite';
+
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
 export type ProjectedMidiSnapshot = {
@@ -10,6 +12,15 @@ export type ProjectedMidiSnapshot = {
 
 function unchangedSnapshot(_action: unknown, _clipId: string, snapshot: ProjectedMidiSnapshot): ProjectedMidiSnapshot {
     return snapshot;
+}
+
+function afterNoteWrite(
+    action: ActionOf<'addNotes' | 'editMidiNotes' | 'restoreMidiClipNotes'>,
+    clipId: string,
+    snapshot: ProjectedMidiSnapshot
+): ProjectedMidiSnapshot {
+    const notes = projectMidiNoteWrite(action, clipId, snapshot.notes);
+    return notes && notes !== snapshot.notes ? { ...snapshot, notes } : snapshot;
 }
 
 function afterRemoveClip(
@@ -210,7 +221,7 @@ const midiSnapshotByActionType: {
     createDrumPreviewBranches: unchangedSnapshot,
     deleteDrumPreviewBranches: unchangedSnapshot,
     copyMidiArticulations: unchangedSnapshot,
-    restoreMidiClipNotes: unchangedSnapshot,
+    restoreMidiClipNotes: afterNoteWrite,
     quantizeNoteLengths: unchangedSnapshot,
     transposeNotes: unchangedSnapshot,
     humanizeNotes: unchangedSnapshot,
@@ -359,7 +370,8 @@ const midiSnapshotByActionType: {
     setMidiOutput: unchangedSnapshot,
     clearMidiOutput: unchangedSnapshot,
     restoreMidiOutput: unchangedSnapshot,
-    addNotes: unchangedSnapshot,
+    addNotes: afterNoteWrite,
+    editMidiNotes: afterNoteWrite,
     completeMidi: unchangedSnapshot,
     variationMidi: unchangedSnapshot,
     generateBassline: unchangedSnapshot,

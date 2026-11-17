@@ -1,4 +1,5 @@
 import { type AppActionType } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 
 type CommandArguments = Readonly<Record<string, unknown>>;
 
@@ -22,11 +23,29 @@ function twoPointsPerTrack(commandArguments: CommandArguments): number {
     return arrayLength(commandArguments.trackIds) * 2;
 }
 
+function countNoteInserts(commandArguments: CommandArguments): number {
+    return countMidiNoteOperations(commandArguments, 'insert');
+}
+
+function countNoteDeletes(commandArguments: CommandArguments): number {
+    return countMidiNoteOperations(commandArguments, 'delete');
+}
+
+export function countMidiNoteOperations(
+    commandArguments: CommandArguments,
+    type: 'insert' | 'delete' | 'patch'
+): number {
+    const operations = commandArguments.operations;
+    return Array.isArray(operations)
+        ? operations.filter((operation) => isRecord(operation) && operation.type === type).length
+        : 0;
+}
+
 /** The grants and counts one action type puts on a versioned command batch. */
 export type CommandBatchActionEffect = {
     /** Tracks the action creates; absent means none. */
     readonly createdTracks?: CommandBatchCountReader;
-    /** Objects the action deletes; absent means one when `delete` is set, none otherwise. */
+    /** Override the number of deletions carried by the delete grant. */
     readonly deletedObjects?: CommandBatchCountReader;
     /** Automation points the action writes at most; absent means none. */
     readonly automationPoints?: CommandBatchCountReader;
@@ -34,8 +53,8 @@ export type CommandBatchActionEffect = {
     readonly importedAssets?: CommandBatchCountReader;
     /** Render jobs the action starts; absent means none. */
     readonly renderJobs?: CommandBatchCountReader;
-    readonly create?: true;
-    readonly delete?: true;
+    readonly create?: true | CommandBatchCountReader;
+    readonly delete?: true | CommandBatchCountReader;
     readonly routing?: true;
     readonly tempo?: true;
     readonly master?: true;
@@ -204,6 +223,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setAutomationLaneEnabled: NONE,
     addAutomationPoint: { create: true, automationPoints: countOne },
     quantizeNotes: NONE,
+    editMidiNotes: { create: countNoteInserts, delete: countNoteDeletes },
     removeShortMidiOverlaps: NONE,
     createDrumPreviewBranches: { create: true },
     deleteDrumPreviewBranches: NONE,

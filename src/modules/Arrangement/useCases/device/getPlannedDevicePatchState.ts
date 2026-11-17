@@ -191,6 +191,7 @@ export const plannedDeviceWriteStepByActionType: {
     setAutomationLaneEnabled: commandStep,
     addAutomationPoint: commandStep,
     quantizeNotes: commandStep,
+    editMidiNotes: commandStep,
     removeShortMidiOverlaps: commandStep,
     createDrumPreviewBranches: commandStep,
     deleteDrumPreviewBranches: commandStep,

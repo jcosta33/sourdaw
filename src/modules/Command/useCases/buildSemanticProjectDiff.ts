@@ -1,3 +1,4 @@
+import { countMidiNoteOperations } from '../models/CommandBatchActionEffect';
 import { semanticDiffClassificationByActionType } from '../models/SemanticDiffActionClassification';
 import { type CommandBatchRange, type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
@@ -63,7 +64,10 @@ function commandObjectIds(command: VersionedCommandEnvelope): string[] {
 function semanticFactKinds(command: VersionedCommandEnvelope): SemanticFactKind[] {
     const classification = semanticDiffClassificationByActionType[command.operation];
     const kinds: SemanticFactKind[] = [];
-    if (classification.created) {
+    if (
+        classification.created ||
+        (command.operation === 'editMidiNotes' && countMidiNoteOperations(command.arguments, 'insert') > 0)
+    ) {
         kinds.push('created');
     }
     if (classification.moved) {
@@ -84,7 +88,12 @@ function semanticFactKinds(command: VersionedCommandEnvelope): SemanticFactKind[
     if (classification.project) {
         kinds.push('project');
     }
-    if (kinds.length === 0) {
+    if (
+        kinds.length === 0 ||
+        (command.operation === 'editMidiNotes' &&
+            (countMidiNoteOperations(command.arguments, 'patch') > 0 ||
+                countMidiNoteOperations(command.arguments, 'delete') > 0))
+    ) {
         kinds.push('edited');
     }
     return kinds;
@@ -95,7 +104,8 @@ function destructiveClassification(command: VersionedCommandEnvelope): Destructi
     if (
         command.operation.startsWith('remove') ||
         command.operation.startsWith('delete') ||
-        command.operation === 'thinAutomation'
+        command.operation === 'thinAutomation' ||
+        (command.operation === 'editMidiNotes' && countMidiNoteOperations(command.arguments, 'delete') > 0)
     ) {
         return 'deletion';
     }
@@ -105,7 +115,11 @@ function destructiveClassification(command: VersionedCommandEnvelope): Destructi
     if (classification.consolidation) {
         return 'consolidation';
     }
-    if (command.operation.startsWith('clear') || classification.overwrite) {
+    if (
+        command.operation.startsWith('clear') ||
+        classification.overwrite ||
+        (command.operation === 'editMidiNotes' && countMidiNoteOperations(command.arguments, 'patch') > 0)
+    ) {
         return 'overwrite';
     }
     if (classification.sourceMutation) {

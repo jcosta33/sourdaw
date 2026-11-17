@@ -310,6 +310,7 @@ const addActionSourceOwnersByActionType: {
     setAutomationLaneEnabled: addNoOwners,
     addAutomationPoint: addNoOwners,
     quantizeNotes: addNoOwners,
+    editMidiNotes: addNoOwners,
     removeShortMidiOverlaps: addNoOwners,
     createDrumPreviewBranches: addNoOwners,
     deleteDrumPreviewBranches: addNoOwners,

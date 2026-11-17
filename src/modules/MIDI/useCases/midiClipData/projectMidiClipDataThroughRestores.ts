@@ -180,6 +180,7 @@ const controllerRestoresByActionType: {
     setAutomationLaneEnabled: noControllerRestores,
     addAutomationPoint: noControllerRestores,
     quantizeNotes: noControllerRestores,
+    editMidiNotes: noControllerRestores,
     removeShortMidiOverlaps: noControllerRestores,
     createDrumPreviewBranches: noControllerRestores,
     deleteDrumPreviewBranches: noControllerRestores,

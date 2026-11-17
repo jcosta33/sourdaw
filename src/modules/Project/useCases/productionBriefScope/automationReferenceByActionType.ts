@@ -148,6 +148,7 @@ export const automationReferenceByActionType: {
     setAutomationLaneEnabled: automationReferenceRules.namesLaneOrContent,
     addAutomationPoint: automationReferenceRules.namesContentOnly,
     quantizeNotes: automationReferenceRules.namesLaneOrContent,
+    editMidiNotes: automationReferenceRules.namesLaneOrContent,
     removeShortMidiOverlaps: automationReferenceRules.namesLaneOrContent,
     createDrumPreviewBranches: automationReferenceRules.namesLaneOrContent,
     deleteDrumPreviewBranches: automationReferenceRules.namesLaneOrContent,

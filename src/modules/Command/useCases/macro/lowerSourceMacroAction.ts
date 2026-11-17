@@ -195,6 +195,7 @@ const lowerByActionType: {
     setAutomationLaneEnabled: cloneForReplay,
     addAutomationPoint: cloneForReplay,
     quantizeNotes: cloneForReplay,
+    editMidiNotes: cloneForReplay,
     removeShortMidiOverlaps: cloneForReplay,
     createDrumPreviewBranches: cloneForReplay,
     deleteDrumPreviewBranches: cloneForReplay,

@@ -154,6 +154,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setAutomationLaneEnabled: anyArguments,
     addAutomationPoint: anyArguments,
     quantizeNotes: anyArguments,
+    editMidiNotes: anyArguments,
     removeShortMidiOverlaps: anyArguments,
     createDrumPreviewBranches: anyArguments,
     deleteDrumPreviewBranches: anyArguments,

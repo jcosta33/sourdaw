@@ -35,6 +35,19 @@ function materializeNestedNoteIds(action: Extract<AppAction, { type: 'addNotes' 
     return { action: changed ? cloned : action, applicationAssignedIds };
 }
 
+function materializeEditedNoteIds(action: ActionOf<'editMidiNotes'>): MaterializedCommandApplicationIds {
+    const cloned = structuredClone(action);
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    for (const [index, operation] of cloned.payload.operations.entries()) {
+        if (operation.type !== 'insert') {
+            continue;
+        }
+        operation.note.id ??= `note-command-${crypto.randomUUID()}`;
+        applicationAssignedIds.push({ argument: `operations[${String(index)}].note.id`, value: operation.note.id });
+    }
+    return { action: applicationAssignedIds.length > 0 ? cloned : action, applicationAssignedIds };
+}
+
 function materializeMidiInputOwnerId(
     action: Extract<AppAction, { type: 'armTrack' }>
 ): MaterializedCommandApplicationIds {
@@ -290,6 +303,7 @@ const applicationIdMaterializerByActionType: {
     setAutomationLaneEnabled: materializeByIdRule,
     addAutomationPoint: materializeByIdRule,
     quantizeNotes: materializeByIdRule,
+    editMidiNotes: materializeEditedNoteIds,
     removeShortMidiOverlaps: materializeByIdRule,
     createDrumPreviewBranches: materializeByIdRule,
     deleteDrumPreviewBranches: materializeByIdRule,

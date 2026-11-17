@@ -11,7 +11,11 @@ import {
 } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
+import {
+    ADD_NOTES_MAX_NOTES_PER_COMMAND,
+    MIDI_NOTE_EDIT_MAX_OPERATIONS,
+    MIDI_NOTE_MIN_DURATION_BEATS,
+} from '#/utils/midiNoteBatchLimits';
 
 export type ExecutableAppActionRisk =
     'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive' | 'external-effect';
@@ -210,6 +214,13 @@ const editableMidiClipTargetRules = [
 const writableMidiClipTargetRules = [
     { argument: 'clipId', capability: 'writable-midi-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const midiNoteEditFields = {
+    pitch: { type: 'integer', minimum: 0, maximum: 127 },
+    startBeat: { type: 'number', minimum: 0 },
+    duration: { type: 'number', minimum: MIDI_NOTE_MIN_DURATION_BEATS },
+    velocity: { type: 'integer', minimum: 1, maximum: 127 },
+} as const;
 
 const sendTargetRules = [
     { argument: 'busId', capability: 'bus', promptRole: 'destination' },
@@ -1192,6 +1203,65 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipId', 'notes'],
+        },
+    },
+    {
+        actionType: 'editMidiNotes',
+        risk: 'destructive-reversible',
+        discoverability: 'hidden',
+        description: 'Selectively patch, delete or insert notes in one existing MIDI clip.',
+        intentPhrases: [],
+        targetRules: [{ argument: 'clipId', capability: 'writable-midi-clip', allowBatchLocal: false }],
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string' },
+                operations: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: MIDI_NOTE_EDIT_MAX_OPERATIONS,
+                    items: {
+                        anyOf: [
+                            {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: {
+                                    type: { type: 'string', enum: ['patch'] },
+                                    noteId: { type: 'string' },
+                                    patch: {
+                                        type: 'object',
+                                        additionalProperties: false,
+                                        properties: midiNoteEditFields,
+                                        minProperties: 1,
+                                    },
+                                },
+                                required: ['type', 'noteId', 'patch'],
+                            },
+                            {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: { type: { type: 'string', enum: ['delete'] }, noteId: { type: 'string' } },
+                                required: ['type', 'noteId'],
+                            },
+                            {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: {
+                                    type: { type: 'string', enum: ['insert'] },
+                                    note: {
+                                        type: 'object',
+                                        additionalProperties: false,
+                                        properties: midiNoteEditFields,
+                                        required: ['pitch', 'startBeat', 'duration'],
+                                    },
+                                },
+                                required: ['type', 'note'],
+                            },
+                        ],
+                    },
+                },
+            },
+            required: ['clipId', 'operations'],
         },
     },
     {
@@ -3186,19 +3256,21 @@ type InferJsonSchemaObject<Schema extends { properties: Record<string, unknown> 
     }
 >;
 
-type InferJsonSchema<Schema> = Schema extends { enum: readonly (infer Value)[] }
-    ? Value
-    : Schema extends { type: 'string' }
-      ? string
-      : Schema extends { type: 'number' | 'integer' }
-        ? number
-        : Schema extends { type: 'boolean' }
-          ? boolean
-          : Schema extends { type: 'array'; items: infer Item }
-            ? InferJsonSchema<Item>[]
-            : Schema extends { type: 'object'; properties: infer Properties extends Record<string, unknown> }
-              ? InferJsonSchemaObject<Schema & { properties: Properties }>
-              : never;
+type InferJsonSchema<Schema> = Schema extends { anyOf: readonly (infer Alternative)[] }
+    ? InferJsonSchema<Alternative>
+    : Schema extends { enum: readonly (infer Value)[] }
+      ? Value
+      : Schema extends { type: 'string' }
+        ? string
+        : Schema extends { type: 'number' | 'integer' }
+          ? number
+          : Schema extends { type: 'boolean' }
+            ? boolean
+            : Schema extends { type: 'array'; items: infer Item }
+              ? InferJsonSchema<Item>[]
+              : Schema extends { type: 'object'; properties: infer Properties extends Record<string, unknown> }
+                ? InferJsonSchemaObject<Schema & { properties: Properties }>
+                : never;
 
 type DescriptorAction<Descriptor> = Descriptor extends {
     actionType: infer ActionType extends AppActionType;
@@ -3409,6 +3481,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipStretchRatio: CLIP_MUTATION_IDENTITY,
     fitClipToBeats: CLIP_MUTATION_IDENTITY,
     addNotes: ADD_NOTES_MUTATION_IDENTITY,
+    editMidiNotes: ADD_NOTES_MUTATION_IDENTITY,
     quantizeNotes: CLIP_MUTATION_IDENTITY,
     removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
     arpeggiate: CLIP_MUTATION_IDENTITY,
@@ -3531,6 +3604,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipStretchRatio: true,
     fitClipToBeats: false,
     addNotes: false,
+    editMidiNotes: false,
     quantizeNotes: false,
     removeShortMidiOverlaps: false,
     arpeggiate: false,

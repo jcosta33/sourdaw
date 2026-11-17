@@ -143,6 +143,7 @@ export const clipSatelliteReplacementByActionType: {
     setAutomationLaneEnabled: noReplacements,
     addAutomationPoint: noReplacements,
     quantizeNotes: noReplacements,
+    editMidiNotes: noReplacements,
     removeShortMidiOverlaps: noReplacements,
     createDrumPreviewBranches: noReplacements,
     deleteDrumPreviewBranches: noReplacements,

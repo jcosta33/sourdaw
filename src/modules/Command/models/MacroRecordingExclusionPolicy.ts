@@ -134,6 +134,7 @@ export const macroRecordingExcludesActionType: { readonly [Type in AppActionType
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
     quantizeNotes: false,
+    editMidiNotes: true,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

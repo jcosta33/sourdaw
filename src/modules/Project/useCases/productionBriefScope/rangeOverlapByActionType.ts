@@ -147,6 +147,7 @@ export const rangeOverlapByActionType: {
     setAutomationLaneEnabled: rangeOverlapRules.none,
     addAutomationPoint: rangeOverlapRules.none,
     quantizeNotes: rangeOverlapRules.none,
+    editMidiNotes: rangeOverlapRules.none,
     removeShortMidiOverlaps: rangeOverlapRules.none,
     createDrumPreviewBranches: rangeOverlapRules.none,
     deleteDrumPreviewBranches: rangeOverlapRules.none,

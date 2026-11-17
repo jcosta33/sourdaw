@@ -260,6 +260,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
             context,
             (clip) => `Quantize notes in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`
         ),
+    editMidiNotes: (action) => describeAction(action),
     removeShortMidiOverlaps: (action) => describeShortOverlapRemoval(action) ?? describeAction(action),
     createDrumPreviewBranches: describeDrumPreviewBranches,
     deleteDrumPreviewBranches: describeFromRegistry,

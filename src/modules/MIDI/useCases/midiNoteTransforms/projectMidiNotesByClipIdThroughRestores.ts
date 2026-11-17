@@ -3,7 +3,9 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { type MidiNotesSnapshot } from '../../events/midiAppActions';
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
-import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
+import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
+
+import { projectMidiNoteWrite } from './projectMidiNoteWrite';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -24,14 +26,20 @@ function noNotesProjection(): void {
     return undefined;
 }
 
-function projectAddNotes(action: ActionOf<'addNotes'>, notesByClipId: Record<string, MidiNote[]>): void {
-    if (!isMaterializedAddNotesArguments(action.payload)) {
-        return;
+function projectNotes(
+    action: ActionOf<'addNotes' | 'editMidiNotes' | 'restoreMidiClipNotes'>,
+    notesByClipId: Record<string, MidiNote[]>
+): void {
+    const { clipId } = action.payload;
+    const projected = projectMidiNoteWrite(action, clipId, {
+        present: Object.hasOwn(notesByClipId, clipId),
+        value: notesByClipId[clipId] ?? [],
+    });
+    if (projected?.present && isMidiNoteSnapshot(projected.value)) {
+        notesByClipId[clipId] = projected.value;
+    } else if (projected?.present === false) {
+        delete notesByClipId[clipId];
     }
-    notesByClipId[action.payload.clipId] = [
-        ...(notesByClipId[action.payload.clipId] ?? []),
-        ...action.payload.notes.map((note) => ({ ...note })),
-    ];
 }
 
 function projectRestoreTrack(action: ActionOf<'restoreTrack'>, notesByClipId: Record<string, MidiNote[]>): void {
@@ -48,17 +56,6 @@ function projectRestoreClip(action: ActionOf<'restoreClip'>, notesByClipId: Reco
     if (action.payload.midiNotesSnapshot !== null) {
         notesByClipId[action.payload.clipId] = cloneSnapshotNotes(action.payload.midiNotesSnapshot);
     }
-}
-
-function projectRestoreMidiClipNotes(
-    action: ActionOf<'restoreMidiClipNotes'>,
-    notesByClipId: Record<string, MidiNote[]>
-): void {
-    if (action.payload.notesBucketPresent === false) {
-        delete notesByClipId[action.payload.clipId];
-        return;
-    }
-    notesByClipId[action.payload.clipId] = action.payload.notes.map((note) => ({ ...note }));
 }
 
 // Every action type states how it changes the notes buckets: a new action does not compile until it does.
@@ -201,7 +198,7 @@ const notesProjectionByActionType: {
     createDrumPreviewBranches: noNotesProjection,
     deleteDrumPreviewBranches: noNotesProjection,
     copyMidiArticulations: noNotesProjection,
-    restoreMidiClipNotes: projectRestoreMidiClipNotes,
+    restoreMidiClipNotes: projectNotes,
     quantizeNoteLengths: noNotesProjection,
     transposeNotes: noNotesProjection,
     humanizeNotes: noNotesProjection,
@@ -350,7 +347,8 @@ const notesProjectionByActionType: {
     setMidiOutput: noNotesProjection,
     clearMidiOutput: noNotesProjection,
     restoreMidiOutput: noNotesProjection,
-    addNotes: projectAddNotes,
+    addNotes: projectNotes,
+    editMidiNotes: projectNotes,
     completeMidi: noNotesProjection,
     variationMidi: noNotesProjection,
     generateBassline: noNotesProjection,

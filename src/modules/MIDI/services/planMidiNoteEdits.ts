@@ -1,14 +1,13 @@
 import { MAX_MIDI_DATA_7BIT, MIN_AUDIBLE_VELOCITY } from '#/utils/midiData';
-import { MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
+import { MIDI_NOTE_EDIT_MAX_OPERATIONS, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
+import { type MidiNoteEditScope } from '../events/midiAppActions';
 import { type MidiNote } from '../models/MidiNote';
 import { cloneMidiNoteForAdmission } from '../transformers/cloneMidiNoteForAdmission';
 import { isMidiNoteSnapshot } from '../transformers/isMidiNoteSnapshot';
 import { normalizeMidiNoteInput } from '../transformers/normalizeMidiNoteInput';
 
 import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
-
-export const MIDI_NOTE_EDIT_MAX_OPERATIONS = 128;
 
 type NotePatch = Partial<Pick<MidiNote, 'pitch' | 'startBeat' | 'duration' | 'velocity'>>;
 type InsertNote = Pick<MidiNote, 'id' | 'pitch' | 'startBeat' | 'duration'> & {
@@ -23,15 +22,6 @@ export type MidiNoteEditOperation =
     | { type: 'insert'; note: InsertNote };
 
 type BeatWindow = { startBeat: number; endBeat: number };
-
-/** Authority supplied by the application, independently of the proposed operations. */
-export type MidiNoteEditScope = {
-    allowedNoteIds: readonly string[];
-    protectedNoteIds: readonly string[];
-    protectedWindows: readonly BeatWindow[];
-    insertionWindows: readonly BeatWindow[];
-    insertionBudget: number;
-};
 
 type NoteEditChange = {
     type: MidiNoteEditOperation['type'];
@@ -149,7 +139,7 @@ function isWindowList(value: unknown): value is readonly BeatWindow[] {
     );
 }
 
-function isScope(value: MidiNoteEditScope): boolean {
+function isScope(value: unknown): value is MidiNoteEditScope {
     return (
         isRecord(value) &&
         hasKeys(value, [
@@ -163,6 +153,7 @@ function isScope(value: MidiNoteEditScope): boolean {
         isIdList(value.protectedNoteIds) &&
         isWindowList(value.protectedWindows) &&
         isWindowList(value.insertionWindows) &&
+        typeof value.insertionBudget === 'number' &&
         Number.isSafeInteger(value.insertionBudget) &&
         value.insertionBudget >= 0 &&
         value.insertionBudget <= MIDI_NOTE_EDIT_MAX_OPERATIONS
@@ -197,11 +188,7 @@ function patchNote(note: MidiNote, patch: NotePatch): MidiNote {
 }
 
 /** Plan one clip's ordered edits without writing project state or assigning new identities. */
-export function planMidiNoteEdits(input: {
-    notes: readonly MidiNote[];
-    operations: readonly MidiNoteEditOperation[];
-    scope: MidiNoteEditScope;
-}): PlanResult {
+export function planMidiNoteEdits(input: { notes: unknown; operations: unknown; scope: unknown }): PlanResult {
     if (
         !isMidiNoteSnapshot(input.notes) ||
         input.notes.some(

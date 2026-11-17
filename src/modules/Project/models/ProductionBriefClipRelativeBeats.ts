@@ -138,6 +138,7 @@ export const carriesClipRelativeBeatsByActionType: { readonly [Type in AppAction
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

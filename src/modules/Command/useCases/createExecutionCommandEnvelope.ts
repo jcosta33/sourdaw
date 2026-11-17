@@ -176,6 +176,7 @@ const seedMaterializerByActionType: {
     setAutomationLaneEnabled: leaveSeedUnminted,
     addAutomationPoint: leaveSeedUnminted,
     quantizeNotes: leaveSeedUnminted,
+    editMidiNotes: leaveSeedUnminted,
     removeShortMidiOverlaps: leaveSeedUnminted,
     createDrumPreviewBranches: leaveSeedUnminted,
     deleteDrumPreviewBranches: leaveSeedUnminted,

@@ -161,6 +161,7 @@ export const legacyRangeRemovalByActionType: {
     setAutomationLaneEnabled: notLegacyRangeWrite,
     addAutomationPoint: notLegacyRangeWrite,
     quantizeNotes: notLegacyRangeWrite,
+    editMidiNotes: notLegacyRangeWrite,
     removeShortMidiOverlaps: notLegacyRangeWrite,
     createDrumPreviewBranches: notLegacyRangeWrite,
     deleteDrumPreviewBranches: notLegacyRangeWrite,

@@ -151,6 +151,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     setAutomationLaneEnabled: noFallbackScope,
     addAutomationPoint: noFallbackScope,
     quantizeNotes: noFallbackScope,
+    editMidiNotes: noFallbackScope,
     removeShortMidiOverlaps: noFallbackScope,
     createDrumPreviewBranches: noFallbackScope,
     deleteDrumPreviewBranches: noFallbackScope,

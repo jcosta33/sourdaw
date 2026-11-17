@@ -131,6 +131,15 @@ export function compileCommandArgumentMetadata(
             }
         }
     }
+    if (operation === 'editMidiNotes') {
+        // Clip-relative beats are bound by the owner's note window. Batch range locks use project beats.
+        metadata.time = [];
+        for (const parameter of metadata.parameterUnits) {
+            if (getLeafName(parameter.argument) === 'duration') {
+                parameter.unit = 'beats';
+            }
+        }
+    }
     // Source preservation is derived support. Its owner still validates every
     // value; these captures do not expand the musician's requested scope.
     const describesObjects = (path: string) =>

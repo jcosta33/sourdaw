@@ -139,6 +139,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setAutomationLaneEnabled: 'content',
     addAutomationPoint: 'content',
     quantizeNotes: 'content',
+    editMidiNotes: 'content',
     removeShortMidiOverlaps: 'content',
     createDrumPreviewBranches: 'content',
     deleteDrumPreviewBranches: 'content',
