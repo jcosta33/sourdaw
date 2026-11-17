@@ -17,6 +17,8 @@ type MissingSource = {
     label: string;
 };
 
+type SameFolderCandidate = MissingSource & { names: Set<string> };
+
 function comparableSourceName(name: string): string {
     const normalized = name.trim().toLowerCase();
     const extensionStart = normalized.lastIndexOf('.');
@@ -84,20 +86,42 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
     return false;
 }
 
-function remainingSources(excludedBufferId: string): MissingSource[] {
-    const sources = new Map<string, MissingSource>();
+function remainingSources(excludedBufferId: string): SameFolderCandidate[] {
+    const sources = new Map<string, SameFolderCandidate>();
     for (const item of missingMediaStore.value?.items ?? []) {
-        if (
-            item.kind !== 'clip' ||
-            item.bufferId === excludedBufferId ||
-            sources.has(item.bufferId) ||
-            readRelinkAudioSourceEligibility(item.bufferId) !== 'eligible'
-        ) {
+        if (item.kind !== 'clip' || item.bufferId === excludedBufferId) {
             continue;
         }
-        sources.set(item.bufferId, { sourceBufferId: item.bufferId, label: item.label });
+        const name = comparableSourceName(item.label);
+        const source = sources.get(item.bufferId);
+        if (source) {
+            source.names.add(name);
+            continue;
+        }
+        if (readRelinkAudioSourceEligibility(item.bufferId) !== 'eligible') {
+            continue;
+        }
+        sources.set(item.bufferId, { sourceBufferId: item.bufferId, label: item.label, names: new Set([name]) });
     }
     return [...sources.values()];
+}
+
+function matchSameFolderFile(
+    candidates: readonly SameFolderCandidate[],
+    file: File,
+    selectedNameCounts: ReadonlyMap<string, number>
+): SameFolderCandidate | undefined {
+    const matchingName = comparableSourceName(file.name);
+    const matches = candidates.filter((candidate) => candidate.names.has(matchingName));
+    const [source] = matches;
+    if (!source || matches.length > 1) {
+        return undefined;
+    }
+    let selectedFileCount = 0;
+    for (const name of source.names) {
+        selectedFileCount += selectedNameCounts.get(name) ?? 0;
+    }
+    return selectedFileCount === 1 ? source : undefined;
 }
 
 async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () => boolean): Promise<void> {
@@ -127,29 +151,22 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
         selectedNameCounts.set(name, (selectedNameCounts.get(name) ?? 0) + 1);
     }
 
-    const matchedBufferIds = new Set<string>();
     let skippedCount = 0;
     let repaired = false;
     for (const file of files) {
         if (!isCurrent()) {
             return;
         }
-        const name = comparableSourceName(file.name);
-        const matches = candidates.filter(
-            (candidate) =>
-                !matchedBufferIds.has(candidate.sourceBufferId) && comparableSourceName(candidate.label) === name
-        );
-        if (matches.length !== 1 || selectedNameCounts.get(name) !== 1) {
+        const source = matchSameFolderFile(candidates, file, selectedNameCounts);
+        if (!source) {
             skippedCount++;
             continue;
         }
-        const source = matches[0]!;
         if (readRelinkAudioSourceEligibility(source.sourceBufferId) !== 'eligible') {
             skippedCount++;
             continue;
         }
         if (await relinkReplacement(source, file, isCurrent)) {
-            matchedBufferIds.add(source.sourceBufferId);
             repaired = true;
         }
         if (!isCurrent()) {

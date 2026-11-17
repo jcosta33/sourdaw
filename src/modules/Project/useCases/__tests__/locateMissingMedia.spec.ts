@@ -413,4 +413,93 @@ describe('locateMissingMedia', () => {
             'warning'
         );
     });
+
+    it.each([
+        { firstAlias: 'Guitar.wav', secondAlias: 'Bass.wav' },
+        { firstAlias: 'Bass.wav', secondAlias: 'Guitar.wav' },
+    ])('skips a name shared by two sources with $firstAlias listed first', async ({ firstAlias, secondAlias }) => {
+        arrange([
+            audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+            audioClip('clip-a1', 'track-a1', 'buf-a', firstAlias),
+            audioClip('clip-a2', 'track-a2', 'buf-a', secondAlias),
+            audioClip('clip-b', 'track-b', 'buf-b', 'Bass.wav'),
+        ]);
+        const firstFile = replacement('first-replacement.wav');
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([firstFile])
+            .mockResolvedValueOnce([replacement('Bass.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+            'decoded-first-replacement.wav',
+            'buf-a',
+            'buf-a',
+            'buf-b',
+        ]);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledExactlyOnceWith(firstFile);
+        expect(notifyUser).toHaveBeenCalledWith(
+            '1 selected file did not uniquely match a missing clip name and was left unchanged.',
+            'warning'
+        );
+    });
+
+    it('repairs a source through a name repeated by its own aliases', async () => {
+        arrange([
+            audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+            audioClip('clip-a1', 'track-a1', 'buf-a', 'Guitar.wav'),
+            audioClip('clip-a2', 'track-a2', 'buf-a', 'Bass.wav'),
+            audioClip('clip-a3', 'track-a3', 'buf-a', 'BASS.WAV'),
+        ]);
+        const bassFile = replacement('Bass.wav');
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('first-replacement.wav')])
+            .mockResolvedValueOnce([bassFile]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+            'decoded-first-replacement.wav',
+            'decoded-Bass.wav',
+            'decoded-Bass.wav',
+            'decoded-Bass.wav',
+        ]);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(2);
+        expect(mocks.decodeAudioFile).toHaveBeenNthCalledWith(2, bassFile);
+        expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
+    });
+
+    it.each([
+        { firstSelection: 'Guitar.wav', secondSelection: 'Bass.wav' },
+        { firstSelection: 'Bass.wav', secondSelection: 'Guitar.wav' },
+    ])(
+        'skips two selected alias names for one source when $firstSelection is selected first',
+        async ({ firstSelection, secondSelection }) => {
+            arrange([
+                audioClip('clip-first', 'track-first', 'buf-first', 'First.wav'),
+                audioClip('clip-a1', 'track-a1', 'buf-a', 'Guitar.wav'),
+                audioClip('clip-a2', 'track-a2', 'buf-a', 'Bass.wav'),
+            ]);
+            const firstFile = replacement('first-replacement.wav');
+            vi.mocked(pickFilesFromNativeDialog)
+                .mockResolvedValueOnce([firstFile])
+                .mockResolvedValueOnce([replacement(firstSelection), replacement(secondSelection)]);
+            vi.mocked(confirmUser).mockResolvedValue(true);
+
+            await locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
+
+            expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+                'decoded-first-replacement.wav',
+                'buf-a',
+                'buf-a',
+            ]);
+            expect(mocks.decodeAudioFile).toHaveBeenCalledExactlyOnceWith(firstFile);
+            expect(notifyUser).toHaveBeenCalledWith(
+                '2 selected files did not uniquely match a missing clip name and were left unchanged.',
+                'warning'
+            );
+        }
+    );
 });
