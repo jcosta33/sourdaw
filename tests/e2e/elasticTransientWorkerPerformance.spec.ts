@@ -477,12 +477,22 @@ function readNativeTask(
     return { operation, phase, task, sdkMs, medianMs, appMs: task.durationMs - sdkMs };
 }
 
-function matchesLongTask(entry: CapturedLongTask, task: MainThreadTask, inputMarkStart: number): boolean {
-    // Chrome's Long Tasks observer rounds independently of the trace's microsecond clock.
+function matchesLongTask(
+    entry: CapturedLongTask,
+    task: MainThreadTask,
+    phase: PreparationMeasure,
+    inputMarkStart: number
+): boolean {
+    // The observer's interval can end before RunTask ends. Bind its start to that
+    // task and require it to cover the actual SDK call within the observer's rounding.
+    const taskStart = inputMarkStart + task.startFromInputMs;
+    const observedEnd = entry.start + entry.duration;
     return (
         entry.name === 'self' &&
-        Math.abs(entry.start - inputMarkStart - task.startFromInputMs) < 1 &&
-        Math.abs(entry.duration - task.durationMs) < 1
+        Math.abs(entry.start - taskStart) <= 0.1 &&
+        observedEnd <= taskStart + task.durationMs + 1 &&
+        entry.start <= phase.startTime + 0.1 &&
+        observedEnd + 1 >= phase.startTime + phase.duration
     );
 }
 
@@ -526,7 +536,9 @@ function assertNativeTaskBudget(measurement: NativeTaskMeasurement, reference: N
         }
     }
     for (const entry of measurement.longTasks) {
-        const matches = qualified.filter(({ task }) => matchesLongTask(entry, task, measurement.inputMarkStart));
+        const matches = qualified.filter(({ task, phase }) =>
+            matchesLongTask(entry, task, phase, measurement.inputMarkStart)
+        );
         if (matches.length !== 1) {
             failures.push(`Browser long task ${entry.duration} ms at ${entry.start} ms is unqualified`);
         }
