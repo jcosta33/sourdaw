@@ -119,7 +119,9 @@ export function projectClipControllerEvents(input: ProjectClipControllerEventsIn
 export function projectClipControllerEventsWithProvenance(input: ProjectClipControllerEventsInput) {
     const source = new Map<string, MidiCC>();
     for (const row of input.controlChanges) {
-        if (source.has(row.id)) throw new Error('Ambiguous MIDI controller identity');
+        if (source.has(row.id)) {
+            throw new Error('Ambiguous MIDI controller identity');
+        }
         source.set(row.id, row);
     }
     const evidence: Array<
@@ -127,13 +129,16 @@ export function projectClipControllerEventsWithProvenance(input: ProjectClipCont
     > = [];
     projectControllers(input, (move, window) => {
         const original = source.get(move.id);
-        if (!original) throw new Error('MIDI controller source unavailable');
+        if (!original) {
+            throw new Error('MIDI controller source unavailable');
+        }
         const sourceBeat = original.beat;
-        const origin = move.closesClip
-            ? 'closing'
-            : Math.abs(move.beat - window.beatOffset - sourceBeat) > SAME_BEAT_TOLERANCE
-              ? 'carried'
-              : 'source';
+        let origin: 'source' | 'carried' | 'closing' = 'source';
+        if (move.closesClip) {
+            origin = 'closing';
+        } else if (Math.abs(move.beat - window.beatOffset - sourceBeat) > SAME_BEAT_TOLERANCE) {
+            origin = 'carried';
+        }
         evidence.push({ ...move, sourceBeat, origin });
     });
     return evidence.sort((left, right) => left.beat - right.beat);

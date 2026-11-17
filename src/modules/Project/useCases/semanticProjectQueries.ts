@@ -632,12 +632,16 @@ function boundRevision(revision: SemanticProjectRevision, warnings: string[]): S
 
 export function querySemanticProject(input: SemanticProjectQueryInput): SemanticProjectQueryReceipt {
     assertSemanticProjectQueryInput(input);
-    if (input.type === 'musical-content') settlePendingProjectWritesAndCaptureRevision();
+    if (input.type === 'musical-content') {
+        settlePendingProjectWritesAndCaptureRevision();
+    }
     const snapshot = semanticProjectIndex.read();
     resetRetentionForProject(snapshot);
     const warnings: string[] = [];
     const cursorRevision = input.type === 'musical-content' ? input.expectedRevision : snapshot.revisionToken;
-    if (cursorRevision === undefined) throw new Error('Musical content revision is unavailable');
+    if (cursorRevision === undefined) {
+        throw new Error('Musical content revision is unavailable');
+    }
     const page = getPage(input, cursorRevision);
     const items = selectItems(input, snapshot, warnings);
     const pagedItems = items.slice(page.offset, page.offset + page.limit).map((item) => boundQueryItem(item, warnings));

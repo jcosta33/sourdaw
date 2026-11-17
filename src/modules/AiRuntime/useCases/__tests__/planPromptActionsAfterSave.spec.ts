@@ -164,7 +164,9 @@ describe('planning across a save', () => {
             { type: 'musical-content', filters: { stableId: clip.id, startBeat: 0, endBeat: 4 }, page: { limit: 1 } },
             binding
         );
-        if (first.status !== 'valid') throw new Error('Musical query was refused');
+        if (first.status !== 'valid') {
+            throw new Error('Musical query was refused');
+        }
         const firstPage = querySemanticProject(first.input);
         expect(firstPage.revisionToken).not.toBe(beforeSave);
         expect(firstPage.nextCursor).not.toBeNull();

@@ -65,7 +65,7 @@ describe('canonical roles at the provider continuation boundary', () => {
         setPianoRollSelection('c', ['n'], ['c'], [{ clipId: 'c', projection }]);
         const musicalContentBinding = captureMusicalContentBinding();
         const requestTurn = vi.fn(async ({ turn, receiptContext }: { turn: number; receiptContext: string | null }) => {
-            if (turn === 1)
+            if (turn === 1) {
                 return {
                     status: 'complete' as const,
                     toolCalls: [
@@ -80,6 +80,7 @@ describe('canonical roles at the provider continuation boundary', () => {
                         },
                     ],
                 };
+            }
             expect(receiptContext).toContain('"pitch":36');
             expect(receiptContext).toContain('"stored-score"');
             return { status: 'complete' as const, toolCalls: [] };
@@ -142,11 +143,12 @@ describe('canonical roles at the provider continuation boundary', () => {
                     directive: { mode: string };
                     budgetNote: string;
                 }) => {
-                    if (turn === 1)
+                    if (turn === 1) {
                         return {
                             status: 'complete' as const,
                             toolCalls: [{ id: 'interpret', name: 'interpret', arguments: {} }],
                         };
+                    }
                     if (turn === 2) {
                         expect(directive).toEqual({
                             mode: 'required',
@@ -198,7 +200,9 @@ describe('canonical roles at the provider continuation boundary', () => {
                 requestTurn,
             });
             expect(result.status).toBe('complete');
-            if (result.status === 'complete') expect(result.toolCalls.map((call) => call.id)).toEqual(['fresh']);
+            if (result.status === 'complete') {
+                expect(result.toolCalls.map((call) => call.id)).toEqual(['fresh']);
+            }
             expect(result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')).toBe(true);
             expect(
                 result.receipts.some((receipt) => receipt.toolName === 'project.query' && receipt.status === 'success')
@@ -245,17 +249,19 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
             terminalToolNames: new Set(['setTempo']),
             requestTurn: async ({ turn, receiptContext }) => {
-                if (turn === 1)
+                if (turn === 1) {
                     return { status: 'complete', toolCalls: [{ id: 'interpret', name: 'interpret', arguments: {} }] };
+                }
                 if (turn > 2) {
                     const parsed = JSON.parse(receiptContext!.slice(receiptContext!.lastIndexOf('\n') + 1));
                     const last = parsed.receipts.at(-1);
                     cursor = last.data.nextCursor ?? undefined;
-                    if (!cursor)
+                    if (!cursor) {
                         return {
                             status: 'complete',
                             toolCalls: [{ id: 'proposal', name: 'setTempo', arguments: { bpm: 120 } }],
                         };
+                    }
                 }
                 return {
                     status: 'complete',
@@ -266,7 +272,7 @@ describe('canonical roles at the provider continuation boundary', () => {
                             arguments: {
                                 type: 'musical-content',
                                 filters: { stableId: 'c', startBeat: 0, endBeat: 4 },
-                                page: { limit: 1, ...(cursor ? { cursor } : {}) },
+                                page: { limit: 1, cursor },
                             },
                         },
                     ],
@@ -322,8 +328,9 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
             terminalToolNames: new Set(['setTempo']),
             requestTurn: async ({ turn, budgetNote, receiptContext }) => {
-                if (turn === 1)
+                if (turn === 1) {
                     return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
+                }
                 if (turn === 2) {
                     expect(budgetNote).toContain('"startBeat":200');
                     return {
@@ -431,8 +438,9 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
             terminalToolNames: new Set(['setTempo']),
             requestTurn: async ({ turn, budgetNote, receiptContext }) => {
-                if (turn === 1)
+                if (turn === 1) {
                     return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
+                }
                 if (turn === 2) {
                     expect(budgetNote).toContain('"startBeat":204');
                     return {
@@ -500,13 +508,16 @@ describe('canonical roles at the provider continuation boundary', () => {
                 },
                 terminalToolNames: new Set(['setTempo']),
                 requestTurn: async ({ turn }) => {
-                    if (turn === 1)
+                    if (turn === 1) {
                         return {
                             status: 'complete',
                             toolCalls: [{ id: 'interpret', name: 'interpret', arguments: {} }],
                         };
+                    }
                     if (turn === 2) {
-                        if (failure === 'stale') setPianoRollSelection('c', [], ['c']);
+                        if (failure === 'stale') {
+                            setPianoRollSelection('c', [], ['c']);
+                        }
                         return {
                             status: 'complete',
                             toolCalls: [
@@ -526,7 +537,9 @@ describe('canonical roles at the provider continuation boundary', () => {
                             ],
                         };
                     }
-                    if (failure === 'await-stale') setPianoRollSelection('c', [], ['c']);
+                    if (failure === 'await-stale') {
+                        setPianoRollSelection('c', [], ['c']);
+                    }
                     return {
                         status: 'complete',
                         toolCalls: [{ id: `proposal-${turn}`, name: 'setTempo', arguments: { bpm: 120 } }],
@@ -534,8 +547,9 @@ describe('canonical roles at the provider continuation boundary', () => {
                 },
             });
             expect(result.status).toBe('rejected');
-            if (failure !== 'stale' && failure !== 'await-stale')
+            if (failure !== 'stale' && failure !== 'await-stale') {
                 expect(result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')).toBe(true);
+            }
         }
     );
 
@@ -573,13 +587,15 @@ describe('canonical roles at the provider continuation boundary', () => {
                 },
             },
             terminalToolNames: new Set(['setTempo']),
-            requestTurn: async ({ turn }) =>
-                turn === 1
-                    ? { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] }
-                    : {
-                          status: 'complete',
-                          toolCalls: [{ id: 'proposal', name: 'setTempo', arguments: { bpm: 120 } }],
-                      },
+            requestTurn: async ({ turn }) => {
+                if (turn === 1) {
+                    return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
+                }
+                return {
+                    status: 'complete',
+                    toolCalls: [{ id: 'proposal', name: 'setTempo', arguments: { bpm: 120 } }],
+                };
+            },
         });
         expect(result.status).toBe('complete');
     });
@@ -589,23 +605,25 @@ describe('canonical roles at the provider continuation boundary', () => {
         const result = await runApplicationOwnedToolLoop({
             loopId: 'forged-binding',
             terminalToolNames: new Set(['setTempo']),
-            requestTurn: async ({ turn }) =>
-                turn === 1
-                    ? {
-                          status: 'complete',
-                          toolCalls: [
-                              {
-                                  id: 'forged',
-                                  name: 'project.query',
-                                  arguments: {
-                                      type: 'musical-content',
-                                      filters: { stableId: 'c', startBeat: 0, endBeat: 4 },
-                                      ...binding,
-                                  },
-                              },
-                          ],
-                      }
-                    : { status: 'complete', toolCalls: [] },
+            requestTurn: async ({ turn }) => {
+                if (turn === 1) {
+                    return {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'forged',
+                                name: 'project.query',
+                                arguments: {
+                                    type: 'musical-content',
+                                    filters: { stableId: 'c', startBeat: 0, endBeat: 4 },
+                                    ...binding,
+                                },
+                            },
+                        ],
+                    };
+                }
+                return { status: 'complete', toolCalls: [] };
+            },
         });
         expect(result.receipts[0]).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
     });
@@ -646,22 +664,26 @@ describe('canonical roles at the provider continuation boundary', () => {
                 },
             },
             terminalToolNames: new Set(['command.batch.decline']),
-            requestTurn: async ({ turn }) =>
-                turn === 1
-                    ? { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] }
-                    : {
-                          status: 'complete',
-                          toolCalls: [
-                              {
-                                  id: 'decline',
-                                  name: 'command.batch.decline',
-                                  arguments: { kind: 'clarify', reason: 'Which phrase?', questions: ['Which phrase?'] },
-                              },
-                          ],
-                      },
+            requestTurn: async ({ turn }) => {
+                if (turn === 1) {
+                    return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
+                }
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'decline',
+                            name: 'command.batch.decline',
+                            arguments: { kind: 'clarify', reason: 'Which phrase?', questions: ['Which phrase?'] },
+                        },
+                    ],
+                };
+            },
         });
         expect(result.status).toBe('complete');
-        if (result.status === 'complete') expect(result.decline?.kind).toBe('clarify');
+        if (result.status === 'complete') {
+            expect(result.decline?.kind).toBe('clarify');
+        }
         expect(result.receipts.some((receipt) => receipt.toolName === 'project.query')).toBe(false);
     });
 

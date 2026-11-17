@@ -340,7 +340,7 @@ it('sends actual contrasting MIDI query receipts to the local provider within it
         const musicalContentBinding = captureMusicalContentBinding();
         const attempts: ProviderAttemptAdmission[] = [];
         completion.mockImplementation(async (system: string, user: string) => {
-            if (completion.mock.calls.length === 1)
+            if (completion.mock.calls.length === 1) {
                 return JSON.stringify(
                     nonAcousticMetricIntakeTurn({
                         modeId: 'edit',
@@ -348,7 +348,8 @@ it('sends actual contrasting MIDI query receipts to the local provider within it
                         dimensions: ['midi-content'],
                     })(user, system)
                 );
-            if (completion.mock.calls.length === 2)
+            }
+            if (completion.mock.calls.length === 2) {
                 return JSON.stringify([
                     {
                         id: 'phrase',
@@ -360,6 +361,7 @@ it('sends actual contrasting MIDI query receipts to the local provider within it
                         },
                     },
                 ]);
+            }
             return JSON.stringify(clarification);
         });
         const result = await parsePromptToActions({

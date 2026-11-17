@@ -404,7 +404,9 @@ describe('generateToolPlanningOutcome', () => {
                             { firstUserMessage: 'Read the phrase.', history, budgetNote }
                         ),
                 }).catch((error: unknown) => {
-                    if (error instanceof ApplicationOwnedToolLoopRequestError) throw error.originalError;
+                    if (error instanceof ApplicationOwnedToolLoopRequestError) {
+                        throw error.originalError;
+                    }
                     throw error;
                 });
                 expect(result.receipts).toEqual(
@@ -502,7 +504,10 @@ describe('generateToolPlanningOutcome', () => {
                 usage: null,
             });
             const fetchRequest = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-                const body = JSON.parse(String(init?.body));
+                if (typeof init?.body !== 'string') {
+                    throw new TypeError('Expected a serialized request body');
+                }
+                const body = JSON.parse(init.body);
                 expect(body.tools.map((tool: ToolSchema) => tool.function.name)).toEqual([
                     'project_query',
                     'command_batch_decline',
@@ -589,7 +594,9 @@ describe('generateToolPlanningOutcome', () => {
                         { firstUserMessage: context, history, budgetNote }
                     ),
             }).catch((error: unknown) => {
-                if (error instanceof ApplicationOwnedToolLoopRequestError) throw error.originalError;
+                if (error instanceof ApplicationOwnedToolLoopRequestError) {
+                    throw error.originalError;
+                }
                 throw error;
             });
             expect(result).toMatchObject({ status: 'complete', decline: { kind: 'clarify', reason: 'Which phrase?' } });

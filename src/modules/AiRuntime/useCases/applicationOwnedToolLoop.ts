@@ -390,8 +390,9 @@ function parseProjectQueryArguments(
     argumentsValue: Record<string, unknown>,
     binding?: ReturnType<typeof captureMusicalContentBinding>
 ): ParsedQuery {
-    if (argumentsValue.type === 'musical-content' && binding === undefined)
+    if (argumentsValue.type === 'musical-content' && binding === undefined) {
         return { status: 'invalid', reason: 'Musical evidence binding is unavailable.' };
+    }
     const parsed =
         argumentsValue.type === 'musical-content' && binding !== undefined
             ? bindMusicalContentQuery(argumentsValue, binding)
@@ -475,7 +476,7 @@ function executeSemanticProjectQuery(
                     'Musical page cursor is stale or invalid; start a fresh request.',
             };
             const safeMessage = messages[error.message];
-            if (safeMessage !== undefined)
+            if (safeMessage !== undefined) {
                 return failureReceipt({
                     callId,
                     turn,
@@ -484,6 +485,7 @@ function executeSemanticProjectQuery(
                     safeMessage,
                     retryable: true,
                 });
+            }
         }
         return failureReceipt({
             callId,
@@ -2560,13 +2562,14 @@ export async function runApplicationOwnedToolLoop(
             if (creativeAuthority.mode !== 'edit' || !creativeAuthority.editDimensions.includes('midi-content')) {
                 musicalRead = null;
             } else {
-                if (input.musicalContentBinding === undefined)
+                if (input.musicalContentBinding === undefined) {
                     return {
                         status: 'rejected',
                         reason: 'Musical evidence binding is unavailable.',
                         receipts,
                         turns: turn - 1,
                     };
+                }
                 try {
                     musicalRead = createMusicalReadPrerequisite(creativeAuthority, input.musicalContentBinding);
                 } catch {
@@ -2579,13 +2582,14 @@ export async function runApplicationOwnedToolLoop(
                 }
             }
         }
-        if (musicalRead && !musicalRead.current())
+        if (musicalRead && !musicalRead.current()) {
             return {
                 status: 'rejected',
                 reason: 'Musical evidence is stale; start a fresh request.',
                 receipts,
                 turns: turn - 1,
             };
+        }
         const musicalHint = musicalRead?.hint() ?? null;
         // A held candidate can still receive the real executor's stale-snapshot refusal. Snapshot
         // movement itself is neither an invocation nor a receipt and cannot settle its control.
@@ -2658,13 +2662,14 @@ export async function runApplicationOwnedToolLoop(
         if (outcome.status === 'rejected') {
             return { ...outcome, receipts, turns: turn };
         }
-        if (musicalRead && !musicalRead.current())
+        if (musicalRead && !musicalRead.current()) {
             return {
                 status: 'rejected',
                 reason: 'Musical evidence is stale; start a fresh request.',
                 receipts,
                 turns: turn,
             };
+        }
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
         }
@@ -3108,13 +3113,14 @@ export async function runApplicationOwnedToolLoop(
             };
         }
         if (musicalHint !== null && terminalCalls.some(({ call }) => call.name !== COMMAND_BATCH_DECLINE_TOOL_NAME)) {
-            if (isFinalTurn)
+            if (isFinalTurn) {
                 return {
                     status: 'rejected',
                     reason: 'Required musical evidence was not read within the planning budget.',
                     receipts,
                     turns: turn,
                 };
+            }
             const missing = terminalCalls.map(({ call, callId }) =>
                 failureReceipt({
                     callId,
@@ -3126,17 +3132,19 @@ export async function runApplicationOwnedToolLoop(
                 })
             );
             const overBudget = admitTurnReceipts(missing, turn, outcome, terminalCalls);
-            if (overBudget !== null)
+            if (overBudget !== null) {
                 return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
             continue;
         }
-        if (musicalHint !== null && outcome.toolCalls.length === 0)
+        if (musicalHint !== null && outcome.toolCalls.length === 0) {
             return {
                 status: 'rejected',
                 reason: 'Required musical evidence was not requested.',
                 receipts,
                 turns: turn,
             };
+        }
         const terminalValidation: ValidatedTerminalCalls = validateTerminalCalls(terminalCalls);
         if (terminalValidation.status === 'rejected') {
             return {
@@ -3338,7 +3346,9 @@ export async function runApplicationOwnedToolLoop(
             const admitted = turnReceipts[index];
             const raw = rawTurnReceipts[index];
             const call = safeReadCalls[index]?.call;
-            if (musicalRead && admitted && raw && call) musicalRead.admit(call, raw, admitted);
+            if (musicalRead && admitted && raw && call) {
+                musicalRead.admit(call, raw, admitted);
+            }
             if (
                 currentOpportunity !== null &&
                 admitted !== undefined &&

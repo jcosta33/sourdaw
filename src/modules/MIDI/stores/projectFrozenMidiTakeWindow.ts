@@ -259,20 +259,28 @@ export function projectFrozenMidiTakeWindow({
     if (collectController) {
         const originals = new Map<string, MidiCC>();
         for (const row of source.rows.controlChanges.value) {
-            if (originals.has(row.id)) throw new Error('Ambiguous MIDI controller identity');
+            if (originals.has(row.id)) {
+                throw new Error('Ambiguous MIDI controller identity');
+            }
             originals.set(row.id, row);
         }
-        for (const row of synthetic) collectController({ row, origin: 'synthetic' });
+        for (const row of synthetic) {
+            collectController({ row, origin: 'synthetic' });
+        }
         for (const row of projected.controlChanges) {
             const original = originals.get(row.id);
-            if (!original) throw new Error('MIDI controller source unavailable');
+            if (!original) {
+                throw new Error('MIDI controller source unavailable');
+            }
             const origin =
                 Math.abs(row.beat - window.beatOffset - original.beat) > SAME_BEAT_TOLERANCE ? 'carried' : 'source';
             collectController({ row, origin, sourceBeat: original.beat });
         }
         for (const row of projected.closingControlChanges) {
             const original = originals.get(row.id);
-            if (!original) throw new Error('MIDI controller source unavailable');
+            if (!original) {
+                throw new Error('MIDI controller source unavailable');
+            }
             collectController({ row, origin: 'closing', sourceBeat: original.beat });
         }
     }
