@@ -146,6 +146,45 @@ it('records production setup before a blocked test module can be collected', asy
     }
 }, 30_000);
 
+it('reports a failed case before a later case finishes', async () => {
+    const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
+    const spec = join(fixture, 'early-failure.spec.ts');
+    const entered = join(fixture, 'entered');
+    writeFileSync(
+        spec,
+        `import { writeFileSync } from 'node:fs'; import { it } from 'vitest';
+it('first case', () => { throw new Error('unique-early-failure-sentinel'); });
+it('held case', async () => { writeFileSync(${JSON.stringify(entered)}, 'entered'); await new Promise(() => {}); }, 120_000);
+`
+    );
+    const child = spawn(process.execPath, [join(root, 'scripts/runVitestZeroTestGuard.ts'), spec], {
+        cwd: root,
+        detached: true,
+        env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture },
+    });
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+    try {
+        await vi.waitFor(() => {
+            expect(readFileSync(entered, 'utf8')).toBe('entered');
+            expect(child.exitCode).toBeNull();
+            expect(output).toContain('unique-early-failure-sentinel');
+        }, { timeout: 20_000 });
+    } finally {
+        if (child.pid !== undefined) {
+            try {
+                process.kill(-child.pid, 'SIGKILL');
+            } catch {
+                /* Already exited. */
+            }
+        }
+        await closed;
+        rmSync(fixture, { recursive: true, force: true });
+    }
+}, 30_000);
+
 it('keeps builtin spawn interception available after production worker setup', () => {
     const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
     try {
