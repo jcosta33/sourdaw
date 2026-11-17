@@ -33,6 +33,7 @@ import {
 } from '../../stores/adjustmentLayer';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 
+import { AdjustmentLayerAddMenu } from './AdjustmentLayerAddMenu';
 import {
     handleLayerRowKeyDown,
     handleRegionEdgeKeyDown,
@@ -40,7 +41,6 @@ import {
     MIN_REGION_BEATS,
     type RegionEdge,
 } from './adjustmentLayerKeyboard';
-import { AdjustmentLayerAddMenu } from './AdjustmentLayerAddMenu';
 import { AdjustmentRegionBand, type FadePreview } from './AdjustmentRegionBand';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
