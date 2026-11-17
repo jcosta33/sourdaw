@@ -57,7 +57,7 @@ export const FilterSection = ({
     useEffect(() => {
         const graph = graphRef.current;
         if (!graph) {
-            return;
+            return undefined;
         }
         // The response graph uses this same width to map pointer input to frequency.
         const observer = new ResizeObserver(([entry]) => {

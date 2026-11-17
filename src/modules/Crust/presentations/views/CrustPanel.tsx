@@ -120,8 +120,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const disclosureTier = effectDisclosureTierFromLevel(patch.uiLevel);
     const meters = useCrustMeters(deviceId);
     const [openMenu, setOpenMenu] = useState<'preset' | 'streaming' | null>(null);
-    const presetTrigger = useRef<HTMLButtonElement>(null);
-    const streamingTrigger = useRef<HTMLButtonElement>(null);
+    const presetTriggerRef = useRef<HTMLButtonElement>(null);
+    const streamingTriggerRef = useRef<HTMLButtonElement>(null);
     const presetMenuOpen = openMenu === 'preset';
     const streamingMenuOpen = openMenu === 'streaming';
 
@@ -198,12 +198,12 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             event.preventDefault();
                             event.stopPropagation();
                             setOpenMenu(null);
-                            presetTrigger.current?.focus();
+                            presetTriggerRef.current?.focus();
                         }
                     }}
                 >
                     <Button
-                        ref={presetTrigger}
+                        ref={presetTriggerRef}
                         variant="bare"
                         size="bare"
                         type="button"
@@ -260,12 +260,12 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             event.preventDefault();
                             event.stopPropagation();
                             setOpenMenu(null);
-                            streamingTrigger.current?.focus();
+                            streamingTriggerRef.current?.focus();
                         }
                     }}
                 >
                     <Button
-                        ref={streamingTrigger}
+                        ref={streamingTriggerRef}
                         variant="bare"
                         size="bare"
                         type="button"
