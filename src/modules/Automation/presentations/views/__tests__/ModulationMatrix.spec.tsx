@@ -1,4 +1,4 @@
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { executeUserAppAction } from '#/modules/Command/useCases';
@@ -293,6 +293,21 @@ describe('ModulationMatrix', () => {
         });
     });
 
+    it('keeps the first hydrated track and the draft after track reordering or removal', () => {
+        const view = render(<ModulationMatrix />);
+        fireEvent.click(screen.getByRole('button', { name: 'New Modulator' }));
+        fireEvent.change(screen.getByLabelText('Modulator name'), { target: { value: 'Waiting for drums' } });
+        const drums = makeTrack('drums', 'Drums');
+        const keys = makeTrack('keys', 'Keys');
+        for (const tracks of [[drums, keys], [keys, drums], [keys]]) {
+            mocks.trackState = { tracks };
+            view.rerender(<ModulationMatrix />);
+            expect(screen.getByLabelText('Modulator track scope')).toHaveValue('drums');
+            expect(screen.getByLabelText('Modulator name')).toHaveValue('Waiting for drums');
+        }
+        expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+    });
+
     it('keeps a named draft and mapped source when a dispatched creation commits nothing', async () => {
         mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
         mocks.modState = { modulators: [makeModulatorWithMapping(-0.37)] };
@@ -350,12 +365,24 @@ describe('ModulationMatrix', () => {
         expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
     });
 
-    it('keeps both scroll regions keyboard reachable while creating a source', () => {
+    it('focuses native controls in the open creation form and the existing mapping list', () => {
         mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
         render(<ModulationMatrix />);
         fireEvent.click(screen.getByRole('button', { name: 'New Modulator' }));
-        for (const name of ['New modulator form', 'Modulators and mappings']) {
-            expect(screen.getByRole('region', { name })).toHaveAttribute('tabindex', '0');
+
+        const form = within(screen.getByRole('region', { name: 'New modulator form' }));
+        const list = within(screen.getByRole('region', { name: 'Modulators and mappings' }));
+        expect(form.getByRole('textbox', { name: 'Modulator name' })).toHaveFocus();
+        for (const control of [
+            form.getByRole('button', { name: 'Add' }),
+            list.getByRole('button', { name: 'Add Mapping' }),
+            list.getByRole('slider', { name: /Amount for/ }),
+            list.getByRole('button', { name: 'Remove mapping' }),
+        ]) {
+            expect(control.tabIndex).toBe(0);
+            control.focus();
+            expect(control).toHaveFocus();
         }
     });
 

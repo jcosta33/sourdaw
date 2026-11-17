@@ -53,7 +53,7 @@ const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement =
     const [pending, setPending] = useState(false);
     const [error, setError] = useState('');
     const [addedLaneId, setAddedLaneId] = useState<string | null>(null);
-    const addedLaneLabel = useRef<HTMLSpanElement>(null);
+    const addedLaneLabelRef = useRef<HTMLSpanElement>(null);
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
     // External plugin parameters resolve out of this store, and a refresh fills
@@ -63,7 +63,7 @@ const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement =
     const trackLanes = autoState.lanes.filter((lane) => lane.trackId === track.id && !lane.clipId);
 
     useEffect(() => {
-        addedLaneLabel.current?.scrollIntoView({ block: 'nearest' });
+        addedLaneLabelRef.current?.scrollIntoView({ block: 'nearest' });
     }, [addedLaneId]);
 
     const addLane = async (parameterId: string, parameterName: string): Promise<void> => {
@@ -94,8 +94,8 @@ const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement =
             } else {
                 setError(`Could not add ${parameterName}. Check the target and project locks, then try again.`);
             }
-        } catch (cause) {
-            const reason = cause instanceof Error ? cause.message : 'The edit failed.';
+        } catch (error_) {
+            const reason = error_ instanceof Error ? error_.message : 'The edit failed.';
             setError(`Could not add ${parameterName}. ${reason} Check the target and try again.`);
         } finally {
             setPending(false);
@@ -113,7 +113,9 @@ const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement =
                 role="menuitem"
                 className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent/50"
                 disabled={Boolean(existing) || pending}
-                onClick={() => void addLane(parameterId, parameterName)}
+                onClick={() => {
+                    void addLane(parameterId, parameterName);
+                }}
             >
                 <span className="min-w-0 whitespace-normal">{label}</span>
                 {existing ? (
@@ -216,7 +218,7 @@ const TrackAutomation = ({ track }: TrackAutomationSectionProps): ReactElement =
                         <SurfaceCard key={lane.id} className="flex items-center justify-between">
                             <span
                                 className="text-[10px] text-foreground font-medium truncate pr-2"
-                                ref={lane.id === addedLaneId ? addedLaneLabel : undefined}
+                                ref={lane.id === addedLaneId ? addedLaneLabelRef : undefined}
                                 title={lane.parameterName}
                             >
                                 {lane.parameterName}

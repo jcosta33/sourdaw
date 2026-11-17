@@ -173,28 +173,28 @@ function useModulationSubmission(onClose: () => void) {
     const [authority] = useState(captureProjectTransitionAuthority);
     const [error, setError] = useState('');
     const [pending, setPending] = useState(false);
-    const inFlight = useRef(false);
-    const mounted = useRef(false);
+    const inFlightRef = useRef(false);
+    const mountedRef = useRef(false);
     useEffect(() => {
-        mounted.current = true;
+        mountedRef.current = true;
         return () => {
-            mounted.current = false;
+            mountedRef.current = false;
         };
     }, []);
 
     const submit = async (action: CreationAction, hasTarget: () => boolean, isSettled: () => boolean) => {
-        if (inFlight.current) {
+        if (inFlightRef.current) {
             return;
         }
         if (!authority.isCurrent()) {
             setError('The project changed. Reopen this form in the current project.');
             return;
         }
-        inFlight.current = true;
+        inFlightRef.current = true;
         setPending(true);
         setError('');
         const subject = action.type === 'addModulator' ? 'modulator' : 'mapping';
-        const available = () => mounted.current && authority.isCurrent() && hasTarget();
+        const available = () => mountedRef.current && authority.isCurrent() && hasTarget();
         let accepted = false;
         let failure = 'The target may be unavailable or the project may have locks';
         try {
@@ -210,11 +210,11 @@ function useModulationSubmission(onClose: () => void) {
                     accepted = true;
                 },
             });
-        } catch (cause) {
-            accepted = isAppActionCommittedError(cause);
-            failure = cause instanceof Error ? cause.message : 'The edit failed';
+        } catch (error_) {
+            accepted = isAppActionCommittedError(error_);
+            failure = error_ instanceof Error ? error_.message : 'The edit failed';
         } finally {
-            inFlight.current = false;
+            inFlightRef.current = false;
             setPending(false);
         }
         if (accepted && available() && isSettled()) {
@@ -246,11 +246,9 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
 
     // Seed an initially empty picker after track hydration. A deleted selection
     // stays visibly unavailable until the musician chooses its replacement.
-    useEffect(() => {
-        if (defaultTrackId) {
-            setForm((prev) => (prev.trackId ? prev : { ...prev, trackId: defaultTrackId }));
-        }
-    }, [defaultTrackId]);
+    if (form.trackId === '' && defaultTrackId !== '') {
+        setForm({ ...form, trackId: defaultTrackId });
+    }
 
     const setField = <Key extends keyof FormState>(key: Key, value: FormState[Key]): void => {
         setForm((prev) => ({ ...prev, [key]: value }));
@@ -702,10 +700,10 @@ type ModulatorCardProps = {
 
 const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement => {
     const [pickerOpen, setPickerOpen] = useState(false);
-    const mappingButton = useRef<HTMLButtonElement>(null);
+    const mappingButtonRef = useRef<HTMLButtonElement>(null);
     const closePicker = () => {
         setPickerOpen(false);
-        mappingButton.current?.focus();
+        mappingButtonRef.current?.focus();
     };
 
     useEffect(() => {
@@ -787,7 +785,7 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                 </Row>
                 <div className="flex-1" />
                 <Button
-                    ref={mappingButton}
+                    ref={mappingButtonRef}
                     variant="ghost"
                     size="xs"
                     aria-expanded={pickerOpen}
@@ -816,10 +814,10 @@ export const ModulationMatrix = (): ReactElement => {
     const modState = useStore(modulationStore, emptyModState);
     const trackState = useStore(trackStore, defaultTrackState);
     const [newFormOpen, setNewFormOpen] = useState(false);
-    const newButton = useRef<HTMLButtonElement>(null);
+    const newButtonRef = useRef<HTMLButtonElement>(null);
     const closeForm = () => {
         setNewFormOpen(false);
-        newButton.current?.focus();
+        newButtonRef.current?.focus();
     };
 
     const tracks: TrackRef[] = trackState.tracks.map((track) => ({
@@ -845,7 +843,7 @@ export const ModulationMatrix = (): ReactElement => {
                 titleClassName="text-[11px] font-semibold text-foreground uppercase tracking-wider"
                 actions={
                     <Button
-                        ref={newButton}
+                        ref={newButtonRef}
                         variant="secondary"
                         size="xs"
                         onClick={() => setNewFormOpen((open) => !open)}
@@ -860,21 +858,14 @@ export const ModulationMatrix = (): ReactElement => {
 
             {newFormOpen ? (
                 <section
-                    role="region"
                     aria-label="New modulator form"
-                    tabIndex={0}
                     className="max-h-[55%] min-h-0 shrink-0 overflow-auto overscroll-contain border-b border-border-hairline bg-surface-inset"
                 >
                     <NewModulatorForm tracks={tracks} onClose={closeForm} />
                 </section>
             ) : null}
 
-            <div
-                role="region"
-                aria-label="Modulators and mappings"
-                tabIndex={0}
-                className="min-h-0 flex-1 overflow-auto overscroll-contain"
-            >
+            <section aria-label="Modulators and mappings" className="min-h-0 flex-1 overflow-auto overscroll-contain">
                 <Stack gap={2} className="p-2">
                     {modulators.length === 0 ? (
                         <DawEmptyState
@@ -919,7 +910,7 @@ export const ModulationMatrix = (): ReactElement => {
                         </tbody>
                     </table>
                 )}
-            </div>
+            </section>
         </DawPanelSurface>
     );
 };
