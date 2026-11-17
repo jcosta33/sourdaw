@@ -38,9 +38,7 @@ export function verifyAudioBufferReferences(): void {
     const state = trackStore.value;
     // No track state means no project to make a claim about — clear rather than
     // leave the prior project's rows looking current.
-    const items = state
-        ? collectMissingMedia(state.tracks, (bufferId) => getCachedAudioBuffer({ bufferId }) !== null)
-        : [];
+    const items = collectMissingMedia(state?.tracks ?? [], (bufferId) => getCachedAudioBuffer({ bufferId }) !== null);
 
     missingMediaStore.set({ items });
 

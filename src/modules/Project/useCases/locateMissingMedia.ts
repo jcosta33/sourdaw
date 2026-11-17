@@ -158,9 +158,11 @@ async function recoverSameFolderSelections(
             skippedCount++;
             continue;
         }
-        const selectionMatches = (tracks: readonly Track[]): boolean =>
-            matchSameFolderFile(remainingSources(excludedBufferId, tracks), file, selectedNameCounts)
-                ?.sourceBufferId === source.sourceBufferId;
+        const sourceBufferId = source.sourceBufferId;
+        function selectionMatches(tracks: readonly Track[]): boolean {
+            const match = matchSameFolderFile(remainingSources(excludedBufferId, tracks), file, selectedNameCounts);
+            return match?.sourceBufferId === sourceBufferId;
+        }
         if (!selectionMatches(trackStore.value?.tracks ?? [])) {
             skippedCount++;
             continue;
