@@ -6,12 +6,11 @@ import { projectClipMidiEvents } from '../grooveTemplates/projectClipMidiEvents'
 
 import {
     type BaseGapPianoRollNoteOwner,
-    type PianoRollTakeNotes,
-    type projectPianoRollTakeNotes,
-} from './projectPianoRollTakeNotes';
+    type BaseOccurrence,
+    type ClipPlacement,
+    type QueryWindow,
+} from './pianoRollProjectionTypes';
 
-type ClipPlacement = Parameters<typeof projectPianoRollTakeNotes>[0];
-type QueryWindow = NonNullable<Parameters<typeof projectPianoRollTakeNotes>[4]>;
 type QueryBudget = { charge: (amount: number) => void; emit: (amount: number) => void };
 
 function appendEventOccurrences(
@@ -22,7 +21,7 @@ function appendEventOccurrences(
     base: { ownersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner> },
     window: QueryWindow,
     occurrenceIndex: number,
-    occurrences: Array<PianoRollTakeNotes['baseOccurrences'][number]>
+    occurrences: Array<BaseOccurrence>
 ): void {
     for (const gap of gaps) {
         const start = Math.max(event.startBeat, gap.startBeat);
@@ -56,7 +55,7 @@ export function projectBaseOccurrences(
     base: { ownersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner> },
     window: QueryWindow,
     budget: QueryBudget
-): PianoRollTakeNotes['baseOccurrences'] {
+): readonly BaseOccurrence[] {
     const expansion = projectClipLoopExpansion({
         clipDurationBeats: clip.endBeat - clip.startBeat,
         configuredLoopLengthBeats: clip.loopLength,
@@ -104,7 +103,7 @@ export function projectBaseOccurrences(
     if (cursor < clip.endBeat) {
         gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
     }
-    const occurrences: Array<PianoRollTakeNotes['baseOccurrences'][number]> = [];
+    const occurrences: Array<BaseOccurrence> = [];
     for (let index = first; index < last; index++) {
         const events = projectClipMidiEvents({
             events: baseRows,

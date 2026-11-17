@@ -1,7 +1,7 @@
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import { type MidiCC, type MidiNote } from '../../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type SourceLocatedMidiPitchBend } from '../../services/projectMidiClipWindow';
 import {
@@ -12,33 +12,22 @@ import {
 import { isFrozenMidiTakeSource } from '../../stores/isFrozenMidiTakeSource';
 import { projectFrozenMidiTakeWindow } from '../../stores/projectFrozenMidiTakeWindow';
 
+import {
+    type BaseGapPianoRollNoteOwner,
+    type BaseOccurrence,
+    type ClipPlacement,
+    type QueryWindow,
+} from './pianoRollProjectionTypes';
 import { projectBaseOccurrences } from './projectBaseOccurrences';
 import { projectClipControllerEventsWithProvenance } from './projectClipControllerEventsWithProvenance';
 import { projectClipPitchBendEvents } from './projectClipPitchBendEvents';
 import { projectMidiClipWindow } from './projectMidiClipWindow';
 
+export type { BaseGapPianoRollNoteOwner } from './pianoRollProjectionTypes';
+
 type OriginalNote = NonNullable<
     TakeLaneStoreState['lanes'][number]['takes'][number]['midiSource']
 >['rows']['notes']['value'][number];
-
-type ClipPlacement = {
-    readonly id: string;
-    readonly startBeat: number;
-    readonly endBeat: number;
-    readonly midiOffsetBeats?: number;
-    readonly loopEnabled?: boolean;
-    readonly loopLength?: number;
-    readonly loopOriginBeat?: number;
-};
-
-type QueryWindow = {
-    fromBeat: number;
-    toBeat: number;
-    maxWork: number;
-    maxOutput: number;
-    controlChanges?: readonly MidiCC[];
-    pitchBends?: readonly MidiPitchBend[];
-};
 
 function queryBudget(window: QueryWindow) {
     if (
@@ -103,25 +92,12 @@ export type FrozenPianoRollInsertOwner = {
     readonly slotPresent: boolean;
 };
 
-export type BaseGapPianoRollNoteOwner = {
-    readonly row: MidiNote;
-    readonly displayedStartBeat: number;
-    readonly displayedDuration: number;
-};
-
 export type PianoRollTakeNotes = {
     readonly notes: MidiNote[];
     readonly baseNotes: MidiNote[];
     readonly ownersByViewId: ReadonlyMap<string, FrozenPianoRollNoteOwner>;
     readonly baseOwnersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner>;
-    readonly baseOccurrences: readonly {
-        row: MidiNote;
-        viewId: string;
-        startBeat: number;
-        duration: number;
-        velocity: number;
-        occurrenceIndex: number;
-    }[];
+    readonly baseOccurrences: readonly BaseOccurrence[];
     readonly baseControllers: readonly ReturnType<typeof projectClipControllerEventsWithProvenance>[number][];
     readonly basePitchBends: readonly (ReturnType<typeof projectClipPitchBendEvents>[number] & {
         origin: 'source' | 'carried';
