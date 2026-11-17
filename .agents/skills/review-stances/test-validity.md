@@ -189,10 +189,25 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    click through PCM copy, cold Worker, atomic commit and UI completion, with frames and main-thread tasks recorded
    over that same interval; the reviewer checks the recorded interval covers all of it. Native document parsing
    and JS-root materialization are separate costs even when one public load call combines them (#5843).
+   A fresh single-clip source also omits retained-history seed encoding and late supplemental history. #5843
+   (`afc6`, five recorded `kimi-k2.8` standard draws; prompts unavailable) had the 120-second source without
+   those dense inputs. Require authoritative tracks, MIDI, companion warp states and retained native changes,
+   then observe cold full-document seed compression and the real 200-entry history append/eviction alongside
+   the prepared primary mutation. Both complete tasks stay inside the original click-to-completion gate.
+   A deterministic unchanged-row payload-read check must fail without the trusted-presence shortcut, while
+   peer deletion, nested stranded-seed and signed-zero controls must fail an overbroad shortcut. Real owner
+   history must co-commit with the prepared primary or leave both slots unchanged on refusal.
    Moving either stage outside an existing named measure must leave it inside the full click-to-completion
    long-task gate. Hold the parsed handle before adoption and require abort or replaced authority to free it
    without publication. A mock that always returns
    empty hits proves neither suppression nor completion.
+   Admit concurrent Save/Detect through both real public routes on the same populated project, with current
+   native history and a genuine prospective Worker pending. Require successful durable Save, completed Detect
+   and unchanged correctness gates; a started Save or a held synthetic reply proves no overlap. Preserve the
+   Worker's real computation and reply, and observe Save settlement independently rather than holding Detect
+   for all of Save. If claiming replanning, show the actual captured input revision changed: overlapping Save
+   alone does not prove invalidation or require another attempt. Removing the Save invocation or preventing
+   its completion must fail admission before a performance pass can be reported.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**

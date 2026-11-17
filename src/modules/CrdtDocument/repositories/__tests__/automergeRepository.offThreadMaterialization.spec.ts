@@ -196,6 +196,111 @@ afterEach(() => {
 });
 
 describe('repository canonical Worker candidate adoption', () => {
+    it('exports complete native seed history without main-thread compression or consuming the adoption cursor', async () => {
+        let original = from<Document>({ slot: { count: 0 } }, { actor });
+        for (let index = 0; index < 2048; index++) {
+            original = change(original, { time: 0, message: `retained edit ${index}` }, (draft) => {
+                draft.other = index % 2 === 0;
+            });
+        }
+        repository.insertDoc('root', original);
+        const control = clone(original, { actor });
+        const expectedCursor = native.saveIncremental(control);
+        free(control);
+        const history = native.getChangesMetaSince(original, []);
+        mocks.request.mockImplementationOnce(async (request) => {
+            expect(request.seed[8]).toBe(0);
+            expect(request.seed.byteOffset).toBe(0);
+            expect(request.seed.byteLength).toBe(request.seed.buffer.byteLength);
+            const reloaded = load<Document>(request.seed, { actor: request.actor });
+            try {
+                expect(reloaded).toEqual(original);
+                expect(getHeads(reloaded)).toEqual(getHeads(original));
+                expect(getActorId(reloaded)).toBe(actor);
+                expect(native.getChangesMetaSince(reloaded, [])).toEqual(history);
+            } finally {
+                free(reloaded);
+            }
+            return response(request);
+        });
+        const prepared = plan(original);
+        vi.mocked(native.save).mockClear();
+        try {
+            await prepared.requestMaterialization!(new AbortController().signal);
+            expect(native.save).not.toHaveBeenCalled();
+            expect(native.saveIncremental(original)).toEqual(expectedCursor);
+            publish(prepared.materialize());
+            const actual = repository.getDoc<Document>('root')!;
+            expect(actual.slot.count).toBe(1);
+            const additions = native.getChangesMetaSince(actual, getHeads(original));
+            expect(additions).toHaveLength(1);
+            expect(additions[0]).toMatchObject({ actor, seq: 2050, deps: getHeads(original), message: 'Detect' });
+            expect(repository.captureDocIncremental('root', getHeads(original))?.chunk.byteLength).toBeGreaterThan(0);
+        } finally {
+            prepared.discard();
+        }
+    });
+
+    it('captures only uncaptured native history after Worker adoption and preserves subsequent capture progress', async () => {
+        const original = seed();
+        const baseline = Uint8Array.from(save(clone(original)));
+        const baselineHeads = getHeads(original);
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.other = true;
+        });
+        const prior = repository.getDoc<Document>('root')!;
+        const prepared = plan(prior);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        // A native capture during the wait belongs to the live handle, not the retained adoption clone.
+        repository.saveDocIncremental('root');
+        publish(prepared.materialize());
+        const captured = repository.captureDocIncremental('root', baselineHeads)!;
+        const missingBaseline = loadIncremental(init<Document>(), captured.chunk);
+        const actual = repository.getDoc<Document>('root')!;
+        const reconstructed = loadIncremental(load<Document>(baseline), captured.chunk);
+        try {
+            expect(getMissingDeps(missingBaseline, []).length).toBeGreaterThan(0);
+            expect(missingBaseline.slot).toBeUndefined();
+            expect(reconstructed).toEqual(actual);
+            expect(getHeads(reconstructed)).toEqual(captured.heads);
+            expect(getChanges(original, reconstructed)).toHaveLength(2);
+            expect(repository.captureDocIncremental('root', captured.heads)?.chunk).toHaveLength(0);
+            repository.changeDoc<Document>('root', (doc) => {
+                doc.slot.count = 2;
+            });
+            const next = repository.captureDocIncremental('root', captured.heads)!;
+            expect(getChanges(actual, loadIncremental(clone(actual), next.chunk))).toHaveLength(1);
+            expect(repository.captureDocIncremental('root', next.heads)?.chunk).toHaveLength(0);
+        } finally {
+            free(reconstructed);
+            free(missingBaseline);
+        }
+    });
+
+    it.each(['request', 'discard', 'abort', 'no-op'] as const)(
+        'keeps an explicit persistence frontier independent of private %s work',
+        async (kind) => {
+            const original = seed();
+            const heads = getHeads(original);
+            repository.changeDoc<Document>('root', (doc) => {
+                doc.other = true;
+            });
+            const prior = repository.getDoc<Document>('root')!;
+            const control = Uint8Array.from(native.saveSince(prior, heads));
+            const prepared = plan(prior, kind === 'no-op');
+            const controller = new AbortController();
+            await prepared.requestMaterialization!(controller.signal);
+            if (kind === 'no-op') {
+                publish(prepared.materialize());
+            } else if (kind === 'abort') {
+                controller.abort();
+            }
+            expect(repository.captureDocIncremental('root', heads)?.chunk).toEqual(control);
+            prepared.discard();
+            expect(repository.captureDocIncremental('root', heads)?.chunk).toEqual(control);
+        }
+    );
+
     it('diagnoses public native change checksum validation without changing live authority', () => {
         const original = seed();
         const changed = change(clone(original, { actor }), { message: 'Detect' }, (doc) => {

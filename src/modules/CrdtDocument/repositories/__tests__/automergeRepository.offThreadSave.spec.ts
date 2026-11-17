@@ -1,4 +1,4 @@
-import { clone, load, loadIncremental } from '@automerge/automerge';
+import { clone, getHeads, load, loadIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -78,6 +78,51 @@ describe('AutomergeRepository off-thread full save (CC-8)', () => {
         vi.unstubAllGlobals();
         vi.resetModules();
     });
+
+    it.each(['worker', 'fallback'] as const)(
+        'binds %s full persistence bytes to their own frontier while live edits continue',
+        async (outcome) => {
+            serveWorker();
+            const repository = await loadRepositoryFromWorker();
+            repository.changeDoc('root', (doc: ProjectDoc) => {
+                doc.first = true;
+            });
+            const started = Promise.withResolvers<{ worker: ControlledWorker; request: CompactShadowRequest }>();
+            ControlledWorker.onPostMessage = (worker, request) => {
+                if (request.type === 'compactShadow') {
+                    started.resolve({ worker, request });
+                }
+            };
+            const firstHeads = repository.getHeads('root');
+            const capturing = repository.capturePersistenceBundle();
+            const held = await started.promise;
+            repository.changeDoc('root', (doc: ProjectDoc) => {
+                doc.second = true;
+            });
+            if (outcome === 'worker') {
+                respondToCompactShadow(held.worker, held.request);
+            } else {
+                held.worker.emitMessage({ id: held.request.id, type: 'compactStale', reason: 'test fallback' });
+            }
+            const captured = await capturing;
+            const decoded = load<ProjectDoc>(captured.bundle.get('root')!);
+            expect(getHeads(decoded)).toEqual(captured.headsByDoc.get('root'));
+            expect(decoded.first).toBe(true);
+            expect(decoded.second).toBe(outcome === 'worker' ? undefined : true);
+            if (outcome === 'worker') {
+                expect(captured.headsByDoc.get('root')).toEqual(firstHeads);
+            }
+            // Snapshot/export calls may consume native cursors but cannot consume the explicit queue frontier.
+            const frontier = captured.headsByDoc.get('root')!;
+            repository.saveDoc('root');
+            repository.saveAll();
+            const delta = repository.captureDocIncremental('root', frontier)!;
+            const replayed = loadIncremental(decoded, delta.chunk);
+            expect(replayed).toEqual(repository.getDoc('root'));
+            expect(getHeads(replayed)).toEqual(delta.heads);
+            expect(delta.chunk.length > 0).toBe(outcome === 'worker');
+        }
+    );
 
     it('returns the bytes the worker encoded, and ships only a delta to get them', async () => {
         const exchange = serveWorker();

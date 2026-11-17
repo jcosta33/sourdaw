@@ -11,14 +11,12 @@ import {
     merge,
     change,
     getChanges,
-    getChangesMetaSince,
-    getMissingDeps,
-    hasHeads,
     view,
     getHeads,
     clone,
     getActorId,
     getAuthor,
+    getBackend,
     free,
 } from '@automerge/automerge';
 
@@ -26,17 +24,29 @@ import { logger } from '#/infra/logger/appLogger';
 import { type CanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import {
     getCurrentAutomergeStorageMutationOwner,
+    captureAutomergeStorageMutationAuthority,
     runOutsideAutomergeStoragePublisherScope,
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
-import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
+import {
+    hasNativeWorkerRequestId,
+    retainsActiveFrontier,
+    type IncrementalsEncodedResponse,
+} from '../models/NativeIncrementalEncoding';
+import { isBoundedNativePreparationPolicy } from '../models/NativeMutationSequence';
+import {
+    type ProspectiveMutationWorkerResult,
+    type ProspectiveMutationWorkerRequest,
+} from '../models/ProspectiveMutationWorkerProtocol';
 import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 import { advanceRootIdentityEpoch, readRootIdentityEpoch } from '../stores/rootIdentityEpoch';
 
+import { admitBoundedNativeSequence } from './admitBoundedNativeSequence';
 import { adoptProspectiveMutationChanges } from './adoptProspectiveMutationChanges';
 import { assertCompleteCanonicalChange } from './assertCompleteCanonicalChange';
+import { captureNativeIncrementals } from './captureNativeIncrementals';
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
 
@@ -98,39 +108,7 @@ function createSnapshotTransactionOverlapError(id: DocId): Error {
 }
 
 function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>): boolean {
-    const previousHeads = getHeads(previous);
-    const replacementHeads = getHeads(replacement);
-    const unreachedHeads = new Set(previousHeads);
-    for (const head of replacementHeads) {
-        unreachedHeads.delete(head);
-    }
-    if (unreachedHeads.size === 0) {
-        return true;
-    }
-    if (!hasHeads(replacement, previousHeads)) {
-        return false;
-    }
-
-    const dependencies = new Map(
-        getChangesMetaSince(replacement, previousHeads).map((change) => [change.hash, change.deps])
-    );
-    const visited = new Set<string>();
-    const pending = [...replacementHeads];
-    while (pending.length > 0 && unreachedHeads.size > 0) {
-        const head = pending.pop();
-        if (!head || visited.has(head)) {
-            continue;
-        }
-        visited.add(head);
-        if (unreachedHeads.delete(head)) {
-            continue;
-        }
-        const dependentHeads = dependencies.get(head);
-        if (dependentHeads) {
-            pending.push(...dependentHeads);
-        }
-    }
-    return unreachedHeads.size === 0;
+    return retainsActiveFrontier(replacement, getHeads(previous));
 }
 
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
@@ -139,6 +117,7 @@ function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>)
 // and collaboration patch ingestion.
 
 type WorkerResponse =
+    | (IncrementalsEncodedResponse & { id: number })
     | { id: number; type: 'loaded'; compacted: [string, Uint8Array][]; rootId: string }
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: [string, Uint8Array][] }
@@ -211,6 +190,10 @@ function createCrdtWorkerInstance(): CrdtWorkerInstance {
 
     function handleMessage(event: MessageEvent): void {
         if (instance.failed) {
+            return;
+        }
+        if (!hasNativeWorkerRequestId(event.data)) {
+            failCrdtWorker(instance, new Error('Invalid CRDT Worker response request identity'));
             return;
         }
 
@@ -575,8 +558,15 @@ class AutomergeRepository {
         message?: string,
         snapshotTransaction?: object,
         localSlots?: readonly string[],
-        canonicalMutation?: CanonicalStorageSlotMutation
+        canonicalMutation?: CanonicalStorageSlotMutation,
+        preparationPolicy?: ProspectiveMutationWorkerRequest['preparationPolicy']
     ) {
+        if (preparationPolicy !== undefined && !isBoundedNativePreparationPolicy(preparationPolicy)) {
+            throw new Error('Unsupported native preparation policy');
+        }
+        if (preparationPolicy !== undefined && !canonicalMutation) {
+            throw new Error('Native sequence preparation requires a canonical slot');
+        }
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
@@ -586,12 +576,19 @@ class AutomergeRepository {
         const actor = getActorId(doc);
         const previousHeads = getHeads(doc);
         let candidate: Doc<TDoc> | undefined = clone(doc, { actor });
+        let admittedSequence: Doc<TDoc> | undefined;
         authority.assertCurrent();
         let cloneConsumed = false;
         let workerRequested = false;
         let workerResult: ProspectiveMutationWorkerResult | undefined;
         let removeMaterializationAbortListener: (() => void) | undefined;
         const controller = new AbortController();
+        const assertSequenceAuthority = captureAutomergeStorageMutationAuthority(() => {
+            if (cloneConsumed) {
+                throw new Error('Prospective clone has already settled');
+            }
+            authority.assertCurrent();
+        });
         const releaseClone = (): void => {
             removeMaterializationAbortListener?.();
             removeMaterializationAbortListener = undefined;
@@ -599,8 +596,16 @@ class AutomergeRepository {
                 free(candidate);
                 candidate = undefined;
             }
+            if (admittedSequence) {
+                free(admittedSequence);
+                admittedSequence = undefined;
+            }
         };
         const nativeAuthor = canonicalMutation ? getAuthor(doc) : undefined;
+        if (preparationPolicy !== undefined && nativeAuthor !== undefined && nativeAuthor !== null) {
+            releaseClone();
+            throw new Error('Native sequence preparation requires an absent author');
+        }
         let requestMaterialization: ((signal: AbortSignal) => Promise<void>) | undefined;
         if (canonicalMutation && (nativeAuthor === null || nativeAuthor === undefined)) {
             requestMaterialization = (signal: AbortSignal): Promise<void> => {
@@ -623,15 +628,62 @@ class AutomergeRepository {
                     const encodingClone = clone(candidate, { actor });
                     let seed: Uint8Array<ArrayBuffer>;
                     try {
-                        seed = Uint8Array.from(save(encodingClone));
+                        seed = Uint8Array.from(getBackend(encodingClone).saveNoCompress());
                     } finally {
                         free(encodingClone);
                     }
                     authority.assertCurrent();
-                    return requestProspectiveMutation(
-                        { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
-                        materializationSignal
-                    )
+                    let request: ProspectiveMutationWorkerRequest = {
+                        seed,
+                        heads: previousHeads,
+                        actor,
+                        message,
+                        mutation: canonicalMutation,
+                    };
+                    if (preparationPolicy !== undefined) {
+                        request = { ...request, preparationPolicy };
+                    }
+                    const response = requestProspectiveMutation(request, materializationSignal);
+                    if (preparationPolicy === 'bounded-native-sequence-v1') {
+                        let captured: Doc<TDoc> | undefined = candidate;
+                        candidate = undefined;
+                        return response
+                            .then(async (result) => {
+                                if (!captured || cloneConsumed) {
+                                    throw new Error('Prospective clone has already settled');
+                                }
+                                const owned = captured;
+                                captured = undefined;
+                                const admitted = await admitBoundedNativeSequence({
+                                    candidate: owned,
+                                    source: doc,
+                                    result,
+                                    previousHeads,
+                                    actor,
+                                    message,
+                                    key: canonicalMutation.key,
+                                    signal: materializationSignal,
+                                    assertCurrent: assertSequenceAuthority,
+                                });
+                                try {
+                                    materializationSignal.throwIfAborted();
+                                    assertSequenceAuthority();
+                                    admittedSequence = admitted;
+                                } catch (error) {
+                                    free(admitted);
+                                    throw error;
+                                }
+                            })
+                            .catch((error: unknown) => {
+                                if (captured) {
+                                    free(captured);
+                                    captured = undefined;
+                                }
+                                releaseClone();
+                                throw error;
+                            });
+                    }
+                    return response
                         .then((result) => {
                             if (cloneConsumed) {
                                 return;
@@ -679,12 +731,22 @@ class AutomergeRepository {
                 cloneConsumed = true;
                 try {
                     authority.assertCurrent();
+                    if (preparationPolicy === 'bounded-native-sequence-v1' && !admittedSequence) {
+                        throw new Error('Prospective mutation Worker has not completed');
+                    }
                 } catch (error) {
+                    if (preparationPolicy === 'bounded-native-sequence-v1') {
+                        controller.abort(error);
+                    }
                     releaseClone();
                     throw error;
                 }
                 let updated: Doc<TDoc>;
-                if (workerRequested) {
+                if (admittedSequence) {
+                    updated = admittedSequence;
+                    admittedSequence = undefined;
+                    releaseClone();
+                } else if (workerRequested) {
                     if (!workerResult || !candidate) {
                         releaseClone();
                         throw new Error('Prospective mutation Worker has not completed');
@@ -961,13 +1023,53 @@ class AutomergeRepository {
         return saveIncremental(doc);
     }
 
+    /** Capture persistence bytes without consuming a handle-local serialization cursor. */
+    captureDocIncremental(id: DocId, previousHeads: Heads): { chunk: Uint8Array; heads: Heads } | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        const heads = getHeads(doc);
+        const frontier = retainsActiveFrontier(doc, previousHeads) ? previousHeads : [];
+        return { chunk: Uint8Array.from(saveSince(doc, frontier)), heads };
+    }
+
+    async captureIncrementalsOffThread(frontiers: ReadonlyMap<DocId, Heads>) {
+        const identity = this.getDocumentIdentityEpoch();
+        const rootIdentity = this.getRootIdentityEpoch();
+        const discarded = this.getLastHistoryDiscardEpoch();
+        const chunks = await captureNativeIncrementals(
+            this.docs,
+            frontiers,
+            (documents) => invokeWorker({ type: 'encodeIncrementals', documents }),
+            (error) =>
+                logger.warn(
+                    '[AutomergeRepository] Incremental Worker failed; encoding captured state synchronously:',
+                    error
+                )
+        );
+        return {
+            chunks,
+            isCurrent: () =>
+                identity === this.getDocumentIdentityEpoch() &&
+                rootIdentity === this.getRootIdentityEpoch() &&
+                discarded === this.getLastHistoryDiscardEpoch(),
+        };
+    }
+
     /** Serialize all documents as a bundle. */
     saveAll(): DocumentBundle {
+        return this.captureFullBundle().bundle;
+    }
+
+    private captureFullBundle(): { bundle: DocumentBundle; headsByDoc: Map<DocId, Heads> } {
         const bundle: DocumentBundle = new Map();
+        const headsByDoc = new Map<DocId, Heads>();
         for (const [id, doc] of this.docs) {
+            headsByDoc.set(id, getHeads(doc));
             bundle.set(id, save(doc));
         }
-        return bundle;
+        return { bundle, headsByDoc };
     }
 
     /** Inspect one captured root document without installing it as live or worker-shadow state. */
@@ -1003,8 +1105,8 @@ class AutomergeRepository {
      * `saveSince` deltas for documents it already holds, full saves for ones it
      * does not — and lets the worker run the expensive full encode.
      *
-     * `saveSince` does not consume Automerge's incremental cursor, so the
-     * coordinator's `saveDocIncremental` chunking is unaffected.
+     * Persistence receives the exact captured frontier with these bytes;
+     * generic exports retain their bundle-only contract.
      *
      * Failure semantics match `mergeBundle`: a worker crash, a stale replica or
      * an unexpected response degrades to the synchronous `saveAll()` with a
@@ -1012,6 +1114,10 @@ class AutomergeRepository {
      * bundle, and any downstream persistence failure surfaces unchanged.
      */
     async saveAllOffThread(): Promise<DocumentBundle> {
+        return (await this.capturePersistenceBundle()).bundle;
+    }
+
+    async capturePersistenceBundle(): Promise<{ bundle: DocumentBundle; headsByDoc: Map<DocId, Heads> }> {
         const shadowHeads = crdtWorkerState.shadowHeads;
         if (!shadowHeads) {
             return this.seedWorkerShadowFromMainThread();
@@ -1032,7 +1138,7 @@ class AutomergeRepository {
             // every lineage replacement — `createProject`, `insertDoc`, a
             // branch-switch `replaceDoc` — reseeds instead, without each
             // mutation site having to remember to invalidate.
-            if (!replicaHeads || getMissingDeps(doc, replicaHeads).length > 0) {
+            if (!replicaHeads || !retainsActiveFrontier(doc, replicaHeads)) {
                 seeds.push([id, save(doc)]);
                 continue;
             }
@@ -1045,7 +1151,7 @@ class AutomergeRepository {
             response = await invokeWorker({ type: 'compactShadow', seeds, deltas, removedDocIds, expectedHeads });
         } catch (error) {
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous full save:', error);
-            return this.saveAll();
+            return this.captureFullBundle();
         }
 
         if (response.type === 'compactStale') {
@@ -1053,16 +1159,16 @@ class AutomergeRepository {
                 reason: response.reason,
             });
             crdtWorkerState.shadowHeads = null;
-            return this.saveAll();
+            return this.captureFullBundle();
         }
         if (response.type !== 'compacted') {
             logger.warn('[AutomergeRepository] Unexpected CRDT worker response for compactShadow:', response.type);
             crdtWorkerState.shadowHeads = null;
-            return this.saveAll();
+            return this.captureFullBundle();
         }
 
         crdtWorkerState.shadowHeads = new Map<DocId, Heads>(expectedHeads);
-        return new Map<DocId, Uint8Array>(response.bundle);
+        return { bundle: new Map<DocId, Uint8Array>(response.bundle), headsByDoc: new Map(expectedHeads) };
     }
 
     /**
@@ -1070,17 +1176,14 @@ class AutomergeRepository {
      * to the worker so the next compaction can run off-thread. The reseed is
      * fire-and-forget — the caller's bundle never waits on it.
      */
-    private seedWorkerShadowFromMainThread(): DocumentBundle {
-        const bundle = this.saveAll();
-        const capturedHeads = new Map<DocId, Heads>();
-        for (const [id, doc] of this.docs) {
-            capturedHeads.set(id, getHeads(doc));
-        }
+    private seedWorkerShadowFromMainThread(): { bundle: DocumentBundle; headsByDoc: Map<DocId, Heads> } {
+        const captured = this.captureFullBundle();
+        const { bundle, headsByDoc } = captured;
 
         invokeWorker({ type: 'loadBundle', bundle: Array.from(bundle.entries()), retainShadow: true })
             .then((response) => {
                 if (response.type === 'loaded') {
-                    crdtWorkerState.shadowHeads = capturedHeads;
+                    crdtWorkerState.shadowHeads = headsByDoc;
                 }
                 return null;
             })
@@ -1089,7 +1192,7 @@ class AutomergeRepository {
                 return null;
             });
 
-        return bundle;
+        return captured;
     }
 
     isMutationBlockedBySnapshotTransaction(id: DocId, snapshotTransaction?: object): boolean {
@@ -1269,9 +1372,11 @@ class AutomergeRepository {
     async loadAll({
         bundle,
         shouldCommit,
+        onInstalled,
     }: {
         bundle: DocumentBundle;
         shouldCommit?: () => boolean;
+        onInstalled?: (headsByDoc: Map<DocId, Heads>) => void;
     }): Promise<boolean> {
         if (bundle.size === 0) {
             return false;
@@ -1316,6 +1421,11 @@ class AutomergeRepository {
             this.captureWorkerShadowHeads();
         }
         this.markDocumentIdentityMutation();
+        // Capture the installed bundle before observers can author more changes.
+        // Durable-load callers pair these heads with the authority of these bytes.
+        if (onInstalled) {
+            onInstalled(new Map(Array.from(documents, ([id, document]) => [id, getHeads(document)])));
+        }
         this.notifyRootInstallation();
         this.notifyListeners();
         return true;

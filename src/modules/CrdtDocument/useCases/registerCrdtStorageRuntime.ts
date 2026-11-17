@@ -94,7 +94,15 @@ export function registerCrdtStorageRuntime(): void {
                 localSlots: changedKeys,
             });
         },
-        cloneDocForMutation: ({ docId, changedKeys, changeFn, message, snapshotTransaction, canonicalMutation }) => {
+        cloneDocForMutation: ({
+            docId,
+            changedKeys,
+            changeFn,
+            message,
+            snapshotTransaction,
+            canonicalMutation,
+            preparationPolicy,
+        }) => {
             const cloned = cloneProspectiveCrdtMutation<StorageRuntimeDoc>({
                 id: docId,
                 localSlots: changedKeys,
@@ -102,6 +110,7 @@ export function registerCrdtStorageRuntime(): void {
                 message,
                 snapshotTransaction,
                 canonicalMutation,
+                preparationPolicy,
             });
             return {
                 requestMaterialization: cloned.requestMaterialization,

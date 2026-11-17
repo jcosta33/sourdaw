@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
 import {
     change,
     clone,
@@ -8,10 +11,12 @@ import {
     getHeads,
     getLastLocalChange,
     merge,
+    saveIncremental,
     toJS,
     type Doc,
 } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { initializeWasm } from '@automerge/automerge/slim';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import {
@@ -19,7 +24,9 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import { materializeProspectiveMutation } from '../../workers/prospectiveMutationWorkerRuntime';
 import { automergeRepository as repository } from '../automergeRepository';
+import * as workerClient from '../prospectiveMutationWorkerClient';
 
 type State = { count: number; peer?: boolean; replacement?: boolean };
 const ACTOR = 'aaaaaaaaaaaaaaaa';
@@ -45,12 +52,323 @@ function validation(validateDocument: (document: Doc<State>) => void = () => und
 }
 
 beforeEach(() => repository.reset());
+beforeAll(async () => {
+    const require = createRequire(import.meta.url);
+    await initializeWasm(Uint8Array.from(readFileSync(require.resolve('@automerge/automerge/automerge.wasm'))));
+});
 afterEach(() => {
     vi.restoreAllMocks();
     repository.reset();
 });
 
 describe('private prospective Automerge candidates', () => {
+    it('bounds an explicitly requested native sequence before transferring its private candidate', async () => {
+        type SequenceState = { slot: { text: string } };
+        const original = from<SequenceState>({ slot: { text: '' } }, { actor: ACTOR });
+        repository.insertDoc('root', original);
+        const target = { text: 'native sequence '.repeat(300) };
+        const mutation = {
+            kind: 'canonical-json-slot-v1' as const,
+            key: 'slot',
+            baseValue: { text: '' },
+            value: target,
+            documentPresence: { slot: { text: '' } },
+        };
+        const request = vi
+            .spyOn(workerClient, 'requestProspectiveMutation')
+            .mockImplementation(async (input) =>
+                materializeProspectiveMutation({ ...input, preparationPolicy: 'bounded-native-sequence-v1' })
+            );
+        const changeFn = vi.fn((draft: SequenceState) => {
+            draft.slot = target;
+        });
+        const preparation = repository.cloneProspectiveMutation<SequenceState>(
+            'root',
+            changeFn,
+            'Capture arrangement',
+            undefined,
+            ['slot'],
+            mutation,
+            'bounded-native-sequence-v1'
+        );
+        const observer = vi.fn();
+        repository.onChange(observer);
+        await expect(preparation.requestMaterialization?.(new AbortController().signal)).resolves.toBeUndefined();
+        expect(request).toHaveBeenCalledOnce();
+        expect(repository.getDoc('root')).toBe(original);
+        expect(observer).not.toHaveBeenCalled();
+        const prepared = preparation.materialize();
+        expect(changeFn).not.toHaveBeenCalled();
+        repository.changeDoc<SequenceState>('root', changeFn, 'Capture arrangement', undefined, ['slot'], {
+            preparedCandidate: prepared,
+            validateDocument: (document) => expect(document.slot).toEqual(target),
+            beforePublication: () => undefined,
+            onPublished: () => undefined,
+        });
+        expect(repository.getDoc<SequenceState>('root')?.slot).toEqual(target);
+        expect(observer).toHaveBeenCalledOnce();
+        expect(getChangesMetaSince(repository.getDoc('root')!, getHeads(original)).length).toBeGreaterThan(1);
+        expect(changeFn).not.toHaveBeenCalled();
+    });
+
+    it('admits after an await under the exact captured open storage owner', async () => {
+        const original = from({ slot: { text: '' } }, { actor: ACTOR });
+        repository.insertDoc('root', original);
+        const mutation = {
+            kind: 'canonical-json-slot-v1' as const,
+            key: 'slot',
+            baseValue: { text: '' },
+            value: { text: 'owned sequence '.repeat(180) },
+            documentPresence: { slot: { text: '' } },
+        };
+        vi.spyOn(workerClient, 'requestProspectiveMutation').mockImplementation(async (input) =>
+            materializeProspectiveMutation(input)
+        );
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            repository.cloneProspectiveMutation(
+                'root',
+                () => {
+                    throw new Error('Canonical preparation must not replay the callback');
+                },
+                undefined,
+                undefined,
+                ['slot'],
+                mutation,
+                'bounded-native-sequence-v1'
+            )
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        const preparation = transaction.value;
+        try {
+            const request = transaction.scope(() => preparation.requestMaterialization?.(new AbortController().signal));
+            await request;
+            expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+            expect(repository.getDoc('root')).toBe(original);
+            const candidate = transaction.scope(() => preparation.materialize());
+            transaction.scope(() =>
+                repository.changeDoc('root', () => undefined, undefined, undefined, ['slot'], {
+                    preparedCandidate: candidate,
+                    validateDocument: (document) => expect(document.slot).toEqual(mutation.value),
+                    beforePublication: () => undefined,
+                    onPublished: () => undefined,
+                })
+            );
+            transaction.commit();
+            expect(repository.getDoc('root')?.slot).toEqual(mutation.value);
+        } finally {
+            preparation.discard();
+            transaction.abort();
+        }
+    });
+
+    it.each(['foreign-mutation', 'root-replacement', 'discard', 'abort-owner'] as const)(
+        'refuses %s after a privately admitted prefix without later native publication',
+        async (revocation) => {
+            const original = from({ slot: { text: '' } }, { actor: ACTOR });
+            repository.insertDoc('root', original);
+            const originalHeads = getHeads(original);
+            const originalHistory = getChangesMetaSince(original, []);
+            const mutation = {
+                kind: 'canonical-json-slot-v1' as const,
+                key: 'slot',
+                baseValue: { text: '' },
+                value: { text: 'owned sequence '.repeat(180) },
+                documentPresence: { slot: { text: '' } },
+            };
+            vi.spyOn(workerClient, 'requestProspectiveMutation').mockImplementation(async (input) =>
+                materializeProspectiveMutation(input)
+            );
+            const Channel = globalThis.MessageChannel;
+            const held = Promise.withResolvers<() => void>();
+            let hostTasks = 0;
+            vi.stubGlobal(
+                'MessageChannel',
+                class extends Channel {
+                    constructor() {
+                        super();
+                        if (++hostTasks === 2) {
+                            const post = this.port2.postMessage.bind(this.port2);
+                            this.port2.postMessage = () => held.resolve(() => post(undefined));
+                        }
+                    }
+                }
+            );
+            const observer = vi.fn();
+            repository.onChange(observer);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                repository.cloneProspectiveMutation(
+                    'root',
+                    () => undefined,
+                    undefined,
+                    undefined,
+                    ['slot'],
+                    mutation,
+                    'bounded-native-sequence-v1'
+                )
+            );
+            if (transaction.status !== 'returned') {
+                throw transaction.error;
+            }
+            const preparation = transaction.value;
+            try {
+                const requested = transaction.scope(() =>
+                    preparation.requestMaterialization?.(new AbortController().signal)
+                );
+                const release = await held.promise;
+                expect(hostTasks).toBe(2);
+                expect(repository.getDoc('root')).toBe(original);
+                expect(observer).not.toHaveBeenCalled();
+                if (revocation === 'foreign-mutation') {
+                    repository.changeDoc<Record<string, unknown>>('root', (draft) => {
+                        draft.peer = true;
+                    });
+                }
+                if (revocation === 'root-replacement') {
+                    repository.insertDoc('root', from({ replacement: true }));
+                }
+                if (revocation === 'discard') {
+                    preparation.discard();
+                }
+                if (revocation === 'abort-owner') {
+                    transaction.abort();
+                }
+                const live = repository.getDoc('root');
+                if (!live) {
+                    throw new Error('Revocation control lost its actual root');
+                }
+                const truth = toJS(live);
+                const heads = getHeads(live);
+                const publications = observer.mock.calls.length;
+                const retainedHistory = getChangesMetaSince(original, []);
+                expect(retainedHistory.slice(0, originalHistory.length)).toEqual(originalHistory);
+                release();
+                await expect(requested).rejects.toThrow();
+                expect(repository.getDoc('root')).toBe(live);
+                expect(toJS(live)).toEqual(truth);
+                expect(getHeads(live)).toEqual(heads);
+                expect(observer).toHaveBeenCalledTimes(publications);
+                expect(getHeads(original)).toEqual(originalHeads);
+                expect(getChangesMetaSince(original, [])).toEqual(retainedHistory);
+                expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+            } finally {
+                preparation.discard();
+                transaction.abort();
+                vi.unstubAllGlobals();
+            }
+        }
+    );
+
+    it('requires completed bounded admission before materializing and retires a still pending Worker', async () => {
+        type SequenceState = { slot: { text: string } };
+        const original = from<SequenceState>({ slot: { text: '' } }, { actor: ACTOR });
+        repository.insertDoc('root', original);
+        const truth = toJS(original);
+        const heads = getHeads(original);
+        const history = getChangesMetaSince(original, []);
+        const cursorControl = clone(original, { actor: ACTOR });
+        const cursor = saveIncremental(cursorControl);
+        const native = await import('@automerge/automerge');
+        native.free(cursorControl);
+        expect(cursor.length).toBeGreaterThan(0);
+        const observer = vi.fn();
+        repository.onChange(observer);
+        const mutation = {
+            kind: 'canonical-json-slot-v1' as const,
+            key: 'slot',
+            baseValue: { text: '' },
+            value: { text: 'Prepared' },
+            documentPresence: { slot: { text: '' } },
+        };
+        const changeFn = vi.fn((draft: SequenceState) => {
+            draft.slot = mutation.value;
+        });
+        const create = () =>
+            repository.cloneProspectiveMutation<SequenceState>(
+                'root',
+                changeFn,
+                undefined,
+                undefined,
+                ['slot'],
+                mutation,
+                'bounded-native-sequence-v1'
+            );
+        const unrequested = create();
+        let unexpected: ReturnType<typeof unrequested.materialize> | undefined;
+        try {
+            expect(() => {
+                unexpected = unrequested.materialize();
+            }).toThrow('Prospective mutation Worker has not completed');
+            expect(changeFn).not.toHaveBeenCalled();
+        } finally {
+            unexpected?.discard();
+            unrequested.discard();
+        }
+        const posted = Promise.withResolvers<unknown>();
+        const terminated = vi.fn();
+        const holder: { worker?: HeldWorker } = {};
+        class HeldWorker {
+            onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+            onerror: (() => void) | null = null;
+            onmessageerror: (() => void) | null = null;
+            constructor() {
+                holder.worker = this;
+            }
+            postMessage(
+                input: Parameters<typeof workerClient.requestProspectiveMutation>[0],
+                transfer: Transferable[]
+            ): void {
+                const copied = structuredClone(input, { transfer });
+                // Dedicated messaging creates records and buffers in the receiving realm.
+                const mutationJson = JSON.stringify(copied.mutation);
+                const mutation: unknown = JSON.parse(mutationJson);
+                posted.resolve({ ...copied, seed: Uint8Array.from(copied.seed), mutation });
+            }
+            terminate(): void {
+                terminated();
+            }
+        }
+        vi.stubGlobal('Worker', HeldWorker);
+        vi.useFakeTimers();
+        const pending = create();
+        try {
+            const request = pending.requestMaterialization;
+            if (!request) {
+                throw new Error('Expected the explicit native request route');
+            }
+            const requested = request(new AbortController().signal);
+            const rejected = expect(requested).rejects.toThrow('Prospective mutation Worker has not completed');
+            const input = await posted.promise;
+            const held = holder.worker;
+            if (!held?.onmessage) {
+                throw new Error('Actual private client did not install its pending callback');
+            }
+            const late = held.onmessage;
+            expect(() => pending.materialize()).toThrow('Prospective mutation Worker has not completed');
+            await rejected;
+            expect(terminated).toHaveBeenCalledOnce();
+            expect(held.onmessage).toBeNull();
+            expect(held.onerror).toBeNull();
+            expect(held.onmessageerror).toBeNull();
+            expect(vi.getTimerCount()).toBe(0);
+            const result = materializeProspectiveMutation(input);
+            late(new MessageEvent('message', { data: { status: 'complete', ...result } }));
+            expect(() => pending.materialize()).toThrow('already settled');
+            expect(changeFn).not.toHaveBeenCalled();
+            expect(observer).not.toHaveBeenCalled();
+            expect(repository.getDoc('root')).toBe(original);
+            expect(toJS(original)).toEqual(truth);
+            expect(getHeads(original)).toEqual(heads);
+            expect(getChangesMetaSince(original, [])).toEqual(history);
+            expect(saveIncremental(original)).toEqual(cursor);
+        } finally {
+            pending.discard();
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('rejects without consuming the original handle, epochs, observers, owner publications or snapshot capture', async () => {
         const original = seed();
         const before = epochs();

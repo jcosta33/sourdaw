@@ -30,6 +30,27 @@ Split out (a stance matching one carries that file, not this one): replay agains
    import/Save/clear/restore case; collector protection also covers finalized recovery storage. The serializer's
    revision travels with its data and the build is rejected if it changes across a serializer await; repeat the
    retained-buffer case with a held success.
+   Private-handle adoption (#5843, #6514) must not restart incremental export from its captured baseline. Drive
+   the real queue after a full baseline, an unsaved edit and Worker adoption: its payload alone requires the known
+   baseline dependencies, while baseline plus payload restores exact truth and heads. Restoring native-cursor
+   capture must fail `persistCrdtProject.spec.ts`'s omission check even when reconstruction stays green. Worker and
+   fallback capture heads describe their own bytes while live heads advance. Two IDB aborts retry identical bytes;
+   discarding an obsolete failed full bundle after membership returns to its original shape still retains the root
+   edit, and the next edit exports once. Generation/HMR fences invalidate discarded progress; descendant or foreign
+   frontiers outside active history cannot suppress output. Redundant history proves excess export, not data loss.
+   Carry actual native history, applied-frontier membership and a nonempty source-cursor baseline through
+   adoption, real Save, cold reload, then a later edit, Save and reload. A received but unapplied queued head
+   can be absent from `getMissingDeps`; missing-dependency output alone cannot establish applied ancestry.
+   Compare replay and later deltas against the final saved native bytes and authorized Save metadata changes,
+   rather than demanding pre-Save heads survive unchanged. Restoring cursor-consuming capture or accepting
+   an unapplied frontier must fail the native replay and omission controls.
+   An outgoing take Save must carry its native authority through the serialized queue (#5537, #5987).
+   In `src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts`,
+   hold a real predecessor at audio preflight, queue the outgoing Save, and install a different Automerge root
+   with the same persisted project ID and creation time while the old projection remains. Release the predecessor
+   and require the outgoing Save to refuse before migration or snapshot work, leave durable copies untouched, and
+   preserve dirty state and take debt. An ordinary edit on the same native authority still saves while the
+   replacement is loading.
 2. **Cold-cache consumers rebuild every durable reference and report owner results (#187, #4496).** Failure:
    export, mixdown, stems or recovery use a warm cache or a mocked owner, miss a buffer or swallow a failure.
    Probe: cold project with an ordinary clip and an active frozen print whose PCM has its own ID; both IDs reach
@@ -58,6 +79,12 @@ Split out (a stance matching one carries that file, not this one): replay agains
    Arrangement already wrote. Keep valid null, present-empty and legacy-alias controls, and keep restore
    validation with the owner: admitting a forward action to the session mirror must not add it to executable
    action discovery.
+   Admit the paired native document and JSON snapshot from one actual Save through the directory reader.
+   Separate successful IDB-native reload and JSON hydration do not prove the pair agrees. Capture an active
+   snapshot, make a later real track or clip edit, and retain a distinct inactive snapshot: the stored active
+   cache must match live owner state before the serialization revision is captured, and both saved forms must
+   reopen together. Keep inactive ownership, unmanifested-media and tamper refusals, and compare admitted
+   native bytes with the live export; ignoring cached rows or normalizing away the disagreement must fail.
 4. **Saved replay binds relationships between individually valid rows (#5064, #3328, #4108, #4519).** Failure: each
    captured row passes its own shape check but its owner, identity or operation is foreign, so replay writes into
    an unrelated clip, track, lane or action. Probe: from a genuine saved entry change one relation only: a

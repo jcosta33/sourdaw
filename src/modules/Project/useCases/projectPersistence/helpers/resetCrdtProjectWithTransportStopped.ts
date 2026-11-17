@@ -1,5 +1,5 @@
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { resetCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, resetCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { settleProjectSwitchPluginTeardown, unloadPluginsBeforeProjectSwitch } from '#/modules/PluginHost/useCases';
 import { countSettledTakes, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -59,10 +59,10 @@ const takeDiscardedNotice = 'Recording discarded — the take could not be saved
  * already released, so each lap tears the audio graph and the plugins down again
  * before it asks.
  *
- * `shouldContinue` is asked after every save and stop and again after every
- * teardown, because a newer project load can take over while the take commits
- * or the plugins unload and must not then be replaced by this one: the answer is
- * a refusal, which every caller already treats as an abort before the switch.
+ * `shouldContinue` is asked at entry, after every save and stop, and again
+ * after every teardown, because a newer project load can take over while the
+ * take commits or the plugins unload. Every caller treats that refusal as an
+ * abort before the switch.
  * The same answer is part of the check the reset runs at the switch, so a
  * caller that gives up while the reset awaits its durable steps keeps the
  * outgoing project: the reset withdraws its begun record and the helper answers
@@ -86,6 +86,11 @@ export async function resetCrdtProjectWithTransportStopped(
     shouldContinue: () => boolean,
     outgoingProject: OutgoingProjectDisposition = 'save-closed-takes'
 ): Promise<SettledProjectReset> {
+    if (!shouldContinue()) {
+        return { status: 'refused', reason: 'superseded' };
+    }
+    const expectedOutgoingProjectIdentity = captureProjectIdentity();
+
     // The settled-take count before this replacement's latest save: the takes up
     // to it are saved, or reported if that save failed, so they never hold the
     // switch again.
@@ -114,7 +119,7 @@ export async function resetCrdtProjectWithTransportStopped(
             return;
         }
         attemptedThrough = countSettledTakes();
-        takeUnsaved = !(await saveProject());
+        takeUnsaved = !(await saveProject({ expectedOutgoingProjectIdentity }));
     }
 
     await settleClosedTakes();
@@ -133,6 +138,9 @@ export async function resetCrdtProjectWithTransportStopped(
             return { status: 'refused', reason: 'superseded' };
         }
         await settleClosedTakes();
+        if (!shouldContinue()) {
+            return { status: 'refused', reason: 'superseded' };
+        }
         resetAudioGraph();
         await unloadPluginsBeforeProjectSwitch();
         if (!shouldContinue()) {

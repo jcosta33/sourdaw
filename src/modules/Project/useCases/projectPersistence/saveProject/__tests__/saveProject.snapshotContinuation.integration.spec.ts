@@ -1,3 +1,4 @@
+import { from, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -309,6 +310,91 @@ describe('saveProject snapshot continuation', () => {
             expect({ first: await first.saving, queued: await queued }).toEqual({ first: false, queued: true });
             expect(opened.persistenceFailures()).toEqual([`${REFUSAL_PREFIX}: the project revision moved`]);
             expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited during the first save']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'refuses a queued outgoing save whose native authority was replaced under the same persisted identity',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const [crdt, migration, transport, { unsavedClosedTakes }] = await Promise.all([
+                import('#/modules/CrdtDocument/useCases'),
+                import('../../migrateActiveProjectIdentity'),
+                import('#/modules/Transport/useCases'),
+                import('../../helpers/unsavedClosedTakes'),
+            ]);
+            const first = await startSaveHeldInPreflight(opened);
+            const trace = await traceSnapshotWork();
+            const migrate = vi.spyOn(migration, 'migrateActiveProjectIdentity');
+            const persist = vi.spyOn(crdt, 'persistCrdtProject');
+            const expectedOutgoingProjectIdentity = crdt.captureProjectIdentity();
+            const queued = opened.project.saveProject({ expectedOutgoingProjectIdentity });
+
+            try {
+                const projection = opened.projectStore.value;
+                const root = crdt.getCrdtDoc<{ projectMeta: { projectId: string; createdAt: number } }>('root');
+                if (!root || !projection) {
+                    throw new Error('expected a native root and its project projection');
+                }
+                crdt.replaceCrdtDoc({ id: 'root', doc: from(toJS(root)) });
+                expect(crdt.captureProjectIdentity()).not.toBe(expectedOutgoingProjectIdentity);
+                const successor = crdt.getCrdtDoc<{ projectMeta: { projectId: string; createdAt: number } }>('root');
+                expect(successor?.projectMeta).toMatchObject({
+                    projectId: projection.projectId,
+                    createdAt: projection.createdAt,
+                });
+                expect(opened.projectStore.value).toBe(projection);
+
+                // A new closed take would be acknowledged if the stale save were allowed to complete.
+                vi.spyOn(transport, 'countSettledTakes').mockReturnValue(1);
+                expect(unsavedClosedTakes.hasUnsaved()).toBe(true);
+            } finally {
+                first.release();
+            }
+
+            expect({ first: await first.saving, queued: await queued }).toEqual({ first: false, queued: false });
+            expect(migrate).not.toHaveBeenCalled();
+            expect(trace.events).toEqual([]);
+            expect(persist).not.toHaveBeenCalled();
+            const recentKey = opened.project.getProjectSnapshotKey(CREATED_AT);
+            expect(indexedDb.get('sourdaw-projects', 'projects', recentKey)).toBeUndefined();
+            expect(opened.project.getRecentProjects()).toEqual([]);
+            expect(opened.projectStore.value?.dirty).toBe(true);
+            expect(unsavedClosedTakes.hasUnsaved()).toBe(true);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'saves an edit under the same outgoing authority while the replacement is loading',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const { captureProjectIdentity } = await import('#/modules/CrdtDocument/useCases');
+            const first = await startSaveHeldInPreflight(opened);
+            const expectedOutgoingProjectIdentity = captureProjectIdentity();
+            const queued = opened.project.saveProject({ expectedOutgoingProjectIdentity });
+
+            try {
+                const project = opened.projectStore.value;
+                if (!project) {
+                    throw new Error('expected an outgoing project');
+                }
+                opened.projectStore.set({ ...project, loading: true, initialized: false });
+                opened.renameTrack(opened.track.id, 'Edited in the outgoing project');
+                expect(captureProjectIdentity()).toBe(expectedOutgoingProjectIdentity);
+            } finally {
+                first.release();
+            }
+
+            expect({ first: await first.saving, queued: await queued }).toEqual({ first: false, queued: true });
+            expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited in the outgoing project']);
+            expect(opened.project.getRecentProjects()).toMatchObject([
+                { key: opened.project.getProjectSnapshotKey(CREATED_AT) },
+            ]);
+            expect(opened.projectStore.value).toMatchObject({ dirty: false, loading: true, initialized: false });
         },
         CASE_TIMEOUT_MS
     );

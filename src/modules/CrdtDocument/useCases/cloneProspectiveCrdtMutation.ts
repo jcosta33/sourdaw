@@ -12,6 +12,7 @@ export function cloneProspectiveCrdtMutation<DocShape = Record<string, unknown>>
         input.message,
         input.snapshotTransaction,
         input.localSlots,
-        input.canonicalMutation
+        input.canonicalMutation,
+        input.preparationPolicy
     );
 }

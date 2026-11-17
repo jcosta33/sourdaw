@@ -8,6 +8,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { syncCurrentArrangementToStore } from '../../../arrangement/syncCurrentArrangementToStore';
+import { takeSnapshot } from '../../../arrangement/takeSnapshot';
+import { isHydratableProjectData } from '../../helpers/isHydratableProjectData';
 import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 
 import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
@@ -378,7 +381,8 @@ function makeWave(samples: Float32Array): File {
     return file;
 }
 
-async function createSavedDirectoryProject() {
+async function createSavedDirectoryProject(progress: (phase: string) => void = () => undefined) {
+    progress('setup module imports requested');
     const [
         audio,
         arrangement,
@@ -406,6 +410,7 @@ async function createSavedDirectoryProject() {
         import('#/modules/PluginHost/useCases'),
         import('@automerge/automerge'),
     ]);
+    progress('setup module imports completed');
     projectOriginalMediaPort.configure({
         capture: collaboration.captureProjectOriginalMedia,
         restore: collaboration.restoreProjectOriginalMedia,
@@ -423,7 +428,9 @@ async function createSavedDirectoryProject() {
         },
     });
     arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
+    progress('production handler import requested');
     const { getProductionCommandHandlerMaps } = await import('#/app/getProductionCommandHandlerMaps');
+    progress('production handler import completed');
     const handlerMaps = getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true });
     command.registerProductionCommandHandlers(handlerMaps);
     command.setActionHistoryMetadataPort({
@@ -436,13 +443,21 @@ async function createSavedDirectoryProject() {
     const { actionHistoryStore } = await import('#/modules/CrdtDocument/stores');
     stopHistoryMirror = actionHistoryStore.subscribe((state) => command.syncActionReplayMetadata(state?.entries ?? []));
     crdt.registerCrdtStorageRuntime();
+    progress('projection registration import requested');
     const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
+    progress('projection registration import completed');
     registerProjectSlotProjections();
+    progress('lifecycle registration import requested');
     const { registerProjectLifecycle } = await import('#/app/registerProjectLifecycle');
+    progress('lifecycle registration import completed');
     registerProjectLifecycle();
+    progress('device registration import requested');
     const { registerDeviceEnginePorts } = await import('#/app/registerDeviceEnginePorts');
+    progress('device registration import completed');
     registerDeviceEnginePorts();
+    progress('supporting registration import requested');
     const { registerSupportingServicePorts } = await import('#/app/registerSupportingServicePorts');
+    progress('supporting registration import completed');
     registerSupportingServicePorts();
     collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
     audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
@@ -456,7 +471,9 @@ async function createSavedDirectoryProject() {
         updatedAt: 1_700_000_000_000,
         dirty: true,
     });
+    progress('setup audio import requested');
     await arrangement.importAudioFile(makeWave(new Float32Array([0, 0.5, -0.5, 0])), { shouldContinue: () => true });
+    progress('setup audio import completed');
     const clip = arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)[0];
     if (!clip?.audioBufferId || !folder.root) {
         throw new Error('Expected real saved-directory audio');
@@ -465,12 +482,16 @@ async function createSavedDirectoryProject() {
         projectId: projectStores.projectStore.value?.projectId,
         captureWitness: crdt.captureDurableDocumentWitness,
     });
+    progress('setup first Save requested');
     expect(await project.saveProject({ requestFolderSelection: true })).toBe(true);
+    progress('setup first Save completed');
     const projectId = projectStores.projectStore.value?.projectId;
     if (!projectId) {
         throw new Error('Expected saved directory identity');
     }
+    progress('setup directory handle requested');
     const directory = await (await folder.root.getDirectoryHandle('projects')).getDirectoryHandle(projectId);
+    progress('setup directory handle completed');
     const { runProjectLoadTransaction } = await import('../../helpers/runProjectLoadTransaction');
     return {
         audio,
@@ -600,6 +621,154 @@ describe('project directory save and cold Recent open', () => {
         projectOriginalMediaPort.configure(null);
         vi.restoreAllMocks();
     });
+
+    it('reopens paired native and JSON saves after the active arrangement gains a real audio clip', async () => {
+        const started = performance.now();
+        const initialCpu = process.cpuUsage();
+        const progress = (phase: string): void => {
+            const elapsedMs = performance.now() - started;
+            const cpu = process.cpuUsage(initialCpu);
+            console.info('Paired directory phase', {
+                phase,
+                elapsedMs,
+                cpuMs: (cpu.user + cpu.system) / 1000,
+                remainingCaseBudgetMs: 70_000 - elapsedMs,
+            });
+        };
+        const runtime = await createSavedDirectoryProject(progress);
+        progress('setup completed');
+        const { arrangementStore } = runtime.projectStores;
+        syncCurrentArrangementToStore();
+        const arrangements = arrangementStore.value;
+        if (!arrangements) {
+            throw new Error('Expected real arrangement authority');
+        }
+        const inactive = takeSnapshot('inactive-control', 'Inactive media control');
+        arrangementStore.set({
+            ...arrangements,
+            arrangements: [...arrangements.arrangements, inactive],
+        });
+        progress('coherent control Save requested');
+        expect(await runtime.project.saveProject()).toBe(true);
+        progress('coherent control Save completed');
+        const binding = folder.bound.get('last');
+        if (!binding) {
+            throw new Error('Expected a real saved directory binding');
+        }
+        progress('coherent control reader import requested');
+        const { prepareProjectDirectoryRead } = await import('../../projectDirectoryRead');
+        progress('coherent control reader import completed');
+        progress('coherent control read requested');
+        const control = await prepareProjectDirectoryRead(binding, () => true);
+        progress('coherent control read completed');
+        expect(control.projectId).toBe(runtime.projectId);
+        expect(control.decodedAudioBuffers[runtime.clip.audioBufferId!]?.getChannelData(0)).toEqual(
+            runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })?.getChannelData(0)
+        );
+
+        progress('later owner audio import requested');
+        await runtime.arrangement.importAudioFile(makeWave(new Float32Array([0.25, -0.125, 0.75, 0])), {
+            shouldContinue: () => true,
+        });
+        progress('later owner audio import completed');
+        const liveTracks = structuredClone(runtime.arrangementStores.trackStore.value?.tracks);
+        const liveClips = liveTracks?.flatMap((track) => track.clips);
+        expect(liveClips).toHaveLength(2);
+        const secondClip = liveClips?.find((clip) => clip.id !== runtime.clip.id);
+        if (!secondClip?.audioBufferId || !secondClip.assetHash || !runtime.clip.audioBufferId) {
+            throw new Error('Expected the real import action to add distinct media');
+        }
+        expect(secondClip.audioBufferId).not.toBe(runtime.clip.audioBufferId);
+        expect(secondClip.assetHash).not.toBe(runtime.clip.assetHash);
+        flushAutomergeStorageWrites();
+        type MediaRoot = {
+            tracks: Pick<NonNullable<typeof runtime.arrangementStores.trackStore.value>, 'tracks'>;
+            arrangements: NonNullable<typeof arrangementStore.value>;
+        };
+        const rootBeforeSave = runtime.crdt.getCrdtDoc<MediaRoot>(runtime.crdt.DOC_PREFIX_ROOT);
+        if (!rootBeforeSave) {
+            throw new Error('Expected settled native authority before the paired Save');
+        }
+        const nativeBeforeSave = runtime.automerge.toJS(rootBeforeSave);
+        const inactiveBeforeSave = nativeBeforeSave.arrangements.arrangements.find((entry) => entry.id === inactive.id);
+        expect(inactiveBeforeSave).toBeDefined();
+        expect(nativeBeforeSave.tracks.tracks.flatMap((track) => track.clips)).toHaveLength(2);
+        expect(
+            nativeBeforeSave.arrangements.arrangements
+                .find((entry) => entry.id === arrangements.activeArrangementId)
+                ?.tracks.tracks.flatMap((track) => track.clips)
+        ).toHaveLength(1);
+        expect(
+            arrangementStore.value?.arrangements
+                .find((snapshot) => snapshot.id === arrangements.activeArrangementId)
+                ?.tracks.tracks.flatMap((track) => track.clips)
+        ).toHaveLength(1);
+        progress('second Save requested');
+        expect(await runtime.project.saveProject()).toBe(true);
+        progress('second Save completed');
+
+        progress('saved directory inspection import requested');
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        progress('saved directory inspection import completed');
+        progress('saved directory read requested');
+        const saved = await projectDirectory.read(runtime.directory, runtime.projectId);
+        progress('saved directory read completed');
+        const snapshot: unknown = JSON.parse(saved.snapshot);
+        if (!isHydratableProjectData(snapshot)) {
+            throw new Error('Expected the actual Save snapshot to pass JSON admission');
+        }
+        expect(snapshot.activeArrangementId).toBe(arrangements.activeArrangementId);
+        expect(snapshot.arrangement.tracks.flatMap((track) => track.clips)).toHaveLength(2);
+        expect(
+            snapshot.arrangements
+                ?.find((entry) => entry.id === arrangements.activeArrangementId)
+                ?.tracks?.tracks.flatMap((track) => track.clips)
+        ).toHaveLength(2);
+        expect(
+            snapshot.arrangements
+                ?.find((entry) => entry.id === inactive.id)
+                ?.tracks?.tracks.flatMap((track) => track.clips)
+                .map((clip) => clip.bufferId)
+        ).toEqual([runtime.clip.audioBufferId]);
+        progress('saved native admission requested');
+        const native = await runtime.crdt.prepareExternalProjectDocument(saved.document, runtime.projectId);
+        progress('saved native admission completed');
+        expect(native.rootMediaSlots.tracks).toEqual(nativeBeforeSave.tracks);
+        expect(native.rootMediaSlots.arrangements).toEqual(nativeBeforeSave.arrangements);
+        expect(nativeBeforeSave.arrangements.arrangements.find((entry) => entry.id === inactive.id)).toEqual(
+            inactiveBeforeSave
+        );
+        expect(saved.document.byteLength).toBeGreaterThan(0);
+        expect([...saved.pcm.keys()].sort()).toEqual([runtime.clip.audioBufferId, secondClip.audioBufferId].sort());
+        for (const id of saved.pcm.keys()) {
+            const samples = runtime.audio.getCachedAudioBuffer({ bufferId: id })?.getChannelData(0);
+            const bytes = saved.pcm.get(id)?.channels[0];
+            if (!samples || !bytes) {
+                throw new Error('Expected exact saved PCM for both media owners');
+            }
+            expect(bytes).toEqual(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
+        }
+        console.info('Paired directory save admission control', {
+            projectId: runtime.projectId,
+            validControl: control.projectId,
+            liveClipIds: liveClips?.map((clip) => clip.id),
+            pcmIds: [...saved.pcm.keys()],
+            nativeMediaSlots: native.rootMediaSlots,
+            snapshotArrangements: snapshot.arrangements,
+        });
+        progress('PCM inspection completed; runtime cache clear requested');
+        await runtime.audio.clearRuntimeCachedAudioBuffers();
+        progress('runtime cache clear completed');
+        runtime.crdt.resetCrdtProjectAuthority('Cold paired reopen');
+        runtime.helpers.resetModuleStoresToDefault();
+
+        progress('target cold paired directory admission requested');
+        await expect(runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).resolves.toBe(
+            true
+        );
+        progress('target cold paired directory admission completed');
+        expect(runtime.arrangementStores.trackStore.value?.tracks).toEqual(liveTracks);
+    }, 70_000);
 
     it('writes real document, PCM and original bytes; reopens them after session memory is removed', async () => {
         const [audio, arrangement, project, projectStores, arrangementStores, crdt, helpers, metadata, collaboration] =

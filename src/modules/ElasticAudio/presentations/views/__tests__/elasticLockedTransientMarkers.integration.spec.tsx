@@ -131,7 +131,9 @@ class MaterializationWorker {
                         { status: 'complete', ...result },
                         { transfer: result.changes.map((bytes) => bytes.buffer) }
                     );
-                    expect(result.changes.every((bytes) => bytes.byteLength === 0)).toBe(true);
+                    for (const bytes of result.changes) {
+                        expect(bytes.byteLength).toBe(0);
+                    }
                     if (!MaterializationWorker.recordedReceivingRealm) {
                         console.info('Controlled Worker host-clone receiving realm:', {
                             typedArray: response.changes.every((bytes) => bytes instanceof Uint8Array),
@@ -141,7 +143,9 @@ class MaterializationWorker {
                     }
                     // Node's clone returns host-realm views; a browser message adopts the receiver's intrinsics.
                     const changes = response.changes.map((bytes) => Uint8Array.from(bytes));
-                    expect(changes.every((bytes) => bytes.buffer instanceof ArrayBuffer)).toBe(true);
+                    for (const bytes of changes) {
+                        expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+                    }
                     this.onmessage?.(new MessageEvent('message', { data: { ...response, changes } }));
                 },
                 (error: unknown) => {
@@ -362,6 +366,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         materialization.mockImplementation(async (request) => {
             // Only transport is substituted; the same canonical helper and native codec remain real.
             const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+            expect(getHeads(seed)).toEqual(request.heads);
             const candidate = change(seed, { message: request.message }, (draft) =>
                 applyCanonicalStorageSlotMutation(draft, request.mutation)
             );

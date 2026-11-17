@@ -6,7 +6,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-import { applyChanges, change, clone, free, from, getBackend, getChanges, getHeads, save } from '@automerge/automerge';
+import {
+    applyChanges,
+    change,
+    clone,
+    free,
+    from,
+    getBackend,
+    getChanges,
+    getHeads,
+    save,
+    decodeChange,
+    getChangesMetaSince,
+    getMissingDeps,
+} from '@automerge/automerge';
 import { build, createLogger, createServer, loadConfigFromFile } from 'vite';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -232,7 +245,12 @@ describe('shipping prospective Worker public WASM assets', () => {
         );
 
         type Reply =
-            | { status: 'complete'; changes: Uint8Array<ArrayBuffer>[]; heads: string[] }
+            | {
+                  status: 'complete';
+                  changes: Uint8Array<ArrayBuffer>[];
+                  heads: string[];
+                  sequence?: { changeCount: number; operationCount: number };
+              }
             | { status: 'failed'; message: string };
         for (const origin of ['https://example.test/subdirectory/', 'app://sourdaw/']) {
             for (const encodingKind of ['compressed', 'uncompressed']) {
@@ -340,6 +358,92 @@ describe('shipping prospective Worker public WASM assets', () => {
                         expect(original.slot.count).toBe(0);
                     } finally {
                         free(actual);
+                    }
+                    postMessage.mockClear();
+                    const sequenceEncoding = clone(original, { actor });
+                    let sequenceSeed: Uint8Array<ArrayBuffer>;
+                    try {
+                        if (encodingKind === 'compressed') {
+                            sequenceSeed = Uint8Array.from(save(sequenceEncoding));
+                        } else {
+                            sequenceSeed = Uint8Array.from(getBackend(sequenceEncoding).saveNoCompress());
+                        }
+                    } finally {
+                        free(sequenceEncoding);
+                    }
+                    const target = { count: 1, text: 'Shipping sequence '.repeat(180) };
+                    Reflect.set(context, 'suppliedSeed', sequenceSeed);
+                    Reflect.set(
+                        context,
+                        'suppliedJson',
+                        JSON.stringify({
+                            heads: getHeads(original),
+                            actor,
+                            message: 'Capture arrangement',
+                            time: 7,
+                            preparationPolicy: 'bounded-native-sequence-v1',
+                            mutation: {
+                                kind: 'canonical-json-slot-v1',
+                                key: 'slot',
+                                baseValue: { count: 0 },
+                                value: target,
+                                documentPresence: { slot: { count: 0 } },
+                            },
+                        })
+                    );
+                    await scope.onmessage({
+                        data: vm.runInContext('({ ...JSON.parse(suppliedJson), seed: suppliedSeed })', context),
+                    });
+                    expect(fetchBinary).toHaveBeenCalledTimes(1);
+                    expect(postMessage).toHaveBeenCalledOnce();
+                    const sequenceReply = postMessage.mock.calls[0]?.[0];
+                    if (!sequenceReply || sequenceReply.status !== 'complete' || !sequenceReply.sequence) {
+                        throw new Error('Actual emitted Worker omitted its bounded native sequence');
+                    }
+                    expect(sequenceReply.changes.length).toBeGreaterThan(1);
+                    expect(sequenceReply.sequence.changeCount).toBe(sequenceReply.changes.length);
+                    const sequenceTransfer = postMessage.mock.calls[0]?.[1];
+                    expect(sequenceTransfer).toHaveLength(sequenceReply.changes.length);
+                    let replay = clone(original, { actor });
+                    let operations = 0;
+                    const sourceHistory = getChangesMetaSince(original, []);
+                    let previousHeads = getHeads(original);
+                    let sequenceNumber =
+                        Math.max(
+                            ...sourceHistory.filter((change) => change.actor === actor).map((change) => change.seq)
+                        ) + 1;
+                    let startOp = Math.max(...sourceHistory.map((change) => change.maxOp)) + 1;
+                    try {
+                        for (const [index, bytes] of sequenceReply.changes.entries()) {
+                            expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+                            expect(bytes.byteOffset).toBe(0);
+                            expect(bytes.byteLength).toBe(bytes.buffer.byteLength);
+                            expect(bytes.byteLength).toBeLessThanOrEqual(65_536);
+                            expect(bytes[8]).toBe(1);
+                            expect(sequenceTransfer?.[index]).toBe(bytes.buffer);
+                            const decoded = decodeChange(bytes);
+                            expect(decoded.ops.length).toBeLessThanOrEqual(1024);
+                            expect(decoded).toMatchObject({
+                                actor,
+                                seq: sequenceNumber++,
+                                startOp,
+                                message: 'Capture arrangement',
+                                time: 7,
+                                deps: previousHeads,
+                            });
+                            startOp += decoded.ops.length;
+                            operations += decoded.ops.length;
+                            [replay] = applyChanges(replay, [bytes]);
+                            previousHeads = getHeads(replay);
+                        }
+                        expect(operations).toBe(sequenceReply.sequence.operationCount);
+                        expect(replay.slot).toEqual(target);
+                        expect(getHeads(replay)).toEqual(sequenceReply.heads);
+                        expect(getMissingDeps(replay, getHeads(original))).toEqual([]);
+                        expect(getChangesMetaSince(replay, []).slice(0, sourceHistory.length)).toEqual(sourceHistory);
+                        expect(original.slot).toEqual({ count: 0 });
+                    } finally {
+                        free(replay);
                     }
                 } finally {
                     free(original);

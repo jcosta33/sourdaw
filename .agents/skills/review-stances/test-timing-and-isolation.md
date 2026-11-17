@@ -108,7 +108,23 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    A fresh-project green does not establish project-scale coverage: build a realistic current document and
    retained native history through real actions, then assert both from authoritative state. Record fixture
    size and history depth outside the measured interval without warming worker or replica state on the route.
-   Gate the native phases and their complete enclosing host tasks against the existing budgets.
+   Gate the native phases and their complete enclosing host tasks against the existing budgets. #5843's
+   introducing `afc6` retained a fresh single-clip 120-second fixture; its recorded five `kimi-k2.8` standard
+   draws did not demonstrate dense retained-history seed or publication cost. Their prompts are not retained,
+   so those records do not establish a prompting or tier failure. Include complete native seed encoding in the
+   cold handoff task and the late capped 200-entry action-history append/eviction in the atomic publication
+   task. Full-seed compression and unchanged supplemental-history traversal can independently exhaust the
+   task ceiling. Keep both inside the original completion interval and require complete enclosing-task proof;
+   changing one phase measure or moving history beyond completion does not bound either task.
+   An observational census keeps heads, history and JSON-size diagnostics on one settled root without
+   awaiting authorization serialization or warming a native encoder before the measured command.
+   Exercise cold Detect with current dense native history while a real public Save overlaps its pending
+   Worker. Attribute snapshot refresh, incremental export and their callers inside complete tasks and frames
+   over the union of both operations until both settle; retain the separate original Detect click-to-DOM wall
+   bound. Do not defer autosave, shrink the input or hold Detect for the entire asynchronous Save to manufacture
+   overlap. #3877 establishes Save durability and cold reopen, not this combined performance claim; #5843's
+   retained evidence leaves dense concurrent-Save coverage unverified. The older synchronous saved-snapshot
+   origins have no located associated PR or review record, so their missed stance remains unknown.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**

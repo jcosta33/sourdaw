@@ -31,7 +31,7 @@ import {
 } from '../../../models/ProjectData';
 import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
-import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
+import { takeSnapshot } from '../../arrangement/takeSnapshot';
 
 import { cvGateProjection } from './cvGateProjection';
 import { midiLearnProjection } from './midiLearnProjection';
@@ -150,7 +150,6 @@ export async function buildProjectData({
         return null;
     }
 
-    syncCurrentArrangementToStore();
     flushAutomergeStorageWrites();
     const snapshotRevision = captureProjectRevision();
 
@@ -174,6 +173,12 @@ export async function buildProjectData({
         return null;
     }
 
+    // Saving projects the active live state into the file. Capturing it in the
+    // document belongs to arrangement switching, not serialization.
+    const arrangements = arrState.arrangements.map((snapshot) =>
+        snapshot.id === arrState.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+    );
+
     // Collect all audioBufferIds referenced by the project (current track state
     // and every arrangement, including non-active ones).
     const allBufferIds = new Set<string>();
@@ -188,7 +193,7 @@ export async function buildProjectData({
     for (const id of collectOrdinaryBufferIds(tracks)) {
         ordinaryBufferIds.add(id);
     }
-    for (const arr of arrState.arrangements) {
+    for (const arr of arrangements) {
         for (const id of collectBufferIds(arr.tracks)) {
             allBufferIds.add(id);
         }
@@ -225,7 +230,7 @@ export async function buildProjectData({
     for (const device of collectYeastDeviceIds(tracks.tracks)) {
         yeastDeviceIds.add(device);
     }
-    for (const arrangement of arrState.arrangements) {
+    for (const arrangement of arrangements) {
         for (const device of collectYeastDeviceIds(arrangement.tracks.tracks)) {
             yeastDeviceIds.add(device);
         }
@@ -333,7 +338,7 @@ export async function buildProjectData({
         midiLearn,
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
-        arrangements: arrState.arrangements.map((snapshot) => {
+        arrangements: arrangements.map((snapshot) => {
             const snapshotMidi: Parameters<typeof serializeProjectMidi>[0] = {
                 notesByClipId: snapshot.midi.notesByClipId,
                 ccByClipId: snapshot.midi.ccByClipId,

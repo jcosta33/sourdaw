@@ -3,7 +3,12 @@ import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioSto
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, exportSdawFile, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRevision,
+    exportSdawFile,
+    persistCrdtProject,
+} from '#/modules/CrdtDocument/useCases';
 import { countSettledTakes } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -47,6 +52,12 @@ function assertProjectSnapshotAuthority(): void {
     }
 }
 
+function assertOutgoingProjectIdentity(expected: string | undefined): void {
+    if (expected !== undefined && captureProjectIdentity() !== expected) {
+        throw new Error('[saveProject] Outgoing project authority changed before save could finish');
+    }
+}
+
 /** Names the one authority that moved since the snapshot, so a refusal seen only in a remote log says which. */
 function describeSnapshotChange(
     persistedProject: ProjectStoreState,
@@ -70,6 +81,26 @@ function describeSnapshotChange(
         return 'the required audio durability receipt is no longer current';
     }
     return null;
+}
+
+function createSnapshotContinuationAssertion(
+    persistedProject: ProjectStoreState,
+    snapshotRevision: string,
+    expectedOutgoingProjectIdentity: string | undefined
+): (audioDurabilityReceipt?: AudioDurabilityReceipt) => void {
+    return (audioDurabilityReceipt) => {
+        assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
+        // A public project edit updates its store immediately but may defer
+        // the corresponding Automerge write until the next animation frame.
+        // Expose that write before every post-await authority check so the
+        // original serialized revision cannot certify a newer visible state.
+        flushAutomergeStorageWrites();
+        assertProjectSnapshotAuthority();
+        const change = describeSnapshotChange(persistedProject, snapshotRevision, audioDurabilityReceipt);
+        if (change !== null) {
+            throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
+        }
+    };
 }
 
 let pendingFolderSelection: { projectId: string; root: Promise<FileSystemDirectoryHandle> } | null = null;
@@ -220,13 +251,18 @@ export type SaveProjectOptions = {
      * the folder the project already bound.
      */
     requestFolderSelection?: boolean;
+    /** The native authority captured by a replacement before saving its outgoing closed takes. */
+    expectedOutgoingProjectIdentity?: string;
 };
 
-export function saveProject({ requestFolderSelection = false }: SaveProjectOptions = {}): Promise<boolean> {
+export function saveProject({
+    requestFolderSelection = false,
+    expectedOutgoingProjectIdentity,
+}: SaveProjectOptions = {}): Promise<boolean> {
     // The picker must start in the gesture turn, before the queued predecessor
     // settles or migration and plugin capture await.
     const selectedRoot = requestFolderSelection ? requestProjectFolderSelection() : null;
-    const save = runSaveAfter(latestSave, selectedRoot);
+    const save = runSaveAfter(latestSave, selectedRoot, expectedOutgoingProjectIdentity);
     latestSave = save;
     // Only a save still in flight is waited on: once it settles, fulfilled or
     // rejected, the next save starts at once.
@@ -244,17 +280,21 @@ export function saveProject({ requestFolderSelection = false }: SaveProjectOptio
 
 async function runSaveAfter(
     predecessor: Promise<boolean> | undefined,
-    selectedRoot: Promise<FileSystemDirectoryHandle> | null
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null,
+    expectedOutgoingProjectIdentity: string | undefined
 ): Promise<boolean> {
     if (predecessor) {
         // Only the order matters here; the predecessor's own caller receives
         // its result, rejection included, through the promise it was handed.
         await predecessor.catch(() => undefined);
     }
-    return persistProjectSnapshot(selectedRoot);
+    return persistProjectSnapshot(selectedRoot, expectedOutgoingProjectIdentity);
 }
 
-async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryHandle> | null): Promise<boolean> {
+async function persistProjectSnapshot(
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null,
+    expectedOutgoingProjectIdentity: string | undefined
+): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
     // stores hold. That pairing only survives while a project is open. After a
     // load replaced the CRDT authority and then failed, `projectStore` still
@@ -282,7 +322,7 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
 
     const project = projectStore.value;
     if (!project) {
-        return true;
+        return expectedOutgoingProjectIdentity === undefined;
     }
 
     // Key recent projects by a stable per-project id (createdAt, set once at
@@ -293,7 +333,9 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
     const folderSave = folderSaveAvailable();
 
     try {
+        assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
         await migrateActiveProjectIdentity();
+        assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
 
         // Capture each loaded native plugin's live state chunk into project truth
         // before serialization, so a reopened project restores editor-driven state
@@ -305,6 +347,7 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
         // may a plugin edit reported after its state was read (#5989).
         const pluginEditsAtCapture = pluginStateEditCount.read();
         const everyPluginCaptured = await captureEveryPluginState();
+        assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
 
         const current = projectStore.value;
         if (!current || current.createdAt !== project.createdAt) {
@@ -344,18 +387,11 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
             throw new Error('[saveProject] Project snapshot could not be built');
         }
 
-        const assertSnapshotContinuation = (audioDurabilityReceipt?: AudioDurabilityReceipt): void => {
-            // A public project edit updates its store immediately but may defer
-            // the corresponding Automerge write until the next animation frame.
-            // Expose that write before every post-await authority check so the
-            // original serialized revision cannot certify a newer visible state.
-            flushAutomergeStorageWrites();
-            assertProjectSnapshotAuthority();
-            const change = describeSnapshotChange(persistedProject, built.snapshotRevision, audioDurabilityReceipt);
-            if (change !== null) {
-                throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
-            }
-        };
+        const assertSnapshotContinuation = createSnapshotContinuationAssertion(
+            persistedProject,
+            built.snapshotRevision,
+            expectedOutgoingProjectIdentity
+        );
 
         let preflightReceipt: AudioDurabilityReceipt | undefined;
         try {
@@ -398,6 +434,7 @@ async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryH
                             audioDurabilityReceipt,
                             assertSnapshotContinuation,
                         });
+                        assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
                     }
 
                     // Awaited, so a rejected transaction reaches the catch below

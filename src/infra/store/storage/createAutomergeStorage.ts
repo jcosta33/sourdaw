@@ -58,6 +58,7 @@ type AutomergeStoragePortMutationInput = {
     message?: string;
     snapshotTransaction?: object;
     canonicalMutation?: CanonicalStorageSlotMutation;
+    preparationPolicy?: AutomergeStoragePreparationOptions['preparationPolicy'];
 };
 
 type PreparedStorageCandidate = {
@@ -75,6 +76,7 @@ type PreparedStorageReuse = {
     readonly candidate: PreparedStorageCandidate;
     readonly owner: object;
     readonly port: AutomergeStoragePort;
+    readonly preparationPolicy?: AutomergeStoragePreparationOptions['preparationPolicy'];
     matches(): boolean;
 };
 type PreparedStorageSet = {
@@ -301,6 +303,10 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     preserveLocalRuntimeStateOnRecompute?: true;
 };
 
+export type AutomergeStoragePreparationOptions = {
+    readonly preparationPolicy?: 'bounded-native-sequence-v1';
+};
+
 /**
  * An Automerge-backed adapter can force only its own rAF-deferred, unscoped
  * write to settle. The method is bound to the adapter's private commit owner;
@@ -311,7 +317,8 @@ export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
     prepareSet?(
         scope: object | undefined,
         value: TData,
-        stageValue?: (value: TData) => void
+        stageValue?: (value: TData) => void,
+        options?: AutomergeStoragePreparationOptions
     ): PreparedStorageSet | undefined;
 };
 
@@ -521,6 +528,17 @@ export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
         return activeAutomergeStorageMutationProvenance.owner;
     }
     return activeAutomergeStorageTransaction?.commitOwner;
+}
+
+/** Capture provenance for synchronous authority checks after an asynchronous preparation. */
+export function captureAutomergeStorageMutationAuthority(assertAuthority: () => void): () => void {
+    const owner = getCurrentAutomergeStorageMutationOwner();
+    return (): void => {
+        if (owner && !openAutomergeStorageCommitOwners.has(owner)) {
+            throw new Error('Captured Automerge storage owner is no longer open');
+        }
+        runWithAutomergeStorageMutationOwner(owner, assertAuthority);
+    };
 }
 
 /** Metadata accompanies this owner's real document effect; it never creates a publication by itself. */
@@ -1056,6 +1074,10 @@ function commitAutomergeStorageMutations(
                             performance.measure('automerge-storage-prepared-publication', {
                                 start: installed,
                                 end: installed,
+                                detail: {
+                                    preparationPolicy: prepared?.preparationPolicy,
+                                    primaryKey: preparedMutations[0]?.key,
+                                },
                             });
                             performance.clearMeasures('automerge-storage-prepared-publication');
                         }
@@ -2788,7 +2810,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     };
 
     const adapter: AutomergeStorageAdapter<TData> = {
-        prepareSet(scope, requestedValue, stageValue) {
+        prepareSet(scope, requestedValue, stageValue, preparationOptions) {
+            const preparationPolicy = preparationOptions?.preparationPolicy;
             const captured = scope ? preparationScopes.get(scope) : undefined;
             const port = getAutomergeStoragePort();
             if (
@@ -2876,6 +2899,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 (captured.message === undefined || typeof captured.message === 'string')
                     ? { kind: 'canonical-json-slot-v1', key, baseValue, value, documentPresence: presence }
                     : undefined;
+            if (preparationPolicy !== undefined && !canonicalMutation) {
+                return undefined;
+            }
             const changeFn = canonicalMutation
                 ? (draft: AutomergeStorageMutableDoc) => applyCanonicalStorageSlotMutation(draft, canonicalMutation)
                 : createAutomergeStorageChangeFn([mutation], true, () => undefined);
@@ -2895,6 +2921,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                             performance.measure('automerge-storage-materialization-handoff-task', {
                                 start: started,
                                 end: performance.now(),
+                                detail: { preparationPolicy, primaryKey: key },
                             });
                             performance.clearMeasures('automerge-storage-materialization-handoff-task');
                         }
@@ -2905,15 +2932,19 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     if (cloned || candidate) {
                         throw new Error('Prepared Automerge set was already cloned');
                     }
+                    const input: AutomergeStoragePortMutationInput = {
+                        docId,
+                        changedKeys: [key],
+                        changeFn,
+                        message: captured.message,
+                        snapshotTransaction: transaction.snapshotTransaction,
+                        canonicalMutation,
+                    };
+                    if (preparationPolicy !== undefined) {
+                        input.preparationPolicy = preparationPolicy;
+                    }
                     cloned = runWithAutomergeStorageMutationOwner(transaction.commitOwner, () =>
-                        cloneDocForMutation.call(port, {
-                            docId,
-                            changedKeys: [key],
-                            changeFn,
-                            message: captured.message,
-                            snapshotTransaction: transaction.snapshotTransaction,
-                            canonicalMutation,
-                        })
+                        cloneDocForMutation.call(port, input)
                     );
                     assertCurrent();
                 },
@@ -2958,6 +2989,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     pending.prepared = {
                         candidate: preparedCandidate,
                         port,
+                        preparationPolicy,
                         matches: () =>
                             pending.revision === revision &&
                             pending.value === value &&

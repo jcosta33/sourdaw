@@ -19,6 +19,9 @@
  *   → { id, type: 'compacted',     bundle: [string, Uint8Array][] }
  *   → { id, type: 'compactStale',  reason: string }
  *
+ *   ← { id, type: 'encodeIncrementals', documents: { id, seed, heads, frontier }[] }
+ *   → { id, type: 'incrementalsEncoded', documents: { id, heads, chunk }[] } (stateless)
+ *
  *   ← { id, type: 'inspectCheckpointRootMedia', rootBytes: Uint8Array }
  *   → { id, type: 'checkpointRootMediaInspected', audioBufferIds: string[] }
  *
@@ -26,6 +29,9 @@
  */
 
 import { type Doc, type Heads, getHeads, load, loadIncremental, merge, save } from '@automerge/automerge';
+
+import { type IncrementalEncodingInput } from '../models/NativeIncrementalEncoding';
+import { encodeNativeIncrementals } from '../repositories/encodeNativeIncrementals';
 
 import { inspectCheckpointRootMedia } from './checkpointRootMedia';
 
@@ -231,6 +237,7 @@ export function processCompactShadow({
 // ── Message dispatcher ────────────────────────────────────────────────────────
 
 type WorkerInMsg =
+    | { id: number; type: 'encodeIncrementals'; documents: IncrementalEncodingInput[] }
     | { id: number; type: 'loadBundle'; bundle: [string, Uint8Array][]; retainShadow?: boolean }
     | { id: number; type: 'mergeBundle'; current: [string, Uint8Array][]; incoming: [string, Uint8Array][] }
     | {
@@ -246,7 +253,10 @@ type WorkerInMsg =
 self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
     const { id } = data;
     try {
-        if (data.type === 'loadBundle') {
+        if (data.type === 'encodeIncrementals') {
+            const documents = encodeNativeIncrementals(data.documents);
+            self.postMessage({ id, type: 'incrementalsEncoded', documents });
+        } else if (data.type === 'loadBundle') {
             const bundle = new Map<string, Uint8Array>(data.bundle);
             const result = processLoad(bundle);
             if (data.retainShadow === true) {

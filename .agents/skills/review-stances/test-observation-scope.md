@@ -18,6 +18,12 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    real-store probe in `command-entry-and-state-oracles.md` probe 1. Removing the producer, reload fence or
    copy must fail the case.
    (#4036, #5578, #5064, #5157, #4564)
+   A successful reload does not prove an incremental exporter omitted captured history (#5843, #6514).
+   Decode the actual queue payload without its baseline and require missing dependencies, then reconstruct with
+   the baseline and require exact heads and truth. A native handle replaced by a private candidate can reset its
+   save cursor and export everything while a reconstruction-only test stays green. Restoring native-cursor queue
+   capture must fail that omission check; pair it with the byte/frontier and abandoned-full probes in
+   `project-integrity.md` probe 1.
 
 2. **Final equality hides a write followed by restoration.**
    Probe: count writes from a sentinel placed before the action and observe settled transitions, since
@@ -122,6 +128,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    For keyboard controls, assert owned effects and that unowned keys during playback cause no state change or
    default prevention. Follow surviving Tab and focus moves needs a browser case: read the affected end-to-end
    job that runs it on the head, since a component case cannot show it.
+   One accepted logical publication can follow multiple real Worker attempts. Retain every reply callback and
+   cancellation or stale outcome, distinguish responses from accepted publication, and never select the first,
+   last or fastest attempt or assume response singleton counts. Derive the required phase census independently
+   from actual Worker progress or native additions, accounting for supplemental changes; require a nonempty
+   complete set of sequential indices before checking its values. Removing phase emission must fail rather
+   than make `.every` vacuously pass. Indexed Node phase checks establish emission and admission coverage,
+   not browser enclosing-task or frame coverage.
    (#5243, #3548, #3170)
 
 8. **The evidence claims more than its scope.**
