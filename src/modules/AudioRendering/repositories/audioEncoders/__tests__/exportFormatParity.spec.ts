@@ -379,6 +379,8 @@ describe('real streaming codec bytes', () => {
 });
 
 describe('replayable converted real codec bytes', () => {
+    // Each depth resamples once for WAV and twice for FLAC. V8 coverage on
+    // PR runners can take these six bounded passes past the default timeout.
     it('independently decodes converted mono WAV/FLAC with identical seeded PCM and exact MD5', async () => {
         const decoder = await shippedDecoder();
         const samples = Float32Array.from(
@@ -411,7 +413,7 @@ describe('replayable converted real codec bytes', () => {
             }
             expect(error / (44100 - 512)).toBeLessThan(0.000001);
         }
-    });
+    }, 15000);
     it.each([
         [44100, 1],
         [44100, 2],
