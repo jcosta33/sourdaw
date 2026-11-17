@@ -22,14 +22,15 @@ use sourdaw_harness_fx::{
     CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, ECHO_FRAMES, GAIN_DEFAULT, GAIN_PARAM_ID,
     LATENCY_FRAMES, VST3_CLASS_ID,
 };
+use vst3::Steinberg::int32;
 use vst3::Steinberg::Vst::ProcessModes_;
 
 const SAMPLE_RATE: f64 = 48_000.0;
 const BLOCK_FRAMES: usize = 128;
 /// Enough whole blocks to carry the impulse, its echo, and silence after both.
 const BLOCKS: usize = (LATENCY_FRAMES + ECHO_FRAMES) / BLOCK_FRAMES + 2;
-const VST3_REALTIME: i32 = ProcessModes_::kRealtime as i32;
-const VST3_OFFLINE: i32 = ProcessModes_::kOffline as i32;
+const VST3_REALTIME: int32 = ProcessModes_::kRealtime as int32;
+const VST3_OFFLINE: int32 = ProcessModes_::kOffline as int32;
 
 /// The cdylib this crate's build produced, found the way
 /// `sourdaw-harness-tone`'s acceptance test finds its own: `deps/` first, the

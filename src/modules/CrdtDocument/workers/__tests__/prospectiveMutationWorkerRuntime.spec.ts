@@ -11,7 +11,6 @@ import {
     getChanges,
     getHeads,
     getObjectId,
-    load,
     merge,
     save,
 } from '@automerge/automerge';
@@ -135,7 +134,7 @@ describe('private canonical materialization Worker runtime', () => {
                 mutation,
             };
             const response = materializeProspectiveMutation(request);
-            const result = load<Document>(response.bytes, { actor });
+            const [result] = applyChanges(clone(initial, { actor }), response.changes);
             expect(getHeads(result)).toEqual(response.heads);
             const baseline = change(clone(initial, { actor }), { message: message || undefined, time: 7 }, (doc) =>
                 applyCanonicalStorageSlotMutation(doc, mutation)
@@ -170,7 +169,8 @@ describe('private canonical materialization Worker runtime', () => {
             heads: getHeads(initial),
             mutation: { ...mutation, value: mutation.baseValue },
         });
-        const result = load<Document>(response.bytes, { actor });
+        expect(response.changes).toEqual([]);
+        const [result] = applyChanges(clone(initial, { actor }), response.changes);
         expect(getHeads(result)).toEqual(response.heads);
         expect(getChanges(initial, result)).toEqual([]);
         expect(result).toEqual(initial);
