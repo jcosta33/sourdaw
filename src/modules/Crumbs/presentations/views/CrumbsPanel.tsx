@@ -234,17 +234,11 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     {mode === 'drum' ? (
                         <SectionCard title="Pad bay" detail="Trigger pads to play samples">
                             <PadGrid
-                                key={deviceId}
                                 pads={pads.pads}
                                 selectedIndex={pads.selectedPadIndex}
                                 onSelectPad={(index) => selectPad(deviceId, index)}
                                 onTriggerPad={(index) => triggerPadOn(deviceId, index, 100)}
-                                onTriggerPadOff={(padId) => {
-                                    const index = padStore.value?.[deviceId]?.pads.findIndex((pad) => pad.id === padId);
-                                    if (index !== undefined && index >= 0) {
-                                        void triggerPadOff(deviceId, index);
-                                    }
-                                }}
+                                onTriggerPadOff={(index) => triggerPadOff(deviceId, index)}
                                 onReorderPad={(from, to) => reorderPad(deviceId, from, to)}
                             />
                         </SectionCard>

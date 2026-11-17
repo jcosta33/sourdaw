@@ -5,7 +5,7 @@
  * the flash intensity is driven by the pad color, not by velocity.
  */
 
-import { type PointerEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Grid } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -19,14 +19,14 @@ type PadGridProps = {
     padPeaks?: (number[] | null)[];
     onSelectPad: (index: number) => void;
     onTriggerPad: (index: number) => void;
-    /** Release the preview by stable pad ID, even if its slot has changed. */
-    onTriggerPadOff?: (padId: number) => void;
+    /**
+     * Release the pad's note. Called on pointer/key up and on pointer leave so a
+     * non-one-shot or long-release voice is stopped when the user lets go, rather
+     * than sustaining until the engine envelope decides on its own.
+     */
+    onTriggerPadOff?: (index: number) => void;
     onReorderPad?: (fromIndex: number, toIndex: number) => void;
 };
-
-// A numeric input is the pointer ID. A string is the activation key.
-type PadInput = number | 'Enter' | ' ';
-type HeldPad = { input: PadInput; release: () => void };
 
 export const PadGrid = ({
     pads,
@@ -46,22 +46,14 @@ export const PadGrid = ({
     const flashTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
     // Stamps each flash so a superseded timer leaves the newer flash in place.
     const flashSequence = useRef(0);
-    const heldPads = useRef(new Map<number, HeldPad>());
+    // Pads currently held down (keyed by stable pad.id). A note-off must fire once
+    // per press: mouseUp and mouseLeave can both follow a single mouseDown, so the
+    // held set gates the release to exactly the first one that lands.
+    const heldPads = useRef<Set<number>>(new Set());
 
     useEffect(() => {
         const timers = flashTimers.current;
-        const holds = heldPads.current;
-        const releaseAll = () => {
-            for (const [padId, hold] of holds) {
-                holds.delete(padId);
-                hold.release();
-            }
-        };
-
-        window.addEventListener('blur', releaseAll);
         return () => {
-            window.removeEventListener('blur', releaseAll);
-            releaseAll();
             for (const timer of Object.values(timers)) {
                 clearTimeout(timer);
             }
@@ -83,17 +75,9 @@ export const PadGrid = ({
         }
     }, [pads]);
 
-    function handleTrigger(index: number, padId: number, input: PadInput): void {
-        if (heldPads.current.has(padId)) {
-            return;
-        }
-
-        // Keep the callback from the press, which belongs to the originating device.
-        heldPads.current.set(padId, { input, release: () => onTriggerPadOff?.(padId) });
-        if (typeof input === 'string') {
-            onSelectPad(index);
-        }
+    function handleTrigger(index: number, padId: number): void {
         onTriggerPad(index);
+        heldPads.current.add(padId);
 
         flashSequence.current += 1;
         const flashId = flashSequence.current;
@@ -116,14 +100,13 @@ export const PadGrid = ({
         }, 150);
     }
 
-    function handleRelease(padId: number, input: PadInput): void {
-        const hold = heldPads.current.get(padId);
-        if (hold?.input !== input) {
+    function handleRelease(index: number, padId: number): void {
+        // Only release a pad we actually triggered, and only once: drop it from the
+        // held set first so a trailing mouseLeave after mouseUp is a no-op.
+        if (!heldPads.current.delete(padId)) {
             return;
         }
-
-        heldPads.current.delete(padId);
-        hold.release();
+        onTriggerPadOff?.(index);
     }
 
     return (
@@ -149,10 +132,6 @@ export const PadGrid = ({
                     padBoxShadow = `0 0 12px ${pad.color}33`;
                 }
 
-                function releasePointer(event: PointerEvent<HTMLButtonElement>): void {
-                    handleRelease(pad.id, event.pointerId);
-                }
-
                 return (
                     <Button
                         variant="bare"
@@ -167,43 +146,26 @@ export const PadGrid = ({
                             boxShadow: padBoxShadow,
                         }}
                         onClick={() => onSelectPad(index)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onPointerDown={(e) => {
-                            if (e.button === 0) {
-                                handleTrigger(index, pad.id, e.pointerId);
-                            }
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleTrigger(index, pad.id);
                         }}
-                        onPointerUp={releasePointer}
-                        onPointerLeave={releasePointer}
-                        onPointerCancel={releasePointer}
-                        onLostPointerCapture={releasePointer}
+                        onMouseUp={() => handleRelease(index, pad.id)}
+                        onMouseLeave={() => handleRelease(index, pad.id)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                if (!e.repeat) {
-                                    handleTrigger(index, pad.id, e.key);
-                                }
+                                onSelectPad(index);
+                                handleTrigger(index, pad.id);
                             }
                         }}
                         onKeyUp={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                handleRelease(pad.id, e.key);
+                                handleRelease(index, pad.id);
                             }
                         }}
-                        onBlur={() => {
-                            const input = heldPads.current.get(pad.id)?.input;
-                            if (input !== undefined) {
-                                handleRelease(pad.id, input);
-                            }
-                        }}
-                        onDragStart={() => {
-                            const input = heldPads.current.get(pad.id)?.input;
-                            if (typeof input === 'number') {
-                                handleRelease(pad.id, input);
-                            }
-                            setDragFrom(index);
-                        }}
+                        onDragStart={() => setDragFrom(index)}
                         onDragOver={(e) => {
                             e.preventDefault();
                             setDragOver(index);
