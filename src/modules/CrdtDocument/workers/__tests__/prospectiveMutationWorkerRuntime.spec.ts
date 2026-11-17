@@ -87,6 +87,48 @@ describe('private canonical materialization Worker runtime', () => {
         expect(getHeads(replay)).toEqual(result.heads);
     });
 
+    it('preserves Detect confidence exactly across bounded changes with mixed scalars and peer edits', () => {
+        const base = { markers: [] };
+        const initial = from({ slot: base, collaborative: { title: 'Original', revision: 7 } }, { actor });
+        const peer = change(clone(initial, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
+            doc.collaborative.title = 'Peer edit';
+            doc.collaborative.revision = 340;
+        });
+        const source = merge(clone(initial, { actor }), peer);
+        const confidence = 0.9517297589061063;
+        const target = {
+            markers: [
+                { id: 'warp-auto', confidence, originalBeat: 2.453333333333333, locked: false, rank: 300 },
+                { id: 'warp-later', confidence, originalBeat: 4.125, locked: true, rank: -17 },
+            ],
+            description: 'native sequence '.repeat(300),
+        };
+        const request = {
+            seed: save(clone(source)),
+            actor,
+            heads: getHeads(source),
+            message: 'Detect transients',
+            time: 7,
+            mutation: {
+                kind: 'canonical-json-slot-v1' as const,
+                key: 'slot',
+                baseValue: base,
+                value: target,
+                documentPresence: { slot: base },
+            },
+        };
+        const single = materializeProspectiveMutation(request);
+        const [ordinary] = applyChanges(clone(source, { actor }), single.changes);
+        const bounded = materializeProspectiveMutation({ ...request, preparationPolicy: 'bounded-native-sequence-v1' });
+        expect(bounded.changes.length).toBeGreaterThan(1);
+        const [replayed] = applyChanges(clone(source, { actor }), bounded.changes);
+
+        expect(ordinary.slot).toEqual(target);
+        expect(replayed.slot).toEqual(ordinary.slot);
+        expect(replayed.collaborative).toEqual({ title: 'Peer edit', revision: 340 });
+        expect(getHeads(replayed)).toEqual(bounded.heads);
+    });
+
     it.each([
         {},
         { message: undefined, time: undefined },
