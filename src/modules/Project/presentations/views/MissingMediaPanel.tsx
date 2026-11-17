@@ -47,11 +47,17 @@ function rowKey(item: MissingMediaItem): string {
 
 export const MissingMediaPanel = (): ReactElement | null => {
     const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
+    if (missingMedia.items.length === 0) {
+        return null;
+    }
+    return <MissingMediaPanelContent items={missingMedia.items} />;
+};
+
+const MissingMediaPanelContent = ({ items }: { items: MissingMediaItem[] }): ReactElement => {
     const tracks = useStore(trackStore, defaultTrackState);
     const [open, setOpen] = useState(false);
     const [locatingBufferId, setLocatingBufferId] = useState<string | null>(null);
 
-    const items = missingMedia.items;
     const primaryRowByBuffer = new Map<string, string>();
     const eligibilityByBuffer = new Map<string, ReturnType<typeof readRelinkAudioSourceEligibility>>();
     for (const item of items) {
@@ -71,10 +77,6 @@ export const MissingMediaPanel = (): ReactElement | null => {
             setLocatingBufferId(null);
         }
     };
-
-    if (items.length === 0) {
-        return null;
-    }
 
     // The headline counts *files*, not references: a clip split in two is one
     // file the user has to find, not two. The row count can exceed it, so the
