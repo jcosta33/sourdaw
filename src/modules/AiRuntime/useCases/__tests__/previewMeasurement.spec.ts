@@ -2113,9 +2113,8 @@ describe('real caller sequential measurement opportunity', () => {
                     _f,
                     options: Parameters<typeof generateToolPlanningOutcome>[9]
                 ) => {
-                    const receipt = options?.history
-                        .flatMap((turn) => turn.receipts)
-                        .find((entry) => entry.callId === 'poor');
+                    const history: HostedTurnHistory | undefined = options?.history;
+                    const receipt = history?.flatMap((turn) => turn.receipts).find((entry) => entry.callId === 'poor');
                     expect(receipt).toMatchObject({
                         status: 'success',
                         revision: before.revision,
