@@ -5,7 +5,7 @@ export function isDeviceEditorHistoryTarget(target: EventTarget | null): boolean
     }
     if (
         target.closest(
-            'textarea, select, [contenteditable="true"], [role="textbox"], [role="combobox"], [data-canvas-editor]'
+            'textarea, select, [contenteditable="true"], [role="textbox"], [role="combobox"], [aria-haspopup]:not([aria-haspopup="false"])[aria-expanded="true"], [data-canvas-editor]'
         )
     ) {
         return false;

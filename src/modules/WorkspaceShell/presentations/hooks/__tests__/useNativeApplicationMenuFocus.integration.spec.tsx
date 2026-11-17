@@ -129,6 +129,7 @@ function NativeMenuHost() {
 }
 
 function DeviceHistoryHost() {
+    const [expanded, setExpanded] = useState(false);
     const project = projectStore.value;
     if (!project) {
         throw new Error('Expected an open project');
@@ -145,7 +146,16 @@ function DeviceHistoryHost() {
             otherSurfaceOwnsEscape={() => false}
             onClose={() => {}}
         >
-            <button>Device control</button>
+            <button aria-haspopup="listbox" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+                Device control
+            </button>
+            {expanded ? (
+                <div role="listbox" aria-label="Presets">
+                    <div role="option" aria-selected="true">
+                        Factory
+                    </div>
+                </div>
+            ) : null}
             <input aria-label="Preset name" />
         </FloatingDevicePanel>
     );
@@ -219,6 +229,10 @@ describe('Edit command focus in the workspace', () => {
                 act(click);
             }
             invoke(preset, 'Undo');
+            fireEvent.click(control);
+            expect(screen.getByRole('listbox', { name: 'Presets' })).toBeInTheDocument();
+            invoke(control, 'Undo');
+            fireEvent.click(control);
             expect(undo).not.toHaveBeenCalled();
             setClipSelection(['clip-two']);
             invoke(control, 'Cut');
