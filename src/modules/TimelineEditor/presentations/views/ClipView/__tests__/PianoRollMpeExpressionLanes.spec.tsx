@@ -197,6 +197,7 @@ vi.mock('#/components/ui/button', () => ({
         onClick,
         variant,
         size,
+        ref,
         className,
         'aria-pressed': ariaPressed,
         'aria-label': ariaLabel,
@@ -205,12 +206,14 @@ vi.mock('#/components/ui/button', () => ({
         onClick?: () => void;
         variant?: string;
         size?: string;
+        ref?: React.Ref<HTMLButtonElement>;
         className?: string;
         'aria-pressed'?: boolean;
         'aria-label'?: string;
     }) => (
         <button
             type="button"
+            ref={ref}
             onClick={onClick}
             className={className}
             data-variant={variant}
@@ -313,9 +316,7 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         ];
         renderWithExpressionViewOn();
 
-        expect(
-            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
         expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
     });
     it('returns to Velocity after the primary instrument stops offering the selected lane', () => {
@@ -337,15 +338,11 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         rerender(<PianoRoll {...defaultProps} />);
         expect(screen.getByText('pressure')).toBeInTheDocument();
         expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
-        expect(
-            screen.queryByText(
-                'Velocity available. Additional expression lanes depend on the primary track instrument.'
-            )
-        ).not.toBeInTheDocument();
+        expect(screen.queryByText('Velocity only for this instrument')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Return to Velocity' }));
+        expect(screen.getByLabelText('Toggle Expression View (I4)')).toHaveFocus();
+        expect(screen.getByLabelText('Toggle Expression View (I4)')).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByText('velocity')).toBeInTheDocument();
-        expect(
-            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
     });
 });

@@ -264,9 +264,7 @@ describe('PianoRollToolbar', () => {
                 onActiveExpressionLaneChange={vi.fn()}
             />
         );
-        expect(
-            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
         expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
     });
 
@@ -280,9 +278,7 @@ describe('PianoRollToolbar', () => {
                 mpeExpressionLanes={[]}
             />
         );
-        expect(
-            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Velocity only for this instrument')).toBeInTheDocument();
         expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
         expect(screen.queryByText('Pressure (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Slide (MPE)')).not.toBeInTheDocument();
