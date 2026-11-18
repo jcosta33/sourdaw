@@ -8,16 +8,31 @@ import {
     resolveMidiPitchWindow,
 } from '../../models/InlineMidiGeometry';
 import { type TimelineRenderer } from '../../models/RendererBackend';
-import {
-    type ClipRenderModel,
-    type TimelineRenderModel,
-    type TrackRenderModel,
-} from '../../models/TimelineRenderModel';
+import { type TimelineRenderModel, type TrackRenderModel } from '../../models/TimelineRenderModel';
 import { getRenderedTrackExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
+
+type ClipRow = Pick<TrackRenderModel, 'color' | 'clips'> & { top: number; height: number };
+
+function* getClipRows(model: TimelineRenderModel, dpr: number): Generator<ClipRow> {
+    let top = -model.scrollY * dpr;
+    for (const track of model.tracks) {
+        const height = track.height * dpr;
+        yield { top, height, color: track.color, clips: track.clips };
+        for (const [index, lane] of (track.variationLanes ?? []).entries()) {
+            yield {
+                top: top + height + index * VARIATION_LANE_HEIGHT * dpr,
+                height: VARIATION_LANE_HEIGHT * dpr,
+                color: track.color,
+                clips: lane.clips,
+            };
+        }
+        top += getRenderedTrackExtent(track) * dpr;
+    }
+}
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
@@ -459,140 +474,137 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             }
 
             // 2. Clips
-            function drawClip(clip: ClipRenderModel, track: TrackRenderModel, rowTop: number, th: number): void {
-                const cx1 = beatToX(clip.startBeat);
-                const cx2 = beatToX(clip.endBeat);
-                if (cx2 < 0 || cx1 > w) {
-                    return;
-                }
-                const clipTop = rowTop + 2 * dpr;
-                const clipBottom = rowTop + th - 2 * dpr;
-                const isSelected = selectedClipIds.includes(clip.id);
-                const alpha = clip.muted ? 0.35 : 1.0;
+            for (const track of getClipRows(model, dpr)) {
+                trackY = track.top;
+                const th = track.height;
+                const clipTop = trackY + 2 * dpr;
+                const clipBottom = trackY + th - 2 * dpr;
 
-                // Clip body
-                const color = clip.color || track.color || 'oklch(0.40 0.08 250)';
-                addRect(cx1, clipTop, cx2, clipBottom, color, alpha * 1);
-
-                // Clip top accent stripe
-                addRect(cx1, clipTop, cx2, clipTop + 3 * dpr, color, alpha);
-
-                // Selection highlight — warm metallic border + inner brightening
-                if (isSelected) {
-                    // Inner brightening overlay to make clip pop
-                    addRect(cx1, clipTop, cx2, clipBottom, '#ffffff', 0.06);
-                    // Warm metallic border (2px, high alpha)
-                    const bw = 2 * dpr;
-                    addRect(cx1, clipTop, cx2, clipTop + bw, 'oklch(0.62 0.05 55)', 0.75);
-                    addRect(cx1, clipTop, cx1 + bw, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
-                    addRect(cx2 - bw, clipTop, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
-                    addRect(cx1, clipBottom - bw, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
-                }
-
-                // MIDI notes. The note area, pitch window, repeats and bar sizes come from
-                // the shared law, so this pass draws what the Canvas renderer draws and
-                // what a click acts on.
-                if (clip.type === 'midi' && (clip.midiNotes.length > 0 || clip.isInlineEditing)) {
-                    const isInline = clip.isInlineEditing ?? false;
-                    const frame = resolveMidiClipFrame(isInline, cx1, cx2 - cx1, rowTop, th, dpr);
-                    if (isMidiFrameDrawable(frame, dpr)) {
-                        const pitchWindow = resolveMidiPitchWindow(clip.midiNotes, isInline, frame.contentHeight);
-                        if (isInline) {
-                            addRect(cx1, frame.contentTop, cx2, frame.contentTop + frame.contentHeight, '#000000', 0.2);
-                            for (let row = 0; row <= pitchWindow.pitchRange + 1; row++) {
-                                const lineY = frame.contentTop + row * pitchWindow.rowHeight;
-                                addRect(cx1, lineY - dpr * 0.25, cx2, lineY + dpr * 0.25, '#ffffff', 0.05);
-                            }
-                        }
-                        const noteAlpha = alpha * (isInline ? 0.8 : 0.22);
-                        forEachMidiNoteRect(
-                            clip,
-                            frame,
-                            pitchWindow,
-                            {
-                                inline: isInline,
-                                pixelScale: dpr,
-                                visibleBeats: { from: model.viewportStartBeat, to: model.viewportEndBeat },
-                            },
-                            (_note, noteX, noteY, noteW, noteH) => {
-                                if (noteX + noteW < 0 || noteX > w) {
-                                    return;
-                                }
-                                addRect(noteX, noteY, noteX + noteW, noteY + noteH, '#ffffff', noteAlpha);
-                            }
-                        );
+                for (const clip of track.clips) {
+                    const cx1 = beatToX(clip.startBeat);
+                    const cx2 = beatToX(clip.endBeat);
+                    if (cx2 < 0 || cx1 > w) {
+                        continue;
                     }
-                }
+                    const isSelected = selectedClipIds.includes(clip.id);
+                    const alpha = clip.muted ? 0.35 : 1.0;
 
-                // AUDIO waveform peaks
-                if (clip.type === 'audio' && clip.audioBufferId) {
-                    const w = cx2 - cx1;
-                    if (w >= 4) {
-                        const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
-                        if (buffer) {
-                            const midY = clipTop + (clipBottom - clipTop) / 2;
-                            const padding = 2 * dpr;
-                            const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
-                            const wfColor = '#ffffff';
-                            const occurrences = getAudioWaveformOccurrences({
-                                clip,
-                                model,
-                                sampleRate: buffer.sampleRate,
-                                bufferLength: buffer.length,
-                                maxBins: 2000,
-                            });
-                            for (const occurrence of occurrences) {
-                                const peaks = getCachedAudioBufferWaveformPeaks({
-                                    bufferId: clip.audioBufferId,
-                                    numBins: occurrence.numBins,
-                                    startSample: occurrence.span.startSample,
-                                    endSample: occurrence.span.endSample,
-                                });
-                                if (peaks.length === 0) {
-                                    continue;
+                    // Clip body
+                    const color = clip.color || track.color || 'oklch(0.40 0.08 250)';
+                    addRect(cx1, clipTop, cx2, clipBottom, color, alpha * 1);
+
+                    // Clip top accent stripe
+                    addRect(cx1, clipTop, cx2, clipTop + 3 * dpr, color, alpha);
+
+                    // Selection highlight — warm metallic border + inner brightening
+                    if (isSelected) {
+                        // Inner brightening overlay to make clip pop
+                        addRect(cx1, clipTop, cx2, clipBottom, '#ffffff', 0.06);
+                        // Warm metallic border (2px, high alpha)
+                        const bw = 2 * dpr;
+                        addRect(cx1, clipTop, cx2, clipTop + bw, 'oklch(0.62 0.05 55)', 0.75);
+                        addRect(cx1, clipTop, cx1 + bw, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
+                        addRect(cx2 - bw, clipTop, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
+                        addRect(cx1, clipBottom - bw, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
+                    }
+
+                    // MIDI notes. The note area, pitch window, repeats and bar sizes come from
+                    // the shared law, so this pass draws what the Canvas renderer draws and
+                    // what a click acts on.
+                    if (clip.type === 'midi' && (clip.midiNotes.length > 0 || clip.isInlineEditing)) {
+                        const isInline = clip.isInlineEditing ?? false;
+                        const frame = resolveMidiClipFrame(isInline, cx1, cx2 - cx1, trackY, th, dpr);
+                        if (isMidiFrameDrawable(frame, dpr)) {
+                            const pitchWindow = resolveMidiPitchWindow(clip.midiNotes, isInline, frame.contentHeight);
+                            if (isInline) {
+                                addRect(
+                                    cx1,
+                                    frame.contentTop,
+                                    cx2,
+                                    frame.contentTop + frame.contentHeight,
+                                    '#000000',
+                                    0.2
+                                );
+                                for (let row = 0; row <= pitchWindow.pitchRange + 1; row++) {
+                                    const lineY = frame.contentTop + row * pitchWindow.rowHeight;
+                                    addRect(cx1, lineY - dpr * 0.25, cx2, lineY + dpr * 0.25, '#ffffff', 0.05);
                                 }
-                                const positions = getAudioWaveformPeakPositions({
+                            }
+                            const noteAlpha = alpha * (isInline ? 0.8 : 0.22);
+                            forEachMidiNoteRect(
+                                clip,
+                                frame,
+                                pitchWindow,
+                                {
+                                    inline: isInline,
+                                    pixelScale: dpr,
+                                    visibleBeats: { from: model.viewportStartBeat, to: model.viewportEndBeat },
+                                },
+                                (_note, noteX, noteY, noteW, noteH) => {
+                                    if (noteX + noteW < 0 || noteX > w) {
+                                        return;
+                                    }
+                                    addRect(noteX, noteY, noteX + noteW, noteY + noteH, '#ffffff', noteAlpha);
+                                }
+                            );
+                        }
+                    }
+
+                    // AUDIO waveform peaks
+                    if (clip.type === 'audio' && clip.audioBufferId) {
+                        const w = cx2 - cx1;
+                        if (w >= 4) {
+                            const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
+                            if (buffer) {
+                                const midY = clipTop + (clipBottom - clipTop) / 2;
+                                const padding = 2 * dpr;
+                                const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
+                                const wfColor = '#ffffff';
+                                const occurrences = getAudioWaveformOccurrences({
                                     clip,
                                     model,
-                                    occurrence,
-                                    binCount: peaks.length,
+                                    sampleRate: buffer.sampleRate,
+                                    bufferLength: buffer.length,
+                                    maxBins: 2000,
                                 });
-                                for (let index = 0; index < peaks.length; index++) {
-                                    const peakHeight = (peaks[index] ?? 0) * amplitude;
-                                    if (peakHeight > 0.5) {
-                                        addRect(
-                                            positions[index]! * dpr,
-                                            midY - peakHeight,
-                                            positions[index + 1]! * dpr,
-                                            midY + peakHeight,
-                                            wfColor,
-                                            alpha * 0.18
-                                        );
+                                for (const occurrence of occurrences) {
+                                    const peaks = getCachedAudioBufferWaveformPeaks({
+                                        bufferId: clip.audioBufferId,
+                                        numBins: occurrence.numBins,
+                                        startSample: occurrence.span.startSample,
+                                        endSample: occurrence.span.endSample,
+                                    });
+                                    if (peaks.length === 0) {
+                                        continue;
+                                    }
+                                    const positions = getAudioWaveformPeakPositions({
+                                        clip,
+                                        model,
+                                        occurrence,
+                                        binCount: peaks.length,
+                                    });
+                                    for (let index = 0; index < peaks.length; index++) {
+                                        const peakHeight = (peaks[index] ?? 0) * amplitude;
+                                        if (peakHeight > 0.5) {
+                                            addRect(
+                                                positions[index]! * dpr,
+                                                midY - peakHeight,
+                                                positions[index + 1]! * dpr,
+                                                midY + peakHeight,
+                                                wfColor,
+                                                alpha * 0.18
+                                            );
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                // Clip name. Placed from the layout the Canvas2D renderer
-                // also uses, so switching backends loses no information.
-                addClipLabel(clip.name, cx1, cx2, rowTop);
-            }
-
-            trackY = -scrollY * dpr;
-            for (const track of model.tracks) {
-                const th = track.height * dpr;
-                for (const clip of track.clips) {
-                    drawClip(clip, track, trackY, th);
+                    // Clip name. Placed from the layout the Canvas2D renderer
+                    // also uses, so switching backends loses no information.
+                    addClipLabel(clip.name, cx1, cx2, trackY);
                 }
-                for (const [laneIndex, lane] of (track.variationLanes ?? []).entries()) {
-                    const laneTop = trackY + th + laneIndex * VARIATION_LANE_HEIGHT * dpr;
-                    for (const clip of lane.clips) {
-                        drawClip(clip, track, laneTop, VARIATION_LANE_HEIGHT * dpr);
-                    }
-                }
-                trackY += getRenderedTrackExtent(track) * dpr;
             }
 
             // 3. Bar / beat grid lines

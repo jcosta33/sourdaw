@@ -676,6 +676,40 @@ mod tests {
 
 Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(test)]` coverage. Add command tests beside the Rust module they exercise; test the body directly rather than routing through the desktop shell's IPC.
 
+### Hosted effect WAV export
+
+The [hosted effect export spec](../src/modules/AudioRendering/presentations/views/__tests__/hostedEffectExportSamples.integration.spec.tsx)
+requires macOS with a 44.1 or 48 kHz default audio output. Run it explicitly from the checkout you want
+to verify. It scans the harness CLAP effect in a disposable native profile and drives the mixdown
+dialog. The picker supplies a temporary destination and the native export transaction commits the
+WAV. The spec reads those file bytes and checks the stereo taps, the gain change, and the echo past
+the clip end against static-gain and zero-tail exports.
+
+Choose an artifact directory outside the checkout on its drive. With dependencies installed, run:
+
+```bash
+export SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS=/absolute/path/to/hosted-effect-export
+export SOURDAW_HOSTED_EFFECT_EXPORT_FIXTURES="$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS/target/debug"
+mkdir -p "$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS"
+
+pnpm guard --profile broad --show-output -- cargo build \
+    --package sourdaw-native --lib --features napi-addon --package sourdaw-harness-fx \
+    --target-dir "$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS/target"
+pnpm guard --profile focused --show-output -- cargo build \
+    --package sourdaw-native --bin sourdaw-plugin-scan-helper \
+    --target-dir "$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS/target"
+cp "$SOURDAW_HOSTED_EFFECT_EXPORT_FIXTURES/libsourdaw_native.dylib" \
+    "$SOURDAW_HOSTED_EFFECT_EXPORT_FIXTURES/sourdaw-native.node"
+
+pnpm guard --profile focused --show-output -- pnpm test:run \
+    src/modules/AudioRendering/presentations/views/__tests__/hostedEffectExportSamples.integration.spec.tsx
+```
+
+The default unit run skips this hardware-dependent case. The focused run requires the configured
+binaries and fails if the render cannot use the native engine. It copies the three verified WAVs to
+the artifact directory. Auto-detect displays the plugin's reported tail, and the dialog's two-second
+minimum determines the Auto WAV length for this fixture.
+
 ### Hosted browser quantum measurements
 
 Changes to the browser quantum harness, its measured DSP closure, or the committed WASM it loads trigger

@@ -74,6 +74,28 @@ type WaveformEditorProps = {
     audioBufferId?: string;
 };
 
+async function relinkDroppedAudio(input: {
+    sourceBufferId: string;
+    replacementBufferId: string;
+    fileName: string;
+    isCurrent: () => boolean;
+}): Promise<boolean | null> {
+    try {
+        const result = await relinkClipAudioSource({
+            sourceBufferId: input.sourceBufferId,
+            replacementBufferId: input.replacementBufferId,
+            shouldExecute: input.isCurrent,
+        });
+        return result.status === 'relinked';
+    } catch {
+        discardDecodedAudioFile(input.replacementBufferId);
+        if (input.isCurrent()) {
+            notifyUser(`Failed to relink "${input.fileName}"`, 'error');
+        }
+        return null;
+    }
+}
+
 type DrawWaveformInput = {
     canvas: HTMLCanvasElement;
     container: HTMLDivElement;
@@ -260,20 +282,15 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
             // source at write time.
             const sourceBufferId = audioBufferId ?? clipId;
             const sourceIsMissing = getCachedAudioBuffer({ bufferId: sourceBufferId }) === null;
-            let repaired: boolean;
+            let repaired: boolean | null;
             if (sourceIsMissing) {
-                try {
-                    const result = await relinkClipAudioSource({
-                        sourceBufferId,
-                        replacementBufferId: bufferId,
-                        shouldExecute: authority.isCurrent,
-                    });
-                    repaired = result.status === 'relinked';
-                } catch {
-                    discardDecodedAudioFile(bufferId);
-                    if (authority.isCurrent()) {
-                        notifyUser(`Failed to relink "${file.name}"`, 'error');
-                    }
+                repaired = await relinkDroppedAudio({
+                    sourceBufferId,
+                    replacementBufferId: bufferId,
+                    fileName: file.name,
+                    isCurrent: authority.isCurrent,
+                });
+                if (repaired === null) {
                     return;
                 }
             } else {
