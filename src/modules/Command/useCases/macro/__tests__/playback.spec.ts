@@ -5,6 +5,7 @@ import * as storageWrites from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane } from '#/modules/Automation/useCases';
 
+import { AppActionConflictError } from '../../../errors/AppActionExecutionError';
 import { type Macro } from '../../../models/Macro';
 import { macroStore } from '../../../stores/macroStore';
 import { playMacro } from '../playback';
@@ -106,6 +107,44 @@ describe('playMacro', () => {
         const secondOptions = executeAppActionMock.mock.calls[1]![1];
         expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
         expect(secondOptions?.groupLabel).toBe('Macro: Draw then trim');
+    });
+
+    describe('saved Save actions', () => {
+        it.each([{ type: 'saveProject' }, { type: 'saveProject', payload: {} }] as const)(
+            'forwards ordinary Save %j once',
+            async (action) => {
+                const saved: Macro = { ...macro, name: 'Save the project', actions: [action] };
+                macroStore.set({ macros: [structuredClone(saved)], recording: false, currentRecording: [] });
+
+                await expect(playMacro(saved.id)).resolves.toBeUndefined();
+
+                expect(executeAppActionMock).toHaveBeenCalledExactlyOnceWith(action, {
+                    groupId: expect.any(String),
+                    groupLabel: 'Macro: Save the project',
+                });
+                expect(macroStore.value?.macros).toEqual([saved]);
+            }
+        );
+
+        it('refuses private Save preparation before any action is dispatched', async () => {
+            const saved: Macro = {
+                ...macro,
+                actions: [
+                    { type: 'togglePlayback' },
+                    { type: 'saveProject', payload: { intent: 'prepareSnapshot' } },
+                    { type: 'toggleLoop' },
+                ],
+            };
+            macroStore.set({ macros: [structuredClone(saved)], recording: false, currentRecording: [] });
+
+            const outcome = await playMacro(saved.id).catch((error: unknown) => error);
+
+            expect(executeAppActionMock).not.toHaveBeenCalled();
+            expect(storageWrites.flushAutomergeStorageWrites).not.toHaveBeenCalled();
+            expect(outcome).toBeInstanceOf(AppActionConflictError);
+            expect(outcome).toMatchObject({ message: expect.stringContaining('saveProject') });
+            expect(macroStore.value?.macros).toEqual([saved]);
+        });
     });
 
     it('clears the recorded duplicateClipAt copy id so replay mints a fresh copy, not a no-op', async () => {
