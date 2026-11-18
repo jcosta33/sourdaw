@@ -95,6 +95,7 @@ function schemaFor(type, stack = new Set()) {
     }
 
     const stringIndex = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+    const hasWritableStringIndex = stringIndex !== undefined && (stringIndex.flags & ts.TypeFlags.Never) === 0;
     const properties = {};
     const required = [];
     for (const property of checker.getPropertiesOfType(type)) {
@@ -105,14 +106,14 @@ function schemaFor(type, stack = new Set()) {
             required.push(property.name);
         }
     }
-    if (Object.keys(properties).length === 0 && stringIndex) {
+    if (Object.keys(properties).length === 0 && hasWritableStringIndex) {
         return { type: 'record', values: schemaFor(stringIndex, nextStack) };
     }
     return {
         type: 'object',
         properties,
         required,
-        additionalProperties: stringIndex ? schemaFor(stringIndex, nextStack) : false,
+        additionalProperties: hasWritableStringIndex ? schemaFor(stringIndex, nextStack) : false,
     };
 }
 
