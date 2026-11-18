@@ -9,6 +9,13 @@ import { buildQualityLintArgv } from '../runLint';
 
 const root = resolve(import.meta.dirname, '../..');
 
+function isolateTypeScriptProject(directory: string, parent: string, files: string[]) {
+    writeFileSync(
+        join(directory, 'tsconfig.json'),
+        JSON.stringify({ extends: resolve(root, parent), files, include: [], exclude: [] })
+    );
+}
+
 describe('production quality lint', () => {
     it('observes typed, Vitest and Playwright failures from one real CLI pass', () => {
         const scripts = mkdtempSync(join(root, 'scripts/lint-quality-probe-'));
@@ -22,6 +29,14 @@ describe('production quality lint', () => {
             const sourceHelper = join(source, 'testing/sourceHelper.ts');
             mkdirSync(join(scripts, '__tests__'));
             mkdirSync(join(source, 'testing'));
+            // Type-aware lint must not enumerate other tests' transient files while they are removed.
+            isolateTypeScriptProject(scripts, 'scripts/tsconfig.json', [
+                'typed.ts',
+                'unit.spec.ts',
+                '__tests__/unitHelper.ts',
+            ]);
+            isolateTypeScriptProject(source, 'tsconfig.json', ['testing/sourceHelper.ts']);
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['browser.spec.ts']);
             writeFileSync(
                 runTime,
                 `
@@ -392,7 +407,10 @@ describe('production quality lint', () => {
                     'if (missing) { return; } // immutable missing guard skips the assertion',
                 ])
             );
-            expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
+            expect(
+                report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted(),
+                `Oxlint stdout:\n${result.stdout}\nOxlint stderr:\n${result.stderr}`
+            ).toEqual(
                 [
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
@@ -433,6 +451,7 @@ describe('production quality lint', () => {
         const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-run-'));
         try {
             const fixture = join(e2e, 'quietWindow.spec.ts');
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['quietWindow.spec.ts']);
             const ledgerPath = join(root, QUALITY_BUDGET);
             const ledger = readFileSync(ledgerPath);
             const formatted = `import { expect, test } from '../e2eTest';
