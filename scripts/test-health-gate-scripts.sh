@@ -434,6 +434,7 @@ const expectedValidationJobs = [
     'lint',
     'boundaries',
     'unit',
+    'unit-coverage',
     'tooling-unit',
     'smoke',
     'build',
@@ -1024,7 +1025,7 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(
-    unitRun === 'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
+    unitRun === 'node scripts/runIsolatedUnitShard.ts coverage-shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
     'unit shard must delegate its exact matrix shard through the isolated account context'
 );
 // Exercise the producer rather than searching source: helper metadata must never
@@ -1106,7 +1107,7 @@ expect(
     'required end-to-end jobs must run only the selected validated spec groups'
 );
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun.replace('coverage-shard', 'shard'),
     'nightly unit shard must delegate its exact matrix shard through the same isolated account as the required unit suite'
 );
 expect(
@@ -1286,7 +1287,7 @@ for (const [file, parsed] of Object.entries(workflowsByFile)) {
     }
 }
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun.replace('coverage-shard', 'shard'),
     'nightly unit Run shard must reach the test:run wrapper that applies the census exclusion through the isolated account'
 );
 expect(
