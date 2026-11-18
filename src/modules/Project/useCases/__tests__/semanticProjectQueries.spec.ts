@@ -390,6 +390,116 @@ describe('semantic project queries', () => {
         );
     });
 
+    it('keeps expression evidence identities distinct across base note fragments in one loop pass', () => {
+        const track = createTrack({ id: 'comp-track', name: 'Comp', kind: 'midi' });
+        const clip = {
+            id: 'comp-clip',
+            trackId: track.id,
+            name: 'Comp',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 12,
+            loopEnabled: true,
+            loopLength: 4,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        track.clips = [clip];
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        const baseNote = {
+            id: 'base-note',
+            pitch: 67,
+            startBeat: 0,
+            duration: 4,
+            velocity: 80,
+            expression: { pressure: [{ offsetBeats: 1.25, value: 40 }] },
+        };
+        setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [baseNote] } });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'comp-lane',
+                    trackId: track.id,
+                    takes: [
+                        {
+                            id: 'frozen-take',
+                            clipId: clip.id,
+                            name: 'Frozen take',
+                            startBeat: 0,
+                            endBeat: 12,
+                            selected: true,
+                            midiSource: {
+                                sourceClipId: 'frozen-source',
+                                sourceEntryBeat: 0,
+                                sourceEndBeat: 4,
+                                phaseHeadBeat: 4.5,
+                                passLengthBeats: 4,
+                                rows: {
+                                    notes: {
+                                        present: true,
+                                        value: [
+                                            {
+                                                id: 'frozen-note',
+                                                pitch: 60,
+                                                startBeat: 0,
+                                                duration: 1.25,
+                                                velocity: 90,
+                                            },
+                                        ],
+                                    },
+                                    controlChanges: { present: false, value: [] },
+                                    pitchBends: { present: false, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 4.5, endBeat: 5, takeId: 'frozen-take' },
+                        { startBeat: 5.5, endBeat: 6, takeId: 'frozen-take' },
+                    ],
+                },
+            ],
+        });
+        const parsed = bindMusicalContentQuery(
+            { type: 'musical-content', filters: { stableId: clip.id, startBeat: 5, endBeat: 8 } },
+            captureMusicalContentBinding()
+        );
+        if (parsed.status !== 'valid') {
+            throw new Error('Comp gap query was refused');
+        }
+
+        const { items, nextCursor } = querySemanticProject(parsed.input);
+
+        expect(nextCursor).toBeNull();
+        expect(items.find((item) => item.kind === 'note' && item.noteId === 'frozen-note')).toMatchObject({
+            ownerClipId: 'frozen-source',
+            takeId: 'frozen-take',
+            timelineStartBeat: 5.5,
+        });
+        const notes = items.filter((item) => item.kind === 'note' && item.noteId === baseNote.id);
+        expect(
+            notes.map((row) => [row.timelineStartBeat, row.timelineDuration, row.viewId, row.occurrenceIndex])
+        ).toEqual([
+            [5, 0.5, baseNote.id, 1],
+            [6, 2, baseNote.id, 1],
+        ]);
+        const noteIds = notes.map((row) => row.id);
+        expect(new Set(noteIds).size).toBe(2);
+        const expression = items.filter((item) => item.kind === 'expression' && item.noteId === baseNote.id);
+        expect(expression.map((row) => [row.dimension, row.offsetBeats, row.value])).toEqual([
+            ['pressure', 1.25, 40],
+            ['pressure', 1.25, 40],
+        ]);
+        const expressionIds = expression.map((row) => row.id);
+        expect(new Set(expressionIds).size, JSON.stringify({ noteIds, expressionIds })).toBe(2);
+        expect(expressionIds).toEqual(noteIds.map((id) => `${id.slice(0, -1)},"pressure",0]`));
+        expect(querySemanticProject(parsed.input).items).toEqual(items);
+    });
+
     it('returns frozen note ownership with controller and bend carry from the same projected take window', () => {
         const track = createTrack({ id: 'take-track', name: 'Take', kind: 'midi' });
         const clip = {
