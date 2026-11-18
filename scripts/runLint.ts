@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
+import { parseQualityReport, QUALITY_CONFIG, readQualityBudget, reconcileQualityBudget } from './lintQualityBudget.ts';
+
 type Options = {
     files: string[];
     fix: boolean;
@@ -282,15 +284,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-function readIgnorePatterns(rootDir: string): string[] {
-    const parsed = ts.parseConfigFileTextToJson(
-        PUBLIC_PLUGINS_CONFIG,
-        readFileSync(resolve(rootDir, PUBLIC_PLUGINS_CONFIG), 'utf8')
-    );
+function readIgnorePatterns(rootDir: string, configFile: string): string[] {
+    const parsed = ts.parseConfigFileTextToJson(configFile, readFileSync(resolve(rootDir, configFile), 'utf8'));
     const config: unknown = parsed.config;
     const patterns: unknown = isRecord(config) ? config.ignorePatterns : undefined;
     if (parsed.error !== undefined || !Array.isArray(patterns) || !patterns.every((p) => typeof p === 'string')) {
-        throw new Error(`${PUBLIC_PLUGINS_CONFIG} has no readable ignorePatterns list`);
+        throw new Error(`${configFile} has no readable ignorePatterns list`);
     }
     return patterns;
 }
@@ -301,7 +300,11 @@ function readIgnorePatterns(rootDir: string): string[] {
  * fewer, so the count is compared exactly rather than against a tolerance that
  * would let a whole skipped target through.
  */
-export function expectedPluginFiles(targets: string[], rootDir: string = process.cwd()): string[] {
+export function expectedPluginFiles(
+    targets: string[],
+    rootDir: string = process.cwd(),
+    config: string = PUBLIC_PLUGINS_CONFIG
+): string[] {
     const result = spawnSync('git', ['ls-files', '-z', '--', ...targets], {
         cwd: rootDir,
         encoding: 'utf8',
@@ -310,26 +313,27 @@ export function expectedPluginFiles(targets: string[], rootDir: string = process
     if (result.error !== undefined || result.status !== 0) {
         throw new Error('git ls-files failed while listing the plugin pass targets');
     }
-    return unignoredSourceFiles([...new Set(result.stdout.split('\0'))], readIgnorePatterns(rootDir));
+    return unignoredSourceFiles([...new Set(result.stdout.split('\0'))], readIgnorePatterns(rootDir, config));
 }
 
 export function assertPluginCoverage(
     linted: number | undefined,
     expectedFiles: readonly string[],
-    targets: readonly string[]
+    targets: readonly string[],
+    label = 'oxlint-plugins'
 ): void {
     if (linted === undefined) {
-        throw new Error('oxlint-plugins reported no linted file count, so its coverage cannot be verified');
+        throw new Error(`${label} reported no linted file count, so its coverage cannot be verified`);
     }
     if (linted < expectedFiles.length) {
         throw new Error(
-            `oxlint-plugins linted ${linted} files but ${expectedFiles.length} tracked source files lie under its targets`
+            `${label} linted ${linted} files but ${expectedFiles.length} tracked source files lie under its targets`
         );
     }
     for (const target of targets) {
         const contributes = expectedFiles.some((file) => file === target || file.startsWith(`${target}/`));
         if (!contributes) {
-            throw new Error(`oxlint-plugins target ${target} contributes no tracked source file to the pass`);
+            throw new Error(`${label} target ${target} contributes no tracked source file to the pass`);
         }
     }
 }
@@ -361,10 +365,64 @@ function checkPublicPlugins(options: Pick<Options, 'files' | 'full'>): void {
     console.log(`lint: oxlint-plugins passed (${elapsed})`);
 }
 
+export function buildQualityLintArgv(targets: string[], env: NodeJS.ProcessEnv = process.env): string[] {
+    return [
+        'exec',
+        'oxlint',
+        `--config=${QUALITY_CONFIG}`,
+        '--disable-nested-config',
+        '--no-error-on-unmatched-pattern',
+        `--threads=${lintThreads(env)}`,
+        '--format=json',
+        ...targets,
+    ];
+}
+
+function checkQuality(options: Options, targets: string[], budget: ReturnType<typeof readQualityBudget>): void {
+    const root = process.cwd();
+    const label = 'oxlint-quality';
+    console.log(`lint: ${label} started`);
+    const started = performance.now();
+    const result = spawnSync('pnpm', buildQualityLintArgv(targets), {
+        encoding: 'utf8',
+        maxBuffer: 256 * 1024 * 1024,
+    });
+    if (result.error !== undefined) {
+        throw new Error(`${label} failed to start or collect output: ${result.error.message}`);
+    }
+    process.stderr.write(result.stderr);
+    if (result.status !== 0 && result.status !== 1) {
+        process.stderr.write(result.stdout);
+        throw new Error(`${label} did not complete: ${result.signal ?? String(result.status)}`);
+    }
+    let report;
+    try {
+        report = parseQualityReport(result.stdout, root);
+    } catch (error) {
+        process.stderr.write(result.stdout);
+        throw error;
+    }
+    if (options.full) {
+        assertPluginCoverage(report.fileCount, expectedPluginFiles(targets, root, QUALITY_CONFIG), targets, label);
+    }
+    const verdict = reconcileQualityBudget(report, budget, options.full ? undefined : targets, root);
+    for (const diagnostic of verdict.diagnostics) {
+        console.error(diagnostic);
+    }
+    if (verdict.failed || (result.status !== 0 && !verdict.hadErrors)) {
+        throw new Error(`${label} failed`);
+    }
+    console.log(`lint: ${label} passed (${Math.round(performance.now() - started)} ms)`);
+}
+
 function main(): number {
     try {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? [...FULL_OXLINT_TARGETS] : options.files;
+        if (existsSync('oxlint-suppressions.json')) {
+            throw new Error('oxlint-suppressions.json would bypass the explicit lint quality budget');
+        }
+        const qualityBudget = readQualityBudget(process.cwd());
         ensureServerDependencies(targets);
         runStep('oxlint', buildOxlintArgv(options, targets));
         if (!options.fix) {
@@ -378,6 +436,7 @@ function main(): number {
             // final bytes without introducing another writer or fix loop.
             checkPublicPlugins(options);
         }
+        checkQuality(options, targets, qualityBudget);
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);

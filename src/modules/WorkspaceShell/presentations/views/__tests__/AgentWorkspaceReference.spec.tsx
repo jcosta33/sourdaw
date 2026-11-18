@@ -27,6 +27,8 @@ vi.mock('#/modules/AiRuntime/presentations/views', () => ({
 
 const SAMPLE_RATE = 48_000;
 const FILE_NAME = 'Reference Master.wav';
+// V8 coverage can push the real audio measurement past Testing Library's one-second wait.
+const REFERENCE_SUMMARY_TIMEOUT = 4_000;
 
 /** Four seconds of a 1 kHz stereo sine at half scale. */
 function sineBuffer(): AudioBuffer {
@@ -72,7 +74,9 @@ describe('the reference controls of the agent workspace', () => {
         expect(screen.getByText('No reference loaded')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Load reference…' }));
 
-        const summary = await screen.findByTestId('agent-reference-summary');
+        const summary = await screen.findByTestId('agent-reference-summary', undefined, {
+            timeout: REFERENCE_SUMMARY_TIMEOUT,
+        });
         expect(summary.textContent).toMatch(/^Reference Master\.wav · -?\d+\.\d LUFS$/u);
         expect(agentReferenceStore.value?.reference?.name).toBe(FILE_NAME);
     });
@@ -83,7 +87,7 @@ describe('the reference controls of the agent workspace', () => {
         mocks.decodeAudioFileBuffer.mockResolvedValue(sineBuffer());
         render(<AgentWorkspace />);
         fireEvent.click(screen.getByRole('button', { name: 'Load reference…' }));
-        await screen.findByTestId('agent-reference-summary');
+        await screen.findByTestId('agent-reference-summary', undefined, { timeout: REFERENCE_SUMMARY_TIMEOUT });
 
         fireEvent.click(screen.getByRole('button', { name: 'Clear reference' }));
 

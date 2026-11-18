@@ -379,18 +379,24 @@ describe('real streaming codec bytes', () => {
 });
 
 describe('replayable converted real codec bytes', () => {
-    it('independently decodes converted mono WAV/FLAC with identical seeded PCM and exact MD5', async () => {
-        const decoder = await shippedDecoder();
-        const samples = Float32Array.from(
-            { length: 48000 },
-            (_, frame) => 0.2 * Math.sin((2 * Math.PI * 1000 * frame) / 48000)
-        );
-        const source = createDeliveryPcmSource({
-            source: { length: samples.length, numberOfChannels: 2, sampleRate: 48000, getChannelData: () => samples },
-            sampleRate: 44100,
-            channels: 1,
-        });
-        for (const depth of [16, 24] as const) {
+    it.each([16, 24] as const)(
+        'independently decodes converted mono %i-bit WAV/FLAC with identical seeded PCM and exact MD5',
+        async (depth) => {
+            const decoder = await shippedDecoder();
+            const samples = Float32Array.from(
+                { length: 48000 },
+                (_, frame) => 0.2 * Math.sin((2 * Math.PI * 1000 * frame) / 48000)
+            );
+            const source = createDeliveryPcmSource({
+                source: {
+                    length: samples.length,
+                    numberOfChannels: 2,
+                    sampleRate: 48000,
+                    getChannelData: () => samples,
+                },
+                sampleRate: 44100,
+                channels: 1,
+            });
             const dither = { mode: 'tpdf' as const, seed: 7821 };
             const wav = await captureStream((write) => audioBufferToWav(source, depth, undefined, dither, { write }));
             const flac = await captureStream((write) => audioBufferToFlac(source, depth, undefined, dither, { write }));
@@ -411,7 +417,7 @@ describe('replayable converted real codec bytes', () => {
             }
             expect(error / (44100 - 512)).toBeLessThan(0.000001);
         }
-    });
+    );
     it.each([
         [44100, 1],
         [44100, 2],

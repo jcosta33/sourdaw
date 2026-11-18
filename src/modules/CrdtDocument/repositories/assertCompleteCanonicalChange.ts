@@ -26,7 +26,18 @@ export function assertCompleteCanonicalChange(bytes: Uint8Array<ArrayBuffer>): v
             // Native insertion accepts a corrupt checksum; the public decoder
             // recomputes the change hash, including for compressed changes.
             const checksum = Array.from(bytes.subarray(4, 8), (value) => value.toString(16).padStart(2, '0')).join('');
-            if (!decodeChange(bytes).hash.startsWith(checksum)) {
+            let hash: string;
+            const started = performance.now();
+            try {
+                hash = decodeChange(bytes).hash;
+            } finally {
+                performance.measure('automerge-prospective-vendor-decode-task', {
+                    start: started,
+                    end: performance.now(),
+                });
+                performance.clearMeasures('automerge-prospective-vendor-decode-task');
+            }
+            if (!hash.startsWith(checksum)) {
                 throw new Error('Prospective mutation Worker returned an invalid change checksum');
             }
             return;
