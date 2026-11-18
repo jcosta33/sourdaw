@@ -95,6 +95,71 @@ describe('canonical roles at the provider continuation boundary', () => {
         expect(result.receipts[0]).toMatchObject({ status: 'success', toolName: 'project.query' });
     });
 
+    it('sends a retryable stale musical cursor refusal to the next provider turn', async () => {
+        const musicalContentBinding = captureMusicalContentBinding();
+        const filters = { stableId: 'c', startBeat: 0, endBeat: 4 };
+        const { nextCursor } = querySemanticProject({
+            ...musicalContentBinding,
+            type: 'musical-content',
+            filters,
+            page: { limit: 1 },
+        });
+        if (nextCursor === null) {
+            throw new Error('Expected a real cursor issued for the original musical window');
+        }
+        const requestTurn = vi
+            .fn<Parameters<typeof runApplicationOwnedToolLoop>[0]['requestTurn']>()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'stale-page',
+                        name: 'project.query',
+                        arguments: {
+                            type: 'musical-content',
+                            filters: { ...filters, endBeat: 2 },
+                            page: { limit: 1, cursor: nextCursor },
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'stale-musical-cursor',
+            musicalContentBinding,
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result.status).toBe('complete');
+        expect(requestTurn).toHaveBeenCalledTimes(2);
+        const nextTurn = requestTurn.mock.calls[1]?.[0];
+        expect(nextTurn?.turn).toBe(2);
+        const receiptJson = nextTurn?.receiptContext?.split('\n').at(-1);
+        if (receiptJson === undefined) {
+            throw new Error('Expected serialized refusal evidence in the provider continuation');
+        }
+        const receiptContext: unknown = JSON.parse(receiptJson);
+        expect(receiptContext).toMatchObject({
+            receipts: [
+                {
+                    callId: 'stale-page',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'failure',
+                    revision: null,
+                    data: null,
+                    error: {
+                        code: 'musical-content-refused',
+                        safeMessage: 'Musical page cursor is stale or invalid; start a fresh request.',
+                        retryable: true,
+                    },
+                },
+            ],
+        });
+    });
+
     it.each([false, true])(
         'requires complete real musical pages before a fresh proposal (selected: %s)',
         async (selected) => {
