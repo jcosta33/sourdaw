@@ -2,10 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
-export const COMPLEXITY_RULE = 'eslint/complexity';
+const COMPLEXITY_RULE = 'eslint/complexity';
+const OXLINT = fileURLToPath(new URL('../node_modules/oxlint/bin/oxlint', import.meta.url));
 
 type FilePair = { path: string; base: string; head: string };
 type Snapshot = { file: FilePair; source: string; scores: Map<string, number>; bytes: number };
@@ -100,7 +102,6 @@ function readScore(entry: unknown, snapshots: ReadonlyMap<string, Snapshot>, roo
 }
 
 function scoreRevision(
-    root: string,
     directory: string,
     config: string,
     maximum: number,
@@ -118,7 +119,7 @@ function scoreRevision(
     const result = spawnSync(
         process.execPath,
         [
-            resolve(root, 'node_modules/oxlint/bin/oxlint'),
+            OXLINT,
             '--disable-nested-config',
             '--no-ignore',
             '--threads=2',
@@ -193,7 +194,7 @@ function scoresByFunction(snapshot: Snapshot): Map<string, number> {
 }
 
 /** Compare native over-cap scores only where top-level function identity is unambiguous on both sides. */
-export function findComplexityGrowth(root: string, qualityConfig: string, files: readonly FilePair[]): string[] {
+export function findComplexityGrowth(qualityConfig: string, files: readonly FilePair[]): string[] {
     const { options, maximum } = complexityOptions(qualityConfig);
     const directory = mkdtempSync(join(tmpdir(), 'lint-complexity-'));
     try {
@@ -213,8 +214,8 @@ export function findComplexityGrowth(root: string, qualityConfig: string, files:
                 rules: { [COMPLEXITY_RULE]: options },
             })
         );
-        const base = scoreRevision(root, join(directory, 'base'), config, maximum, files, 'base');
-        const head = scoreRevision(root, join(directory, 'head'), config, maximum, files, 'head');
+        const base = scoreRevision(join(directory, 'base'), config, maximum, files, 'base');
+        const head = scoreRevision(join(directory, 'head'), config, maximum, files, 'head');
         const previous = new Map(base.map((snapshot) => [snapshot.file.path, scoresByFunction(snapshot)]));
         const findings: string[] = [];
         for (const snapshot of head) {
