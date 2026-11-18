@@ -112,7 +112,12 @@ function qualityBudgetSeed(root: string, mergeBase: string) {
         baseConfig = git(root, ['show', `${mergeBase}:${QUALITY_CONFIG}`]);
     }
     const { present } = parseConfiguredQualityRules(baseConfig, `${mergeBase}:${QUALITY_CONFIG}`);
-    const rules = errors.difference(present);
+    const rules = new Set<string>();
+    for (const rule of errors) {
+        if (!present.has(rule)) {
+            rules.add(rule);
+        }
+    }
     if (rules.size === 0) {
         return undefined;
     }
