@@ -52,6 +52,7 @@ credentials after the check. When the primary check fails, report the blocker.
 2. Open `pnpm lane:open [issue] [slug] --type <type> --model <model>` with the
    author's actual model. This opens the lane from `origin/main` and stamps author identity.
    For a dependent lane add `--stack-on <absolute-parent-lane>`.
+   If opening prints a guidance warning, read the instructions at the named lane revision before proceeding.
 3. For an issue-bound lane, run `pnpm issue:claim <issue>` from the primary. Verify the claim
    succeeds before assigning work. For an issueless change, the lane and early PR establish the
    claim. File longer campaigns and handoffs first so each lane can claim against the tracker.
