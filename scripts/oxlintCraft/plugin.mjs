@@ -3,7 +3,7 @@
  * Messages tell the author the fix. `{ ...record, field }` and `fn(...args)` stay legal.
  */
 
-import { qualityRules } from './qualityRules.mjs';
+import { hasSameFunctionNode, qualityRules } from './qualityRules.mjs';
 
 const ARRAY_PIPELINE_METHODS = new Set(['map', 'filter', 'sort', 'flatMap', 'reduce']);
 
@@ -276,9 +276,114 @@ const noLongArrayChain = {
     },
 };
 
+const FUNCTION_NODES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
+
+const isCall = (node) =>
+    node.type === 'CallExpression' || (node.type === 'ChainExpression' && node.expression.type === 'CallExpression');
+
+const isAwaitedCall = (node) => node.type === 'AwaitExpression' && isCall(node.argument);
+
+const isLocalVoidCall = (source, callee, block) => {
+    const scope = source.getScope(callee);
+    const variable = scope.references.find((reference) => reference.identifier === callee)?.resolved;
+    if (variable?.defs.length !== 1 || variable.references.some((reference) => reference.isWrite())) {
+        return false;
+    }
+    const declaration = variable.defs[0].node;
+    if (
+        declaration.type !== 'FunctionDeclaration' ||
+        declaration.parent !== block ||
+        !declaration.body ||
+        declaration.async ||
+        declaration.generator
+    ) {
+        return false;
+    }
+    if (declaration.returnType) {
+        return declaration.returnType.typeAnnotation.type === 'TSVoidKeyword';
+    }
+    const body = declaration.body.body;
+    return (
+        body.length === 1 &&
+        body[0].type === 'ExpressionStatement' &&
+        source.getCommentsBefore(declaration).length === 0
+    );
+};
+
+const isStatementBranch = (source, node, block) => {
+    if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression' || isAwaitedCall(node)) {
+        return true;
+    }
+    // Formatting removes grouping. A bare call can then acquire TypeScript assertion or never flow effects.
+    return (
+        node.type === 'CallExpression' &&
+        node.callee.type === 'Identifier' &&
+        isLocalVoidCall(source, node.callee, block)
+    );
+};
+
+const fixTernary = (context, node, statement, fixer) => {
+    const block = statement.parent;
+    if (block.type !== 'BlockStatement' || !FUNCTION_NODES.has(block.parent.type)) {
+        return null;
+    }
+
+    const source = context.sourceCode;
+    const returnsValue = statement.type === 'ReturnStatement';
+    if (returnsValue && (!block.parent.returnType || block.parent.generator)) {
+        return null;
+    }
+    const isEligibleBranch = returnsValue
+        ? (branch) => isCall(branch) || isAwaitedCall(branch)
+        : (branch) => isStatementBranch(source, branch, block);
+    const prefix = source.text.slice(statement.range[0], node.test.range[0]);
+    const beforeConsequent = source.text.slice(node.test.range[1], node.consequent.range[0]);
+    const beforeAlternate = source.text.slice(node.consequent.range[1], node.alternate.range[0]);
+    const terminator = source.text.slice(node.alternate.range[1], statement.range[1]);
+    if (
+        (returnsValue ? prefix.trim() !== 'return' : prefix !== '') ||
+        beforeConsequent.trim() !== '?' ||
+        beforeAlternate.trim() !== ':' ||
+        terminator.trim() !== ';' ||
+        source.getCommentsBefore(statement).length > 0 ||
+        source.getCommentsInside(statement).length > 0 ||
+        source.getCommentsAfter(statement).some((comment) => comment.loc.start.line === statement.loc.end.line) ||
+        !isEligibleBranch(node.consequent) ||
+        !isEligibleBranch(node.alternate)
+    ) {
+        return null;
+    }
+
+    const test = source.getText(node.test);
+    const branchPrefix = returnsValue ? 'return ' : '';
+    // Preserve branch grouping and the original line breaks, including those before the semicolon.
+    const consequent = `${branchPrefix}(${source.getText(node.consequent)})`;
+    const alternate = `${branchPrefix}(${source.getText(node.alternate)})`;
+    const openConsequent = beforeConsequent.replace('?', '{');
+    const openAlternate = beforeAlternate.replace(':', 'else {');
+    return fixer.replaceText(
+        statement,
+        `if (${test})${openConsequent}${consequent}; }${openAlternate}${alternate}${terminator} }`
+    );
+};
+
+function isControlFlowTernary(context, node, parent) {
+    if (getAncestors(context, node).some(isJsxNode)) {
+        return false;
+    }
+    if (parent?.type === 'ExpressionStatement') {
+        return true;
+    }
+    if (isSimpleValue(node.consequent) && isSimpleValue(node.alternate)) {
+        return false;
+    }
+    return isMultiline(context, node);
+}
+
 const noControlFlowTernary = {
     meta: {
         type: 'problem',
+        fixable: 'code',
         docs: {
             description: 'Disallow ternaries used as if/else. Simple values and JSX remain allowed.',
         },
@@ -287,30 +392,65 @@ const noControlFlowTernary = {
     create(context) {
         return {
             ConditionalExpression(node) {
-                if (getAncestors(context, node).some(isJsxNode)) {
+                const parent = unwrap(node.parent);
+                if (!isControlFlowTernary(context, node, parent)) {
                     return;
                 }
-                const parent = unwrap(node.parent);
-                if (parent?.type === 'ExpressionStatement') {
+                if (parent.type === 'ExpressionStatement') {
                     context.report({
                         node,
                         message: 'Do not use a ternary as a statement. Use `if` / `else`.',
+                        fix: (fixer) => fixTernary(context, node, parent, fixer),
                     });
                     return;
                 }
-                if (isSimpleValue(node.consequent) && isSimpleValue(node.alternate)) {
-                    return;
-                }
-                if (isJsxNode(unwrap(node.consequent)) && isJsxNode(unwrap(node.alternate))) {
-                    return;
-                }
-                if (!isMultiline(context, node)) {
-                    return;
-                }
+                const canSplitReturn = parent.type === 'ReturnStatement' && parent.argument === node;
                 context.report({
                     node,
                     message:
                         'Do not use a ternary as an if. Keep `cond ? value : value` or JSX `cond ? <A /> : <B />`; use `if` for statements and calls.',
+                    fix: canSplitReturn ? (fixer) => fixTernary(context, node, parent, fixer) : undefined,
+                });
+            },
+        };
+    },
+};
+
+function hasSubstantialBranchWork(context, branch) {
+    let calls = 0;
+    return hasSameFunctionNode(context, branch, (node) => {
+        if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression') {
+            return true;
+        }
+        if (node.type === 'CallExpression' || node.type === 'NewExpression') {
+            calls += 1;
+        }
+        return calls >= 3;
+    });
+}
+
+const noComplexTernaryBranch = {
+    meta: {
+        type: 'problem',
+        fixable: 'code',
+        docs: { description: 'Disallow substantial work in a ternary branch regardless of line breaks.' },
+        schema: [],
+    },
+    create(context) {
+        return {
+            ConditionalExpression(node) {
+                const parent = unwrap(node.parent);
+                if (
+                    isControlFlowTernary(context, node, parent) ||
+                    ![node.consequent, node.alternate].some((branch) => hasSubstantialBranchWork(context, branch))
+                ) {
+                    return;
+                }
+                const canSplitReturn = parent.type === 'ReturnStatement' && parent.argument === node;
+                context.report({
+                    node,
+                    message: 'Move the branch computation or mutation into explicit if/else control flow.',
+                    fix: canSplitReturn ? (fixer) => fixTernary(context, node, parent, fixer) : undefined,
                 });
             },
         };
@@ -328,6 +468,7 @@ const plugin = {
         'no-json-parse-stringify': noJsonParseStringify,
         'no-long-array-chain': noLongArrayChain,
         'no-control-flow-ternary': noControlFlowTernary,
+        'no-complex-ternary-branch': noComplexTernaryBranch,
         ...qualityRules,
     },
 };

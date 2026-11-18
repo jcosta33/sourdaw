@@ -52,6 +52,7 @@ credentials after the check. When the primary check fails, report the blocker.
 2. Open `pnpm lane:open [issue] [slug] --type <type> --model <model>` with the
    author's actual model. This opens the lane from `origin/main` and stamps author identity.
    For a dependent lane add `--stack-on <absolute-parent-lane>`.
+   If opening prints a guidance warning, read the instructions at the named lane revision before proceeding.
 3. For an issue-bound lane, run `pnpm issue:claim <issue>` from the primary. Verify the claim
    succeeds before assigning work. For an issueless change, the lane and early PR establish the
    claim. File longer campaigns and handoffs first so each lane can claim against the tracker.
@@ -125,6 +126,12 @@ the merge-base delivery guidance and its references.
 `REQUEST_CHANGES` carries blocker comments on changed lines. `APPROVE` carries compact
 head-bound evidence, a short reviewer-written body and no inline comments.
 Keep credentials, private reviewer prose and sensitive logs out of the record.
+
+When drafting the public approval, name what was observed and the result in its broadest
+verification claim. Tie that claim to the structured evidence for the reviewed head. State the
+boundary the verification reached, such as behavior measured in a test, an interaction recorded
+by a test double, or a property established by source comparison. Narrow or qualify the claim
+when the broader outcome was unobserved.
 
 ### i. Before any APPROVE publish
 
