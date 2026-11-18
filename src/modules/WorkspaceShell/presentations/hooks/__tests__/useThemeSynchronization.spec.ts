@@ -24,6 +24,11 @@ vi.mock('#/modules/Preferences/stores', () => ({
 
 describe('useThemeSynchronization', () => {
     beforeEach(() => {
+        vi.stubGlobal('matchMedia', () => ({
+            matches: false,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+        }));
         mocks.listeners.clear();
         mocks.preferences.current = { theme: 'light' };
         document.documentElement.classList.remove('dark', 'light');

@@ -11,6 +11,12 @@ import { SectionTitle, FieldGroup, ToggleRow } from '../preferencesShared';
 
 import type { Preferences } from '../../../models/Preferences';
 
+const themeIcons = {
+    system: <Monitor className="size-3" />,
+    light: <Sun className="size-3" />,
+    dark: <Moon className="size-3" />,
+};
+
 type SectionProps = {
     prefs: Preferences;
     update: (partial: Partial<Preferences>) => void;
@@ -32,24 +38,17 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
 
             <FieldGroup label="Theme">
                 <Row align="stretch" gap={2}>
-                    {(['system', 'light', 'dark'] as const).map((time) => (
+                    {(['system', 'light', 'dark'] as const).map((theme) => (
                         <Button
-                            key={time}
-                            variant={prefs.theme === time ? 'secondary' : 'outline'}
+                            key={theme}
+                            variant={prefs.theme === theme ? 'secondary' : 'outline'}
+                            aria-pressed={prefs.theme === theme}
                             size="sm"
-                            onClick={() => {
-                                update({ theme: time });
-                            }}
+                            onClick={() => update({ theme })}
                             className="capitalize gap-1"
                         >
-                            {time === 'system' ? (
-                                <Monitor className="size-3" />
-                            ) : time === 'dark' ? (
-                                <Moon className="size-3" />
-                            ) : (
-                                <Sun className="size-3" />
-                            )}
-                            {time}
+                            {themeIcons[theme]}
+                            {theme}
                         </Button>
                     ))}
                 </Row>

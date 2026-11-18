@@ -43,7 +43,8 @@ describe('AppearanceSection', () => {
     it('marks the active theme button as selected', () => {
         render(<AppearanceSection prefs={{ ...defaultPreferences, theme: 'dark' }} update={vi.fn()} />);
 
-        expect(screen.getByRole('button', { name: /dark/i })).toHaveAttribute('data-variant', 'secondary');
+        expect(screen.getByRole('button', { name: /dark/i })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: /system/i })).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByRole('button', { name: /light/i })).toHaveAttribute('data-variant', 'outline');
     });
 

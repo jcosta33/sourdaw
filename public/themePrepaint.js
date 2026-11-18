@@ -215,7 +215,7 @@
         return json;
     };
 
-    let theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     try {
         const stored = JSON.parse(window.localStorage.getItem('sourdaw-preferences') ?? 'null');
         // SuperJSON transforms every annotated value before applying aliases;
@@ -232,7 +232,7 @@
             theme = decoded.theme;
         }
     } catch {
-        // Storage denial and corrupt preferences retain the dark default.
+        // Storage denial and corrupt preferences retain the system appearance.
     }
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
