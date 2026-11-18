@@ -300,6 +300,33 @@ function seedMidiPhrase(clipName = 'Lead Motif') {
     selectPhraseNotes([THIRD.id, FILLER.id]);
 }
 
+function assertMidiReadReceipt(
+    message: Parameters<typeof getApplicationToolReceipts>[0],
+    partial: boolean,
+    selectedNoteIds: string[]
+): void {
+    const receipt = getApplicationToolReceipts(message).find(
+        (entry) =>
+            typeof entry === 'object' && entry !== null && 'toolName' in entry && entry.toolName === 'project.query'
+    );
+    const completeExpected = {
+        status: 'success',
+        data: {
+            queryType: 'musical-content',
+            nextCursor: null,
+            items: expect.arrayContaining(
+                selectedNoteIds.map((noteId) => expect.objectContaining({ noteId, selected: true }))
+            ),
+        },
+    };
+    const partialExpected = { status: 'success', data: { nextCursor: expect.any(String) } };
+    let expected: typeof completeExpected | typeof partialExpected = completeExpected;
+    if (partial) {
+        expected = partialExpected;
+    }
+    expect(receipt).toMatchObject(expected);
+}
+
 function scriptMidiPhraseEdit(
     options: {
         clipId?: string;
@@ -326,27 +353,29 @@ function scriptMidiPhraseEdit(
         name: 'editMidiNotes',
         arguments: { clipId, operations: options.operations ?? PHRASE_OPERATIONS },
     };
-    const proposal = () =>
-        options.plain
-            ? [{ name: 'command.batch.propose', arguments: { commands: [command] } }]
-            : [
-                  proposeCall([{ id: 'edit-phrase', ...command }], {
-                      semantic: { classification: 'complex', uncertainty: [] },
-                      objective: 'Reshape the phrase while preserving the opening and the instrument.',
-                      constraints: [],
-                      scope: {
-                          targetIds: [clipId, PHRASE_TRACK_ID],
-                          targetRanges: [],
-                          protectedTargetIds: [],
-                          protectedRanges: [],
-                      },
-                      capabilityIds: [],
-                      assetIds: [],
-                      alternatives: [],
-                      validationStrategy: ['Preserve all notes outside the selection.'],
-                      stoppingConditions: ['Stop if the selected notes changed.'],
-                  }),
-              ];
+    const proposal = () => {
+        if (options.plain) {
+            return [{ name: 'command.batch.propose', arguments: { commands: [command] } }];
+        }
+        return [
+            proposeCall([{ id: 'edit-phrase', ...command }], {
+                semantic: { classification: 'complex', uncertainty: [] },
+                objective: 'Reshape the phrase while preserving the opening and the instrument.',
+                constraints: [],
+                scope: {
+                    targetIds: [clipId, PHRASE_TRACK_ID],
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+                capabilityIds: [],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Preserve all notes outside the selection.'],
+                stoppingConditions: ['Stop if the selected notes changed.'],
+            }),
+        ];
+    };
     const turns: ScriptedTurn[] = [
         nonAcousticMetricIntakeTurn({
             modeId: 'edit',
@@ -361,29 +390,14 @@ function scriptMidiPhraseEdit(
     turns.push(
         (message) => {
             if (options.read !== false) {
-                const receipt = getApplicationToolReceipts(message).find(
-                    (entry) =>
-                        typeof entry === 'object' &&
-                        entry !== null &&
-                        'toolName' in entry &&
-                        entry.toolName === 'project.query'
+                assertMidiReadReceipt(
+                    message,
+                    options.read === 'partial',
+                    options.selectedNoteIds ?? [THIRD.id, FILLER.id]
                 );
                 if (options.read === 'partial') {
-                    expect(receipt).toMatchObject({ status: 'success', data: { nextCursor: expect.any(String) } });
                     return [catalogDiscoveryCall(['editMidiNotes'])];
                 }
-                expect(receipt).toMatchObject({
-                    status: 'success',
-                    data: {
-                        queryType: 'musical-content',
-                        nextCursor: null,
-                        items: expect.arrayContaining(
-                            (options.selectedNoteIds ?? [THIRD.id, FILLER.id]).map((noteId) =>
-                                expect.objectContaining({ noteId, selected: true })
-                            )
-                        ),
-                    },
-                });
             }
             options.changeDuringRead?.();
             return [catalogDiscoveryCall(['editMidiNotes'])];
@@ -870,13 +884,16 @@ describe('high-level intent execution', () => {
             }
             const second = requireConfirmation();
             expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+            expect(second.id === first.id).toBe(prior !== 'same');
+            expect(
+                prior === 'same' ||
+                    [...requests, chatStore.value?.messages.at(-1)?.content]
+                        .join('\n')
+                        .includes('Transform compilation includes a protected or unresolved target')
+            ).toBe(true);
+            expect(durablePhraseDevices()).toEqual(devicesBefore);
+            expect(runtimeMocks.updateDeviceParam).toHaveBeenCalledTimes(runtimeWritesBefore);
             if (prior !== 'same') {
-                expect(second.id).toBe(first.id);
-                expect([...requests, chatStore.value?.messages.at(-1)?.content].join('\n')).toContain(
-                    'Transform compilation includes a protected or unresolved target'
-                );
-                expect(durablePhraseDevices()).toEqual(devicesBefore);
-                expect(runtimeMocks.updateDeviceParam).toHaveBeenCalledTimes(runtimeWritesBefore);
                 return;
             }
             expect(second.id, chatStore.value?.messages.at(-1)?.content).not.toBe(first.id);
