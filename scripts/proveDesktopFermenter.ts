@@ -33,6 +33,7 @@ const COMMIT = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
 const RUN_NUMBER = /^[1-9][0-9]{0,19}$/u;
 const MAX_RECEIPT_BYTES = 1024;
+const USAGE = 'Expected either --capture --receipt PATH or --receipt PATH --json PATH';
 
 type RunIdentity = { sourceSha: string; runId: string; runAttempt: string };
 type Digests = { payloadSha256: string; executableSha256: string };
@@ -274,8 +275,8 @@ async function main(): Promise<number> {
     });
     const checkout = process.cwd();
     const { capture, receipt, json } = values;
-    if (!receipt || (capture ? json !== undefined : !json)) {
-        throw new TypeError('Expected either --capture --receipt PATH or --receipt PATH --json PATH');
+    if (!receipt || (capture && json !== undefined)) {
+        throw new TypeError(USAGE);
     }
     const options = { checkout, app: join(checkout, APP_PATH), receipt };
     const hostSupported = process.platform === 'darwin' && process.arch === 'arm64';
@@ -283,6 +284,9 @@ async function main(): Promise<number> {
         captureBuildReceipt(options, process.env, hostSupported);
         process.stdout.write('Captured the Fermenter packaged build receipt.\n');
         return 0;
+    }
+    if (!json) {
+        throw new TypeError(USAGE);
     }
     const record = await runProof(options, process.env, {
         hostSupported,
