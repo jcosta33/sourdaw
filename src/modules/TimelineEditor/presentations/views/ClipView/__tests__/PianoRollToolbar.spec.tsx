@@ -255,7 +255,7 @@ describe('PianoRollToolbar', () => {
         expect(screen.getByLabelText('Piano roll zoom')).toBeInTheDocument();
     });
 
-    it('offers the Velocity lane in the Expression view', () => {
+    it('shows Velocity availability when instrument lanes are omitted', () => {
         render(
             <PianoRollToolbar
                 {...defaultProps}
@@ -264,8 +264,10 @@ describe('PianoRollToolbar', () => {
                 onActiveExpressionLaneChange={vi.fn()}
             />
         );
-        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
-        expect(values).toContain('velocity');
+        expect(
+            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
+        ).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
     });
 
     it('hides every MPE expression lane when the track instrument sounds none (MD-2)', () => {
@@ -278,10 +280,10 @@ describe('PianoRollToolbar', () => {
                 mpeExpressionLanes={[]}
             />
         );
-        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
-        expect(values).not.toContain('pressure');
-        expect(values).not.toContain('slide');
-        expect(values).not.toContain('pitchBend');
+        expect(
+            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
+        ).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
         expect(screen.queryByText('Pressure (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Slide (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Pitch Bend (MPE)')).not.toBeInTheDocument();

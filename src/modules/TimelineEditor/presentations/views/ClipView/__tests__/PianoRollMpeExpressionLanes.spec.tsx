@@ -5,7 +5,7 @@
  * toolbar's documented `mpeExpressionLanes` contract (audit MD-2), so on a
  * Fermenter track the selector lists Velocity plus Pressure, Slide and
  * Pitch Bend, while a track whose instrument sounds none of them lists
- * Velocity alone.
+ * a Velocity availability readout.
  *
  * This file renders the real PianoRollToolbar (unlike PianoRoll.spec.tsx,
  * which stubs it) so the assertion covers the whole chain — trackStore
@@ -301,7 +301,7 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         expect(values).toContain('pitchBend');
     });
 
-    it('offers Velocity only on a track whose instrument sounds no MPE dimension', () => {
+    it('explains Velocity availability on a track whose instrument sounds no MPE dimension', () => {
         trackState.tracks = [
             {
                 id: 'track-1',
@@ -313,10 +313,9 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         ];
         renderWithExpressionViewOn();
 
-        const values = selectorOptionValues();
-        expect(values).toContain('velocity');
-        expect(values).not.toContain('pressure');
-        expect(values).not.toContain('slide');
-        expect(values).not.toContain('pitchBend');
+        expect(
+            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
+        ).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
     });
 });

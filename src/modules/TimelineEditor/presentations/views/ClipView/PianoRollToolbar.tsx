@@ -352,21 +352,29 @@ export const PianoRollToolbar = ({
         </Button>
 
         {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
-            <DawCompactSelect
-                value={activeExpressionLane}
-                onChange={(event) =>
-                    onActiveExpressionLaneChange(event.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')
-                }
-                size="micro"
-                aria-label="Active expression lane"
-            >
-                <option value="velocity">Velocity</option>
-                {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
-                    <option key={lane} value={lane}>
-                        {MPE_LANE_LABELS[lane]}
-                    </option>
-                ))}
-            </DawCompactSelect>
+            mpeExpressionLanes.length === 0 ? (
+                <span className="text-[10px] text-muted-foreground">
+                    Velocity available. Additional expression lanes depend on the primary track instrument.
+                </span>
+            ) : (
+                <DawCompactSelect
+                    value={activeExpressionLane}
+                    onChange={(event) =>
+                        onActiveExpressionLaneChange(
+                            event.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend'
+                        )
+                    }
+                    size="micro"
+                    aria-label="Active expression lane"
+                >
+                    <option value="velocity">Velocity</option>
+                    {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
+                        <option key={lane} value={lane}>
+                            {MPE_LANE_LABELS[lane]}
+                        </option>
+                    ))}
+                </DawCompactSelect>
+            )
         ) : null}
 
         {openedClips && openedClips.length > 1 && focusedClipId !== undefined && onFocusedClipIdChange !== undefined ? (
