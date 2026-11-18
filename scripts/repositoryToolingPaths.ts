@@ -61,16 +61,24 @@ function isStaticAnalysisConfig(path: string): boolean {
     return STATIC_ANALYSIS_CONFIG.has(path) || /^\.dependency-cruiser[\w.-]*\.(?:cjs|json)$/.test(path);
 }
 
+// Playwright runs the server launcher. Its WebGPU admission profile records
+// crash evidence, which the WebGPU workflow collects after a failed proof.
+const BROWSER_RUNTIME_SCRIPTS = new Set([
+    'scripts/e2eDevServer.ts',
+    'scripts/browserAiMacCrashEvidence.ts',
+    'scripts/browserAiMacCrashSummary.ts',
+]);
+
 /**
  * Repository tooling and prose never select browser execution, though they keep broad non-browser
  * validation. Generator and build scripts reach the browser only through their outputs, which land
- * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
- * stays classified with them. Agent guidance under src/ and tests/ is the exception, because no
- * product code loads it.
+ * under src/ or public/ and select browser coverage there. Browser runtime scripts stay on the
+ * product route. Product trees may load Markdown, so it stays classified with them. Agent guidance
+ * under src/ and tests/ is the exception, because no product code loads it.
  */
 export function isRepositoryTooling(path: string): boolean {
     return (
-        path.startsWith('scripts/') ||
+        (path.startsWith('scripts/') && !BROWSER_RUNTIME_SCRIPTS.has(path)) ||
         path.startsWith('.agents/') ||
         path === '.gitleaksignore' ||
         path === '.gitleaks.toml' ||

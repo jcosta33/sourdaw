@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { clearUndoHistory, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
+import { captureDurableDocumentWitness, compactProject, resetCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
@@ -48,6 +48,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: () => 'outgoing-project-authority',
+    captureDurableDocumentWitness: vi.fn(),
+    captureProjectRootIdentity: vi.fn(() => 'hostless-root'),
     captureProjectRevision: vi.fn(),
     compactProject: vi.fn().mockResolvedValue(undefined),
     createCrdtDoc: vi.fn(),
@@ -130,6 +132,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
     executeUserAppAction: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
@@ -165,6 +168,10 @@ describe('newProject with the native host absent', () => {
         });
         expect(compactProject).toHaveBeenCalledOnce();
         expect(clearUndoHistory).toHaveBeenCalledOnce();
+        expect(reconcileSessionUndoForProject).toHaveBeenCalledExactlyOnceWith({
+            projectId: projectStore.value?.projectId,
+            captureWitness: captureDurableDocumentWitness,
+        });
         expect(stopPlayback).toHaveBeenCalledOnce();
         expect(ensureTrackStrips).not.toHaveBeenCalled();
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });

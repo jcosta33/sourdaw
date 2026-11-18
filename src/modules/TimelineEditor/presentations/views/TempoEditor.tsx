@@ -155,6 +155,9 @@ export const TempoEditor = (): ReactElement => {
                         value={time.numValue}
                         onChange={(event) => time.setNumValue(event.target.value)}
                         onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing) {
+                                return;
+                            }
                             if (event.key === 'Enter') {
                                 time.commitTimeSig();
                             }
@@ -241,6 +244,9 @@ export const TempoEditor = (): ReactElement => {
                                                   onChange={(event) => time.setEditingChangeTempo(event.target.value)}
                                                   onBlur={time.commitEditChange}
                                                   onKeyDown={(event) => {
+                                                      if (event.nativeEvent.isComposing) {
+                                                          return;
+                                                      }
                                                       if (event.key === 'Enter') {
                                                           time.commitEditChange();
                                                       }

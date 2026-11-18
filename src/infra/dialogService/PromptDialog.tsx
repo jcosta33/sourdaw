@@ -44,6 +44,9 @@ export const PromptDialog = (): ReactElement => {
                     ref={contentRef}
                     onOpenAutoFocus={onOpenAutoFocus}
                     onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) {
+                            return;
+                        }
                         if (event.key === 'Enter') {
                             if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
                                 return;

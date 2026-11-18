@@ -73,6 +73,10 @@ annotated with an imported callback type takes its parameter shape from that con
 In the product pilot the stock assertion ban diagnoses TypeScript's postfix `!`. Existing fixes from native
 `typescript/no-unnecessary-type-assertion` still remove assertions the type checker finds
 redundant. A non-null assertion that changes a type needs a guard or an explicit invariant.
+The stock type-aware `typescript/no-unsafe-type-assertion` rule checks narrowing casts in
+CommandInterface product code and WorkspaceShell presentation views. It follows the same
+TS and TSX product exclusions. Prefer a compiler-visible guard. A cast backed by a runtime
+invariant that TypeScript cannot infer needs a rule-specific directive with the reason.
 The stock type-aware generic rule reports parameters that establish no type relationship.
 The quality pass counts `no-else-return` findings when a preceding branch already returns on every
 path. It allows `else if` chains and keeps `else` branches that prevent fall-through.

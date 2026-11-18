@@ -156,6 +156,9 @@ export async function playMacro(macroId: string): Promise<void> {
     if (!macro) {
         return;
     }
+    if (macro.actions.some((action) => action.type === 'insertAutomationLanePoints')) {
+        throw new AppActionConflictError('playMacro', 'Automation lane insertions are local edits.');
+    }
 
     if (macro.actions.some((action) => action.type === 'saveProject' && action.payload?.intent === 'prepareSnapshot')) {
         throw new AppActionConflictError('saveProject', 'Internal Save preparation cannot be replayed from a macro');

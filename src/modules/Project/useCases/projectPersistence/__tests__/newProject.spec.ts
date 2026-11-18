@@ -1,14 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import {
     clearRuntimeCachedAudioBuffers,
     forgetProjectLatchedPedals,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import {
+    clearUndoHistory,
+    commitUndoEntry,
+    createUndoEntry,
+    reconcileSessionUndoForProject,
+    stampSessionUndoWitness,
+} from '#/modules/Command/useCases';
+import {
+    captureDurableDocumentWitness,
+    captureProjectRootIdentity,
     compactProject,
     createCrdtProject,
     projectActionHistoryToStore,
@@ -99,6 +112,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: () => 'outgoing-project-authority',
+    captureDurableDocumentWitness: vi.fn(() => 'fixture-witness'),
+    captureProjectRootIdentity: vi.fn(() => 'fixture-root'),
     captureProjectRevision: vi.fn(),
     compactProject: vi.fn().mockResolvedValue(undefined),
     createCrdtDoc: vi.fn(),
@@ -163,12 +178,16 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-// newProject imports clearUndoHistory.
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
-    executeUserAppAction: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...actual,
+        clearUndoHistory: vi.fn(actual.clearUndoHistory),
+        reconcileSessionUndoForProject: vi.fn(actual.reconcileSessionUndoForProject),
+        executeUserAppAction: vi.fn(),
+        resetActionReplayAuthority: vi.fn(),
+    };
+});
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({
     removeProjectJson: vi.fn(),
@@ -177,7 +196,11 @@ vi.mock('../../../repositories/project/removeProjectJson', () => ({
 describe('newProject injectable', () => {
     beforeEach(() => {
         Container.clear();
+        clearUndoHistory();
+        sessionStorage.removeItem('sourdaw-undo-session');
         vi.clearAllMocks();
+        vi.mocked(captureDurableDocumentWitness).mockReset().mockReturnValue('fixture-witness');
+        vi.mocked(captureProjectRootIdentity).mockReset().mockReturnValue('fixture-root');
         vi.mocked(stopPlayback).mockResolvedValue(undefined);
         // Each case opens with a project that owes nothing for the takes before it.
         unsavedClosedTakes.acknowledgeAll();
@@ -287,6 +310,95 @@ describe('newProject injectable', () => {
         );
     });
 
+    it('clears the outgoing history and stamps the freshly installed project during its first compaction', async () => {
+        const {
+            captureDurableDocumentWitness: captureWitness,
+            captureProjectRootIdentity: captureRootIdentity,
+            createCrdtDoc,
+            registerCrdtStorageRuntime,
+            removeCrdtDoc,
+        } = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>('#/modules/CrdtDocument/useCases');
+        const outgoingId = 'outgoing-project';
+        reconcileSessionUndoForProject({ projectId: outgoingId, captureWitness });
+        commitUndoEntry(
+            createUndoEntry(
+                'Outgoing edit',
+                { type: 'setTrackColor', payload: { trackId: 'old', color: '#2468ac' } },
+                null,
+                'manual'
+            )
+        );
+        expect(undoHistoryStore.value?.past.map((entry) => entry.label)).toEqual(['Outgoing edit']);
+
+        vi.mocked(captureProjectRootIdentity).mockImplementation(captureRootIdentity);
+        vi.mocked(captureDurableDocumentWitness).mockImplementation(captureWitness);
+        resetMocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: resetMocks.finalize });
+        });
+        let firstWitness: string | undefined;
+        vi.mocked(compactProject).mockImplementationOnce(async () => {
+            flushAutomergeStorageWrites();
+            stampSessionUndoWitness();
+            firstWitness = sessionStorage.getItem('sourdaw-undo-session') ?? undefined;
+        });
+
+        try {
+            await expect(newProject('Fresh project')).resolves.toBe(true);
+
+            const publishedProjectId = projectStore.value?.projectId;
+            expect(isCanonicalProjectId(publishedProjectId)).toBe(true);
+            expect(publishedProjectId).not.toEqual(outgoingId);
+            expect(undoHistoryStore.value).toEqual({ past: [], future: [] });
+            expect(reconcileSessionUndoForProject).toHaveBeenLastCalledWith({
+                projectId: publishedProjectId,
+                captureWitness: captureDurableDocumentWitness,
+            });
+            expect(firstWitness).toBeDefined();
+            expect(JSON.parse(firstWitness!)).toEqual({
+                projectId: publishedProjectId,
+                witness: captureWitness(),
+                past: [],
+                future: [],
+            });
+        } finally {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+        }
+    });
+
+    it('does not bind an identity when metadata did not install it', async () => {
+        const set = projectStore.set.bind(projectStore);
+        const publish = vi.spyOn(projectStore, 'set').mockImplementation((state) => {
+            if (state?.name !== 'Unpublished project') {
+                set(state);
+            }
+        });
+        try {
+            await expect(newProject('Unpublished project')).resolves.toBe(true);
+
+            expect(projectStore.value?.name).toBe('Existing Project');
+            expect(clearUndoHistory).toHaveBeenCalledOnce();
+            expect(reconcileSessionUndoForProject).not.toHaveBeenCalled();
+        } finally {
+            publish.mockRestore();
+        }
+    });
+
+    it('does not bind history if a different root was installed during material retirement', async () => {
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockImplementationOnce(async () => {
+            vi.mocked(captureProjectRootIdentity).mockReturnValue('replacement-root');
+        });
+
+        await expect(newProject('Superseded committed project')).resolves.toBe(true);
+
+        expect(reconcileSessionUndoForProject).not.toHaveBeenCalled();
+    });
+
     it('mints unique canonical identities for projects created in the same millisecond', async () => {
         const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
         try {
@@ -326,6 +438,8 @@ describe('newProject injectable', () => {
         // The player stays in the old project, whose graph is rebuilt above, so
         // a damper still held must survive the abandoned activation.
         expect(forgetProjectLatchedPedals).not.toHaveBeenCalled();
+        expect(clearUndoHistory).not.toHaveBeenCalled();
+        expect(reconcileSessionUndoForProject).not.toHaveBeenCalled();
     });
 
     // Choosing the open project's Recent entry starts no transaction of its own,
@@ -876,5 +990,6 @@ describe('newProject injectable', () => {
         await expect(newProject('Committed despite native failure')).resolves.toBe(true);
         expect(projectStore.value?.name).toBe('Committed despite native failure');
         expect(resetMocks.finalize).toHaveBeenCalledOnce();
+        expect(reconcileSessionUndoForProject).not.toHaveBeenCalled();
     });
 });

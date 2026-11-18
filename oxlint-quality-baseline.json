@@ -4265,7 +4265,7 @@
             "count": 11
         },
         "eslint/max-lines-per-function": {
-            "count": 6
+            "count": 5
         },
         "eslint/max-params": {
             "count": 7
@@ -4274,10 +4274,10 @@
             "count": 20
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 20
+            "count": 18
         },
         "typescript/no-non-null-assertion": {
-            "count": 11
+            "count": 10
         }
     },
     "src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts": {
@@ -10630,11 +10630,6 @@
             "count": 1
         }
     },
-    "src/modules/Automation/useCases/automation/addAutomationPoint.ts": {
-        "typescript/no-non-null-assertion": {
-            "count": 1
-        }
-    },
     "src/modules/Automation/useCases/automation/automationTimeStateCodec.ts": {
         "eslint/complexity": {
             "count": 1
@@ -12440,6 +12435,9 @@
     },
     "src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts": {
         "eslint/complexity": {
+            "count": 1
+        },
+        "typescript/no-unsafe-type-assertion": {
             "count": 1
         }
     },
@@ -14651,14 +14649,6 @@
     },
     "src/modules/MIDI/stores/midiStore.ts": {
         "eslint/complexity": {
-            "count": 2
-        }
-    },
-    "src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-params": {
             "count": 2
         }
     },
@@ -17036,9 +17026,6 @@
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 1
         },
@@ -17078,14 +17065,6 @@
     "src/modules/TimelineEditor/presentations/helpers/pianoRollOpeningScroll.ts": {
         "typescript/no-non-null-assertion": {
             "count": 3
-        }
-    },
-    "src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts": {
-        "eslint/max-lines-per-function": {
-            "count": 1
-        },
-        "eslint/max-params": {
-            "count": 1
         }
     },
     "src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts": {
@@ -18811,6 +18790,9 @@
             "count": 1
         },
         "typescript/no-non-null-assertion": {
+            "count": 1
+        },
+        "typescript/no-unsafe-type-assertion": {
             "count": 1
         }
     },
