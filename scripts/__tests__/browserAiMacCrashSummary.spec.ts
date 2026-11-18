@@ -196,7 +196,7 @@ describe('Browser AI macOS native crash summary', () => {
         });
     });
 
-    it('skips prior and unusable candidates without following symlinks or opening special files', async () => {
+    it('skips prior and unusable candidates without following symlinks or blocking on a FIFO', async () => {
         await withFixture(async ({ ips, reports, summary, collect }) => {
             ips('stale.ips');
             symlinkSync(join(reports, 'stale.ips'), join(reports, 'new-link.ips'));

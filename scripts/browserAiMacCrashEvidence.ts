@@ -98,9 +98,6 @@ export function readBoundedCrashFile(path: string, limit: number, privateFile = 
         return undefined;
     }
     try {
-        if (!lstatSync(path).isFile()) {
-            return undefined;
-        }
         const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
         try {
             const stat = fstatSync(fd);
