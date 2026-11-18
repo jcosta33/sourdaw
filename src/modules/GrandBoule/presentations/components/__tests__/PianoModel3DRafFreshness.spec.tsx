@@ -61,8 +61,35 @@ function makeGlMock(): WebGL2RenderingContext {
 
 describe('PianoModel3D rAF prop freshness (#1)', () => {
     let rafCallbacks: FrameRequestCallback[];
+    let intersectionCallback: IntersectionObserverCallback;
+    let observedTarget: Element;
+    const disconnect = vi.fn();
+    const observe = vi.fn((target: Element) => {
+        observedTarget = target;
+    });
+
+    const setIntersecting = (isIntersecting: boolean): void => {
+        act(() =>
+            intersectionCallback(
+                [{ isIntersecting, target: observedTarget } as IntersectionObserverEntry],
+                {} as IntersectionObserver
+            )
+        );
+    };
 
     beforeEach(() => {
+        disconnect.mockClear();
+        observe.mockClear();
+        vi.stubGlobal(
+            'IntersectionObserver',
+            class {
+                constructor(callback: IntersectionObserverCallback) {
+                    intersectionCallback = callback;
+                }
+                observe = observe;
+                disconnect = disconnect;
+            }
+        );
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) => {
             if (id === 'webgl2') {
                 return makeGlMock() as unknown as RenderingContext;
@@ -80,6 +107,7 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     const tick = (): void => {
@@ -109,6 +137,7 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
 
         rerender(<PianoModel3D {...props} visible />);
         expect(getContext).toHaveBeenCalledOnce();
+        setIntersecting(true);
         expect(requestFrame).toHaveBeenCalledOnce();
         const frame = requestFrame.mock.results[0]?.value;
 
@@ -116,6 +145,7 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
         expect(queryByLabelText('Grand Boule interactive piano')).not.toBeInTheDocument();
         expect(queryByRole('status')).not.toBeInTheDocument();
         expect(cancelFrame).toHaveBeenCalledExactlyOnceWith(frame);
+        expect(disconnect).toHaveBeenCalledOnce();
         expect(gl.deleteBuffer).toHaveBeenCalledOnce();
         expect(gl.deleteVertexArray).toHaveBeenCalledOnce();
         expect(gl.deleteProgram).toHaveBeenCalledOnce();
@@ -123,12 +153,54 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
 
         rerender(<PianoModel3D {...props} visible />);
         expect(getContext).toHaveBeenCalledTimes(2);
+        setIntersecting(true);
         expect(requestFrame).toHaveBeenCalledTimes(2);
+    });
+
+    it('pauses offscreen and in a hidden document, resumes once with current notes, and disconnects', () => {
+        const gl = makeGlMock();
+        vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(((id: string): RenderingContext | null =>
+            id === 'webgl2' ? gl : null) as typeof HTMLCanvasElement.prototype.getContext);
+        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+        const props = { activeNotes: new Map<number, number>(), sustainPedal: 0, lidPosition: 0.5 };
+        const { getByLabelText, rerender, unmount } = render(<PianoModel3D {...props} />);
+        expect(observe).toHaveBeenCalledWith(getByLabelText('Grand Boule interactive piano'));
+        expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+        setIntersecting(true);
+        tick();
+        expect(gl.drawArrays).toHaveBeenCalledTimes(1);
+        const pending = vi.mocked(window.requestAnimationFrame).mock.results.at(-1)?.value;
+        setIntersecting(false);
+        expect(window.cancelAnimationFrame).toHaveBeenCalledWith(pending);
+        rafCallbacks = [];
+        const notes = new Map([[60, 0.8]]);
+        const readNotes = vi.spyOn(notes, 'get');
+        rerender(<PianoModel3D {...props} activeNotes={notes} />);
+        setIntersecting(true);
+        setIntersecting(true);
+        expect(rafCallbacks).toHaveLength(1);
+        tick();
+        expect(gl.drawArrays).toHaveBeenCalledTimes(2);
+        expect(readNotes).toHaveBeenCalled();
+        visibility.mockReturnValue('hidden');
+        act(() => document.dispatchEvent(new Event('visibilitychange')));
+        expect(window.cancelAnimationFrame).toHaveBeenCalledWith(
+            vi.mocked(window.requestAnimationFrame).mock.results.at(-1)?.value
+        );
+        rafCallbacks = [];
+        visibility.mockReturnValue('visible');
+        act(() => document.dispatchEvent(new Event('visibilitychange')));
+        expect(rafCallbacks).toHaveLength(1);
+        const finalFrame = vi.mocked(window.requestAnimationFrame).mock.results.at(-1)?.value;
+        unmount();
+        expect(window.cancelAnimationFrame).toHaveBeenCalledWith(finalFrame);
+        expect(disconnect).toHaveBeenCalledOnce();
     });
 
     it('reads the activeNotes map passed on the latest render, not the mount-time one', () => {
         const initialNotes = new Map<number, number>();
         const { rerender } = render(<PianoModel3D activeNotes={initialNotes} sustainPedal={0} lidPosition={0.5} />);
+        setIntersecting(true);
         tick(); // first frame reads the mount-time map
 
         // A fresh map for the next render; spy on its get to detect reads.
@@ -146,6 +218,7 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
         // the pedal path. Use the active-note set to observe the loop's reads.
         const notes = new Map<number, number>([[60, 0.9]]);
         const { rerender } = render(<PianoModel3D activeNotes={notes} sustainPedal={0} lidPosition={0.5} />);
+        setIntersecting(true);
         tick();
 
         const liveNotes = new Map<number, number>([[60, 0.9]]);
