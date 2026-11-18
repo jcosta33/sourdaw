@@ -14,15 +14,11 @@
  * switch: the pre-switch save's snapshot of the blank project on disk (it
  * carries a post-restore rename session 1 never saved, and is read back
  * through the real load path), the blank project's recent-projects entry, and
- * the loaded project's durable identity. The #2898 silent stall is REPRODUCED
- * here by the characterization case: a null audio-buffer candidate drives the
- * real replaceProjectData into its abort path, loadRecentProject returns
- * 'aborted', and handleLoad silently does nothing — the active project stays
- * on the blank one with no surfaced error. The E2E-only suspects that survive
- * are any other stubbed seam plus the CRDT worker boundary (real
- * worker-backed persistence and revision epochs racing the pre-switch save),
- * which a Project-module spec cannot drive without deep-importing
- * CrdtDocument's test harness — forbidden by the tests boundary cruise.
+ * the loaded project's durable identity. The abort case sends a null
+ * audio-buffer candidate through real replaceProjectData and requires the
+ * menu to surface the failure while keeping the blank project active.
+ * Save preparation uses actual Command dispatch and native document authority;
+ * persistence and load collaborators remain the declared doubles below.
  *
  * Declaration order is load-bearing. The transition machinery keeps
  * module-global ordering counters, so after the committed case's explicit
@@ -34,18 +30,18 @@
  * candidate aborting — does not read the boot transition.
  */
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MessageChannel } from 'node:worker_threads';
+
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    captureProjectRevision: vi.fn<() => string>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     importCachedAudioBuffers:
         vi.fn<() => Promise<{ persist: () => Promise<boolean>; publish: () => undefined } | null>>(),
     loadCrdtProject: vi.fn<() => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     resetCrdtProject: vi.fn(),
-    getCrdtDoc: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -55,9 +51,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureDurableDocumentWitness: vi.fn(),
-    captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn(() => Promise.resolve()),
-    getCrdtDoc: mocks.getCrdtDoc,
     loadCrdtProject: mocks.loadCrdtProject,
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
@@ -69,8 +63,6 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     clearUndoHistory: vi.fn(),
-    executeAppAction: vi.fn(() => Promise.resolve()),
-    executeUserAppAction: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
@@ -163,12 +155,19 @@ vi.mock('../TemplateChooser', () => ({
     TemplateChooser: () => null,
 }));
 
+import { registerKernelPorts } from '#/app/registerKernelPorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { createCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installFakeIndexedDb } from '../../../__tests__/fakeIndexedDb';
@@ -324,6 +323,16 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         const { createControlledLockManager } = await import('#/infra/testing/createControlledLockManager');
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
+        registerKernelPorts();
+        clearHandlerRegistry();
+        registerHandlerMap(getWorkspaceHandlers());
         // One fake IndexedDB world across tests: storageSupport caches its
         // database handle module-globally, so the first install stays the
         // connected one and later installs only replace the global stub.
@@ -331,7 +340,6 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         idbControls = installFakeIndexedDb();
         window.localStorage.clear();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
-        mocks.captureProjectRevision.mockReturnValue('revision-fixture');
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         // The live audio-buffer candidate; the characterization case is the
         // only place that overrides this to null.
@@ -340,7 +348,6 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
             publish: () => undefined,
         });
         mocks.loadCrdtProject.mockResolvedValue(true);
-        mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
         mocks.resetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
             onAuthorityReplaced?.();
             return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
@@ -350,6 +357,10 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
 
     afterEach(async () => {
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        await settleNativePreparationWorkers();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });
 
@@ -417,13 +428,9 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         fireEvent.click(await screen.findByText(SAVED_PROJECT_NAME));
 
         await waitFor(() => expect(mocks.importCachedAudioBuffers).toHaveBeenCalledTimes(1));
-        // Settle the aborted continuation (microtasks only — no timers run in
-        // this flow).
-        await act(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 0));
-        });
-
-        expect(notifyUser).toHaveBeenCalledWith('Could not open "Saved Song" — see logs for details.', 'error');
+        await waitFor(() =>
+            expect(notifyUser).toHaveBeenCalledWith('Could not open "Saved Song" — see logs for details.', 'error')
+        );
         expect(projectStore.value?.name).toBe(BLANK_PROJECT_NAME);
         expect(projectStore.value?.loading).toBe(false);
         expect(getRecentProjects().some((entry) => entry.name === SAVED_PROJECT_NAME)).toBe(true);

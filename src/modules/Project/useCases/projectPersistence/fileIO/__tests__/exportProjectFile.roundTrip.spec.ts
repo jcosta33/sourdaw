@@ -36,7 +36,6 @@ import { midiLearnProjection } from '../midiLearnProjection';
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve('written' as const)),
 }));
-vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // The save reads the settled-take count with its snapshot; no take is recorded here.
 vi.mock('#/modules/Transport/useCases', () => ({ countSettledTakes: () => 0 }));
@@ -423,8 +422,11 @@ describe('exportProjectFile round-trip shape', () => {
             'buf-arrangement-alt': cached_buffer,
         });
         trackStore.set({ tracks: [current_track], selectedTrackId: null });
+        const default_arrangement_state = structuredClone(defaultArrangementStoreState);
         arrangementStore.set({
+            ...default_arrangement_state,
             arrangements: [
+                ...default_arrangement_state.arrangements,
                 {
                     id: 'arrangement-a',
                     name: 'Arrangement A',
@@ -433,7 +435,6 @@ describe('exportProjectFile round-trip shape', () => {
                     midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
                 },
             ],
-            activeArrangementId: 'arrangement-a',
         });
 
         await exportProjectFile();
@@ -449,11 +450,16 @@ describe('exportProjectFile round-trip shape', () => {
         const export_input = vi.mocked(exportCachedAudioBuffers).mock.calls[0]?.[0];
         expect(export_input?.bufferIds).toEqual(expect.arrayContaining(expected_buffer_ids));
         expect(export_input?.bufferIds).toHaveLength(expected_buffer_ids.length);
-        expect(written().audioBuffers).toEqual({
+        const exported = written();
+        expect(exported.audioBuffers).toEqual({
             'buf-current-clip': cached_buffer,
             'buf-arrangement-alt': cached_buffer,
         });
-        const saved_arrangement_clip = written().arrangements?.[0]?.tracks?.tracks[0]?.clips[0];
+        expect(exported.activeArrangementId).toBe(default_arrangement_state.activeArrangementId);
+        const saved_active_arrangement = exported.arrangements?.find(({ id }) => id === exported.activeArrangementId);
+        expect(saved_active_arrangement?.tracks?.tracks[0]?.clips[0]).toMatchObject({ bufferId: 'buf-current-clip' });
+        const saved_inactive_arrangement = exported.arrangements?.find(({ id }) => id === 'arrangement-a');
+        const saved_arrangement_clip = saved_inactive_arrangement?.tracks?.tracks[0]?.clips[0];
         expect(saved_arrangement_clip).toMatchObject({ bufferId: 'buf-arrangement-clip' });
         expect(saved_arrangement_clip).not.toHaveProperty('audioBufferId');
         expect(notifyUser).toHaveBeenCalledWith(

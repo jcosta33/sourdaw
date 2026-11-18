@@ -41,7 +41,9 @@ const mocks = vi.hoisted(() => ({
     reconcileSessionUndoForProject:
         vi.fn<(target: { projectId: string | undefined; captureWitness: () => string }) => void>(),
     resetActionReplayAuthority: vi.fn<() => void>(),
-    executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    executeAppAction: vi.fn<typeof import('#/modules/Command/useCases').executeAppAction>(async (_action, options) => {
+        options?.onCommitted?.();
+    }),
     captureProjectRevision: vi.fn<() => string>(() => 'saved-revision'),
     captureDurableDocumentWitness: vi.fn<() => string>(() => 'document-witness'),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),

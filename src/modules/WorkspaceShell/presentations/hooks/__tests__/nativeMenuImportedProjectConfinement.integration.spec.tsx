@@ -1,10 +1,12 @@
 import { File as PlatformFile } from 'node:buffer';
+import { MessageChannel } from 'node:worker_threads';
 
 import { getHeads, toJS } from '@automerge/automerge';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -96,6 +98,8 @@ beforeEach(() => {
     vi.stubGlobal('indexedDB', new IDBFactory());
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     vi.stubGlobal('File', PlatformFile);
+    vi.stubGlobal('Worker', NativePreparationWorker);
+    vi.stubGlobal('MessageChannel', MessageChannel);
     vi.stubEnv('SOURDAW_DESKTOP_RUNTIME_SCOPE_ROOT', undefined);
     vi.stubEnv('SOURDAW_DESKTOP_DEV', undefined);
     vi.stubEnv('SOURDAW_PLUGIN_SCAN_WORKER_COMMAND', process.env.SOURDAW_PLUGIN_SCAN_WORKER_COMMAND);
@@ -110,6 +114,7 @@ afterEach(async () => {
     for (const dispose of disposers.splice(0)) {
         await dispose();
     }
+    await settleNativePreparationWorkers();
     for (const listener of process.stdout.listeners('error')) {
         if (!stdoutListeners.includes(listener)) {
             process.stdout.removeListener('error', listener);
@@ -194,6 +199,8 @@ describe('imported project names at the actual native menu boundary', () => {
         const { configureProjectOriginalMediaPort } = await import('#/app/configureProjectOriginalMediaPort');
         const { useProjectState } = await import('../useProjectState');
         const { useNativeApplicationMenu } = await import('../useNativeApplicationMenu');
+        const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
+        const { clearHandlerRegistry, registerHandlerMap } = await import('#/modules/Command/stores');
 
         crdt.registerCrdtStorageRuntime();
         registerProjectSlotProjections();
@@ -201,6 +208,9 @@ describe('imported project names at the actual native menu boundary', () => {
         registerDeviceEnginePorts();
         registerSupportingServicePorts();
         registerKernelPorts();
+        clearHandlerRegistry();
+        registerHandlerMap(getWorkspaceHandlers());
+        disposers.push(clearHandlerRegistry);
         configureProjectOriginalMediaPort();
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
         command.setActionHistoryMetadataPort({

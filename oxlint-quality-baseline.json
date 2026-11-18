@@ -15799,11 +15799,6 @@
             "count": 2
         }
     },
-    "src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx": {
-        "sourdaw-craft/no-fixed-test-sleep": {
-            "count": 1
-        }
-    },
     "src/modules/Project/repositories/nativeFileDialog/helpers.ts": {
         "typescript/no-non-null-assertion": {
             "count": 1
