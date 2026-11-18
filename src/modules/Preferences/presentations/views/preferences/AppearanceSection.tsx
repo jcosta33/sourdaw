@@ -1,12 +1,11 @@
 import { type ReactElement, useState } from 'react';
 
-import { Sun, Moon, Palette } from 'lucide-react';
+import { Sun, Moon, Palette, Monitor } from 'lucide-react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
 
 import { SectionTitle, FieldGroup, ToggleRow } from '../preferencesShared';
 
@@ -33,18 +32,23 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
 
             <FieldGroup label="Theme">
                 <Row align="stretch" gap={2}>
-                    {(['dark', 'light'] as const).map((time) => (
+                    {(['system', 'light', 'dark'] as const).map((time) => (
                         <Button
                             key={time}
                             variant={prefs.theme === time ? 'secondary' : 'outline'}
                             size="sm"
                             onClick={() => {
                                 update({ theme: time });
-                                applyDocumentTheme(time);
                             }}
                             className="capitalize gap-1"
                         >
-                            {time === 'dark' ? <Moon className="size-3" /> : <Sun className="size-3" />}
+                            {time === 'system' ? (
+                                <Monitor className="size-3" />
+                            ) : time === 'dark' ? (
+                                <Moon className="size-3" />
+                            ) : (
+                                <Sun className="size-3" />
+                            )}
                             {time}
                         </Button>
                     ))}

@@ -26,24 +26,11 @@ describe('mainStylesheetRules', () => {
         expect(floatingSurface).not.toContain('rgba(255, 255, 255');
     });
 
-    it('ships warm scrollbar highlights in the renderer stylesheet', () => {
-        const declarationsFor = (selector: string) =>
-            stylesheetRules()
-                .filter((rule) => rule.selector === selector)
-                .flatMap((rule) => rule.declarations);
-
-        expect(declarationsFor('*')).toContainEqual({
-            property: 'scrollbar-color',
-            value: 'rgba(255, 249, 242, 0.12) transparent',
-        });
-        expect(declarationsFor('::-webkit-scrollbar-thumb')).toContainEqual({
-            property: 'background',
-            value: 'rgba(255, 249, 242, 0.12)',
-        });
-        expect(declarationsFor('::-webkit-scrollbar-thumb:hover')).toContainEqual({
-            property: 'background',
-            value: 'rgba(255, 249, 242, 0.25)',
-        });
+    it('uses theme colors and restores native scrollbars in forced colors', () => {
+        expect(mainStylesheet).toContain('scrollbar-color: var(--color-muted-foreground) var(--color-background);');
+        expect(mainStylesheet).toContain('@media (prefers-contrast: more)');
+        expect(mainStylesheet).toContain('@media (forced-colors: active)');
+        expect(mainStylesheet).toContain('scrollbar-color: auto;');
     });
 
     it('reads the universal selector as itself rather than losing it', () => {
@@ -138,14 +125,14 @@ describe('mainStylesheetRules', () => {
     });
 
     it('keeps dense metadata legible and defines semantic type roles in @theme', () => {
-        expect(tokensStylesheet).toContain('--text-nano: 11px;');
-        expect(tokensStylesheet).toContain('--text-micro: 11px;');
-        expect(tokensStylesheet).toContain('--text-caption: 11px;');
-        expect(tokensStylesheet).toContain('--text-dense: 12px;');
-        expect(tokensStylesheet).toContain('--text-compact: 12px;');
-        expect(tokensStylesheet).toContain('--text-metadata: 11px;');
-        expect(tokensStylesheet).toContain('--text-label: 12px;');
-        expect(tokensStylesheet).toContain('--text-value: 12px;');
-        expect(tokensStylesheet).toContain('--text-body: 12px;');
+        expect(tokensStylesheet).toContain('--text-nano: 0.6875rem;');
+        expect(tokensStylesheet).toContain('--text-micro: 0.6875rem;');
+        expect(tokensStylesheet).toContain('--text-caption: 0.6875rem;');
+        expect(tokensStylesheet).toContain('--text-dense: 0.75rem;');
+        expect(tokensStylesheet).toContain('--text-compact: 0.75rem;');
+        expect(tokensStylesheet).toContain('--text-metadata: 0.6875rem;');
+        expect(tokensStylesheet).toContain('--text-label: 0.75rem;');
+        expect(tokensStylesheet).toContain('--text-value: 0.75rem;');
+        expect(tokensStylesheet).toContain('--text-body: 0.75rem;');
     });
 });

@@ -47,17 +47,11 @@ describe('AppearanceSection', () => {
         expect(screen.getByRole('button', { name: /light/i })).toHaveAttribute('data-variant', 'outline');
     });
 
-    it('calls update with the clicked theme and synchronizes every browser theme channel', () => {
+    it('lets the user return to system appearance', () => {
         const update = vi.fn();
         render(<AppearanceSection prefs={{ ...defaultPreferences, theme: 'dark' }} update={update} />);
-
-        fireEvent.click(screen.getByRole('button', { name: /light/i }));
-
-        expect(update).toHaveBeenCalledWith({ theme: 'light' });
-        expect(document.documentElement.classList.contains('light')).toBe(true);
-        expect(document.documentElement.classList.contains('dark')).toBe(false);
-        expect(document.documentElement.style.colorScheme).toBe('light');
-        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
+        fireEvent.click(screen.getByRole('button', { name: /system/i }));
+        expect(update).toHaveBeenCalledWith({ theme: 'system' });
     });
 
     it('reflects colorblindMode in the ToggleRow and calls update on toggle', () => {

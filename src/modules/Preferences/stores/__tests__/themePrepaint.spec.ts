@@ -11,6 +11,7 @@ const startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrep
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 
 type StartupThemeOptions = {
+    prefersDark?: boolean;
     hasStartup?: () => boolean;
     onMutation?: (callback: () => void) => void;
     onDisconnect?: () => void;
@@ -31,7 +32,10 @@ const runStartupTheme = (stored: string | null, operations: string[] = [], optio
     );
     const metaAttributes: Record<string, string> = {};
     runInNewContext(startupThemeScript, {
-        window: { localStorage: { getItem: () => stored } },
+        window: {
+            localStorage: { getItem: () => stored },
+            matchMedia: () => ({ matches: options.prefersDark ?? true }),
+        },
         MutationObserver: class {
             constructor(callback: () => void) {
                 onMutation(callback);
@@ -71,6 +75,12 @@ const runStartupTheme = (stored: string | null, operations: string[] = [], optio
 describe('theme prepaint', () => {
     it('hides the document in the inline startup style before any theme resource runs', () => {
         expect(indexHtml).toMatch(/:root\s*\{[^}]*visibility:\s*hidden;/u);
+    });
+
+    it('follows the system for fresh and system preferences while explicit choices win', () => {
+        expect(runStartupTheme(null, [], { prefersDark: false }).colorScheme).toBe('light');
+        expect(runStartupTheme(stringify({ theme: 'system' }), [], { prefersDark: true }).colorScheme).toBe('dark');
+        expect(runStartupTheme(stringify({ theme: 'dark' }), [], { prefersDark: false }).colorScheme).toBe('dark');
     });
 
     it('restores the persisted light theme before startup paint', () => {
@@ -339,7 +349,8 @@ describe('theme prepaint', () => {
             // createLocalStorage returns the raw string when SuperJSON rejects it.
             decoded = stored;
         }
-        const validatedTheme = validateStoredPreferences(decoded).theme;
+        const preference = validateStoredPreferences(decoded).theme;
+        const validatedTheme = preference === 'system' ? 'dark' : preference;
 
         expect(runStartupTheme(stored)).toEqual({
             classes: new Set([validatedTheme]),

@@ -215,7 +215,7 @@
         return json;
     };
 
-    let theme = 'dark';
+    let theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     try {
         const stored = JSON.parse(window.localStorage.getItem('sourdaw-preferences') ?? 'null');
         // SuperJSON transforms every annotated value before applying aliases;
@@ -228,8 +228,8 @@
         if (stored?.meta?.referentialEqualities) {
             decoded = applyReferentialEqualities(decoded, stored.meta.referentialEqualities, legacyPaths);
         }
-        if (decoded?.theme === 'light') {
-            theme = 'light';
+        if (decoded?.theme === 'light' || decoded?.theme === 'dark') {
+            theme = decoded.theme;
         }
     } catch {
         // Storage denial and corrupt preferences retain the dark default.
