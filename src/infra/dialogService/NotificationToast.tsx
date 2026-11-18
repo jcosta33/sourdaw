@@ -164,6 +164,17 @@ const NotificationHistory = ({
     );
 };
 
+const NotificationLiveRegions = ({ current }: { current: AppNotification | undefined }): ReactElement => (
+    <>
+        <div role="status" className="sr-only">
+            {current?.level !== 'error' ? current?.message : null}
+        </div>
+        <div role="alert" className="sr-only">
+            {current?.level === 'error' ? current.message : null}
+        </div>
+    </>
+);
+
 export const NotificationToast = (): ReactElement | null => {
     const { items, history, unreadCount, dismissCurrent, dismissNotification, markAllRead, runAction } =
         useNotificationQueue();
@@ -184,12 +195,7 @@ export const NotificationToast = (): ReactElement | null => {
                 markAllRead={markAllRead}
                 runAction={runAction}
             />
-            <div role="status" className="sr-only">
-                {current?.level !== 'error' ? current?.message : null}
-            </div>
-            <div role="alert" className="sr-only">
-                {current?.level === 'error' ? current.message : null}
-            </div>
+            <NotificationLiveRegions current={current} />
             {current ? (
                 <div
                     data-testid="notification-toast"
