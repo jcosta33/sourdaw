@@ -53,6 +53,9 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: mocks.executeUserAppAction,
+    commitUndoEntry: vi.fn(),
+    getExecutableAppActionEffect: vi.fn(() => null),
+    resetActionReplayAuthority: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

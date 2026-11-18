@@ -9,7 +9,11 @@ export function insertAutomationPointAtBeat(
     let hi = points.length;
     while (lo < hi) {
         const mid = (lo + hi) >>> 1;
-        if (points[mid]!.beat <= point.beat) {
+        const midpoint = points[mid];
+        if (midpoint === undefined) {
+            throw new Error('Expected a point inside the sorted automation lane.');
+        }
+        if (midpoint.beat <= point.beat) {
             lo = mid + 1;
         } else {
             hi = mid;

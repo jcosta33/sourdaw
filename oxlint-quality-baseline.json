@@ -10621,11 +10621,6 @@
             "count": 1
         }
     },
-    "src/modules/Automation/useCases/automation/addAutomationPoint.ts": {
-        "typescript/no-non-null-assertion": {
-            "count": 1
-        }
-    },
     "src/modules/Automation/useCases/automation/automationTimeStateCodec.ts": {
         "eslint/complexity": {
             "count": 1

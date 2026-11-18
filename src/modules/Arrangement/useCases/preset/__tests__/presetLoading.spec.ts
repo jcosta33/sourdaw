@@ -27,6 +27,7 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    captureProjectRootIdentity: vi.fn(() => 'fixture-root'),
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
