@@ -1,5 +1,6 @@
 import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
+
 import { mergeAutomationPointBatch } from './mergeAutomationPointBatch';
 
 /**
