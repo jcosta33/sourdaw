@@ -5,6 +5,7 @@ import { midiFragmentWindowEntry, resolveClipLoopPassGrid, resolveLoopedOffsetBe
 import { type MidiCC } from '../../../models/MidiNote';
 import { getGrooveProjection } from '../../grooveTemplates/getGrooveProjection';
 import { projectClipControllerEvents } from '../projectClipControllerEvents';
+import { projectClipControllerEventsWithProvenance } from '../projectClipControllerEventsWithProvenance';
 
 function controller(id: string, beat: number, value: number, cc = 64, channel = 0): MidiCC {
     return { id, controller: cc, value, beat, channel };
@@ -15,6 +16,25 @@ function placed(events: readonly MidiCC[]): { beat: number; value: number }[] {
 }
 
 describe('projectClipControllerEvents', () => {
+    it('reports source, carried and closing controller provenance without changing playback rows', () => {
+        const input = {
+            controlChanges: [controller('a', 0, 127), controller('b', 2, 127), controller('c', 5, 0)],
+            clip: { startBeat: 4, endBeat: 8, midiOffsetBeats: 1 },
+            fromBeat: 4,
+            toBeat: 9,
+        };
+        expect(projectClipControllerEventsWithProvenance(input)).toEqual([
+            expect.objectContaining({ id: 'a', beat: 4, sourceBeat: 0, origin: 'carried' }),
+            expect.objectContaining({ id: 'b', beat: 5, sourceBeat: 2, origin: 'source' }),
+            expect.objectContaining({ id: 'c', beat: 8, sourceBeat: 5, origin: 'closing' }),
+        ]);
+        expect(placed(projectClipControllerEvents(input))).toEqual([
+            { beat: 4, value: 127 },
+            { beat: 5, value: 127 },
+            { beat: 8, value: 0 },
+        ]);
+    });
+
     it('begins a clip from the value in force at its content offset and places the moves past it', () => {
         // Clip at 4 plays content from beat 1, so content 0 (pedal down) is in force
         // when the clip starts and is carried to the clip start; content 2 and 3
