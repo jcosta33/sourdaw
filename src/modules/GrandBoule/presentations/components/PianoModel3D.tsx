@@ -3,6 +3,8 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
+import { startVisiblePianoFrameLoop } from './startVisiblePianoFrameLoop';
+
 /**
  * Interactive 3D grand piano model.
  *
@@ -351,12 +353,8 @@ export const PianoModel3D = ({
         // when the vertex count exceeds the currently-cached capacity.
         const vertexScratch: number[] = [];
         let uploadBuffer: Float32Array | null = null;
-        let rafId: number | null = null;
-        let intersecting = false;
-        let disposed = false;
 
         const render = (): void => {
-            rafId = null;
             const W = canvas.width;
             const H = canvas.height;
             gl.viewport(0, 0, W, H);
@@ -555,40 +553,11 @@ export const PianoModel3D = ({
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
             gl.bufferData(gl.ARRAY_BUFFER, uploadBuffer.subarray(0, vertexCount), gl.DYNAMIC_DRAW);
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount / 6);
-
-            rafId = requestAnimationFrame(render);
         };
 
-        const updateRendering = (): void => {
-            if (disposed) {
-                return;
-            }
-            if (intersecting && document.visibilityState === 'visible') {
-                if (rafId === null) {
-                    rafId = requestAnimationFrame(render);
-                }
-            } else if (rafId !== null) {
-                cancelAnimationFrame(rafId);
-                rafId = null;
-            }
-        };
-        const observer = new IntersectionObserver((entries) => {
-            for (const entry of entries) {
-                if (entry.target === canvas) {
-                    intersecting = entry.isIntersecting;
-                }
-            }
-            updateRendering();
-        });
-        observer.observe(canvas);
-        document.addEventListener('visibilitychange', updateRendering);
+        const stopRendering = startVisiblePianoFrameLoop(canvas, render);
         return () => {
-            disposed = true;
-            observer.disconnect();
-            document.removeEventListener('visibilitychange', updateRendering);
-            if (rafId !== null) {
-                cancelAnimationFrame(rafId);
-            }
+            stopRendering();
             gl.deleteBuffer(vbo);
             gl.deleteVertexArray(vao);
             gl.deleteProgram(prog);
