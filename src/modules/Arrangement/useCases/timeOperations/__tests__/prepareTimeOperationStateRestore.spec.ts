@@ -1215,6 +1215,59 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 
+    it.each([
+        { failureMode: 'before publication', publishTake: false, attemptedWrites: 1 },
+        { failureMode: 'with refused compensation', publishTake: true, attemptedWrites: 2 },
+    ])(
+        'reports a take lane failure $failureMode while compensating track geometry',
+        ({ publishTake, attemptedWrites }) => {
+            const expectedTrackState = createTrackState(2);
+            const replacementTrackState = createTrackState(1, 0, {
+                clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-1' })],
+            });
+            setCurrentState(expectedTrackState, createMarkerState(8));
+            installDependencies();
+            const take = createTake('clip-1', 'Retired take', 0, 4);
+            const restoredLane = { ...createTakeLane('track-1'), takes: [take] };
+            const transaction = prepareTimeOperationStateRestore(
+                createPlan({
+                    scope: 'selected-range',
+                    expectedTrackState,
+                    replacementTrackState,
+                    takeLanes: {
+                        version: 1,
+                        appliedEffect: 'restore',
+                        removedClipIds: ['clip-1'],
+                        retiredLanes: [{ laneIndex: 0, lane: restoredLane, retiredTakeIds: [take.id] }],
+                    },
+                })
+            );
+            const failure = new Error('Injected take lane publication failure');
+            const publish = takeLaneStore.set.bind(takeLaneStore);
+            const write = vi.spyOn(takeLaneStore, 'set').mockImplementationOnce((state) => {
+                if (publishTake) {
+                    publish(state);
+                }
+                throw failure;
+            });
+            write.mockImplementationOnce(() => undefined);
+            const expectedFailure = publishTake
+                ? expect.objectContaining({
+                      name: 'UnrecoveredTimeOperationStateError',
+                      originalFailure: failure,
+                      compensationFailures: [
+                          expect.objectContaining({ message: 'Take lane state could not be restored' }),
+                      ],
+                  })
+                : failure;
+
+            expect(() => transaction.apply()).toThrow(expectedFailure);
+            expect(write).toHaveBeenCalledTimes(attemptedWrites);
+            expect(takeLaneStore.value?.lanes).toEqual(publishTake ? [restoredLane] : []);
+            expect(mocks.trackState.value).toEqual(expectedTrackState);
+        }
+    );
+
     it.each(['captured', 'replacement'] as const)(
         'retire replay respects a %s host when only a later peer take remains',
         (host) => {

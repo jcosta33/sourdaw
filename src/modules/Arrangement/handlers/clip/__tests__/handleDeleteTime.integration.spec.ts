@@ -1549,6 +1549,74 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         }
     );
 
+    it('keeps selected Delete Time retryable when Undo fails after publishing a captured take', async () => {
+        arrangeJoinedOwners();
+        setWarpState('gone', {
+            enabled: true,
+            markers: [{ id: 'gone-warp', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        const removed = createTake('gone', 'Removed in range', 3, 5);
+        const sibling = createTake('untouched', 'Outside the range', 12, 14);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...lane(),
+                    takes: [sibling, removed],
+                    activeCompRegions: [
+                        { startBeat: 3, endBeat: 5, takeId: removed.id },
+                        { startBeat: 12, endBeat: 14, takeId: sibling.id },
+                    ],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const original = durableOwners();
+        deleteTimeRange(2, 6, ['track-1', 'midi-track']);
+        flushAutomergeStorageWrites();
+        const deleted = durableOwners();
+        const deletedDocument = structuredClone(getCrdtDoc<Project>('root'));
+        const history = undoStore.value;
+        expect(history?.past).toHaveLength(1);
+        expect(history?.future).toEqual([]);
+        expect(lane().takes).toEqual([sibling]);
+        expect(deleted.midi).not.toEqual(original.midi);
+        expect(deleted.automation.lanes).toEqual([]);
+        expect(deleted.gainEnvelopes.envelopes.gone).toBeUndefined();
+        expect(deleted.warpStates.states.gone).toBeUndefined();
+        const failure = new Error('Injected failure after restoring the captured take');
+        const publishTakes = takeLaneStore.set.bind(takeLaneStore);
+        const takeWrite = vi.spyOn(takeLaneStore, 'set').mockImplementationOnce((state) => {
+            expect(trackStore.value?.tracks).toEqual(original.tracks);
+            expect(midiStore.value).toEqual(original.midi);
+            expect(automationStore.value).toEqual(original.automation);
+            expect(gainEnvelopeStore.value).toEqual(original.gainEnvelopes);
+            expect(warpStateStore.value).toEqual(original.warpStates);
+            publishTakes(state);
+            expect(lane().takes).toEqual([sibling, removed]);
+            throw failure;
+        });
+        await expect(undo()).rejects.toBe(failure);
+        takeWrite.mockRestore();
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<Project>('root')).toEqual(deletedDocument);
+        expectDurableOwners(deleted);
+        expect(undoStore.value).toBe(history);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        expectDurableOwners(original);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual(history?.past);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expectDurableOwners(deleted);
+        expect(undoStore.value?.past).toEqual(history?.past);
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
     it('selected settled replay joins real MIDI, Automation and satellites while preserving unrelated satellites', async () => {
         arrangeJoinedOwners();
         const originalTracks = structuredClone(trackStore.value);
