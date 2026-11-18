@@ -115,6 +115,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     activeRecordingRef: { current: [] },
     readMusicalRangeInputs: vi.fn(() => []),
     trackStore: mocks.trackStore,

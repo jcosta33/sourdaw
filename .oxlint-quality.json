@@ -1,0 +1,79 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["typescript", "vitest"],
+    "jsPlugins": ["./scripts/oxlintCraft/plugin.mjs"],
+    "categories": {
+        "correctness": "off",
+        "suspicious": "off",
+        "pedantic": "off",
+        "perf": "off",
+        "style": "off",
+        "restriction": "off",
+        "nursery": "off"
+    },
+    "options": {
+        "typeAware": true
+    },
+    "ignorePatterns": [
+        "src/routeTree.gen.ts",
+        "src/modules/AudioEngine/wasm/*.js",
+        "src/modules/AudioEngine/wasm/*.d.ts",
+        "src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.js",
+        "src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.d.ts",
+        "src/modules/AudioRendering/workers/vendor/opus/opus-encode.js",
+        "src/modules/AudioRendering/workers/vendor/opus/opus-encode.d.ts",
+        "src/modules/AudioRendering/workers/vendor/opus/core.js",
+        "src/modules/AudioRendering/workers/vendor/vorbis/vorbis.wasm.js",
+        "src/modules/AudioRendering/workers/vendor/opus/src/opus.wasm.js",
+        "scripts/**/*.mjs",
+        "scripts/**/*.cjs",
+        "scripts/download-levain-samples-direct.ts",
+        "scripts/download-levain-samples.ts",
+        "scripts/__tests__/check-dependency-boundaries.spec.ts",
+        "scripts/oxlintCraft/__tests__/fixtures/**"
+    ],
+    "rules": {
+        "typescript/switch-exhaustiveness-check": [
+            "error",
+            {
+                "considerDefaultExhaustiveForUnions": false
+            }
+        ],
+        "sourdaw-craft/no-conditional-empty-spread": "error",
+        "sourdaw-craft/no-useless-clone-spread": "error",
+        "sourdaw-craft/no-spread-clone-array-method": "error",
+        "sourdaw-craft/no-json-parse-stringify": "error",
+        "sourdaw-craft/no-long-array-chain": "error",
+        "sourdaw-craft/no-control-flow-ternary": "error",
+        "sourdaw-craft/no-silent-catch": "error",
+        "sourdaw-craft/no-failed-operation-success": "error",
+        "sourdaw-craft/no-external-data-assertion": "error"
+    },
+    "overrides": [
+        {
+            "files": ["**/*.{spec,test}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+            "excludeFiles": ["**/*.e2e.spec.*", "tests/e2e/**", "server/**", "electron/out/**"],
+            "rules": {
+                "vitest/no-conditional-expect": "error",
+                "sourdaw-craft/no-invalid-vitest-expect": "error"
+            }
+        },
+        {
+            "files": ["tests/e2e/**/*.{spec,test}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+            "rules": {
+                "sourdaw-craft/no-conditional-playwright-admission": "error"
+            }
+        },
+        {
+            "files": [
+                "**/*.{spec,test}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+                "**/__tests__/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+                "src/**/testing/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+                "tests/e2e/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"
+            ],
+            "rules": {
+                "sourdaw-craft/no-fixed-test-sleep": "error"
+            }
+        }
+    ]
+}
