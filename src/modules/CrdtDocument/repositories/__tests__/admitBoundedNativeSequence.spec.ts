@@ -90,6 +90,14 @@ function replaceFirst(result: ProspectiveMutationWorkerResult, edit: (value: A.D
     return { ...result, changes: [Uint8Array.from(A.encodeChange(change)), ...result.changes.slice(1)] };
 }
 
+function corruptChecksum(bytes: Uint8Array | undefined): void {
+    const checksumByte = bytes?.[4];
+    if (!bytes || checksumByte === undefined) {
+        throw new Error('Checksum rejection requires an existing native change checksum byte');
+    }
+    bytes[4] = checksumByte ^ 1;
+}
+
 function withOpaqueExtra(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
     if (bytes[8] !== 1) {
         throw new Error('Opaque control requires native type1');
@@ -229,7 +237,9 @@ describe('bounded native sequence authority', () => {
         const truth = A.toJS(source);
         const heads = A.getHeads(source);
         let invalid: ProspectiveMutationWorkerResult = result;
-        let authoredControl: { author: string | undefined; changeAuthor: string | undefined } | undefined;
+        let authoredControl:
+            | { author: ReturnType<typeof A.getAuthor>; changeAuthor: ReturnType<typeof A.getAuthor> | undefined }
+            | undefined;
         let type2Control: number | undefined;
         if (kind === 'author') {
             const authored = A.change(
@@ -278,12 +288,16 @@ describe('bounded native sequence authority', () => {
             invalid = replaceFirst(result, (value) => ({ ...value, deps: [] }));
         }
         if (kind === 'checksum' || kind === 'type2') {
-            const first = Uint8Array.from(result.changes[0]!);
+            const received = result.changes[0];
+            if (!received) {
+                throw new Error('Expected an actual first native change to corrupt');
+            }
+            const first = Uint8Array.from(received);
             if (kind === 'type2') {
                 first[8] = 2;
                 type2Control = first[8];
             } else {
-                first[4] ^= 1;
+                corruptChecksum(first);
             }
             invalid = { ...result, changes: [first, ...result.changes.slice(1)] };
         }
@@ -405,7 +419,7 @@ describe('bounded native sequence authority', () => {
             const controller = new AbortController();
             const before = vi.mocked(A.free).mock.calls.length;
             if (failure === 'checksum') {
-                result.changes[0]![4] ^= 1;
+                corruptChecksum(result.changes[0]);
             }
             const requested = admitBoundedNativeSequence({
                 source,

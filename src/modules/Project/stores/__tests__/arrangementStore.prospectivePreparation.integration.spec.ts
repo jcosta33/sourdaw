@@ -1,6 +1,6 @@
 import { Blob as NativeBlob } from 'node:buffer';
 import { writeFileSync } from 'node:fs';
-import { performance as nativePerformance, PerformanceObserver } from 'node:perf_hooks';
+import { performance as nativePerformance, PerformanceMeasure, PerformanceObserver } from 'node:perf_hooks';
 import { MessageChannel } from 'node:worker_threads';
 
 import * as A from '@automerge/automerge';
@@ -84,7 +84,7 @@ describe('arrangementStore real bounded native preparation', () => {
         const cancellation = new AbortController();
         const observer = new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
-                if (entry.name.startsWith('automerge-')) {
+                if (entry.name.startsWith('automerge-') && entry instanceof PerformanceMeasure) {
                     timings.push({ name: entry.name, duration: entry.duration, detail: entry.detail });
                     if (
                         (entry.name.includes('sequence-slice') || entry.name.includes('sequence-planning')) &&
@@ -181,7 +181,7 @@ describe('arrangementStore real bounded native preparation', () => {
             expect(A.saveIncremental(original)).toEqual(cursor);
             const entries = observer.takeRecords();
             for (const entry of entries) {
-                if (entry.name.startsWith('automerge-')) {
+                if (entry.name.startsWith('automerge-') && entry instanceof PerformanceMeasure) {
                     timings.push({ name: entry.name, duration: entry.duration, detail: entry.detail });
                 }
             }
@@ -271,7 +271,7 @@ describe('arrangementStore real bounded native preparation', () => {
             unstore();
             unsubscribe();
             for (const entry of observer.takeRecords()) {
-                if (entry.name.startsWith('automerge-')) {
+                if (entry.name.startsWith('automerge-') && entry instanceof PerformanceMeasure) {
                     timings.push({ name: entry.name, duration: entry.duration, detail: entry.detail });
                 }
             }

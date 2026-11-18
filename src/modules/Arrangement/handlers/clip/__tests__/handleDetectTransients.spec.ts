@@ -166,7 +166,7 @@ function waitForFirstReply(
 ) {
     return Promise.race([
         firstReply,
-        completion.then((result) => {
+        Promise.resolve(completion).then((result) => {
             throw new Error('Detect finished before posting its bounded Worker request', { cause: result });
         }),
     ]);
