@@ -183,13 +183,17 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
         expect(gl.drawArrays).toHaveBeenCalledTimes(2);
         expect(readNotes).toHaveBeenCalled();
         visibility.mockReturnValue('hidden');
-        act(() => document.dispatchEvent(new Event('visibilitychange')));
+        act(() => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
         expect(window.cancelAnimationFrame).toHaveBeenCalledWith(
             vi.mocked(window.requestAnimationFrame).mock.results.at(-1)?.value
         );
         rafCallbacks = [];
         visibility.mockReturnValue('visible');
-        act(() => document.dispatchEvent(new Event('visibilitychange')));
+        act(() => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
         expect(rafCallbacks).toHaveLength(1);
         const finalFrame = vi.mocked(window.requestAnimationFrame).mock.results.at(-1)?.value;
         unmount();
