@@ -9,12 +9,12 @@ import {
     toggleAutomationVisibility,
     removeAutomationLane,
     restoreAutomationLanes,
-    insertAutomationShape,
     deleteSelectedPoints,
     getSelectionBounds,
     adjustYZoom,
     zoomToUsedRange,
     getAutomationLaneCeiling,
+    insertAutomationLanePoints,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { captureGestureBeat, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -334,7 +334,12 @@ export const AutomationLaneRow = ({
         if (!contextMenu) {
             return;
         }
-        insertAutomationShape(lane.id, shape, contextMenu.beat, contextMenu.beat + 4);
+        void insertAutomationLanePoints(lane, {
+            kind: 'shape',
+            shape,
+            startBeat: contextMenu.beat,
+            endBeat: contextMenu.beat + 4,
+        });
         setContextMenu(null);
     };
 

@@ -19,9 +19,7 @@ const mocks = vi.hoisted(() => ({
             points: Array<{ id?: string; beat: number; value: number; curve: string; tension: number }>;
         }>,
     },
-    addAutomationPoint: vi.fn(),
     removeAutomationPoint: vi.fn(),
-    removeAutomationPointById: vi.fn(),
     updateAutomationPoint: vi.fn(),
     setAutomationPointCurve: vi.fn(),
     beginDrawSession: vi.fn(),
@@ -30,6 +28,7 @@ const mocks = vi.hoisted(() => ({
     cancelDrawSession: vi.fn(),
     selectPointsInRange: vi.fn(),
     pushUndoEntry: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -40,10 +39,9 @@ vi.mock('#/modules/Automation/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
-    addAutomationPoint: mocks.addAutomationPoint,
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     removeAutomationPoint: mocks.removeAutomationPoint,
-    removeAutomationPointById: mocks.removeAutomationPointById,
     updateAutomationPoint: mocks.updateAutomationPoint,
     setAutomationPointCurve: mocks.setAutomationPointCurve,
     beginDrawSession: mocks.beginDrawSession,
@@ -54,7 +52,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
@@ -186,7 +184,7 @@ describe('automationDrag', () => {
     });
 
     describe('onRubberBandStart', () => {
-        it('a click without drag adds an automation point with an undo entry', () => {
+        it('dispatches a point insertion on a click without a drag', () => {
             const lane = makeLane([]);
             const surface = renderSurface({
                 onSurfaceMouseDown: (event) => onRubberBandStart(event, lane, setRubberBand, setSelectedPoints, coords),
@@ -198,23 +196,17 @@ describe('automationDrag', () => {
 
             fireEvent.mouseUp(window, { clientX: 50, clientY: 40 });
 
-            expect(mocks.addAutomationPoint).toHaveBeenCalledWith(
-                'lane-1',
-                expect.objectContaining({ beat: 5, value: 0.6, curve: 'linear', tension: 0 })
+            expect(mocks.executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
+                {
+                    type: 'insertAutomationLanePoints',
+                    payload: {
+                        laneId: 'lane-1',
+                        owner: { trackId: 'track-1', parameterId: 'volume' },
+                        insertion: { kind: 'point', point: { beat: 5, value: 0.6, curve: 'linear', tension: 0 } },
+                    },
+                },
+                expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
             );
-            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
-                'Add automation point',
-                expect.any(Function),
-                expect.any(Function)
-            );
-
-            // Undo removes the added point by its id, not by beat: the id handed
-            // to removeAutomationPointById is the added point's own.
-            const addedPointId = mocks.addAutomationPoint.mock.calls[0]?.[1]?.id;
-            expect(addedPointId).toEqual(expect.any(String));
-            const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
-            undoFn();
-            expect(mocks.removeAutomationPointById).toHaveBeenCalledWith('lane-1', addedPointId);
         });
 
         it('a meaningful drag selects the points in range instead of adding one', () => {
@@ -235,7 +227,7 @@ describe('automationDrag', () => {
             // beats 5..15, values low→high from the y extremes
             expect(mocks.selectPointsInRange).toHaveBeenCalledWith('lane-1', 5, 15, expect.closeTo(0.2), 0.6);
             expect(setSelectedPoints).toHaveBeenLastCalledWith([1, 2]);
-            expect(mocks.addAutomationPoint).not.toHaveBeenCalled();
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
             expect(setRubberBand).toHaveBeenLastCalledWith(null);
         });
 
@@ -285,12 +277,12 @@ describe('automationDrag', () => {
             fireEvent.keyDown(window, { key: 'Escape' });
 
             expect(setRubberBand).toHaveBeenCalledWith(null);
-            expect(mocks.addAutomationPoint).not.toHaveBeenCalled();
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
             expect(mocks.selectPointsInRange).not.toHaveBeenCalled();
 
             // Listeners are torn down: a mouseup after Escape does nothing further.
             fireEvent.mouseUp(window, { clientX: 150, clientY: 80 });
-            expect(mocks.addAutomationPoint).not.toHaveBeenCalled();
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         });
     });
 

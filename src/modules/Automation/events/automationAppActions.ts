@@ -2,6 +2,29 @@ import { type SendAutomationRangeSnapshot } from '../models/SendAutomationRangeS
 
 import { type AutomationPointSnapshot } from './automationSnapshots';
 
+type AutomationLaneInsertion =
+    | { kind: 'point'; point: Omit<AutomationPointSnapshot, 'id'> }
+    | {
+          kind: 'shape';
+          shape: 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
+          startBeat: number;
+          endBeat: number;
+          cycles?: number;
+      };
+
+type AutomationLaneInsertionOwner = { trackId: string; parameterId: string; clipId?: string };
+
+type AutomationLaneInsertionCapture = {
+    laneObjectId: string;
+    minValue: number;
+    maxValue: number;
+    editId: string;
+    before: AutomationPointSnapshot[];
+    after: AutomationPointSnapshot[];
+    changedBeats: number[];
+    changedPointIds: string[];
+};
+
 export type AutomationAppAction =
     | { type: 'addModulator'; payload: { modulator: Omit<ModulatorSnapshot, 'id'>; modulatorId?: string } }
     | { type: 'removeModulator'; payload: { modulatorId: string } }
@@ -190,6 +213,17 @@ export type AutomationAppAction =
           payload: { laneId: string; expectedPoints?: readonly AutomationPointSnapshot[] };
       }
     | { type: 'setAutomationLaneEnabled'; payload: { laneId: string; enabled: boolean } }
+    | {
+          /** Local point and shape insertion, materialized by the owning Automation handler. */
+          type: 'insertAutomationLanePoints';
+          payload: {
+              laneId: string;
+              owner: AutomationLaneInsertionOwner;
+              insertion: AutomationLaneInsertion;
+              capture?: AutomationLaneInsertionCapture;
+              direction?: 'undo';
+          };
+      }
     | {
           type: 'addAutomationPoint';
           /**

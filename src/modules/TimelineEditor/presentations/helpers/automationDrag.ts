@@ -7,8 +7,6 @@ import { type MouseEvent as ReactMouseEvent } from 'react';
 
 import { automationStore } from '#/modules/Automation/stores';
 import {
-    addAutomationPoint,
-    removeAutomationPointById,
     updateAutomationPoint,
     setAutomationPointCurve,
     beginDrawSession,
@@ -16,6 +14,7 @@ import {
     endDrawSession,
     cancelDrawSession,
     selectPointsInRange,
+    insertAutomationLanePoints,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
@@ -68,30 +67,6 @@ export const onDrawMouseDown = (
 };
 
 // ── Point insertion ──────────────────────────────────────────────────────────
-
-/** Add one point to a lane as a single undoable edit, addressed by its own id. */
-const addPointWithUndo = (laneId: string, fields: Omit<AutomationPoint, 'id'>): void => {
-    // The id is what makes the undo side remove exactly the point this edit
-    // added; removing by beat would also take any other point already sitting
-    // at the same beat.
-    const pointId = `auto-point-${crypto.randomUUID()}`;
-    const point: AutomationPoint = { id: pointId, ...fields };
-    addAutomationPoint(laneId, point);
-    pushUndoEntry(
-        'Add automation point',
-        () => {
-            removeAutomationPointById(laneId, pointId);
-        },
-        () => {
-            addAutomationPoint(laneId, point);
-        }
-    );
-};
-
-/** Add one linear point where the click landed, as a single undoable edit. */
-export const addAutomationPointWithUndo = (laneId: string, beat: number, value: number): void => {
-    addPointWithUndo(laneId, { beat, value, curve: 'linear', tension: 0 });
-};
 
 /**
  * Curve families a point can split at any interior beat with both halves
@@ -178,7 +153,7 @@ export const insertAutomationPointPreservingShape = (laneId: string, beat: numbe
     if (point === undefined) {
         return false;
     }
-    addPointWithUndo(laneId, point);
+    void insertAutomationLanePoints(lane, { kind: 'point', point });
     return true;
 };
 
@@ -246,7 +221,15 @@ export const onRubberBandStart = (
                     setSelectedPoints(found);
                 }
             } else if (!isShift) {
-                addAutomationPointWithUndo(lane.id, Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
+                void insertAutomationLanePoints(lane, {
+                    kind: 'point',
+                    point: {
+                        beat: Math.max(0, coords.xToBeat(x)),
+                        value: coords.yToValue(y),
+                        curve: 'linear',
+                        tension: 0,
+                    },
+                });
             }
             setRubberBand(null);
         },

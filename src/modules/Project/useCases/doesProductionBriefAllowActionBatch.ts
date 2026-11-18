@@ -120,6 +120,11 @@ function actionOverlapsRange(
     scope: ProductionBriefRangeScope,
     footprint: ProductionBriefActionFootprint
 ): boolean {
+    if (action.type === 'insertAutomationLanePoints') {
+        // The ordered capture includes every untouched point. Only the owner's
+        // verified changed beats describe this insertion's range footprint.
+        return specificRangeOverlap(action, scope, footprint);
+    }
     return (
         (!ownValue(carriesClipRelativeBeatsByActionType, action.type, false) &&
             valueOverlapsRange(action.payload, scope)) ||
@@ -193,7 +198,13 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
     const projectActions = actions.filter((action) => !isAdmittedRoute(action));
     const actionStrings = new Set<string>();
     for (const action of projectActions) {
-        collectActionStrings(action.payload, actionStrings);
+        if (action.type === 'insertAutomationLanePoints') {
+            const { laneId, owner, capture } = action.payload;
+            actionStrings.add(laneId);
+            collectActionStrings([owner?.trackId, owner?.clipId, capture?.changedPointIds], actionStrings);
+        } else {
+            collectActionStrings(action.payload, actionStrings);
+        }
     }
 
     const protectedScopes = collectProtectedScopes(brief).map((protection) => protection.scope);

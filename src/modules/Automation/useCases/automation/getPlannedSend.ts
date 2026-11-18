@@ -296,6 +296,7 @@ const plannedSendByActionType: {
     removeAutomationLane: unchangedSend,
     setAutomationLaneEnabled: unchangedSend,
     addAutomationPoint: unchangedSend,
+    insertAutomationLanePoints: unchangedSend,
     quantizeNotes: unchangedSend,
     removeShortMidiOverlaps: unchangedSend,
     createDrumPreviewBranches: unchangedSend,
