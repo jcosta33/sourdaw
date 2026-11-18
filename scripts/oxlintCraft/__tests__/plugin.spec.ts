@@ -159,10 +159,88 @@ runCraftRule('no-control-flow-ternary', {
     invalid: [
         {
             code: 'armed ? arm() : disarm();',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() { armed ? arm() : synth.disarm(); }',
+            output: 'function change() { if (armed) { (arm()); } else { (synth.disarm()); } }',
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'async function change() { check() ? await start() : await stop(); }',
+            output: 'async function change() { if (check()) { (await start()); } else { (await stop()); } }',
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'const change = () => { armed ? class { static run() {} }.run() : disarm(); };',
+            output: 'const change = () => { if (armed) { (class { static run() {} }.run()); } else { (disarm()); } };',
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() {\n    (armed ? arm() : disarm());\n}',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() {\n    armed ? arm() : disarm()\n}',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() {\n    armed ? /* keep this */ arm() : disarm();\n}',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() { armed ? arm(/* keep this */ track) : disarm(); }',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() { armed ? arm() : (disarm()); }',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() {\n    // @ts-expect-error required for the next line\n    armed ? arm() : disarm();\n}',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() {\n    armed ? arm() : disarm(); // keep this\n}',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() {\n    armed\n        ? arm()\n        : disarm();\n}',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() { armed ? arm() : value; }',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() { if (active) armed ? arm() : disarm(); }',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            code: 'function change() { if (active) { armed ? arm() : disarm(); } }',
+            output: null,
+            errors: [{ message: /Do not use a ternary as a statement/ }],
+        },
+        {
+            filename: 'Panel.tsx',
+            code: 'function change() { armed ? <On /> : <Off />; }',
+            output: null,
             errors: [{ message: /Do not use a ternary as a statement/ }],
         },
         {
             code: 'const next =\n    ready\n        ? start()\n        : stop();',
+            output: null,
             errors: [{ message: /Do not use a ternary as an if/ }],
         },
     ],
