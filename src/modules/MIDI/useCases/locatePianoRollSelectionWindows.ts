@@ -6,17 +6,67 @@ import { type MidiNote } from '../models/MidiNote';
 import { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 import { type readPianoRollSelection } from './readPianoRollSelection';
 
+type ClipPlacement = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    loopOriginBeat?: number;
+};
+
+function sourceBeats(clip: ClipPlacement, source: MidiNote, displayBeat: number): number[] | null {
+    const beats: number[] = [];
+    const expansion = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const grid = resolveClipLoopPassGrid({
+        startBeat: clip.startBeat,
+        endBeat: clip.endBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+        loopLengthBeats: expansion.loopLengthBeats,
+        iterationCount: expansion.iterationCount,
+    });
+    const atDisplay = Math.floor((displayBeat - grid.firstPassStartBeat) / expansion.loopLengthBeats);
+    if (!Number.isSafeInteger(atDisplay)) {
+        return null;
+    }
+    const passes = new Set([0, atDisplay - 1, atDisplay, atDisplay + 1]);
+    for (const pass of passes) {
+        if (pass < 0 || pass >= grid.passCount) {
+            continue;
+        }
+        const iterationStartBeat = grid.firstPassStartBeat + pass * expansion.loopLengthBeats;
+        if (
+            !Number.isFinite(iterationStartBeat) ||
+            iterationStartBeat + expansion.loopLengthBeats <= iterationStartBeat
+        ) {
+            return null;
+        }
+        for (const event of projectClipMidiEvents({
+            events: [source],
+            clipId: clip.id,
+            clipStartBeat: clip.startBeat,
+            clipEndBeat: clip.endBeat,
+            iterationStartBeat,
+            loopLengthBeats: expansion.loopLengthBeats,
+            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+            loopEnabled: clip.loopEnabled,
+            loopOriginBeat: clip.loopOriginBeat,
+        })) {
+            beats.push(event.startBeat);
+        }
+    }
+    return beats;
+}
+
 /** Bounded read hints only; source ownership and the query still decide what can be read. */
 export function locatePianoRollSelectionWindows(
-    clip: {
-        id: string;
-        startBeat: number;
-        endBeat: number;
-        midiOffsetBeats?: number;
-        loopEnabled?: boolean;
-        loopLength?: number;
-        loopOriginBeat?: number;
-    },
+    clip: ClipPlacement,
     owner: ReturnType<typeof readPianoRollSelection>['owners'][number],
     source: MidiNote | undefined
 ) {
@@ -31,49 +81,11 @@ export function locatePianoRollSelectionWindows(
         if (!source) {
             return [];
         }
-        const expansion = projectClipLoopExpansion({
-            clipDurationBeats: clip.endBeat - clip.startBeat,
-            configuredLoopLengthBeats: clip.loopLength,
-            loopEnabled: clip.loopEnabled ?? false,
-        });
-        const grid = resolveClipLoopPassGrid({
-            startBeat: clip.startBeat,
-            endBeat: clip.endBeat,
-            loopOriginBeat: clip.loopOriginBeat,
-            loopEnabled: clip.loopEnabled ?? false,
-            loopLengthBeats: expansion.loopLengthBeats,
-            iterationCount: expansion.iterationCount,
-        });
-        const atDisplay = Math.floor((displayBeat - grid.firstPassStartBeat) / expansion.loopLengthBeats);
-        if (!Number.isSafeInteger(atDisplay)) {
+        const projected = sourceBeats(clip, source, displayBeat);
+        if (projected === null) {
             return [];
         }
-        const passes = new Set([0, atDisplay - 1, atDisplay, atDisplay + 1]);
-        for (const pass of passes) {
-            if (pass < 0 || pass >= grid.passCount) {
-                continue;
-            }
-            const iterationStartBeat = grid.firstPassStartBeat + pass * expansion.loopLengthBeats;
-            if (
-                !Number.isFinite(iterationStartBeat) ||
-                iterationStartBeat + expansion.loopLengthBeats <= iterationStartBeat
-            ) {
-                return [];
-            }
-            for (const event of projectClipMidiEvents({
-                events: [source],
-                clipId: clip.id,
-                clipStartBeat: clip.startBeat,
-                clipEndBeat: clip.endBeat,
-                iterationStartBeat,
-                loopLengthBeats: expansion.loopLengthBeats,
-                midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                loopEnabled: clip.loopEnabled,
-                loopOriginBeat: clip.loopOriginBeat,
-            })) {
-                beats.push(event.startBeat);
-            }
-        }
+        beats.push(...projected);
     }
     return Array.from(
         new Set(

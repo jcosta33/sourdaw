@@ -84,11 +84,14 @@ describe('piano roll frozen take occurrence ownership', () => {
 
     it('retains original occurrence IDs when a bounded query reads only the later repeat', () => {
         const full = projectPianoRollTakeNotes(loopingClip, 'track', laneState());
-        const bounded = projectPianoRollTakeNotes(loopingClip, 'track', laneState(), [], {
-            fromBeat: 4,
-            toBeat: 8,
-            maxWork: 100,
-            maxOutput: 10,
+        const bounded = projectPianoRollTakeNotes(loopingClip, 'track', laneState(), {
+            baseRows: [],
+            window: {
+                fromBeat: 4,
+                toBeat: 8,
+                maxWork: 100,
+                maxOutput: 10,
+            },
         });
         expect(bounded.notes).toEqual(full.notes.filter((note) => note.startBeat >= 4 && note.startBeat < 8));
         expect(bounded.ownersByViewId.get(bounded.notes[0]!.id)).toEqual(full.ownersByViewId.get(full.notes[1]!.id));
@@ -108,11 +111,14 @@ describe('piano roll frozen take occurrence ownership', () => {
                 pitchBends: { present: true, value: [{ id: 'bend', value: 2048, channel: 0, beat: 4.9 }] },
             },
         };
-        const projected = projectPianoRollTakeNotes(loopingClip, 'track', state, [], {
-            fromBeat: 0,
-            toBeat: 4,
-            maxWork: 1_000,
-            maxOutput: 100,
+        const projected = projectPianoRollTakeNotes(loopingClip, 'track', state, {
+            baseRows: [],
+            window: {
+                fromBeat: 0,
+                toBeat: 4,
+                maxWork: 1_000,
+                maxOutput: 100,
+            },
         });
         expect(projected.frozenControllers).toEqual(
             expect.arrayContaining([
@@ -142,11 +148,14 @@ describe('piano roll frozen take occurrence ownership', () => {
 
     it('refuses before enumerating a query with too many repeats', () => {
         expect(() =>
-            projectPianoRollTakeNotes(loopingClip, 'track', laneState(), [], {
-                fromBeat: 0,
-                toBeat: 12,
-                maxWork: 1,
-                maxOutput: 10,
+            projectPianoRollTakeNotes(loopingClip, 'track', laneState(), {
+                baseRows: [],
+                window: {
+                    fromBeat: 0,
+                    toBeat: 12,
+                    maxWork: 1,
+                    maxOutput: 10,
+                },
             })
         ).toThrow('MIDI projection work budget exceeded');
     });
@@ -159,8 +168,7 @@ describe('piano roll frozen take occurrence ownership', () => {
                 { ...loopingClip, startBeat: 1e16, endBeat: 1e16 + 100, loopLength: 1 },
                 'track',
                 distant,
-                [],
-                { fromBeat: 1e16, toBeat: 1e16 + 10, maxWork: 10_000, maxOutput: 100 }
+                { baseRows: [], window: { fromBeat: 1e16, toBeat: 1e16 + 10, maxWork: 10_000, maxOutput: 100 } }
             )
         ).toThrow('MIDI projection work budget exceeded');
 
@@ -168,11 +176,14 @@ describe('piano roll frozen take occurrence ownership', () => {
         const take = deep.lanes[0]!.takes[0]!;
         take.midiSource = { ...take.midiSource!, sourceEntryBeat: 1e9, sourceEndBeat: 1e9 + 4 };
         expect(() =>
-            projectPianoRollTakeNotes(loopingClip, 'track', deep, [], {
-                fromBeat: 0,
-                toBeat: 4,
-                maxWork: 10_000,
-                maxOutput: 100,
+            projectPianoRollTakeNotes(loopingClip, 'track', deep, {
+                baseRows: [],
+                window: {
+                    fromBeat: 0,
+                    toBeat: 4,
+                    maxWork: 10_000,
+                    maxOutput: 100,
+                },
             })
         ).toThrow('MIDI projection work budget exceeded');
     });
@@ -188,11 +199,14 @@ describe('piano roll frozen take occurrence ownership', () => {
             loopOriginBeat: 0,
         };
         const source = { id: 'head', pitch: 67, startBeat: 0, duration: 0.25, velocity: 80 };
-        const result = projectPianoRollTakeNotes(clip, 'track', null, [source], {
-            fromBeat: 4,
-            toBeat: 9,
-            maxWork: 100,
-            maxOutput: 10,
+        const result = projectPianoRollTakeNotes(clip, 'track', null, {
+            baseRows: [source],
+            window: {
+                fromBeat: 4,
+                toBeat: 9,
+                maxWork: 100,
+                maxOutput: 10,
+            },
         });
         expect(result.baseOccurrences.map((entry) => [entry.row.id, entry.startBeat])).toEqual([
             ['head', 4],

@@ -243,20 +243,17 @@ function readMusicalSource(input: SemanticProjectQueryInput) {
 /** Stored musical rows and their ownership, not a prediction of the processed sound. */
 export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQueryItem[] {
     const { startBeat, endBeat, selection, targetIsOpen, track, clip, midi } = readMusicalSource(input);
-    const projection = projectPianoRollTakeNotes(
-        clip,
-        track.id,
-        takeLaneStore.value,
-        midi.notesByClipId[clip.id] ?? [],
-        {
+    const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, {
+        baseRows: midi.notesByClipId[clip.id] ?? [],
+        window: {
             fromBeat: startBeat,
             toBeat: endBeat,
             maxWork: 16_384,
             maxOutput: 512,
             controlChanges: midi.ccByClipId[clip.id] ?? [],
             pitchBends: midi.pitchBendByClipId[clip.id] ?? [],
-        }
-    );
+        },
+    });
     const rows: SemanticQueryItem[] = [];
     function addRow(row: SemanticQueryItem): void {
         if (rows.length >= 512) {

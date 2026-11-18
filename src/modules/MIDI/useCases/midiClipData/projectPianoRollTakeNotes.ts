@@ -185,8 +185,7 @@ function viewId(
     region: SelectedRegion,
     occurrenceIndex: number,
     regionIndex: number,
-    rowId: string,
-    segmentIndex: number
+    { rowId, segmentIndex }: { rowId: string; segmentIndex: number }
 ): string {
     const key = [region.laneId, region.takeId, occurrenceIndex, regionIndex, rowId];
     return `frozen:${JSON.stringify(segmentIndex === 0 ? key : [...key, segmentIndex])}`;
@@ -309,17 +308,62 @@ function chargeFrozenRegion(
     budget.emit(repeats * controlCount * 16);
 }
 
+function appendProjectedNotes(
+    projected: NonNullable<ReturnType<typeof projectFrozenMidiTakeWindow>>,
+    { region, occurrenceIndex, regionIndex }: { region: SelectedRegion; occurrenceIndex: number; regionIndex: number },
+    { clip, window }: { clip: ClipPlacement; window: QueryWindow | undefined },
+    { notes, ownersByViewId }: { notes: MidiNote[]; ownersByViewId: Map<string, FrozenPianoRollNoteOwner> }
+): void {
+    const { source } = region;
+    const segmentsByRowId = new Map<string, number>();
+    for (const note of projected.notes) {
+        const original = source.rows.notes.value.find((row) => row.id === note.id);
+        if (!original) {
+            throw new Error('Frozen MIDI note has no original row');
+        }
+        const segmentIndex = segmentsByRowId.get(note.id) ?? 0;
+        segmentsByRowId.set(note.id, segmentIndex + 1);
+        const id = viewId(region, occurrenceIndex, regionIndex, { rowId: note.id, segmentIndex });
+        const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+        if (window && (note.startBeat >= window.toBeat || note.startBeat + note.duration <= window.fromBeat)) {
+            continue;
+        }
+        const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
+        const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
+        notes.push(display);
+        ownersByViewId.set(id, {
+            laneId: region.laneId,
+            takeId: region.takeId,
+            sourceClipId: region.sourceClipId,
+            sourceEntryBeat: source.sourceEntryBeat,
+            row: original,
+            occurrenceIndex,
+            displayedStartBeat,
+            displayedDuration: note.duration,
+        });
+    }
+}
+
 function projectRegionOccurrences(
     clip: ClipPlacement,
-    region: ReturnType<typeof selectedRegions>[number],
-    regionIndex: number,
-    fromBeat: number,
-    toBeat: number,
+    {
+        region,
+        regionIndex,
+        fromBeat,
+        toBeat,
+    }: { region: SelectedRegion; regionIndex: number; fromBeat: number; toBeat: number },
     window: QueryWindow | undefined,
-    notes: MidiNote[],
-    ownersByViewId: Map<string, FrozenPianoRollNoteOwner>,
-    frozenControllers: Array<PianoRollTakeNotes['frozenControllers'][number]>,
-    frozenPitchBends: Array<PianoRollTakeNotes['frozenPitchBends'][number]>
+    {
+        notes,
+        ownersByViewId,
+        frozenControllers,
+        frozenPitchBends,
+    }: {
+        notes: MidiNote[];
+        ownersByViewId: Map<string, FrozenPianoRollNoteOwner>;
+        frozenControllers: Array<PianoRollTakeNotes['frozenControllers'][number]>;
+        frozenPitchBends: Array<PianoRollTakeNotes['frozenPitchBends'][number]>;
+    }
 ): void {
     const { source } = region;
     for (const { absoluteOccurrenceIndex: occurrenceIndex } of frozenMidiTakeRepeats(
@@ -372,33 +416,12 @@ function projectRegionOccurrences(
         if (!projected) {
             throw new Error('Invalid frozen MIDI take window');
         }
-        const segmentsByRowId = new Map<string, number>();
-        for (const note of projected.notes) {
-            const original = source.rows.notes.value.find((row) => row.id === note.id);
-            if (!original) {
-                throw new Error('Frozen MIDI note has no original row');
-            }
-            const segmentIndex = segmentsByRowId.get(note.id) ?? 0;
-            segmentsByRowId.set(note.id, segmentIndex + 1);
-            const id = viewId(region, occurrenceIndex, regionIndex, note.id, segmentIndex);
-            const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-            if (window && (note.startBeat >= window.toBeat || note.startBeat + note.duration <= window.fromBeat)) {
-                continue;
-            }
-            const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
-            const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
-            notes.push(display);
-            ownersByViewId.set(id, {
-                laneId: region.laneId,
-                takeId: region.takeId,
-                sourceClipId: region.sourceClipId,
-                sourceEntryBeat: source.sourceEntryBeat,
-                row: original,
-                occurrenceIndex,
-                displayedStartBeat,
-                displayedDuration: note.duration,
-            });
-        }
+        appendProjectedNotes(
+            projected,
+            { region, occurrenceIndex, regionIndex },
+            { clip, window },
+            { notes, ownersByViewId }
+        );
     }
 }
 
@@ -421,18 +444,12 @@ function projectFrozenRegions(
         if (budget) {
             chargeFrozenRegion(region, fromBeat, toBeat, budget);
         }
-        projectRegionOccurrences(
-            clip,
-            region,
-            regionIndex,
-            fromBeat,
-            toBeat,
-            window,
+        projectRegionOccurrences(clip, { region, regionIndex, fromBeat, toBeat }, window, {
             notes,
             ownersByViewId,
             frozenControllers,
-            frozenPitchBends
-        );
+            frozenPitchBends,
+        });
     }
     return { notes, ownersByViewId, frozenControllers, frozenPitchBends };
 }
@@ -489,9 +506,10 @@ export function projectPianoRollTakeNotes(
     clip: ClipPlacement,
     trackId: string,
     laneState: TakeLaneStoreState | null,
-    baseRows: readonly MidiNote[] = [],
-    window?: QueryWindow
+    source: readonly MidiNote[] | { baseRows: readonly MidiNote[]; window: QueryWindow } = []
 ): PianoRollTakeNotes {
+    const baseRows = 'window' in source ? source.baseRows : source;
+    const window = 'window' in source ? source.window : undefined;
     const budget = window ? queryBudget(window) : undefined;
     if (budget) {
         chargeNotes(budget, baseRows);
@@ -507,8 +525,10 @@ export function projectPianoRollTakeNotes(
     budget?.charge(baseRows.length * Math.max(1, coveredWindows.length + 1));
     budget?.emit(baseRows.length * Math.max(1, coveredWindows.length + 1));
     const base = projectBaseGapNotes(clip, baseRows, coveredWindows);
-    const baseOccurrences =
-        window && budget ? projectBaseOccurrences(clip, baseRows, coveredWindows, base, window, budget) : [];
+    let baseOccurrences: PianoRollTakeNotes['baseOccurrences'] = [];
+    if (window && budget) {
+        baseOccurrences = projectBaseOccurrences({ clip, baseRows, covered: coveredWindows, base }, window, budget);
+    }
     const { baseControllers, basePitchBends } = projectBaseControllers(clip, coveredWindows, window, budget);
     if (window) {
         base.notes = base.notes.filter((note) => {

@@ -131,8 +131,7 @@ function repeatFoldedNotes(
     source: FrozenMidiTakeSource,
     notes: readonly MidiNote[],
     repeat: FrozenMidiTakeRepeat,
-    startBeat: number,
-    endBeat: number
+    { startBeat, endBeat }: { startBeat: number; endBeat: number }
 ): MidiNoteWindowRow[] {
     if (!repeat.loops) {
         return [];
@@ -142,7 +141,7 @@ function repeatFoldedNotes(
         loopLengthBeats: repeat.strideBeats,
         loopStartSourceBeat: source.sourceEntryBeat + repeat.startBeat - repeat.passHeadBeat,
     };
-    return foldedNotes(source, notes, loop, startBeat, endBeat);
+    return foldedNotes(source, notes, loop, { startBeat, endBeat });
 }
 
 function withFoldedNotes<Note extends { readonly startBeat: number }>(
@@ -159,8 +158,7 @@ function foldedNotes(
     source: FrozenMidiTakeSource,
     notes: readonly MidiNote[],
     loop: LoopRead,
-    startBeat: number,
-    endBeat: number
+    { startBeat, endBeat }: { startBeat: number; endBeat: number }
 ): MidiNoteWindowRow[] {
     const folded: MidiNoteWindowRow[] = [];
     const loopEndSourceBeat = loop.loopStartSourceBeat + loop.loopLengthBeats;
@@ -184,14 +182,35 @@ function foldedNotes(
     }
 }
 
+function collectProjectedBends(
+    window: SourceWindow,
+    projected: ReturnType<typeof projectMidiClipWindow<SourceLocatedMidiPitchBend>>,
+    collectBend: ProjectFrozenMidiTakeWindowInput['collectBend']
+): void {
+    if (collectBend) {
+        for (const row of [...projected.priorPassPitchBends, ...projected.pitchBends]) {
+            const origin =
+                Math.abs(row.beat - window.beatOffset - row.sourceRecordedBeat) > SAME_BEAT_TOLERANCE
+                    ? 'carried'
+                    : 'source';
+            collectBend({ row, origin, sourceBeat: row.sourceRecordedBeat });
+        }
+    }
+}
+
 function collectProjectedControllersAndBends(
     source: FrozenMidiTakeSource,
     window: SourceWindow,
-    projected: ReturnType<typeof projectMidiClipWindow<SourceLocatedMidiPitchBend>>,
-    synthetic: readonly MidiCC[],
-    collectController: ProjectFrozenMidiTakeWindowInput['collectController'],
-    collectBend: ProjectFrozenMidiTakeWindowInput['collectBend']
+    {
+        projected,
+        synthetic,
+    }: {
+        projected: ReturnType<typeof projectMidiClipWindow<SourceLocatedMidiPitchBend>>;
+        synthetic: readonly MidiCC[];
+    },
+    collectors: Pick<ProjectFrozenMidiTakeWindowInput, 'collectController' | 'collectBend'>
 ): void {
+    const { collectController, collectBend } = collectors;
     if (collectController) {
         const originals = new Map<string, MidiCC>();
         for (const row of source.rows.controlChanges.value) {
@@ -220,15 +239,27 @@ function collectProjectedControllersAndBends(
             collectController({ row, origin: 'closing', sourceBeat: original.beat });
         }
     }
-    if (collectBend) {
-        for (const row of [...projected.priorPassPitchBends, ...projected.pitchBends]) {
-            const origin =
-                Math.abs(row.beat - window.beatOffset - row.sourceRecordedBeat) > SAME_BEAT_TOLERANCE
-                    ? 'carried'
-                    : 'source';
-            collectBend({ row, origin, sourceBeat: row.sourceRecordedBeat });
-        }
-    }
+    collectProjectedBends(window, projected, collectBend);
+}
+
+function validWindowInput({
+    source,
+    fragment,
+    recordingPassIndex,
+    absoluteOccurrenceIndex,
+    fromBeat,
+    toBeat,
+}: ProjectFrozenMidiTakeWindowInput): boolean {
+    return !(
+        !isFrozenMidiTakeSource(source) ||
+        !isValidFragment(fragment) ||
+        (recordingPassIndex !== undefined && (!Number.isSafeInteger(recordingPassIndex) || recordingPassIndex < 0)) ||
+        !Number.isSafeInteger(absoluteOccurrenceIndex) ||
+        absoluteOccurrenceIndex < 0 ||
+        !isFiniteBeat(fromBeat) ||
+        !isFiniteBeat(toBeat) ||
+        fromBeat >= toBeat
+    );
 }
 
 /**
@@ -253,16 +284,7 @@ export function projectFrozenMidiTakeWindow({
     collectController,
     collectBend,
 }: ProjectFrozenMidiTakeWindowInput): FrozenMidiTakeWindow | null {
-    if (
-        !isFrozenMidiTakeSource(source) ||
-        !isValidFragment(fragment) ||
-        (recordingPassIndex !== undefined && (!Number.isSafeInteger(recordingPassIndex) || recordingPassIndex < 0)) ||
-        !Number.isSafeInteger(absoluteOccurrenceIndex) ||
-        absoluteOccurrenceIndex < 0 ||
-        !isFiniteBeat(fromBeat) ||
-        !isFiniteBeat(toBeat) ||
-        fromBeat >= toBeat
-    ) {
+    if (!validWindowInput({ source, fragment, recordingPassIndex, absoluteOccurrenceIndex, fromBeat, toBeat })) {
         return null;
     }
     const empty: FrozenMidiTakeWindow = {
@@ -281,7 +303,7 @@ export function projectFrozenMidiTakeWindow({
     }
     const passNotes = selectMidiNotesForRecordingPass(source.rows.notes.value, recordingPassIndex);
     const notes = repeat.loops ? passNotes.map((note) => capToLoop(note, repeat.strideBeats)) : passNotes;
-    const folded = repeatFoldedNotes(source, notes, repeat, visibleStartBeat, visibleEndBeat);
+    const folded = repeatFoldedNotes(source, notes, repeat, { startBeat: visibleStartBeat, endBeat: visibleEndBeat });
     const window = sourceWindowAt(source, repeat.passHeadBeat, visibleStartBeat, visibleEndBeat);
     if (!window) {
         return { ...empty, notes: folded };
@@ -303,7 +325,7 @@ export function projectFrozenMidiTakeWindow({
         window.visibleStartBeat,
         window.visibleStartBeat + window.beatOffset
     );
-    collectProjectedControllersAndBends(source, window, projected, synthetic, collectController, collectBend);
+    collectProjectedControllersAndBends(source, window, { projected, synthetic }, { collectController, collectBend });
     return {
         ...empty,
         ...projected,

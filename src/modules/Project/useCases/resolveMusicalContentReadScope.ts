@@ -29,11 +29,14 @@ function findSelectedWindow(
         if (++budget.scans > 32) {
             throw new Error('Selected musical source unavailable in bounded windows');
         }
-        const projection = projectPianoRollTakeNotes(clip, trackId, takeLaneStore.value, sourceRows, {
-            fromBeat: candidate.startBeat,
-            toBeat: candidate.endBeat,
-            maxWork: 16_384,
-            maxOutput: 512,
+        const projection = projectPianoRollTakeNotes(clip, trackId, takeLaneStore.value, {
+            baseRows: sourceRows,
+            window: {
+                fromBeat: candidate.startBeat,
+                toBeat: candidate.endBeat,
+                maxWork: 16_384,
+                maxOutput: 512,
+            },
         });
         const found =
             projection.baseOccurrences.some(

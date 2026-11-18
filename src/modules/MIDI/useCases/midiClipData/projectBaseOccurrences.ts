@@ -14,14 +14,23 @@ import {
 type QueryBudget = { charge: (amount: number) => void; emit: (amount: number) => void };
 
 function appendEventOccurrences(
-    event: ReturnType<typeof projectClipMidiEvents>[number],
-    row: MidiNote,
-    gaps: readonly { startBeat: number; endBeat: number }[],
-    clip: ClipPlacement,
-    base: { ownersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner> },
-    window: QueryWindow,
-    occurrenceIndex: number,
-    occurrences: Array<BaseOccurrence>
+    {
+        event,
+        row,
+        occurrenceIndex,
+    }: { event: ReturnType<typeof projectClipMidiEvents>[number]; row: MidiNote; occurrenceIndex: number },
+    {
+        gaps,
+        clip,
+        base,
+        window,
+    }: {
+        gaps: readonly { startBeat: number; endBeat: number }[];
+        clip: ClipPlacement;
+        base: { ownersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner> };
+        window: QueryWindow;
+    },
+    occurrences: BaseOccurrence[]
 ): void {
     for (const gap of gaps) {
         const start = Math.max(event.startBeat, gap.startBeat);
@@ -48,11 +57,33 @@ function appendEventOccurrences(
     }
 }
 
+function uncoveredGaps(clip: ClipPlacement, covered: readonly { startBeat: number; endBeat: number }[]) {
+    const gaps: { startBeat: number; endBeat: number }[] = [];
+    let cursor = clip.startBeat;
+    for (const region of [...covered].sort((a, b) => a.startBeat - b.startBeat)) {
+        if (region.startBeat > cursor) {
+            gaps.push({ startBeat: cursor, endBeat: region.startBeat });
+        }
+        cursor = Math.max(cursor, region.endBeat);
+    }
+    if (cursor < clip.endBeat) {
+        gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
+    }
+    return gaps;
+}
+
 export function projectBaseOccurrences(
-    clip: ClipPlacement,
-    baseRows: readonly MidiNote[],
-    covered: readonly { startBeat: number; endBeat: number }[],
-    base: { ownersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner> },
+    {
+        clip,
+        baseRows,
+        covered,
+        base,
+    }: {
+        clip: ClipPlacement;
+        baseRows: readonly MidiNote[];
+        covered: readonly { startBeat: number; endBeat: number }[];
+        base: { ownersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner> };
+    },
     window: QueryWindow,
     budget: QueryBudget
 ): readonly BaseOccurrence[] {
@@ -92,17 +123,7 @@ export function projectBaseOccurrences(
             (baseRows.length + segments * base.ownersByViewId.size + segments + 3)
     );
     budget.emit(passes * baseRows.length * 2 * segments);
-    const gaps: { startBeat: number; endBeat: number }[] = [];
-    let cursor = clip.startBeat;
-    for (const region of [...covered].sort((a, b) => a.startBeat - b.startBeat)) {
-        if (region.startBeat > cursor) {
-            gaps.push({ startBeat: cursor, endBeat: region.startBeat });
-        }
-        cursor = Math.max(cursor, region.endBeat);
-    }
-    if (cursor < clip.endBeat) {
-        gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
-    }
+    const gaps = uncoveredGaps(clip, covered);
     const occurrences: Array<BaseOccurrence> = [];
     for (let index = first; index < last; index++) {
         const events = projectClipMidiEvents({
@@ -121,7 +142,11 @@ export function projectBaseOccurrences(
             if (!row) {
                 throw new Error('Projected MIDI note has no source row');
             }
-            appendEventOccurrences(event, row, gaps, clip, base, window, grid.passesAheadOfAnchor + index, occurrences);
+            appendEventOccurrences(
+                { event, row, occurrenceIndex: grid.passesAheadOfAnchor + index },
+                { gaps, clip, base, window },
+                occurrences
+            );
         }
     }
     return occurrences;
