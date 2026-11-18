@@ -9,11 +9,13 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
 import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
+import { pluginStateEditCount } from '../../saveProject/pluginStateEditCount';
 import { cvGateProjection } from '../cvGateProjection';
 import { exportProjectFile } from '../exportProjectFile';
 import { midiLearnProjection } from '../midiLearnProjection';
 
 import type { Track } from '#/modules/Arrangement/stores';
+import type { DownloadProjectFileOutcome } from '../../../../repositories/project/downloadProjectFile';
 import type { ProjectDataWithOriginalMedia } from '../projectOriginalMediaArchive';
 
 const captureExternalPluginStatesMock = vi.hoisted(() =>
@@ -189,6 +191,8 @@ describe('exportProjectFile', () => {
     });
 
     it('writes the current project version into the exported data', async () => {
+        pluginStateEditCount.record();
+
         await exportProjectFile();
 
         expect(downloadProjectFile).toHaveBeenCalledTimes(1);
@@ -213,6 +217,41 @@ describe('exportProjectFile', () => {
         expect(downloadProjectFile).toHaveBeenCalledTimes(1);
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('could not be read'), 'warning');
         expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+    });
+
+    it('warns after a written download when a plugin reported an edit during the download', async () => {
+        const downloadStarted = Promise.withResolvers<void>();
+        const download = Promise.withResolvers<DownloadProjectFileOutcome>();
+        vi.mocked(downloadProjectFile).mockImplementationOnce(() => {
+            downloadStarted.resolve();
+            return download.promise;
+        });
+
+        const exporting = exportProjectFile();
+        await downloadStarted.promise;
+        pluginStateEditCount.record();
+        expect(notifyUser).not.toHaveBeenCalled();
+        download.resolve('written');
+        await exporting;
+
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Project exported, but one or more plugins reported changes during export — the file may contain an earlier plugin state.',
+            'warning'
+        );
+    });
+
+    it('warns when a plugin reports an edit before capture has finished', async () => {
+        captureExternalPluginStatesMock.mockImplementationOnce(async () => {
+            pluginStateEditCount.record();
+            return { rejectedPlugins: [] };
+        });
+
+        await exportProjectFile();
+
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Project exported, but one or more plugins reported changes during export — the file may contain an earlier plugin state.',
+            'warning'
+        );
     });
 
     it('reports unavailable originals only after writing playable PCM and its archive marker', async () => {
@@ -245,9 +284,13 @@ describe('exportProjectFile', () => {
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('reports both missing PCM and originals without claiming playable audio was included', async () => {
+    it('reports a late plugin edit alongside missing PCM and originals', async () => {
         seedMissingOriginalExport();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValueOnce({});
+        vi.mocked(downloadProjectFile).mockImplementationOnce(async () => {
+            pluginStateEditCount.record();
+            return 'written';
+        });
 
         await exportProjectFile();
 
@@ -260,7 +303,11 @@ describe('exportProjectFile', () => {
             'Project exported with 1 unavailable original audio file — the original source files cannot be recovered from this export.',
             'warning'
         );
-        expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Project exported, but one or more plugins reported changes during export — the file may contain an earlier plugin state.',
+            'warning'
+        );
+        expect(notifyUser).toHaveBeenCalledTimes(3);
     });
 
     it('captures live native plugin state before building the export (no prior save required)', async () => {
@@ -358,19 +405,25 @@ describe('exportProjectFile', () => {
     });
 
     it.each(['cancelled', 'rejected-stale'] as const)(
-        'does not announce success when download is %s',
+        'does not announce export completion after a plugin edit when download is %s',
         async (outcome) => {
-            vi.mocked(downloadProjectFile).mockResolvedValueOnce(outcome);
+            vi.mocked(downloadProjectFile).mockImplementationOnce(async () => {
+                pluginStateEditCount.record();
+                return outcome;
+            });
 
             await exportProjectFile();
 
-            expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+            expect(notifyUser).not.toHaveBeenCalled();
         }
     );
 
     it('reports a failed project-file download without rejecting the export action', async () => {
         const failure = new Error('save dialog failed');
-        vi.mocked(downloadProjectFile).mockRejectedValueOnce(failure);
+        vi.mocked(downloadProjectFile).mockImplementationOnce(async () => {
+            pluginStateEditCount.record();
+            throw failure;
+        });
 
         await expect(exportProjectFile()).resolves.toBeUndefined();
 
