@@ -89,7 +89,7 @@ test.describe('Gluten panel — preset search filtering', () => {
         await page.setViewportSize({ width: 1440, height: 900 });
         const faceplate = page.locator('.gluten-faceplate');
         const workspace = faceplate.locator(':scope > div').first();
-        const panelBody = page.getByTestId('instrument-bottom-panel-body').filter({ has: faceplate });
+        const panelBody = page.getByTestId('floating-device-panel-body').filter({ has: faceplate });
         const defaultGeometry = await faceplate.evaluate((element) => ({
             width: element.getBoundingClientRect().width,
             columns: getComputedStyle(element.firstElementChild as Element).gridTemplateColumns,

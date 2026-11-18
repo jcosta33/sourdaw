@@ -1,6 +1,9 @@
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
+import { isEngineHostedPluginDeviceType } from '../../repositories/deviceStrategy/isEngineHostedPluginDeviceType';
 import { type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
+
+import { readHostedPluginTail } from './hostedPluginTail';
 
 type DeviceChainEntry = {
     id: string;
@@ -8,6 +11,7 @@ type DeviceChainEntry = {
     parameterValues: Record<string, number>;
     deviceState?: unknown;
     bypassed: boolean;
+    externalInstanceId?: string;
 };
 
 export type ProjectDeviceTailsInput = {
@@ -20,7 +24,24 @@ export type ProjectDeviceTailsInput = {
      * which sits downstream of both, supplies the lookup.
      */
     tailForDeviceType: (deviceType: string) => TailDeclarationLike | undefined;
+    /**
+     * The tail a hosted plugin instance reported about itself. A hosted device
+     * declares none by type — every one spells `external-plugin` — so its tail
+     * is its instance's. Defaults to the live report PluginHost records.
+     */
+    tailForHostedInstance?: (externalInstanceId: string) => TailDeclarationLike | undefined;
 };
+
+function deviceTail(
+    device: DeviceChainEntry,
+    tailForDeviceType: ProjectDeviceTailsInput['tailForDeviceType'],
+    tailForHostedInstance: NonNullable<ProjectDeviceTailsInput['tailForHostedInstance']>
+): TailDeclarationLike | undefined {
+    if (isEngineHostedPluginDeviceType(device.type) && device.externalInstanceId !== undefined) {
+        return tailForHostedInstance(device.externalInstanceId);
+    }
+    return tailForDeviceType(device.type);
+}
 
 function declarationUsesAutomatedGate(tail: TailDeclarationLike | undefined, parameterId: string): boolean {
     if (!tail) {
@@ -42,14 +63,19 @@ function declarationUsesAutomatedGate(tail: TailDeclarationLike | undefined, par
  * on the device type that no descriptor fed; that is the defect this seam
  * exists to make unrepeatable.
  */
-export function projectDeviceTails({ devices, automationLanes = [], tailForDeviceType }: ProjectDeviceTailsInput) {
+export function projectDeviceTails({
+    devices,
+    automationLanes = [],
+    tailForDeviceType,
+    tailForHostedInstance = readHostedPluginTail,
+}: ProjectDeviceTailsInput) {
     const projected = devices.map((device) => ({
         id: device.id,
         type: device.type,
         parameterValues: device.parameterValues,
         deviceState: device.deviceState,
         bypassed: device.bypassed,
-        tail: tailForDeviceType(device.type),
+        tail: deviceTail(device, tailForDeviceType, tailForHostedInstance),
     }));
 
     const automatedParameterIds = projected.map(() => new Set<string>());

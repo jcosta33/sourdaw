@@ -41,7 +41,11 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
-import { checkSizeBaselineShrinks as checkSizeBaselineShrinksWith, isEntryModule } from '../checkSizeBaselineShrinks';
+import {
+    checkQualityBudgetShrinks,
+    checkSizeBaselineShrinks as checkSizeBaselineShrinksWith,
+    isEntryModule,
+} from '../checkSizeBaselineShrinks';
 import {
     countFileLines,
     describeSizeBaselineGrowth,
@@ -634,6 +638,34 @@ describe('size baseline check against the merge base', () => {
         expect(findings.some((finding) => finding.startsWith('z.ts: added to eslint.size-baseline.mjs'))).toBe(true);
     });
 
+    it('seeds quality budget only for files already in the base', () => {
+        const budgetPath = join(dir, 'oxlint-quality-baseline.json');
+        const text = (file: string) => JSON.stringify({ [file]: { 'vitest/no-conditional-expect': { count: 1 } } });
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        expect(() => checkQualityBudgetShrinks(dir)).toThrow('oxlint-quality-baseline.json');
+        writeFileSync(budgetPath, text('untracked.ts'));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            'untracked.ts: cannot seed a lint quality budget for a path absent at the merge base.',
+        ]);
+        writeFileSync(budgetPath, text('eslint.size-baseline.mjs'));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+    });
+
+    it('binds quality budget growth to the recorded merge base', () => {
+        const budgetPath = join(dir, 'oxlint-quality-baseline.json');
+        const count = (value: number) =>
+            JSON.stringify({ 'a.ts': { 'vitest/no-conditional-expect': { count: value } } });
+        writeFileSync(budgetPath, count(2));
+        commit('seed quality counts');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeFileSync(budgetPath, count(1));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+        writeFileSync(budgetPath, count(3));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            'a.ts: vitest/no-conditional-expect budget increased from 2 to 3 in oxlint-quality-baseline.json.',
+        ]);
+    });
+
     it('should accept a head that only removes a path and lowers a ceiling', async () => {
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeBaseline(['a.ts'], { 'a.ts': 650 });
@@ -809,9 +841,10 @@ describe('size baseline check against the merge base', () => {
     describe('as a command', () => {
         function runCli(): { status: number; stdout: string; stderr: string } {
             mkdirSync(join(dir, 'scripts'), { recursive: true });
-            for (const name of ['checkSizeBaselineShrinks.ts', 'lintSizeCeilings.ts']) {
+            for (const name of ['checkSizeBaselineShrinks.ts', 'lintSizeCeilings.ts', 'lintQualityBudget.ts']) {
                 copyFileSync(resolve(__dirname, '..', name), join(dir, 'scripts', name));
             }
+            writeFileSync(join(dir, 'oxlint-quality-baseline.json'), '{}\n');
             const result = spawnSync('node', ['scripts/checkSizeBaselineShrinks.ts'], { cwd: dir, encoding: 'utf8' });
             return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
         }
@@ -866,7 +899,7 @@ describe('size baseline check against the merge base', () => {
             const { status, stdout } = runCli();
             expect({ status, stdout }).toEqual({
                 status: 0,
-                stdout: 'Size baseline only shrinks against the merge base.\n',
+                stdout: 'Size and lint quality baselines only shrink against the merge base.\n',
             });
         });
     });
