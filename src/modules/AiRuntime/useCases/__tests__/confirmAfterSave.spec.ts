@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MessageChannel } from 'node:worker_threads';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -13,6 +16,7 @@ import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     configureCommandBatchIdempotency,
+    executeAppAction,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
     resetCommandBatchIdempotency,
@@ -37,7 +41,7 @@ import {
     projectStore,
     type ProjectStoreState,
 } from '#/modules/Project/stores';
-import { buildProjectData } from '#/modules/Project/useCases';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -115,6 +119,7 @@ function createTrack(id: string, name: string): Track {
 }
 
 function seedProject(): void {
+    projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
     trackStore.set({
         tracks: [createTrack('track-vocals', 'Vocals'), createTrack('track-drums', 'Drums')],
         selectedTrackId: 'track-vocals',
@@ -139,16 +144,16 @@ function currentProject(): ProjectStoreState {
     return projectStore.value ?? defaultProjectStoreState;
 }
 
-/**
- * The root writes `saveProject` performs, in its order: it publishes a fresh save timestamp, then
- * serializes through `buildProjectData`, which refreshes the active arrangement's entry from the
- * live slots. Nothing a musician edited moves.
- */
 async function writeSave(): Promise<void> {
-    const project = currentProject();
-    projectStore.set({ ...project, updatedAt: project.updatedAt + 30_000, dirty: true });
-    await buildProjectData({ includeAudioBuffers: false });
-    flushAutomergeStorageWrites();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(currentProject().updatedAt + 30_000);
+    try {
+        await executeAppAction(
+            { type: 'saveProject', payload: { intent: 'prepareSnapshot' } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    } finally {
+        clock.mockRestore();
+    }
 }
 
 function activeArrangementTrackIds(): string[] {
@@ -248,6 +253,16 @@ const PROJECT_CONTENT_EDIT_ROWS = PROJECT_CONTENT_EDITS.flatMap((row) => [
     { ...row, saved: true },
 ]);
 
+beforeEach(() => {
+    vi.stubGlobal('Worker', NativePreparationWorker);
+    vi.stubGlobal('MessageChannel', MessageChannel);
+});
+
+afterEach(async () => {
+    await settleNativePreparationWorkers();
+    vi.unstubAllGlobals();
+});
+
 describe('Confirm after a save', () => {
     beforeEach(() => {
         configureAiWorkflowCommandPreflightFixture();
@@ -258,6 +273,7 @@ describe('Confirm after a save', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -267,7 +283,6 @@ describe('Confirm after a save', () => {
         agentRunLifecycle.clear();
         agentProjectRepairStateStore.set(null);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
-        projectStore.set(defaultProjectStoreState);
         chatStore.set({
             messages: [{ id: 'assistant-1', role: 'assistant', content: 'Awaiting confirmation', timestamp: 1 }],
             isGenerating: false,
@@ -413,6 +428,7 @@ describe('Direct commit after a save', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -421,7 +437,6 @@ describe('Direct commit after a save', () => {
         agentRunLifecycle.clear();
         agentProjectRepairStateStore.set(null);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
-        projectStore.set(defaultProjectStoreState);
         seedProject();
     });
 

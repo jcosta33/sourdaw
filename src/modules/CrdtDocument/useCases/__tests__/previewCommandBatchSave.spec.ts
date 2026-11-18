@@ -1,6 +1,8 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { createStore } from '#/infra/store/createStore';
 import {
     countPendingAutomergeStorageWrites,
@@ -17,14 +19,15 @@ import {
     compilePartialCommandBatchAcceptance,
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
+    executeAppAction,
     executeVersionedCommandBatchEnvelope,
     parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { buildProjectData } from '#/modules/Project/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState, getTransportHandlers } from '#/modules/Transport/useCases';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { actionHistoryStore } from '../../stores/actionHistoryStore';
@@ -35,7 +38,7 @@ import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
 import { settledProjectRevisionMatchesLiveIgnoringSaveWrites } from '../settledProjectRevisionMatchesLiveIgnoringSaveWrites';
 
 function seedSaveCheckpoint(): void {
-    projectStore.set(structuredClone(defaultProjectStoreState));
+    projectStore.set({ ...structuredClone(defaultProjectStoreState), initialized: true, loading: false });
     arrangementStore.set({
         activeArrangementId: 'arrangement-save',
         arrangements: [
@@ -59,14 +62,19 @@ function seedSaveCheckpoint(): void {
 }
 
 async function writeSaveCheckpoint(): Promise<void> {
-    registerSupportingServicePorts();
     const project = projectStore.value;
     if (!project) {
         throw new Error('Expected a savable project');
     }
-    projectStore.set({ ...project, updatedAt: project.updatedAt + 30_000 });
-    await buildProjectData({ includeAudioBuffers: false });
-    flushAutomergeStorageWrites();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(project.updatedAt + 30_000);
+    try {
+        await executeAppAction(
+            { type: 'saveProject', payload: { intent: 'prepareSnapshot' } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    } finally {
+        clock.mockRestore();
+    }
 }
 
 describe('command preview save and content authority', () => {
@@ -78,6 +86,9 @@ describe('command preview save and content authority', () => {
         });
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
         commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
@@ -475,7 +486,8 @@ describe('command preview save and content authority', () => {
         }
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await settleNativePreparationWorkers();
         flushAutomergeStorageWrites();
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);

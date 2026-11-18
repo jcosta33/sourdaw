@@ -12,6 +12,7 @@ import { EMPTY_PERSISTENCE_AUTHORITY } from '../crdtPersistence/persistenceAutho
 import {
     completePersistenceWritesUntilSettled,
     ControlledWorker,
+    respondToEncodeIncrementals,
     respondToLoad,
     respondToMerge,
     type LoadBundleRequest,
@@ -75,31 +76,12 @@ describe('AutomergeRepository replacement load authority', () => {
         const persistence = new TransactionalPersistence();
         mocks.openDatabase.mockImplementation(() => Promise.resolve(persistence.database));
 
-        automergeRepository.reset();
-        await loadRootOnlyProject();
-        automergeRepository.createProject('project');
-        const baseCompaction = compactProject();
-        const baseTransaction = await persistence.waitForTransaction('readwrite', 1);
-        baseTransaction.complete();
-        await baseCompaction;
-
-        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
-            doc.oldGenerationEdit = true;
-        });
-        const oldSave = persistCrdtProject();
-        const oldTransaction = await persistence.waitForTransaction('readwrite', 2);
-        expect(oldTransaction.writes.some(({ kind }) => kind === 'add')).toBe(true);
-
-        let resolveDeferredLoad: ((value: { worker: ControlledWorker; request: LoadBundleRequest }) => void) | null =
-            null;
-        const deferredLoad = new Promise<{ worker: ControlledWorker; request: LoadBundleRequest }>((resolve) => {
-            resolveDeferredLoad = resolve;
-        });
-        let hasDeferredLoad = false;
+        const deferredLoad = Promise.withResolvers<{ worker: ControlledWorker; request: LoadBundleRequest }>();
+        let holdReplacementLoad = false;
         ControlledWorker.onPostMessage = (worker, request) => {
-            if (!hasDeferredLoad && request.type === 'loadBundle') {
-                hasDeferredLoad = true;
-                resolveDeferredLoad?.({ worker, request });
+            if (holdReplacementLoad && request.type === 'loadBundle') {
+                holdReplacementLoad = false;
+                deferredLoad.resolve({ worker, request });
                 return;
             }
             queueMicrotask(() => {
@@ -107,22 +89,48 @@ describe('AutomergeRepository replacement load authority', () => {
                     respondToLoad(worker, request);
                 } else if (request.type === 'mergeBundle') {
                     respondToMerge(worker, request);
+                } else if (request.type === 'encodeIncrementals') {
+                    respondToEncodeIncrementals(worker, request);
                 }
             });
         };
 
+        automergeRepository.reset();
+        await loadRootOnlyProject();
+        automergeRepository.createProject('project');
+        const baseCompaction = compactProject();
+        const baseTransaction = await persistence.waitForTransaction('readwrite', 1);
+        baseTransaction.complete();
+        await baseCompaction;
+        const baseHeads = automergeRepository.getHeads('root');
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.oldGenerationEdit = true;
+        });
+        const oldHeads = automergeRepository.getHeads('root');
+        expect(oldHeads).not.toEqual(baseHeads);
+        const oldSave = persistCrdtProject();
+        const oldTransaction = await persistence.waitForTransaction('readwrite', 2);
+        expect(oldTransaction.writes.some(({ kind }) => kind === 'add')).toBe(true);
+
+        holdReplacementLoad = true;
         const replacementLoad = loadCrdtProject();
         await persistence.waitForTransaction('readonly', 1);
-        const delayedWorkerRequest = await deferredLoad;
+        const delayedWorkerRequest = await deferredLoad.promise;
+        expect(oldTransaction.isAbortRequested()).toBe(true);
+        expect(automergeRepository.getHeads('root')).toEqual(oldHeads);
         oldTransaction.complete();
         respondToLoad(delayedWorkerRequest.worker, delayedWorkerRequest.request);
 
         await expect(oldSave).resolves.toBeUndefined();
         await expect(replacementLoad).resolves.toBe(true);
+        expect(automergeRepository.getHeads('root')).toEqual(baseHeads);
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.afterReplacementLoad = true;
         });
+        const newHeads = automergeRepository.getHeads('root');
+        expect(newHeads).not.toEqual(oldHeads);
         const postLoadSave = persistCrdtProject();
         await completePersistenceWritesUntilSettled({
             operation: postLoadSave,
@@ -143,6 +151,6 @@ describe('AutomergeRepository replacement load authority', () => {
             afterReplacementLoad: true,
         });
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('oldGenerationEdit');
-        expect(oldTransaction.isAbortRequested()).toBe(true);
+        expect(automergeRepository.getHeads('root')).toEqual(newHeads);
     });
 });

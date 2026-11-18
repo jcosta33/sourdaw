@@ -14,6 +14,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 describe('mutateCrdtDoc', () => {
     beforeEach(() => {
         vi.mocked(automergeRepository.changeDoc).mockClear();
+        vi.mocked(automergeRepository.cloneProspectiveMutation).mockClear();
     });
 
     it('should delegate the change function to the repository changeDoc', () => {
@@ -33,7 +34,7 @@ describe('mutateCrdtDoc', () => {
         );
     });
 
-    it('forwards the supported canonical description only through private preparation', () => {
+    it('forwards the canonical description and bounded policy only through private preparation', () => {
         const changeFn = vi.fn();
         const canonicalMutation = {
             kind: 'canonical-json-slot-v1' as const,
@@ -41,20 +42,36 @@ describe('mutateCrdtDoc', () => {
             baseValue: null,
             value: { count: 1 },
         };
-        cloneProspectiveCrdtMutation({
+        const input = {
             id: 'root',
             changeFn,
             message: 'Detect',
             localSlots: ['slot'],
             canonicalMutation,
-        });
-        expect(automergeRepository.cloneProspectiveMutation).toHaveBeenCalledWith(
+            preparationPolicy: 'bounded-native-sequence-v1' as const,
+        };
+
+        cloneProspectiveCrdtMutation(input);
+        expect(automergeRepository.changeDoc).not.toHaveBeenCalled();
+        mutateCrdtDoc(input);
+
+        expect(automergeRepository.cloneProspectiveMutation).toHaveBeenCalledExactlyOnceWith(
             'root',
             changeFn,
             'Detect',
             undefined,
             ['slot'],
-            canonicalMutation
+            canonicalMutation,
+            'bounded-native-sequence-v1'
+        );
+        expect(automergeRepository.changeDoc).toHaveBeenCalledExactlyOnceWith(
+            'root',
+            changeFn,
+            'Detect',
+            undefined,
+            ['slot'],
+            undefined,
+            undefined
         );
     });
 
