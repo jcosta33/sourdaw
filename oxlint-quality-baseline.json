@@ -10631,11 +10631,6 @@
             "count": 1
         }
     },
-    "src/modules/Automation/useCases/automation/batchAddAutomationPoints.ts": {
-        "typescript/no-non-null-assertion": {
-            "count": 2
-        }
-    },
     "src/modules/Automation/useCases/automation/createAutomationLane.ts": {
         "eslint/max-params": {
             "count": 1
@@ -10662,6 +10657,11 @@
     "src/modules/Automation/useCases/automation/isExactClipAutomationMoveSnapshots.ts": {
         "eslint/complexity": {
             "count": 1
+        }
+    },
+    "src/modules/Automation/useCases/automation/mergeAutomationPointBatch.ts": {
+        "typescript/no-non-null-assertion": {
+            "count": 2
         }
     },
     "src/modules/Automation/useCases/automation/planParameterRangeWrite.ts": {
