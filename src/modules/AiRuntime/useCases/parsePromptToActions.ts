@@ -1352,6 +1352,11 @@ const planPromptIntent = inject({ logger })(
                                           };
                                       }
                                       creativeAuthority = admission.authority;
+                                      const publicReadingReceipt: { creativeInterpretation?: string } = {};
+                                      if ('creativeInterpretation' in admission) {
+                                          publicReadingReceipt.creativeInterpretation =
+                                              admission.creativeInterpretation;
+                                      }
                                       return {
                                           status: 'admitted',
                                           providerProjection:
@@ -1370,9 +1375,7 @@ const planPromptIntent = inject({ logger })(
                                                   editDimensions: admission.authority.editDimensions,
                                                   prohibitions: admission.authority.prohibitions,
                                                   creationSlots: admission.authority.creationSlots,
-                                                  ...('creativeInterpretation' in admission
-                                                      ? { creativeInterpretation: admission.creativeInterpretation }
-                                                      : {}),
+                                                  ...publicReadingReceipt,
                                               },
                                               summary:
                                                   'Creative interpretation admitted; acoustic goals require actual compatible preview proof before approval.',
