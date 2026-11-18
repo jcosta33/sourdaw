@@ -458,10 +458,6 @@ function isFullyVisible(inner: Rect, outer: Rect): boolean {
     );
 }
 
-function expectedToolbarControls(): string[] {
-    return [...TOOLBAR_CONTROLS];
-}
-
 function assertToolbarFocus(state: ToolbarState, expectedName: string): void {
     expect(state.activeName).toBe(expectedName);
     const control = requireValue(
@@ -495,7 +491,7 @@ async function assertToolbarKeyboardTraversal(page: Page, frame: Frame, scale: n
         await expect.poll(async () => (await toolbarState(frame)).toolbarScrollLeft).toBe(0);
         state = await toolbarState(frame);
     }
-    const expected = expectedToolbarControls();
+    const expected = [...TOOLBAR_CONTROLS];
     for (const name of expected) {
         expect(state.controls.map((control) => control.name)).toContain(name);
     }
