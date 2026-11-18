@@ -901,7 +901,7 @@
           },
           {
             "name": "Install Chromium",
-            "timeout-minutes": 2,
+            "timeout-minutes": 10,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
@@ -1810,7 +1810,7 @@
           },
           {
             "name": "Install Chromium",
-            "timeout-minutes": 2,
+            "timeout-minutes": 10,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
