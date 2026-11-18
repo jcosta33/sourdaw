@@ -151,7 +151,13 @@ export const handleInsertAutomationLanePoints = createHandler<'insertAutomationL
         };
         const root = getCrdtDoc(ROOT_DOCUMENT);
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === laneId);
-        if (!root || check(root, expected) || !lane || !matchesLane(lane, owner, capture, expected)) {
+        if (
+            !root ||
+            check(root, expected) ||
+            !lane ||
+            !matchesLane(lane, owner, capture, expected) ||
+            !isRestorableAutomationPointSet(replacement)
+        ) {
             return { status: 'conflict', reason: conflict };
         }
 

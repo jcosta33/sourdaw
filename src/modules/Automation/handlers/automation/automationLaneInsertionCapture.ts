@@ -11,6 +11,7 @@ import { isRestorableAutomationPointSet } from './validateRangeWriteSessionEntri
 
 export type InsertAutomationLanePoints = Extract<AppAction, { type: 'insertAutomationLanePoints' }>;
 type Insertion = InsertAutomationLanePoints['payload']['insertion'];
+type ValidatedInsertion = Exclude<Insertion, { kind: 'point' }> | { kind: 'point'; point: Omit<AutomationPoint, 'id'> };
 export type InsertionOwner = InsertAutomationLanePoints['payload']['owner'];
 export type InsertionCapture = NonNullable<InsertAutomationLanePoints['payload']['capture']>;
 type LaneRange = Pick<AutomationLane, 'parameterId' | 'clipId' | 'minValue' | 'maxValue'>;
@@ -27,7 +28,7 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
-export function isLaneInsertion(insertion: unknown): insertion is Insertion {
+export function isLaneInsertion(insertion: unknown): insertion is ValidatedInsertion {
     if (!isRecord(insertion)) {
         return false;
     }
@@ -59,7 +60,7 @@ export function isInsertionOwner(value: unknown): value is InsertionOwner {
 export function planLaneInsertion(
     range: LaneRange,
     before: AutomationPoint[],
-    insertion: Insertion,
+    insertion: ValidatedInsertion,
     editId: string
 ): Pick<InsertionCapture, 'after' | 'changedBeats' | 'changedPointIds'> | null {
     const planned =

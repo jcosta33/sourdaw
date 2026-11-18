@@ -105,7 +105,11 @@ describe('insertAutomationPointPreservingShape', () => {
             throw new Error('Expected a point insertion');
         }
         const added = action.payload.insertion.point;
-        automationStore.set({ lanes: [makeLane([...points, added].sort((a, b) => a.beat - b.beat))] });
+        if (added.curve !== inserted.curve) {
+            throw new Error('Expected the captured segment curve');
+        }
+        const splitPoint = { ...added, curve: added.curve };
+        automationStore.set({ lanes: [makeLane([...points, splitPoint].sort((a, b) => a.beat - b.beat))] });
         expectSameSamples(before, sampleLane());
     });
 
