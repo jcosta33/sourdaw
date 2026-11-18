@@ -34,7 +34,9 @@ const runStartupTheme = (stored: string | null, operations: string[] = [], optio
     runInNewContext(startupThemeScript, {
         window: {
             localStorage: { getItem: () => stored },
-            matchMedia: () => ({ matches: options.prefersDark ?? true }),
+            matchMedia: (query: string) => ({
+                matches: query === '(prefers-color-scheme: dark)' && (options.prefersDark ?? true),
+            }),
         },
         MutationObserver: class {
             constructor(callback: () => void) {

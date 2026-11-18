@@ -27,10 +27,36 @@ describe('mainStylesheetRules', () => {
     });
 
     it('uses theme colors and restores native scrollbars in forced colors', () => {
-        expect(mainStylesheet).toContain('scrollbar-color: var(--color-muted-foreground) var(--color-background);');
-        expect(mainStylesheet).toContain('@media (prefers-contrast: more)');
-        expect(mainStylesheet).toContain('@media (forced-colors: active)');
-        expect(mainStylesheet).toContain('scrollbar-color: auto;');
+        const rules = stylesheetRules();
+        expect(rules).toContainEqual(
+            expect.objectContaining({
+                selector: '*',
+                conditional: [],
+                declarations: expect.arrayContaining([
+                    { property: 'scrollbar-width', value: 'thin' },
+                    { property: 'scrollbar-color', value: 'var(--color-muted-foreground) var(--color-background)' },
+                ]),
+            })
+        );
+        expect(rules).toContainEqual(
+            expect.objectContaining({
+                selector: '*',
+                conditional: ['@media (prefers-contrast: more)'],
+                declarations: expect.arrayContaining([
+                    { property: 'scrollbar-color', value: 'var(--color-foreground) var(--color-background)' },
+                ]),
+            })
+        );
+        expect(rules).toContainEqual(
+            expect.objectContaining({
+                selector: '*',
+                conditional: ['@media (forced-colors: active)'],
+                declarations: expect.arrayContaining([
+                    { property: 'scrollbar-color', value: 'auto' },
+                    { property: 'scrollbar-width', value: 'auto' },
+                ]),
+            })
+        );
     });
 
     it('reads the universal selector as itself rather than losing it', () => {
