@@ -222,7 +222,7 @@ An `APPROVE` on the same plan with three clean draws:
 {
     "format": "compact-v1",
     "event": "APPROVE",
-    "body": "setTempo now refuses non-positive tempi. Tried zero BPM, undo after refusal, and saving after refusal. The tempo map and saved state held. Nit: the refusal message could name the accepted range.",
+    "body": "The setTempo test observed refusal at 0 BPM. The case failed when the guard was reverted. Nit: the refusal message could name the accepted range.",
     "reviewerModel": "claude-sonnet-4.5",
     "draws": [
         {
