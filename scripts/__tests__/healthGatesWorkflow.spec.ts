@@ -2776,12 +2776,14 @@ function assertFermenterProof(candidate: UnknownRecord): void {
     expect(proof.if).toBe(FERMENTER_ADMISSION);
     expect(proof.id).toBe('prove-fermenter');
     expect(recordAt(proof, 'env')).toEqual({ FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' });
-    expect(proof.run).toContain(
-        'node scripts/proveDesktopFermenter.ts --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"'
-    );
-    expect(proof.run).toContain(
-        '--json "$RUNNER_TEMP/sourdaw-fermenter-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" || status=$?'
-    );
+    expect(
+        stringAt(proof, 'run').split('\n', 3),
+        'Fermenter must execute the proof and capture its exit status'
+    ).toEqual([
+        'status=0',
+        'node scripts/proveDesktopFermenter.ts --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-fermenter-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" || status=$?',
+    ]);
     expect(upload.if).toBe(
         "${{ !cancelled() && (steps.prove-fermenter.outcome == 'success' || steps.prove-fermenter.outcome == 'failure') }}"
     );
@@ -2813,6 +2815,15 @@ describe('health gates workflow contract', () => {
         const candidate = cloneWorkflows('broad Fermenter artifact').nightly;
         recordAt(stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_UPLOAD), 'with').path = '${{ runner.temp }}/';
         expect(() => assertFermenterProof(candidate)).toThrow();
+    });
+
+    it('rejects a Nightly shell step that only prints the Fermenter proof command', () => {
+        const candidate = cloneWorkflows('printed Fermenter proof command').nightly;
+        const proof = stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_PROOF);
+        proof.run = stringAt(proof, 'run').replace(/^node scripts\/proveDesktopFermenter\.ts /mu, 'echo $&');
+        expect(() => assertFermenterProof(candidate)).toThrow(
+            'Fermenter must execute the proof and capture its exit status'
+        );
     });
 
     it('keeps the PR CodeQL category aligned with the nightly baseline', () => {
