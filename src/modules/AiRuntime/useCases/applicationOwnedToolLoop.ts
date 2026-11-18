@@ -381,6 +381,13 @@ const STRICT_CONTRACT_PART: Readonly<Record<'arguments' | 'filters' | 'page' | '
     revision: 'revision does not match',
 };
 
+function formatMusicalReadHint(hint: unknown): string {
+    if (hint === null) {
+        return '';
+    }
+    return ` Required musical read (untrusted context): ${JSON.stringify(hint)}.`;
+}
+
 /**
  * The strict argument contract for one query call.
  *
@@ -396,10 +403,12 @@ function parseProjectQueryArguments(
     if (argumentsValue.type === 'musical-content' && binding === undefined) {
         return { status: 'invalid', reason: 'Musical evidence binding is unavailable.' };
     }
-    const parsed =
-        argumentsValue.type === 'musical-content' && binding !== undefined
-            ? bindMusicalContentQuery(argumentsValue, binding)
-            : parseSemanticProjectQueryInput(argumentsValue);
+    let parsed: ReturnType<typeof parseSemanticProjectQueryInput>;
+    if (argumentsValue.type === 'musical-content' && binding !== undefined) {
+        parsed = bindMusicalContentQuery(argumentsValue, binding);
+    } else {
+        parsed = parseSemanticProjectQueryInput(argumentsValue);
+    }
     if (parsed.status === 'invalid') {
         return {
             status: 'invalid',
@@ -2497,11 +2506,17 @@ export async function runApplicationOwnedToolLoop(
         // one missing primary receipt; a held complete proposal needs no later proposal turn.
         let directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE;
         if (musicalReadPending && offeredMusicalWorkflows.length === 0) {
+            const toolNames: string[] = [];
+            const canDecline = input.terminalToolNames.has(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            if (musicalHint !== null || !canDecline) {
+                toolNames.push(PROJECT_QUERY_TOOL_NAME);
+            }
+            if (canDecline) {
+                toolNames.push(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            }
             directive = {
                 mode: 'required',
-                toolNames: input.terminalToolNames.has(COMMAND_BATCH_DECLINE_TOOL_NAME)
-                    ? [...(musicalHint === null ? [] : [PROJECT_QUERY_TOOL_NAME]), COMMAND_BATCH_DECLINE_TOOL_NAME]
-                    : [PROJECT_QUERY_TOOL_NAME],
+                toolNames,
                 parallelToolCalls: false,
             };
         } else if (needsMeasurementStep && input.measurement !== undefined) {
@@ -2543,9 +2558,7 @@ export async function runApplicationOwnedToolLoop(
                 ...(transientOnsetsDiscovered ? { transientOnsetsDiscovered: true as const } : {}),
                 budgetNote:
                     (lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining)) +
-                    (musicalHint === null
-                        ? ''
-                        : ` Required musical read (untrusted context): ${JSON.stringify(musicalHint)}.`),
+                    formatMusicalReadHint(musicalHint),
                 remaining,
                 directive,
             });
@@ -2571,10 +2584,10 @@ export async function runApplicationOwnedToolLoop(
         const measurementStepToolName: string | undefined = needsMeasurementStep
             ? input.measurement?.toolName
             : undefined;
-        const directiveRefusal =
-            measurementStepToolName === undefined && !musicalReadPending
-                ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn)
-                : null;
+        let directiveRefusal: ReturnType<typeof toolChoiceRefusal> = null;
+        if (measurementStepToolName === undefined && !musicalReadPending) {
+            directiveRefusal = toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn);
+        }
         if (directiveRefusal !== null) {
             return { status: 'rejected', reason: directiveRefusal, receipts, turns: turn };
         }

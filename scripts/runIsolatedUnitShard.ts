@@ -4,8 +4,10 @@ import { accessSync, constants, lstatSync, mkdirSync, readFileSync, realpathSync
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertIndependentUnitObjects, copyUnitCheckout, unitAccessBootstrap } from './unitExecutionCopy.ts';
+import { unitCoverageShardDirectory } from './unitCoveragePaths.ts';
+import { assertIndependentUnitObjects, copyUnitCheckout } from './unitExecutionCopy.ts';
 import { ownCheckoutDirectories } from './unitShardCheckoutOwnership.ts';
+import { droppedCommand, exportUnitCoverage, safeEnvironment, systemPath } from './unitShardExecution.ts';
 
 const sequentialGuardSpecs = [
     'scripts/__tests__/resourceGuardStorage.spec.ts',
@@ -14,7 +16,12 @@ const sequentialGuardSpecs = [
 ] as const;
 
 type CommandResult = { status: number | null; stdout: string; stderr: string };
-type CommandOptions = { env?: NodeJS.ProcessEnv; cwd?: string; inheritOutput?: boolean };
+type CommandOptions = {
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    inheritOutput?: boolean;
+    maxBuffer?: number;
+};
 type Command = (file: string, args: string[], options?: CommandOptions) => CommandResult;
 type Metadata = { directory: boolean; file: boolean; uid: number; gid: number; mode: number; device: number };
 export type UnitIsolationContext = {
@@ -52,7 +59,6 @@ export type UnitIsolationPorts = {
 };
 
 const helperName = 'scripts/runIsolatedUnitShard.ts';
-const systemPath = '/usr/local/bin:/usr/bin:/bin';
 
 function nativeCommand(file: string, args: string[], options: CommandOptions = {}): CommandResult {
     const result = spawnSync(file, args, {
@@ -61,6 +67,7 @@ function nativeCommand(file: string, args: string[], options: CommandOptions = {
         encoding: 'utf8',
         stdio: options.inheritOutput ? 'inherit' : 'pipe',
         timeout: options.inheritOutput ? undefined : 300_000,
+        maxBuffer: options.maxBuffer,
     });
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
@@ -154,25 +161,6 @@ function unusedUid(ports: UnitIsolationPorts, uid: number): void {
     }
 }
 
-function safeEnvironment(context: UnitIsolationContext): NodeJS.ProcessEnv {
-    return {
-        HOME: context.home,
-        PATH: `${dirname(context.node)}:${dirname(context.pnpm)}:${systemPath}`,
-        PNPM_CONFIG_STORE_DIR: context.store,
-        CI: 'true',
-        GITHUB_ACTIONS: 'true',
-        GITHUB_WORKSPACE: context.workspace,
-        VITEST_MAX_WORKERS: '2',
-        TMPDIR: context.temp,
-        TMP: context.temp,
-        TEMP: context.temp,
-    };
-}
-
-function envArguments(env: NodeJS.ProcessEnv): string[] {
-    return Object.entries(env).map(([key, value]) => `${key}=${value}`);
-}
-
 function setupCommand(ports: UnitIsolationPorts, file: string, args: string[], root: string): CommandResult {
     return ports.run(
         '/usr/bin/sudo',
@@ -192,38 +180,6 @@ function setupCommand(ports: UnitIsolationPorts, file: string, args: string[], r
         ],
         { cwd: root }
     );
-}
-
-function droppedCommand(
-    ports: UnitIsolationPorts,
-    context: UnitIsolationContext,
-    phase: string,
-    shard?: string
-): CommandResult {
-    const args = [
-        '-n',
-        '--',
-        '/usr/bin/setpriv',
-        `--reuid=${context.uid}`,
-        `--regid=${context.gid}`,
-        '--clear-groups',
-        '--inh-caps=-all',
-        '--bounding-set=-all',
-        '--ambient-caps=-all',
-        '--no-new-privs',
-        '/usr/bin/env',
-        '-i',
-        ...envArguments(safeEnvironment(context)),
-        context.node,
-        '-e',
-        unitAccessBootstrap,
-        JSON.stringify(context),
-        phase,
-    ];
-    if (shard !== undefined) {
-        args.push(shard);
-    }
-    return ports.run('/usr/bin/sudo', args, { cwd: '/', inheritOutput: true });
 }
 
 function prepareExecutionContext(
@@ -508,14 +464,16 @@ export function runUnitPhase(
             }).status ?? 1
         );
     }
-    if (phase !== 'install' && phase !== 'browsers' && phase !== 'shard') {
+    const reportsCoverage = phase === 'coverage-shard';
+    const runsShard = phase === 'shard' || reportsCoverage;
+    if (phase !== 'install' && phase !== 'browsers' && !runsShard) {
         throw new Error('unit isolation phase is invalid');
     }
-    if (phase === 'shard' && !/^[1-4]\/4$/.test(shard ?? '')) {
+    if (runsShard && !/^[1-4]\/4$/.test(shard ?? '')) {
         throw new Error('unit shard must remain one of four');
     }
     const options = { cwd: context.workspace, env: safeEnvironment(context), inheritOutput: true };
-    if (phase === 'shard') {
+    if (runsShard) {
         console.info(
             `unit isolation admitted: uid=${context.uid} gid=${context.gid} groups=empty caps=empty no-new-privs=1 phase=storage`
         );
@@ -531,6 +489,14 @@ export function runUnitPhase(
         `unit isolation admitted: uid=${context.uid} gid=${context.gid} groups=empty caps=empty no-new-privs=1 phase=${phase}${shard === undefined ? '' : ` shard=${shard}`}`
     );
     let args = ['run', 'test:run', `--shard=${shard}`, ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`)];
+    if (reportsCoverage) {
+        args.push(
+            '--coverage',
+            '--coverage.provider=istanbul',
+            '--coverage.reporter=json',
+            `--coverage.reportsDirectory=${join(context.temp, unitCoverageShardDirectory)}`
+        );
+    }
     if (phase === 'install') {
         args = ['install', '--frozen-lockfile', '--store-dir', context.store];
     }
@@ -569,7 +535,12 @@ export function launchUnitPhase(
     ) {
         throw new Error('unit isolation context does not belong to this runner');
     }
-    return droppedCommand(ports, context, phase, shard).status ?? 1;
+    const start = performance.now();
+    const status = droppedCommand(ports, context, phase, shard).status ?? 1;
+    if (status === 0 && phase === 'coverage-shard') {
+        exportUnitCoverage(ports, context, shard ?? '', Math.ceil(performance.now() - start));
+    }
+    return status;
 }
 
 function argument(args: string[], key: string): string {
@@ -611,7 +582,7 @@ function main(args: string[], ports: UnitIsolationPorts): number {
     if (mode === 'execute') {
         return runUnitPhase(parseContext(argument(args, '--context-json')), argument(args, '--phase'), shard, ports);
     }
-    if (mode === 'install' || mode === 'browsers' || mode === 'shard') {
+    if (mode === 'install' || mode === 'browsers' || mode === 'shard' || mode === 'coverage-shard') {
         return launchUnitPhase(argument(args, '--context'), mode, shard, ports);
     }
     throw new Error('unit isolation command is invalid');

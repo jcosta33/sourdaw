@@ -18,6 +18,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 import sourdawPlugin from './scripts/lint/sourdaw.mjs';
+import sourdawCraftPlugin from './scripts/oxlintCraft/plugin.mjs';
 
 const jsxA11yPlugin = eslintPluginJsxA11yX.configs.recommended.plugins['jsx-a11y-x'];
 const commentsPlugin = eslintPluginComments.recommended.plugins?.['@eslint-community/eslint-comments'];
@@ -164,6 +165,7 @@ export default tseslint.config(
             'react-hooks-js': eslintPluginReactHooks,
             'react-hooks': eslintPluginReactHooks,
             sourdaw: sourdawPlugin,
+            'sourdaw-craft': sourdawCraftPlugin,
             '@stylistic': eslintPluginStylistic,
             '@eslint-community/eslint-comments': commentsPlugin,
         },
@@ -413,7 +415,7 @@ export default tseslint.config(
     },
     { files: ['eslint.config.mjs'], languageOptions: { parserOptions: { project: './tsconfig.eslint-config.json' } } },
     {
-        files: ['eslint.size-baseline.mjs', 'oxlint.craft-baseline.mjs'],
+        files: ['eslint.size-baseline.mjs'],
         extends: [tseslint.configs.disableTypeChecked],
         languageOptions: { parserOptions: { project: false } },
     },

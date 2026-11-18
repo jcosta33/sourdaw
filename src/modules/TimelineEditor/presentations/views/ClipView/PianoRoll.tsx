@@ -162,13 +162,13 @@ export const PianoRoll = ({
     // since both scroll containers live in this component.
     const expressionScrollRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
-    const setSelectedNoteIds: Dispatch<SetStateAction<Set<string>>> = (change) =>
-        onSelectedNoteIdsChange(
-            change,
-            takeProjections.size > 256
-                ? []
-                : Array.from(takeProjections, ([id, projection]) => ({ clipId: id, projection }))
-        );
+    const setSelectedNoteIds: Dispatch<SetStateAction<Set<string>>> = (change) => {
+        let projections: Parameters<typeof setPianoRollSelection>[3] = [];
+        if (takeProjections.size <= 256) {
+            projections = Array.from(takeProjections, ([id, projection]) => ({ clipId: id, projection }));
+        }
+        onSelectedNoteIdsChange(change, projections);
+    };
     const [gridSnap, setGridSnap] = useState(0.25);
 
     const { keyRoot, scaleName } = useStore(projectStore);

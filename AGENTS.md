@@ -1,257 +1,71 @@
 # Sourdaw Agent Rules
 
-Read nested `AGENTS.md` before editing its subtree; it overrides this file there.
+Read any nested `AGENTS.md` before editing its subtree. It overrides this file there.
+
+- **Before changing files** — survey ownership, open an owned [worktree](#worktrees), and read the
+  applicable [repository skills](./.agents/skills/) for the paths and behavior you will touch.
+- **Before running checks** — use [Resource Safety](#resource-safety) and the exact affected
+  [Checks](#checks). PR CI owns broad validation.
+- **Before orchestrating a change or running any review or delivery script** — load
+  [delivery-orchestration]. Run trusted GitHub writes through the protected primary package route.
+- **Before dispatching reviewers or approving** — apply [Review](#review), including independent
+  blind stances and a global review of the exact head.
 
 ## Ownership
 
 The top-level agent owns code, architecture, quality, tests, docs, tooling, tracker, and hygiene.
-Decide, act, deliver; report outcomes and exceptions, never process
-([ADR 0026](./.agents/decisions/0026-ownership-by-exception.md)).
+Report outcomes and exceptions. [ADR 0026](./.agents/decisions/0026-ownership-by-exception.md)
 
-Escalate only costly-to-reverse decisions that change the product for users. Security, data loss,
-legal, and spend exposure count as product consequence. Present researched options and one recommendation.
+Escalate only costly-to-reverse decisions that change the product for users, including security, data
+loss, legal exposure, and spend. Present researched options and one recommendation. Decide other
+questions using live code, primary sources, standards, and DAW practice. Make reversible calls at
+roughly 70% of desired information. Irreversible acts without product consequence require full
+information and a durable record. Missing access is a blocker.
 
-Decide everything else. Make reversible calls at roughly 70% of desired information, using live
-code, primary sources, standards, and established DAW practice. Irreversible acts without product
-consequence require full information and a durable record. Engineering effort, schedule, patch
-breadth, delivery mechanics, and ordinary technical risk do not justify escalation. Missing access
-is a blocker, not a question.
+Fix or hand off every defect you encounter, including misbehavior, broken invariants, and documented
+contract contradictions. Give sizeable defects their own lane and batch small unrelated defects in
+a hygiene lane. The lane and PR claim the work you take on. File a tracker issue only for work you
+leave behind, with enough detail for a new session to act.
 
-Fix or hand off every encountered defect: observable misbehavior, broken invariants, or documented
-contract contradictions, never style preferences. Existing defects spread through surrounding code
-and agents copying it. Give sizeable defects their own lane; batch small unrelated ones in a hygiene
-lane. Your fix's lane and PR claim it; do not file an issue.
+## Safety
 
-The tracker exists to hand work to other agents in the future. File only what you leave behind:
-defects, follow-ups, and designs you are not taking into a lane now, each with enough detail for a
-cold session or another agent to act. Never file an issue for work your own session is about to do,
-and never offer to file or ask whether to file: file it or do it.
+- Preserve unrelated changes and stage only files you changed. Another agent's lane, branch, and
+  PR are read-only.
+- Never run destructive Git commands, force-push, amend published history, or delete branches
+  without explicit authority.
+- Install packages or edit CI/build controls only when the task requires it.
+- Pass explicit file targets to `pnpm format` and `pnpm cargo:fmt`. Keep formatter, codemod, and
+  autofix scope to owned files. Run `format:full` only on explicit request.
+- Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.
+- Keep secrets and sensitive log data out of public reviews. Compose credential-shaped and
+  armored-key fixtures at runtime from parts. The required PR diff secret scan matches literals.
 
-## Delegation
+## Worktrees
 
-The orchestrator specifies, dispatches, and organizes; it does not implement. It owns the outcome:
-it adjudicates every finding, reviews each head globally, and decides approval and merge, executing
-those decisions through the trusted scripts — the reviewer App publishes reviews and `deliver` merges
-as the author App. Each delegated agent executes one precise task, returns evidence and a result, and
-neither contacts the user nor owns decisions.
+One change, one owned lane under `.agents/worktrees/`, one PR. Edit tracked files only in that lane.
+The protected primary hosts credentials and gitignored operations, including review bundles and
+their caller documents. Stash, processes, disk, and author locks are shared across worktrees.
 
-Use the cheapest adequate economy, standard, or strongest tier for each task, independent of the
-orchestrator's model. Judge ambiguity, scope, failure consequence, reversibility, and the strength of
-available verification; a small diff alone does not make a task easy. Economy fits bounded mechanical
-work with a decisive oracle; standard fits ordinary behavior and integration work. Use strongest for
-architecture, real-time audio, security, data loss, irreversible change, conflicting evidence, or
-unresolved consequential ambiguity.
-
-Diagnose a blocked or disputed step before changing its tier. Escalate a genuine reasoning or model-capability
-failure, or a disputed interpretation, for the affected subproblem; then return to the cheapest
-adequate tier. Missing credentials, dependencies, browser access, resource capacity, or a deterministic
-environment failure call for fixing or reporting that blocker, not a blind retry on a stronger model.
-
-At dispatch, resolve the tier to an explicitly selected available model and a reasoning setting that
-model supports. Deployment profiles own tier mappings outside this portable policy. If no profile is
-available, select from the current model catalog, state the capability basis and provisional nature
-of the choice, and continue. If the harness cannot configure reasoning effort, use its default and
-do not claim a setting or capability it did not provide.
-
-For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
-Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
-author's, recording the fallback in the review document: `modelExhaustion` names what made every
-other model unavailable, and the published body names each reviewer model that matches an author.
-
-Design the whole requested outcome before dispatch, then give each agent one independently safe
-behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
-objective, lane, branch, paths, exclusions, dependencies, applicable preservation guarantees,
-acceptance conditions, integration observable, and exact checks, and, when the change carries a
-handwritten path under product scope (`src/modules/`, `src/components/`, `electron/`), the
-user-observable verification steps the pull request's How to test must teach. Before writing it, trace each
-acceptance observable (event, counter, or caller-read figure) to its producing line, and each
-prescribed mechanism to every required code route. Unemitted observables and partially covered routes
-are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
-check, or dispatch inventories into it, and do not require another plan file or issue for work the
-session owns. Require back only status, changed paths, decisive evidence, and blockers. Author and
-repair dispatches also say how to do the work, as a senior engineer briefs a junior and never as
-pseudo-code: the approach and rejected alternative, where to work and the code to follow, step order,
-area traps and generated artifacts, per-step verification, and stop-and-report conditions. Reviewer
-dispatches never carry that reasoning; the templates live in [delivery-orchestration].
-
-Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
-together. Split distinct outcomes when separate review materially helps, provided each slice can land
-safely and final integration stays coherent. Stack only separately useful slices with a real dependency.
-A size report alone never requires a split, and no numeric threshold decides one. When distinct
-outcomes must land together, name the invariant or dependency that requires joint landing; a feature
-name or changed-line target is insufficient. If a review repair introduces a new mechanism or outcome,
-reassess the PR scope before dispatching more author work.
-
-Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
-and overlapping files.
-
-## Review
-
-Keep reviewers blind: give each the head, diff, and exactly one stance, never other reviewers'
-prose, the author's transcript, or orchestrator reasoning. Prior findings anchor reviewers.
-Reviewers never confer; findings meet only in the orchestrator.
-
-Derive the stances from the task, never from a menu or habit: enumerate the material risks this
-diff creates, then assign one independent stance to each, named for the failure mode that admits
-it — the input or state that breaks, never the path the diff touches. A stance any diff would admit
-— "correctness" above all — is the baseline every reviewer already holds, not a stance.
-Independence is distinct failure modes, never distinct files: stances pinned to different touched
-paths that share one probe library are one stance. Dispatch one stance per independent risk, never
-fewer than the risk plan's floor below.
-
-Reviewers use only fast, low-cost mid-tier models or below: recorded by their public model names.
-Use economy or standard for every review stance, including real-time audio, security, data loss,
-irreversible change and disputed findings. Never use frontier or high-end review models: Fable,
-Astra, Opus, or any Sol model. This ceiling applies to reviewers only; author and orchestrator
-routing above stays unchanged. Preserve specialist risk classes, independent stances, blind
-review, and discriminating evidence rather than escalating the review model.
-
-Diversify among configured models, preferring a different model from the author's when
-available. When only one permitted model is available, disclose the unavailable alternatives in
-`modelExhaustion`; it never waives the cost ceiling. Independent draws from different permitted
-models may share one stance to expose different findings; that extends model diversity, not the
-stance count.
-
-Every reviewer carries the baseline posture regardless of stance: establish what must break for
-each existing check to fail and whether it observes what its name claims. A pass alone is not
-evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
-mutation, then run the named spec; remaining green fails the round. The probe is a reviewer duty
-the orchestrator checks in the report, not a publication gate. Reviewers read the fixed commit and
-bundle by default and never create a worktree or clone. They may probe in the clean, committed author
-lane only through the exclusive handoff in [reviewer isolation](.agents/skills/review-stances/README.md#reviewer-isolation).
-If a probe cannot run, report its exact mutation, named check, and limitation for orchestrator or
-author execution; never report an unrun probe as passed.
-
-Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
-whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without
-any assertion when the entry point is absent, renaming its locator, or failing to mount. The
-baseline probe for a UI case must show it fails when its required entry point is unavailable —
-unconditional admission, or removal of the duplicate with the obligation named in the spec that
-owns the behavior.
-
-Dispatch a posture as well as a surface: try to break the change; report the strongest surviving
-finding with concrete failure inputs or state, or report none. Finding nothing is success; never
-manufacture findings. Tell reviewers that hedged findings without a concrete break are discarded.
-
-Scale evidence to the claim. Check findings against the live head and surrounding code, not the
-diff alone. Merge-blocking findings require the reproduction's input, state, or mutation and observed
-result. Baseline-probe findings name the mutation that should have failed the check but did not.
-
-Blind reviewers report only to the orchestrator, which validates every finding against live code
-before acting. Discard incorrect, out-of-scope, or personal-style findings; never forward or post
-them. After the posting step below, dispatch survivors as precise repairs in the orchestrator's own
-words to avoid anchoring the author. Authors never judge findings against their own work. Validate
-before posting: `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and only a head
-addressing the finding can resolve it, so a wrongly posted finding blocks delivery without a repair
-to make.
-
-Every round, the orchestrator also reviews the whole head itself, with no stance and before reading
-any stance report so none anchors it. Does the head do what was asked, fit the architecture and the
-product, and keep the right scope? Do its tests observe their claimed subjects, and is every
-accepted finding repaired rather than silenced? Would the orchestrator merge it? Green `Gate` proves
-only the checks and scopes it observed. This global review is not a draw: it is not recorded in
-`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported goes
-to a blind draw whose stance names that failure mode, never the finding, and is posted once a draw
-reproduces it. Anything no draw reproduces, concrete defect or judgement alike, is never posted:
-the orchestrator withholds approval and, under [Delegation](#delegation), re-briefs the author on a
-new head or respins or closes the PR. That hold is not a review and posts nothing; the
-request-changes rule governs posted findings. The orchestrator never approves a head it judges
-unfit, whatever the draws say.
-
-`review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
-`ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
-derived from the same path classification as the size report beside it so the two cannot disagree.
-The classification encodes semantic risk beyond size: playback-timing, project-persistence, and
-every trusted GitHub-write closure path earn their specialist class however small the diff
-(#3377). The plan's classes name risk surfaces the stance enumeration must weigh; they never name
-the stances.
-
-`review.json` is the round's only caller document
-([ADR 0054](./.agents/decisions/0054-proportional-machine-checked-review-floor.md)). Beside the
-event, body, comments, `reviewerModel`, and approval evidence it carries `draws`, one
-`{ stance, reviewerModel, tier, outcome }` per completed draw (`tier` is `economy` or `standard`
-for fresh publication; historical `strongest` values stay readable; `outcome` is `clean` or
-`findings`), and optional `discarded`, one `{ finding, reason }`
-per discard, never posted. `review:publish` itself derives the head-bound record `deliver` reads
-from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publication is refused
-before any remote write unless its draws cover the plan's floor of distinct stances — one for
-`docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
-every stance the plan's classes earn when they earn fewer. Every fresh publication also checks
-each draw's declared `tier`, and `review.json` must carry the draws itself: an unpublished
-`dossier.json` never supplies them. Only `economy` and `standard` pass, and `strongest` metadata refuses a fresh publication.
-The script does not check model names against the cost ceiling; choosing a permitted model for
-each draw is the orchestrator's duty, and the script enforces only the declared tier and author
-diversity (`scripts/reviewerModelDiversity.ts`).
-The floor is the minimum the record can prove; whether the stances attack
-independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
-files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are
-ignored with one log line. Re-publishing a head whose record already binds its
-publication replays that record unchanged, and records persisted under earlier contracts keep
-replaying and verifying.
-
-A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (ten, in
-`scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
-refuses every fresh reviewer publication on it, approve or request changes, and no caller document
-lifts the freeze. A dismissed reviewer `REQUEST_CHANGES` review that owns an inline comment still
-counts. Respin the change as one consolidated pull request and close the frozen one with
-`pr:supersede` once the replacement merges. `review:repair` and `review:confirm` stay open so
-unresolved threads remain resolvable. `review:prepare` logs
-`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, adds
-`review-round-freeze:<pr>:frozen` when the count reaches the threshold, and `review:repair` logs
-the count line only at or above the threshold.
-
-An obsolete pull request with no truthful merged replacement may use `pr:retire` only when every
-live review root is resolved by an author-App repair and reviewer-App confirmation on the named
-head, and every `REQUEST_CHANGES` review maps to those roots. Its public `retirement-v1` record
-attests the reason and evidence; the command verifies native review and closure facts, not semantic
-obsolescence. This route does not approve or deliver the PR.
-
-Every recorded value — draws, discards, and approval claims — is single-line, trimmed and bounded,
-and refused when it carries a credential-shaped value, a private-key header, a JWT, a bearer token,
-or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
-
-A lane that adds credential-shaped or armored-key fixtures composes them at runtime from their parts;
-the pull-request diff secret scan is a required gate and matches those literals in source.
-
-A bundle with no `risk-plan.json` is admitted for fresh publication and for delivery only when its
-pull request was opened before risk plans began (`PLANLESS_REVIEW_BUNDLE_CUTOVER` in
-`scripts/reviewPublicationBinding.ts`); any later one must re-run `review:prepare`. Admitted legacy
-bundles still meet the reviewer cost and diversity rules. Historical review and acceptance documents stay readable
-unchanged; exact published replay and recovery do not re-run fresh model eligibility, and
-`review:accept` takes no dossier.
-
-Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review against the reviewed
-head, then dispatch repairs. The author pushes the fixed head and records each repair through
-`review:repair`, leaving the thread open; the reviewer App, a distinct identity, resolves only the
-threads whose recorded repair validates through `review:confirm`, and a refusal resolves nothing.
-Both act only on threads whose root comment the reviewer App or the owner wrote.
-`review:resolve` is retired and refuses all resolutions. Never repair first and approve in
-one motion: the public record must retain the reviewer identity's findings against the original
-head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
-exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
-delivery gate: the reviewer App records the independent review, its APPROVE publication records the
-delivery authorization, and `deliver` then merges as the immutable author App.
-
-For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
-(missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
-`.agents/skills/review-stances/` whose probes participate in what would have caught it — the
-behavior-and-invariant file is the fallback home when no specific file matches — or mint a new
-file for a defect class none covers, so cold orchestrators inherit the escape lesson. Escapes
-measure review
-quality; fixing without learning does not prove it.
-
-## Docs
-
-Document durable contracts: rules, invariants, and reasons. Exclude counts, inventories, and
-current-state enumerations that drift with ordinary work. Fix or file defects before deleting
-"gotcha" or "known drift" notes. Retain deliberately accepted, test-guarded states as contracts.
-
-## DAW Standard
-
-Protect DAW essentials: real-time audio, timing accuracy, latency-aware monitoring, non-destructive
-editing, deterministic automation, project integrity, dependable undo, and fast musician workflows.
-Research established DAWs before inventing interaction or audio semantics; follow professional
-convention unless Sourdaw deliberately differs.
+- Survey live lanes, PRs and overlaps before opening. Open with
+  `pnpm lane:open [issue] [slug] --type <type> --model <model>`. Use the actual author model and a
+  conventional PR title type. The command locks the new lane as `active:sourdaw-author` without
+  minting an App token or running `gh`. Claim bound issues immediately with
+  `pnpm issue:claim <issue>` from the protected primary. Bound PRs close their issue by default.
+  Campaign slices use `lane:publish --relates` to leave the umbrella open.
+- Stack only on a clean, committed, owned parent in the same repository. Publish parents first.
+  Synchronize a child through `lane:sync-parent` before main-only delivery. Preserve exact parent
+  lineage and verify the combined outcome on the final head. [Stack procedure](./.agents/skills/delivery-orchestration/references/lane-publication.md#stack-synchronization)
+- Stage and commit with `node scripts/gitCheckpoint.ts add -- <paths>` and
+  `node scripts/gitCheckpoint.ts commit <git arguments>` in the lane. Retain private receipts on
+  failure. Enable hooks with `git config core.hooksPath .githooks`. Use a conventional
+  `type(scope)!: subject` subject with at most 100 characters, free of control characters and
+  closing keywords. `lane:open` stamps the author App identity. `pnpm lane:identity` restamps it.
+  [Checkpoint receipts](./.agents/skills/delivery-orchestration/references/lane-operations.md#checkpoint-receipts)
+- Give browser verification a lane-unique `SOURDAW_E2E_PORT` derived from the slug. Warmup and
+  UI scripts verify the server belongs to your checkout.
+- Delivery queues guarded local cleanup. Consult `pnpm lane:cleanup --status` for pending work.
+  Use native proof before removal, and strand abandoned work to preserve its tip.
+  [Cleanup and preservation procedure](./.agents/skills/delivery-orchestration/references/lane-operations.md#local-cleanup-after-delivery)
 
 ## Resource Safety
 
@@ -316,6 +130,166 @@ a retry never authorizes delivery. GitHub's ruleset counts the newest run of `Ga
 retry satisfies the ruleset; `deliver` itself refuses a head on which any non-draft `health-gates.yml`
 attempt failed, and the remedy is a new push.
 
+## Delegation
+
+The orchestrator specifies and dispatches all implementation. It owns the outcome, findings,
+global review, and approval and merge decisions. Each agent executes one precise task and returns
+evidence to the orchestrator. Agents neither contact the user nor own those decisions.
+
+Use the cheapest adequate tier for the task, independent of the orchestrator's model. Economy
+fits bounded mechanical work with a decisive check. Standard fits ordinary behavior and
+integration work. Strongest fits architecture, real-time audio, security, data loss, irreversible
+work, and consequential ambiguity. Diagnose blockers before changing tiers. Repair or report
+missing credentials, dependencies, access, capacity, and deterministic environment failures.
+Escalate genuine reasoning failures or disputed interpretations for the affected subproblem,
+then return to the cheapest adequate tier. Reviewers have the separate ceiling below.
+
+At dispatch, explicitly select an available model and supported reasoning setting. Use deployment
+profiles for mappings. Without one, give the capability basis and mark the choice provisional.
+Use the harness default where it cannot set reasoning effort. Diversify among equally adequate
+models at the cheapest adequate tier. Apply the reviewer diversity rule below.
+
+Design the whole outcome before dispatch. Specify the objective, lane, branch, paths, exclusions,
+dependencies, preservation guarantees, acceptance conditions, integration observable, and exact
+checks for each independently safe slice. Trace each observable to its producer and each required
+mechanism to all its routes. For handwritten paths under `src/modules/`, `src/components/`, or
+`electron/`, specify user-observable How to test steps. Give reviewers only neutral conditions
+from the request and governing contract with the fixed head, bundle, and stance. Brief authors
+and repair agents on the approach, code, and sequence. Keep that reasoning away from reviewers
+and PR bodies. [Dispatch briefs](./.agents/skills/delivery-orchestration/SKILL.md#briefs)
+
+Default to one PR for a cohesive change, including callers and tests. Split independently useful
+outcomes when review benefits and each slice can land safely. Stack only on a real dependency.
+Size alone never decides a split. When distinct outcomes must land together, name the invariant
+or dependency. Reassess scope before a repair introduces a new mechanism or outcome. Parallelize
+only write-disjoint tasks within a lane and follow [Delivery](#delivery) for overlaps across lanes.
+
+## Review
+
+### Governing revision
+
+Use the bundle's `manifest.json` to distinguish the governing merge base (`baseSha`) from the
+reviewed head (`headSha`). Start with `contracts/AGENTS.md` and the other bundled contract copies.
+For a referenced source absent from the bundle, resolve its path relative to the referring file's
+original repository path and read `git show <baseSha>:<repo-relative-path>`. Use that same
+revision at every hop, including nested references. Apply those sources to stance selection,
+evidence and approval. Inspect the proposed changes in `diff.patch` and read product code and
+proposed guidance at `headSha`.
+
+### Stances and models
+
+Keep each reviewer blind. Give them the fixed head, bundle and one stance. Exclude other reports,
+author transcripts, and orchestrator reasoning. Reviewers report to the orchestrator and never
+confer. Use the most specific matching [stance reference](./.agents/skills/review-stances/README.md)
+when one exists.
+
+Enumerate the material risks introduced by the diff. Assign one stance to each independent
+failure mode, named for the input or state that breaks. Correctness is every reviewer's baseline.
+A different file, role, or label does not make a stance independent, and separate paths sharing
+one probe library still count as one stance. Multiple draws on one stance may diversify models.
+
+Require at least **three distinct stances** unless the change is absolutely tiny and harmless.
+The exception applies only if the change cannot alter what the product does, what a test proves,
+what a rule, procedure, contract or decision requires or records, which document or section a
+requirement points at, a persisted or generated artifact, or a build or delivery path. Such a
+change may use one stance, subject to the machine floor. If the plan falls short, dispatch the
+missing independent stances before running the round.
+
+`review:prepare` derives `risk-plan.json` from the same path classification as the size report.
+Weigh every applicable risk class, including specialist rules for playback timing, persisted
+project state, and trusted GitHub-write closure paths, regardless of size. Fresh plan-carrying
+publication counts distinct stance names before any remote write. Its machine floor is one for
+`docs-only` and `test-only`, two for `small` (handwritten product code under `src/` only), and
+otherwise three or every stance the classes earn when fewer. The orchestrator judges independence
+and the human minimum. [Risk classes](./.agents/skills/delivery-orchestration/references/review-records.md#risk-classes)
+
+Use fast, low-cost mid-tier models or below for every stance, including real-time audio, security,
+data loss, irreversible change, and disputed findings. Use economy or standard. Fable, Astra,
+Opus and all Sol models are excluded. Record public model names. Prefer a permitted model
+different from the author's and diversify equally adequate models. If a reviewer matches an
+author, explain the unavailability of every eligible alternative in `modelExhaustion` and name
+the matching model in the published body. The script checks tier and author diversity. Choosing
+a model within the cost ceiling remains the orchestrator's duty.
+
+### Evidence and adjudication
+
+Every reviewer tries to break the change and reports the strongest surviving failure with concrete
+input, state, or mutation and observed result, or reports none. For each existing check, determine
+what should make it fail and whether it observes its claim. Name and run a mechanical probe
+against the applicable spec by reverting the behavioral hunk or applying one targeted mutation.
+A probe that stays green fails the round. This is a reviewer duty even though publication does
+not gate on it. Read the fixed commit and bundle. Run probes only after exclusive handoff of the
+clean, committed author lane. Reviewers never create a worktree or clone. When a probe cannot run,
+return the exact mutation, named check, and limitation. An unrun probe records no pass.
+[Reviewer isolation](./.agents/skills/review-stances/README.md#reviewer-isolation)
+
+For UI specs, remove the required entry point and require the check to fail. A body guarded by
+`if (await locator.isVisible().catch(() => false))` can pass without assertions when the locator
+changes or the UI fails to mount (#4441, introduced by #1531). Enforce unconditional admission or
+remove the duplicate and name the obligation in the spec that owns it.
+
+Before reading any stance report in each round, review the whole exact head yourself against the
+request, architecture, product, and scope. Check that tests observe their claims and previous
+findings are repaired. Decide whether you would merge it. This global review stays out of
+`draws` and has no reviewer cost ceiling. Green `Gate` establishes only the checks and scopes it ran.
+
+Adjudicate against the live head and surrounding code. Require concrete reproduction and observed
+results for blockers. For a check-validity finding, identify the mutation that should fail the
+named check. Discard incorrect, out-of-scope, personal-style, and unsubstantiated findings.
+File out-of-scope defects. If only the global review finds a blocker, dispatch a fresh blind
+stance on the failure mode without sharing the finding. Publish it only if a draw reproduces it.
+Otherwise hold approval, post nothing, and re-brief for a new head, respin, or close. An unfit head
+never earns approval.
+
+### Publication and repair
+
+Use only `review.json` as caller input. Include a `draws` entry for every completed blind draw
+and record discarded candidates privately. Publication derives the head-bound record that
+`deliver` reads. Keep recorded values single-line, trimmed, bounded, and free of credential
+shapes, private-key headers, JWTs, bearer tokens, and raw transcript markers. Keep private
+reviewer prose out of the record. [Schema, replay, legacy admission and freeze](./.agents/skills/delivery-orchestration/references/review-records.md)
+
+Publish all validated blockers in a reviewer-App `REQUEST_CHANGES` against the reviewed head
+**before** dispatching repairs. Restate findings for the author. Authors never adjudicate their
+own work. Push the fixes through `lane:publish`. The author App uses `review:repair` to record
+each fix on the live head and leave the thread open. The reviewer App alone uses `review:confirm`
+to resolve threads whose recorded repairs validate. Both act only on reviewer-App or owner
+roots. A confirmation refusal resolves nothing. No free-form thread write can clear a wrongly
+posted finding. `review:resolve` is retired. Obtain fresh review on the new head.
+
+Request changes when the head must not merge, including style-guide or code-craft violations.
+Approve a head that improves the system and is fit to merge. One blind reviewer-App APPROVE
+with recorded delivery authorization binds the current head. Approvals carry no inline
+comments. Put non-blocking observations in the body as `Nit:` or `Optional:`, or file them.
+Write a nonempty body for a teammate describing what changed, what was attacked, what held, and
+material exceptions. Keep discriminating checks in structured evidence. Omit routine CI
+narration, inventories, check-status links, role announcements, hash footers, and tool-generated
+provenance. Disclose material failed, skipped, or incomplete verification in approvals,
+delivery summaries, and closing comments. Skip closing comments that only repeat merged state.
+
+When the [review freeze](./.agents/skills/delivery-orchestration/references/review-records.md#review-bundles-and-publication)
+refuses fresh publication, respin the change as one consolidated PR and use `pr:supersede` after
+its replacement merges. Repairs and confirmations remain available. For an obsolete PR without
+a truthful merged replacement, follow the
+[retirement requirements](./.agents/skills/delivery-orchestration/references/closure-and-retirement.md).
+For defects reaching `main`, fix or hand off under [Ownership](#ownership), trace the introducing
+PR and missing, mis-tiered, or mis-prompted stance, and record the escape in every standing stance
+file whose probes could have caught it. Use the behavior-and-invariant file when nothing more
+specific applies, or add a file for an uncovered defect class.
+
+## Docs
+
+Document durable contracts: rules, invariants, and reasons. Exclude counts, inventories, and
+current-state enumerations that drift with ordinary work. Fix or file defects before deleting
+"gotcha" or "known drift" notes. Retain deliberately accepted, test-guarded states as contracts.
+
+## DAW Standard
+
+Protect DAW essentials: real-time audio, timing accuracy, latency-aware monitoring, non-destructive
+editing, deterministic automation, project integrity, dependable undo, and fast musician workflows.
+Research established DAWs before inventing interaction or audio semantics; follow professional
+convention unless Sourdaw deliberately differs.
+
 ## Map
 
 - `src/modules/`: product code, split by domain.
@@ -365,129 +339,6 @@ Apply everywhere code is written:
 
 Detail: [conventions](./docs/07-conventions.md).
 
-## Worktrees
-
-One change, one lane, one PR. Edit tracked files only in your lane under `.agents/worktrees/`, never
-the shared primary checkout holding credentials and other lanes. Its gitignored operational paths
-are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds review documents,
-and `.env.sourdaw-*` credentials live there.
-
-`pnpm lane:open [issue] [slug] --type <type> --model <model>` fetches and branches from `origin/main`, locks the lane
-`active:sourdaw-author`, then stays offline without minting or spawning `gh`. To create a dependent
-lane, pass `--stack-on <absolute-parent-lane>`; the clean, committed, owned parent must belong to the
-same primary repository, and the command records the exact parent lineage under
-`.agents/lane-stacks/`. The selector asserts caller ownership within the existing same-account trust
-boundary; role locks alone do not prove it. Slugs cannot be purely numeric: bare numbers mean issues.
-`<type>` is the conventional-commit type of the change, from the set pull-request titles use
-(`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`; never `style`), and
-`lane:open` refuses a missing or unknown one. Supply the ticket number for `<type>/<issue>/<slug>`;
-otherwise use `<type>/<slug>`. Lanes opened before types existed keep their `agent/<issue>/<slug>`
-or `agent/<slug>` branches, which every script still recognizes; no new lane is created under
-`agent/`. PRs close their issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
-your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swaps the issue onto
-`status:active`, posts a claim comment that decides concurrent claims so exactly one wins, and
-moves its board items to In progress; `lane:open` prints the command. The
-issue-bound and issueless procedures are in [delivery-orchestration]. Lane worktrees carry the
-author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lane:identity`), and
-`lane:publish` refuses lane-owned commits whose author or committer is not that stamped identity —
-it checks recorded git identity, not who wrote a commit — and commits the resolved bases (origin/main and any stack parent head) already reach are not the lane's to author.
-
-For owned staging and checkpoint commits, run `node scripts/gitCheckpoint.ts add -- <paths>` or
-`node scripts/gitCheckpoint.ts commit <git arguments>` from the lane. The command runs Git once
-with its ordinary environment and hooks, streams stderr, and prints a private receipt location and
-writer PID. The initial private receipt must be created before Git starts; failure to create it
-refuses the checkpoint. Once Git starts, a diagnostic storage failure does not change its result.
-Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
-stall observation; retain them when a checkpoint fails. They may contain private paths and Git
-output. They default to `~/.agents/artifacts/sourdaw/git-checkpoints`; set `SOURDAW_CHECKPOINT_DIR`
-to a private directory outside the worktree to choose their location, under the artifact workspace
-([Artifacts](#artifacts)) when the checkout's drive is not the home directory's. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
-best-effort PID and start identity check; the check is not atomic and the process can exit or its
-PID can be reused before sampling. Shared receivers are never sampled. A failed
-syscall pathname requires separately authorized observation arranged before the write; a receipt or
-later trace cannot recover it. Do not retry an unchanged failure or change a shared daemon to collect
-evidence.
-
-A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
-the model itself, keeping every qualifier that distinguishes capability or edition within the
-family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and
-date-snapshot suffixes. `lane:publish` labels the PR with the model's bare name and carries the
-milestone and project membership of the bound issue;
-`--milestone`/`--project` override those values by open title on any lane — left empty rather than
-forced. Project membership is read and applied through the verified operator credential, because
-installation tokens cannot reach user-owned Projects v2; without that credential the publish says
-so and leaves membership to the operator backfill, while everything else stays under the author
-App. An issueless lane derives its project from its derived type label, and applies it only when a
-project of that name exists. The PR also carries the repository's descriptive
-labels: the bound issue's labels minus the `priority:` and `status:` namespaces, or on an issueless
-lane one type label derived from the conventional subject (`feat` → `enhancement`,
-`fix` → `bug`, `docs` → `documentation`); `--label <name>` adds more by live canonical name, and
-descriptive labels are never created on demand — only authorship labels are, identified by their
-`Authored by ` description.
-
-Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
-targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
-publication and approval require both the verified final parent head and its landed commit in the
-child history. A moved, missing, ambiguous, closed-unmerged, or racing parent blocks publication.
-`pnpm lane:sync-parent --lane <absolute-child-lane>` merges the verified current parent head into
-only that clean owned child. After the parent squash lands, it merges the verified final parent head
-first, then the exact parent squash commit, then fetched current `main`, preserving all parent and
-child history while retaining later main edits and reversions. Resolve a conflict at any merge in
-the child, commit normally, and rerun synchronization. Never rebase,
-reset, force-push, cascade to siblings, or silently adopt a replacement parent. Deliver remains
-bottom-up and main-only; sync the child, then publish and obtain fresh Gate and review.
-Keep earlier slices related with `--relates` until closure is warranted, and verify the original
-end-to-end outcome on the final combined head.
-
-Lanes isolate only working trees. Stash, process table, disk, and author lock are shared;
-global or destructive operations from any lane affect all lanes. Lanes running browser verification
-export `SOURDAW_E2E_PORT` with a lane-unique value (derive it from the lane slug), and the
-warmup and ui-scripts identity assertions refuse a dev server belonging to another checkout.
-
-Successful delivery queues local cleanup after merge, receipt and tracker bookkeeping and after the
-delivery lock is released. A delivered PR stays delivered when its lane is protected or cleanup is
-pending. The deterministic `pnpm lane:cleanup` worker also discovers missed deliveries and merged
-legacy detached lanes under `.agents/review-worktrees/`; it never creates review worktrees.
-It reuses `lane:remove` with fresh exact-head merge or native supersession proof, a directory identity
-fence, clean/untracked/ignored-data checks, no active Git operation, and a complete open-file/process
-inspection. Unknown activity, unavailable GitHub inspection, foreign locks and changed identities
-retain work. Safety refusals recheck on the normal schedule; unavailable inspection uses capped
-backoff. Successful delivery wakes its matching head without bypassing shared inspection backoff.
-An old queued identity never authorizes a replacement
-lane; discovery gives the replacement its own record and fresh proof after a delay.
-
-Install or refresh the macOS user job with `pnpm lane:cleanup:install` from an approved current
-checkout. It runs at login and periodically, using a verified `origin/main` runtime under the primary
-checkout's gitignored `.agents/lane-cleanup/`, independent of removed author lanes and primary
-working-tree drift. Installation may refresh only the protected primary
-`scripts/trustedGithubWriteBootstrap.ts` from approved Git objects when it matches HEAD/index or the
-exact previously installed approved blob; local launcher edits and staged changes refuse. This is
-the sole tracked-primary installation exception; every other primary edit survives. The installed
-job performs no dependency install. The worker preserves common Git `info/exclude` entries while
-excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
-`pnpm lane:cleanup --status` from a current checkout, the records and historical logs in that
-directory, `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.log` for current
-worker output, and `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log
-for launchd initialization failures. The job starts with the canonical home as its working directory
-and opens its logs on that volume before Node accesses the primary checkout. Grant the pinned Node
-binary Removable Volumes access for an external primary only when the macOS privacy log identifies
-its denial; use Full Disk Access only when that denial requires it. The worker can run directly
-where process inspection is available; the scheduler installer explicitly requires macOS.
-
-Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
-Removal requires a clean lane holding exactly one PR's head whose work reached `main`, either
-merged directly or through `pr:supersede`'s receipt naming a merged replacement; a receipt stops
-counting once the old PR is reopened at or after it. Removal and `lane:prune` never treat
-credential-shaped ignored files (`.env*`, `*.pem`, `*.key`, SSH keys, `.npmrc` and the like) as
-disposable, except inside `node_modules`. Other closed PRs
-are abandonments: use `lane:strand` to preserve their unlanded work. It refuses open PRs or
-uncommitted work, pins the abandoned tip at `refs/sourdaw/strands/<lane>` before writing the receipt
-or removing anything, and records it, with that ref, in a receipt in the primary checkout. It refuses
-when that ref or a same-lane receipt already records a different head; a retry at the same head
-reuses both. After writing the receipt it
-removes the worktree and deletes the lane's local branch with `git branch -D`;
-`git branch <name> refs/sourdaw/strands/<lane>` revives the work. `lane:remove` leaves the local branch: delete it after removal.
-
 ## Artifacts
 
 Drafts, one-offs, scratch clones and checkouts, dependency installs, and unpublished or secret work
@@ -512,215 +363,71 @@ pnpm issue:file <template> --title "…" --fields <json> [--milestone <m>] [--pr
 
 After create, attach parent/child issues as GitHub sub-issues.
 
-Every issue needs priority, status, and descriptive labels. On `issue:file`, set an applicable
-milestone by title, never UI number (validation against **open** milestones rejects it before filing),
-and roadmap project membership when applicable; leave either empty rather than force a fit.
-Sourdaw Features auto-add requires `project:features` and excludes `bug`; unfiltered sub-issue
-inheritance is disabled because it cannot filter by category. Feature, Spec, and Campaign forms set
-the route label. Generic Task, Audit, Research, and Inventory forms remain neutral: select
-`--project "Sourdaw Features"` with `issue:file` or add the label manually when they belong there.
-Selecting Bugs or Refactors removes the Features route, and Bug or Change plan forms cannot target
-Features.
-No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
-<issue>` swaps the status labels, posts its claim comment and moves the boards, and `pnpm issue:reconcile` applies
-digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
-backfilling a pull request's own labels, milestone, or project membership when it predates
-`lane:publish`'s metadata assertion. Read live metadata
-with `gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`,
-never a recorded list.
+Use live labels, open milestone titles, and applicable roadmap projects. See
+[issue filing and reconciliation](./.agents/skills/delivery-orchestration/references/lane-publication.md#issue-filing-and-reconciliation)
+for routes, metadata, and when to use an operator correction.
 
 ## Delivery
 
-Use trusted `pnpm` scripts for every covered GitHub write; their role identities and delivery
-gates exclude hand-rolled equivalents or bypasses. The only manual `gh` write exceptions:
-correcting an issue's own state, labels, milestone, project membership, or sub-issue links; and
-backfilling a pull request's own labels, milestone, or project membership predating
-`lane:publish`'s metadata assertion — these use the operator account. Scripts use their
-designated App identities, including merge. The verified `jcosta33` user credential serves only the
-trusted ruleset change, `issue:claim`'s tracker claim, `lane:publish`'s project-membership read
-and `--add-project` edit, and the legacy `review:accept` publication with its
-`review:publish:recover` path; no other manual `gh pr` write qualifies. Lane tooling owns
-every `git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
-unrestricted; use it for live tracker state.
+[delivery-orchestration]: ./.agents/skills/delivery-orchestration/SKILL.md
 
-The delivery procedure — command table, script order, flags, validation and refusal semantics,
-locks, receipts, document formats, launcher boundary — lives in [delivery-orchestration]; ALWAYS
-load it before running any review or delivery script.
+Use trusted `pnpm` scripts for covered GitHub writes. Lane tooling owns every push. Run trusted
+GitHub-write scripts and `review:prepare` from the protected primary checkout. Scripts read lane
+files as data. A refusal requires fixing its named cause and using the same route. Read-only
+`gh` is unrestricted for live evidence.
 
-[delivery-orchestration]: ./.agents/skills/delivery-orchestration/
+- Manual `gh` writes are limited to operator corrections of an issue's state, labels, milestone,
+  project membership or sub-issue links and backfilling a PR's labels, milestone or project
+  membership when it predates the publisher's metadata assertion.
+- Only the designated script role loads its gitignored `.env.sourdaw-author` or
+  `.env.sourdaw-reviewer` from the primary root, the parent of `git rev-parse --git-common-dir`.
+  Authenticate App roles by immutable actor node IDs in `scripts/githubAppIdentity.ts`.
+  Mutable slugs and logins are display only. Never load the other role's credentials or commit
+  credentials. `deliver` never mints the reviewer.
+- The verified `jcosta33` credential serves the trusted ruleset change, `issue:claim` tracker
+  claim, `lane:publish` project membership reads and edits, and legacy `review:accept` and its
+  recovery. The ruleset command selects it on `github.com` and verifies actor type `User` and
+  immutable node ID `MDQ6VXNlcjg5NzgyNzA=` in an isolated API session. Never add credentials or
+  grant this role to workers. Merge, receipts, and tracker completion retain the author App's identity.
+  [Launcher trust boundary](./.agents/skills/delivery-orchestration/references/trust-boundary.md)
 
-Gitignored `.env.sourdaw-author` and `.env.sourdaw-reviewer` live at the primary root (parent of
-`git rev-parse --git-common-dir`). Each script loads only its own role's file; never load the
-other's or commit credentials. Authenticate roles by immutable bot actor node IDs in
-`scripts/githubAppIdentity.ts`, never interchangeable; mutable App slugs and logins are display
-only. `deliver` does not mint the reviewer.
+Preserve workflow separation. Only `health-gates.yml` mints `Gate`, on the pull-request events
+it already handles. Keep `always()` on the gate job and assertion, require successful selected
+checks and the exact selected CodeQL result, and fail drafts, cancellation, and unexpectedly
+skipped checks. A skipped required check can pass GitHub's ruleset. Keep heavy checks reusable,
+nightly unconditional and the sole production web deploy. Review workflow changes for ways a head
+can weaken its own gate. [Workflow separation](./.agents/skills/delivery-orchestration/references/delivery-checks.md#workflow-separation)
 
-The trusted ruleset change uses the stored `gh` credential for `jcosta33` on `github.com`; the
-login selects it, and an isolated API session must verify actor type `User` and immutable node ID
-`MDQ6VXNlcjg5NzgyNzA=` before granting authority. Never add credentials or grant this role to
-workers; receipt and tracker writes retain their author App identities, and the merge itself runs
-as the author App. Lock, recovery, and receipt procedure: [delivery-orchestration].
+Inspect the live non-strict `main` ruleset. Honor squash-only PRs, current-head approval,
+resolved threads, and GitHub Actions' exact-head `Gate`. Only `pnpm ruleset:harden` may change the
+four approved controls. Keep the shadow status and other CI contexts non-required. Attribute
+unexplained failures to the change or a named pre-existing defect. A filed cause or retry alone
+never clears red. Require the whole `Health gates` workflow on the exact head and fresh review
+after a head change. Unrelated `origin/main` movement alone does not require a merge or stale the
+review. Take main for a real conflict or mergeability requirement, or to acquire the actual fix
+for a blocked Gate under its recovery procedure.
+[Ruleset controls](./.agents/skills/delivery-orchestration/references/delivery-checks.md#ruleset-and-shadow-status)
 
-Run every trusted GitHub-write script through the protected primary checkout's package route; the
-[delivery-orchestration] skill lists them, and `review:accept` remains only for legacy pre-policy heads.
-Lane files are data, never executable delivery code. Launcher snapshot mechanics:
-[delivery-orchestration].
+Settle generated artifacts in the lane before publishing, including WASM, evidence digests, and
+release inventory rewrites when triggered. [Affected generators](./.agents/skills/delivery-orchestration/references/delivery-checks.md#generated-artifacts-before-publication)
 
-Workflow separation is a security boundary. Owner-required `Gate` must pass on the PR head;
-GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that
-skips `Gate` can pass a red head (a `pull_request_review` trigger did, in production). Preserve:
+`pnpm deliver` is the only merge route. It serves non-draft structurally mergeable PRs targeting
+`main`. It verifies the immutable reviewer Bot's APPROVE of the exact live head and that review's
+recorded authorization, with every thread resolved, and squash-merges as the immutable author App.
+[Validation, admission and retry semantics](./.agents/skills/delivery-orchestration/references/delivery-checks.md#validation-order)
 
-- `.github/workflows/health-gates.yml` answers to `pull_request` `opened`, `synchronize`, `reopened`,
-  `ready_for_review`, and `converted_to_draft`, and mints `Gate`. Its `gate` job and its assertion
-  step carry `always()` so cancellation cannot skip the verdict. A draft still fails `Gate`: a
-  skipped required check passes. Heavy checks run only when the pull request is not a draft.
-  The assertion requires successful scope, shared E2E build, validation and affected checks, plus
-  the exact selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a
-  trigger to this file, and do not rename `gate`. A later event in the same concurrency group
-  cancels the in-progress run, and that cancelled `Gate` fails; a new push is that event.
-- `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
-  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review
-  for every non-draft pull request. Nightly and `release:proof:assemble` also run release inventory;
-  the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
-- `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
-  Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
-  only for a non-draft pull request. CodeQL has a separately permissioned required
-  job in `health-gates.yml`; full-history secret scanning remains in the nightly.
-- `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
-  nightly failure report. It is the only production web deploy — `vercel.json` disables the Git
-  integration, so reaching `main` deploys nothing by itself.
+Keep at most five live lanes. Keep batches small and merge each once CI and review permit.
+Sequence changes to the same handwritten file or a contract another lane relies on. Waits on CI
+or review leave room for independent work. If reviewers cannot attack the whole diff, reassess
+scope under [Delegation](#delegation).
 
-No job outside `health-gates.yml` may be named `Gate`.
+Compare live diffs and trace each changed generator input to the fields and digests it feeds,
+including outputs still awaiting regeneration. Separate lanes may share a generated file when
+their changes affect distinct, deterministically regeneratable fields from independent inputs.
+Use the scoped generators in your own lane and check mergeability before delivery. Sequence
+changes that affect the same input or output field, or that edit a hand-curated record or measured
+baseline in the shared file.
 
-`scripts/prValidationScope.ts` records the affected browser plan with reasons. A clean integration
-checkout may narrow feature-presentation changes through the resolved file dependency graph and
-explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Otherwise, product edits that lie only inside function bodies run just the specs the fresh nightly coverage map saw execute those files, failing closed to the full suite. Unknown,
-shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
-browser spec changes select those specs, and a changed test-side module selects the specs that import it. Documentation and explicitly known review tooling avoid
-browser runs. Other `scripts/**`, `.agents/**`, `release/*.json`, non-product Markdown, Rust sources and Cargo
-manifests, `evidence/**`, root lint, format and boundary configs, and `nightly.yml` select no
-browser suite but keep broad non-browser validation: scripts and Rust reach the browser only through outputs
-under `src/` or `public/`, which select it themselves, and nightly runs the full train. Smoke runs separately for every browser plan; Browser AI hardware admission follows
-selected browser-AI suites. Required selected jobs must succeed, and scope resolution or missing
-evidence fails closed. Nightly remains the unconditional full-load gate. The maintenance contract is
-in [affected E2E](./docs/affected-e2e.md).
-The ruleset requires the single `Gate`; review must catch heads weakening their own workflow.
-
-Resource Safety governs local checks; never rerun repository-wide pipeline gates locally.
-
-Read the live `main` ruleset; repository configuration, not this text, enforces it. It blocks
-deletion and non-fast-forward, requires squashed PRs, one approving review and approval of the
-last push, resolved threads, and `Gate` on the PR head. It is non-strict: unrelated `origin/main`
-movement requires no merge; take `main` only for real conflicts or mergeability, and the new head
-then requires fresh `Gate` and review.
-
-Dismissing stale reviews on push, requiring approval of the last push, the one-approval count, and
-the source the required `Gate` check must come from are ruleset configuration, and only the trusted
-ruleset command, `pnpm ruleset:harden`, may change them. It is a dry run that prints the planned
-change unless `--apply` is passed. It plans against the live ruleset, refuses a change outside the
-approved set — stale-review dismissal, last-push approval, `required_approving_review_count` = 1,
-and `Gate` pinned to GitHub Actions, `integration_id` 15368, so no other identity's check or status
-named `Gate` satisfies it — or one that adds a required context, captures the live ruleset's
-canonical bytes as the rollback before writing, applies as the verified orchestrator User, and
-reads back, failing unless all four are shown. It has no
-throwaway-ruleset mode; the canary evidence #3002 requires for such a change is a live pull request
-— a red `Gate` blocking a merge, fresh approvals required after each push, unresolved threads
-blocking, and reviewer App confirmations resolving threads. Read the live ruleset rather than
-assume any control is on. The reviewer's shadow status
-(`pnpm review:shadow-status <pr> --head <full-sha>`) is deliberately non-required: it attests only immutable commit facts about the exact head, never a
-verdict that another commit or a later push can inherit. No wave may make a CI context or a shadow
-status context required, because a required context converts an observation into merge authority —
-for the shadow status, that would erase the reason it exists.
-
-For committed wasm artifacts, consult `scripts/wasm-artifacts.ts` for package and build-script
-names; they cannot be derived from crate names. Any non-test edit in a package's
-path-dependency closure, including comments, changes its hash: rebuild the package, rewrite the
-manifest, stage artifacts, then verify after staging. Exception: root `Cargo.toml` contributes
-only canonical profile tables, the workspace package table, patch/replace tables, the resolver
-line, and closure-resolved workspace dependencies; new members, comments, and unrelated
-dependencies do not. `wasm:manifest` retains hashes for packages without rebuild evidence, so
-rebuilding the wrong package can match a manifest over stale artifacts. Identify every affected
-package from `scripts/wasm-artifacts.ts`; rebuild each affected package when its generated artifacts
-must change, then rewrite and verify the manifest. PR CI checks committed WASM freshness; do not run
-`pnpm wasm:all` as a broad local fallback. Clean rebases can leave wasm stale; only
-`pnpm wasm:verify` proves freshness after generation or staging.
-
-`lane:publish` pushes without `--force` and refuses uncommitted changes: commit the work yourself
-with a conventional subject first. Titling, bodies, flags, stacks, and stranded lanes:
-[delivery-orchestration].
-
-Request changes when this head must not merge, posting every blocking comment with that review.
-Approve when the change improves the system, even if imperfect — never when it makes it worse;
-style-guide and code-craft violations block, personal style does not. An approval is never empty:
-its body states what the reviewer attacked and what held.
-
-Give reviewers the bundle and neutral review conditions from the request or governing
-contract, never author transcripts or conclusions; preserve blind dispatch, and give the final head
-the orchestrator's global review under [Review](#review) before any approval is published. Bundle,
-publication, and thread procedure: [delivery-orchestration].
-
-Never fill approvals, delivery summaries, or closing comments with routine
-successful-CI narration, passed-check inventories, or links repeating required-check status;
-always disclose material failed, skipped, or incomplete verification, keep discriminating checks
-in structured evidence, and report the outcome and material exceptions; do not add a closing
-comment that only repeats the merged state.
-
-Write every approval and review body as a human reviewer would: what the change
-does, what was attacked, what held, and any remaining concerns. Never announce your role,
-identity, or authority chain — the posting identity already carries it. Never cite check
-counts, hash footers, or tool-generated provenance artifacts in the body. The reader is a
-teammate reviewing the work, not an auditor verifying the pipeline ran. If the sentence could
-appear unchanged in a CI log, it does not belong in a review.
-
-Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
-Each inline comment opens a merge-blocking thread; `review:confirm` validates an author-recorded
-repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body
-with `Nit:` or `Optional:`, or file them — they belong to `CHANGES_REQUESTED` reviews and
-require an addressing new head.
-
-Push fixes before `review:repair`; the reviewer resolves through `review:confirm` only once the
-current head addresses the finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
-findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
-grow the PR.
-
-Pull-request validation failures yield required red `Gate`, never softened warnings. Attribute
-every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
-run checks; locally format changed files and stage rewrites.
-
-Unrelated `origin/main` movement does not stale reviews; re-review feature-head changes touching
-the reviewed surface and conflict resolutions. CI's aggregate merge-state label cannot substitute.
-
-Every consequential claim needs discriminating proof — a test failing on revert, a measurement at
-the user boundary; approval alone is weak. Never include secrets or sensitive log data in the
-public review.
-
-`pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after the immutable
-reviewer Bot's APPROVE of the current head and its recorded delivery authorization, with all
-threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
-other way. Validation order, admission, and retry semantics: [delivery-orchestration].
-
-Keep batches small and merges prompt. Hold at most five live lanes at once. Lanes that do not
-stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
-file or pinned digest when it feeds that file's generator or digest: an app action feeds the
-command schema and the agent evidence manifest, device guidance feeds the evidence manifest, an
-edit to the admitted Grand Boule DSP source or ADR 0036 feeds the release inventory, and a crate's dependency closure feeds the wasm
-manifest. Work that shares any of these with a live lane waits for it to merge, or stacks on it
-only when it depends on that lane's change. A head waiting on CI or review does not block opening
-a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
-whole, reassess its scope under Delegation before review.
-A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
-The `commit-msg` hook refuses what `lane:publish` refuses in a subject: one that is not
-`type(scope)!: subject` with a pull-request title type (so neither `style`, `revert` nor a
-`Revert "..."` subject), carries a control character or an issue-closing reference, or is longer
-than 100 characters.
-
-## Safety
-
-- Preserve unrelated changes. Stage only files you changed.
-- Never run destructive git, force-push, amend published history, or delete branches without
-  explicit authority.
-- Never install packages or edit CI/build controls unless the task requires it.
-- Never widen a formatter, codemod, or autofix past the files your change owns. Always pass explicit
-  file targets to `pnpm format` and `pnpm cargo:fmt`; repository-wide formatting is `format:full`
-  and runs only when explicitly requested.
-- Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.
+Resolve generated conflicts in your own lane. Regenerate the affected fields from the merged inputs
+and preserve hand-curated evidence and measured baselines. Publish the resolved head for fresh
+`Gate` and review.
