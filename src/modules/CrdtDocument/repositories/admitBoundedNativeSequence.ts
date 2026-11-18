@@ -188,8 +188,7 @@ function admitSequenceChunk<TDoc>(
     let applyEnded = started;
     let phase: 'response' | 'apply' | 'authority' = 'response';
     try {
-        assertCompleteCanonicalChange(bytes);
-        const decoded = decodeChange(bytes);
+        const decoded = assertCompleteCanonicalChange(bytes);
         const dependencies = new Set(cursor.previousHeads);
         if (cursor.previousOwnHash) {
             dependencies.add(cursor.previousOwnHash);

@@ -13,7 +13,13 @@ import { admitBoundedNativeSequence } from '../admitBoundedNativeSequence';
 
 vi.mock('@automerge/automerge', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@automerge/automerge')>();
-    return { ...actual, free: vi.fn(actual.free), applyChanges: vi.fn(actual.applyChanges) };
+    return {
+        ...actual,
+        free: vi.fn(actual.free),
+        applyChanges: vi.fn(actual.applyChanges),
+        decodeChange: vi.fn(actual.decodeChange),
+        encodeChange: vi.fn(actual.encodeChange),
+    };
 });
 
 const ACTOR = 'aaaaaaaaaaaaaaaa';
@@ -106,6 +112,33 @@ function withOpaqueExtra(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
 }
 
 describe('bounded native sequence authority', () => {
+    it('decodes each received chunk once and still validates its canonical round trip', async () => {
+        const { source, result, target } = fixture();
+        const decode = vi.mocked(A.decodeChange).mockClear();
+        const encode = vi.mocked(A.encodeChange).mockClear();
+        try {
+            const candidate = await admit(source, result);
+            try {
+                const canonicalBytes = new Set(
+                    encode.mock.results.filter((outcome) => outcome.type === 'return').map((outcome) => outcome.value)
+                );
+                const decodeInputs = decode.mock.calls.map(([bytes]) => bytes);
+                expect(canonicalBytes.size).toBe(result.changes.length);
+                for (const bytes of canonicalBytes) {
+                    expect(decodeInputs.filter((input) => input === bytes)).toHaveLength(1);
+                }
+                const receivedDecodes = decodeInputs.filter((bytes) => !canonicalBytes.has(bytes));
+                expect(receivedDecodes).toHaveLength(result.changes.length);
+                expect(receivedDecodes).toEqual(result.changes);
+                expect(A.toJS(candidate)).toEqual({ slot: target });
+            } finally {
+                A.free(candidate);
+            }
+        } finally {
+            A.free(source);
+        }
+    });
+
     it('preserves a larger peer maxOp, complete source history, cursor and subsequent actor sequence', async () => {
         const { source, result, target } = fixture(true);
         const history = A.getChangesMetaSince(source, []);
