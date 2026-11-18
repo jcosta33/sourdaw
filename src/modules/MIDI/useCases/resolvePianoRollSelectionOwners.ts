@@ -1,5 +1,27 @@
 import { type Owner, type PianoRollSelection, type Projection } from './pianoRollSelectionRuntime';
 
+function ownerForNote(
+    clipId: string,
+    projection: Projection['projection'],
+    note: Projection['projection']['notes'][number]
+): Owner {
+    const frozen = projection.ownersByViewId.get(note.id);
+    const base = projection.baseOwnersByViewId.get(note.id);
+    const owner: Owner = {
+        clipId,
+        viewId: note.id,
+        ownerClipId: frozen?.sourceClipId ?? clipId,
+        storedNoteId: frozen?.row.id ?? base?.row.id ?? note.id,
+        displayedStartBeat: note.startBeat,
+        displayedDuration: note.duration,
+    };
+    if (frozen) {
+        owner.takeId = frozen.takeId;
+        owner.occurrenceIndex = frozen.occurrenceIndex;
+    }
+    return owner;
+}
+
 export function resolvePianoRollSelectionOwners(
     viewIds: readonly string[],
     projections: readonly Projection[]
@@ -24,20 +46,7 @@ export function resolvePianoRollSelectionOwners(
             if (owners.has(note.id)) {
                 return { status: 'ambiguous', owners: [] };
             }
-            const frozen = projection.ownersByViewId.get(note.id);
-            const base = projection.baseOwnersByViewId.get(note.id);
-            const owner: Owner = {
-                clipId,
-                viewId: note.id,
-                ownerClipId: frozen?.sourceClipId ?? clipId,
-                storedNoteId: frozen?.row.id ?? base?.row.id ?? note.id,
-                displayedStartBeat: note.startBeat,
-                displayedDuration: note.duration,
-            };
-            if (frozen) {
-                owner.takeId = frozen.takeId;
-                owner.occurrenceIndex = frozen.occurrenceIndex;
-            }
+            const owner = ownerForNote(clipId, projection, note);
             owners.set(note.id, owner);
         }
     }

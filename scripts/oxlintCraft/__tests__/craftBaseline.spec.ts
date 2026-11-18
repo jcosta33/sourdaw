@@ -4,7 +4,7 @@ import { ESLint } from 'eslint';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { QUALITY_CONFIG, qualityRuleIds } from '../../lintQualityBudget';
+import { canonicalQualityRule, QUALITY_CONFIG, qualityRuleIds } from '../../lintQualityBudget';
 
 function readConfig(file: string): { ignorePatterns: string[]; rules: object; overrides: { rules?: object }[] } {
     const result = ts.parseConfigFileTextToJson(file, readFileSync(file, 'utf8'));
@@ -15,22 +15,23 @@ function readConfig(file: string): { ignorePatterns: string[]; rules: object; ov
 }
 
 describe('quality lint configuration', () => {
-    it('keeps the existing native file exclusions and assigns each budgeted ID to one dedicated pass', () => {
+    it('keeps the native exclusions and layers only the three historical size rules', () => {
         const config = readConfig(QUALITY_CONFIG);
         const original = readConfig('.oxlintrc.json');
         const publicPlugins = readConfig('.oxlint-plugins.json');
-        const ruleNames = (value: typeof config) => [
-            ...Object.keys(value.rules),
-            ...value.overrides.flatMap(({ rules }) => Object.keys(rules ?? {})),
-        ];
+        const ruleNames = (value: typeof config) =>
+            [...Object.keys(value.rules), ...value.overrides.flatMap(({ rules }) => Object.keys(rules ?? {}))].map(
+                canonicalQualityRule
+            );
+        const otherRules = new Set(ruleNames(original).concat(ruleNames(publicPlugins)));
 
         expect(config.ignorePatterns).toEqual(original.ignorePatterns);
         expect(ruleNames(config).toSorted()).toEqual(qualityRuleIds.toSorted());
         expect(
-            [...ruleNames(original), ...ruleNames(publicPlugins)].filter((name) =>
-                qualityRuleIds.some((rule) => rule === name)
-            )
-        ).toEqual([]);
+            Array.from(otherRules)
+                .filter((name) => qualityRuleIds.some((rule) => rule === name))
+                .sort()
+        ).toEqual(['eslint/complexity', 'eslint/max-depth', 'eslint/max-lines-per-function']);
     });
 
     it('registers the real craft rules as known ESLint directive names without enabling them twice', async () => {

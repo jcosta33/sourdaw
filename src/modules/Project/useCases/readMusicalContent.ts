@@ -10,83 +10,99 @@ type Selection = ReturnType<typeof readPianoRollSelection>;
 type Clip = NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number];
 type AddRow = (row: SemanticQueryItem) => void;
 
-function addNoteRows(projection: Projection, clip: Clip, selection: Selection, addRow: AddRow): void {
-    type SourceNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
-    function addNote(
-        original: SourceNote,
-        viewId: string,
-        ownerClipId: string,
-        timelineStart: number,
-        timelineDuration: number,
-        projectedVelocity: number,
-        takeId: string | null,
-        occurrenceIndex: number
-    ): void {
-        const occurrenceIdentity = [
-            ownerClipId,
-            takeId,
-            occurrenceIndex,
-            viewId,
-            timelineStart,
-            timelineDuration,
-        ] as const;
-        addRow({
-            id: JSON.stringify(occurrenceIdentity),
-            kind: 'note',
-            noteId: original.id,
-            ownerClipId,
-            clipId: clip.id,
-            pitch: original.pitch,
-            startBeat: original.startBeat,
-            duration: original.duration,
-            velocity: original.velocity,
-            channel: original.channel ?? null,
-            probability: original.probability ?? null,
-            articulation: original.articulation ?? null,
-            pressure: original.pressure ?? null,
-            slide: original.slide ?? null,
-            pitchBend: original.pitchBend ?? null,
-            pitchBendRangeSemitones: original.pitchBendRangeSemitones ?? null,
-            selected: selection.owners.some(
-                (owner) =>
-                    owner.clipId === clip.id &&
-                    owner.viewId === viewId &&
-                    owner.ownerClipId === ownerClipId &&
-                    owner.storedNoteId === original.id
-            ),
-            viewId,
-            timelineStartBeat: timelineStart,
-            timelineDuration,
-            projectedVelocity,
-            takeId,
-            occurrenceIndex,
-            sourceBasis: 'stored-score',
-            projectionBasis: 'clip-projection',
-        });
-        for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
-            for (const [index, point] of (original.expression?.[dimension] ?? []).entries()) {
-                addRow({
-                    id: JSON.stringify([...occurrenceIdentity, dimension, index]),
-                    kind: 'expression',
-                    ownerClipId,
-                    noteId: original.id,
-                    dimension,
-                    offsetBeats: point.offsetBeats,
-                    value: point.value,
-                });
-            }
+type SourceNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
+
+type NoteProjection = {
+    original: SourceNote;
+    viewId: string;
+    ownerClipId: string;
+    timelineStart: number;
+    timelineDuration: number;
+    projectedVelocity: number;
+    takeId: string | null;
+    occurrenceIndex: number;
+};
+
+function addNote(
+    {
+        original,
+        viewId,
+        ownerClipId,
+        timelineStart,
+        timelineDuration,
+        projectedVelocity,
+        takeId,
+        occurrenceIndex,
+    }: NoteProjection,
+    clipId: string,
+    selection: Selection,
+    addRow: AddRow
+): void {
+    const occurrenceIdentity = [ownerClipId, takeId, occurrenceIndex, viewId, timelineStart, timelineDuration] as const;
+    addRow({
+        id: JSON.stringify(occurrenceIdentity),
+        kind: 'note',
+        noteId: original.id,
+        ownerClipId,
+        clipId,
+        pitch: original.pitch,
+        startBeat: original.startBeat,
+        duration: original.duration,
+        velocity: original.velocity,
+        channel: original.channel ?? null,
+        probability: original.probability ?? null,
+        articulation: original.articulation ?? null,
+        pressure: original.pressure ?? null,
+        slide: original.slide ?? null,
+        pitchBend: original.pitchBend ?? null,
+        pitchBendRangeSemitones: original.pitchBendRangeSemitones ?? null,
+        selected: selection.owners.some(
+            (owner) =>
+                owner.clipId === clipId &&
+                owner.viewId === viewId &&
+                owner.ownerClipId === ownerClipId &&
+                owner.storedNoteId === original.id
+        ),
+        viewId,
+        timelineStartBeat: timelineStart,
+        timelineDuration,
+        projectedVelocity,
+        takeId,
+        occurrenceIndex,
+        sourceBasis: 'stored-score',
+        projectionBasis: 'clip-projection',
+    });
+    for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
+        for (const [index, point] of (original.expression?.[dimension] ?? []).entries()) {
+            addRow({
+                id: JSON.stringify([...occurrenceIdentity, dimension, index]),
+                kind: 'expression',
+                ownerClipId,
+                noteId: original.id,
+                dimension,
+                offsetBeats: point.offsetBeats,
+                value: point.value,
+            });
         }
     }
+}
+
+function addNoteRows(projection: Projection, clip: Clip, selection: Selection, addRow: AddRow): void {
     for (const occurrence of projection.baseOccurrences) {
         addNote(
-            occurrence.row,
-            occurrence.viewId,
+            {
+                original: occurrence.row,
+                viewId: occurrence.viewId,
+                ownerClipId: clip.id,
+                timelineStart: occurrence.startBeat,
+                timelineDuration: occurrence.duration,
+                projectedVelocity: occurrence.velocity,
+                takeId: null,
+                occurrenceIndex: occurrence.occurrenceIndex,
+            },
             clip.id,
-            occurrence.startBeat,
-            occurrence.duration,
-            occurrence.velocity,
-            null,
-            occurrence.occurrenceIndex
+            selection,
+            addRow
         );
     }
     for (const displayed of projection.notes) {
@@ -96,14 +112,19 @@ function addNoteRows(projection: Projection, clip: Clip, selection: Selection, a
         }
         const timelineStart = clip.startBeat + displayed.startBeat - (clip.midiOffsetBeats ?? 0);
         addNote(
-            frozen.row,
-            displayed.id,
-            frozen.sourceClipId,
-            timelineStart,
-            displayed.duration,
-            displayed.velocity,
-            frozen.takeId,
-            frozen.occurrenceIndex
+            {
+                original: frozen.row,
+                viewId: displayed.id,
+                ownerClipId: frozen.sourceClipId,
+                timelineStart,
+                timelineDuration: displayed.duration,
+                projectedVelocity: displayed.velocity,
+                takeId: frozen.takeId,
+                occurrenceIndex: frozen.occurrenceIndex,
+            },
+            clip.id,
+            selection,
+            addRow
         );
     }
 }
@@ -212,13 +233,9 @@ function addHarmonyRows(startBeat: number, endBeat: number, addRow: AddRow): voi
     }
 }
 
-function readMusicalSource(input: SemanticProjectQueryInput) {
-    const { stableId, startBeat, endBeat } = input.filters ?? {};
-    if (stableId === undefined || startBeat === undefined || endBeat === undefined || endBeat <= startBeat) {
-        throw new Error('Musical content requires one clip and a nonempty range');
-    }
+function readBoundPianoRollSelection(stableId: string, selectionToken: string | undefined) {
     const selection = readPianoRollSelection();
-    if (selection.token !== input.selectionToken) {
+    if (selection.token !== selectionToken) {
         throw new Error('Stale musical selection');
     }
     const targetIsOpen = selection.clipIds.includes(stableId);
@@ -228,6 +245,15 @@ function readMusicalSource(input: SemanticProjectQueryInput) {
     if (targetIsOpen && selection.status === 'unavailable' && selection.viewIds.length > 0) {
         throw new Error('Piano roll selection unavailable');
     }
+    return { selection, targetIsOpen };
+}
+
+function readMusicalSource(input: SemanticProjectQueryInput) {
+    const { stableId, startBeat, endBeat } = input.filters ?? {};
+    if (stableId === undefined || startBeat === undefined || endBeat === undefined || endBeat <= startBeat) {
+        throw new Error('Musical content requires one clip and a nonempty range');
+    }
+    const { selection, targetIsOpen } = readBoundPianoRollSelection(stableId, input.selectionToken);
     const track = trackStore.value?.tracks.find((candidate) => candidate.clips.some((clip) => clip.id === stableId));
     const clip = track?.clips.find((candidate) => candidate.id === stableId);
     if (!track || !clip || clip.type !== 'midi') {
@@ -240,34 +266,13 @@ function readMusicalSource(input: SemanticProjectQueryInput) {
     return { startBeat, endBeat, selection, targetIsOpen, track, clip, midi };
 }
 
-/** Stored musical rows and their ownership, not a prediction of the processed sound. */
-export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQueryItem[] {
-    const { startBeat, endBeat, selection, targetIsOpen, track, clip, midi } = readMusicalSource(input);
-    const projection = projectPianoRollTakeNotes(
-        clip,
-        track.id,
-        takeLaneStore.value,
-        midi.notesByClipId[clip.id] ?? [],
-        {
-            fromBeat: startBeat,
-            toBeat: endBeat,
-            maxWork: 16_384,
-            maxOutput: 512,
-            controlChanges: midi.ccByClipId[clip.id] ?? [],
-            pitchBends: midi.pitchBendByClipId[clip.id] ?? [],
-        }
-    );
-    const rows: SemanticQueryItem[] = [];
-    function addRow(row: SemanticQueryItem): void {
-        if (rows.length >= 512) {
-            throw new Error('Musical content row budget exceeded');
-        }
-        if (Object.values(row).some((value) => typeof value === 'string' && value.length > 2_048)) {
-            throw new Error('Musical content text exceeds receipt limit');
-        }
-        rows.push(row);
-    }
-    addRow({
+function createMusicalWindowRow(
+    clip: Clip,
+    startBeat: number,
+    endBeat: number,
+    noteSelection: 'available' | 'unavailable'
+): SemanticQueryItem {
+    return {
         id: clip.id,
         kind: 'musical-window',
         startBeat,
@@ -282,8 +287,36 @@ export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQu
         scaleName: projectStore.value?.scaleName ?? null,
         keyProvenance: projectStore.value ? 'project-settings' : 'unknown',
         controllerChase: 'unavailable',
-        noteSelection: targetIsOpen && selection.status === 'resolved' ? 'available' : 'unavailable',
+        noteSelection,
+    };
+}
+
+/** Stored musical rows and their ownership, not a prediction of the processed sound. */
+export function readMusicalContent(input: SemanticProjectQueryInput): SemanticQueryItem[] {
+    const { startBeat, endBeat, selection, targetIsOpen, track, clip, midi } = readMusicalSource(input);
+    const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, {
+        baseRows: midi.notesByClipId[clip.id] ?? [],
+        window: {
+            fromBeat: startBeat,
+            toBeat: endBeat,
+            maxWork: 16_384,
+            maxOutput: 512,
+            controlChanges: midi.ccByClipId[clip.id] ?? [],
+            pitchBends: midi.pitchBendByClipId[clip.id] ?? [],
+        },
     });
+    const rows: SemanticQueryItem[] = [];
+    function addRow(row: SemanticQueryItem): void {
+        if (rows.length >= 512) {
+            throw new Error('Musical content row budget exceeded');
+        }
+        if (Object.values(row).some((value) => typeof value === 'string' && value.length > 2_048)) {
+            throw new Error('Musical content text exceeds receipt limit');
+        }
+        rows.push(row);
+    }
+    const noteSelection = targetIsOpen && selection.status === 'resolved' ? 'available' : 'unavailable';
+    addRow(createMusicalWindowRow(clip, startBeat, endBeat, noteSelection));
     addNoteRows(projection, clip, selection, addRow);
     addControllerRows(projection, clip, addRow);
     addHarmonyRows(startBeat, endBeat, addRow);

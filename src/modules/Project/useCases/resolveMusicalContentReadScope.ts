@@ -13,27 +13,24 @@ import {
 import { type captureMusicalContentBinding } from './captureMusicalContentBinding';
 
 type SelectionOwner = ReturnType<typeof readPianoRollSelection>['owners'][number];
-type Clip = NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number];
-type SourceRows = NonNullable<typeof midiStore.value>['notesByClipId'][string];
+type Tracks = NonNullable<typeof trackStore.value>['tracks'];
+type ClipSource = ReturnType<typeof resolveClipSource>;
 
-function findSelectedWindow(
-    clip: Clip,
-    trackId: string,
-    sourceRows: SourceRows,
-    owner: SelectionOwner,
-    budget: { scans: number }
-) {
+function findSelectedWindow({ clip, track, sourceRows }: ClipSource, owner: SelectionOwner, budget: { scans: number }) {
     const source = sourceRows.find((row) => row.id === owner.storedNoteId);
     const candidates = locatePianoRollSelectionWindows(clip, owner, source);
     for (const candidate of candidates) {
         if (++budget.scans > 32) {
             throw new Error('Selected musical source unavailable in bounded windows');
         }
-        const projection = projectPianoRollTakeNotes(clip, trackId, takeLaneStore.value, sourceRows, {
-            fromBeat: candidate.startBeat,
-            toBeat: candidate.endBeat,
-            maxWork: 16_384,
-            maxOutput: 512,
+        const projection = projectPianoRollTakeNotes(clip, track.id, takeLaneStore.value, {
+            baseRows: sourceRows,
+            window: {
+                fromBeat: candidate.startBeat,
+                toBeat: candidate.endBeat,
+                maxWork: 16_384,
+                maxOutput: 512,
+            },
         });
         const found =
             projection.baseOccurrences.some(
@@ -59,12 +56,7 @@ function findSelectedWindow(
     throw new Error('Selected musical source unavailable in bounded windows');
 }
 
-function resolveClipSource(
-    clipId: string,
-    tracks: NonNullable<typeof trackStore.value>['tracks'],
-    selection: ReturnType<typeof readPianoRollSelection>,
-    midi: NonNullable<typeof midiStore.value>
-) {
+function requireMidiClip(clipId: string, tracks: Tracks) {
     const track = tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
     const clip = track?.clips.find((candidate) => candidate.id === clipId);
     if (
@@ -77,6 +69,16 @@ function resolveClipSource(
     ) {
         throw new Error('Musical read scope unavailable');
     }
+    return { clip, track };
+}
+
+function resolveClipSource(
+    clipId: string,
+    tracks: Tracks,
+    selection: ReturnType<typeof readPianoRollSelection>,
+    midi: NonNullable<typeof midiStore.value>
+) {
+    const { clip, track } = requireMidiClip(clipId, tracks);
     if (selection.clipIds.includes(clipId) && selection.viewIds.length > 0 && selection.status !== 'resolved') {
         throw new Error('Musical selection ownership unavailable');
     }
@@ -89,6 +91,17 @@ function resolveClipSource(
         throw new Error('Musical read scope unavailable');
     }
     return { clip, track, owners, sourceRows };
+}
+
+function readMusicalScopeTracks(clipIds: readonly string[]): Tracks {
+    if (clipIds.length === 0 || clipIds.length > 32 || new Set(clipIds).size !== clipIds.length) {
+        throw new Error('Musical read scope unavailable');
+    }
+    const tracks = trackStore.value?.tracks ?? [];
+    if (tracks.length > 16_384 || tracks.reduce((count, track) => count + track.clips.length, 0) > 16_384) {
+        throw new Error('Musical read scope unavailable');
+    }
+    return tracks;
 }
 
 /** Read coverage only: this does not authorize edits or establish protected time windows. */
@@ -104,13 +117,7 @@ export function resolveMusicalContentReadScope(
     if (selection.token !== binding.selectionToken) {
         throw new Error('Stale musical selection');
     }
-    if (clipIds.length === 0 || clipIds.length > 32 || new Set(clipIds).size !== clipIds.length) {
-        throw new Error('Musical read scope unavailable');
-    }
-    const tracks = trackStore.value?.tracks ?? [];
-    if (tracks.length > 16_384 || tracks.reduce((count, track) => count + track.clips.length, 0) > 16_384) {
-        throw new Error('Musical read scope unavailable');
-    }
+    const tracks = readMusicalScopeTracks(clipIds);
     const scanBudget = { scans: 0 };
     const midi = midiStore.value;
     if (!midi) {
@@ -118,13 +125,14 @@ export function resolveMusicalContentReadScope(
     }
     const windows: Array<{ clipId: string; startBeat: number; endBeat: number; owners: typeof selection.owners }> = [];
     for (const clipId of clipIds) {
-        const { clip, track, owners, sourceRows } = resolveClipSource(clipId, tracks, selection, midi);
+        const source = resolveClipSource(clipId, tracks, selection, midi);
+        const { clip, owners } = source;
         if (owners.length === 0) {
             windows.push({ clipId, startBeat: clip.startBeat, endBeat: clip.endBeat, owners: [] });
             continue;
         }
         for (const owner of owners) {
-            const candidate = findSelectedWindow(clip, track.id, sourceRows, owner, scanBudget);
+            const candidate = findSelectedWindow(source, owner, scanBudget);
             const existing = windows.find(
                 (window) =>
                     window.clipId === clipId &&

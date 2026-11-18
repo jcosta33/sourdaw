@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PianoModel3D } from '../PianoModel3D';
 
 /**
- * Regression (#1): the rAF render loop is created once in a []-deps effect.
+ * Regression (#1): the rAF render loop is created once per visible renderer.
  * It must read the *current* activeNotes / sustainPedal props through refs that
  * are refreshed each render — never the mount-time closure. These tests drive
  * the loop, swap the props, drive it again, and assert the loop touched the new
@@ -41,6 +41,8 @@ function makeGlMock(): WebGL2RenderingContext {
         getUniformLocation: vi.fn(() => ({})),
         createVertexArray: vi.fn(() => ({})),
         createBuffer: vi.fn(() => ({})),
+        deleteVertexArray: vi.fn(),
+        deleteBuffer: vi.fn(),
         bindVertexArray: vi.fn(),
         bindBuffer: vi.fn(),
         enableVertexAttribArray: vi.fn(),
@@ -89,6 +91,40 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
             }
         });
     };
+
+    it('creates the renderer only while visible and cancels its pending frame on hide', () => {
+        const gl = makeGlMock();
+        const getContext = vi
+            .mocked(HTMLCanvasElement.prototype.getContext)
+            .mockImplementation(((id: string): RenderingContext | null =>
+                id === 'webgl2' ? gl : null) as typeof HTMLCanvasElement.prototype.getContext);
+        const requestFrame = vi.mocked(window.requestAnimationFrame);
+        const cancelFrame = vi.mocked(window.cancelAnimationFrame);
+        const props = { activeNotes: new Map<number, number>(), sustainPedal: 0, lidPosition: 0.5 };
+        const { queryByLabelText, queryByRole, rerender } = render(<PianoModel3D {...props} visible={false} />);
+        expect(queryByLabelText('Grand Boule interactive piano')).not.toBeInTheDocument();
+        expect(queryByRole('status')).not.toBeInTheDocument();
+        expect(getContext).not.toHaveBeenCalled();
+        expect(requestFrame).not.toHaveBeenCalled();
+
+        rerender(<PianoModel3D {...props} visible />);
+        expect(getContext).toHaveBeenCalledOnce();
+        expect(requestFrame).toHaveBeenCalledOnce();
+        const frame = requestFrame.mock.results[0]?.value;
+
+        rerender(<PianoModel3D {...props} visible={false} />);
+        expect(queryByLabelText('Grand Boule interactive piano')).not.toBeInTheDocument();
+        expect(queryByRole('status')).not.toBeInTheDocument();
+        expect(cancelFrame).toHaveBeenCalledExactlyOnceWith(frame);
+        expect(gl.deleteBuffer).toHaveBeenCalledOnce();
+        expect(gl.deleteVertexArray).toHaveBeenCalledOnce();
+        expect(gl.deleteProgram).toHaveBeenCalledOnce();
+        expect(requestFrame).toHaveBeenCalledOnce();
+
+        rerender(<PianoModel3D {...props} visible />);
+        expect(getContext).toHaveBeenCalledTimes(2);
+        expect(requestFrame).toHaveBeenCalledTimes(2);
+    });
 
     it('reads the activeNotes map passed on the latest render, not the mount-time one', () => {
         const initialNotes = new Map<number, number>();

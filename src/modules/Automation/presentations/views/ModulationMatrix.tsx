@@ -33,18 +33,9 @@ import { endMappingAmountDrag } from '../../useCases/modulation/endMappingAmount
 import { isMappingAmountDragActive } from '../../useCases/modulation/isMappingAmountDragActive';
 import { paintMappingAmountDrag } from '../../useCases/modulation/paintMappingAmountDrag';
 import { type MappingTarget } from '../../useCases/modulation/removeMapping';
+import { useModulationSubmission } from '../hooks/useModulationSubmission';
 
-type DeviceRef = {
-    id: string;
-    name: string;
-    type: string;
-};
-
-type TrackRef = {
-    id: string;
-    name: string;
-    devices: DeviceRef[];
-};
+import { AddMappingPicker, type TrackRef } from './AddMappingPicker';
 
 const emptyModState: ModulationStoreState = { modulators: [] };
 
@@ -177,19 +168,19 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
     const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM, trackId: defaultTrackId });
     const fieldId = useId();
 
-    // The form can open before tracks hydrate (fresh project load); a one-shot
-    // seed would pin trackId to '' forever and leave Add permanently disabled
-    // (`addModulator` refuses an empty trackId). Resync the default selection
-    // whenever the track list changes, the way the voicebank picker in
-    // ClipMidiAiSection resyncs against its registry.
+    const { error, pending, submit } = useModulationSubmission(onClose);
+    const nameRef = useRef<HTMLInputElement>(null);
+    const hasTrack = tracks.some((track) => track.id === form.trackId);
+
     useEffect(() => {
-        setForm((prev) => {
-            if (tracks.length === 0) {
-                return prev.trackId === '' ? prev : { ...prev, trackId: '' };
-            }
-            return tracks.some((track) => track.id === prev.trackId) ? prev : { ...prev, trackId: tracks[0]!.id };
-        });
-    }, [tracks]);
+        nameRef.current?.focus();
+    }, []);
+
+    // Seed an initially empty picker after track hydration. A deleted selection
+    // stays visibly unavailable until the musician chooses its replacement.
+    if (form.trackId === '' && defaultTrackId !== '') {
+        setForm({ ...form, trackId: defaultTrackId });
+    }
 
     const setField = <Key extends keyof FormState>(key: Key, value: FormState[Key]): void => {
         setForm((prev) => ({ ...prev, [key]: value }));
@@ -200,12 +191,16 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
         if (!built) {
             return;
         }
-        void executeUserAppAction({ type: 'addModulator', payload: { modulator: built } });
-        onClose();
+        const modulatorId = `mod-${built.kind}-${crypto.randomUUID()}`;
+        void submit(
+            { type: 'addModulator', payload: { modulatorId, modulator: built } },
+            () => trackStore.value?.tracks.some((track) => track.id === built.trackId) === true,
+            () => modulationStore.value?.modulators.some((source) => source.id === modulatorId) === true
+        );
     };
 
     return (
-        <Stack gap={2} className="border-b border-border-hairline bg-surface-inset p-3">
+        <Stack gap={2} className="w-full max-w-[40rem] p-2">
             <Row justify="between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-foreground">
                     New Modulator
@@ -214,12 +209,16 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     <X className="size-3.5" />
                 </Button>
             </Row>
-            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
+            <fieldset
+                disabled={pending}
+                className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5"
+            >
                 <label htmlFor={`${fieldId}-name`} className="text-[10px] text-muted-foreground">
                     Name
                 </label>
                 <DawCompactInput
                     id={`${fieldId}-name`}
+                    ref={nameRef}
                     value={form.name}
                     onChange={(event) => setField('name', event.target.value)}
                     aria-label="Modulator name"
@@ -252,6 +251,11 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     aria-label="Modulator track scope"
                 >
                     {tracks.length === 0 ? <option value="">No tracks available</option> : null}
+                    {form.trackId && !hasTrack ? (
+                        <option disabled value={form.trackId}>
+                            Track unavailable
+                        </option>
+                    ) : null}
                     {tracks.map((track) => (
                         <option key={track.id} value={track.id}>
                             {track.name}
@@ -314,121 +318,25 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                         />
                     </>
                 ) : null}
-            </div>
+            </fieldset>
+            {!hasTrack ? (
+                <p className="text-xs text-muted-foreground">Choose an available track to add a modulator.</p>
+            ) : null}
+            {error ? (
+                <p role="alert" className="text-xs text-destructive">
+                    {error}
+                </p>
+            ) : null}
             <Row justify="end" gap={2} className="pt-1">
                 <Button variant="ghost" size="xs" onClick={onClose}>
                     Cancel
                 </Button>
-                <Button variant="secondary" size="xs" onClick={handleSubmit} disabled={form.trackId === ''}>
+                <Button variant="secondary" size="xs" onClick={handleSubmit} disabled={pending || !hasTrack}>
                     <Plus className="size-3" />
                     <span className="ml-1">Add</span>
                 </Button>
             </Row>
         </Stack>
-    );
-};
-
-type AddMappingPickerProps = {
-    modulatorId: string;
-    tracks: TrackRef[];
-    onClose: () => void;
-};
-
-const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProps): ReactElement => {
-    const initialTrackId = tracks[0]?.id ?? '';
-    const [trackId, setTrackId] = useState(initialTrackId);
-    const selectedTrack = tracks.find((t) => t.id === trackId);
-    const initialDeviceId = selectedTrack?.devices[0]?.id ?? '';
-    const [deviceId, setDeviceId] = useState(initialDeviceId);
-    const selectedDevice = selectedTrack?.devices.find((d) => d.id === deviceId);
-    const descriptor = selectedDevice ? getPluginById(selectedDevice.type) : undefined;
-    const automatable = descriptor?.parameters.filter((p) => p.automatable) ?? [];
-    const initialParamId = automatable[0]?.id ?? '';
-    const [paramId, setParamId] = useState(initialParamId);
-
-    const handleTrackChange = (event: ChangeEvent<HTMLSelectElement>): void => {
-        const nextTrackId = event.target.value;
-        setTrackId(nextTrackId);
-        const nextTrack = tracks.find((t) => t.id === nextTrackId);
-        const nextDeviceId = nextTrack?.devices[0]?.id ?? '';
-        setDeviceId(nextDeviceId);
-        const nextDevice = nextTrack?.devices.find((d) => d.id === nextDeviceId);
-        const nextDescriptor = nextDevice ? getPluginById(nextDevice.type) : undefined;
-        setParamId(nextDescriptor?.parameters.find((p) => p.automatable)?.id ?? '');
-    };
-
-    const handleDeviceChange = (event: ChangeEvent<HTMLSelectElement>): void => {
-        const nextDeviceId = event.target.value;
-        setDeviceId(nextDeviceId);
-        const nextDevice = selectedTrack?.devices.find((d) => d.id === nextDeviceId);
-        const nextDescriptor = nextDevice ? getPluginById(nextDevice.type) : undefined;
-        setParamId(nextDescriptor?.parameters.find((p) => p.automatable)?.id ?? '');
-    };
-
-    const canAdd = trackId !== '' && deviceId !== '' && paramId !== '';
-
-    const handleAdd = (): void => {
-        if (!canAdd) {
-            return;
-        }
-        void executeUserAppAction({
-            type: 'addMapping',
-            payload: {
-                modulatorId,
-                mapping: {
-                    targetTrackId: trackId,
-                    targetDeviceId: deviceId,
-                    targetParamId: paramId,
-                    amount: 0.5,
-                },
-            },
-        });
-        onClose();
-    };
-
-    return (
-        <Row wrap gap={2} className="rounded-sm bg-surface-inset px-2 py-1.5">
-            <DawCompactSelect value={trackId} onChange={handleTrackChange} aria-label="Target track">
-                {tracks.length === 0 ? <option value="">No tracks</option> : null}
-                {tracks.map((track) => (
-                    <option key={track.id} value={track.id}>
-                        {track.name}
-                    </option>
-                ))}
-            </DawCompactSelect>
-            <DawCompactSelect
-                value={deviceId}
-                onChange={handleDeviceChange}
-                aria-label="Target device"
-                disabled={!selectedTrack || selectedTrack.devices.length === 0}
-            >
-                {!selectedTrack || selectedTrack.devices.length === 0 ? <option value="">No devices</option> : null}
-                {selectedTrack?.devices.map((device) => (
-                    <option key={device.id} value={device.id}>
-                        {device.name}
-                    </option>
-                ))}
-            </DawCompactSelect>
-            <DawCompactSelect
-                value={paramId}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) => setParamId(event.target.value)}
-                aria-label="Target parameter"
-                disabled={automatable.length === 0}
-            >
-                {automatable.length === 0 ? <option value="">No automatable params</option> : null}
-                {automatable.map((param) => (
-                    <option key={param.id} value={param.id}>
-                        {param.name}
-                    </option>
-                ))}
-            </DawCompactSelect>
-            <Button variant="secondary" size="xs" onClick={handleAdd} disabled={!canAdd}>
-                Add
-            </Button>
-            <Button variant="ghost" size="xs" onClick={onClose}>
-                Cancel
-            </Button>
-        </Row>
     );
 };
 
@@ -586,6 +494,11 @@ type ModulatorCardProps = {
 
 const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement => {
     const [pickerOpen, setPickerOpen] = useState(false);
+    const mappingButtonRef = useRef<HTMLButtonElement>(null);
+    const closePicker = () => {
+        setPickerOpen(false);
+        mappingButtonRef.current?.focus();
+    };
 
     useEffect(() => {
         const clearOwnedDrag = (): void => {
@@ -665,7 +578,13 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                     Enabled
                 </Row>
                 <div className="flex-1" />
-                <Button variant="ghost" size="xs" onClick={() => setPickerOpen((open) => !open)}>
+                <Button
+                    ref={mappingButtonRef}
+                    variant="ghost"
+                    size="xs"
+                    aria-expanded={pickerOpen}
+                    onClick={() => setPickerOpen((open) => !open)}
+                >
                     <Plus className="size-3" />
                     <span className="ml-1">Add Mapping</span>
                 </Button>
@@ -680,9 +599,7 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                     <Trash2 className="size-3.5" />
                 </Button>
             </Row>
-            {pickerOpen ? (
-                <AddMappingPicker modulatorId={modulator.id} tracks={tracks} onClose={() => setPickerOpen(false)} />
-            ) : null}
+            {pickerOpen ? <AddMappingPicker modulator={modulator} tracks={tracks} onClose={closePicker} /> : null}
         </Stack>
     );
 };
@@ -691,6 +608,11 @@ export const ModulationMatrix = (): ReactElement => {
     const modState = useStore(modulationStore, emptyModState);
     const trackState = useStore(trackStore, defaultTrackState);
     const [newFormOpen, setNewFormOpen] = useState(false);
+    const newButtonRef = useRef<HTMLButtonElement>(null);
+    const closeForm = () => {
+        setNewFormOpen(false);
+        newButtonRef.current?.focus();
+    };
 
     const tracks: TrackRef[] = trackState.tracks.map((track) => ({
         id: track.id,
@@ -715,6 +637,7 @@ export const ModulationMatrix = (): ReactElement => {
                 titleClassName="text-[11px] font-semibold text-foreground uppercase tracking-wider"
                 actions={
                     <Button
+                        ref={newButtonRef}
                         variant="secondary"
                         size="xs"
                         onClick={() => setNewFormOpen((open) => !open)}
@@ -727,9 +650,16 @@ export const ModulationMatrix = (): ReactElement => {
                 }
             />
 
-            {newFormOpen ? <NewModulatorForm tracks={tracks} onClose={() => setNewFormOpen(false)} /> : null}
+            {newFormOpen ? (
+                <section
+                    aria-label="New modulator form"
+                    className="max-h-[55%] min-h-0 shrink-0 overflow-auto overscroll-contain border-b border-border-hairline bg-surface-inset"
+                >
+                    <NewModulatorForm tracks={tracks} onClose={closeForm} />
+                </section>
+            ) : null}
 
-            <div className="flex-1 overflow-auto">
+            <section aria-label="Modulators and mappings" className="min-h-0 flex-1 overflow-auto overscroll-contain">
                 <Stack gap={2} className="p-2">
                     {modulators.length === 0 ? (
                         <DawEmptyState
@@ -774,7 +704,7 @@ export const ModulationMatrix = (): ReactElement => {
                         </tbody>
                     </table>
                 )}
-            </div>
+            </section>
         </DawPanelSurface>
     );
 };
