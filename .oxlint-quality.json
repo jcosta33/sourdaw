@@ -33,6 +33,7 @@
         "scripts/oxlintCraft/__tests__/fixtures/**"
     ],
     "rules": {
+        "no-else-return": ["error", { "allowElseIf": true }],
         "typescript/no-unnecessary-type-parameters": "error",
         "typescript/switch-exhaustiveness-check": [
             "error",
