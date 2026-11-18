@@ -355,11 +355,10 @@ export const SetlistPanel = (): ReactElement => {
                                                 onClick={(event) => event.stopPropagation()}
                                                 onBlur={(event) => handleCommitName(item.id, event.target.value)}
                                                 onKeyDown={(event) => {
+                                                    event.stopPropagation();
                                                     if (event.nativeEvent.isComposing) {
-                                                        event.stopPropagation();
                                                         return;
                                                     }
-                                                    event.stopPropagation();
                                                     if (event.key === 'Enter') {
                                                         handleCommitName(
                                                             item.id,

@@ -216,14 +216,13 @@ export const ArrangementSelector = (): ReactElement | null => {
                                             value={editName}
                                             onChange={(event) => setEditName(event.target.value)}
                                             onKeyDown={(event) => {
+                                                event.stopPropagation();
                                                 if (event.nativeEvent.isComposing) {
-                                                    event.stopPropagation();
                                                     return;
                                                 }
                                                 if (event.key === 'Enter') {
                                                     handleRenameSubmit(arr.id);
                                                 }
-                                                event.stopPropagation();
                                             }}
                                             onBlur={() => handleRenameSubmit(arr.id)}
                                             onClick={(event) => event.stopPropagation()}
