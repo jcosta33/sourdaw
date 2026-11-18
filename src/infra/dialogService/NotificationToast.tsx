@@ -192,6 +192,7 @@ export const NotificationToast = (): ReactElement | null => {
             </div>
             {current ? (
                 <div
+                    data-testid="notification-toast"
                     className={cn(
                         'pointer-events-none fixed top-14 right-4 w-80 rounded-lg border p-3 shadow-xl motion-safe:animate-in motion-safe:slide-in-from-top-2',
                         DIALOG_SERVICE_LAYER,

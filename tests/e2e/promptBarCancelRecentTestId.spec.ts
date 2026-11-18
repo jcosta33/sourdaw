@@ -178,8 +178,11 @@ test.describe('LaunchScreen recent-project cards', () => {
         // 'not-found': an error notice fires and the launch screen returns home.
         await recent_card.click();
 
-        const error_notice = page.getByRole('alert').filter({ hasText: 'Failed to open "Recent Mix"' });
+        const error_notice = page.getByTestId('notification-toast');
         await expect(error_notice).toBeVisible({ timeout: 15_000 });
+        await expect(error_notice).toContainText('Failed to open "Recent Mix"');
+        await expect(error_notice.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+        await expect(page.getByRole('alert')).toContainText('Failed to open "Recent Mix"');
         await expect(page.locator('#launch-new-project')).toBeVisible({ timeout: 15_000 });
     });
 });
