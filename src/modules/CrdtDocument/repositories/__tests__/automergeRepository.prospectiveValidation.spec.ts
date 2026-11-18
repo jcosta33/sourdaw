@@ -18,13 +18,14 @@ import {
 import { initializeWasm } from '@automerge/automerge/slim';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { logger } from '#/infra/logger/appLogger';
 import {
     getCurrentAutomergeStorageMutationOwner,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { materializeProspectiveMutation } from '../../workers/prospectiveMutationWorkerRuntime';
+import { type ProspectiveMutationWorkerRequest } from '../../models/ProspectiveMutationWorkerProtocol';
 import { automergeRepository as repository } from '../automergeRepository';
 import * as workerClient from '../prospectiveMutationWorkerClient';
 
@@ -51,14 +52,32 @@ function validation(validateDocument: (document: Doc<State>) => void = () => und
     return { validateDocument: vi.fn(validateDocument), beforePublication: vi.fn(), onPublished: vi.fn() };
 }
 
+async function receiveNativePreparation(request: ProspectiveMutationWorkerRequest): Promise<MessageEvent<unknown>> {
+    const worker = new NativePreparationWorker(new URL('../../workers/prospectiveMutationWorker.ts', import.meta.url));
+    try {
+        const reply = Promise.withResolvers<MessageEvent<unknown>>();
+        worker.onmessage = reply.resolve;
+        worker.onerror = () => reply.reject(new Error('Native preparation Worker failed'));
+        worker.onmessageerror = () => reply.reject(new Error('Native preparation Worker message failed'));
+        worker.postMessage(request, [request.seed.buffer]);
+        const event = await reply.promise;
+        expect(event.data).toMatchObject({ status: 'complete' });
+        return event;
+    } finally {
+        worker.terminate();
+    }
+}
+
 beforeEach(() => repository.reset());
 beforeAll(async () => {
     const require = createRequire(import.meta.url);
     await initializeWasm(Uint8Array.from(readFileSync(require.resolve('@automerge/automerge/automerge.wasm'))));
 });
-afterEach(() => {
+afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     repository.reset();
+    await settleNativePreparationWorkers();
 });
 
 describe('private prospective Automerge candidates', () => {
@@ -74,11 +93,8 @@ describe('private prospective Automerge candidates', () => {
             value: target,
             documentPresence: { slot: { text: '' } },
         };
-        const request = vi
-            .spyOn(workerClient, 'requestProspectiveMutation')
-            .mockImplementation(async (input) =>
-                materializeProspectiveMutation({ ...input, preparationPolicy: 'bounded-native-sequence-v1' })
-            );
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        const request = vi.spyOn(workerClient, 'requestProspectiveMutation');
         const changeFn = vi.fn((draft: SequenceState) => {
             draft.slot = target;
         });
@@ -94,7 +110,10 @@ describe('private prospective Automerge candidates', () => {
         const observer = vi.fn();
         repository.onChange(observer);
         await expect(preparation.requestMaterialization?.(new AbortController().signal)).resolves.toBeUndefined();
-        expect(request).toHaveBeenCalledOnce();
+        expect(request).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ preparationPolicy: 'bounded-native-sequence-v1' }),
+            expect.any(AbortSignal)
+        );
         expect(repository.getDoc('root')).toBe(original);
         expect(observer).not.toHaveBeenCalled();
         const prepared = preparation.materialize();
@@ -121,9 +140,7 @@ describe('private prospective Automerge candidates', () => {
             value: { text: 'owned sequence '.repeat(180) },
             documentPresence: { slot: { text: '' } },
         };
-        vi.spyOn(workerClient, 'requestProspectiveMutation').mockImplementation(async (input) =>
-            materializeProspectiveMutation(input)
-        );
+        vi.stubGlobal('Worker', NativePreparationWorker);
         const transaction = runWithAutomergeStorageTransaction(undefined, () =>
             repository.cloneProspectiveMutation(
                 'root',
@@ -177,9 +194,7 @@ describe('private prospective Automerge candidates', () => {
                 value: { text: 'owned sequence '.repeat(180) },
                 documentPresence: { slot: { text: '' } },
             };
-            vi.spyOn(workerClient, 'requestProspectiveMutation').mockImplementation(async (input) =>
-                materializeProspectiveMutation(input)
-            );
+            vi.stubGlobal('Worker', NativePreparationWorker);
             const Channel = globalThis.MessageChannel;
             const held = Promise.withResolvers<() => void>();
             let hostTasks = 0;
@@ -213,10 +228,17 @@ describe('private prospective Automerge candidates', () => {
             }
             const preparation = transaction.value;
             try {
-                const requested = transaction.scope(() =>
-                    preparation.requestMaterialization?.(new AbortController().signal)
-                );
-                const release = await held.promise;
+                const request = preparation.requestMaterialization;
+                if (!request) {
+                    throw new Error('Expected the explicit native request route');
+                }
+                const requested = transaction.scope(() => request(new AbortController().signal));
+                const release = await Promise.race([
+                    held.promise,
+                    requested.then(() => {
+                        throw new Error('Bounded admission finished before the private prefix was held');
+                    }),
+                ]);
                 expect(hostTasks).toBe(2);
                 expect(repository.getDoc('root')).toBe(original);
                 expect(observer).not.toHaveBeenCalled();
@@ -305,7 +327,7 @@ describe('private prospective Automerge candidates', () => {
             unexpected?.discard();
             unrequested.discard();
         }
-        const posted = Promise.withResolvers<unknown>();
+        const posted = Promise.withResolvers<ProspectiveMutationWorkerRequest>();
         const terminated = vi.fn();
         const holder: { worker?: HeldWorker } = {};
         class HeldWorker {
@@ -315,15 +337,8 @@ describe('private prospective Automerge candidates', () => {
             constructor() {
                 holder.worker = this;
             }
-            postMessage(
-                input: Parameters<typeof workerClient.requestProspectiveMutation>[0],
-                transfer: Transferable[]
-            ): void {
-                const copied = structuredClone(input, { transfer });
-                // Dedicated messaging creates records and buffers in the receiving realm.
-                const mutationJson = JSON.stringify(copied.mutation);
-                const mutation: unknown = JSON.parse(mutationJson);
-                posted.resolve({ ...copied, seed: Uint8Array.from(copied.seed), mutation });
+            postMessage(input: ProspectiveMutationWorkerRequest, transfer: Transferable[]): void {
+                posted.resolve(structuredClone(input, { transfer }));
             }
             terminate(): void {
                 terminated();
@@ -352,8 +367,8 @@ describe('private prospective Automerge candidates', () => {
             expect(held.onerror).toBeNull();
             expect(held.onmessageerror).toBeNull();
             expect(vi.getTimerCount()).toBe(0);
-            const result = materializeProspectiveMutation(input);
-            late(new MessageEvent('message', { data: { status: 'complete', ...result } }));
+            vi.useRealTimers();
+            late(await receiveNativePreparation(input));
             expect(() => pending.materialize()).toThrow('already settled');
             expect(changeFn).not.toHaveBeenCalled();
             expect(observer).not.toHaveBeenCalled();

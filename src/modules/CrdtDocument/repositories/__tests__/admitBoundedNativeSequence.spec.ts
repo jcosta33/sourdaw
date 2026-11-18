@@ -4,12 +4,14 @@ import { createRequire } from 'node:module';
 
 import * as A from '@automerge/automerge';
 import { initializeWasm } from '@automerge/automerge/slim';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 
 import { hasOpaqueNativeMetadata } from '../../models/NativeMutationSequence';
 import { type ProspectiveMutationWorkerResult } from '../../models/ProspectiveMutationWorkerProtocol';
-import { materializeProspectiveMutation } from '../../workers/prospectiveMutationWorkerRuntime';
 import { admitBoundedNativeSequence } from '../admitBoundedNativeSequence';
+import { requestProspectiveMutation } from '../prospectiveMutationWorkerClient';
 
 vi.mock('@automerge/automerge', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@automerge/automerge')>();
@@ -31,7 +33,16 @@ beforeAll(async () => {
     await initializeWasm(Uint8Array.from(readFileSync(require.resolve('@automerge/automerge/automerge.wasm'))));
 });
 
-function fixture(peer = false) {
+beforeEach(() => {
+    vi.stubGlobal('Worker', NativePreparationWorker);
+});
+
+afterEach(async () => {
+    vi.unstubAllGlobals();
+    await settleNativePreparationWorkers();
+});
+
+async function fixture(peer = false) {
     let source = A.from<State>({ slot: { text: '' } }, { actor: ACTOR });
     if (peer) {
         const other = A.change(A.clone(source, { actor: PEER }), (draft) => {
@@ -48,23 +59,31 @@ function fixture(peer = false) {
     } finally {
         A.free(encoding);
     }
-    const result = materializeProspectiveMutation({
-        seed,
-        actor: ACTOR,
-        heads: A.getHeads(source),
-        preparationPolicy: 'bounded-native-sequence-v1',
-        message: 'Capture',
-        time: 0,
-        mutation: {
-            kind: 'canonical-json-slot-v1',
-            key: 'slot',
-            baseValue: { text: '' },
-            value: target,
-            documentPresence: { slot: { text: '' } },
-        },
-    });
-    expect(result.changes.length).toBeGreaterThan(1);
-    return { source, target, result };
+    try {
+        const result = await requestProspectiveMutation(
+            {
+                seed,
+                actor: ACTOR,
+                heads: A.getHeads(source),
+                preparationPolicy: 'bounded-native-sequence-v1',
+                message: 'Capture',
+                time: 0,
+                mutation: {
+                    kind: 'canonical-json-slot-v1',
+                    key: 'slot',
+                    baseValue: { text: '' },
+                    value: target,
+                    documentPresence: { slot: { text: '' } },
+                },
+            },
+            new AbortController().signal
+        );
+        expect(result.changes.length).toBeGreaterThan(1);
+        return { source, target, result };
+    } catch (error) {
+        A.free(source);
+        throw error;
+    }
 }
 
 function admit(source: A.Doc<State>, result: ProspectiveMutationWorkerResult) {
@@ -121,7 +140,7 @@ function withOpaqueExtra(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
 
 describe('bounded native sequence authority', () => {
     it('decodes each received chunk once and still validates its canonical round trip', async () => {
-        const { source, result, target } = fixture();
+        const { source, result, target } = await fixture();
         const decode = vi.mocked(A.decodeChange).mockClear();
         const encode = vi.mocked(A.encodeChange).mockClear();
         const apply = vi.mocked(A.applyChanges).mockClear();
@@ -180,7 +199,7 @@ describe('bounded native sequence authority', () => {
     });
 
     it('preserves a larger peer maxOp, complete source history, cursor and subsequent actor sequence', async () => {
-        const { source, result, target } = fixture(true);
+        const { source, result, target } = await fixture(true);
         const history = A.getChangesMetaSince(source, []);
         const heads = A.getHeads(source);
         const truth = A.toJS(source);
@@ -233,7 +252,7 @@ describe('bounded native sequence authority', () => {
         'duplicate',
         'final-heads',
     ] as const)('rejects %s before any live publication', async (kind) => {
-        const { source, result } = fixture();
+        const { source, result } = await fixture();
         const truth = A.toJS(source);
         const heads = A.getHeads(source);
         let invalid: ProspectiveMutationWorkerResult = result;
@@ -355,7 +374,7 @@ describe('bounded native sequence authority', () => {
     });
 
     it('rejects native-valid opaque extra metadata before applying its first chunk', async () => {
-        const { source, result } = fixture();
+        const { source, result } = await fixture();
         const first = withOpaqueExtra(result.changes[0]!);
         let control = A.clone(source, { actor: ACTOR });
         try {
@@ -381,7 +400,7 @@ describe('bounded native sequence authority', () => {
     });
 
     it('rejects a valid final unowned write at the patch guard, with correct actor and sequence metadata', async () => {
-        const { source, result } = fixture();
+        const { source, result } = await fixture();
         let control = A.clone(source, { actor: ACTOR });
         try {
             [control] = A.applyChanges(control, result.changes);
@@ -412,7 +431,7 @@ describe('bounded native sequence authority', () => {
     it.each(['checksum', 'cancel'] as const)(
         'frees its owned private backend once after %s, without freeing its borrowed source',
         async (failure) => {
-            const { source, result } = fixture();
+            const { source, result } = await fixture();
             const candidate = A.clone(source, { actor: ACTOR });
             const backend = A.getBackend(candidate);
             const borrowed = A.getBackend(source);
