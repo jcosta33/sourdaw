@@ -4262,7 +4262,7 @@
             "count": 11
         },
         "eslint/max-lines-per-function": {
-            "count": 6
+            "count": 5
         },
         "eslint/max-params": {
             "count": 7
@@ -4274,7 +4274,7 @@
             "count": 18
         },
         "typescript/no-non-null-assertion": {
-            "count": 11
+            "count": 10
         }
     },
     "src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts": {

@@ -2448,17 +2448,15 @@ export async function runApplicationOwnedToolLoop(
         if (interpretation === 'admitted' && creativeAuthority !== undefined && musicalRead === undefined) {
             if (creativeAuthority.mode !== 'edit' || !creativeAuthority.editDimensions.includes('midi-content')) {
                 musicalRead = null;
+            } else if (input.musicalContentBinding === undefined) {
+                musicalRead = null;
+                musicalReadUnavailable = true;
             } else {
-                if (input.musicalContentBinding === undefined) {
+                try {
+                    musicalRead = createMusicalReadPrerequisite(creativeAuthority, input.musicalContentBinding);
+                } catch {
                     musicalRead = null;
                     musicalReadUnavailable = true;
-                } else {
-                    try {
-                        musicalRead = createMusicalReadPrerequisite(creativeAuthority, input.musicalContentBinding);
-                    } catch {
-                        musicalRead = null;
-                        musicalReadUnavailable = true;
-                    }
                 }
             }
         }

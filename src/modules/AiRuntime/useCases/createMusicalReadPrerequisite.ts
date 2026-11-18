@@ -29,33 +29,61 @@ function matchesReadCall(call: ToolCallResult, window: ReadWindow, cursor: strin
     );
 }
 
-function admittedPage(raw: ApplicationToolReceipt, admitted: ApplicationToolReceipt, state: PageState) {
+function unchangedMusicalReceiptData(raw: ApplicationToolReceipt, admitted: ApplicationToolReceipt) {
     if (
         raw.status !== 'success' ||
         admitted.status !== 'success' ||
         JSON.stringify(raw) !== JSON.stringify(admitted) ||
         admitted.warnings.length > 0 ||
         !record(admitted.data) ||
-        admitted.data.queryType !== 'musical-content' ||
-        !record(admitted.data.page) ||
-        admitted.data.page.offset !== state.offset ||
-        typeof admitted.data.page.total !== 'number' ||
-        !Array.isArray(admitted.data.items) ||
-        (state.total !== undefined && state.total !== admitted.data.page.total)
+        admitted.data.queryType !== 'musical-content'
     ) {
         return null;
     }
-    const total = admitted.data.page.total;
-    const { items, nextCursor: next } = admitted.data;
+    return admitted.data;
+}
+
+function pageContinuationFits(state: PageState, total: number, itemCount: number, next: string | null): boolean {
+    const end = state.offset + itemCount;
+    if ((state.total !== undefined && state.total !== total) || end > total) {
+        return false;
+    }
+    if (next === null) {
+        return end === total;
+    }
+    return itemCount > 0;
+}
+
+function admittedPage(raw: ApplicationToolReceipt, admitted: ApplicationToolReceipt, state: PageState) {
+    const data = unchangedMusicalReceiptData(raw, admitted);
+    if (data === null) {
+        return null;
+    }
+    const { items, page, nextCursor: next } = data;
     if (
-        (next !== null && typeof next !== 'string') ||
-        state.offset + items.length > total ||
-        (next === null && state.offset + items.length !== total) ||
-        (next !== null && items.length === 0)
+        !record(page) ||
+        page.offset !== state.offset ||
+        typeof page.total !== 'number' ||
+        !Array.isArray(items) ||
+        (next !== null && typeof next !== 'string')
     ) {
+        return null;
+    }
+    const total = page.total;
+    if (!pageContinuationFits(state, total, items.length, next)) {
         return null;
     }
     return { items, next, total };
+}
+
+function matchesSelectedOwner(item: Record<string, unknown>, owner: ReadWindow['owners'][number]): boolean {
+    return (
+        item.viewId === owner.viewId &&
+        item.ownerClipId === owner.ownerClipId &&
+        item.noteId === owner.storedNoteId &&
+        (item.takeId ?? undefined) === owner.takeId &&
+        (owner.occurrenceIndex === undefined || item.occurrenceIndex === owner.occurrenceIndex)
+    );
 }
 
 function selectedOwners(items: unknown[], window: ReadWindow, found: Set<string>): void {
@@ -64,13 +92,7 @@ function selectedOwners(items: unknown[], window: ReadWindow, found: Set<string>
             continue;
         }
         for (const owner of window.owners) {
-            if (
-                item.viewId === owner.viewId &&
-                item.ownerClipId === owner.ownerClipId &&
-                item.noteId === owner.storedNoteId &&
-                (item.takeId ?? undefined) === owner.takeId &&
-                (owner.occurrenceIndex === undefined || item.occurrenceIndex === owner.occurrenceIndex)
-            ) {
+            if (matchesSelectedOwner(item, owner)) {
                 found.add(owner.viewId);
             }
         }

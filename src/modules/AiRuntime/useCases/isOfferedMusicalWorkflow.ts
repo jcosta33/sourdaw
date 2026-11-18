@@ -26,12 +26,8 @@ export function isOfferedMusicalWorkflow(
         return false;
     }
     const selection = calls[0].arguments;
-    const capability = selection.capabilityId;
-    if (
-        Object.keys(selection).length !== 1 ||
-        typeof capability !== 'string' ||
-        !offered.some((id) => id === capability)
-    ) {
+    const capability = offered.find((id) => id === selection.capabilityId);
+    if (Object.keys(selection).length !== 1 || capability === undefined) {
         return false;
     }
     const proposal = calls[1].arguments;
@@ -43,6 +39,6 @@ export function isOfferedMusicalWorkflow(
     ) {
         return false;
     }
-    const commandName = workflowCommands[capability as OfferedMusicalWorkflow];
+    const commandName = workflowCommands[capability];
     return proposal.commands.every((command: unknown) => isRecord(command) && command.name === commandName);
 }
