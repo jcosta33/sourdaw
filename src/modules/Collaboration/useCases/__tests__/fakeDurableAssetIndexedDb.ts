@@ -145,9 +145,10 @@ class FakeTransaction {
     }
 
     indexDefinition(storeName: string, indexName: string): IndexDefinition | undefined {
-        return this.active
-            ? this.localIndexes.get(storeName)?.get(indexName)
-            : this.state.indexes.get(storeName)?.get(indexName);
+        if (this.active) {
+            return this.localIndexes.get(storeName)?.get(indexName);
+        }
+        return this.state.indexes.get(storeName)?.get(indexName);
     }
 
     enqueue(operation: () => void): void {

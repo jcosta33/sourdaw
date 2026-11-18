@@ -9,6 +9,7 @@ export const qualityRuleIds = [
     'eslint/max-depth',
     'eslint/max-lines-per-function',
     'eslint/max-params',
+    'eslint/no-else-return',
     'sourdaw-craft/no-complex-ternary-branch',
     'sourdaw-craft/no-conditional-empty-spread',
     'sourdaw-craft/no-conditional-playwright-admission',
