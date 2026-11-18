@@ -125,83 +125,89 @@ describe('Inspector device automation target admission', () => {
         }
     });
 
-    it.each(['retained', 'removed'] as const)(
-        'adjudicates the queued Device Drive edit when the target is %s',
-        async (target) => {
-            const authority = captureProjectTransitionAuthority();
-            const initial = readRoot();
-            expect(initial.root.tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual([DEVICE_ID]);
-            expect(initial.root.automation.lanes).toEqual([]);
-            expect(undoHistoryStore.value?.past).toEqual([]);
+    function queueDeviceDriveEdit() {
+        const authority = captureProjectTransitionAuthority();
+        const initial = readRoot();
+        expect(initial.root.tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual([DEVICE_ID]);
+        expect(initial.root.automation.lanes).toEqual([]);
+        expect(undoHistoryStore.value?.past).toEqual([]);
 
-            const release = Promise.withResolvers<void>();
-            const finished = Promise.withResolvers<void>();
-            const realDispatch = commandUseCases.executeUserAppAction;
-            const dispatch = vi
-                .spyOn(commandUseCases, 'executeUserAppAction')
-                .mockImplementationOnce(async (action, options) => {
-                    await release.promise;
-                    try {
-                        await realDispatch(action, options);
-                    } finally {
-                        finished.resolve();
-                    }
-                });
-
-            render(<Inspector />);
-            fireEvent.click(screen.getByRole('button', { name: 'Add automation lane' }));
-            fireEvent.click(screen.getByRole('menuitem', { name: 'Drive' }));
-            expect(dispatch).toHaveBeenCalledExactlyOnceWith(
-                expect.objectContaining({
-                    type: 'addAutomationLane',
-                    payload: expect.objectContaining({ trackId: TRACK_ID, parameterId: TARGET_ID }),
-                }),
-                expect.any(Object)
-            );
-            expect(readRoot().heads).toEqual(initial.heads);
-
-            if (target === 'removed') {
-                await act(() =>
-                    commandUseCases.executeAppAction({ type: 'removeDevice', payload: { deviceId: DEVICE_ID } })
-                );
-                expect(readRoot().root.tracks.tracks[0]?.devices).toEqual([]);
-                expect(trackStore.value?.tracks[0]?.devices).toEqual([]);
-                expect(undoHistoryStore.value?.past.at(-1)).toMatchObject({
-                    action: { type: 'removeDevice', payload: { deviceId: DEVICE_ID } },
-                });
-            }
-            expect(authority.isCurrent()).toBe(true);
-            const before = readRoot();
-            const historyBefore = structuredClone(undoHistoryStore.value);
-            await act(async () => {
-                release.resolve();
-                await finished.promise;
+        const release = Promise.withResolvers<void>();
+        const finished = Promise.withResolvers<void>();
+        const realDispatch = commandUseCases.executeUserAppAction;
+        const dispatch = vi
+            .spyOn(commandUseCases, 'executeUserAppAction')
+            .mockImplementationOnce(async (action, options) => {
+                await release.promise;
+                try {
+                    await realDispatch(action, options);
+                } finally {
+                    finished.resolve();
+                }
             });
 
-            const after = readRoot();
-            if (target === 'retained') {
-                expect(after.root.automation.lanes.map(({ parameterId }) => parameterId)).toEqual([TARGET_ID]);
-                expect(automationStore.value).toEqual(after.root.automation);
-                expect(undoHistoryStore.value?.past.at(-1)).toMatchObject({
-                    action: { type: 'addAutomationLane', payload: { parameterId: TARGET_ID } },
-                });
-                expect(screen.getByText('Distortion: Drive')).toBeVisible();
-                return;
-            }
+        render(<Inspector />);
+        fireEvent.click(screen.getByRole('button', { name: 'Add automation lane' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Drive' }));
+        expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                type: 'addAutomationLane',
+                payload: expect.objectContaining({ trackId: TRACK_ID, parameterId: TARGET_ID }),
+            }),
+            expect.any(Object)
+        );
+        expect(readRoot().heads).toEqual(initial.heads);
 
-            expect.soft(after.root.automation.lanes.map(({ parameterId }) => parameterId)).toEqual([]);
-            expect.soft(automationStore.value?.lanes.map(({ parameterId }) => parameterId)).toEqual([]);
-            expect
-                .soft(
-                    undoHistoryStore.value?.past.map((entry) =>
-                        entry.kind === 'action' ? entry.action.type : entry.kind
-                    )
-                )
-                .toEqual(['removeDevice']);
-            expect.soft(undoHistoryStore.value).toEqual(historyBefore);
-            expect.soft(after.heads).toEqual(before.heads);
-            expect.soft(screen.queryByText('Distortion: Drive')).not.toBeInTheDocument();
-            expect.soft(screen.queryByRole('alert')).toHaveTextContent('Could not add Distortion: Drive');
-        }
-    );
+        return {
+            authority,
+            async finish() {
+                await act(async () => {
+                    release.resolve();
+                    await finished.promise;
+                });
+            },
+        };
+    }
+
+    it('adds the queued Device Drive lane while the target is retained', async () => {
+        const edit = queueDeviceDriveEdit();
+        expect(edit.authority.isCurrent()).toBe(true);
+        await edit.finish();
+
+        const after = readRoot();
+        expect(after.root.automation.lanes.map(({ parameterId }) => parameterId)).toEqual([TARGET_ID]);
+        expect(automationStore.value).toEqual(after.root.automation);
+        expect(undoHistoryStore.value?.past.at(-1)).toMatchObject({
+            action: { type: 'addAutomationLane', payload: { parameterId: TARGET_ID } },
+        });
+        expect(screen.getByText('Distortion: Drive')).toBeVisible();
+    });
+
+    it('rejects the queued Device Drive lane after removing the target', async () => {
+        const edit = queueDeviceDriveEdit();
+        await act(() => commandUseCases.executeAppAction({ type: 'removeDevice', payload: { deviceId: DEVICE_ID } }));
+        expect(readRoot().root.tracks.tracks[0]?.devices).toEqual([]);
+        expect(trackStore.value?.tracks[0]?.devices).toEqual([]);
+        expect(undoHistoryStore.value?.past.at(-1)).toMatchObject({
+            action: { type: 'removeDevice', payload: { deviceId: DEVICE_ID } },
+        });
+
+        expect(edit.authority.isCurrent()).toBe(true);
+        const before = readRoot();
+        const historyBefore = structuredClone(undoHistoryStore.value);
+        await edit.finish();
+
+        const after = readRoot();
+        expect.soft(after.root.automation.lanes.map(({ parameterId }) => parameterId)).toEqual([]);
+        expect.soft(automationStore.value?.lanes.map(({ parameterId }) => parameterId)).toEqual([]);
+        expect
+            .soft(
+                undoHistoryStore.value?.past.map((entry) => (entry.kind === 'action' ? entry.action.type : entry.kind))
+            )
+            .toEqual(['removeDevice']);
+        expect.soft(undoHistoryStore.value).toEqual(historyBefore);
+        expect.soft(after.heads).toEqual(before.heads);
+        expect.soft(screen.queryByText('Distortion: Drive')).not.toBeInTheDocument();
+        expect.soft(screen.queryByRole('alert')).toHaveTextContent('Could not add Distortion: Drive');
+    });
 });

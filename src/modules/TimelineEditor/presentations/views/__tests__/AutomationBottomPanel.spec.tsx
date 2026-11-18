@@ -277,33 +277,45 @@ describe('AutomationBottomPanel', () => {
                     maxValue: 2,
                 },
             ];
-            let previousObservation: [Element, (width: number) => void] | undefined;
-            for (const [open, firstWidth, resizedWidth] of [
-                [true, 475.5, 321],
-                [false, 671.5, 532],
-                [true, 453.5, 312],
-            ] as const) {
-                mocks.workspaceStore.value.trackListOpen = open;
-                view.rerender(<AutomationBottomPanel />);
+            const observeViewport = () => {
                 expect(screen.queryByTestId('lane-row-gain-lane')).not.toBeInTheDocument();
                 expect(observed.size).toBe(1);
                 const observation = [...observed][0]!;
-                const [element, resize] = observation;
-                expect(element).toBeInTheDocument();
-                if (previousObservation) {
-                    const [previousElement, previousResize] = previousObservation;
-                    expect(previousElement).not.toBeInTheDocument();
-                    expect(observed.has(previousElement)).toBe(false);
-                    act(() => previousResize(123));
-                    expect(screen.queryByTestId('lane-row-gain-lane')).not.toBeInTheDocument();
-                }
+                expect(observation[0]).toBeInTheDocument();
+                return observation;
+            };
 
+            const verifyWidths = (
+                [element, resize]: [Element, (width: number) => void],
+                firstWidth: number,
+                resizedWidth: number
+            ) => {
                 act(() => resize(firstWidth));
                 const row = screen.getByTestId('lane-row-gain-lane');
                 expect(element).toContainElement(row);
                 expect(row).toHaveAttribute('data-width', String(firstWidth));
                 act(() => resize(resizedWidth));
                 expect(row).toHaveAttribute('data-width', String(resizedWidth));
+            };
+
+            view.rerender(<AutomationBottomPanel />);
+            let previousObservation = observeViewport();
+            verifyWidths(previousObservation, 475.5, 321);
+
+            for (const [open, firstWidth, resizedWidth] of [
+                [false, 671.5, 532],
+                [true, 453.5, 312],
+            ] as const) {
+                mocks.workspaceStore.value.trackListOpen = open;
+                view.rerender(<AutomationBottomPanel />);
+                const observation = observeViewport();
+                const [previousElement, previousResize] = previousObservation;
+                expect(previousElement).not.toBeInTheDocument();
+                expect(observed.has(previousElement)).toBe(false);
+                act(() => previousResize(123));
+                expect(screen.queryByTestId('lane-row-gain-lane')).not.toBeInTheDocument();
+
+                verifyWidths(observation, firstWidth, resizedWidth);
                 previousObservation = observation;
             }
             view.unmount();
