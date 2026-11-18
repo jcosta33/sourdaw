@@ -144,7 +144,7 @@ test.describe('Clip context menu operations', () => {
         await canvas.click({ button: 'right', position: { x: 200, y: 30 } });
         const add = page.getByRole('menuitem', { name: /Add Clip Here/i });
         await add.click();
-        await page.waitForTimeout(500);
+        await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
     });
 
     test('MIDI clip context menu exposes the exact operation names', async ({ page }) => {
@@ -195,7 +195,7 @@ test.describe('MIDI editor — advanced lane controls', () => {
         const canvas = page.getByLabel('Timeline editor surface');
         await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
         await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
-        await page.waitForTimeout(500);
+        await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
         await canvas.dblclick({ position: { x: 300, y: 30 } });
     });
 
@@ -208,25 +208,22 @@ test.describe('MIDI editor — advanced lane controls', () => {
         await expect(fold).not.toHaveAttribute('aria-pressed', fold_before ?? '');
     });
 
-    test('Expression view toggle reveals the Active expression lane combobox', async ({ page }) => {
-        const expr_toggle = page.getByRole('button', { name: /Toggle Expression View/i });
-        await expr_toggle.waitFor({ state: 'visible' });
-
-        // Before enabling, the lane combobox is absent.
-        const lane = page.getByRole('combobox', { name: /Active expression lane/i });
-        await expect(lane).toHaveCount(0);
-
-        await expr_toggle.click();
-
+    test('Expression view toggle reveals the velocity lane', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: /Toggle Expression View/i });
+        const selector = page.getByRole('combobox', { name: 'Active expression lane' });
+        const readout = page.getByText('Velocity only for this instrument', { exact: true });
+        const lane = page.getByRole('group', { name: 'velocity lane', exact: true });
+        await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+        await expect(readout).toHaveCount(0);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+        await expect(selector).toHaveCount(0);
+        await expect(readout).toBeVisible();
         await expect(lane).toBeVisible();
-        // Velocity is the only always-available expression lane. The MPE per-note
-        // lanes (Pitch Bend / Pressure / Slide) are intentionally hidden until the
-        // engine sounds them (audit MD-2, honest-availability flag — #719), so the
-        // combobox must surface Velocity and must NOT surface the MPE lanes.
-        const opts = await lane.locator('option').allInnerTexts();
-        const joined = opts.join('|');
-        expect(joined).toMatch(/Velocity/);
-        expect(joined).not.toMatch(/Pitch Bend|Pressure|Slide/);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+        await expect(readout).toHaveCount(0);
+        await expect(lane).toHaveCount(0);
     });
 });
 
