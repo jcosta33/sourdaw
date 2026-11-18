@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { COMPLEXITY_RULE, findComplexityGrowth } from './lintComplexityGrowth.ts';
 import {
     findQualityBudgetGrowth,
     parseConfiguredQualityRules,
@@ -126,7 +127,7 @@ function qualityBudgetSeed(root: string, mergeBase: string) {
     return { rules, files };
 }
 
-/** Counts only shrink after a rule enters the quality pass. Its first counts may cover unchanged tracked files. */
+/** Quality counts only shrink after activation, and matched over-cap functions cannot grow more complex. */
 export function checkQualityBudgetShrinks(root: string): string[] {
     const mergeBase = resolveMergeBase(root);
     const head = readQualityBudget(root);
@@ -144,7 +145,31 @@ export function checkQualityBudgetShrinks(root: string): string[] {
         git(root, ['show', `${mergeBase}:${QUALITY_BUDGET}`]),
         `${mergeBase}:${QUALITY_BUDGET}`
     );
-    return findQualityBudgetGrowth(base, head, qualityBudgetSeed(root, mergeBase));
+    const findings = findQualityBudgetGrowth(base, head, qualityBudgetSeed(root, mergeBase));
+    const revision = git(root, ['rev-parse', 'HEAD']).trim();
+    const modified = git(root, [
+        'diff',
+        '--name-only',
+        '--no-renames',
+        '--diff-filter=M',
+        '-z',
+        mergeBase,
+        revision,
+        '--',
+    ]);
+    const files = modified.split('\0').filter((path) => /\.tsx?$/.test(path) && base.get(path)?.has(COMPLEXITY_RULE));
+    const pairs = files
+        .map((path) => ({
+            path,
+            base: git(root, ['show', `${mergeBase}:${path}`]),
+            head: git(root, ['show', `${revision}:${path}`]),
+        }))
+        .filter(({ base: previous, head: current }) => previous !== current);
+    if (pairs.length === 0) {
+        return findings;
+    }
+    const config = git(root, ['show', `${revision}:${QUALITY_CONFIG}`]);
+    return [...findings, ...findComplexityGrowth(root, config, pairs)];
 }
 
 /**

@@ -25,6 +25,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+    chmodSync,
     copyFileSync,
     existsSync,
     mkdirSync,
@@ -882,13 +883,157 @@ describe('size baseline check against the merge base', () => {
     describe('as a command', () => {
         function runCli(): { status: number; stdout: string; stderr: string } {
             mkdirSync(join(dir, 'scripts'), { recursive: true });
-            for (const name of ['checkSizeBaselineShrinks.ts', 'lintSizeCeilings.ts', 'lintQualityBudget.ts']) {
+            for (const name of [
+                'checkSizeBaselineShrinks.ts',
+                'lintComplexityGrowth.ts',
+                'lintSizeCeilings.ts',
+                'lintQualityBudget.ts',
+            ]) {
                 copyFileSync(resolve(__dirname, '..', name), join(dir, 'scripts', name));
             }
-            writeFileSync(join(dir, 'oxlint-quality-baseline.json'), '{}\n');
+            if (!existsSync(join(dir, 'oxlint-quality-baseline.json'))) {
+                writeFileSync(join(dir, 'oxlint-quality-baseline.json'), '{}\n');
+            }
+            writeFileSync(join(dir, 'package.json'), '{"type":"module"}\n');
+            if (!existsSync(join(dir, 'node_modules'))) {
+                symlinkSync(join(repoRoot, 'node_modules'), join(dir, 'node_modules'), 'junction');
+            }
             const result = spawnSync('node', ['scripts/checkSizeBaselineShrinks.ts'], { cwd: dir, encoding: 'utf8' });
             return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
         }
+
+        describe('existing native complexity findings', () => {
+            function body(score: number): string {
+                const branches = Array.from({ length: score - 1 }, (_, index) => `if (value === ${index}) return 0;`);
+                return `{ ${branches.join(' ')} return value; }`;
+            }
+
+            function declaration(name: string, score: number): string {
+                return `export function ${name}(value: number) ${body(score)}`;
+            }
+
+            function writeCode(file: string, ...parts: string[]): void {
+                writeFileSync(join(dir, file), `${parts.join('\n')}\n`);
+            }
+
+            function setBase(count: number, file = 'a.ts'): void {
+                writeFileSync(
+                    join(dir, 'oxlint-quality-baseline.json'),
+                    JSON.stringify({
+                        [file]: { 'eslint/complexity': { count } },
+                    })
+                );
+                writeFileSync(
+                    join(dir, '.oxlint-quality.json'),
+                    JSON.stringify({
+                        overrides: [{ files: ['**/*.{ts,tsx}'], rules: { complexity: ['error', 15] } }],
+                    })
+                );
+                commit('base with native complexity findings');
+                git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            }
+
+            it('rejects higher complexity with the same count in the committed merge-base comparison', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                setBase(1);
+                const base = git('rev-parse', 'HEAD').trim();
+                writeCode('a.ts', declaration('apply', 19));
+                commit('main moves on');
+                git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+                git('checkout', '-q', '-b', 'feature', base);
+                writeCode('a.ts', '// 🎚', declaration('apply', 17));
+                commit('head with same count and higher complexity');
+                writeCode('a.ts', declaration('apply', 16));
+                expect(runCli()).toMatchObject({
+                    status: 1,
+                    stderr: 'a.ts: function apply complexity increased from 16 to 17 (maximum 15).\n',
+                });
+            });
+
+            it('accepts reductions, reordering, comments and renamed or nested functions', () => {
+                const nested = (score: number) =>
+                    `function outer(value: number) { function stable(value: number) ${body(score)} return stable(value); }`;
+                writeCode(
+                    'a.ts',
+                    declaration('stable', 16),
+                    declaration('reduce', 17),
+                    declaration('rename', 16),
+                    nested(16)
+                );
+                setBase(4);
+                writeCode(
+                    'a.ts',
+                    '// 🎚',
+                    nested(19),
+                    declaration('renamed', 18),
+                    declaration('reduce', 16),
+                    declaration('stable', 16)
+                );
+                commit('reorder, reduce and rename');
+                expect(runCli()).toMatchObject({ status: 0, stderr: '' });
+            });
+
+            it('tracks a unique overload implementation and a direct const arrow by identifier and kind', () => {
+                const arrow = (name: string, score: number) =>
+                    `export const ${name} = (value: number) => ${body(score)};`;
+                const overload = 'export function apply(value: number): number;';
+                writeCode('a.ts', overload, declaration('apply', 16), arrow('convert', 16), arrow('shape', 16));
+                setBase(3);
+                writeCode('a.ts', overload, declaration('apply', 17), arrow('convert', 18), declaration('shape', 19));
+                commit('grow the same implementation and arrow');
+                expect(runCli()).toMatchObject({
+                    status: 1,
+                    stderr: 'a.ts: function apply complexity increased from 16 to 17 (maximum 15).\na.ts: const convert arrow complexity increased from 16 to 18 (maximum 15).\n',
+                });
+            });
+
+            it('distinguishes a nested concise arrow from its const binding when they share an end', () => {
+                const nested = (score: number) => `const outer = () => (value: number) => ${body(score)};`;
+                const bound = (score: number) => `export const view = function (value: number) ${body(score)};`;
+                writeCode('a.tsx', nested(16), bound(17), 'export const label = <span>🎚</span>;');
+                setBase(2, 'a.tsx');
+                writeCode('a.tsx', 'export const label = <span>🎚</span>;', bound(18), nested(19));
+                commit('grow the inner arrow and the direct function expression');
+                expect(runCli()).toMatchObject({
+                    status: 1,
+                    stderr: 'a.tsx: const view function complexity increased from 17 to 18 (maximum 15).\n',
+                });
+            });
+
+            it('fails when native scoring reports a parser diagnostic', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                setBase(1);
+                writeCode('a.ts', 'export function broken( {');
+                commit('unparseable head content');
+                const result = runCli();
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('Unexpected Oxlint complexity diagnostic in a.ts');
+            });
+
+            it('accepts a decrease that eliminates the last native finding', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                setBase(1);
+                writeCode('a.ts', declaration('apply', 15));
+                writeFileSync(join(dir, 'oxlint-quality-baseline.json'), '{}\n');
+                commit('eliminate the last finding');
+                expect(runCli()).toMatchObject({ status: 0, stderr: '' });
+            });
+
+            it('skips unchanged, moved, and previously unbudgeted files', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                writeCode('src.ts', declaration('apply', 17));
+                setBase(1);
+                writeCode('src.ts', declaration('apply', 18));
+                chmodSync(join(dir, 'a.ts'), 0o755);
+                rmSync(join(dir, '.oxlint-quality.json'));
+                commit('only an unbudgeted source file changes');
+                writeCode('a.ts', declaration('apply', 17));
+                expect(runCli()).toMatchObject({ status: 0, stderr: '' });
+                git('mv', 'a.ts', 'moved.ts');
+                commit('move the budgeted file');
+                expect(runCli()).toMatchObject({ status: 0, stderr: '' });
+            });
+        });
 
         it('should exit 1 and print the finding for an added path', () => {
             git('update-ref', 'refs/remotes/origin/main', 'HEAD');
