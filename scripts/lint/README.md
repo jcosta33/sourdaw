@@ -74,9 +74,12 @@ In the product pilot the stock assertion ban diagnoses TypeScript's postfix `!`.
 `typescript/no-unnecessary-type-assertion` still remove assertions the type checker finds
 redundant. A non-null assertion that changes a type needs a guard or an explicit invariant.
 The stock type-aware `typescript/no-unsafe-type-assertion` rule checks narrowing casts in
-CommandInterface product code and WorkspaceShell presentation views. It follows the same
-TS and TSX product exclusions. Prefer a compiler-visible guard. A cast backed by a runtime
-invariant that TypeScript cannot infer needs a rule-specific directive with the reason.
+selected product directories in `.oxlint-quality.json`. The scope includes whole modules,
+selected WorkspaceShell layers, shared layout and UI components, helpers, and routes. It follows
+the same TS and TSX product exclusions. Check the stock diagnostics before admitting a directory.
+Review casts backed by runtime invariants such as the FLAC encoder's single-bit mask. Prefer a
+compiler-visible guard. When TypeScript cannot infer the invariant, use a rule-specific
+directive that explains it.
 The stock type-aware generic rule reports parameters that establish no type relationship.
 The quality pass counts `no-else-return` findings when a preceding branch already returns on every
 path. It allows `else if` chains and keeps `else` branches that prevent fall-through.
