@@ -22,8 +22,16 @@ function addNoteRows(projection: Projection, clip: Clip, selection: Selection, a
         takeId: string | null,
         occurrenceIndex: number
     ): void {
+        const occurrenceIdentity = [
+            ownerClipId,
+            takeId,
+            occurrenceIndex,
+            viewId,
+            timelineStart,
+            timelineDuration,
+        ] as const;
         addRow({
-            id: JSON.stringify([ownerClipId, takeId, occurrenceIndex, viewId, timelineStart, timelineDuration]),
+            id: JSON.stringify(occurrenceIdentity),
             kind: 'note',
             noteId: original.id,
             ownerClipId,
@@ -58,7 +66,7 @@ function addNoteRows(projection: Projection, clip: Clip, selection: Selection, a
         for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
             for (const [index, point] of (original.expression?.[dimension] ?? []).entries()) {
                 addRow({
-                    id: JSON.stringify([ownerClipId, takeId, occurrenceIndex, viewId, dimension, index]),
+                    id: JSON.stringify([...occurrenceIdentity, dimension, index]),
                     kind: 'expression',
                     ownerClipId,
                     noteId: original.id,
