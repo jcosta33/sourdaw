@@ -4,6 +4,7 @@
 import type { Rule } from 'eslint';
 
 export type CraftRuleId =
+    | 'no-complex-ternary-branch'
     | 'no-conditional-empty-spread'
     | 'no-useless-clone-spread'
     | 'no-spread-clone-array-method'
@@ -15,6 +16,7 @@ export type CraftRuleId =
     | 'no-failed-operation-success'
     | 'no-fixed-test-sleep'
     | 'no-invalid-vitest-expect'
+    | 'no-positional-boolean-flags'
     | 'no-silent-catch';
 
 declare const plugin: {
