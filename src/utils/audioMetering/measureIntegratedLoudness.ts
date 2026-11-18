@@ -56,6 +56,7 @@ function createAccumulator(input: AccumulatorInput, retainGatedBlock?: (power: n
     }));
     const history = new Float64Array(blockFrames);
     const absoluteGatePower = 10 ** ((ABSOLUTE_GATE_LUFS - LOUDNESS_OFFSET) / 10);
+    const recordGatedBlock = retainGatedBlock ?? (() => undefined);
     let frames = 0,
         energy = 0,
         gatedSum = 0,
@@ -91,7 +92,7 @@ function createAccumulator(input: AccumulatorInput, retainGatedBlock?: (power: n
                         if (blockPower > absoluteGatePower && blockPower > (input.relativeGatePower ?? 0)) {
                             gatedSum += blockPower;
                             gatedCount++;
-                            retainGatedBlock?.(blockPower);
+                            recordGatedBlock(blockPower);
                         }
                     }
                 }
@@ -157,8 +158,7 @@ export function measureIntegratedLoudness({
     const relativeGatePower = first.relativeGatePower();
     let gatedSum = 0;
     let gatedCount = 0;
-    for (let index = 0; index < retainedCount; index++) {
-        const power = powers[index]!;
+    for (const power of powers.subarray(0, retainedCount)) {
         if (power > relativeGatePower) {
             gatedSum += power;
             gatedCount++;
