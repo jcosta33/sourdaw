@@ -1,7 +1,11 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { from, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
+import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
 
@@ -53,6 +57,8 @@ async function openProjectWithCachedStereoClip() {
         { configureCollaborationAssetOwner },
         { withProjectAudioStorageLock },
         { registerHandlerMap },
+        { getWorkspaceHandlers },
+        { registerKernelPorts },
         { logger },
         { injectDependencies },
         { notifyUser },
@@ -70,6 +76,8 @@ async function openProjectWithCachedStereoClip() {
         import('#/modules/Collaboration/useCases'),
         import('#/infra/storage/withProjectAudioStorageLock'),
         import('#/modules/Command/stores'),
+        import('#/modules/WorkspaceShell/useCases'),
+        import('#/app/registerKernelPorts'),
         import('#/infra/logger/appLogger'),
         import('#/infra/di/testing/injectDependencies'),
         import('#/utils/Notification/notifyUser'),
@@ -82,6 +90,8 @@ async function openProjectWithCachedStereoClip() {
     await restoreCachedAudioBuffersFromIdb({ audioContext: context });
     setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
     registerHandlerMap(getArrangementHandlers());
+    registerHandlerMap(getWorkspaceHandlers());
+    registerKernelPorts();
     registerCrdtStorageRuntime();
     configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
     configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
@@ -209,6 +219,8 @@ describe('saveProject snapshot continuation', () => {
         localStorage.clear();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
     });
 
     afterEach(async () => {
@@ -223,6 +235,7 @@ describe('saveProject snapshot continuation', () => {
             import('#/modules/Command/stores'),
             import('#/infra/di/Container'),
         ]);
+        await settleNativePreparationWorkers();
         configureDurableAudioBufferOwnership(null);
         stopActiveAutoSave();
         clearHandlerRegistry();

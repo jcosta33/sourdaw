@@ -53,15 +53,6 @@ const requests: WorkerRequest[] = [];
 let nextReply: ReturnType<typeof Promise.withResolvers<HeldReply>> | undefined;
 
 class PublicSaveWorker extends NativePreparationWorker {
-    constructor(url: URL) {
-        if (!url.pathname.endsWith('/prospectiveMutationWorker.ts')) {
-            // This Node host implements the prospective Worker transport. The
-            // repository uses its own fallback for incremental persistence.
-            throw new Error('The Node Save fixture does not host the incremental persistence Worker');
-        }
-        super(url);
-    }
-
     override postMessage(data: unknown, transfer: ArrayBuffer[]): void {
         if (!isRecord(data) || !isRecord(data.mutation)) {
             throw new Error('Expected a real prospective mutation request');
@@ -268,8 +259,10 @@ async function openSaveProject() {
         readNamed,
         readNamedRecord,
         readHistory,
+        renameProject: project.renameProject,
         renameSourceTrack,
         saveProject: project.saveProject,
+        getRecentProjects: project.getRecentProjects,
         trackStore,
     };
 }
@@ -423,6 +416,9 @@ describe('public Save of the active arrangement', () => {
             expect(getHeads(opened.readRoot())).toEqual(beforeHeads);
             expect(toJS(opened.readRoot())).toEqual(beforeTruth);
             expect(opened.readNamedRecord()).toBeUndefined();
+            // The named snapshot must inherit the timestamp that the
+            // transaction captured before sending this Worker request.
+            vi.mocked(Date.now).mockReturnValue(SAVED_AT + 1);
             outcome.release();
 
             await expect(saving).resolves.toBe(true);
@@ -439,5 +435,51 @@ describe('public Save of the active arrangement', () => {
             outcome.release();
             await saving.catch(() => undefined);
         }
+    }, 30_000);
+
+    it('replans the same native project after a rename and records the committed name in Recent', async () => {
+        const opened = await openSaveProject();
+        await opened.renameSourceTrack(EDITED_NAME);
+        const history = opened.readHistory();
+        vi.spyOn(Date, 'now').mockReturnValue(SAVED_AT);
+        const first = Promise.withResolvers<HeldReply>();
+        nextReply = first;
+        const saving = opened.saveProject();
+        const settled = saving.then((saved) => ({ kind: 'save' as const, saved }));
+        const stale = await Promise.race([first.promise, settled]);
+        if (stale.kind === 'save') {
+            throw new Error('Save settled before the initial Worker reply');
+        }
+
+        const retry = Promise.withResolvers<HeldReply>();
+        try {
+            opened.renameProject('Renamed during Save');
+            expect(opened.readNamedRecord()).toBeUndefined();
+            nextReply = retry;
+        } finally {
+            stale.release();
+        }
+
+        const current = await Promise.race([retry.promise, settled]);
+        if (current.kind === 'save') {
+            throw new Error('Save settled before the same-project retry');
+        }
+        try {
+            expect(requests).toEqual([
+                { key: 'arrangements', policy: 'bounded-native-sequence-v1' },
+                { key: 'arrangements', policy: 'bounded-native-sequence-v1' },
+            ]);
+            expect(opened.readRoot().projectMeta).toMatchObject({ name: 'Renamed during Save', updatedAt: CREATED_AT });
+            expect(opened.readNamedRecord()).toBeUndefined();
+        } finally {
+            current.release();
+            await saving.catch(() => undefined);
+        }
+
+        await expect(saving).resolves.toBe(true);
+        expectSavedSources(opened, EDITED_NAME);
+        expect(opened.readNamed().meta.name).toBe('Renamed during Save');
+        expect(opened.getRecentProjects()).toMatchObject([{ name: 'Renamed during Save' }]);
+        expect(opened.readHistory()).toEqual(history);
     }, 30_000);
 });

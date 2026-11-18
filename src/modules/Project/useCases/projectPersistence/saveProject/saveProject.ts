@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     captureProjectIdentity,
@@ -30,6 +31,7 @@ import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
 import { pluginStateEditCount } from './pluginStateEditCount';
+import { ProjectSavePreparationStaleError } from './prepareProjectSaveSnapshot';
 
 const {
     beginProjectDirectorySelection,
@@ -45,6 +47,8 @@ type AudioDurabilityReceipt = {
 };
 
 let latestSave: Promise<boolean> | undefined;
+const SAVE_PREPARATION_TIMEOUT_MS = 30_000;
+const MAX_SAVE_PREPARATION_ATTEMPTS = 3;
 
 function assertProjectSnapshotAuthority(): void {
     if (agentProjectRepairStateStore.value !== null) {
@@ -291,6 +295,88 @@ async function runSaveAfter(
     return persistProjectSnapshot(selectedRoot, expectedOutgoingProjectIdentity);
 }
 
+function readSaveProject(createdAt: number, identity: string): ProjectStoreState {
+    const current = projectStore.value;
+    if (!current || current.createdAt !== createdAt || captureProjectIdentity() !== identity) {
+        throw new Error('[saveProject] Active project changed before persistence');
+    }
+    return current;
+}
+
+function assertSavePreparationAuthority(project: ProjectStoreState, identity: string): void {
+    const current = readSaveProject(project.createdAt, identity);
+    if (current.projectId !== project.projectId) {
+        throw new Error('[saveProject] Active project id changed before persistence');
+    }
+    assertProjectSnapshotAuthority();
+    if (projectLoadFailureStore.value !== null) {
+        throw new Error('[saveProject] Active project load failed before persistence');
+    }
+}
+
+async function prepareSaveData(
+    project: ProjectStoreState,
+    identity: string,
+    expectedOutgoingProjectIdentity: string | undefined
+) {
+    const signal = AbortSignal.timeout(SAVE_PREPARATION_TIMEOUT_MS);
+    const payload: { intent: 'prepareSnapshot'; expectedOutgoingProjectIdentity?: string } = {
+        intent: 'prepareSnapshot',
+    };
+    if (expectedOutgoingProjectIdentity !== undefined) {
+        payload.expectedOutgoingProjectIdentity = expectedOutgoingProjectIdentity;
+    }
+
+    for (let attempt = 0; attempt < MAX_SAVE_PREPARATION_ATTEMPTS; attempt += 1) {
+        signal.throwIfAborted();
+        assertSavePreparationAuthority(project, identity);
+        let committedRevision: string | undefined;
+        try {
+            await executeAppAction(
+                { type: 'saveProject', payload },
+                {
+                    signal,
+                    skipUndo: true,
+                    skipMacroRecording: true,
+                    onCommitted: () => {
+                        committedRevision = captureProjectRevision();
+                    },
+                }
+            );
+        } catch (error) {
+            if (!(error instanceof ProjectSavePreparationStaleError)) {
+                throw error;
+            }
+            continue;
+        }
+
+        signal.throwIfAborted();
+        assertSavePreparationAuthority(project, identity);
+        if (committedRevision === undefined) {
+            throw new Error('[saveProject] Snapshot preparation did not commit');
+        }
+        if (captureProjectRevision() !== committedRevision) {
+            continue;
+        }
+
+        // Count settled takes in the same turn the no-PCM builder captures
+        // the revision. The builder may still flush a deferred project write.
+        const settledTakesAtSnapshot = countSettledTakes();
+        const built = await buildProjectData({ usePreparedSaveSnapshot: true });
+        signal.throwIfAborted();
+        assertSavePreparationAuthority(project, identity);
+        if (captureProjectRevision() !== committedRevision || (built && built.snapshotRevision !== committedRevision)) {
+            continue;
+        }
+        if (!built) {
+            throw new Error('[saveProject] Project snapshot could not be built');
+        }
+        return { built, settledTakesAtSnapshot };
+    }
+
+    throw new Error('[saveProject] Project kept changing during snapshot preparation');
+}
+
 async function persistProjectSnapshot(
     selectedRoot: Promise<FileSystemDirectoryHandle> | null,
     expectedOutgoingProjectIdentity: string | undefined
@@ -334,8 +420,10 @@ async function persistProjectSnapshot(
 
     try {
         assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
+        const identity = captureProjectIdentity();
         await migrateActiveProjectIdentity();
         assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
+        const persistedProject = readSaveProject(project.createdAt, identity);
 
         // Capture each loaded native plugin's live state chunk into project truth
         // before serialization, so a reopened project restores editor-driven state
@@ -348,17 +436,6 @@ async function persistProjectSnapshot(
         const pluginEditsAtCapture = pluginStateEditCount.read();
         const everyPluginCaptured = await captureEveryPluginState();
         assertOutgoingProjectIdentity(expectedOutgoingProjectIdentity);
-
-        const current = projectStore.value;
-        if (!current || current.createdAt !== project.createdAt) {
-            throw new Error('[saveProject] Active project changed before persistence');
-        }
-        const persistedProject = current;
-
-        // Keep the project dirty until every durable write succeeds. The
-        // timestamp belongs to the snapshot being built, so publish it before
-        // serialization and include it in the revision token below.
-        projectStore.set({ ...current, updatedAt: Date.now(), dirty: true });
 
         // Write a flat-JSON ProjectData snapshot under the SAME key the
         // recent entry uses, so loadRecentProject can reopen it. The
@@ -376,16 +453,11 @@ async function persistProjectSnapshot(
         // in bytes. loadRecentProject resolves the ids through the cache,
         // exactly as the boot restore path already does.
         //
-        // Read in the same synchronous turn as the snapshot's revision, so a
-        // take that settles once the snapshot is taken still counts as unsaved.
-        const settledTakesAtSnapshot = countSettledTakes();
-        const built = await buildProjectData({ includeAudioBuffers: false });
-        if (!built) {
-            // No snapshot means nothing under recentKey to reopen. Listing
-            // the project anyway is how a recent entry came to point at
-            // nothing (ADR 0013).
-            throw new Error('[saveProject] Project snapshot could not be built');
-        }
+        const { built, settledTakesAtSnapshot } = await prepareSaveData(
+            persistedProject,
+            identity,
+            expectedOutgoingProjectIdentity
+        );
 
         const assertSnapshotContinuation = createSnapshotContinuationAssertion(
             persistedProject,
@@ -444,7 +516,7 @@ async function persistProjectSnapshot(
 
                     // Only record the recent-projects entry once the snapshot
                     // write committed for the exact revision it serialized.
-                    addToRecentProjects(persistedProject.name, recentKey);
+                    addToRecentProjects(built.data.meta.name, recentKey);
                     assertSnapshotContinuation(audioDurabilityReceipt);
 
                     // The CRDT snapshot and named project file establish the same

@@ -1,3 +1,5 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,6 +10,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 import { syncCurrentArrangementToStore } from '../../../arrangement/syncCurrentArrangementToStore';
 import { takeSnapshot } from '../../../arrangement/takeSnapshot';
 import { isHydratableProjectData } from '../../helpers/isHydratableProjectData';
@@ -574,6 +577,8 @@ describe('project directory save and cold Recent open', () => {
         folder.beforeBindingRead = null;
         vi.stubGlobal('indexedDB', new IDBFactory());
         vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
         const nativeClone = structuredClone;
         vi.stubGlobal('structuredClone', (value: unknown) => {
             const cloned: unknown = nativeClone(value);
@@ -605,6 +610,7 @@ describe('project directory save and cold Recent open', () => {
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         stopHistoryMirror?.();
         stopHistoryMirror = undefined;
         const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
@@ -690,14 +696,17 @@ describe('project directory save and cold Recent open', () => {
             throw new Error('Expected settled native authority before the paired Save');
         }
         const nativeBeforeSave = runtime.automerge.toJS(rootBeforeSave);
+        const activeBeforeSave = nativeBeforeSave.arrangements.arrangements.find(
+            (entry) => entry.id === arrangements.activeArrangementId
+        );
+        const liveTrackState = runtime.arrangementStores.trackStore.value;
+        if (!activeBeforeSave || !liveTrackState) {
+            throw new Error('Expected the stale native active snapshot and the live tracks');
+        }
         const inactiveBeforeSave = nativeBeforeSave.arrangements.arrangements.find((entry) => entry.id === inactive.id);
         expect(inactiveBeforeSave).toBeDefined();
         expect(nativeBeforeSave.tracks.tracks.flatMap((track) => track.clips)).toHaveLength(2);
-        expect(
-            nativeBeforeSave.arrangements.arrangements
-                .find((entry) => entry.id === arrangements.activeArrangementId)
-                ?.tracks.tracks.flatMap((track) => track.clips)
-        ).toHaveLength(1);
+        expect(activeBeforeSave.tracks.tracks.flatMap((track) => track.clips)).toHaveLength(1);
         expect(
             arrangementStore.value?.arrangements
                 .find((snapshot) => snapshot.id === arrangements.activeArrangementId)
@@ -734,10 +743,21 @@ describe('project directory save and cold Recent open', () => {
         const native = await runtime.crdt.prepareExternalProjectDocument(saved.document, runtime.projectId);
         progress('saved native admission completed');
         expect(native.rootMediaSlots.tracks).toEqual(nativeBeforeSave.tracks);
-        expect(native.rootMediaSlots.arrangements).toEqual(nativeBeforeSave.arrangements);
-        expect(nativeBeforeSave.arrangements.arrangements.find((entry) => entry.id === inactive.id)).toEqual(
-            inactiveBeforeSave
-        );
+        expect(native.rootMediaSlots.arrangements).toEqual({
+            ...nativeBeforeSave.arrangements,
+            arrangements: nativeBeforeSave.arrangements.arrangements.map((entry) => {
+                if (entry.id !== activeBeforeSave.id) {
+                    return entry;
+                }
+                return {
+                    ...activeBeforeSave,
+                    tracks: {
+                        tracks: nativeBeforeSave.tracks.tracks,
+                        selectedTrackId: liveTrackState.selectedTrackId,
+                    },
+                };
+            }),
+        });
         expect(saved.document.byteLength).toBeGreaterThan(0);
         expect([...saved.pcm.keys()].sort()).toEqual([runtime.clip.audioBufferId, secondClip.audioBufferId].sort());
         for (const id of saved.pcm.keys()) {
@@ -802,6 +822,8 @@ describe('project directory save and cold Recent open', () => {
         });
         arrangement.setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(arrangement.getArrangementHandlers());
+        const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
+        registerHandlerMap(getWorkspaceHandlers());
         crdt.registerCrdtStorageRuntime();
         const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
         registerProjectSlotProjections();

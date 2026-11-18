@@ -131,6 +131,8 @@ type BuildProjectDataInput = {
      * `audioBuffers` simply stays unset.
      */
     includeAudioBuffers?: boolean;
+    /** The owning Save action has already refreshed the active arrangement and timestamp. */
+    usePreparedSaveSnapshot?: boolean;
 };
 
 /**
@@ -145,6 +147,7 @@ type BuildProjectDataInput = {
  */
 export async function buildProjectData({
     includeAudioBuffers = false,
+    usePreparedSaveSnapshot = false,
 }: BuildProjectDataInput = {}): Promise<BuiltProjectData | null> {
     if (agentProjectRepairStateStore.value !== null) {
         return null;
@@ -173,11 +176,12 @@ export async function buildProjectData({
         return null;
     }
 
-    // Saving projects the active live state into the file. Capturing it in the
-    // document belongs to arrangement switching, not serialization.
-    const arrangements = arrState.arrangements.map((snapshot) =>
-        snapshot.id === arrState.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
-    );
+    let arrangements = arrState.arrangements;
+    if (!usePreparedSaveSnapshot) {
+        arrangements = arrangements.map((snapshot) =>
+            snapshot.id === arrState.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+        );
+    }
 
     // Collect all audioBufferIds referenced by the project (current track state
     // and every arrangement, including non-active ones).
@@ -269,7 +273,7 @@ export async function buildProjectData({
             projectId: project.projectId,
             name: project.name,
             createdAt: project.createdAt,
-            updatedAt: Date.now(),
+            updatedAt: usePreparedSaveSnapshot ? project.updatedAt : Date.now(),
             keyRoot: project.keyRoot,
             scaleName: project.scaleName,
             tuning: project.tuning,

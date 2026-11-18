@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import * as command from '#/modules/Command/useCases';
 
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
+import { ProjectSavePreparationStaleError } from '../prepareProjectSaveSnapshot';
 import { saveProject } from '../saveProject';
 
 import type { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
@@ -85,6 +87,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
         throw new Error('Unexpected directory document export in this fixture');
     }),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
 }));
@@ -189,6 +192,9 @@ describe('saveProject', () => {
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
+        vi.spyOn(command, 'executeAppAction').mockImplementation(async (_action, options) => {
+            options?.onCommitted?.();
+        });
         mockBuiltProjectData();
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
@@ -199,6 +205,7 @@ describe('saveProject', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
 
@@ -300,6 +307,43 @@ describe('saveProject', () => {
         finishMigration?.();
         await expect(saving).resolves.toBe(true);
         expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('reprepares if a same-project edit moves the revision after the committed observer', async () => {
+        vi.mocked(command.executeAppAction).mockImplementationOnce(async (_action, options) => {
+            options?.onCommitted?.();
+            mocks.captureProjectRevision.mockReturnValue('edited-after-commit');
+            mockBuiltProjectData('edited-after-commit');
+        });
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(command.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.buildProjectData).toHaveBeenCalledExactlyOnceWith({ usePreparedSaveSnapshot: true });
+        expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
+    });
+
+    it('bounds same-owner stale retries under one cancellation deadline', async () => {
+        vi.mocked(command.executeAppAction).mockRejectedValue(new ProjectSavePreparationStaleError());
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        const options = vi.mocked(command.executeAppAction).mock.calls.map(([, attempt]) => attempt);
+        expect(options).toHaveLength(3);
+        expect(options[0]?.signal).toBeInstanceOf(AbortSignal);
+        expect(options.every((attempt) => attempt?.signal === options[0]?.signal)).toBe(true);
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a dispatch with no authoritative committed observer', async () => {
+        vi.mocked(command.executeAppAction).mockResolvedValueOnce(undefined);
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(command.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
     });
 
     it('revalidates snapshot authority after waiting for the storage lock', async () => {

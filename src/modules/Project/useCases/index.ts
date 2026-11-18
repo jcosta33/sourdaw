@@ -6,6 +6,7 @@ export { quiesceProjectSession } from './projectPersistence/quiesceProjectSessio
 export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
+export { prepareProjectSaveSnapshot } from './projectPersistence/saveProject/prepareProjectSaveSnapshot';
 export { saveProjectBeforeReplacement } from './projectPersistence/saveProject/saveProjectBeforeReplacement';
 export { pendingProjectReplacements } from './projectPersistence/pendingProjectReplacements';
 export { markDirty } from './projectPersistence/saveProject/markDirty';

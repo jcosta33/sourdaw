@@ -5,6 +5,7 @@ import {
     captureProjectTransitionAuthority,
     newProject,
     pendingProjectReplacements,
+    prepareProjectSaveSnapshot,
     saveProject,
     saveProjectBeforeReplacement,
     exportProjectFile,
@@ -61,6 +62,7 @@ vi.mock('#/modules/Project/useCases', () => ({
         },
     },
     newProject: vi.fn(),
+    prepareProjectSaveSnapshot: vi.fn(),
     saveProject: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),
     exportProjectFile: vi.fn(),
@@ -147,9 +149,50 @@ describe('Workspace Project Handlers', () => {
         expect(shouldProceed?.()).toBe(false);
     });
 
-    it('handleSaveProject should delegate to saveProject', () => {
-        void handleSaveProject.execute({ type: 'saveProject' });
-        expect(saveProject).toHaveBeenCalled();
+    it.each([{ type: 'saveProject' }, { type: 'saveProject', payload: {} }] as const)(
+        'starts ordinary Save in the call turn for %j',
+        (action) => {
+            const pendingSave = Promise.withResolvers<boolean>();
+            vi.mocked(saveProject).mockReturnValueOnce(pendingSave.promise);
+            expect(handleSaveProject.execute(action)).toBeUndefined();
+            expect(saveProject).toHaveBeenCalledExactlyOnceWith({ requestFolderSelection: true });
+            expect(prepareProjectSaveSnapshot).not.toHaveBeenCalled();
+            pendingSave.resolve(true);
+        }
+    );
+
+    it('returns the owning preparation result with the inherited signal and outgoing identity', async () => {
+        const signal = new AbortController().signal;
+        const action = {
+            type: 'saveProject',
+            payload: { intent: 'prepareSnapshot', expectedOutgoingProjectIdentity: 'outgoing-native-authority' },
+        } as const;
+        const prepared = Promise.resolve({ status: 'written' } as const);
+        vi.mocked(prepareProjectSaveSnapshot).mockReturnValueOnce(prepared);
+
+        const result = handleSaveProject.execute(action, { actions: [action], actionIndex: 0, signal });
+        expect(result).toBe(prepared);
+        await expect(result).resolves.toMatchObject({ status: 'written' });
+        expect(prepareProjectSaveSnapshot).toHaveBeenCalledExactlyOnceWith(signal, 'outgoing-native-authority');
+        expect(saveProject).not.toHaveBeenCalled();
+        expect(handleSaveProject.batchExecution).toBe('singleton');
+    });
+
+    it.each([
+        [null],
+        [[]],
+        [{ intent: 'save' }],
+        [{ expectedOutgoingProjectIdentity: 'outgoing-native-authority' }],
+        [{ intent: 'prepareSnapshot', allowLoading: true }],
+        [{ intent: 'prepareSnapshot', expectedOutgoingProjectIdentity: '' }],
+        [{ intent: 'prepareSnapshot', expectedOutgoingProjectIdentity: undefined }],
+        [{ intent: 'prepareSnapshot', expectedOutgoingProjectIdentity: 1 }],
+    ])('refuses malformed Save payload %j without delegating', (payload: unknown) => {
+        expect(() => Reflect.apply(handleSaveProject.execute, undefined, [{ type: 'saveProject', payload }])).toThrow(
+            TypeError
+        );
+        expect(saveProject).not.toHaveBeenCalled();
+        expect(prepareProjectSaveSnapshot).not.toHaveBeenCalled();
     });
 
     it('handleImportAudioFile should pick files and import', async () => {

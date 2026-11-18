@@ -49,6 +49,11 @@ export class NativePreparationWorker {
     constructor(url: URL) {
         const root = process.cwd();
         const pathname = url.pathname;
+        // Only prospective preparation uses this transport. Persistence uses
+        // the repository's platform fallback when its own Worker is absent.
+        if (!pathname.endsWith('/prospectiveMutationWorker.ts')) {
+            throw new Error('The native preparation fixture only hosts the prospective Worker');
+        }
         if (url.protocol !== 'file:' && !pathname.startsWith('/src/')) {
             throw new Error(`Unsupported actual Worker module URL: ${url.href}`);
         }
