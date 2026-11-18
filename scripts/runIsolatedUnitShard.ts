@@ -500,11 +500,10 @@ export function runUnitPhase(
     if (phase === 'install') {
         args = ['install', '--frozen-lockfile', '--store-dir', context.store];
     }
-    // The pinned Playwright Chromium lands under the account's private HOME, the
-    // same cache the shard's launches resolve, so no browser path crosses the
-    // strict environment and the shard never falls back to the image's Chrome.
+    // Default chromium.launch() uses the pinned headless shell under the account's
+    // private HOME, so the shard needs no full Chromium or shared browser path.
     if (phase === 'browsers') {
-        args = ['exec', 'playwright', 'install', 'chromium'];
+        args = ['exec', 'playwright', 'install', 'chromium', '--only-shell'];
     }
     return ports.run(context.pnpm, args, options).status ?? 1;
 }
