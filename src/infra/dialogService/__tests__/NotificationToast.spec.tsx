@@ -89,11 +89,13 @@ describe('NotificationToast', () => {
             'Failed to import "corrupt.mid" - invalid or corrupt MIDI file'
         );
 
+        expect(screen.getByTestId('notification-toast')).toBeVisible();
         const dismissButton = screen.getByRole('button', { name: 'Dismiss notification' });
         act(() => {
             fireEvent.click(dismissButton);
         });
 
+        expect(screen.queryByTestId('notification-toast')).not.toBeInTheDocument();
         expect(screen.getByRole('alert')).toBeEmptyDOMElement();
     });
 

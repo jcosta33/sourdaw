@@ -371,7 +371,10 @@ test('production Faust plays and exports after slow native loading, refuses a na
         expect(contrast.relativeRms).toBeGreaterThan(0.005);
         await inspector.getByRole('button', { name: 'Enable Tape Delay', exact: true }).click();
         await expect(inspector.getByRole('button', { name: 'Bypass Tape Delay', exact: true })).toBeVisible();
-        const previousSuccess = app.getByRole('alert').filter({ hasText: /^Audio exported$/ });
+        const previousSuccess = app
+            .getByTestId('notification-toast')
+            .filter({ has: app.getByText('Audio exported', { exact: true }) });
+        await expect(app.getByRole('status').filter({ hasText: /^Audio exported$/ })).toHaveCount(1);
         await expect(previousSuccess).toHaveCount(1);
         await expect(previousSuccess).toBeVisible();
         await previousSuccess.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
