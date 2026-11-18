@@ -40,7 +40,7 @@ function fixture(peer = false) {
         source = A.merge(A.clone(source, { actor: ACTOR }), other);
         A.free(other);
     }
-    const target = { text: 'Native sequence '.repeat(180) };
+    const target = { text: 'Native sequence '.repeat(180), confidence: 0.9517297589061063 };
     const encoding = A.clone(source, { actor: ACTOR });
     let seed: Uint8Array<ArrayBuffer>;
     try {
