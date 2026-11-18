@@ -1,10 +1,12 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
@@ -85,10 +87,10 @@ const expressiveNote = {
     articulation: 'staccato',
 };
 
-const seedStore = (notesByClipId: Record<string, object[]>): void => {
+const seedStore = (notesByClipId: Record<string, ReturnType<typeof getNotesForClip>>): void => {
     midiStore.set({
         probabilitySeed: 12345,
-        notesByClipId: notesByClipId as never,
+        notesByClipId,
         ccByClipId: {},
         pitchBendByClipId: {},
     });
@@ -110,7 +112,9 @@ const changePeerCurve = (clipId: string, value: number): void => {
 };
 
 type HookArgs = Parameters<typeof usePianoRollInteractions>[0];
-type HarnessArgs = Omit<HookArgs, 'canvasRef' | 'notes'>;
+type HarnessArgs = Omit<HookArgs, 'canvasRef' | 'notes' | 'openedClipNotes' | 'setSelectedNoteIds'> & {
+    openedClipIds?: string[];
+};
 
 // ── Geometry (chromatic scale, unfolded) ─────────────────────────────────
 // getVisiblePitches yields pitches 127 → 0 top-to-bottom, ROW_HEIGHT = 16,
@@ -121,26 +125,37 @@ const BEAT_W = 40;
 
 const yForPitch = (pitch: number): number => RULER + (127 - pitch) * ROW + 8;
 
+const toggleNoteSelection = (canvas: HTMLElement, beat: number, pitch: number): void => {
+    const pointer = { clientX: beat * BEAT_W, clientY: yForPitch(pitch), shiftKey: true };
+    fireEvent.mouseDown(canvas, pointer);
+    fireEvent.mouseUp(canvas, pointer);
+};
+
 /**
  * The production roll feeds the hook from a live store subscription, so the
  * handlers observe notes created mid-gesture. The harness mirrors that wiring;
  * a static prop list would make the paint gesture's mouse-up snapshot empty.
  */
-const Harness = ({ args }: { args: HarnessArgs }): ReactElement => {
+const Harness = ({ args: { openedClipIds, ...args } }: { args: HarnessArgs }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    const [notes, setNotes] = useState(() => getNotesForClip(args.clipId));
-    useEffect(
-        () =>
-            midiStore.subscribe(() => {
-                setNotes(getNotesForClip(args.clipId));
-            }),
-        [args.clipId]
-    );
-    const handlers = usePianoRollInteractions({ ...args, canvasRef, notes });
+    const midi = useStore(midiStore);
+    const [selectedNoteIds, setSelectedNoteIds] = useState(args.selectedNoteIds);
+    const notes = midi?.notesByClipId[args.clipId] ?? [];
+    const openedClipNotes =
+        openedClipIds && Object.fromEntries(openedClipIds.map((id) => [id, midi?.notesByClipId[id] ?? []]));
+    const handlers = usePianoRollInteractions({
+        ...args,
+        canvasRef,
+        notes,
+        openedClipNotes,
+        selectedNoteIds,
+        setSelectedNoteIds,
+    });
     return (
         <canvas
             ref={canvasRef}
             aria-label="piano-roll-test-surface"
+            data-selected-note-ids={[...selectedNoteIds].sort().join(',')}
             tabIndex={0}
             onMouseDown={handlers.handleMouseDown}
             onMouseMove={handlers.handleMouseMove}
@@ -186,7 +201,6 @@ const renderRoll = (overrides: Partial<HarnessArgs> = {}): { canvas: HTMLElement
         paintMode: false,
         lassoMode: false,
         selectedNoteIds: new Set<string>(),
-        setSelectedNoteIds: vi.fn(),
         setZoom: vi.fn(),
         draw: vi.fn(),
         constrainToScale: false,
@@ -234,6 +248,90 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
         await redoSync();
         expect(getNotesForClip('clip-1').find((note) => note.id === 'n2')).toBeUndefined();
         expect(getNotesForClip('clip-1').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(91);
+    });
+
+    it('refuses to join a cross-clip selection and joins it once confined to the secondary clip', async () => {
+        const primaryFirst = { id: 'n1', pitch: 60, startBeat: 2, duration: 1, velocity: 80 };
+        const primarySecond = { ...primaryFirst, id: 'n2', startBeat: 3 };
+        const secondaryFirst = { ...primaryFirst, id: 'n3', startBeat: 4, velocity: 65 };
+        const secondarySecond = { ...secondaryFirst, id: 'n4', startBeat: 5, velocity: 95 };
+        seedStore(
+            structuredClone({ 'clip-1': [primaryFirst, primarySecond], 'clip-2': [secondaryFirst, secondarySecond] })
+        );
+        const { canvas } = renderRoll({ openedClipIds: ['clip-2'] });
+
+        toggleNoteSelection(canvas, 2.5, 60);
+        toggleNoteSelection(canvas, 3.5, 60);
+        toggleNoteSelection(canvas, 4.5, 60);
+        toggleNoteSelection(canvas, 5.5, 60);
+        expect(canvas.getAttribute('data-selected-note-ids')).toBe('n1,n2,n3,n4');
+
+        fireEvent.keyDown(canvas, { key: 'j' });
+        expect(getNotesForClip('clip-1')).toStrictEqual([primaryFirst, primarySecond]);
+        expect(getNotesForClip('clip-2')).toStrictEqual([secondaryFirst, secondarySecond]);
+        expect(canvas.getAttribute('data-selected-note-ids')).toBe('n1,n2,n3,n4');
+        expect(undoStore.value?.past).toHaveLength(0);
+
+        toggleNoteSelection(canvas, 2.5, 60);
+        toggleNoteSelection(canvas, 3.5, 60);
+        expect(canvas.getAttribute('data-selected-note-ids')).toBe('n3,n4');
+
+        fireEvent.keyDown(canvas, { key: 'j' });
+        expect(getNotesForClip('clip-1')).toStrictEqual([primaryFirst, primarySecond]);
+        expect(getNotesForClip('clip-2')).toStrictEqual([{ ...secondaryFirst, duration: 2 }]);
+        expect(canvas.getAttribute('data-selected-note-ids')).toBe('');
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        await undoSync();
+        expect(getNotesForClip('clip-1')).toStrictEqual([primaryFirst, primarySecond]);
+        expect(getNotesForClip('clip-2')).toStrictEqual([secondaryFirst, secondarySecond]);
+    });
+
+    it('duplicates selected notes by their shared span in each owning clip and replays both copies together', async () => {
+        const primary = {
+            ...expressiveNote,
+            pressure: 72,
+            slide: 41,
+            expression: { pressure: [{ offsetBeats: 1, value: 83 }] },
+        };
+        const secondary = {
+            ...primary,
+            id: 'n2',
+            startBeat: 5,
+            duration: 1.5,
+            pitch: 64,
+            velocity: 95,
+            expression: { pitchBend: [{ offsetBeats: 0.5, value: -256 }] },
+        };
+        const unselected = { id: 'peer', startBeat: 1, duration: 12, pitch: 67, velocity: 60 };
+        seedStore(structuredClone({ 'clip-1': [primary], 'clip-2': [secondary, unselected] }));
+        const { canvas } = renderRoll({ openedClipIds: ['clip-2'] });
+
+        toggleNoteSelection(canvas, 2.5, 60);
+        toggleNoteSelection(canvas, 5.5, 64);
+        expect(canvas.getAttribute('data-selected-note-ids')).toBe('n1,n2');
+
+        fireEvent.keyDown(canvas, { key: 'd', ctrlKey: true });
+        const primaryAfter = structuredClone(getNotesForClip('clip-1'));
+        const secondaryAfter = structuredClone(getNotesForClip('clip-2'));
+        expect(primaryAfter).toStrictEqual([primary, { ...primary, id: expect.any(String), startBeat: 6.5 }]);
+        expect(secondaryAfter).toStrictEqual([
+            secondary,
+            unselected,
+            { ...secondary, id: expect.any(String), startBeat: 9.5 },
+        ]);
+        const copyIds = [...primaryAfter.slice(1), ...secondaryAfter.slice(2)].map((note) => note.id);
+        expect(new Set([primary.id, secondary.id, unselected.id, ...copyIds]).size).toBe(5);
+        expect(canvas.getAttribute('data-selected-note-ids')).toBe(copyIds.sort().join(','));
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        await undoSync();
+        expect(getNotesForClip('clip-1')).toStrictEqual([primary]);
+        expect(getNotesForClip('clip-2')).toStrictEqual([secondary, unselected]);
+
+        await redoSync();
+        expect(getNotesForClip('clip-1')).toStrictEqual(primaryAfter);
+        expect(getNotesForClip('clip-2')).toStrictEqual(secondaryAfter);
     });
 
     it('undoes a split without reverting a peer expression edit', async () => {
@@ -291,7 +389,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
             seedStore({ 'clip-1': [expressiveNote], 'clip-2': [secondary, peer] });
             const { canvas } = renderRoll({
                 selectedNoteIds: new Set(['n1', 'n2']),
-                openedClipNotes: { 'clip-2': [secondary, peer] },
+                openedClipIds: ['clip-2'],
             });
             fireEvent.keyDown(canvas, { key: 'Backspace' });
             changePeerCurve('clip-2', 91);
@@ -333,7 +431,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
             seedStore({ 'clip-1': [expressiveNote], 'clip-2': [secondary] });
             const { canvas } = renderRoll({
                 selectedNoteIds: new Set(['n1', 'n2']),
-                openedClipNotes: { 'clip-2': [secondary] },
+                openedClipIds: ['clip-2'],
             });
 
             fireEvent.keyDown(canvas, { key: 'Backspace' });
