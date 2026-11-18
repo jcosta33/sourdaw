@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "7ef832d08f2649e488ba7430b997260b8c80d83bd5de00ba89abc1f806284d21"
+                    "digest": "a59824552bb5575402807adffc90e11beacff70f67849add9f42d94c6edd37e5"
                 }
             ]
         },

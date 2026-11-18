@@ -53,6 +53,7 @@ import { bindMusicalContentQuery } from '../bindMusicalContentQuery';
 import { captureMusicalContentBinding } from '../captureMusicalContentBinding';
 import { getSemanticProjectIndexDiagnostics } from '../getSemanticProjectIndexDiagnostics';
 import { parseSemanticProjectQueryInput } from '../parseSemanticProjectQueryInput';
+import { resolveMusicalContentReadScope } from '../resolveMusicalContentReadScope';
 import { semanticProjectIndex } from '../semanticProjectIndex';
 import { querySemanticProject } from '../semanticProjectQueries';
 
@@ -216,6 +217,39 @@ function seedProject(): void {
     });
 }
 
+function seedMusicalReadFixture() {
+    const track = createTrack({ id: 'scope-track', name: 'Scope', kind: 'midi' });
+    const clip = {
+        id: 'scope-clip',
+        trackId: track.id,
+        name: 'Scope',
+        type: 'midi' as const,
+        startBeat: 8,
+        endBeat: 16,
+        muted: false,
+        locked: false,
+        color: '',
+        gain: 1,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+    };
+    const first = { id: 'opening-note', pitch: 60, startBeat: 0, duration: 1, velocity: 80 };
+    const second = { id: 'later-note', pitch: 67, startBeat: 4.5, duration: 1, velocity: 95 };
+    track.clips = [clip];
+    setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+    setMidiStoreState({ ...structuredClone(defaultMidiStoreState), notesByClipId: { [clip.id]: [first, second] } });
+    function select(viewIds: string[]): void {
+        const projection = projectPianoRollTakeNotes(
+            clip,
+            track.id,
+            null,
+            midiStore.value?.notesByClipId[clip.id] ?? []
+        );
+        setPianoRollSelection(clip.id, viewIds, [clip.id], [{ clipId: clip.id, projection }]);
+    }
+    return { track, clip, first, second, select };
+}
+
 describe('semantic project queries', () => {
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
@@ -249,6 +283,115 @@ describe('semantic project queries', () => {
         const restored = readPianoRollSelection();
         expect(restored).toMatchObject({ clipId: null, clipIds: [], viewIds: [] });
         expect(restored.token).not.toBe(original.token);
+    });
+
+    it('refuses old musical scope after selection changes and refuses a deleted selected note after recapture', () => {
+        registerCrdtStorageRuntime();
+        midiStore.hydrate();
+        const { clip, first, second, select } = seedMusicalReadFixture();
+        select([first.id]);
+        const opening = captureMusicalContentBinding();
+        expect(resolveMusicalContentReadScope(opening, [clip.id])).toMatchObject([
+            { clipId: clip.id, startBeat: 8, endBeat: 12, owners: [{ storedNoteId: first.id }] },
+        ]);
+
+        select([second.id]);
+        const later = captureMusicalContentBinding();
+        expect(later.expectedRevision).toBe(opening.expectedRevision);
+        expect(() => resolveMusicalContentReadScope(opening, [clip.id])).toThrow('Stale musical selection');
+        expect(resolveMusicalContentReadScope(later, [clip.id])).toMatchObject([
+            { clipId: clip.id, startBeat: 12, endBeat: 16, owners: [{ storedNoteId: second.id }] },
+        ]);
+
+        setNotesForClip(clip.id, [first]);
+        expect(() => resolveMusicalContentReadScope(later, [clip.id])).toThrow('Stale musical content revision');
+        const current = captureMusicalContentBinding();
+        expect(readPianoRollSelection()).toMatchObject({ status: 'resolved', owners: [{ storedNoteId: second.id }] });
+        expect(() => resolveMusicalContentReadScope(current, [clip.id])).toThrow(
+            'Selected musical source unavailable in bounded windows'
+        );
+    });
+
+    it('refuses musical evidence when the editor cannot resolve the selected note owner', () => {
+        const { clip, first, second, select } = seedMusicalReadFixture();
+        setNotesForClip(clip.id, [first]);
+        select([second.id]);
+        expect(readPianoRollSelection()).toMatchObject({ status: 'unavailable', viewIds: [second.id], owners: [] });
+
+        const binding = captureMusicalContentBinding();
+        expect(() => resolveMusicalContentReadScope(binding, [clip.id])).toThrow(
+            'Musical selection ownership unavailable'
+        );
+        expect(() =>
+            querySemanticProject({
+                ...binding,
+                type: 'musical-content',
+                filters: { stableId: clip.id, startBeat: 8, endBeat: 16 },
+            })
+        ).toThrow('Piano roll selection unavailable');
+    });
+
+    it('refuses duplicate musical scope targets and refuses an explicitly removed clip', () => {
+        const { clip, track, select } = seedMusicalReadFixture();
+        select([]);
+        const original = captureMusicalContentBinding();
+        expect(resolveMusicalContentReadScope(original, [clip.id])).toEqual([
+            { clipId: clip.id, startBeat: 8, endBeat: 16, owners: [] },
+        ]);
+        expect(() => resolveMusicalContentReadScope(original, [clip.id, clip.id])).toThrow(
+            'Musical read scope unavailable'
+        );
+
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [{ ...track, clips: [] }] });
+        const current = captureMusicalContentBinding();
+        expect(() => resolveMusicalContentReadScope(current, [clip.id])).toThrow('Musical read scope unavailable');
+        expect(() =>
+            querySemanticProject({
+                ...current,
+                type: 'musical-content',
+                filters: { stableId: clip.id, startBeat: 8, endBeat: 16 },
+            })
+        ).toThrow('MIDI clip not found');
+    });
+
+    it('bounds the complete selected ownership scope before fitting any note windows', () => {
+        const { clip, first, select } = seedMusicalReadFixture();
+        const notes = Array.from({ length: 33 }, (_, index) => ({
+            ...first,
+            id: `scale-${String(index)}`,
+            pitch: 36 + index,
+            startBeat: index / 16,
+            duration: 0.125,
+        }));
+        setNotesForClip(clip.id, notes);
+        select(notes.map((note) => note.id));
+        expect(readPianoRollSelection().owners).toHaveLength(33);
+
+        expect(() => resolveMusicalContentReadScope(captureMusicalContentBinding(), [clip.id])).toThrow(
+            'Musical read scope unavailable'
+        );
+    });
+
+    it('refuses an oversized expression stream even when the first requested page is small', () => {
+        const { clip, first, select } = seedMusicalReadFixture();
+        const pressure = Array.from({ length: 510 }, (_, index) => ({
+            offsetBeats: (index + 1) / 512,
+            value: index % 128,
+        }));
+        chordTrackStore.set({ enabled: true, events: [] });
+        select([]);
+        const query = () =>
+            querySemanticProject({
+                ...captureMusicalContentBinding(),
+                type: 'musical-content',
+                filters: { stableId: clip.id, startBeat: 8, endBeat: 12 },
+                page: { limit: 1 },
+            });
+        setNotesForClip(clip.id, [{ ...first, expression: { pressure: pressure.slice(0, 509) } }]);
+        expect(query().page).toMatchObject({ total: 512, limit: 1 });
+
+        setNotesForClip(clip.id, [{ ...first, expression: { pressure } }]);
+        expect(query).toThrow('Musical content row budget exceeded');
     });
 
     it('pages a dense expression curve as flat rows without truncating or duplicating point identity', () => {
@@ -642,7 +785,11 @@ describe('semantic project queries', () => {
         });
         chordTrackStore.set({
             enabled: true,
-            events: [{ id: 'g-minor', beat: 8, root: 7, quality: 'minor', duration: 4 }],
+            events: [
+                { id: 'previous-chord', beat: 4, root: 0, quality: 'major', duration: 4 },
+                { id: 'g-minor', beat: 8, root: 7, quality: 'minor', duration: 4 },
+                { id: 'next-chord', beat: 12, root: 5, quality: 'major', duration: 4 },
+            ],
         });
         projectStore.set({ ...projectStore.value!, keyRoot: 7, scaleName: 'minor' });
 
@@ -724,6 +871,7 @@ describe('semantic project queries', () => {
                 }),
             ])
         );
+        expect(first.filter((item) => item.kind === 'harmony').map((item) => item.id)).toEqual(['g-minor']);
         expect(first.find((item) => item.kind === 'note' && item.noteId === 'a1')).not.toHaveProperty('expression');
         expect(second).toEqual(
             expect.arrayContaining([
