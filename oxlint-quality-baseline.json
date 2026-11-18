@@ -475,11 +475,6 @@
             "count": 1
         }
     },
-    "scripts/__tests__/runIsolatedUnitShard.spec.ts": {
-        "vitest/no-conditional-expect": {
-            "count": 3
-        }
-    },
     "scripts/__tests__/runLint.spec.ts": {
         "vitest/no-conditional-expect": {
             "count": 2
