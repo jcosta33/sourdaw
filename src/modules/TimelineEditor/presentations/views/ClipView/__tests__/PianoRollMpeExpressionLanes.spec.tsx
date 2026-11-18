@@ -318,4 +318,29 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         ).toBeInTheDocument();
         expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
     });
+    it('returns to Velocity after the primary instrument stops offering the selected lane', () => {
+        trackState.tracks = [
+            {
+                id: 'track-1',
+                kind: 'midi',
+                color: 'oklch(0.5 0.1 200)',
+                clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 64 }],
+                devices: [{ type: 'fermenter' }],
+            },
+        ];
+        const { rerender } = render(<PianoRoll {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Toggle Expression View (I4)'));
+        fireEvent.change(screen.getByLabelText('Active expression lane'), { target: { value: 'pressure' } });
+        expect(screen.getByText('pressure')).toBeInTheDocument();
+
+        trackState.tracks = [{ ...trackState.tracks[0], devices: [{ type: 'toaster' }] }];
+        rerender(<PianoRoll {...defaultProps} />);
+        expect(screen.getByText('pressure')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Return to Velocity' }));
+        expect(screen.getByText('velocity')).toBeInTheDocument();
+        expect(
+            screen.getByText('Velocity available. Additional expression lanes depend on the primary track instrument.')
+        ).toBeInTheDocument();
+    });
 });

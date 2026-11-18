@@ -351,12 +351,25 @@ export const PianoRollToolbar = ({
             Expression
         </Button>
 
-        {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
-            mpeExpressionLanes.length === 0 ? (
-                <span className="text-[10px] text-muted-foreground">
-                    Velocity available. Additional expression lanes depend on the primary track instrument.
-                </span>
-            ) : (
+        {showExpressionView &&
+            activeExpressionLane !== undefined &&
+            onActiveExpressionLaneChange !== undefined &&
+            mpeExpressionLanes.length === 0 && (
+                <>
+                    <span className="text-[10px] text-muted-foreground">
+                        Velocity available. Additional expression lanes depend on the primary track instrument.
+                    </span>
+                    {activeExpressionLane !== 'velocity' && (
+                        <Button variant="ghost" size="xs" onClick={() => onActiveExpressionLaneChange('velocity')}>
+                            Return to Velocity
+                        </Button>
+                    )}
+                </>
+            )}
+        {showExpressionView &&
+            activeExpressionLane !== undefined &&
+            onActiveExpressionLaneChange !== undefined &&
+            mpeExpressionLanes.length > 0 && (
                 <DawCompactSelect
                     value={activeExpressionLane}
                     onChange={(event) =>
@@ -374,8 +387,7 @@ export const PianoRollToolbar = ({
                         </option>
                     ))}
                 </DawCompactSelect>
-            )
-        ) : null}
+            )}
 
         {openedClips && openedClips.length > 1 && focusedClipId !== undefined && onFocusedClipIdChange !== undefined ? (
             <>
