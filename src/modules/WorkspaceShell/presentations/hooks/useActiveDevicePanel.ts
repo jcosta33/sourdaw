@@ -41,6 +41,16 @@ type UseActiveDevicePanelResult = {
     closeActivePanel: () => void;
 };
 
+function containsPanelDevice(state: typeof trackStore.value, panel: ActiveDevicePanel): boolean {
+    return (
+        state?.tracks.some(
+            (track) =>
+                (panel.trackId === null || panel.trackId === track.id) &&
+                track.devices.some((device) => device.id === panel.deviceId)
+        ) ?? false
+    );
+}
+
 export function useActiveDevicePanel(): UseActiveDevicePanelResult {
     const [activePanel, setActivePanel] = useState<ActiveDevicePanel | null>(null);
 
@@ -121,6 +131,7 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
             [DEVICE_TYPE_IDS.builtinCrumbs]: 'sampler',
             [DEVICE_TYPE_IDS.grandBoule]: 'grandBoule',
         } as const satisfies Record<string, NeedsDeviceId>;
+        let previousTracks = trackStore.value;
         const subs = [
             onShowDevicePanel(({ deviceType, deviceId }) => {
                 if (deviceType === 'yeast') {
@@ -138,18 +149,26 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
                 openForKind(kind)({ deviceId });
             }),
             trackStore.subscribe((state) => {
+                const before = previousTracks;
+                previousTracks = state;
                 const nextSelected = state?.selectedTrackId ?? null;
                 setActivePanel((panel) => {
                     if (panel === null) {
                         return panel;
                     }
-                    if (panel.trackId === null) {
-                        return panel;
+                    if (panel.trackId !== null && panel.trackId !== nextSelected) {
+                        return null;
                     }
-                    if (panel.trackId === nextSelected) {
-                        return panel;
+                    // Browser previews and Yeast's selection fallback may never have owned
+                    // a chain slot. Only a transition out of a real slot is a removal.
+                    if (
+                        panel.deviceId !== null &&
+                        containsPanelDevice(before, panel) &&
+                        !containsPanelDevice(state, panel)
+                    ) {
+                        return null;
                     }
-                    return null;
+                    return panel;
                 });
             }),
         ];

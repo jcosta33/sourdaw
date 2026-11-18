@@ -26,7 +26,13 @@ Write probe scripts and their screenshots under the artifact workspace `<root>/.
 
 ### 2. Serve the lane in e2e mode, then run the script with Node
 
-Export a lane-unique `SOURDAW_E2E_PORT` (derive it from the lane slug, root `AGENTS.md` Worktrees), then from the lane start the server in the background with `node scripts/e2eDevServer.ts "$SOURDAW_E2E_PORT"` — the command `playwright.config.ts` uses as its web server. It serves in e2e mode, whose responses carry the serving checkout's identity marker (`sourdawE2eServingCheckoutPlugin` in `vite.config.ts`). Never probe against plain `pnpm dev`: it carries no marker, so the identity assertion cannot refuse another checkout's server. Write a standard Node script against the `playwright` core library and run it with `node <root>/.agents/artifacts/sourdaw/ui-scripts/<script-name>.ts`, never through the test runner. Stop the server when you are done.
+Export a lane-unique `SOURDAW_E2E_PORT` (derive it from the lane slug, root `AGENTS.md` Worktrees), then from the lane start the server in the background with `node scripts/e2eDevServer.ts "$SOURDAW_E2E_PORT"` — the command `playwright.config.ts` uses as its web server. It serves in e2e mode, whose responses carry the serving checkout's identity marker (`sourdawE2eServingCheckoutPlugin` in `vite.config.ts`). Never probe against plain `pnpm dev`: it carries no marker, so the identity assertion cannot refuse another checkout's server. Write a standard Node script against the `playwright` core library. From the lane, run the script under the [resource guard](../../../AGENTS.md#resource-safety) with Node as the entry point.
+
+```bash
+pnpm guard --profile focused --show-output -- node "/path/to/artifact-workspace/ui-scripts/probe.ts"
+```
+
+Use the script's absolute path (rule 1). `--show-output` keeps the probe's output on success. The guard reports its own status alongside the captured output. Stop the server when you are done.
 
 **Why:** the test runner adds assertion and reporter machinery a one-off probe does not want, and it dirties the stdout the JSON contract owns; a server without the marker lets a probe silently inspect another lane's build.
 
@@ -44,7 +50,7 @@ For cache-sized probes, `temporaryPersistentProfile: true` opts into a fresh, em
 
 ### 4. Structured output: JSON to stdout only
 
-Emit one structured JSON object on stdout. Send errors and debug to `console.error` — never free text on stdout.
+Have the script emit one structured JSON object on stdout. Send errors and debug to `console.error` — never free text on stdout.
 
 **Why:** interleaved debug lines corrupt the only machine-readable result.
 

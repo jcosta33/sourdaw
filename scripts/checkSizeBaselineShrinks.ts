@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { findQualityBudgetGrowth, parseQualityBudget, QUALITY_BUDGET, readQualityBudget } from './lintQualityBudget.ts';
 import {
     describeSizeBaselineGrowth,
     findSizeBaselineGrowth,
@@ -15,7 +16,12 @@ import {
 const BASE_REF = 'refs/remotes/origin/main';
 const BASELINE_PATH = 'eslint.size-baseline.mjs';
 function git(root: string, args: string[]): string {
-    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return execFileSync('git', args, {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        maxBuffer: 16 * 1024 * 1024,
+    });
 }
 
 function resolveMergeBase(root: string): string {
@@ -84,6 +90,27 @@ export async function checkSizeBaselineShrinks(root: string, load: ModuleLoader 
     return describeSizeBaselineGrowth(growth);
 }
 
+/** The first tracked budget seeds measured debt. Once present, no path or rule count can increase. */
+export function checkQualityBudgetShrinks(root: string): string[] {
+    const mergeBase = resolveMergeBase(root);
+    const head = readQualityBudget(root);
+    if (!existsAtCommit(root, mergeBase, QUALITY_BUDGET)) {
+        const basePaths = new Set(git(root, ['ls-tree', '-r', '--name-only', '-z', mergeBase]).split('\0'));
+        const findings: string[] = [];
+        for (const file of head.keys()) {
+            if (!basePaths.has(file)) {
+                findings.push(`${file}: cannot seed a lint quality budget for a path absent at the merge base.`);
+            }
+        }
+        return findings;
+    }
+    const base = parseQualityBudget(
+        git(root, ['show', `${mergeBase}:${QUALITY_BUDGET}`]),
+        `${mergeBase}:${QUALITY_BUDGET}`
+    );
+    return findQualityBudgetGrowth(base, head);
+}
+
 /**
  * Whether `moduleUrl` is the script node was started with. The URL is built from the real path, never by
  * interpolating into `file://`, so a `#` or `%` in the checkout path or a symlinked entry still matches.
@@ -95,12 +122,12 @@ export function isEntryModule(moduleUrl: string, entry: string | undefined): boo
 if (isEntryModule(import.meta.url, process.argv[1])) {
     const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
     try {
-        const findings = await checkSizeBaselineShrinks(root);
+        const findings = [...(await checkSizeBaselineShrinks(root)), ...checkQualityBudgetShrinks(root)];
         if (findings.length > 0) {
             process.stderr.write(`${findings.join('\n')}\n`);
             process.exitCode = 1;
         } else {
-            process.stdout.write('Size baseline only shrinks against the merge base.\n');
+            process.stdout.write('Size and lint quality baselines only shrink against the merge base.\n');
         }
     } catch (error) {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

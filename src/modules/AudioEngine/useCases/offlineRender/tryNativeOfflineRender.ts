@@ -2,6 +2,7 @@ import { adjustmentLayerStore } from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
+import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
 import { renderOfflineWithNativeEngine } from './renderOfflineWithNativeEngine';
 import { type resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { selectOfflineRenderEngine } from './selectOfflineRenderEngine';
@@ -30,6 +31,9 @@ export async function tryNativeOfflineRender(
     // over — is surfaced on the export's warning channel. A native attempt
     // that declines mid-flight falls back the same observable way; a
     // cancellation or a seam defect propagates instead of falling back.
+    // One reading of the loaded hosted instances for both halves, taken from
+    // the capture, so the selection and the programme admit the same devices.
+    const hostedPluginRuntime = readNativeOfflineHostedRuntime(input.loadedExternalInstanceIds);
     const selection = await selectOfflineRenderEngine({
         renderableTracks: allRenderableTracks,
         scheduledTracks,
@@ -47,6 +51,7 @@ export async function tryNativeOfflineRender(
         // composition do — not against the renderable subset, whose index
         // space a folder or disabled track ahead of the stack shifts.
         projectTrackIds: (tracks?.tracks ?? allRenderableTracks).map((track) => track.id),
+        hostedPluginRuntime,
     });
     if (selection.engine === 'native/offline') {
         const native = await renderOfflineWithNativeEngine({
@@ -68,6 +73,7 @@ export async function tryNativeOfflineRender(
             onWarning,
             onProgress,
             abortSignal,
+            hostedPluginRuntime,
         });
         if (native.outcome === 'rendered') {
             return native.buffer;

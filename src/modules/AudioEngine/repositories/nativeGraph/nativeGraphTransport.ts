@@ -15,6 +15,7 @@ import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
 import { type NativeLevainBankLayout } from '../../models/NativeSampleBank';
 
+import { cancelNativeGraphOfflineRender } from './cancelNativeGraphOfflineRender';
 import { type NativeGraphWireBatch, type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 
 type TimelineGraphWireBatch = NativeGraphWireBatch & Readonly<{ timelineLease?: string }>;
@@ -163,6 +164,12 @@ export type NativeGraphTransport = Readonly<{
      */
     renderGraphOffline: (input: RenderGraphOfflineInput) => Promise<Uint8Array>;
     /**
+     * `cancel_graph_offline`: stop the render started under `renderId`. A
+     * transport without it renders every request to completion; the export
+     * then ends cancelled at its next checkpoint instead of mid-render.
+     */
+    cancelGraphOfflineRender?: (renderId: string) => Promise<void>;
+    /**
      * `apply_graph_commands`: one batch onto the **live** native engine, which
      * lazily starts on the first batch. Never called by the offline backend —
      * a bounce must not open an audio device — and reached in production only
@@ -215,6 +222,7 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
                 args: { batch, frames, sampleRate, renderId: renderId ?? null },
             });
         },
+        cancelGraphOfflineRender: cancelNativeGraphOfflineRender,
         async applyGraphCommands({ batch }) {
             return desktopInvoke('apply_graph_commands', { batch });
         },
