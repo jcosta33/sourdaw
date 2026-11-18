@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime/useCases';
@@ -303,19 +303,26 @@ describe('PromptBar', () => {
             });
             render(
                 <>
-                    <PromptBar onReviewRun={module_mocks.review_run} />
-                    <PromptBar onReviewRun={module_mocks.review_run} />
+                    <div data-testid="first-prompt">
+                        <PromptBar onReviewRun={module_mocks.review_run} />
+                    </div>
+                    <div data-testid="second-prompt">
+                        <PromptBar onReviewRun={module_mocks.review_run} />
+                    </div>
                 </>
             );
-            const inputs = screen.getAllByRole('combobox', { name: 'Prompt command input' });
-            const lists = screen.getAllByRole('listbox');
-            const options = screen.getAllByRole('option');
-            expect(lists[0].id).not.toBe(lists[1].id);
-            expect(options[0].id).not.toBe(options[1].id);
-            for (const index of [0, 1]) {
-                expect(inputs[index]).toHaveAttribute('aria-controls', lists[index].id);
-                expect(inputs[index]).toHaveAttribute('aria-activedescendant', options[index].id);
-            }
+            const first = within(screen.getByTestId('first-prompt'));
+            const second = within(screen.getByTestId('second-prompt'));
+            const firstList = first.getByRole('listbox');
+            const secondList = second.getByRole('listbox');
+            const firstOption = first.getByRole('option');
+            const secondOption = second.getByRole('option');
+            expect(firstList.id).not.toBe(secondList.id);
+            expect(firstOption.id).not.toBe(secondOption.id);
+            expect(first.getByRole('combobox')).toHaveAttribute('aria-controls', firstList.id);
+            expect(first.getByRole('combobox')).toHaveAttribute('aria-activedescendant', firstOption.id);
+            expect(second.getByRole('combobox')).toHaveAttribute('aria-controls', secondList.id);
+            expect(second.getByRole('combobox')).toHaveAttribute('aria-activedescendant', secondOption.id);
         });
 
         it('shows a destructive-action warning icon for destructive presets', () => {
