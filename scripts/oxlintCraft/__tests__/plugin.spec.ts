@@ -302,7 +302,26 @@ runCraftRule('no-control-flow-ternary', {
         },
         {
             code: 'function change(): number {\n    return armed\n        ? arm()\n        : disarm();\n}',
-            output: 'function change(): number {\n    if (armed)\n        { return (arm()); }\n        else { return (disarm()); }\n}',
+            output: 'function change(): number {\n    if (armed)\n        { return (arm()); }\n        return (disarm());\n}',
+            errors: [{ message: /Do not use a ternary as an if/ }],
+        },
+        {
+            code: [
+                'async function change(): Promise<number> {',
+                '    return check()',
+                '        ? await arm()',
+                '        : await disarm()',
+                '          ;',
+                '}',
+            ].join('\r\n'),
+            output: [
+                'async function change(): Promise<number> {',
+                '    if (check())',
+                '        { return (await arm()); }',
+                '        return (await disarm())',
+                '          ;',
+                '}',
+            ].join('\r\n'),
             errors: [{ message: /Do not use a ternary as an if/ }],
         },
         {
