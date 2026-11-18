@@ -5,6 +5,7 @@ import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ChatMessage } from '../../models/Chat';
+import { isPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
@@ -1263,6 +1264,98 @@ describe('thread context for the planner', () => {
     });
 
     describe('sizing', () => {
+        const escapedReading = String.fromCharCode(0).repeat(512);
+
+        it('keeps the newest request and result identities when admitted readings expand in JSON', () => {
+            const commands = [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }];
+            const measuredDeltas = [{ targetId: 'bass', metric: 'integratedLoudness', delta: -3, unit: 'LUFS' }];
+            const newest = 'Keep that tone, but make the lick less busy';
+            const thread: ThreadContext = {
+                requests: ['A warmer bass', newest],
+                pendingProposal: {
+                    runId: 'pending-run',
+                    confirmationId: 'pending-card',
+                    batchPosition: { index: 1, total: 2 },
+                    creativeInterpretation: escapedReading,
+                    commands,
+                },
+                lastCommit: {
+                    runId: 'commit-run',
+                    batchId: 'commit-batch',
+                    confirmationId: 'commit-card',
+                    receiptIds: ['commit-receipt'],
+                    standing: 'standing',
+                    creativeInterpretation: escapedReading,
+                    commands,
+                    measuredDeltas,
+                },
+            };
+
+            expect(isPublicCreativeInterpretation(escapedReading)).toBe(true);
+            const fitted = fitThreadContext(thread, 'local');
+            const section = readSection(`\n\n${fitted.section}\n\n`);
+            const bytes = new TextEncoder().encode(fitted.section).byteLength;
+
+            expect(bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(fitted.evidence.bytes).toBe(bytes);
+            expect(section.requests).toEqual([
+                { trust: 'untrusted_user_string', value: 'A warmer bass', truncated: false },
+                { trust: 'untrusted_user_string', value: newest, truncated: false },
+            ]);
+            expect(section.pendingProposal).toMatchObject({
+                runId: 'pending-run',
+                confirmationId: 'pending-card',
+                batchPosition: { index: 1, total: 2 },
+                creativeInterpretation: escapedReading,
+                commands,
+                omittedCommandCount: 0,
+            });
+            expect(section.lastCommit).toMatchObject({
+                runId: 'commit-run',
+                batchId: 'commit-batch',
+                confirmationId: 'commit-card',
+                receiptIds: ['commit-receipt'],
+                standing: 'standing',
+                commands,
+                omittedCommandCount: 0,
+                measuredDeltas,
+                omittedMeasuredDeltaCount: 0,
+            });
+            expect(section.lastCommit).not.toHaveProperty('creativeInterpretation');
+        });
+
+        it.each([
+            ['an oversized reading', escapedReading, {}],
+            ['an ordinary reading', 'A small vintage receiver', { creativeInterpretation: 'A small vintage receiver' }],
+        ] as const)('fits cancelled metadata independently of %s', (_scenario, reading, expectedReading) => {
+            const newest = `Keep that tone${escapedReading}`.slice(0, MAX_THREAD_REQUEST_LENGTH);
+            const cancelled = {
+                runId: 'cancelled-run',
+                batchId: 'cancelled-batch',
+                confirmationId: 'cancelled-card',
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+            };
+            const fitted = fitThreadContext(
+                {
+                    requests: [newest],
+                    pendingProposal: null,
+                    lastCommit: null,
+                    lastCancelled: { ...cancelled, creativeInterpretation: reading },
+                },
+                'local'
+            );
+            const section = readSection(`\n\n${fitted.section}\n\n`);
+
+            expect(fitted.evidence.bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(section.requests).toEqual([{ trust: 'untrusted_user_string', value: newest, truncated: false }]);
+            expect(section.lastCancelled).toEqual({
+                trust: 'untrusted_project_data',
+                ...cancelled,
+                ...expectedReading,
+                omittedCommandCount: 0,
+            });
+        });
+
         it('drops the oldest requests first under the cap and keeps the newest', () => {
             const thread = createFullThreadContext();
             const local = fitThreadContext(thread, 'local');

@@ -17,10 +17,13 @@ const MAX_THREAD_RECEIPT_ID_LENGTH = 128;
 type FittedThread = {
     requests: string[];
     pendingCommands: ThreadCommand[];
+    pendingReading?: string;
     committedCommands: ThreadCommand[];
+    committedReading?: string;
     measuredDeltas: ThreadMeasuredDelta[];
     cancelled: boolean;
     cancelledCommands: ThreadCommand[];
+    cancelledReading?: string;
 };
 
 type FittedThreadContext = {
@@ -43,7 +46,7 @@ function serializePendingProposal(pending: ThreadContext['pendingProposal'], fit
         runId: pending.runId,
         confirmationId: pending.confirmationId,
         batchPosition: pending.batchPosition,
-        creativeInterpretation: pending.creativeInterpretation,
+        creativeInterpretation: fitted.pendingReading,
         commands: fitted.pendingCommands,
         omittedCommandCount: pending.commands.length - fitted.pendingCommands.length,
     };
@@ -58,7 +61,7 @@ function serializeLastCommit(commit: ThreadContext['lastCommit'], fitted: Fitted
         runId: commit.runId,
         batchId: commit.batchId,
         confirmationId: commit.confirmationId,
-        creativeInterpretation: commit.creativeInterpretation,
+        creativeInterpretation: fitted.committedReading,
         receiptIds: commit.receiptIds
             .slice(-MAX_THREAD_RECEIPT_IDS)
             .map((receiptId) => receiptId.slice(0, MAX_THREAD_RECEIPT_ID_LENGTH)),
@@ -86,7 +89,10 @@ function serializeSection(thread: ThreadContext, fitted: FittedThread): string {
             ...value,
             lastCancelled: {
                 trust: 'untrusted_project_data',
-                ...thread.lastCancelled,
+                runId: thread.lastCancelled.runId,
+                confirmationId: thread.lastCancelled.confirmationId,
+                batchId: thread.lastCancelled.batchId,
+                creativeInterpretation: fitted.cancelledReading,
                 commands: fitted.cancelledCommands,
                 omittedCommandCount: thread.lastCancelled.commands.length - fitted.cancelledCommands.length,
             },
@@ -115,9 +121,9 @@ function describeFit(thread: ThreadContext, fitted: FittedThread, bytes: number)
 /**
  * The `thread_context` section for one message profile, within that profile's byte cap. The cap
  * is filled in the order a refinement needs: the newest earlier request, then the pending
- * proposal's commands, then the last commit's commands and measured deltas, then the earlier
- * requests from newest back. A command whose arguments do not fit is kept by name and label alone,
- * marked `argumentsOmitted`. An entry that does not fit even so is left out whole and counted; the entries
+ * proposal's commands and the last commit's commands and measured deltas. Complete public readings
+ * are then tried before the earlier requests from newest back. A command whose arguments do not fit
+ * is kept by name and label alone, marked `argumentsOmitted`. An entry that does not fit even so is left out whole and counted; the entries
  * after a command or delta that did not fit are still tried, but requests stop at the first that
  * does not fit, so what survives is always the newest run of turns and the oldest go first. Only
  * the section's ids and counts are always present, and their bounds keep them within either cap.
@@ -138,6 +144,20 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
         }
         fitted = candidate;
         return true;
+    };
+    const tryAddReadings = (): void => {
+        const pendingReading = thread.pendingProposal?.creativeInterpretation;
+        if (pendingReading !== undefined) {
+            tryAdd({ ...fitted, pendingReading });
+        }
+        const committedReading = thread.lastCommit?.creativeInterpretation;
+        if (committedReading !== undefined) {
+            tryAdd({ ...fitted, committedReading });
+        }
+        const cancelledReading = thread.lastCancelled?.creativeInterpretation;
+        if (fitted.cancelled && cancelledReading !== undefined) {
+            tryAdd({ ...fitted, cancelledReading });
+        }
     };
     // A command whose arguments do not fit is still named: its name and label are what a refinement
     // points at, and they cost a fraction of the arguments.
@@ -167,6 +187,7 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
     for (const delta of thread.lastCommit?.measuredDeltas ?? []) {
         tryAdd({ ...fitted, measuredDeltas: [...fitted.measuredDeltas, delta] });
     }
+    tryAddReadings();
     if (requestsFit) {
         for (const request of newestFirstRequests.slice(1)) {
             if (!tryAdd({ ...fitted, requests: [request, ...fitted.requests] })) {
