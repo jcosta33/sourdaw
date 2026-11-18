@@ -1460,8 +1460,8 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
         edited.expectedActive.tracks.tracks = rename(edited.expectedActive.tracks.tracks);
         edited.wire.arrangement.tracks = rename(edited.wire.arrangement.tracks);
         const activeWire = edited.wire.arrangements?.find((entry) => entry.id === edited.wire.activeArrangementId);
-        if (!activeWire) {
-            throw new Error('Immutable dense wire oracle is missing its active arrangement');
+        if (!activeWire?.tracks) {
+            throw new Error('Immutable dense post-boot rename oracle is missing its active arrangement tracks');
         }
         activeWire.tracks.tracks = rename(activeWire.tracks.tracks);
         await firstBoot.evaluate(async () => {
