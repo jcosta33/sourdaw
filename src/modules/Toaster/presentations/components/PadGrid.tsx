@@ -1,4 +1,4 @@
-import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -60,7 +60,10 @@ export const PadGrid = ({
     const mouseActivationRef = useRef<number | null>(null);
     const keyboardActivationRef = useRef<number | null>(null);
     const releasePadRef = useRef(onReleasePad);
-    releasePadRef.current = onReleasePad;
+
+    useLayoutEffect(() => {
+        releasePadRef.current = onReleasePad;
+    }, [onReleasePad]);
 
     function triggerFlash(index: number): void {
         setFlashingPads((previous) => new Set(previous).add(index));
