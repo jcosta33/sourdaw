@@ -8,7 +8,7 @@ import { WorkspaceMobileGate } from '../WorkspaceMobileGate';
 
 const displayScaleMocks = vi.hoisted(() => ({
     listeners: new Set<() => void>(),
-    preferences: { current: { uiScale: 1 } },
+    preferences: { current: { uiScale: 1, theme: 'system' as 'system' | 'light' | 'dark' } },
 }));
 
 vi.mock('#/modules/Preferences/stores', () => ({
@@ -76,8 +76,12 @@ type MediaSubscription = {
 
 let device: DeviceClass = DESKTOP;
 let mediaSubscriptions: MediaSubscription[] = [];
+let systemDark = false;
 
 const mediaMatches = (query: string): boolean => {
+    if (query.includes('prefers-color-scheme: dark')) {
+        return systemDark;
+    }
     if (query.includes('pointer: coarse')) {
         return device.coarsePointer;
     }
@@ -117,9 +121,10 @@ const changeDeviceTo = (next: DeviceClass): void => {
 describe('WorkspaceMobileGate', () => {
     beforeEach(() => {
         mediaSubscriptions = [];
+        systemDark = false;
         childMounted.mockClear();
         displayScaleMocks.listeners.clear();
-        displayScaleMocks.preferences.current = { uiScale: 1 };
+        displayScaleMocks.preferences.current = { uiScale: 1, theme: 'system' };
         vi.mocked(applyDisplayScale).mockReset();
         window.matchMedia = vi.fn().mockImplementation((query: string) => ({
             matches: mediaMatches(query),
@@ -171,7 +176,7 @@ describe('WorkspaceMobileGate', () => {
 
     it('should keep the shell mounted when a stored 200% scale narrows the window', () => {
         setDevice(DESKTOP);
-        displayScaleMocks.preferences.current = { uiScale: 2 };
+        displayScaleMocks.preferences.current = { uiScale: 2, theme: 'system' };
         vi.mocked(applyDisplayScale).mockImplementation((scale) => {
             setDevice({ ...device, innerWidth: device.innerWidth / scale });
         });
@@ -194,7 +199,9 @@ describe('WorkspaceMobileGate', () => {
 
     it('should synchronize appearance without mounting its children on a phone', () => {
         setDevice(PHONE_PORTRAIT);
-        displayScaleMocks.preferences.current = { uiScale: 0.5 };
+        displayScaleMocks.preferences.current = { uiScale: 0.5, theme: 'system' };
+        document.documentElement.classList.remove('light');
+        document.documentElement.classList.add('dark');
 
         const { unmount } = render(
             <WorkspaceMobileGate>
@@ -206,12 +213,14 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.queryByTestId('shell-probe')).not.toBeInTheDocument();
         expect(childMounted).not.toHaveBeenCalled();
         expect(applyDisplayScale).toHaveBeenCalledWith(0.5);
-        expect(document.documentElement).toHaveClass('dark');
+        expect(document.documentElement).toHaveClass('light');
+        expect(document.documentElement).not.toHaveClass('dark');
         expect(document.documentElement.style.visibility).toBe('visible');
         expect(displayScaleMocks.listeners.size).toBe(2);
 
         unmount();
         expect(displayScaleMocks.listeners.size).toBe(0);
+        expect(mediaSubscriptions).toHaveLength(0);
     });
 
     it('should not mount its children while a phone rotates to landscape and back', () => {
@@ -238,7 +247,9 @@ describe('WorkspaceMobileGate', () => {
 
     it('should mount its children and sync appearance on a coarse-pointer tablet in portrait', () => {
         setDevice(TABLET_PORTRAIT);
-        displayScaleMocks.preferences.current = { uiScale: 1.5 };
+        displayScaleMocks.preferences.current = { uiScale: 1.5, theme: 'dark' };
+        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.add('light');
 
         const { unmount } = render(
             <WorkspaceMobileGate>
@@ -250,10 +261,12 @@ describe('WorkspaceMobileGate', () => {
         expect(childMounted).toHaveBeenCalledTimes(1);
         expect(applyDisplayScale).toHaveBeenCalledWith(1.5);
         expect(document.documentElement).toHaveClass('dark');
+        expect(document.documentElement).not.toHaveClass('light');
         expect(displayScaleMocks.listeners.size).toBe(2);
 
         unmount();
         expect(displayScaleMocks.listeners.size).toBe(0);
+        expect(mediaSubscriptions).toHaveLength(0);
     });
 
     it('should preserve shell state when a desktop window is resized below 768px and back', () => {
