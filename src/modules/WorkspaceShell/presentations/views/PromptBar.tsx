@@ -192,13 +192,13 @@ export const PromptBar = ({ onReviewRun }: { onReviewRun: (runId: string) => voi
         }
         return (
             <div className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1">
+                {listboxOpen && !hasQuery ? (
+                    <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                        Available commands
+                    </div>
+                ) : null}
                 {listboxOpen ? (
                     <div id={listboxId} role="listbox" aria-label="Command suggestions">
-                        {!hasQuery && prompt.fuzzyResults.length > 0 ? (
-                            <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
-                                Available commands
-                            </div>
-                        ) : null}
                         {prompt.fuzzyResults.map((result, index) => (
                             <FuzzyResultItem
                                 key={result.preset.id}
