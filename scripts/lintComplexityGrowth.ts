@@ -132,7 +132,7 @@ function scoreRevision(
     );
     if (result.error !== undefined || (result.status !== 0 && result.status !== 1) || result.stderr.trim() !== '') {
         throw new Error(
-            `Oxlint complexity scoring failed for ${side}: ${result.error?.message ?? result.stderr.trim()} (${result.signal ?? result.status})`
+            `Oxlint complexity scoring failed for ${side}: ${result.error?.message ?? result.stderr.trim()} (${String(result.signal ?? result.status)})`
         );
     }
 
