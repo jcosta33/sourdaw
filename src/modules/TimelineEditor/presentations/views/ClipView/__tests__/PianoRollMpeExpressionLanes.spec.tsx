@@ -337,6 +337,11 @@ describe('PianoRoll MPE expression-lane selector (#4679)', () => {
         rerender(<PianoRoll {...defaultProps} />);
         expect(screen.getByText('pressure')).toBeInTheDocument();
         expect(screen.queryByLabelText('Active expression lane')).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(
+                'Velocity available. Additional expression lanes depend on the primary track instrument.'
+            )
+        ).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Return to Velocity' }));
         expect(screen.getByText('velocity')).toBeInTheDocument();
         expect(

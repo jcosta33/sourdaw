@@ -354,18 +354,16 @@ export const PianoRollToolbar = ({
         {showExpressionView &&
             activeExpressionLane !== undefined &&
             onActiveExpressionLaneChange !== undefined &&
-            mpeExpressionLanes.length === 0 && (
-                <>
-                    <span className="text-[10px] text-muted-foreground">
-                        Velocity available. Additional expression lanes depend on the primary track instrument.
-                    </span>
-                    {activeExpressionLane !== 'velocity' && (
-                        <Button variant="ghost" size="xs" onClick={() => onActiveExpressionLaneChange('velocity')}>
-                            Return to Velocity
-                        </Button>
-                    )}
-                </>
-            )}
+            mpeExpressionLanes.length === 0 &&
+            (activeExpressionLane === 'velocity' ? (
+                <span className="text-[10px] text-muted-foreground">
+                    Velocity available. Additional expression lanes depend on the primary track instrument.
+                </span>
+            ) : (
+                <Button variant="ghost" size="xs" onClick={() => onActiveExpressionLaneChange('velocity')}>
+                    Return to Velocity
+                </Button>
+            ))}
         {showExpressionView &&
             activeExpressionLane !== undefined &&
             onActiveExpressionLaneChange !== undefined &&
