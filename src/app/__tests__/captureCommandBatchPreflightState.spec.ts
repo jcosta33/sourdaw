@@ -31,6 +31,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     readMusicalRange: vi.fn(),

@@ -185,7 +185,13 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
-        unit: ISOLATED_UNIT_STEPS,
+        unit: [...ISOLATED_UNIT_STEPS, 'Upload unit coverage shard'],
+        'unit-coverage': [
+            ...SETUP_NODE,
+            'Download unit coverage shards',
+            'Enforce PR coverage',
+            'Upload unit coverage report',
+        ],
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
@@ -378,6 +384,12 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         "steps.filter.outcome == 'failure'"
     ),
     pin('validation.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin(
+        'validation.yml',
+        'unit-coverage',
+        'Upload unit coverage report',
+        "${{ !cancelled() && steps.enforce.outcome != 'skipped' }}"
+    ),
     ...[
         'App types',
         'Test types',

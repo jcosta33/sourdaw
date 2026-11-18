@@ -156,6 +156,32 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
+    it('recognizes the floating editor only while a device control owns focus', () => {
+        openSessionWithCommandHandlers();
+        render(<Host />);
+        const editor = mount(document.createElement('div'));
+        editor.setAttribute('role', 'dialog');
+        editor.setAttribute('aria-modal', 'false');
+        const control = editor.appendChild(document.createElement('button'));
+        control.focus();
+        dispatchKey(control, { key: 'z', metaKey: true });
+        expect(lastKeyTarget()).toBe('textEntry');
+        editor.setAttribute('data-device-editor', '');
+        dispatchKey(control, { key: 'z', metaKey: true });
+        expect(lastKeyTarget()).toBe('deviceEditor');
+        const nested = editor.appendChild(document.createElement('div'));
+        nested.setAttribute('role', 'menu');
+        for (const target of [
+            editor.appendChild(document.createElement('input')),
+            editor.appendChild(document.createElement('select')),
+            nested.appendChild(document.createElement('button')),
+        ]) {
+            target.focus();
+            dispatchKey(target, { key: 'z', metaKey: true });
+            expect(lastKeyTarget()).toBe('textEntry');
+        }
+    });
+
     it('routes undo to the global layer while a [data-canvas-editor] has focus', () => {
         openSessionWithCommandHandlers();
         render(<Host />);

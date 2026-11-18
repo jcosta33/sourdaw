@@ -3,12 +3,7 @@
  * Messages tell the author the fix. `{ ...record, field }` and `fn(...args)` stay legal.
  */
 
-import { dirname, isAbsolute, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { craftBaselineFiles } from '../../oxlint.craft-baseline.mjs';
-
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
+import { qualityRules } from './qualityRules.mjs';
 
 const ARRAY_PIPELINE_METHODS = new Set(['map', 'filter', 'sort', 'flatMap', 'reduce']);
 
@@ -29,27 +24,6 @@ const unwrap = (node) => {
     }
     return current;
 };
-
-export const relativeFilename = (filename) => {
-    if (!filename) {
-        return '';
-    }
-    const normalized = filename.split('\\').join('/');
-    if (!isAbsolute(filename)) {
-        return normalized.replace(/^\.\//, '');
-    }
-    return relative(repoRoot, filename).split('\\').join('/');
-};
-
-export const isCraftBaselineFile = (filename, ruleId) => {
-    const listed = craftBaselineFiles[ruleId];
-    if (!listed) {
-        return false;
-    }
-    return listed.includes(relativeFilename(filename));
-};
-
-const filenameOf = (context) => context.filename ?? context.physicalFilename ?? '';
 
 const propertyName = (node) => {
     if (!node || node.type !== 'MemberExpression' || node.computed) {
@@ -152,16 +126,6 @@ const isMultiline = (context, node) => {
     }
     return context.sourceCode.getText(node).includes('\n');
 };
-
-const skipIfBaselined = (ruleId, rule) => ({
-    ...rule,
-    create(context) {
-        if (isCraftBaselineFile(filenameOf(context), ruleId)) {
-            return {};
-        }
-        return rule.create(context);
-    },
-});
 
 const reportConditionalOrLogicalSpread = (context, node) => {
     const argument = unwrap(node.argument);
@@ -358,12 +322,13 @@ const plugin = {
         name: 'sourdaw-craft',
     },
     rules: {
-        'no-conditional-empty-spread': skipIfBaselined('no-conditional-empty-spread', noConditionalEmptySpread),
-        'no-useless-clone-spread': skipIfBaselined('no-useless-clone-spread', noUselessCloneSpread),
-        'no-spread-clone-array-method': skipIfBaselined('no-spread-clone-array-method', noSpreadCloneArrayMethod),
-        'no-json-parse-stringify': skipIfBaselined('no-json-parse-stringify', noJsonParseStringify),
-        'no-long-array-chain': skipIfBaselined('no-long-array-chain', noLongArrayChain),
-        'no-control-flow-ternary': skipIfBaselined('no-control-flow-ternary', noControlFlowTernary),
+        'no-conditional-empty-spread': noConditionalEmptySpread,
+        'no-useless-clone-spread': noUselessCloneSpread,
+        'no-spread-clone-array-method': noSpreadCloneArrayMethod,
+        'no-json-parse-stringify': noJsonParseStringify,
+        'no-long-array-chain': noLongArrayChain,
+        'no-control-flow-ternary': noControlFlowTernary,
+        ...qualityRules,
     },
 };
 

@@ -200,8 +200,17 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    and JS-root materialization are separate costs even when one public load call combines them (#5843).
    Moving either stage outside an existing named measure must leave it inside the full click-to-completion
    long-task gate. Hold the parsed handle before adoption and require abort or replaced authority to free it
-   without publication. A mock that always returns
-   empty hits proves neither suppression nor completion.
+   without publication. A mock that always returns empty hits cannot prove suppression or completion.
+   [#6968](https://github.com/jcosta33/sourdaw/pull/6968) gated every renderer task at 50 ms
+   after switching Detect to indivisible SDK delta adoption. The #6910 failure exposed the missing
+   discrimination between that SDK cost and splittable product work. Apply and decode the actual
+   Worker reply on the same page in independent reference tasks, with exact bytes, predecessor
+   heads and resulting heads or checksum verified. Require a no-op or mismatched reference to fail,
+   app work in validation or the vendor callback to exhaust its own budget, and an unmarked 50 ms
+   task to fail while the qualified vendor operation may cross that line. A sub-50 ms task without
+   a matched observer entry must still pass with valid reference and app-work evidence even when
+   the cold SDK span exceeds the relative allowance. Match observer long tasks to exactly one
+   qualified trace task and keep the full 100 ms frame-gap predicate.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**
