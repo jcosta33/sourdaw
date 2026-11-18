@@ -28,7 +28,7 @@ const ROOT_DOCUMENT = 'root';
 // The command kernel clones materialized arguments. Authenticate the original
 // replay object at that seam, then retain the installed root for its clone.
 const replayInverses = new WeakSet<InsertAutomationLanePoints>();
-type PreparedAuthority = { rootIdentity: string; isCurrent?: () => boolean };
+type PreparedAuthority = { rootIdentity: string; isCurrent: (() => boolean) | undefined };
 const preparedAuthorities = new WeakMap<InsertAutomationLanePoints, PreparedAuthority>();
 
 function hasOwner(lane: Readonly<Record<string, unknown>>, owner: InsertionOwner): boolean {
@@ -52,14 +52,23 @@ function matchesLane(
 }
 
 function canReplay(action: InsertAutomationLanePoints, context: HandlerMaterializationContext | undefined): boolean {
-    const requested = context?.actions[context.actionIndex];
-    if (context?.undoEntryId === undefined || requested?.type !== action.type) {
+    if (context?.undoEntryId === undefined) {
+        return false;
+    }
+    const requested = context.actions[context.actionIndex];
+    if (requested?.type !== action.type) {
         return false;
     }
     if (action.payload.direction === 'undo') {
         return replayInverses.has(requested);
     }
-    const redo = context.recordedRedo;
+    return canReplayRedo(action, context.recordedRedo);
+}
+
+function canReplayRedo(
+    action: InsertAutomationLanePoints,
+    redo: HandlerMaterializationContext['recordedRedo']
+): boolean {
     const inverse = redo?.inverseAction;
     return (
         redo?.isCurrent() === true &&
@@ -69,14 +78,29 @@ function canReplay(action: InsertAutomationLanePoints, context: HandlerMateriali
     );
 }
 
+function rememberPreparedAuthority(action: InsertAutomationLanePoints, context?: HandlerMaterializationContext): void {
+    preparedAuthorities.set(action, {
+        rootIdentity: captureProjectRootIdentity(),
+        isCurrent: context?.recordedRedo?.isCurrent,
+    });
+}
+
+function readWritableLane(laneId: string, owner: InsertionOwner) {
+    const root = getCrdtDoc(ROOT_DOCUMENT);
+    const rawLane = root ? findRawAutomationLane(root, laneId) : undefined;
+    const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === laneId);
+    const laneObjectId = rawLane && getObjectId(rawLane);
+    if (!lane || !rawLane || !laneObjectId || lane.linkedLaneId !== undefined || !hasOwner(lane, owner)) {
+        return undefined;
+    }
+    return { lane, rawLane, laneObjectId };
+}
+
 function materializeInsertion(action: InsertAutomationLanePoints, context?: HandlerMaterializationContext): void {
     const payload = action.payload;
     if (Object.hasOwn(payload, 'capture') || Object.hasOwn(payload, 'direction')) {
         if (canReplay(action, context) && isCapturedLaneInsertion(payload)) {
-            preparedAuthorities.set(action, {
-                rootIdentity: captureProjectRootIdentity(),
-                ...(context?.recordedRedo ? { isCurrent: context.recordedRedo.isCurrent } : {}),
-            });
+            rememberPreparedAuthority(action, context);
         }
         return;
     }
@@ -88,14 +112,12 @@ function materializeInsertion(action: InsertAutomationLanePoints, context?: Hand
         return;
     }
 
-    const root = getCrdtDoc(ROOT_DOCUMENT);
-    const rawLane = root ? findRawAutomationLane(root, payload.laneId) : undefined;
-    const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === payload.laneId);
-    const laneObjectId = rawLane && getObjectId(rawLane);
     const { owner } = payload;
-    if (!lane || !rawLane || !laneObjectId || lane.linkedLaneId !== undefined || !hasOwner(lane, owner)) {
+    const source = readWritableLane(payload.laneId, owner);
+    if (!source) {
         return;
     }
+    const { lane, rawLane, laneObjectId } = source;
     const { minValue, maxValue } = lane;
     const before = structuredClone(lane.points);
     const editId = crypto.randomUUID();
@@ -106,7 +128,7 @@ function materializeInsertion(action: InsertAutomationLanePoints, context?: Hand
     const capture = { minValue, maxValue, laneObjectId, before, editId, ...planned };
     if (matchesLane(rawLane, owner, capture, before)) {
         payload.capture = capture;
-        preparedAuthorities.set(action, { rootIdentity: captureProjectRootIdentity() });
+        rememberPreparedAuthority(action);
     }
 }
 
@@ -114,7 +136,11 @@ export const handleInsertAutomationLanePoints = createHandler<'insertAutomationL
     materializeCommandArguments: materializeInsertion,
     materializeCommandArgumentsAt: 'execution',
     describe: (action) => {
-        const label = action.payload.insertion?.kind === 'shape' ? 'Insert automation shape' : 'Add automation point';
+        const { insertion } = action.payload;
+        const label =
+            isLaneInsertion(insertion) && insertion.kind === 'shape'
+                ? 'Insert automation shape'
+                : 'Add automation point';
         if (action.payload.direction !== undefined || !preparedAuthorities.has(action)) {
             return { label };
         }

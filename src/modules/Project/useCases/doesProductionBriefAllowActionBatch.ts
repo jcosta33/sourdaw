@@ -4,6 +4,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { productionBriefRefusalByActionType } from '../models/ProductionBriefActionRefusal';
 import { productionBriefRouteByActionType } from '../models/ProductionBriefActionRoute';
@@ -201,7 +202,10 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
         if (action.type === 'insertAutomationLanePoints') {
             const { laneId, owner, capture } = action.payload;
             actionStrings.add(laneId);
-            collectActionStrings([owner?.trackId, owner?.clipId, capture?.changedPointIds], actionStrings);
+            if (isRecord(owner)) {
+                collectActionStrings([owner.trackId, owner.clipId], actionStrings);
+            }
+            collectActionStrings(capture?.changedPointIds, actionStrings);
         } else {
             collectActionStrings(action.payload, actionStrings);
         }

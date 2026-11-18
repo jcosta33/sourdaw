@@ -3,8 +3,8 @@ import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 import { type AutomationLane, type AutomationPoint } from '../models/Automation';
 
 import { DEFAULT_BEAT_MERGE_EPSILON } from './automation/batchAddAutomationPoints';
-import { mergeAutomationPointBatch } from './automation/mergeAutomationPointBatch';
 import { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
+import { mergeAutomationPointBatch } from './automation/mergeAutomationPointBatch';
 
 // Local shape (AGENTS.md model isolation). Structurally compatible with what
 // Arrangement's `generateShapePoints` accepts; we do not import the type from

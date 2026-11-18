@@ -21,17 +21,17 @@ function readLaneObjectId(laneId: string) {
 /** Complete the preceding user edit before capturing the next lane's exact points. */
 export async function insertAutomationLanePoints(lane: LaneTarget, insertion: Insertion): Promise<void> {
     const { id, trackId, parameterId, clipId } = lane;
+    const owner: Omit<LaneTarget, 'id'> = { trackId, parameterId };
+    if (clipId !== undefined) {
+        owner.clipId = clipId;
+    }
     const rootIdentity = captureProjectRootIdentity();
     const laneObjectId = readLaneObjectId(id);
-    const execute = async () => {
+    async function execute(): Promise<void> {
         await executeUserAppAction(
             {
                 type: 'insertAutomationLanePoints',
-                payload: {
-                    laneId: id,
-                    owner: { trackId, parameterId, ...(clipId === undefined ? {} : { clipId }) },
-                    insertion,
-                },
+                payload: { laneId: id, owner, insertion },
             },
             {
                 authorizeFirstHandler: () =>
@@ -40,7 +40,7 @@ export async function insertAutomationLanePoints(lane: LaneTarget, insertion: In
                         : 'The automation lane changed while the insertion was waiting.',
             }
         );
-    };
+    }
 
     const predecessor = pendingByRoot.get(rootIdentity);
     const insertionPending = predecessor ? predecessor.then(execute, execute) : execute();

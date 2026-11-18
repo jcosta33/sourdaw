@@ -224,6 +224,17 @@ async function switchToNewProject({
     }
 }
 
+function bindFreshUndoHistory(projectId: string | undefined, rootIdentity: string | undefined): void {
+    if (
+        rootIdentity !== undefined &&
+        rootIdentity === captureProjectRootIdentity() &&
+        projectId !== undefined &&
+        projectStore.value?.projectId === projectId
+    ) {
+        reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+    }
+}
+
 /** Populate, publish and make durable the project the authority switch installed. */
 async function commitNewProject({
     name,
@@ -274,19 +285,8 @@ async function commitNewProject({
     runCommittedStep('undo history reset', clearUndoHistory);
     // Bind the empty history before persistence can stamp it or another edit
     // can arrive. The old stacks were cleared when the new identity took over.
-    if (
-        !degraded &&
-        rootIdentity !== undefined &&
-        rootIdentity === captureProjectRootIdentity() &&
-        publishedProjectId !== undefined &&
-        projectStore.value?.projectId === publishedProjectId
-    ) {
-        runCommittedStep('undo history ownership', () =>
-            reconcileSessionUndoForProject({
-                projectId: publishedProjectId,
-                captureWitness: captureDurableDocumentWitness,
-            })
-        );
+    if (!degraded) {
+        runCommittedStep('undo history ownership', () => bindFreshUndoHistory(publishedProjectId, rootIdentity));
     }
 
     try {

@@ -1,4 +1,5 @@
 import { getHeldClips } from '#/modules/Arrangement/useCases';
+import { isRecord } from '#/utils/structuralEquality';
 
 import {
     type ActionOf,
@@ -307,8 +308,15 @@ function insertedAutomationLanePoints(
     action: ActionOf<'insertAutomationLanePoints'>,
     scope: ProductionBriefRangeScope
 ): boolean {
-    const { capture, insertion } = action.payload;
-    if (insertion?.kind === 'shape' && intervalOverlapsRange(insertion.startBeat, insertion.endBeat, scope)) {
+    const { capture } = action.payload;
+    const insertion: unknown = action.payload.insertion;
+    if (
+        isRecord(insertion) &&
+        insertion.kind === 'shape' &&
+        typeof insertion.startBeat === 'number' &&
+        typeof insertion.endBeat === 'number' &&
+        intervalOverlapsRange(insertion.startBeat, insertion.endBeat, scope)
+    ) {
         return true;
     }
     const changedBeats = capture?.changedBeats;

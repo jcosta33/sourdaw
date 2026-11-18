@@ -2,8 +2,8 @@ import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerC
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { type AutomationLane, type AutomationPoint } from '../../models/Automation';
-import { is_exact_automation_point } from '../../stores/automationStore';
 import { insertAutomationPointAtBeat } from '../../services/insertAutomationPointAtBeat';
+import { is_exact_automation_point } from '../../stores/automationStore';
 import { planAutomationShapeInsertion } from '../../useCases/automationShapes';
 
 import { automationPointSnapshotsMatch as pointsMatch } from './automationPointSnapshotsMatch';
@@ -28,6 +28,13 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isCycleCount(value: unknown): boolean {
+    return (
+        value === undefined ||
+        (typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_CYCLES)
+    );
+}
+
 export function isLaneInsertion(insertion: unknown): insertion is ValidatedInsertion {
     if (!isRecord(insertion)) {
         return false;
@@ -43,8 +50,7 @@ export function isLaneInsertion(insertion: unknown): insertion is ValidatedInser
         isFiniteNumber(endBeat) &&
         startBeat >= 0 &&
         startBeat < endBeat &&
-        (cycles === undefined ||
-            (typeof cycles === 'number' && Number.isInteger(cycles) && cycles > 0 && cycles <= MAX_CYCLES))
+        isCycleCount(cycles)
     );
 }
 
@@ -57,22 +63,26 @@ export function isInsertionOwner(value: unknown): value is InsertionOwner {
     );
 }
 
+function planInsertionPoints(range: LaneRange, before: AutomationPoint[], insertion: ValidatedInsertion) {
+    if (insertion.kind === 'point') {
+        return insertAutomationPointAtBeat(before, insertion.point);
+    }
+    return planAutomationShapeInsertion(
+        { ...range, points: before },
+        insertion.shape,
+        insertion.startBeat,
+        insertion.endBeat,
+        insertion.cycles
+    );
+}
+
 export function planLaneInsertion(
     range: LaneRange,
     before: AutomationPoint[],
     insertion: ValidatedInsertion,
     editId: string
 ): Pick<InsertionCapture, 'after' | 'changedBeats' | 'changedPointIds'> | null {
-    const planned =
-        insertion.kind === 'point'
-            ? insertAutomationPointAtBeat(before, insertion.point)
-            : planAutomationShapeInsertion(
-                  { ...range, points: before },
-                  insertion.shape,
-                  insertion.startBeat,
-                  insertion.endBeat,
-                  insertion.cycles
-              );
+    const planned = planInsertionPoints(range, before, insertion);
     if (planned === null) {
         return null;
     }
@@ -106,18 +116,11 @@ export function planLaneInsertion(
     };
 }
 
-export function isCapturedLaneInsertion(payload: unknown): boolean {
-    if (
-        !isRecord(payload) ||
-        !isNonEmptyString(payload.laneId) ||
-        !isLaneInsertion(payload.insertion) ||
-        !isInsertionOwner(payload.owner) ||
-        !isRecord(payload.capture) ||
-        (payload.direction !== undefined && payload.direction !== 'undo')
-    ) {
+function matchesInsertionPlan(capture: unknown, owner: InsertionOwner, insertion: ValidatedInsertion): boolean {
+    if (!isRecord(capture)) {
         return false;
     }
-    const { laneObjectId, editId, minValue, maxValue, before, after, changedBeats, changedPointIds } = payload.capture;
+    const { laneObjectId, editId, minValue, maxValue, before, after, changedBeats, changedPointIds } = capture;
     if (
         !isNonEmptyString(laneObjectId) ||
         !isNonEmptyString(editId) ||
@@ -129,12 +132,23 @@ export function isCapturedLaneInsertion(payload: unknown): boolean {
         return false;
     }
 
-    const planned = planLaneInsertion({ ...payload.owner, minValue, maxValue }, before, payload.insertion, editId);
+    const planned = planLaneInsertion({ ...owner, minValue, maxValue }, before, insertion, editId);
     return (
         planned !== null &&
         pointsMatch(after, planned.after) &&
         valuesEqual(changedBeats, planned.changedBeats) &&
         valuesEqual(changedPointIds, planned.changedPointIds)
+    );
+}
+
+export function isCapturedLaneInsertion(payload: unknown): boolean {
+    return (
+        isRecord(payload) &&
+        isNonEmptyString(payload.laneId) &&
+        isLaneInsertion(payload.insertion) &&
+        isInsertionOwner(payload.owner) &&
+        (payload.direction === undefined || payload.direction === 'undo') &&
+        matchesInsertionPlan(payload.capture, payload.owner, payload.insertion)
     );
 }
 

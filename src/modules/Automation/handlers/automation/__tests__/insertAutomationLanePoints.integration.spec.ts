@@ -231,7 +231,7 @@ async function reloadFromIndexedDb() {
     }
 }
 
-function syncPeer(peer: Automerge.Doc<Root>): Automerge.Doc<Root> {
+function syncPeer(peer: Automerge.Doc<Root>) {
     let source = Automerge.clone(root());
     let sourceState = Automerge.initSyncState();
     let peerState = Automerge.initSyncState();
@@ -249,9 +249,7 @@ function syncPeer(peer: Automerge.Doc<Root>): Automerge.Doc<Root> {
             [source, sourceState] = Automerge.receiveSyncMessage(source, sourceState, incoming);
         }
         if (!outgoing && !incoming) {
-            expect(received).toBe(true);
-            expect(Automerge.getHeads(peer)).toEqual(Automerge.getHeads(source));
-            return peer;
+            return { peer, received, sourceHeads: Automerge.getHeads(source) };
         }
     }
     throw new Error('Peer sync did not settle');
@@ -404,7 +402,10 @@ describe('local automation lane insertion', () => {
         expect(tied.slice(0, 2)).toStrictEqual(initialPoints.slice(2, 4));
         expect(tied[2]).toMatchObject({ id: expect.any(String), value: 0.45 });
         function verifyPeer(expected: AutomationPoint[]) {
-            peer = syncPeer(peer);
+            const synced = syncPeer(peer);
+            peer = synced.peer;
+            expect(synced.received).toBe(true);
+            expect(Automerge.getHeads(peer)).toEqual(synced.sourceHeads);
             expect(Automerge.toJS(peer).automation.lanes).toStrictEqual([
                 { ...targetLane, points: expected },
                 otherLane,
@@ -556,19 +557,28 @@ describe('local automation lane insertion', () => {
         }
     );
 
-    it.each<BriefScope>([
-        { kind: 'range', startBeat: 1.9, endBeat: 2.1 },
-        { kind: 'object', objectId: 'unaffected-start' },
-    ])('admits the shape and replay with an untouched point protected by a $kind lock', async (scope) => {
-        setLock(scope);
-        await executeAppAction(shapeAction());
-        const inserted = readLane();
-        expect(inserted).not.toEqual(initialPoints);
-        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
-        expect(readLane()).toStrictEqual(initialPoints);
-        await redo({ stepOverConflicts: false });
-        expect(readLane()).toStrictEqual(inserted);
-    });
+    it.each([
+        { scope: { kind: 'range', startBeat: 1.9, endBeat: 2.1 } },
+        { scope: { kind: 'object', objectType: 'automationPoint', objectId: 'unaffected-start' } },
+    ] satisfies { scope: BriefScope }[])(
+        'admits the shape and replay with an untouched point protected by a $scope.kind lock',
+        async ({ scope }) => {
+            setLock(scope);
+            await expect(
+                executeAppAction({
+                    type: 'removeAutomationPoint',
+                    payload: { laneId: TARGET, pointIndex: 0, pointId: 'unaffected-start' },
+                })
+            ).rejects.toSatisfy(isAppActionAdmissionRefusal);
+            await executeAppAction(shapeAction());
+            const inserted = readLane();
+            expect(inserted).not.toEqual(initialPoints);
+            expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
+            expect(readLane()).toStrictEqual(initialPoints);
+            await redo({ stepOverConflicts: false });
+            expect(readLane()).toStrictEqual(inserted);
+        }
+    );
 
     it('refuses replay when a lock later covers a replaced old beat outside the requested span', async () => {
         await executeAppAction(shapeAction());
