@@ -160,6 +160,14 @@ describe('createDesktopNativeGraphTransport', () => {
         });
     });
 
+    it('cancels a render by its id through cancel_graph_offline', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue(undefined);
+
+        await createDesktopNativeGraphTransport().cancelGraphOfflineRender?.('bounce-7');
+
+        expect(desktopInvoke).toHaveBeenCalledWith('cancel_graph_offline', { renderId: 'bounce-7' });
+    });
+
     it('applies live batches through apply_graph_commands', async () => {
         const applyResult = { acceptance: 'accepted', application: 'applied' };
         vi.mocked(desktopInvoke).mockResolvedValue(applyResult);

@@ -34,7 +34,7 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await expect(level).toHaveAttribute('aria-valuenow', '0.81');
 
         const brightness = page
-            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('dialog', { name: 'Fermenter', exact: true })
             .getByRole('slider', { name: 'Brightness', exact: true });
         await expect(brightness).toBeVisible();
         await brightness.focus();
