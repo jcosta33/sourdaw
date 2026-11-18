@@ -62,7 +62,9 @@ test.describe('Expression lanes on a new MIDI clip', () => {
         const deviceId = await page.evaluate(async (entry) => {
             const { arrangement, command }: typeof import('./persistedHydrationEntry') = await import(entry);
             const trackId = arrangement.trackStore.value?.selectedTrackId;
-            if (!trackId) throw new Error('No selected MIDI track');
+            if (!trackId) {
+                throw new Error('No selected MIDI track');
+            }
             const id = crypto.randomUUID();
             await command.executeAppAction({
                 type: 'addDevice',
