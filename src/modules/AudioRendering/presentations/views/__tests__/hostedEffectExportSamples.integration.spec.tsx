@@ -19,12 +19,6 @@ import {
     isDeviceParameterAutomatable,
     quantiseDeviceParameterValue,
 } from '#/modules/Arrangement/useCases';
-import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
-import {
-    createAutomationLane,
-    createOfflineAutomationEvaluator,
-    getAutomationValueAtBeat,
-} from '#/modules/Automation/useCases';
 import {
     cacheAudioBuffer,
     configureOfflineDeviceParameterLaw,
@@ -32,6 +26,12 @@ import {
     configureOfflinePpqEndpointProjection,
     refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
+import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
+import {
+    createAutomationLane,
+    createOfflineAutomationEvaluator,
+    getAutomationValueAtBeat,
+} from '#/modules/Automation/useCases';
 import {
     createChordPitchProjector,
     createGrooveMidiEventProjector,
@@ -41,8 +41,12 @@ import { externalPluginParameterStore, externalPluginTailStore, pluginScanStore 
 import { activateExternalPlugin, addPluginFolder, startPluginScan } from '#/modules/PluginHost/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { beatAtSecondsFromAnchor, projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
-
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ExportDialog } from '../ExportDialog';
 
@@ -54,6 +58,11 @@ const INSTANCE_ID = 'harness-echo-instance';
 const SOURCE_ID = 'harness-echo-stereo-pulses';
 const OUTPUT_NAMES = ['automated-auto-tail.wav', 'static-auto-tail.wav', 'automated-zero-tail.wav'] as const;
 type OutputName = (typeof OUTPUT_NAMES)[number];
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 const CLIP_END_BEAT = 1;
 const GAIN_CHANGE_BEAT = 0.5;
@@ -155,7 +164,7 @@ function makeNativeHarness(fixtureDirectory: string, workDirectory: string) {
             command.replaceAll(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase())
         );
         if (typeof method !== 'function') {
-            throw new Error(`Unhandled native command ${command}`);
+            throw new TypeError(`Unhandled native command ${command}`);
         }
         const nativeArgs = command === 'scan_plugins' ? [args[0], args[1] ?? false] : args;
         return Reflect.apply(method, host, nativeArgs);
@@ -206,7 +215,7 @@ function makeNativeHarness(fixtureDirectory: string, workDirectory: string) {
 }
 
 function configureRenderPorts(): void {
-    setNotificationEventBus(createEventBus());
+    setNotificationEventBus(createEventBus<NotificationEvents>());
     configureOfflineMidiEventProjection({
         createProjector: createGrooveMidiEventProjector,
         selectProbability: shouldPlayMidiEvent,
@@ -308,13 +317,12 @@ async function exportWav(sampleRate: number, autoTail: boolean) {
     const dialog = render(<ExportDialog open onClose={() => {}} />);
     try {
         fireEvent.click(screen.getByRole('radio', { name: /^Loop region/ }));
-        fireEvent.click(screen.getByRole('button', { name: `${(sampleRate / 1_000).toFixed(1)}k`, exact: true }));
-        fireEvent.click(screen.getByRole('button', { name: '32-bit', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: `${(sampleRate / 1_000).toFixed(1)}k` }));
+        fireEvent.click(screen.getByRole('button', { name: '32-bit' }));
         const auto = screen.getByLabelText('Auto-detect');
         expect(auto).toBeChecked();
-        if (autoTail) {
-            expect(screen.getByText('2.00s minimum (0.01s detected)')).toBeVisible();
-        } else {
+        expect(screen.getByText('2.00s minimum (0.01s detected)')).toBeVisible();
+        if (!autoTail) {
             fireEvent.click(auto);
             fireEvent.change(screen.getByLabelText('Tail seconds'), { target: { value: '0' } });
         }
