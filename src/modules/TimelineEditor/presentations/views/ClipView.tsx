@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef } from 'react';
+import { type ReactElement, type SetStateAction, useEffect, useState, useRef } from 'react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
@@ -11,6 +11,7 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
 import { selectClip } from '#/modules/Arrangement/useCases';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { clearPianoRollSelection, setPianoRollSelection } from '#/modules/MIDI/useCases';
 import { formatMusicalPosition } from '#/modules/Transport/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
@@ -27,6 +28,7 @@ export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const selectedTrack = tracks.find((time) => time.id === selectedTrackId);
     const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
+    const selectedNoteIdsRef = useRef(selectedNoteIds);
     // beatWidth is reported by PianoRoll when its zoom changes
     const [pianoRollBeatWidth, setPianoRollBeatWidth] = useState(40);
     const [pianoRollContentWidth, setPianoRollContentWidth] = useState(0);
@@ -43,6 +45,29 @@ export const ClipView = (): ReactElement => {
         selectedTrack?.clips.find((context) => context.id === clipSelection.selectedClipId) ??
         selectedTrack?.clips[0] ??
         null;
+
+    useEffect(() => {
+        clearPianoRollSelection();
+        const unsubscribe = clipSelectionStore.subscribe(() => clearPianoRollSelection());
+        return () => {
+            unsubscribe();
+            clearPianoRollSelection();
+        };
+    }, []);
+
+    const changeSelectedNoteIds = (
+        change: SetStateAction<Set<string>>,
+        projections: Parameters<typeof setPianoRollSelection>[3]
+    ): void => {
+        const next = typeof change === 'function' ? change(selectedNoteIdsRef.current) : change;
+        selectedNoteIdsRef.current = next;
+        setSelectedNoteIds(next);
+        if (selectedClip?.type === 'midi' && next.size <= 512) {
+            setPianoRollSelection(selectedClip.id, [...next], openedClipIds, projections);
+        } else {
+            clearPianoRollSelection();
+        }
+    };
 
     const startPosition = selectedClip ? formatMusicalPosition({ ...meter, beat: selectedClip.startBeat }) : '';
 
@@ -130,7 +155,7 @@ export const ClipView = (): ReactElement => {
                     trackId={selectedTrack.id}
                     openedClipIds={openedClipIds}
                     selectedNoteIds={selectedNoteIds}
-                    onSelectedNoteIdsChange={setSelectedNoteIds}
+                    onSelectedNoteIdsChange={changeSelectedNoteIds}
                     onScrollChange={handlePianoRollScroll}
                     onBeatWidthChange={setPianoRollBeatWidth}
                     onContentWidthChange={setPianoRollContentWidth}

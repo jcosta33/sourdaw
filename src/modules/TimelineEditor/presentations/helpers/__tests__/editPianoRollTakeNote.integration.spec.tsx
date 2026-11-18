@@ -33,7 +33,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiNoteTransformHandlers, projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -49,7 +49,6 @@ import {
     transformPianoRollTakeNotes,
 } from '../applyPianoRollTakeMenuAction';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
-import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 
 const original = {
     id: 'original-row',
