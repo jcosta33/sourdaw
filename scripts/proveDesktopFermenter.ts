@@ -257,7 +257,7 @@ function writeFinalJson(path: string, value: object): void {
     const directory = mkdtempSync(join(dirname(path), '.fermenter-'));
     const temporary = join(directory, 'record.json');
     try {
-        writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+        writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
         linkSync(temporary, path);
     } finally {
         try {
@@ -295,7 +295,13 @@ async function main(): Promise<number> {
     process.stdout.write(
         `Fermenter packaged proof: ${record.verdict}${record.failureCode ? ` (${record.failureCode})` : ''}.\n`
     );
-    return record.verdict === 'proven' ? 0 : record.verdict === 'failed' ? 1 : 2;
+    if (record.verdict === 'proven') {
+        return 0;
+    }
+    if (record.verdict === 'failed') {
+        return 1;
+    }
+    return 2;
 }
 
 if (import.meta.main) {
