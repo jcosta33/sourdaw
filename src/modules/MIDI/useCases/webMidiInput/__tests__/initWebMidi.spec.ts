@@ -72,6 +72,7 @@ vi.mock('#/infra/di/Container', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    sanitizeTrackSnapshot: vi.fn(),
     persistDeviceParam: vi.fn(),
     activeRecordingRef: { current: [] },
     timelineEditingStore: { value: null },
