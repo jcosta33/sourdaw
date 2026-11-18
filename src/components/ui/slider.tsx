@@ -173,6 +173,9 @@ function SliderThumbNode({
                     onChange={(changeEvent) => setEditVal(changeEvent.target.value)}
                     onBlur={() => setIsEditing(false)}
                     onKeyDown={(keyEvent) => {
+                        if (keyEvent.nativeEvent.isComposing) {
+                            return;
+                        }
                         if (keyEvent.key === 'Enter') {
                             const num = Number(editVal);
                             if (!isNaN(num) && canEdit) {

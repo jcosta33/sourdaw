@@ -1,4 +1,5 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, fireEvent, render, renderHook } from '@testing-library/react';
+import { createElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
@@ -775,7 +776,11 @@ describe('usePromptExecution', () => {
         expect(result.current.fuzzyResults).toHaveLength(3);
         expect(result.current.selectedIndex).toBe(-1);
 
-        const mk = (key: string): { key: string; preventDefault: () => void } => ({ key, preventDefault: vi.fn() });
+        const mk = (key: string) => ({
+            key,
+            nativeEvent: new KeyboardEvent('keydown', { key }),
+            preventDefault: vi.fn(),
+        });
 
         const down = mk('ArrowDown');
         act(() => result.current.handleKeyDown(down as never));
@@ -815,13 +820,44 @@ describe('usePromptExecution', () => {
         expect(inert.preventDefault).not.toHaveBeenCalled();
     });
 
+    it('leaves preset navigation and submission to the IME while composing', () => {
+        vi.mocked(getAvailablePresets).mockReturnValue([preset()]);
+        const Harness = () => {
+            const prompt = usePromptExecution();
+            return createElement('input', {
+                onFocus: () => prompt.setIsFocused(true),
+                onKeyDown: prompt.handleKeyDown,
+                'data-selected': prompt.selectedIndex,
+            });
+        };
+        const { getByRole } = render(createElement(Harness));
+        const input = getByRole('textbox');
+        fireEvent.focus(input);
+        fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true });
+        expect(input.getAttribute('data-selected')).toBe('-1');
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        expect(input.getAttribute('data-selected')).toBe('0');
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(executionUseCaseMocks.submitAdmittedPromptRequest).not.toHaveBeenCalled();
+    });
+
     it('submits the selected preset descriptor on Enter', async () => {
         vi.mocked(getAvailablePresets).mockReturnValue([preset()]);
         const { result } = renderHook(() => usePromptExecution());
         act(() => result.current.setIsFocused(true));
-        act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
+        act(() =>
+            result.current.handleKeyDown({
+                key: 'ArrowDown',
+                nativeEvent: new KeyboardEvent('keydown'),
+                preventDefault: vi.fn(),
+            } as never)
+        );
         await act(async () => {
-            result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
+            result.current.handleKeyDown({
+                key: 'Enter',
+                nativeEvent: new KeyboardEvent('keydown'),
+                preventDefault: vi.fn(),
+            } as never);
         });
         expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -838,17 +874,29 @@ describe('usePromptExecution', () => {
         vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'a', label: 'A' })]);
         const { result } = renderHook(() => usePromptExecution());
         act(() => result.current.setIsFocused(true));
-        act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
+        act(() =>
+            result.current.handleKeyDown({
+                key: 'ArrowDown',
+                nativeEvent: new KeyboardEvent('keydown'),
+                preventDefault: vi.fn(),
+            } as never)
+        );
         expect(result.current.fuzzyResults).toHaveLength(1);
 
-        act(() => result.current.handleKeyDown({ key: 'Escape', preventDefault: vi.fn() } as never));
+        act(() =>
+            result.current.handleKeyDown({
+                key: 'Escape',
+                nativeEvent: new KeyboardEvent('keydown'),
+                preventDefault: vi.fn(),
+            } as never)
+        );
         expect(result.current.fuzzyResults).toHaveLength(0);
         expect(result.current.selectedIndex).toBe(-1);
     });
 
     it('ignores ArrowUp/Tab/Enter/Escape when no fuzzy results are shown', () => {
         const { result } = renderHook(() => usePromptExecution());
-        const evt = { key: 'ArrowDown', preventDefault: vi.fn() };
+        const evt = { key: 'ArrowDown', nativeEvent: new KeyboardEvent('keydown'), preventDefault: vi.fn() };
         act(() => result.current.handleKeyDown(evt as never));
         expect(evt.preventDefault).not.toHaveBeenCalled();
     });
@@ -857,7 +905,7 @@ describe('usePromptExecution', () => {
         vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'a', label: 'A' })]);
         const { result } = renderHook(() => usePromptExecution());
         act(() => result.current.setIsFocused(true));
-        const tab = { key: 'Tab', preventDefault: vi.fn() };
+        const tab = { key: 'Tab', nativeEvent: new KeyboardEvent('keydown'), preventDefault: vi.fn() };
         act(() => result.current.handleKeyDown(tab as never));
         // value unchanged because no selection
         expect(result.current.value).toBe('');

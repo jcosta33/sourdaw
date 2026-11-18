@@ -209,6 +209,9 @@ export const CommandPalette = (): ReactElement | null => {
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.nativeEvent.isComposing) {
+            return;
+        }
         if (event.key === 'ArrowDown') {
             event.preventDefault();
             setSelectedIndex((index) => Math.min(index + 1, flattenedResults.length - 1));

@@ -32,6 +32,9 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     onChange={(event) => setValue(event.target.value)}
                     onBlur={commit}
                     onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) {
+                            return;
+                        }
                         if (event.key === 'Enter') {
                             commit();
                         }

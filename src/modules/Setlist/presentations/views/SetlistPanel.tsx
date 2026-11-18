@@ -167,6 +167,10 @@ export const SetlistPanel = (): ReactElement => {
                         defaultValue={state.name}
                         onBlur={(event) => handleCommitSetlistName(event.target.value)}
                         onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing) {
+                                event.stopPropagation();
+                                return;
+                            }
                             if (event.key === 'Enter') {
                                 handleCommitSetlistName((event.target as HTMLInputElement).value);
                             } else if (event.key === 'Escape') {
@@ -351,6 +355,10 @@ export const SetlistPanel = (): ReactElement => {
                                                 onClick={(event) => event.stopPropagation()}
                                                 onBlur={(event) => handleCommitName(item.id, event.target.value)}
                                                 onKeyDown={(event) => {
+                                                    if (event.nativeEvent.isComposing) {
+                                                        event.stopPropagation();
+                                                        return;
+                                                    }
                                                     event.stopPropagation();
                                                     if (event.key === 'Enter') {
                                                         handleCommitName(
