@@ -75,6 +75,22 @@
             }
         },
         {
+            "files": [
+                "src/modules/CommandInterface/**/*.{ts,tsx}",
+                "src/modules/WorkspaceShell/presentations/views/**/*.{ts,tsx}"
+            ],
+            "excludeFiles": [
+                "**/*.d.ts",
+                "**/*.{spec,test,mock}.{ts,tsx}",
+                "**/setupTests.ts",
+                "**/__tests__/**",
+                "src/**/testing/**"
+            ],
+            "rules": {
+                "typescript/no-unsafe-type-assertion": "error"
+            }
+        },
+        {
             "files": ["src/**/*.{spec,test}.{ts,tsx}"],
             "excludeFiles": ["**/*.e2e.spec.*"],
             "rules": {

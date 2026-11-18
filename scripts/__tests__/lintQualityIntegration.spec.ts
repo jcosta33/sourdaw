@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -576,6 +576,100 @@ export function helper(a: number, b: number, c: number, d: number, e: number) { 
         } finally {
             rmSync(source, { recursive: true, force: true });
             rmSync(e2e, { recursive: true, force: true });
+        }
+    }, 75_000);
+
+    it('rejects unsafe assertions only in the typed product pilot', () => {
+        const command = mkdtempSync(join(root, 'src/modules/CommandInterface/useCases/lint-unsafe-assertion-'));
+        const shell = mkdtempSync(join(root, 'src/modules/WorkspaceShell/presentations/views/lint-unsafe-assertion-'));
+        const otherSource = mkdtempSync(join(root, 'src/modules/WorkspaceShell/presentations/lint-unsafe-assertion-'));
+        const scripts = mkdtempSync(join(root, 'scripts/lint-unsafe-assertion-'));
+        const narrow = 'export function narrow(value: string | number) { return value as string; }';
+        const fixtures = [
+            [command, 'product.ts', narrow],
+            [shell, 'product.tsx', narrow],
+            [
+                shell,
+                'guarded.tsx',
+                `
+import { type DragEvent } from 'react';
+export function guarded(value: string | number) {
+    if (typeof value === 'string') { return value; }
+    return String(value);
+}
+export function widen(value: string) { return value as string | number; }
+export const options = { mode: 'draw' } as const satisfies { mode: string };
+export function stayedInside(event: DragEvent<HTMLDivElement>) {
+    return event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget);
+}
+`,
+            ],
+            [command, 'unit.spec.ts', narrow],
+            [command, 'fixture.mock.tsx', narrow],
+            [command, 'setupTests.ts', narrow],
+            [command, '__tests__/helper.ts', narrow],
+            [command, 'testing/helper.ts', narrow],
+            [otherSource, 'other.tsx', narrow],
+            [scripts, 'script.ts', narrow],
+        ] as const;
+        try {
+            const targets = fixtures.map(([directory, file, content]) => {
+                const target = join(directory, file);
+                if (file.includes('/')) {
+                    mkdirSync(resolve(target, '..'), { recursive: true });
+                }
+                writeFileSync(target, `${content}\n`);
+                return target;
+            });
+            for (const directory of [command, shell, otherSource, scripts]) {
+                const files = fixtures.filter(([dir]) => dir === directory).map(([, file]) => file);
+                isolateTypeScriptProject(
+                    directory,
+                    directory === scripts ? 'scripts/tsconfig.json' : 'tsconfig.json',
+                    files
+                );
+            }
+            const result = spawnSync(
+                resolve(root, 'node_modules/.bin/oxlint'),
+                buildQualityLintArgv(targets).slice(2),
+                {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 60_000,
+                }
+            );
+            expect(result.error).toBeUndefined();
+            const report = parseQualityReport(result.stdout, root);
+            const rule = 'typescript/no-unsafe-type-assertion';
+            const unsafeTargets = [join(command, 'product.ts'), join(shell, 'product.tsx')].map((path) =>
+                relative(root, path).replaceAll('\\', '/')
+            );
+            expect(report.fileCount).toBe(targets.length);
+            expect(report.diagnostics.map(({ file, rule, line }) => [file, rule, line]).toSorted()).toEqual(
+                unsafeTargets.map((path) => [path, rule, 1]).toSorted()
+            );
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+            const unseeded = reconcileQualityBudget(report, new Map(), targets, root);
+            expect(unseeded.failed).toBe(true);
+            const column = narrow.indexOf('value as string') + 1;
+            expect(unseeded.diagnostics.toSorted()).toEqual(
+                unsafeTargets
+                    .map(
+                        (path) =>
+                            `${path}:1:${column}: error (${rule}): Unsafe type assertion: type 'string' is more narrow than the original type.`
+                    )
+                    .toSorted()
+            );
+            const budget = new Map(unsafeTargets.map((path) => [path, new Map([[rule, 1]])]));
+            expect(reconcileQualityBudget(report, budget, targets, root)).toEqual({
+                diagnostics: [],
+                failed: false,
+                hadErrors: true,
+            });
+        } finally {
+            for (const directory of [command, shell, otherSource, scripts]) {
+                rmSync(directory, { recursive: true, force: true });
+            }
         }
     }, 75_000);
 
