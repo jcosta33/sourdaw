@@ -1,10 +1,15 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerKernelPorts } from '#/app/registerKernelPorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
@@ -116,6 +121,8 @@ describe('saveProject audio durability integration', () => {
         clearHandlerRegistry();
         localStorage.clear();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
         injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
     });
 
@@ -126,6 +133,7 @@ describe('saveProject audio durability integration', () => {
         ]);
         configureDurableAudioBufferOwnership(null);
         stopActiveAutoSave();
+        await settleNativePreparationWorkers();
         clearHandlerRegistry();
         Container.clear();
         vi.restoreAllMocks();
@@ -192,6 +200,8 @@ describe('saveProject audio durability integration', () => {
         await restoreCachedAudioBuffersFromIdb({ audioContext: context });
         setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getWorkspaceHandlers());
+        registerKernelPorts();
 
         registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });

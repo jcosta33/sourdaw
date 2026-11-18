@@ -217,7 +217,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     describeAppActionRefusal: vi.fn(),
     isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeAppAction: vi.fn<typeof import('#/modules/Command/useCases').executeAppAction>(async (_action, options) => {
+        options?.onCommitted?.();
+    }),
     pushUndoEntry: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
