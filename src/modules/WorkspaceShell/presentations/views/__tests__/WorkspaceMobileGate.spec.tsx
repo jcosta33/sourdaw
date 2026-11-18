@@ -6,10 +6,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { applyDisplayScale } from '../../../useCases/applyDisplayScale';
 import { WorkspaceMobileGate } from '../WorkspaceMobileGate';
 
-const displayScaleMocks = vi.hoisted(() => ({
-    listeners: new Set<() => void>(),
-    preferences: { current: { uiScale: 1, theme: 'system' as 'system' | 'light' | 'dark' } },
-}));
+const displayScaleMocks = vi.hoisted(() => {
+    const preferences: { current: { uiScale: number; theme: 'system' | 'light' | 'dark' } } = {
+        current: { uiScale: 1, theme: 'system' },
+    };
+    return { listeners: new Set<() => void>(), preferences };
+});
 
 vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {
