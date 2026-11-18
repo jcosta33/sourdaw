@@ -19,8 +19,14 @@ Split out (a stance matching one carries that file, not this one): replay agains
 
 1. **Save certifies the exact snapshot and every asset it references (#964, #1077, #2822, #3877).** Failure: Save
    returns true and clears dirty while the document points at PCM or state that is not durable, was edited after
-   capture, or is certified by a receipt belonging to an older candidate. Probe: abort only the referenced asset's
-   durable transaction with other stores healthy, Save, clear runtime, restore through the production read path;
+   capture, or is certified by a receipt belonging to an older candidate.
+   #6958's approval described testing late plugin edits on Save and read-status consumers, then claimed the same
+   outcomes for Export. Export handled failed reads but skipped the edit counter (#7032). Probe both entry points
+   with a successful capture and an edit reported while capture or the final write is pending. Save stays dirty.
+   A written Export warns about the earlier state. Removing Export's counter comparison must fail
+   `exportProjectFile.spec.ts`, while an unchanged nonzero count still permits success.
+   For assets, abort only the referenced asset's durable transaction with other stores healthy. Save, clear
+   runtime, and restore through the production read path.
    Save returns false and stays dirty, and one later Save persists the exact failed source. Queue a real owning edit
    right after a synchronous snapshot build (no extra await), and between persistence awaits while its Automerge
    write waits for an animation frame; Save fails or includes it, and every continuation flushes pending writes

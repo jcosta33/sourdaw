@@ -4802,7 +4802,7 @@ describe('health gates workflow contract', () => {
         );
         expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Install dependencies')) + 1);
         expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Run shard')) - 1);
-        expect(browsers['timeout-minutes']).toBe(2);
+        expect(browsers['timeout-minutes']).toBe(10);
         expect(browsers.if).toBeUndefined();
         expect(browsers['continue-on-error']).toBeUndefined();
         expect(browsers.env).toBeUndefined();

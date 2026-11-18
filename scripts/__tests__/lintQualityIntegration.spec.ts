@@ -4,10 +4,17 @@ import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseQualityReport, QUALITY_BUDGET, QUALITY_CONFIG } from '../lintQualityBudget';
+import { parseQualityReport, QUALITY_BUDGET, QUALITY_CONFIG, reconcileQualityBudget } from '../lintQualityBudget';
 import { buildQualityLintArgv } from '../runLint';
 
 const root = resolve(import.meta.dirname, '../..');
+
+function isolateTypeScriptProject(directory: string, parent: string, files: string[]) {
+    writeFileSync(
+        join(directory, 'tsconfig.json'),
+        JSON.stringify({ extends: resolve(root, parent), files, include: [], exclude: [] })
+    );
+}
 
 describe('production quality lint', () => {
     it('observes typed, Vitest and Playwright failures from one real CLI pass', () => {
@@ -22,6 +29,14 @@ describe('production quality lint', () => {
             const sourceHelper = join(source, 'testing/sourceHelper.ts');
             mkdirSync(join(scripts, '__tests__'));
             mkdirSync(join(source, 'testing'));
+            // Type-aware lint must not enumerate other tests' transient files while they are removed.
+            isolateTypeScriptProject(scripts, 'scripts/tsconfig.json', [
+                'typed.ts',
+                'unit.spec.ts',
+                '__tests__/unitHelper.ts',
+            ]);
+            isolateTypeScriptProject(source, 'tsconfig.json', ['testing/sourceHelper.ts']);
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['browser.spec.ts']);
             writeFileSync(
                 runTime,
                 `
@@ -392,7 +407,10 @@ describe('production quality lint', () => {
                     'if (missing) { return; } // immutable missing guard skips the assertion',
                 ])
             );
-            expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
+            expect(
+                report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted(),
+                `Oxlint stdout:\n${result.stdout}\nOxlint stderr:\n${result.stderr}`
+            ).toEqual(
                 [
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
@@ -426,6 +444,201 @@ describe('production quality lint', () => {
             rmSync(scripts, { recursive: true, force: true });
             rmSync(e2e, { recursive: true, force: true });
             rmSync(source, { recursive: true, force: true });
+        }
+    }, 75_000);
+
+    it('enforces the pilot rules on product code and Vitest cases at their exact boundaries', () => {
+        const source = mkdtempSync(join(root, 'src/lint-craft-probe-'));
+        const e2e = mkdtempSync(join(root, 'tests/e2e/lint-craft-probe-'));
+        try {
+            const product = join(source, 'product.tsx');
+            const unit = join(source, 'unit.spec.ts');
+            const helper = join(source, 'testing/helpers.ts');
+            const excluded = join(source, 'browser.e2e.spec.ts');
+            const browser = join(e2e, 'browser.spec.ts');
+            mkdirSync(join(source, 'testing'));
+            isolateTypeScriptProject(source, 'tsconfig.json', [
+                'product.tsx',
+                'unit.spec.ts',
+                'testing/helpers.ts',
+                'browser.e2e.spec.ts',
+            ]);
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['browser.spec.ts']);
+            const decisions = (count: number) => 'if (value) { value -= 1; }\n'.repeat(count);
+            writeFileSync(
+                product,
+                `
+import { type HostFlags } from './testing/helpers';
+export function flags(enabled: boolean, flush = false) { return enabled || flush; }
+export function optionalFlags(enabled: boolean, flush?: boolean) { return enabled || flush; }
+export function flag(enabled: boolean) { return enabled; }
+export function optionFlags({ enabled, flush }: { enabled: boolean; flush: boolean }) { return enabled || flush; }
+export const hostFlags: HostFlags = (enabled: boolean, flush: boolean) => enabled || flush;
+type Callback = (enabled: boolean, flush: boolean) => boolean;
+declare function subscribe(callback: Callback): void;
+subscribe((enabled: boolean, flush: boolean) => enabled || flush);
+export function arity(a: number, b: number, c: number, d: number, e: number) { return a + b + c + d + e; }
+export function four(a: number, b: number, c: number, d: number) { return a + b + c + d; }
+// oxlint-disable-next-line max-params -- The host invokes the callback with five positional fields.
+export function hostCallback(a: number, b: number, c: number, d: number, e: number) { return a + b + c + d + e; }
+export function assertion(value?: number) { return value!; }
+export function narrowed(value?: number) { if (value === undefined) { return 0; } return value; }
+export function redundantGeneric<Value>(value: Value): string { return String(value); }
+export function identity<Value>(value: Value): Value { return value; }
+export function branches(value: number) { ${decisions(12)} }
+export function twelve(value: number) { ${decisions(11)} }
+export function nesting(value: number) { if (value) { if (value) { if (value) { if (value) { if (value) { return value; } } } } } }
+export function eighty(value: number) {
+${'value += 1;\n\n// Count only the expression.\n'.repeat(77)}return value;
+}
+export const longIife = (() => {
+let value = 0;
+${'value += 1;\n'.repeat(78)}return value;
+})();
+function step(value: number) { return value + 1; }
+declare function defer(callback: () => number): number;
+export function heavy(enabled: boolean): number { return enabled ? step(step(step(1))) : step(0); }
+export function mixed(enabled: boolean, current: number) { return enabled ? ++current : 0; }
+export function deferred(enabled: boolean) { return enabled ? defer(() => step(step(step(1)))) : 0; }
+export function simple(enabled: boolean, fixed: string) { return enabled ? String(Number(fixed)) : fixed; }
+export function label(enabled: boolean) { return enabled ? <span>on</span> : <span>off</span>; }
+export function multilineLabel(enabled: boolean) {
+    return enabled
+        ? <span>on</span>
+        : <span>off</span>;
+}
+export function multiline(enabled: boolean): number {
+    return enabled // Multiline calls still belong to the original rule.
+        ? step(step(step(1)))
+        : step(0);
+}
+`
+            );
+            writeFileSync(
+                unit,
+                `
+import { assert, assertType, expect, expectTypeOf, it, test } from 'vitest';
+function observe() { return true; }
+it('matchers', () => { expect(observe()).toBe(true); });
+test('assert', () => { assert(observe()); });
+it('type matcher', () => { expectTypeOf(observe()).toEqualTypeOf<boolean>(); });
+test('type assertion', () => { assertType<boolean>(observe()); });
+it('assertion-free', () => { observe(); });
+export function testHelper(a: number, b: number, c: number, d: number, e?: number) { return a + b + c + d + e!; }
+`
+            );
+            writeFileSync(
+                helper,
+                `
+export type HostFlags = (enabled: boolean, flush: boolean) => boolean;
+export function helper(a: number, b: number, c: number, d: number, e: number) { return a + b + c + d + e; }
+`
+            );
+            writeFileSync(excluded, "import { it } from 'vitest';\nit('outside the pilot', () => {});\n");
+            writeFileSync(
+                browser,
+                "import { test } from '@playwright/test';\ntest('browser scope', async () => {});\n"
+            );
+
+            const argv = buildQualityLintArgv([product, unit, helper, excluded, browser]).slice(2);
+            const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), argv, {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 60_000,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+            const report = parseQualityReport(result.stdout, root);
+            expect(report.fileCount).toBe(5);
+            const productLines = readFileSync(product, 'utf8').split('\n');
+            const cases = [
+                ['eslint/complexity', 'export function branches('],
+                ['eslint/max-depth', 'export function nesting('],
+                ['eslint/max-lines-per-function', 'export const longIife'],
+                ['eslint/max-params', 'export function arity('],
+                ['sourdaw-craft/no-complex-ternary-branch', 'export function heavy('],
+                ['sourdaw-craft/no-complex-ternary-branch', 'export function mixed('],
+                ['sourdaw-craft/no-control-flow-ternary', '    return enabled // Multiline'],
+                ['sourdaw-craft/no-positional-boolean-flags', 'export function flags('],
+                ['sourdaw-craft/no-positional-boolean-flags', 'export function optionalFlags('],
+                ['typescript/no-non-null-assertion', 'export function assertion('],
+                ['typescript/no-unnecessary-type-parameters', 'export function redundantGeneric<'],
+            ] as const;
+            const expected = cases.map(([rule, prefix]) => [
+                'product.tsx',
+                rule,
+                productLines.findIndex((line) => line.startsWith(prefix)) + 1,
+            ]);
+            expected.push(['unit.spec.ts', 'vitest/expect-expect', 8]);
+            expect(report.diagnostics.map(({ file, rule, line }) => [basename(file), rule, line]).toSorted()).toEqual(
+                expected.toSorted()
+            );
+        } finally {
+            rmSync(source, { recursive: true, force: true });
+            rmSync(e2e, { recursive: true, force: true });
+        }
+    }, 75_000);
+
+    it('keeps necessary branches and reports only an else after an unconditional return', () => {
+        const directory = mkdtempSync(join(root, 'scripts/lint-early-returns-'));
+        try {
+            const target = join(directory, 'returns.ts');
+            isolateTypeScriptProject(directory, 'scripts/tsconfig.json', ['returns.ts']);
+            writeFileSync(
+                target,
+                `export function redundant(enabled: boolean): number {
+    if (enabled) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+export function fallthrough(enabled: boolean, steps: string[]): number {
+    if (enabled) {
+        steps.push('enabled');
+    } else {
+        return 2;
+    }
+    return 3;
+}
+
+export function chain(value: number): number {
+    if (value > 0) {
+        return 1;
+    } else if (value === 0) {
+        return 2;
+    }
+    return 3;
+}
+
+export function guard(enabled: boolean): number {
+    if (enabled) {
+        return 1;
+    }
+    return 2;
+}
+`
+            );
+            const result = spawnSync('pnpm', buildQualityLintArgv([target]), {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 60_000,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+            const report = parseQualityReport(result.stdout, root);
+            expect(report.fileCount).toBe(1);
+            expect(report.diagnostics.map(({ rule, line, column }) => [rule, line, column])).toEqual([
+                ['eslint/no-else-return', 3, 9],
+            ]);
+            const budget = reconcileQualityBudget(report, new Map(), [target], root);
+            expect(budget.failed).toBe(true);
+            expect(budget.diagnostics).toEqual([
+                expect.stringContaining(':3:9: error (eslint/no-else-return): Unnecessary `else` after `return`.'),
+            ]);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
         }
     }, 75_000);
 
@@ -524,10 +737,167 @@ console.log(JSON.stringify(effects));
         }
     }, 135_000);
 
+    it('keeps the focused branch and redundant assertion fixes stable through formatting and compilation', () => {
+        const directory = mkdtempSync(join(root, 'src/lint-craft-fix-'));
+        try {
+            const target = join(directory, 'target.ts');
+            const neighbor = join(directory, 'neighbor.ts');
+            const ledgerPath = join(root, QUALITY_BUDGET);
+            const ledger = readFileSync(ledgerPath);
+            const eligible =
+                "    return check(choice) ? step(step(step(0, 'inner'), 'middle'), 'outer') : step(9, 'else');";
+            const source = `const effects: string[] = [];
+
+function step(value: number, label = 'step') {
+    effects.push(label);
+    return value + 1;
+}
+
+function check(choice: boolean) {
+    effects.push('check');
+    return choice;
+}
+
+export function select(choice: boolean): number {
+${eligible}
+}
+
+export function redundant(value: number) {
+    return value!;
+}
+
+export function required(value?: number): number {
+    return value!;
+}
+
+export function inferred(choice: boolean) {
+    return choice ? step(step(step(1))) : step(2);
+}
+
+export function wrapped(choice: boolean): number {
+    return (choice ? step(step(step(3))) : step(4)) satisfies number;
+}
+
+function verify(value: unknown): asserts value is string {
+    if (typeof value !== 'string') {
+        throw new Error('not a string');
+    }
+}
+
+export function asserted(choice: boolean, value: unknown) {
+    choice ? verify(value) : verify(value);
+    return value;
+}
+
+console.log(JSON.stringify([select(true), select(false), redundant(3), required(4), asserted(false, 'a'), effects]));
+`;
+            isolateTypeScriptProject(directory, 'tsconfig.app.json', ['target.ts', 'neighbor.ts']);
+            writeFileSync(target, source);
+            writeFileSync(neighbor, source);
+
+            const execute = (command: string, args: string[], status = 0) => {
+                const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', timeout: 60_000 });
+                expect(result.error).toBeUndefined();
+                expect(result.status, result.stdout + result.stderr).toBe(status);
+                return result.stdout;
+            };
+            const declaration = () => {
+                execute(resolve(root, 'node_modules/.bin/tsc'), [
+                    '--ignoreConfig',
+                    '--strict',
+                    '--skipLibCheck',
+                    '--target',
+                    'ESNext',
+                    '--module',
+                    'nodenext',
+                    '--declaration',
+                    '--emitDeclarationOnly',
+                    '--outDir',
+                    directory,
+                    target,
+                ]);
+                return readFileSync(join(directory, 'target.d.ts'), 'utf8');
+            };
+
+            const runtime = execute(process.execPath, [target]);
+            expect(JSON.parse(runtime)).toEqual([
+                3,
+                10,
+                3,
+                4,
+                'a',
+                ['check', 'inner', 'middle', 'outer', 'check', 'else'],
+            ]);
+            const types = declaration();
+            expect(types).toContain('export declare function asserted(choice: boolean, value: unknown): unknown;');
+
+            const oxlint = resolve(root, 'node_modules/.bin/oxlint');
+            const productionFix = () =>
+                execute(oxlint, [
+                    '--config=.oxlintrc.json',
+                    '--disable-nested-config',
+                    '--threads=2',
+                    '--format=json',
+                    '--fix',
+                    '--allow=all',
+                    '--deny=typescript/no-unnecessary-type-assertion',
+                    target,
+                ]);
+            const qualityFix = () => {
+                const report = parseQualityReport(
+                    execute(
+                        oxlint,
+                        [...buildQualityLintArgv([]).slice(2), '--allow=no-else-return', '--fix', target],
+                        1
+                    ),
+                    root
+                );
+                expect(report.fileCount).toBe(1);
+                expect(report.diagnostics.map(({ rule }) => rule).sort()).toEqual([
+                    'sourdaw-craft/no-complex-ternary-branch',
+                    'sourdaw-craft/no-complex-ternary-branch',
+                    'sourdaw-craft/no-control-flow-ternary',
+                    'typescript/no-non-null-assertion',
+                ]);
+            };
+            const format = () => execute(resolve(root, 'node_modules/.bin/prettier'), ['--write', target]);
+            productionFix();
+            const stockFixed = source.replace('    return value!;', '    return value;');
+            expect(readFileSync(target, 'utf8')).toBe(stockFixed);
+            qualityFix();
+            expect(readFileSync(target, 'utf8')).toBe(
+                stockFixed.replace(
+                    eligible,
+                    "    if (check(choice)) { return (step(step(step(0, 'inner'), 'middle'), 'outer')); } return (step(9, 'else'));"
+                )
+            );
+            format();
+            const fixed = stockFixed.replace(
+                eligible,
+                `    if (check(choice)) {
+        return step(step(step(0, 'inner'), 'middle'), 'outer');
+    }
+    return step(9, 'else');`
+            );
+            expect(readFileSync(target, 'utf8')).toBe(fixed);
+            expect(execute(process.execPath, [target])).toBe(runtime);
+            expect(declaration()).toBe(types);
+            productionFix();
+            qualityFix();
+            format();
+            expect(readFileSync(target, 'utf8')).toBe(fixed);
+            expect(readFileSync(neighbor, 'utf8')).toBe(source);
+            expect(readFileSync(ledgerPath)).toEqual(ledger);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    }, 135_000);
+
     it('keeps the final bytes and the ledger stable across real focused check and fix', () => {
         const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-run-'));
         try {
             const fixture = join(e2e, 'quietWindow.spec.ts');
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['quietWindow.spec.ts']);
             const ledgerPath = join(root, QUALITY_BUDGET);
             const ledger = readFileSync(ledgerPath);
             const formatted = `import { expect, test } from '../e2eTest';

@@ -127,6 +127,12 @@ the merge-base delivery guidance and its references.
 head-bound evidence, a short reviewer-written body and no inline comments.
 Keep credentials, private reviewer prose and sensitive logs out of the record.
 
+When drafting the public approval, name what was observed and the result in its broadest
+verification claim. Tie that claim to the structured evidence for the reviewed head. State the
+boundary the verification reached, such as behavior measured in a test, an interaction recorded
+by a test double, or a property established by source comparison. Narrow or qualify the claim
+when the broader outcome was unobserved.
+
 ### i. Before any APPROVE publish
 
 - Require `SUCCESS` for the whole exact-head `Health gates` workflow, `MERGEABLE` and
