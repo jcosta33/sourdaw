@@ -1,4 +1,5 @@
 import { type AutomationPoint } from '../../models/Automation';
+import { insertAutomationPointAtBeat } from '../../services/insertAutomationPointAtBeat';
 import { automationStore } from '../../stores/automationStore';
 
 export function addAutomationPoint(laneId: string, point: AutomationPoint): void {
@@ -11,24 +12,7 @@ export function addAutomationPoint(laneId: string, point: AutomationPoint): void
             if (length.id !== laneId) {
                 return length;
             }
-            // Points are kept sorted by beat. Insert at the binary-search slot
-            // instead of re-sorting the whole array on every call — re-sorting
-            // is O(N log N) per insert, i.e. O(N² log N) to flush an N-point
-            // recording. Ties land after existing equal-beat points (upper
-            // bound), preserving the prior stable-sort placement.
-            const next = [...length.points];
-            let lo = 0;
-            let hi = next.length;
-            while (lo < hi) {
-                const mid = (lo + hi) >>> 1;
-                if (next[mid]!.beat <= point.beat) {
-                    lo = mid + 1;
-                } else {
-                    hi = mid;
-                }
-            }
-            next.splice(lo, 0, point);
-            return { ...length, points: next };
+            return { ...length, points: insertAutomationPointAtBeat(length.points, point) };
         }),
     });
 }
