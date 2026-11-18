@@ -57,6 +57,34 @@ function spanKey(start: number, end: number): string {
     return `${start}:${end}`;
 }
 
+function validatedSpanKey(label: unknown, bytes: number | undefined): string | undefined {
+    const span = record(label) && record(label.span) ? label.span : undefined;
+    const start = span?.offset;
+    const length = span?.length;
+    if (
+        bytes === undefined ||
+        typeof start !== 'number' ||
+        !Number.isSafeInteger(start) ||
+        start < 0 ||
+        typeof length !== 'number' ||
+        !Number.isSafeInteger(length) ||
+        length <= 0 ||
+        start + length > bytes
+    ) {
+        return undefined;
+    }
+    return spanKey(start, start + length);
+}
+
+function validatedScore(message: string, maximum: number): number | undefined {
+    const match = /\bhas a complexity of (\d+)\. Maximum allowed is (\d+)\.$/.exec(message);
+    const score = Number(match?.[1]);
+    if (Number(match?.[2]) !== maximum || !Number.isSafeInteger(score) || score <= maximum) {
+        return undefined;
+    }
+    return score;
+}
+
 function readScore(entry: unknown, snapshots: ReadonlyMap<string, Snapshot>, root: string, maximum: number): void {
     const snapshot =
         record(entry) && typeof entry.filename === 'string' ? snapshots.get(resolve(root, entry.filename)) : undefined;
@@ -71,30 +99,13 @@ function readScore(entry: unknown, snapshots: ReadonlyMap<string, Snapshot>, roo
         const path = snapshot === undefined ? '' : ` in ${snapshot.file.path}`;
         throw new Error(`Unexpected Oxlint complexity diagnostic${path}: ${JSON.stringify(entry)}`);
     }
-    const match = /\bhas a complexity of (\d+)\. Maximum allowed is (\d+)\.$/.exec(entry.message);
-    const score = Number(match?.[1]);
-    const label: unknown = entry.labels[0];
-    const span = record(label) && record(label.span) ? label.span : undefined;
-    const start = span?.offset;
-    const length = span?.length;
-    if (
-        snapshot === undefined ||
-        Number(match?.[2]) !== maximum ||
-        !Number.isSafeInteger(score) ||
-        score <= maximum ||
-        typeof start !== 'number' ||
-        !Number.isSafeInteger(start) ||
-        start < 0 ||
-        typeof length !== 'number' ||
-        !Number.isSafeInteger(length) ||
-        length <= 0 ||
-        start + length > snapshot.bytes
-    ) {
+    const score = validatedScore(entry.message, maximum);
+    const key = validatedSpanKey(entry.labels[0], snapshot?.bytes);
+    if (snapshot === undefined || score === undefined || key === undefined) {
         throw new Error(
             `Invalid Oxlint complexity score or span: ${snapshot?.file.path ?? JSON.stringify(entry.filename)}: ${entry.message}`
         );
     }
-    const key = spanKey(start, start + length);
     if (snapshot.scores.has(key)) {
         throw new Error(`Duplicate Oxlint complexity span: ${snapshot.file.path}: ${key}`);
     }
