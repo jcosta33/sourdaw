@@ -666,6 +666,47 @@ describe('size baseline check against the merge base', () => {
         ]);
     });
 
+    it('seeds a newly configured rule only for unchanged tracked files', () => {
+        const config = join(dir, '.oxlint-quality.json');
+        const budget = join(dir, 'oxlint-quality-baseline.json');
+        const newRule = 'vitest/no-conditional-expect';
+        const oldRule = 'sourdaw-craft/no-control-flow-ternary';
+        const write = (path: string, value: object) => writeFileSync(path, JSON.stringify(value));
+        writeFileSync(join(dir, 'unchanged.ts'), 'export const count = 1;\n');
+        writeFileSync(join(dir, 'edited.ts'), 'export const count = 1;\n');
+        write(config, { rules: { [oldRule]: 'error' } });
+        write(budget, { 'unchanged.ts': { [oldRule]: { count: 2 } } });
+        commit('quality rule already in force');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+
+        write(config, {
+            rules: { [oldRule]: 'error' },
+            overrides: [{ files: ['*.ts'], rules: { [newRule]: 'error' } }],
+        });
+        write(budget, { 'unchanged.ts': { [oldRule]: { count: 1 }, [newRule]: { count: 2 } } });
+        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+
+        writeFileSync(join(dir, 'edited.ts'), 'export const count = 2;\n');
+        writeFileSync(join(dir, 'new.ts'), 'export const count = 1;\n');
+        write(budget, {
+            'unchanged.ts': { [oldRule]: { count: 1 }, [newRule]: { count: 2 } },
+            'edited.ts': { [newRule]: { count: 1 } },
+            'new.ts': { [newRule]: { count: 1 } },
+            'eslint.size-baseline.mjs': { [oldRule]: { count: 1 } },
+        });
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            `edited.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+            `new.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+            `eslint.size-baseline.mjs: ${oldRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+        ]);
+
+        write(config, { rules: { [oldRule]: 'error', [newRule]: 'off' } });
+        write(budget, { 'unchanged.ts': { [newRule]: { count: 1 } } });
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            `unchanged.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+        ]);
+    });
+
     it('should accept a head that only removes a path and lowers a ceiling', async () => {
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeBaseline(['a.ts'], { 'a.ts': 650 });
