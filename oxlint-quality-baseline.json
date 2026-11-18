@@ -12748,11 +12748,6 @@
             "count": 1
         }
     },
-    "src/modules/CrdtDocument/models/ProspectiveMutationWorkerProtocol.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx": {
         "eslint/max-lines-per-function": {
             "count": 1

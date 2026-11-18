@@ -54,6 +54,22 @@ function readBoundedNativeResponse(data: object & { status: unknown }): Prospect
     return undefined;
 }
 
+function readOrdinaryNativeResponse(data: object & { status: unknown }): ProspectiveMutationWorkerResult | undefined {
+    if (
+        data.status === 'complete' &&
+        'changes' in data &&
+        isOwnedChangeArray(data.changes) &&
+        'heads' in data &&
+        isNativeHeadArray(data.heads)
+    ) {
+        return {
+            changes: data.changes.map((bytes) => new Uint8Array(bytes.buffer)),
+            heads: data.heads,
+        };
+    }
+    return undefined;
+}
+
 /** Each private job owns its transferable seed, callbacks, deadline and Worker. */
 export function requestProspectiveMutation(
     request: ProspectiveMutationWorkerRequest,
@@ -105,19 +121,12 @@ export function requestProspectiveMutation(
                     return;
                 }
             }
-            if (
-                request.preparationPolicy === undefined &&
-                data.status === 'complete' &&
-                'changes' in data &&
-                isOwnedChangeArray(data.changes) &&
-                'heads' in data &&
-                isNativeHeadArray(data.heads)
-            ) {
-                finish({
-                    changes: data.changes.map((bytes) => new Uint8Array(bytes.buffer)),
-                    heads: data.heads,
-                });
-                return;
+            if (request.preparationPolicy === undefined) {
+                const ordinary = readOrdinaryNativeResponse(data);
+                if (ordinary) {
+                    finish(ordinary);
+                    return;
+                }
             }
             const message =
                 data.status === 'failed' && 'message' in data && typeof data.message === 'string'

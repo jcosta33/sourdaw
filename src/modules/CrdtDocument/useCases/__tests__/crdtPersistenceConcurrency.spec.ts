@@ -407,17 +407,11 @@ describe('CRDT persistence across independent queue contexts', () => {
                 context.repository.automergeRepository.replaceDocInLineage('root', cloneDoc(base));
             }
             respondToEncodeIncrementals(held.worker, held.request);
-            const error = await settled;
-            if (kind === 'rollback') {
-                expect(error).toMatchObject({
-                    message: '[CrdtPersistence] Project authority changed during incremental encoding',
-                });
-            } else {
-                expect(error).toBeNull();
-            }
-            if (loading) {
-                await expect(loading).resolves.toBe(true);
-            }
+            const rollbackError = expect.objectContaining({
+                message: '[CrdtPersistence] Project authority changed during incremental encoding',
+            });
+            expect(await settled).toEqual(kind === 'rollback' ? rollbackError : null);
+            expect(await loading).toBe(kind === 'load' ? true : undefined);
             expect(persistence.getTransactions('readwrite')).toHaveLength(1);
             const laterRequest = Promise.withResolvers<{
                 worker: ControlledWorker;
@@ -435,11 +429,13 @@ describe('CRDT persistence across independent queue contexts', () => {
                 doc.afterRetirement = true;
             });
             const later = context.queue.runCrdtPersistenceOperation('incremental');
+            let laterFrontier: string[] | undefined;
             if (kind !== 'replacement') {
                 const next = await laterRequest.promise;
-                expect(next.request.documents[0]?.frontier).toEqual(baseHeads);
+                laterFrontier = next.request.documents[0]?.frontier;
                 respondToEncodeIncrementals(next.worker, next.request);
             }
+            expect(laterFrontier).toEqual(kind === 'replacement' ? undefined : baseHeads);
             const write = await persistence.waitForTransaction('readwrite', 2);
             write.complete();
             await later;

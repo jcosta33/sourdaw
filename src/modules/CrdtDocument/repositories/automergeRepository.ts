@@ -35,7 +35,7 @@ import {
     retainsActiveFrontier,
     type IncrementalsEncodedResponse,
 } from '../models/NativeIncrementalEncoding';
-import { isBoundedNativePreparationPolicy } from '../models/NativeMutationSequence';
+import { isAbsentNativeAuthor, isBoundedNativePreparationPolicy } from '../models/NativeMutationSequence';
 import {
     type ProspectiveMutationWorkerResult,
     type ProspectiveMutationWorkerRequest,
@@ -602,12 +602,56 @@ class AutomergeRepository {
             }
         };
         const nativeAuthor = canonicalMutation ? getAuthor(doc) : undefined;
-        if (preparationPolicy !== undefined && nativeAuthor !== undefined && nativeAuthor !== null) {
+        const hasAbsentAuthor = isAbsentNativeAuthor(nativeAuthor);
+        if (preparationPolicy !== undefined && !hasAbsentAuthor) {
             releaseClone();
             throw new Error('Native sequence preparation requires an absent author');
         }
+        const admitSequenceResponse = (
+            response: Promise<ProspectiveMutationWorkerResult>,
+            materializationSignal: AbortSignal,
+            mutation: CanonicalStorageSlotMutation
+        ): Promise<void> => {
+            let captured: Doc<TDoc> | undefined = candidate;
+            candidate = undefined;
+            return response
+                .then(async (result) => {
+                    if (!captured || cloneConsumed) {
+                        throw new Error('Prospective clone has already settled');
+                    }
+                    const owned = captured;
+                    captured = undefined;
+                    const admitted = await admitBoundedNativeSequence({
+                        candidate: owned,
+                        source: doc,
+                        result,
+                        previousHeads,
+                        actor,
+                        message,
+                        key: mutation.key,
+                        signal: materializationSignal,
+                        assertCurrent: assertSequenceAuthority,
+                    });
+                    try {
+                        materializationSignal.throwIfAborted();
+                        assertSequenceAuthority();
+                        admittedSequence = admitted;
+                    } catch (error) {
+                        free(admitted);
+                        throw error;
+                    }
+                })
+                .catch((error: unknown) => {
+                    if (captured) {
+                        free(captured);
+                        captured = undefined;
+                    }
+                    releaseClone();
+                    throw error;
+                });
+        };
         let requestMaterialization: ((signal: AbortSignal) => Promise<void>) | undefined;
-        if (canonicalMutation && (nativeAuthor === null || nativeAuthor === undefined)) {
+        if (canonicalMutation && hasAbsentAuthor) {
             requestMaterialization = (signal: AbortSignal): Promise<void> => {
                 if (cloneConsumed || workerRequested || !candidate) {
                     throw new Error('Prospective clone has already settled');
@@ -645,43 +689,7 @@ class AutomergeRepository {
                     }
                     const response = requestProspectiveMutation(request, materializationSignal);
                     if (preparationPolicy === 'bounded-native-sequence-v1') {
-                        let captured: Doc<TDoc> | undefined = candidate;
-                        candidate = undefined;
-                        return response
-                            .then(async (result) => {
-                                if (!captured || cloneConsumed) {
-                                    throw new Error('Prospective clone has already settled');
-                                }
-                                const owned = captured;
-                                captured = undefined;
-                                const admitted = await admitBoundedNativeSequence({
-                                    candidate: owned,
-                                    source: doc,
-                                    result,
-                                    previousHeads,
-                                    actor,
-                                    message,
-                                    key: canonicalMutation.key,
-                                    signal: materializationSignal,
-                                    assertCurrent: assertSequenceAuthority,
-                                });
-                                try {
-                                    materializationSignal.throwIfAborted();
-                                    assertSequenceAuthority();
-                                    admittedSequence = admitted;
-                                } catch (error) {
-                                    free(admitted);
-                                    throw error;
-                                }
-                            })
-                            .catch((error: unknown) => {
-                                if (captured) {
-                                    free(captured);
-                                    captured = undefined;
-                                }
-                                releaseClone();
-                                throw error;
-                            });
+                        return admitSequenceResponse(response, materializationSignal, canonicalMutation);
                     }
                     return response
                         .then((result) => {
@@ -715,6 +723,24 @@ class AutomergeRepository {
                 }
             };
         }
+        const settleCloneForMaterialization = (): void => {
+            if (cloneConsumed) {
+                throw new Error('Prospective clone has already settled');
+            }
+            cloneConsumed = true;
+            try {
+                authority.assertCurrent();
+                if (preparationPolicy === 'bounded-native-sequence-v1' && !admittedSequence) {
+                    throw new Error('Prospective mutation Worker has not completed');
+                }
+            } catch (error) {
+                if (preparationPolicy === 'bounded-native-sequence-v1') {
+                    controller.abort(error);
+                }
+                releaseClone();
+                throw error;
+            }
+        };
         return {
             requestMaterialization,
             isCurrent: (): boolean => !cloneConsumed && authority.isCurrent(),
@@ -725,22 +751,7 @@ class AutomergeRepository {
                 releaseClone();
             },
             materialize: (): PreparedProspectiveMutation<TDoc> => {
-                if (cloneConsumed) {
-                    throw new Error('Prospective clone has already settled');
-                }
-                cloneConsumed = true;
-                try {
-                    authority.assertCurrent();
-                    if (preparationPolicy === 'bounded-native-sequence-v1' && !admittedSequence) {
-                        throw new Error('Prospective mutation Worker has not completed');
-                    }
-                } catch (error) {
-                    if (preparationPolicy === 'bounded-native-sequence-v1') {
-                        controller.abort(error);
-                    }
-                    releaseClone();
-                    throw error;
-                }
+                settleCloneForMaterialization();
                 let updated: Doc<TDoc>;
                 if (admittedSequence) {
                     updated = admittedSequence;

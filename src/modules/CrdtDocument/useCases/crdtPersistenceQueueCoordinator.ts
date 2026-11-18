@@ -925,6 +925,15 @@ async function flushPendingFullSnapshot(generation: number, attempt: Persistence
     await persistFullSnapshot(pending, attempt);
 }
 
+function finishFullSnapshotCommit(pending: PendingFullSnapshot): void {
+    persistenceState.pendingFullSnapshot = null;
+    persistenceState.persistedBaseDocIds.clear();
+    for (const id of pending.bundle.keys()) {
+        persistenceState.persistedBaseDocIds.add(id);
+    }
+    crdtProjectCompactionState.incrementalSaveCount = 0;
+}
+
 /** Keep a serialized full bundle pending until its replace transaction commits. */
 async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: PersistenceAttempt): Promise<void> {
     if (pending.generation !== persistenceState.persistenceGeneration) {
@@ -1010,12 +1019,7 @@ async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: Persis
         currentPending.generation === persistenceState.persistenceGeneration &&
         persistenceState.pendingFullSnapshot === currentPending
     ) {
-        persistenceState.pendingFullSnapshot = null;
-        persistenceState.persistedBaseDocIds.clear();
-        for (const id of currentPending.bundle.keys()) {
-            persistenceState.persistedBaseDocIds.add(id);
-        }
-        crdtProjectCompactionState.incrementalSaveCount = 0;
+        finishFullSnapshotCommit(currentPending);
     }
 }
 

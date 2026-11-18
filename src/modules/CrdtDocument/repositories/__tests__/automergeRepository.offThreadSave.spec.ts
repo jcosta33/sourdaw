@@ -109,9 +109,8 @@ describe('AutomergeRepository off-thread full save (CC-8)', () => {
             expect(getHeads(decoded)).toEqual(captured.headsByDoc.get('root'));
             expect(decoded.first).toBe(true);
             expect(decoded.second).toBe(outcome === 'worker' ? undefined : true);
-            if (outcome === 'worker') {
-                expect(captured.headsByDoc.get('root')).toEqual(firstHeads);
-            }
+            const expectedHeads = outcome === 'worker' ? firstHeads : repository.getHeads('root');
+            expect(captured.headsByDoc.get('root')).toEqual(expectedHeads);
             // Snapshot/export calls may consume native cursors but cannot consume the explicit queue frontier.
             const frontier = captured.headsByDoc.get('root')!;
             repository.saveDoc('root');

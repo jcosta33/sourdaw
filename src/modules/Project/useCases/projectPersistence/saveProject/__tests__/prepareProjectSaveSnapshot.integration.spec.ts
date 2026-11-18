@@ -214,9 +214,9 @@ function startPreparation(signal?: AbortSignal, expectedOutgoingProjectIdentity?
     if (transaction.status !== 'returned') {
         throw transaction.error;
     }
-    // Admission assertions must not leave an unhandled async refusal behind.
-    void transaction.value.catch(() => undefined);
-    return transaction;
+    // Register rejection handling before the synchronous admission assertions.
+    const settlement = Promise.allSettled([transaction.value]);
+    return { ...transaction, settlement };
 }
 
 function registerValidation(transaction: ReturnType<typeof startPreparation>, result: HandlerExecutionResult): void {
@@ -242,43 +242,82 @@ function holdPreparation(expectedOutgoingProjectIdentity?: string) {
 async function finishHeldPreparation(held: ReturnType<typeof holdPreparation>, deliver: () => void): Promise<void> {
     held.cancellation.abort();
     deliver();
-    await held.transaction.value.catch(() => undefined);
+    // The case asserts the preparation outcome; drain even a refusal during teardown.
+    await held.transaction.settlement;
     held.transaction.abort();
 }
 
-function editSource(source: 'track' | 'MIDI' | 'warp'): void {
-    if (source === 'track') {
-        renameTrack('source-track', 'Subscriber edit');
-        expect(trackStore.value?.tracks[0]?.name).toBe('Subscriber edit');
-        return;
-    }
-    if (source === 'MIDI') {
-        const midi = requireValue(midiStore.value);
-        setMidiStoreState({
-            ...midi,
-            notesByClipId: {
-                ...midi.notesByClipId,
-                'midi-clip': [
-                    ...requireValue(midi.notesByClipId['midi-clip']),
-                    { id: 'later-note', pitch: 72, startBeat: 2, duration: 0.5, velocity: 0.8 },
-                ],
-            },
-        });
-        expect(midiStore.value?.notesByClipId['midi-clip']?.at(-1)?.id).toBe('later-note');
-        return;
-    }
-    const warp = getWarpState('source-clip');
-    hydrateClipWarpStates([
-        {
-            ...warp,
-            clipId: 'source-clip',
-            markers: [
-                ...warp.markers,
-                { id: 'later-marker', originalBeat: 3, warpedBeat: 3.25, origin: 'user', locked: true },
-            ],
+const sourceEdits = [
+    {
+        source: 'track',
+        edit() {
+            renameTrack('source-track', 'Subscriber edit');
+            return trackStore.value?.tracks[0]?.name;
         },
-    ]);
-    expect(getWarpState('source-clip').markers.at(-1)?.id).toBe('later-marker');
+        expected: 'Subscriber edit',
+    },
+    {
+        source: 'MIDI',
+        edit() {
+            const midi = requireValue(midiStore.value);
+            setMidiStoreState({
+                ...midi,
+                notesByClipId: {
+                    ...midi.notesByClipId,
+                    'midi-clip': [
+                        ...requireValue(midi.notesByClipId['midi-clip']),
+                        { id: 'later-note', pitch: 72, startBeat: 2, duration: 0.5, velocity: 0.8 },
+                    ],
+                },
+            });
+            return midiStore.value?.notesByClipId['midi-clip']?.at(-1)?.id;
+        },
+        expected: 'later-note',
+    },
+    {
+        source: 'warp',
+        edit() {
+            const warp = getWarpState('source-clip');
+            hydrateClipWarpStates([
+                {
+                    ...warp,
+                    clipId: 'source-clip',
+                    markers: [
+                        ...warp.markers,
+                        { id: 'later-marker', originalBeat: 3, warpedBeat: 3.25, origin: 'user', locked: true },
+                    ],
+                },
+            ]);
+            return getWarpState('source-clip').markers.at(-1)?.id;
+        },
+        expected: 'later-marker',
+    },
+];
+
+function observeSourceEdit(edit: () => string | undefined) {
+    const edited = vi.fn(edit);
+    const observe = (): void => {
+        if (edited.mock.calls.length === 0) {
+            edited();
+        }
+    };
+    return { observe, edited };
+}
+
+async function expectRefusalBeforeWorker(message: string): Promise<void> {
+    const projection = projectStore.value;
+    const arrangements = arrangementStore.value;
+    const verifyNativeTruth = witnessNativeTruth();
+    const transaction = startPreparation(undefined, captureProjectIdentity());
+    try {
+        await expect(transaction.value).rejects.toThrow(message);
+        expect(requests).toEqual([]);
+        verifyNativeTruth();
+        expect(projectStore.value).toBe(projection);
+        expect(arrangementStore.value).toBe(arrangements);
+    } finally {
+        transaction.abort();
+    }
 }
 
 beforeEach(() => {
@@ -420,40 +459,28 @@ describe('private Project Save preparation with real native storage', () => {
         }
     });
 
-    it.each(['projectId', 'createdAt', 'pending migration'] as const)(
+    it.each(['projectId', 'createdAt'] as const)(
         'refuses %s disagreement before requesting a Worker even for the current outgoing identity',
         async (input) => {
             const project = requireValue(projectStore.value);
-            if (input === 'pending migration') {
-                projectStore.set({ ...project, identityMigrationPending: true });
-            } else {
-                const mismatching = A.change(A.clone(root()), (draft) => {
-                    draft.projectMeta[input] = input === 'projectId' ? createProjectId() : project.createdAt + 1;
-                });
-                replaceCrdtDoc({ id: 'root', doc: mismatching });
-                expect(root().projectMeta[input]).not.toBe(project[input]);
-                expect(projectStore.value).toBe(project);
-            }
-            const projection = projectStore.value;
-            const arrangements = arrangementStore.value;
-            const verifyNativeTruth = witnessNativeTruth();
-            const expectedOutgoingProjectIdentity = captureProjectIdentity();
-            const transaction = startPreparation(undefined, expectedOutgoingProjectIdentity);
-            try {
-                const message =
-                    input === 'pending migration'
-                        ? 'requires settled project identity'
-                        : 'requires matching outgoing project metadata';
-                await expect(transaction.value).rejects.toThrow(message);
-                expect(requests).toEqual([]);
-                verifyNativeTruth();
-                expect(projectStore.value).toBe(projection);
-                expect(arrangementStore.value).toBe(arrangements);
-            } finally {
-                transaction.abort();
-            }
+            const mismatching = A.change(A.clone(root()), (draft) => {
+                draft.projectMeta[input] = input === 'projectId' ? createProjectId() : project.createdAt + 1;
+            });
+            replaceCrdtDoc({ id: 'root', doc: mismatching });
+            expect(root().projectMeta[input]).not.toBe(project[input]);
+            expect(projectStore.value).toBe(project);
+
+            await expectRefusalBeforeWorker('requires matching outgoing project metadata');
         }
     );
+
+    it('refuses pending identity migration before requesting a Worker even for the current outgoing identity', async () => {
+        const project = requireValue(projectStore.value);
+        projectStore.set({ ...project, identityMigrationPending: true });
+        expect(projectStore.value?.identityMigrationPending).toBe(true);
+
+        await expectRefusalBeforeWorker('requires settled project identity');
+    });
 
     it('does not stage or replan a replaced outgoing root while its genuine Worker reply is held', async () => {
         const project = requireValue(projectStore.value);
@@ -550,48 +577,54 @@ describe('private Project Save preparation with real native storage', () => {
         }
     });
 
-    it.each(['track', 'MIDI', 'warp'] as const)(
-        'refuses a same-owner %s edit from either staging notification or before the later commit',
-        async (source) => {
-            // Every position is executed; none may be admitted conditionally.
-            for (const position of ['metadata notification', 'arrangement notification', 'before commit'] as const) {
-                seedProject();
-                requests.length = 0;
-                const before = root();
-                const truth = A.toJS(before);
-                const heads = A.getHeads(before);
-                let edited = false;
-                const observe = (): void => {
-                    if (!edited) {
-                        edited = true;
-                        editSource(source);
-                    }
-                };
-                const store = position === 'metadata notification' ? projectStore : arrangementStore;
-                const unsubscribe = position === 'before commit' ? () => undefined : store.subscribe(observe);
-                const transaction = startPreparation();
-                try {
-                    if (position === 'before commit') {
-                        const result = await transaction.value;
-                        transaction.scope(observe);
-                        expect(A.getHeads(root())).toEqual(heads);
-                        registerValidation(transaction, result);
-                        expect(() => transaction.commit()).toThrow(ProjectSavePreparationStaleError);
-                    } else {
-                        await expect(transaction.value).rejects.toBeInstanceOf(ProjectSavePreparationStaleError);
-                    }
-                    expect(edited).toBe(true);
-                    expect(root()).toBe(before);
-                    transaction.abort();
-                    flushAutomergeStorageWrites();
-                    expect(A.toJS(root())).toEqual(truth);
-                } finally {
-                    unsubscribe();
-                    transaction.abort();
-                }
+    it.each(
+        sourceEdits.flatMap((source) => [
+            { ...source, slot: 'metadata', subscribe: (observe: () => void) => projectStore.subscribe(observe) },
+            { ...source, slot: 'arrangement', subscribe: (observe: () => void) => arrangementStore.subscribe(observe) },
+        ])
+    )(
+        'refuses a same-owner $source edit from the $slot staging notification',
+        async ({ edit, expected, subscribe }) => {
+            const before = root();
+            const truth = A.toJS(before);
+            const { observe, edited } = observeSourceEdit(edit);
+            const unsubscribe = subscribe(observe);
+            const transaction = startPreparation();
+            try {
+                await expect(transaction.value).rejects.toBeInstanceOf(ProjectSavePreparationStaleError);
+                expect(edited).toHaveReturnedWith(expected);
+                expect(root()).toBe(before);
+                transaction.abort();
+                flushAutomergeStorageWrites();
+                expect(A.toJS(root())).toEqual(truth);
+            } finally {
+                unsubscribe();
+                transaction.abort();
             }
         }
     );
+
+    it.each(sourceEdits)('refuses a same-owner $source edit before the later commit', async ({ edit, expected }) => {
+        const before = root();
+        const truth = A.toJS(before);
+        const heads = A.getHeads(before);
+        const { observe, edited } = observeSourceEdit(edit);
+        const transaction = startPreparation();
+        try {
+            const result = await transaction.value;
+            transaction.scope(observe);
+            expect(A.getHeads(root())).toEqual(heads);
+            registerValidation(transaction, result);
+            expect(() => transaction.commit()).toThrow(ProjectSavePreparationStaleError);
+            expect(edited).toHaveReturnedWith(expected);
+            expect(root()).toBe(before);
+            transaction.abort();
+            flushAutomergeStorageWrites();
+            expect(A.toJS(root())).toEqual(truth);
+        } finally {
+            transaction.abort();
+        }
+    });
 
     it('preserves a newer external source edit and dirty metadata when its prepared owner aborts', async () => {
         const transaction = startPreparation();
@@ -646,18 +679,17 @@ describe('private Project Save preparation with real native storage', () => {
                 }
                 const authority = root();
                 const authorityTruth = A.toJS(authority);
-                const refusal = held.transaction.value.catch((error: unknown) => error);
+                const expectedAuthority = reason === 'replacement' ? authority : before;
+                const expectedTruth = reason === 'replacement' ? authorityTruth : truth;
                 deliver();
-                const error = await refusal;
-                expect(error).toBeInstanceOf(Error);
-                expect(error).not.toBeInstanceOf(ProjectSavePreparationStaleError);
+                const [outcome] = await held.transaction.settlement;
+                expect(outcome).toMatchObject({ status: 'rejected', reason: expect.any(Error) });
+                expect(outcome).not.toMatchObject({ reason: expect.any(ProjectSavePreparationStaleError) });
                 held.transaction.abort();
                 expect(root()).toBe(authority);
                 expect(A.toJS(root())).toEqual(authorityTruth);
-                if (reason !== 'replacement') {
-                    expect(authority).toBe(before);
-                    expect(A.toJS(before)).toEqual(truth);
-                }
+                expect(authority).toBe(expectedAuthority);
+                expect(A.toJS(authority)).toEqual(expectedTruth);
             } finally {
                 await finishHeldPreparation(held, deliver);
             }
@@ -847,6 +879,7 @@ describe('private Project Save preparation with real native storage', () => {
             nativeChunkCount?: number;
             reached: string[];
             failure?: string;
+            cleanupRejection?: string;
         } = { timings, nativePublications: 0, reached: ['fixture-and-source-controls'] };
         const collect = (entries: readonly PerformanceEntry[]): void => {
             for (const entry of entries) {
@@ -881,7 +914,6 @@ describe('private Project Save preparation with real native storage', () => {
             expect(requests).toEqual([{ key: 'arrangements', policy: 'bounded-native-sequence-v1' }]);
             if (prefixMs >= 50) {
                 cancellation.abort(new Error('Actual private Save synchronous prefix exceeded50ms'));
-                await transaction.value.catch(() => undefined);
             }
             expect(prefixMs, 'Actual private Save synchronous prefix').toBeLessThan(50);
             report.reached.push('prefix-bound');
@@ -1003,7 +1035,11 @@ describe('private Project Save preparation with real native storage', () => {
         } finally {
             report.totalWallMs ??= performance.now() - wallStarted;
             cancellation.abort();
-            await transaction.value.catch(() => undefined);
+            const [outcome] = await transaction.settlement;
+            if (outcome.status === 'rejected') {
+                const reason: unknown = outcome.reason;
+                report.cleanupRejection = reason instanceof Error ? reason.message : String(reason);
+            }
             transaction.abort();
             unstore();
             unsubscribe();

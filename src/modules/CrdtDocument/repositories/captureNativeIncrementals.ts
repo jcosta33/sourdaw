@@ -16,6 +16,38 @@ function readHeads(value: unknown): value is Heads {
     );
 }
 
+function assertIncrementalFrameHeader(bytes: Uint8Array, offset: number): void {
+    if (
+        bytes.length - offset < 10 ||
+        bytes[offset] !== 0x85 ||
+        bytes[offset + 1] !== 0x6f ||
+        bytes[offset + 2] !== 0x4a ||
+        bytes[offset + 3] !== 0x83 ||
+        (bytes[offset + 8] !== 1 && bytes[offset + 8] !== 2)
+    ) {
+        throw new Error('Invalid incremental Worker change frame');
+    }
+}
+
+function readIncrementalFrameEnd(bytes: Uint8Array, offset: number): number {
+    let length = 0n;
+    for (let index = 0; index < 10; index++) {
+        const byte = bytes[offset + 9 + index];
+        if (byte === undefined || (index === 9 && byte > 1)) {
+            break;
+        }
+        length |= BigInt(byte & 0x7f) << BigInt(index * 7);
+        if ((byte & 0x80) === 0) {
+            const payload = offset + 10 + index;
+            if ((index > 0 && byte === 0) || length > BigInt(bytes.length - payload)) {
+                break;
+            }
+            return payload + Number(length);
+        }
+    }
+    throw new Error('Invalid incremental Worker change length');
+}
+
 /** Framing only: native semantic integrity belongs to the encoder and replay checks. */
 function assertIncrementalFrames(bytes: Uint8Array): void {
     if (bytes.length === 0) {
@@ -23,37 +55,8 @@ function assertIncrementalFrames(bytes: Uint8Array): void {
     }
     let offset = 0;
     while (offset < bytes.length) {
-        if (
-            bytes.length - offset < 10 ||
-            bytes[offset] !== 0x85 ||
-            bytes[offset + 1] !== 0x6f ||
-            bytes[offset + 2] !== 0x4a ||
-            bytes[offset + 3] !== 0x83 ||
-            (bytes[offset + 8] !== 1 && bytes[offset + 8] !== 2)
-        ) {
-            throw new Error('Invalid incremental Worker change frame');
-        }
-        let length = 0n;
-        let end: number | undefined;
-        for (let index = 0; index < 10; index++) {
-            const byte = bytes[offset + 9 + index];
-            if (byte === undefined || (index === 9 && byte > 1)) {
-                break;
-            }
-            length |= BigInt(byte & 0x7f) << BigInt(index * 7);
-            if ((byte & 0x80) === 0) {
-                const payload = offset + 10 + index;
-                if ((index > 0 && byte === 0) || length > BigInt(bytes.length - payload)) {
-                    break;
-                }
-                end = payload + Number(length);
-                break;
-            }
-        }
-        if (end === undefined) {
-            throw new Error('Invalid incremental Worker change length');
-        }
-        offset = end;
+        assertIncrementalFrameHeader(bytes, offset);
+        offset = readIncrementalFrameEnd(bytes, offset);
     }
 }
 
@@ -73,10 +76,7 @@ function isEncodedIncremental(value: unknown): value is EncodedIncremental {
     );
 }
 
-function validateEncodedIncrementals(
-    response: unknown,
-    captured: readonly IncrementalEncodingInput[]
-): EncodedIncremental[] {
+function readIncrementalResponseDocuments(response: unknown, expectedCount: number): unknown[] {
     if (
         typeof response !== 'object' ||
         response === null ||
@@ -84,13 +84,20 @@ function validateEncodedIncrementals(
         response.type !== 'incrementalsEncoded' ||
         !('documents' in response) ||
         !Array.isArray(response.documents) ||
-        response.documents.length !== captured.length
+        response.documents.length !== expectedCount
     ) {
         throw new Error('Invalid incremental encoding response membership');
     }
+    return response.documents;
+}
+
+function validateEncodedIncrementals(
+    response: unknown,
+    captured: readonly IncrementalEncodingInput[]
+): EncodedIncremental[] {
+    const entries = readIncrementalResponseDocuments(response, captured.length);
     const expected = new Map(captured.map((entry) => [entry.id, entry.heads]));
     const result: EncodedIncremental[] = [];
-    const entries: unknown[] = response.documents;
     for (const entry of entries) {
         if (!isEncodedIncremental(entry)) {
             throw new Error('Invalid incremental encoding response document');

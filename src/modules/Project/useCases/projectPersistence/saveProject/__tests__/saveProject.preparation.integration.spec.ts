@@ -393,17 +393,23 @@ describe('public Save of the active arrangement', () => {
         const held = Promise.withResolvers<HeldReply>();
         nextReply = held;
         const saving = opened.saveProject();
+        const settlement = Promise.allSettled([saving]);
         const outcome = await Promise.race([held.promise, saving.then((saved) => ({ kind: 'save' as const, saved }))]);
         if (outcome.kind === 'save') {
-            expect(outcome.saved).toBe(true);
-            expect(requests).toEqual([]);
-            const namedTrack = findRow(findRow(opened.readNamed().arrangements, ACTIVE).tracks?.tracks, SOURCE_TRACK);
+            let namedTrackName: string | undefined;
+            if (opened.readNamedRecord() !== undefined) {
+                namedTrackName = findRow(
+                    findRow(opened.readNamed().arrangements, ACTIVE).tracks?.tracks,
+                    SOURCE_TRACK
+                ).name;
+            }
             const nativeTrack = findRow(
                 findRow(opened.readRoot().arrangements.arrangements, ACTIVE).tracks.tracks,
                 SOURCE_TRACK
             );
             throw new Error(
-                `Public Save returned true without a bounded arrangement Worker request. Native active: "${nativeTrack.name}", named active: "${namedTrack.name}".`
+                `Public Save returned ${outcome.saved} before a bounded arrangement Worker reply. ` +
+                    `Requests: ${JSON.stringify(requests)}. Native active: "${nativeTrack.name}", named active: "${String(namedTrackName)}".`
             );
         }
         try {
@@ -419,22 +425,20 @@ describe('public Save of the active arrangement', () => {
             // The named snapshot must inherit the timestamp that the
             // transaction captured before sending this Worker request.
             vi.mocked(Date.now).mockReturnValue(SAVED_AT + 1);
-            outcome.release();
-
-            await expect(saving).resolves.toBe(true);
-
-            expectSavedSources(opened, EDITED_NAME);
-            const after = toJS(opened.readRoot());
-            expect(findRow(after.arrangements.arrangements, INACTIVE)).toEqual(oldInactive);
-            expect(findRow(findRow(after.arrangements.arrangements, ACTIVE).tracks.tracks, ALTERNATE_TRACK)).toEqual(
-                findRow(oldActive.tracks.tracks, ALTERNATE_TRACK)
-            );
-            expect(after.tracks).toEqual(beforeTruth.tracks);
-            expect(opened.readHistory()).toEqual(history);
         } finally {
             outcome.release();
-            await saving.catch(() => undefined);
+            await settlement;
         }
+
+        expect(await settlement).toEqual([{ status: 'fulfilled', value: true }]);
+        expectSavedSources(opened, EDITED_NAME);
+        const after = toJS(opened.readRoot());
+        expect(findRow(after.arrangements.arrangements, INACTIVE)).toEqual(oldInactive);
+        expect(findRow(findRow(after.arrangements.arrangements, ACTIVE).tracks.tracks, ALTERNATE_TRACK)).toEqual(
+            findRow(oldActive.tracks.tracks, ALTERNATE_TRACK)
+        );
+        expect(after.tracks).toEqual(beforeTruth.tracks);
+        expect(opened.readHistory()).toEqual(history);
     }, 30_000);
 
     it('replans the same native project after a rename and records the committed name in Recent', async () => {
@@ -445,6 +449,7 @@ describe('public Save of the active arrangement', () => {
         const first = Promise.withResolvers<HeldReply>();
         nextReply = first;
         const saving = opened.saveProject();
+        const settlement = Promise.allSettled([saving]);
         const settled = saving.then((saved) => ({ kind: 'save' as const, saved }));
         const stale = await Promise.race([first.promise, settled]);
         if (stale.kind === 'save') {
@@ -473,10 +478,10 @@ describe('public Save of the active arrangement', () => {
             expect(opened.readNamedRecord()).toBeUndefined();
         } finally {
             current.release();
-            await saving.catch(() => undefined);
+            await settlement;
         }
 
-        await expect(saving).resolves.toBe(true);
+        expect(await settlement).toEqual([{ status: 'fulfilled', value: true }]);
         expectSavedSources(opened, EDITED_NAME);
         expect(opened.readNamed().meta.name).toBe('Renamed during Save');
         expect(opened.getRecentProjects()).toMatchObject([{ name: 'Renamed during Save' }]);

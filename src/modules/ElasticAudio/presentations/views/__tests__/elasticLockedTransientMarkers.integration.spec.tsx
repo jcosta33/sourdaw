@@ -1308,7 +1308,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             flushAutomergeStorageWrites();
             const before = toJS(getCrdtDoc('root')!);
             const history = structuredClone(undoHistoryStore.value);
-            const entered = Promise.withResolvers<void>();
+            const entered = Promise.withResolvers<unknown>();
             const release = Promise.withResolvers<void>();
             const invalidate = (): void => {
                 clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
@@ -1316,31 +1316,32 @@ describe('locked transient markers through the real Elastic editor', () => {
             };
             if (phase === 'Worker') {
                 worker.mockImplementationOnce(async () => {
-                    entered.resolve();
+                    entered.resolve(undefined);
                     await release.promise;
                     return { status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] };
                 });
             } else if (phase === 'materialization') {
-                materialization.mockImplementationOnce(async ({ data }) => {
-                    entered.resolve();
-                    await release.promise;
-                    expect(data).toMatchObject({ status: 'complete', changes: expect.any(Array) });
+                materialization.mockImplementationOnce(({ data }) => {
+                    entered.resolve(data);
+                    return release.promise;
                 });
             } else {
                 const set = warpStateStore.set.bind(warpStateStore);
                 vi.spyOn(warpStateStore, 'set').mockImplementationOnce((value) => {
                     set(value);
                     invalidate();
-                    entered.resolve();
+                    entered.resolve(undefined);
                 });
             }
             const pending = setElasticSensitivity(0.82);
-            await entered.promise;
+            const reply = await entered.promise;
             if (phase !== 'commit') {
                 invalidate();
             }
             release.resolve();
             await pending;
+            const completedReply = expect.objectContaining({ status: 'complete', changes: expect.any(Array) });
+            expect(reply).toEqual(phase === 'materialization' ? completedReply : undefined);
             flushAutomergeStorageWrites();
             expect(toJS(getCrdtDoc('root')!)).toEqual(before);
             expect(undoHistoryStore.value).toEqual(history);
@@ -1823,7 +1824,10 @@ describe('locked transient markers through the real Elastic editor', () => {
                 { type: 'detectTransients', payload: { clipId: CLIP_ID } },
                 { signal: controller.signal }
             );
-            const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+            const settled = execution.then(
+                () => ({ status: 'fulfilled' as const }),
+                (error: unknown) => ({ status: 'rejected' as const, error })
+            );
             (await frames.next())(performance.now());
             (await frames.next())(performance.now());
             const { data } = await held.received;
@@ -1837,7 +1841,10 @@ describe('locked transient markers through the real Elastic editor', () => {
                 }
                 const current = JSON.stringify(getCrdtDoc('root'));
                 held.release();
-                await rejected;
+                expect(await settled).toMatchObject({
+                    status: 'rejected',
+                    error: { message: expect.stringMatching(/cancelled|changed/) },
+                });
                 expect(MaterializationWorker.instances).toHaveLength(1);
                 await MaterializationWorker.instances[0]!.completion;
                 expect(JSON.stringify(getCrdtDoc('root'))).toBe(current);

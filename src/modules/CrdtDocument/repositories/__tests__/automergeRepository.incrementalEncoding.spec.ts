@@ -105,9 +105,8 @@ describe('AutomergeRepository stateless incremental encoding', () => {
             }
             const captured = await capture;
             expect(captured.isCurrent()).toBe(true);
-            if (outcome === 'worker') {
-                expect(native.saveSince).not.toHaveBeenCalled();
-            }
+            const expectedSaveCalls = outcome === 'crash' ? held.request.documents.length : 0;
+            expect(native.saveSince).toHaveBeenCalledTimes(expectedSaveCalls);
             for (const item of captured.chunks) {
                 expect(item.chunk).toEqual(expected.get(item.id));
                 expect(item.heads).toEqual(capturedHeads.get(item.id));

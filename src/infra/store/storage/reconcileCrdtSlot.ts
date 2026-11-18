@@ -240,18 +240,12 @@ function readChild(container: MutableContainer | unknown[], field: string | numb
     throw new Error('CRDT slot reconciliation addressed a container with the wrong key kind');
 }
 
-function reconcileChild(input: ReconcileChildInput): void {
+function reconcileUnchangedChild(input: ReconcileChildInput): void {
     const { container, field, fieldName, base, desired, identityByField, presence } = input;
-    const unchanged = isSameValue(base, desired);
     // A captured node equal to the base cannot contain a cache-only seed.
     // Its unchanged writer has nothing to publish, including over newer peer truth.
     // Structural proof retains scalar and own-key distinctions hidden by composite JSON.
-    if (
-        unchanged &&
-        presence !== uncapturedDocumentPresence &&
-        valuesEqual(base, desired) &&
-        valuesEqual(presence, base)
-    ) {
+    if (presence !== uncapturedDocumentPresence && valuesEqual(base, desired) && valuesEqual(presence, base)) {
         return;
     }
     const current = readChild(container, field);
@@ -276,36 +270,42 @@ function reconcileChild(input: ReconcileChildInput): void {
     // no document ever held it, and skipping would strand it outside the
     // document for the next projection to erase. Without a snapshot the
     // absence stays undecided and the deletion-respecting behavior stands.
-    if (unchanged) {
-        if (current === undefined) {
-            if (desired !== undefined && presence === undefined) {
-                writeChild(container, field, desired);
-            }
-            return;
-        }
-        // The document holds this node and the writer carries no delta on it,
-        // so the node's own value is not its to write. A captured snapshot can
-        // still witness a seed deeper in — a node the base carried unchanged,
-        // the document still lacks, and no document ever held — so the walk
-        // continues below an unchanged value wherever a snapshot rides. A
-        // whole-slot write retained as a deferred baseline then seeds exactly
-        // like one whose changed sibling would have carried it down. Without a
-        // snapshot every nested absence stays undecided and the early return
-        // keeps the whole subtree untouched.
-        if (presence !== uncapturedDocumentPresence) {
-            reconcileEqualNode({
-                container,
-                field,
-                fieldName,
-                current,
-                base,
-                desired,
-                presence,
-                identityByField,
-            });
+    if (current === undefined) {
+        if (desired !== undefined && presence === undefined) {
+            writeChild(container, field, desired);
         }
         return;
     }
+    // The document holds this node and the writer carries no delta on it,
+    // so the node's own value is not its to write. A captured snapshot can
+    // still witness a seed deeper in — a node the base carried unchanged,
+    // the document still lacks, and no document ever held — so the walk
+    // continues below an unchanged value wherever a snapshot rides. A
+    // whole-slot write retained as a deferred baseline then seeds exactly
+    // like one whose changed sibling would have carried it down. Without a
+    // snapshot every nested absence stays undecided and the early return
+    // keeps the whole subtree untouched.
+    if (presence !== uncapturedDocumentPresence) {
+        reconcileEqualNode({
+            container,
+            field,
+            fieldName,
+            current,
+            base,
+            desired,
+            presence,
+            identityByField,
+        });
+    }
+}
+
+function reconcileChild(input: ReconcileChildInput): void {
+    const { container, field, fieldName, base, desired, identityByField, presence } = input;
+    if (isSameValue(base, desired)) {
+        reconcileUnchangedChild(input);
+        return;
+    }
+    const current = readChild(container, field);
 
     if (isUnknownRecord(desired) && isUnknownRecord(current)) {
         reconcileRecord({ target: current, base, desired, presence, identityByField });
