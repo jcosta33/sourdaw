@@ -403,11 +403,19 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['WEB', 'web'],
     ['UNCLASSIFIED', 'unclassified'],
 ];
+const FERMENTER_CAPTURE = 'Capture the Fermenter build receipt';
+const FERMENTER_PROOF = 'Prove Fermenter in the packaged app';
+const FERMENTER_UPLOAD = 'Upload the Fermenter proof record';
 // The first filter attempt defers to the retry; Resolve scope fails when neither
 // attempt produced verdicts, so the softened step does not hide a failure.
 type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
+    ...[FERMENTER_CAPTURE, FERMENTER_PROOF, FERMENTER_UPLOAD].map((step) => ({
+        workflow: 'nightly.yml',
+        job: 'desktop-measure',
+        step,
+    })),
 ];
 // A setup-node cache step may soften because its failure only costs the
 // cache; the cap keeps a refused restore inside the deliberate 5-minute step cap.
@@ -1783,9 +1791,9 @@ function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
 // proved, and one on any step reports that step green whatever it ran. The
 // position-enumerated pins above each cover one named job or step; the sweep
 // covers every job in every file, because a softened leg reports a failing
-// proof as a passing summary wherever it lands. The single pinned exception is
-// the first paths-filter attempt, whose softening only hands the question to
-// its retry and the Resolve scope verdict guard.
+// proof as a passing summary wherever it lands. The paths-filter attempt
+// hands the question to its retry and verdict guard. The Fermenter steps
+// report their own verdict and do not decide the Nightly job result.
 function assertNoContinueOnError(set: WorkflowSet): void {
     const pins = new Map(
         CONTINUE_ON_ERROR_STEP_PINS.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
@@ -2746,7 +2754,67 @@ function assertCodeqlComparisonCategory(set: WorkflowSet): void {
     }
 }
 
+const FERMENTER_ADMISSION =
+    "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}";
+
+function assertFermenterProof(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const build = stepNamed(job, 'Build the packaged desktop app');
+    const capture = stepNamed(job, FERMENTER_CAPTURE);
+    const proof = stepNamed(job, FERMENTER_PROOF);
+    const upload = stepNamed(job, FERMENTER_UPLOAD);
+    expect(build.id).toBe('build-packaged-app');
+    expect(steps[steps.indexOf(build) + 1]).toBe(capture);
+    expect(steps.indexOf(capture)).toBeLessThan(steps.indexOf(proof));
+    expect(steps.indexOf(proof)).toBeLessThan(steps.indexOf(upload));
+    expect(capture.if).toBe(FERMENTER_ADMISSION);
+    expect(capture.id).toBe('capture-fermenter');
+    expect(capture.run).toBe(
+        'node scripts/proveDesktopFermenter.ts --capture --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"'
+    );
+    expect(proof.if).toBe(FERMENTER_ADMISSION);
+    expect(proof.id).toBe('prove-fermenter');
+    expect(recordAt(proof, 'env')).toEqual({ FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' });
+    expect(proof.run).toContain(
+        'node scripts/proveDesktopFermenter.ts --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"'
+    );
+    expect(proof.run).toContain(
+        '--json "$RUNNER_TEMP/sourdaw-fermenter-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" || status=$?'
+    );
+    expect(upload.if).toBe(
+        "${{ !cancelled() && (steps.prove-fermenter.outcome == 'success' || steps.prove-fermenter.outcome == 'failure') }}"
+    );
+    for (const step of [capture, proof, upload]) {
+        expect(step['continue-on-error']).toBe(true);
+    }
+    expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-fermenter-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-fermenter-proof-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
+
 describe('health gates workflow contract', () => {
+    it('runs the Fermenter proof only for an uncancelled scheduled main build and uploads only its finalized record', () => {
+        assertFermenterProof(nightly);
+        for (const broadened of [
+            FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", ''),
+            FERMENTER_ADMISSION.replace("github.ref == 'refs/heads/main' && ", ''),
+            FERMENTER_ADMISSION.replace(" && steps.build-packaged-app.outcome == 'success'", ''),
+            FERMENTER_ADMISSION.replace('!cancelled()', 'always()'),
+        ]) {
+            const candidate = cloneWorkflows('broadened Fermenter admission').nightly;
+            stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_PROOF).if = broadened;
+            expect(() => assertFermenterProof(candidate)).toThrow();
+        }
+        const candidate = cloneWorkflows('broad Fermenter artifact').nightly;
+        recordAt(stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_UPLOAD), 'with').path = '${{ runner.temp }}/';
+        expect(() => assertFermenterProof(candidate)).toThrow();
+    });
+
     it('keeps the PR CodeQL category aligned with the nightly baseline', () => {
         expect(() => assertCodeqlComparisonCategory(workflowSet())).not.toThrow();
 
