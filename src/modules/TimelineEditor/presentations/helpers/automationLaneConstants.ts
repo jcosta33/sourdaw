@@ -17,13 +17,13 @@ export const CURVE_OPTIONS: { value: AutomationCurveType; label: string }[] = [
     { value: 'smooth', label: 'Smooth (Spline)' },
 ];
 
-export const SHAPE_OPTIONS: { value: AutomationShapeType; label: string }[] = [
-    { value: 'sine', label: '∿ Sine' },
-    { value: 'triangle', label: '△ Triangle' },
-    { value: 'sawtooth-up', label: '⟋ Sawtooth Up' },
-    { value: 'sawtooth-down', label: '⟍ Sawtooth Down' },
-    { value: 'square', label: '⊓ Square' },
-    { value: 'random', label: '⚡ Random' },
+export const SHAPE_OPTIONS: { value: AutomationShapeType; glyph: string; label: string }[] = [
+    { value: 'sine', glyph: '∿', label: 'Sine' },
+    { value: 'triangle', glyph: '△', label: 'Triangle' },
+    { value: 'sawtooth-up', glyph: '⟋', label: 'Sawtooth Up' },
+    { value: 'sawtooth-down', glyph: '⟍', label: 'Sawtooth Down' },
+    { value: 'square', glyph: '⊓', label: 'Square' },
+    { value: 'random', glyph: '⚡', label: 'Random' },
 ];
 
 /** Map curve type to single-char label for breakpoint nodes. */

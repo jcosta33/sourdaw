@@ -10,6 +10,8 @@ import {
     installFakeAudioIndexedDb,
     META_STORE,
     RECOVERY_STORE,
+    type StoredBufferMeta,
+    type StoredRecoveryRecord,
     type StoredRecoveryValue,
 } from './fakeAudioBufferIndexedDb';
 import {
@@ -388,6 +390,88 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committedRecovery.has(id)).toBe(false);
     });
 
+    it('preserves newer PCM and ownership rows during project recovery', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const completeId = 'committed-successor';
+        const metadataOnlyId = 'metadata-only-successor';
+        const pcmOnlyId = 'pcm-only-successor';
+        const newerData = {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([-0.375, 0.75])],
+            lastAccessed: 2,
+            sizeInBytes: 8,
+        };
+        const newerMetadata = (id: string): StoredBufferMeta => ({
+            lastAccessed: 2,
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId: `${id}-new-lease`,
+                persistenceRevision: `${id}-new-persistence`,
+                status: 'project-owned',
+            },
+            sizeInBytes: 8,
+        });
+        const olderRecovery = (id: string): StoredRecoveryRecord => ({
+            data: {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.125])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            },
+            id,
+            metadata: {
+                lastAccessed: 1,
+                preparedOwner: {
+                    schemaVersion: 1,
+                    leaseId: `${id}-old-lease`,
+                    persistenceRevision: `${id}-old-persistence`,
+                    status: 'temporary',
+                },
+                sizeInBytes: 4,
+            },
+            operation: 'discard',
+            revision: `${id}-old-recovery`,
+            schemaVersion: 1,
+            stagedAtMs: 1,
+        });
+        controls.committed.set(completeId, newerData);
+        controls.committed.set(pcmOnlyId, newerData);
+        for (const id of [completeId, metadataOnlyId]) {
+            controls.committedMeta.set(id, newerMetadata(id));
+        }
+        const ids = [completeId, metadataOnlyId, pcmOnlyId];
+        for (const id of ids) {
+            controls.committedRecovery.set(id, olderRecovery(id));
+        }
+
+        await expect(
+            audioBufferCache.restoreFromIdb({
+                context: createTestContext(
+                    vi.fn((_channels: number, length: number, sampleRate: number) =>
+                        createAudioBuffer({ length, sampleRate })
+                    )
+                ),
+                ids,
+            })
+        ).resolves.toBe(2);
+
+        for (const id of [completeId, pcmOnlyId]) {
+            expect(audioBufferCache.get(id)?.getChannelData(0)).toEqual(newerData.channelData[0]);
+            expect(controls.committed.get(id)).toEqual(newerData);
+        }
+        expect(audioBufferCache.has(metadataOnlyId)).toBe(false);
+        expect(controls.committed.has(metadataOnlyId)).toBe(false);
+        expect(controls.committedMeta.has(pcmOnlyId)).toBe(false);
+        for (const id of [completeId, metadataOnlyId]) {
+            expect(controls.committedMeta.get(id)).toEqual(newerMetadata(id));
+        }
+        for (const id of ids) {
+            expect(controls.committedRecovery.get(id)).toEqual(olderRecovery(id));
+        }
+    });
+
     it('releases a provisional prepare reservation when continuation is cancelled', async () => {
         const controls = installFakeAudioIndexedDb();
         const id = 'cancelled-provisional-reservation';
@@ -690,6 +774,55 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committed.has('invalid-whitespace-owner')).toBe(true);
     });
 
+    it.each([
+        { problem: 'missing', sizeInBytes: 4, sample: undefined },
+        { problem: 'inconsistent', sizeInBytes: 8, sample: 0.25 },
+    ])(
+        'preserves orphan metadata with $problem PCM while reclaiming a complete pair',
+        async ({ problem, sizeInBytes, sample }) => {
+            const controls = installFakeAudioIndexedDb();
+            const incompleteId = `orphan-${problem}`;
+            const completeId = 'orphan-complete';
+            const data = {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.5])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            };
+            const metadata = (id: string, bytes: number): StoredBufferMeta => ({
+                lastAccessed: 1,
+                preparedOwner: {
+                    schemaVersion: 1,
+                    createdAtMs: 1,
+                    leaseId: `${id}-lease`,
+                    persistenceRevision: `${id}-persistence`,
+                    status: 'temporary',
+                },
+                sizeInBytes: bytes,
+            });
+            controls.committedMeta.set(incompleteId, metadata(incompleteId, sizeInBytes));
+            if (sample !== undefined) {
+                controls.committed.set(incompleteId, { ...data, channelData: [new Float32Array([sample])] });
+            }
+            controls.committed.set(completeId, data);
+            controls.committedMeta.set(completeId, metadata(completeId, 4));
+
+            await expect(reclaimPreparedBufferOrphans({ createdBeforeMs: 2, liveLeaseIds: [] })).resolves.toEqual({
+                status: 'reclaimed',
+                count: 1,
+            });
+
+            expect(controls.committed.has(incompleteId)).toBe(sample !== undefined);
+            expect(controls.committed.get(incompleteId)?.channelData[0]?.[0]).toBe(sample);
+            expect(controls.committedMeta.get(incompleteId)).toEqual(metadata(incompleteId, sizeInBytes));
+            expect(controls.committedRecovery.has(incompleteId)).toBe(false);
+            expect(controls.committed.has(completeId)).toBe(false);
+            expect(controls.committedMeta.has(completeId)).toBe(false);
+            expect(controls.committedRecovery.has(completeId)).toBe(false);
+        }
+    );
+
     it('aborts an orphan reclaim when the project admits the exact ID before commit', async () => {
         const controls = installFakeAudioIndexedDb({
             existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
@@ -730,50 +863,62 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committedMeta.has('reclaim-project-race')).toBe(true);
     });
 
-    it('reconciles a committed orphan deletion when project admission lands after commit', async () => {
-        const controls = installFakeAudioIndexedDb({
-            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
-        });
-        const id = 'reclaim-after-commit-project-race';
-        const leaseId = `${id}-lease`;
-        controls.committed.set(id, {
-            sampleRate: 48_000,
-            numberOfChannels: 1,
-            channelData: [new Float32Array([0.375])],
-            lastAccessed: 1,
-            sizeInBytes: 4,
-        });
-        controls.committedMeta.set(id, {
-            lastAccessed: 1,
-            preparedOwner: { schemaVersion: 1, createdAtMs: 1, leaseId, status: 'temporary' },
-            sizeInBytes: 4,
-        });
-        controls.pauseWriteSettlements();
-        let reclaimSettled = false;
-        const reclaim = reclaimPreparedBufferOrphans({ createdBeforeMs: 2, liveLeaseIds: [] }).then((result) => {
-            reclaimSettled = true;
-            return result;
-        });
-        while (controls.pendingWriteSettlementCount() === 0) {
-            await flushIndexedDbTasks(1);
-        }
-
-        controls.releaseNextWriteSettlement();
-        const project = audioBufferCache.importBuffers({
-            buffers: {},
-            cacheIds: [id],
-            context: createTestContext(vi.fn()),
-        });
-        expect(project?.publish()).toBe(0);
-        for (let turn = 0; turn < 40 && !reclaimSettled; turn++) {
-            if (controls.pendingWriteSettlementCount() > 0) {
+    it.each([
+        { admissionAfter: 'pair deletion', sampleAtAdmission: 0.375, sampleAfterFirstRepair: undefined },
+        { admissionAfter: 'recovery cleanup', sampleAtAdmission: undefined, sampleAfterFirstRepair: 0.375 },
+    ])(
+        'restores orphan PCM when project admission lands immediately after $admissionAfter commits',
+        async ({ admissionAfter, sampleAtAdmission, sampleAfterFirstRepair }) => {
+            const controls = installFakeAudioIndexedDb({
+                existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+            });
+            const id = 'reclaim-after-commit-project-race';
+            const leaseId = `${id}-lease`;
+            controls.committed.set(id, {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.375])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            });
+            controls.committedMeta.set(id, {
+                lastAccessed: 1,
+                preparedOwner: { schemaVersion: 1, createdAtMs: 1, leaseId, status: 'temporary' },
+                sizeInBytes: 4,
+            });
+            controls.pauseWriteSettlements();
+            const waitForWrite = () => vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+            const reclaim = reclaimPreparedBufferOrphans({ createdBeforeMs: 2, liveLeaseIds: [] });
+            await waitForWrite();
+            controls.releaseNextWriteSettlement();
+            expect(controls.committed.has(id)).toBe(false);
+            expect(controls.committedMeta.has(id)).toBe(false);
+            expect(controls.committedRecovery.get(id)?.data?.channelData[0]?.[0]).toBe(0.375);
+            if (admissionAfter === 'recovery cleanup') {
+                await waitForWrite();
                 controls.releaseNextWriteSettlement();
             }
-            await flushIndexedDbTasks(1);
-        }
+            expect(controls.committedRecovery.has(id)).toBe(sampleAtAdmission !== undefined);
+            expect(controls.committedRecovery.get(id)?.data?.channelData[0]?.[0]).toBe(sampleAtAdmission);
+            const project = audioBufferCache.importBuffers({
+                buffers: {},
+                cacheIds: [id],
+                context: createTestContext(vi.fn()),
+            });
+            expect(project?.publish()).toBe(0);
+            await waitForWrite();
+            controls.releaseNextWriteSettlement();
+            expect(controls.committedRecovery.has(id)).toBe(sampleAfterFirstRepair !== undefined);
+            expect(controls.committedRecovery.get(id)?.data?.channelData[0]?.[0]).toBe(sampleAfterFirstRepair);
+            if (admissionAfter === 'recovery cleanup') {
+                await waitForWrite();
+                controls.releaseNextWriteSettlement();
+            }
 
-        await expect(reclaim).resolves.toEqual({ status: 'reclaimed', count: 0 });
-        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.375);
-        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'project-owned' });
-    });
+            await expect(reclaim).resolves.toEqual({ status: 'reclaimed', count: 0 });
+            expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.375);
+            expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'project-owned' });
+            expect(controls.committedRecovery.has(id)).toBe(false);
+        }
+    );
 });
