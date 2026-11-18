@@ -19850,7 +19850,7 @@
     },
     "tests/e2e/inspectorAndRouting.spec.ts": {
         "sourdaw-craft/no-fixed-test-sleep": {
-            "count": 2
+            "count": 1
         }
     },
     "tests/e2e/inspectorClip.spec.ts": {
