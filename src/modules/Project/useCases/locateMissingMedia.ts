@@ -42,6 +42,13 @@ async function pickReplacements(multiple: boolean, isCurrent: () => boolean): Pr
     }
 }
 
+function isProjectedSelectionCurrent(
+    isCurrent: () => boolean,
+    selectionMatches?: (tracks: readonly Track[]) => boolean
+): boolean {
+    return isCurrent() && selectionMatches?.(trackStore.value?.tracks ?? []) !== false;
+}
+
 async function relinkReplacement(
     source: MissingSource,
     file: File,
@@ -62,7 +69,7 @@ async function relinkReplacement(
         }
         return false;
     }
-    if (!isCurrent() || selectionMatches?.(trackStore.value?.tracks ?? []) === false) {
+    if (!isProjectedSelectionCurrent(isCurrent, selectionMatches)) {
         discardDecodedAudioFile(replacementBufferId);
         return false;
     }
@@ -86,7 +93,7 @@ async function relinkReplacement(
     }
 
     discardDecodedAudioFile(replacementBufferId);
-    if (!isCurrent() || selectionMatches?.(trackStore.value?.tracks ?? []) === false) {
+    if (!isProjectedSelectionCurrent(isCurrent, selectionMatches)) {
         return false;
     }
     notifyUser(
@@ -135,17 +142,54 @@ function eligibleForRelink(source: MissingSource): boolean {
     return readRelinkAudioSourceEligibility(source.sourceBufferId) === 'eligible';
 }
 
+function countSelectedNames(files: readonly File[]): ReadonlyMap<string, number> {
+    const selectedNameCounts = new Map<string, number>();
+    for (const file of files) {
+        const name = comparableSourceName(file.name);
+        selectedNameCounts.set(name, (selectedNameCounts.get(name) ?? 0) + 1);
+    }
+    return selectedNameCounts;
+}
+
+function prepareSameFolderSelection(
+    candidates: readonly SameFolderCandidate[],
+    file: File,
+    selectedNameCounts: ReadonlyMap<string, number>,
+    excludedBufferId: string
+) {
+    const source = matchSameFolderFile(candidates, file, selectedNameCounts);
+    if (!source || !eligibleForRelink(source)) {
+        return undefined;
+    }
+    const sourceBufferId = source.sourceBufferId;
+    function selectionMatches(tracks: readonly Track[]): boolean {
+        const match = matchSameFolderFile(remainingSources(excludedBufferId, tracks), file, selectedNameCounts);
+        return match?.sourceBufferId === sourceBufferId;
+    }
+    if (!selectionMatches(trackStore.value?.tracks ?? [])) {
+        return undefined;
+    }
+    return { source, selectionMatches };
+}
+
+function classifySameFolderOutcome(
+    relinked: boolean,
+    isCurrent: () => boolean,
+    selectionMatches: (tracks: readonly Track[]) => boolean
+): 'repaired' | 'skipped' | 'unchanged' {
+    if (relinked) {
+        return 'repaired';
+    }
+    return isCurrent() && !selectionMatches(trackStore.value?.tracks ?? []) ? 'skipped' : 'unchanged';
+}
+
 async function recoverSameFolderSelections(
     candidates: readonly SameFolderCandidate[],
     files: readonly File[],
     excludedBufferId: string,
     isCurrent: () => boolean
 ): Promise<void> {
-    const selectedNameCounts = new Map<string, number>();
-    for (const file of files) {
-        const name = comparableSourceName(file.name);
-        selectedNameCounts.set(name, (selectedNameCounts.get(name) ?? 0) + 1);
-    }
+    const selectedNameCounts = countSelectedNames(files);
 
     let skippedCount = 0;
     let repaired = false;
@@ -153,23 +197,16 @@ async function recoverSameFolderSelections(
         if (!isCurrent()) {
             return;
         }
-        const source = matchSameFolderFile(candidates, file, selectedNameCounts);
-        if (!source || !eligibleForRelink(source)) {
+        const selection = prepareSameFolderSelection(candidates, file, selectedNameCounts, excludedBufferId);
+        if (!selection) {
             skippedCount++;
             continue;
         }
-        const sourceBufferId = source.sourceBufferId;
-        function selectionMatches(tracks: readonly Track[]): boolean {
-            const match = matchSameFolderFile(remainingSources(excludedBufferId, tracks), file, selectedNameCounts);
-            return match?.sourceBufferId === sourceBufferId;
-        }
-        if (!selectionMatches(trackStore.value?.tracks ?? [])) {
-            skippedCount++;
-            continue;
-        }
-        if (await relinkReplacement(source, file, isCurrent, selectionMatches)) {
+        const relinked = await relinkReplacement(selection.source, file, isCurrent, selection.selectionMatches);
+        const outcome = classifySameFolderOutcome(relinked, isCurrent, selection.selectionMatches);
+        if (outcome === 'repaired') {
             repaired = true;
-        } else if (isCurrent() && !selectionMatches(trackStore.value?.tracks ?? [])) {
+        } else if (outcome === 'skipped') {
             skippedCount++;
         }
         if (!isCurrent()) {

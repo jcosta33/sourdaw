@@ -49,6 +49,26 @@ function expandOwningFolders(tracks: readonly Track[], track: Track): void {
     }
 }
 
+function getClipVerticalBounds(
+    visibleTracks: readonly Track[],
+    located: LocatedClip
+): { top: number; bottom: number } | null {
+    let trackTop = 0;
+    for (const track of visibleTracks) {
+        if (track.id !== located.track.id) {
+            trackTop += getTimelineTrackHeight(track) + getVariationLaneExtent(track);
+            continue;
+        }
+        const trackHeight = getTimelineTrackHeight(track);
+        if (located.variationLaneIndex !== null) {
+            const top = trackTop + trackHeight + located.variationLaneIndex * VARIATION_LANE_HEIGHT;
+            return { top, bottom: top + VARIATION_LANE_HEIGHT };
+        }
+        return { top: trackTop, bottom: trackTop + trackHeight };
+    }
+    return null;
+}
+
 /** Select a held clip and bring its row and start into view without changing zoom. */
 export function revealClip(clipId: string): boolean {
     const tracks = trackStore.value?.tracks ?? [];
@@ -64,28 +84,16 @@ export function revealClip(clipId: string): boolean {
     }
 
     const visibleTracks = getVisibleTimelineTracks(trackStore.value?.tracks ?? []);
-    const trackIndex = visibleTracks.findIndex((track) => track.id === located.track.id);
-    const track = visibleTracks[trackIndex];
-    if (!track) {
+    const bounds = getClipVerticalBounds(visibleTracks, located);
+    if (!bounds) {
         return false;
     }
 
-    let trackTop = 0;
-    for (let index = 0; index < trackIndex; index++) {
-        const preceding = visibleTracks[index]!;
-        trackTop += getTimelineTrackHeight(preceding) + getVariationLaneExtent(preceding);
-    }
-    let targetTop = trackTop;
-    let targetBottom = trackTop + getTimelineTrackHeight(track);
-    if (located.variationLaneIndex !== null) {
-        targetTop = trackTop + getTimelineTrackHeight(track) + located.variationLaneIndex * VARIATION_LANE_HEIGHT;
-        targetBottom = targetTop + VARIATION_LANE_HEIGHT;
-    }
     const viewportHeight = view.viewportHeight ?? 0;
-    if (targetTop < view.scrollY) {
-        setScrollY(targetTop);
-    } else if (targetBottom > view.scrollY + viewportHeight) {
-        setScrollY(targetBottom - viewportHeight);
+    if (bounds.top < view.scrollY) {
+        setScrollY(bounds.top);
+    } else if (bounds.bottom > view.scrollY + viewportHeight) {
+        setScrollY(bounds.bottom - viewportHeight);
     }
     setScrollX(Math.max(0, located.clip.startBeat * view.pixelsPerBeat - REVEAL_HORIZONTAL_MARGIN_PX));
     selectClipWithFocus(clipId);

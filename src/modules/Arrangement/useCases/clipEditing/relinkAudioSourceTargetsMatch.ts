@@ -40,6 +40,41 @@ function readRelinkSourceState(
     return state;
 }
 
+function readRelinkTargetClips(track: Track, target: RelinkTarget, state: TrackStoreState): Clip[] | null {
+    if (target.alternativeId === null) {
+        const eligible = resolveEligibleClipWriteTarget({ clipId: target.clipId }, state);
+        return eligible.status === 'eligible' ? track.clips : null;
+    }
+    if (target.alternativeId === track.activeAlternativeId) {
+        return null;
+    }
+    const alternatives = track.alternatives.filter((item) => item.id === target.alternativeId);
+    const [alternative] = alternatives;
+    return alternative && alternatives.length === 1 ? alternative.clips : null;
+}
+
+function matchesTarget(state: TrackStoreState | null, target: RelinkTarget): boolean {
+    if (!state) {
+        return false;
+    }
+    const owners = state.tracks.filter((track) => track.id === target.trackId);
+    const [track] = owners;
+    if (!track || owners.length !== 1) {
+        return false;
+    }
+    const eligible = resolveEligibleClipWriteTarget({ trackId: target.trackId }, state);
+    if (eligible.status !== 'eligible' || eligible.trackId !== target.trackId) {
+        return false;
+    }
+    const clips = readRelinkTargetClips(track, target, state);
+    if (!clips) {
+        return false;
+    }
+    const found = clips.filter((clip) => clip.id === target.clipId);
+    const [clip] = found;
+    return clip !== undefined && found.length === 1 && matches(track, clip, target);
+}
+
 export function relinkAudioSourceTargetsMatch(
     targets: readonly RelinkTarget[],
     context?: HandlerValidationContext,
@@ -63,30 +98,7 @@ export function relinkAudioSourceTargetsMatch(
             return false;
         }
         keys.add(key);
-        const owners = state?.tracks.filter((track) => track.id === target.trackId) ?? [];
-        if (owners.length !== 1) {
-            return false;
-        }
-        const track = owners[0]!;
-        const eligible = resolveEligibleClipWriteTarget({ trackId: target.trackId }, state);
-        if (eligible.status !== 'eligible' || eligible.trackId !== target.trackId) {
-            return false;
-        }
-        let clips = track.clips;
-        if (target.alternativeId !== null) {
-            if (target.alternativeId === track.activeAlternativeId) {
-                return false;
-            }
-            const alternatives = track.alternatives.filter((item) => item.id === target.alternativeId);
-            if (alternatives.length !== 1) {
-                return false;
-            }
-            clips = alternatives[0]!.clips;
-        } else if (resolveEligibleClipWriteTarget({ clipId: target.clipId }, state).status !== 'eligible') {
-            return false;
-        }
-        const found = clips.filter((clip) => clip.id === target.clipId);
-        if (found.length !== 1 || !matches(track, found[0]!, target)) {
+        if (!matchesTarget(state, target)) {
             return false;
         }
     }

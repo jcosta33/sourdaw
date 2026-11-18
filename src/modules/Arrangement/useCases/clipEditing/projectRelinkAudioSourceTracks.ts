@@ -15,15 +15,17 @@ function restoredTrack(tracks: readonly Track[], action: Extract<AppAction, { ty
         return null;
     }
     const restored = sanitizeTrackSnapshot({ tracks: [snapshot], selectedTrackId: null }).tracks;
+    const [track] = restored;
     if (
+        !track ||
         restored.length !== 1 ||
-        restored[0]!.id !== action.payload.trackId ||
-        restored[0]!.clips.length !== snapshot.clips.length ||
-        tracks.some((track) => track.id === action.payload.trackId)
+        track.id !== action.payload.trackId ||
+        track.clips.length !== snapshot.clips.length ||
+        tracks.some((item) => item.id === action.payload.trackId)
     ) {
         return null;
     }
-    return [...tracks, restored[0]!];
+    return [...tracks, track];
 }
 
 function restoredClip(tracks: readonly Track[], action: Extract<AppAction, { type: 'restoreClip' }>): Track[] | null {
@@ -95,6 +97,41 @@ function sourceTracks(
     }));
 }
 
+function removeProjectedClip(
+    tracks: readonly Track[],
+    action: Extract<AppAction, { type: 'removeClip' | 'discardDuplicatedClip' }>
+): Track[] | null {
+    const track = tracks.find((item) => item.clips.some((clip) => clip.id === action.payload.clipId));
+    if (!track) {
+        return null;
+    }
+    const ripple = action.type === 'removeClip' && action.payload.ripple;
+    const plan = planRippleDelete({ trackId: track.id, clipIds: [action.payload.clipId], ripple }, { tracks });
+    if (!plan) {
+        return null;
+    }
+    return tracks.map((item) => (item.id === track.id ? { ...item, clips: plan.nextClips } : item));
+}
+
+function applyRelinkPrefixAction(tracks: Track[], action: AppAction): Track[] | null {
+    if (action.type === 'restoreTrack') {
+        return restoredTrack(tracks, action);
+    }
+    if (action.type === 'restoreClip') {
+        return restoredClip(tracks, action);
+    }
+    if (action.type === 'removeTrack') {
+        return tracks.filter((track) => track.id !== action.payload.trackId);
+    }
+    if (action.type === 'removeClip' || action.type === 'discardDuplicatedClip') {
+        return removeProjectedClip(tracks, action);
+    }
+    if (action.type === 'relinkClipAudioSources') {
+        return sourceTracks(tracks, action);
+    }
+    return tracks;
+}
+
 /** Only planned source and owner changes needed by guarded relink replay; never authorizes execution. */
 export function projectRelinkAudioSourceTracks(
     tracks: readonly Track[],
@@ -102,37 +139,11 @@ export function projectRelinkAudioSourceTracks(
 ): Track[] | null {
     let projected = [...tracks];
     for (const action of actions) {
-        if (action.type === 'restoreTrack') {
-            const next = restoredTrack(projected, action);
-            if (!next) {
-                return null;
-            }
-            projected = next;
-        } else if (action.type === 'restoreClip') {
-            const next = restoredClip(projected, action);
-            if (!next) {
-                return null;
-            }
-            projected = next;
-        } else if (action.type === 'removeTrack') {
-            projected = projected.filter((track) => track.id !== action.payload.trackId);
-        } else if (action.type === 'removeClip' || action.type === 'discardDuplicatedClip') {
-            const track = projected.find((item) => item.clips.some((clip) => clip.id === action.payload.clipId));
-            if (!track) {
-                return null;
-            }
-            const ripple = action.type === 'removeClip' && action.payload.ripple;
-            const plan = planRippleDelete(
-                { trackId: track.id, clipIds: [action.payload.clipId], ripple },
-                { tracks: projected }
-            );
-            if (!plan) {
-                return null;
-            }
-            projected = projected.map((item) => (item.id === track.id ? { ...item, clips: plan.nextClips } : item));
-        } else if (action.type === 'relinkClipAudioSources') {
-            projected = sourceTracks(projected, action);
+        const next = applyRelinkPrefixAction(projected, action);
+        if (!next) {
+            return null;
         }
+        projected = next;
     }
     return projected;
 }

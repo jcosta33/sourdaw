@@ -45,6 +45,68 @@ function rowKey(item: MissingMediaItem): string {
     return `clip:${item.clipId ?? item.bufferId}`;
 }
 
+type MissingMediaRowProps = {
+    item: MissingMediaItem;
+    eligibility: ReturnType<typeof readRelinkAudioSourceEligibility>;
+    primary: boolean;
+    locatingBufferId: string | null;
+    onLocate: (item: MissingMediaItem) => Promise<void>;
+};
+
+const MissingMediaRowControls = ({
+    item,
+    eligibility,
+    primary,
+    locatingBufferId,
+    onLocate,
+}: MissingMediaRowProps): ReactElement | null => {
+    if (item.kind !== 'clip') {
+        return null;
+    }
+    let locateButton: ReactElement | null = null;
+    if (primary && eligibility === 'eligible') {
+        locateButton = (
+            <Button
+                size="sm"
+                variant="outline"
+                disabled={locatingBufferId !== null}
+                onClick={() => {
+                    void onLocate(item);
+                }}
+            >
+                {locatingBufferId === item.bufferId ? 'Locating…' : 'Locate…'}
+            </Button>
+        );
+    }
+    const clipId = item.clipId;
+    let revealButton: ReactElement | null = null;
+    if (clipId) {
+        revealButton = (
+            <Button size="sm" variant="ghost" onClick={() => revealClip(clipId)}>
+                Reveal clip
+            </Button>
+        );
+    }
+    return (
+        <div className="mt-1 flex gap-1">
+            {locateButton}
+            {revealButton}
+        </div>
+    );
+};
+
+const MissingMediaRow = (props: MissingMediaRowProps): ReactElement => {
+    const { item, eligibility } = props;
+    return (
+        <li className="px-2 py-1.5">
+            <p className="text-sm">{item.label}</p>
+            <p className="text-xs text-muted-foreground">{item.trackName}</p>
+            <p className="text-xs text-muted-foreground/80">{describeRepair(item, eligibility)}</p>
+            <MissingMediaRowControls {...props} />
+        </li>
+    );
+};
+
 export const MissingMediaPanel = (): ReactElement | null => {
     const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
     if (missingMedia.items.length === 0) {
@@ -108,35 +170,14 @@ const MissingMediaPanelContent = ({ items }: { items: MissingMediaItem[] }): Rea
                     {referenceNote ? <p className="px-2 py-1 text-xs text-muted-foreground">{referenceNote}</p> : null}
                     <ul className="max-h-64 overflow-y-auto">
                         {items.map((item) => (
-                            <li className="px-2 py-1.5" key={rowKey(item)}>
-                                <p className="text-sm">{item.label}</p>
-                                <p className="text-xs text-muted-foreground">{item.trackName}</p>
-                                <p className="text-xs text-muted-foreground/80">
-                                    {describeRepair(item, eligibilityByBuffer.get(item.bufferId) ?? 'missing')}
-                                </p>
-                                {item.kind === 'clip' ? (
-                                    <div className="mt-1 flex gap-1">
-                                        {primaryRowByBuffer.get(item.bufferId) === rowKey(item) &&
-                                        eligibilityByBuffer.get(item.bufferId) === 'eligible' ? (
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                disabled={locatingBufferId !== null}
-                                                onClick={() => {
-                                                    void handleLocate(item);
-                                                }}
-                                            >
-                                                {locatingBufferId === item.bufferId ? 'Locating…' : 'Locate…'}
-                                            </Button>
-                                        ) : null}
-                                        {item.clipId ? (
-                                            <Button size="sm" variant="ghost" onClick={() => revealClip(item.clipId!)}>
-                                                Reveal clip
-                                            </Button>
-                                        ) : null}
-                                    </div>
-                                ) : null}
-                            </li>
+                            <MissingMediaRow
+                                key={rowKey(item)}
+                                item={item}
+                                eligibility={eligibilityByBuffer.get(item.bufferId) ?? 'missing'}
+                                primary={primaryRowByBuffer.get(item.bufferId) === rowKey(item)}
+                                locatingBufferId={locatingBufferId}
+                                onLocate={handleLocate}
+                            />
                         ))}
                     </ul>
                 </PopoverContent>

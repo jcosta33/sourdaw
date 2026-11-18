@@ -12,10 +12,10 @@ import { projectRelinkAudioSourceTracks } from './projectRelinkAudioSourceTracks
 
 function findDocumentOwner(tracks: Record<string, unknown>[], target: RelinkTarget): Record<string, unknown> | null {
     const owners = tracks.filter((track) => track.id === target.trackId);
-    if (owners.length !== 1) {
+    const [owner] = owners;
+    if (!owner || owners.length !== 1) {
         return null;
     }
-    const owner = owners[0]!;
     if (
         owner.kind !== target.trackKind ||
         owner.activeAlternativeId !== target.activeAlternativeId ||
@@ -42,10 +42,11 @@ function findDocumentClip(
             return null;
         }
         const alternatives = owner.alternatives.filter(isRecord).filter((item) => item.id === target.alternativeId);
-        if (alternatives.length !== 1) {
+        const [alternative] = alternatives;
+        if (!alternative || alternatives.length !== 1) {
             return null;
         }
-        clips = alternatives[0]!.clips;
+        clips = alternative.clips;
     } else {
         const liveClips = tracks.flatMap((track): unknown[] => (Array.isArray(track.clips) ? track.clips : []));
         const liveMatches = liveClips.filter(isRecord).filter((clip) => clip.id === target.clipId);
@@ -154,14 +155,7 @@ function readOwnerFingerprints(
     });
 }
 
-/** Authenticate initial raw owners and the final source intent of this entered batch. */
-export function captureRelinkAudioSourceCommitValidation(
-    targets: readonly RelinkTarget[],
-    context?: HandlerValidationContext
-): {
-    validation: HandlerCommitValidation;
-    captureWrittenState: () => boolean;
-} {
+function captureInitialOwnerState(targets: readonly RelinkTarget[], context?: HandlerValidationContext) {
     const identity = captureProjectIdentity();
     const owner = getCurrentAutomergeStorageMutationOwner();
     const root = getCrdtDoc<{ tracks?: NonNullable<typeof trackStore.value> }>('root');
@@ -172,6 +166,18 @@ export function captureRelinkAudioSourceCommitValidation(
     }
     const admitted = planned !== null && documentMatches({ tracks: { tracks: planned } }, targets, 'before');
     const before = readOwnerFingerprints(root, targets);
+    return { identity, owner, root, admitted, before };
+}
+
+/** Authenticate initial raw owners and the final source intent of this entered batch. */
+export function captureRelinkAudioSourceCommitValidation(
+    targets: readonly RelinkTarget[],
+    context?: HandlerValidationContext
+): {
+    validation: HandlerCommitValidation;
+    captureWrittenState: () => boolean;
+} {
+    const { identity, owner, root, admitted, before } = captureInitialOwnerState(targets, context);
     function projected(): { tracks: typeof trackStore.value } {
         return { tracks: trackStore.value };
     }
