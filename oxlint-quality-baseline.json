@@ -14647,14 +14647,6 @@
             "count": 2
         }
     },
-    "src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "eslint/max-params": {
-            "count": 2
-        }
-    },
     "src/modules/MIDI/transformers/__tests__/copyMidiArticulationsToNotes.spec.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
