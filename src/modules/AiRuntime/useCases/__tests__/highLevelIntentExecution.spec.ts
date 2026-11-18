@@ -48,6 +48,7 @@ import {
     clearPianoRollSelection,
     getMidiNoteTransformHandlers,
     projectPianoRollTakeNotes,
+    readPianoRollSelection,
     setPianoRollSelection,
 } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
@@ -810,6 +811,26 @@ describe('high-level intent execution', () => {
         });
         expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
         expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('invalidates a selective edit when selection changes to a resolved subset of the same clip', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        const historyBefore = structuredClone(undoStore.value?.past);
+        selectPhraseNotes([THIRD.id]);
+        expect(readPianoRollSelection()).toMatchObject({
+            status: 'resolved',
+            clipId: PHRASE_CLIP_ID,
+            viewIds: [THIRD.id],
+        });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'invalidated',
+            detail: expect.stringContaining('MIDI note selection changed'),
+        });
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toEqual(historyBefore);
     });
 
     it('requires a new musical read after project revision drift, even on another track', async () => {
