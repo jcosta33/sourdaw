@@ -74,6 +74,22 @@ function holdsPreparedStemResources(actions: PendingAppActionConfirmation['actio
     return actions.some((action) => action.type === 'importStemSet' && action.payload.stems.length > 0);
 }
 
+function readReproposalBriefRefusal(
+    run: NonNullable<ReturnType<typeof agentRunLifecycle.get>>,
+    confirmation: PendingAppActionConfirmation
+): Extract<ReproposePendingChatActionsResult, { status: 'rejected' }> | null {
+    // A later vibe-run batch was planned against one brief; re-proposing it under another would
+    // ground a plan the brief no longer states.
+    const schedule = run.plan?.batchSchedule;
+    if (schedule?.kind === 'vibe-run' && (confirmation.approvalSnapshot.batchPosition?.index ?? 1) > 1) {
+        const drift = readVibeRunBriefDrift(schedule, getProjectContext().productionBrief?.revision ?? null);
+        if (drift !== null) {
+            return { status: 'rejected', reason: `The ${drift}.` };
+        }
+    }
+    return null;
+}
+
 /** Only a live proposal on a live run can be replaced; everything else keeps the state it settled into. */
 function admitReproposal(
     confirmation: PendingAppActionConfirmation
@@ -91,14 +107,9 @@ function admitReproposal(
     if (TERMINAL_RUN_PHASES.has(run.phase)) {
         return { status: 'rejected', reason: `The run this proposal belongs to is already ${run.phase}.` };
     }
-    // A later vibe-run batch was planned against one brief; re-proposing it under another would
-    // ground a plan the brief no longer states.
-    const schedule = run.plan?.batchSchedule;
-    if (schedule?.kind === 'vibe-run' && (confirmation.approvalSnapshot.batchPosition?.index ?? 1) > 1) {
-        const drift = readVibeRunBriefDrift(schedule, getProjectContext().productionBrief?.revision ?? null);
-        if (drift !== null) {
-            return { status: 'rejected', reason: `The ${drift}.` };
-        }
+    const briefRefusal = readReproposalBriefRefusal(run, confirmation);
+    if (briefRefusal !== null) {
+        return briefRefusal;
     }
     if (holdsPreparedStemResources(confirmation.actions)) {
         return { status: 'rejected', reason: PREPARED_STEM_RESOURCES_REASON };
@@ -310,6 +321,12 @@ function recordReplacementBatch(
     }
 }
 
+function selectsPartialBatch(input: ReproposePendingChatActionsInput, originalCommandIds: readonly string[]): boolean {
+    return (
+        input.selectedIntentGroupIds !== undefined && input.selectedIntentGroupIds.length !== originalCommandIds.length
+    );
+}
+
 function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
@@ -338,8 +355,7 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
         return { status: 'rejected' as const, reason: parsedOriginal.reason };
     }
     const originalCommandIds = parsedOriginal.envelope.commands.map((command) => command.commandId);
-    const selectsSubset =
-        input.selectedIntentGroupIds !== undefined && input.selectedIntentGroupIds.length !== originalCommandIds.length;
+    const selectsSubset = selectsPartialBatch(input, originalCommandIds);
 
     let workingBatch: WorkingBatch = commandBatch;
     let includedOriginalCommandIds: readonly string[] = originalCommandIds;
@@ -516,6 +532,20 @@ function watchVibeBatchRePreview(
     };
 }
 
+function proofRefreshStillCurrent(
+    live: ReturnType<typeof getPendingActionConfirmation>,
+    liveRun: ReturnType<typeof agentRunLifecycle.get>,
+    confirmation: PendingAppActionConfirmation
+): boolean {
+    return (
+        live?.status === 'proposed' &&
+        live.supersededBy === null &&
+        live.approvalSnapshot.metricGoalState === confirmation.approvalSnapshot.metricGoalState &&
+        liveRun !== null &&
+        !TERMINAL_RUN_PHASES.has(liveRun.phase)
+    );
+}
+
 /**
  * Replace a stale or partially accepted proposal with a fresh one bound to the current
  * revision. The run stays alive: the superseded proposal is invalidated and its prepared
@@ -558,13 +588,7 @@ export async function reproposePendingChatActions(
         }
         const live = getPendingActionConfirmation(confirmation.id);
         const liveRun = agentRunLifecycle.get(confirmation.runId);
-        if (
-            live?.status !== 'proposed' ||
-            live.supersededBy !== null ||
-            live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
-            liveRun === null ||
-            TERMINAL_RUN_PHASES.has(liveRun.phase)
-        ) {
+        if (!proofRefreshStillCurrent(live, liveRun, confirmation) || liveRun === null) {
             return {
                 status: 'rejected',
                 reason: 'The proposal changed or stopped while its metric proof was being refreshed.',

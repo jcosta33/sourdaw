@@ -8,6 +8,16 @@ import { type checkMidiNoteEditAuthority } from '../checkMidiNoteEditAuthority';
 
 type Authority = NonNullable<ReturnType<typeof checkMidiNoteEditAuthority>>;
 
+function clipCannotBeEdited(clip: NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number]): boolean {
+    return (
+        clip.type !== 'midi' ||
+        !!clip.locked ||
+        !!clip.loopEnabled ||
+        !!clip.isLinkedInstance ||
+        clip.parentClipId !== undefined
+    );
+}
+
 function findEditableBaseMidiClip({ clipId, trackId }: Authority) {
     const tracks = trackStore.value?.tracks ?? [];
     const clips = tracks.flatMap((track) => track.clips.map((clip) => ({ track, clip })));
@@ -19,11 +29,7 @@ function findEditableBaseMidiClip({ clipId, trackId }: Authority) {
         target.track.id !== trackId ||
         target.track.kind !== 'midi' ||
         target.track.frozen ||
-        target.clip.type !== 'midi' ||
-        target.clip.locked ||
-        target.clip.loopEnabled ||
-        target.clip.isLinkedInstance ||
-        target.clip.parentClipId !== undefined ||
+        clipCannotBeEdited(target.clip) ||
         clips.some(({ clip }) => clip.parentClipId === clipId) ||
         takeLaneStore.value?.lanes.some(
             (lane) =>

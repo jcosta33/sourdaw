@@ -9,6 +9,26 @@ type MidiReadProof = NonNullable<
     ReturnType<NonNullable<ReturnType<typeof createMusicalReadPrerequisite>>['completed']>
 >;
 
+function hasSelectedWindows(proof: MidiReadProof, clipId: string): boolean {
+    return (
+        proof.windows.length > 0 &&
+        proof.windows.every((window) => window.clipId === clipId && window.owners.length > 0)
+    );
+}
+
+function matchesAuthorityRevision(
+    authority: CreativeRequestAuthority,
+    proof: MidiReadProof,
+    revision: string
+): boolean {
+    return (
+        authority.mode === 'edit' &&
+        authority.revision === revision &&
+        proof.binding.expectedRevision === revision &&
+        proof.authorityId === authority.authorityId
+    );
+}
+
 function readPermittedClipTarget(authority: CreativeRequestAuthority, clipId: string) {
     const target = authority.targets[0];
     if (
@@ -42,16 +62,14 @@ export function checkMidiNoteEditAuthority(input: {
         !proof ||
         !authority ||
         !revision ||
-        authority.mode !== 'edit' ||
-        authority.revision !== revision ||
-        proof.binding.expectedRevision !== revision ||
-        proof.authorityId !== authority.authorityId ||
+        !matchesAuthorityRevision(authority, proof, revision) ||
         !authority.editDimensions.includes('midi-content') ||
         !musicalContentBindingIsCurrent(proof.binding) ||
-        typeof clipId !== 'string' ||
-        proof.windows.length === 0 ||
-        !proof.windows.every((window) => window.clipId === clipId && window.owners.length > 0)
+        typeof clipId !== 'string'
     ) {
+        return null;
+    }
+    if (!hasSelectedWindows(proof, clipId)) {
         return null;
     }
     const target = readPermittedClipTarget(authority, clipId);

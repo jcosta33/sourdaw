@@ -63,28 +63,53 @@ function findContextualToneClause(prompt: string, context: ProjectContext): Rang
     return hasIndependentInstruction ? range : undefined;
 }
 
-function hasCommittedParameterOnOwner(command: CommittedCommand, { context, trackId }: ToneProtectionInput): boolean {
+function matchesCommittedParameter(command: CommittedCommand, trackId: string): boolean {
     const { type, payload } = command;
     const { deviceId, expectedTrackId, paramId, value } = payload;
-    if (
+    return !(
         type !== 'setDeviceParameter' ||
         expectedTrackId !== trackId ||
         typeof deviceId !== 'string' ||
         typeof paramId !== 'string' ||
         typeof value !== 'number'
-    ) {
+    );
+}
+
+function isProcessingOnly(type: CommittedCommand['type']): boolean {
+    const effect = getExecutableAppActionEffect(type);
+    return effect?.dimensions.length === 1 && effect.dimensions[0] === 'processing';
+}
+
+function hasCommittedParameterOnOwner(command: CommittedCommand, { context, trackId }: ToneProtectionInput): boolean {
+    if (!matchesCommittedParameter(command, trackId)) {
         return false;
     }
-    const effect = getExecutableAppActionEffect(type);
+    const { type, payload } = command;
+    const { deviceId, paramId, value } = payload;
+    const processingOnly = isProcessingOnly(type);
     const targets = context.tracks.flatMap((track) =>
         track.devices.filter((device) => device.id === deviceId).map((device) => ({ track, device }))
     );
     const target = targets[0];
-    if (effect?.dimensions.length !== 1 || effect.dimensions[0] !== 'processing' || targets.length !== 1) {
+    if (!processingOnly || targets.length !== 1) {
         return false;
     }
     const param = target?.device.parameters?.find((parameter) => parameter.id === paramId);
     return target?.track.id === trackId && param?.valuePresent !== false && param?.value === value;
+}
+
+function isSameStandingCommit(
+    prior: NonNullable<ThreadContext['lastCommit']>,
+    liveThread: ThreadContext | null
+): boolean {
+    const current = liveThread?.lastCommit;
+    return (
+        liveThread?.pendingProposal === null &&
+        current?.standing === 'standing' &&
+        current.runId === prior.runId &&
+        current.receiptIds.length === 1 &&
+        current.receiptIds[0] === prior.receiptIds[0]
+    );
 }
 
 function hasStandingMidiResult(input: ToneProtectionInput): boolean {
@@ -95,13 +120,7 @@ function hasStandingMidiResult(input: ToneProtectionInput): boolean {
     }
     const liveThread = readChatThreadContext();
     const current = liveThread?.lastCommit;
-    if (
-        liveThread?.pendingProposal !== null ||
-        current?.standing !== 'standing' ||
-        current.runId !== prior.runId ||
-        current.receiptIds.length !== 1 ||
-        current.receiptIds[0] !== prior.receiptIds[0]
-    ) {
+    if (!isSameStandingCommit(prior, liveThread) || current === null || current === undefined) {
         return false;
     }
     const batch = readCommittedBatch(current);

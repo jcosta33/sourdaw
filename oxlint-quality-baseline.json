@@ -4810,7 +4810,7 @@
     },
     "src/modules/AiRuntime/useCases/planLastCommitContinuation.ts": {
         "eslint/complexity": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/planPromptActions.ts": {
