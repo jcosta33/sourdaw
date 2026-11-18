@@ -98,9 +98,10 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
         }) as typeof HTMLCanvasElement.prototype.getContext);
 
         rafCallbacks = [];
+        let nextFrameId = 0;
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
             rafCallbacks.push(cb);
-            return rafCallbacks.length;
+            return ++nextFrameId;
         });
         vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
     });
@@ -162,8 +163,12 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
         vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(((id: string): RenderingContext | null =>
             id === 'webgl2' ? gl : null) as typeof HTMLCanvasElement.prototype.getContext);
         const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+        const addListener = vi.spyOn(document, 'addEventListener');
+        const removeListener = vi.spyOn(document, 'removeEventListener');
         const props = { activeNotes: new Map<number, number>(), sustainPedal: 0, lidPosition: 0.5 };
         const { getByLabelText, rerender, unmount } = render(<PianoModel3D {...props} />);
+        const visibilityListener = addListener.mock.calls.find(([type]) => type === 'visibilitychange')?.[1];
+        expect(visibilityListener).toBeDefined();
         expect(observe).toHaveBeenCalledWith(getByLabelText('Grand Boule interactive piano'));
         expect(window.requestAnimationFrame).not.toHaveBeenCalled();
         setIntersecting(true);
@@ -197,6 +202,7 @@ describe('PianoModel3D rAF prop freshness (#1)', () => {
         expect(rafCallbacks).toHaveLength(1);
         const finalFrame = vi.mocked(window.requestAnimationFrame).mock.results.at(-1)?.value;
         unmount();
+        expect(removeListener).toHaveBeenCalledWith('visibilitychange', visibilityListener);
         expect(window.cancelAnimationFrame).toHaveBeenCalledWith(finalFrame);
         expect(disconnect).toHaveBeenCalledOnce();
     });
