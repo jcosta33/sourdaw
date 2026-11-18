@@ -18,6 +18,31 @@ describe('DawMenuInlineEditor', () => {
         expect(onCancel).toHaveBeenCalled();
     });
 
+    it('does not submit or propagate Enter during composition', () => {
+        const onSubmit = vi.fn();
+        const onParentKeyDown = vi.fn();
+        render(
+            <div onKeyDown={onParentKeyDown}>
+                <DawMenuInlineEditor
+                    label="Name"
+                    value="draft"
+                    onChange={vi.fn()}
+                    onSubmit={onSubmit}
+                    onCancel={vi.fn()}
+                />
+            </div>
+        );
+        const input = screen.getByRole('textbox');
+
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+        expect(onSubmit).not.toHaveBeenCalled();
+        expect(onParentKeyDown).not.toHaveBeenCalled();
+        expect(input).toHaveValue('draft');
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
     it('should call onSubmit, preventDefault, and stopPropagation on Enter', () => {
         const onSubmit = vi.fn();
         const onCancel = vi.fn();
