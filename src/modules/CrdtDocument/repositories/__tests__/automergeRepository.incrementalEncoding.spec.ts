@@ -1,9 +1,8 @@
 import * as native from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { retainsActiveFrontier } from '../../models/NativeIncrementalEncoding';
+import { encodeNativeIncrementals, retainsActiveFrontier } from '../../models/NativeIncrementalEncoding';
 import { captureNativeIncrementals } from '../captureNativeIncrementals';
-import { encodeNativeIncrementals } from '../encodeNativeIncrementals';
 
 import {
     ControlledWorker,

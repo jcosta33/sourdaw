@@ -1,12 +1,11 @@
 import { type Doc, type Heads, clone, free, getActorId, getBackend, getHeads } from '@automerge/automerge';
 
 import {
+    encodeNativeIncrementals,
     sameNativeHeads,
     type EncodedIncremental,
     type IncrementalEncodingInput,
 } from '../models/NativeIncrementalEncoding';
-
-import { encodeNativeIncrementals } from './encodeNativeIncrementals';
 
 function readHeads(value: unknown): value is Heads {
     return (

@@ -1,4 +1,4 @@
-import { type Doc, type Heads, getChangesMetaSince, getHeads } from '@automerge/automerge';
+import { type Doc, type Heads, free, getChangesMetaSince, getHeads, load, saveSince } from '@automerge/automerge';
 
 export type IncrementalEncodingInput = { id: string; seed: Uint8Array<ArrayBuffer>; heads: Heads; frontier: Heads };
 export type EncodedIncremental = { id: string; chunk: Uint8Array<ArrayBuffer>; heads: Heads };
@@ -51,4 +51,30 @@ export function retainsActiveFrontier(replacement: Doc<unknown>, previousHeads: 
         }
     }
     return unreachedHeads.size === 0;
+}
+
+/** Temporary documents never become shadow replicas. */
+export function encodeNativeIncrementals(documents: readonly IncrementalEncodingInput[]): EncodedIncremental[] {
+    const seen = new Set<string>();
+    const result: EncodedIncremental[] = [];
+    for (const { id, seed, heads, frontier } of documents) {
+        if (seen.has(id)) {
+            throw new Error('Duplicate incremental encoding document');
+        }
+        seen.add(id);
+        const doc = load(seed);
+        try {
+            if (!sameNativeHeads(getHeads(doc), heads)) {
+                throw new Error('Incremental encoding seed heads changed');
+            }
+            result.push({
+                id,
+                heads: getHeads(doc),
+                chunk: Uint8Array.from(saveSince(doc, retainsActiveFrontier(doc, frontier) ? frontier : [])),
+            });
+        } finally {
+            free(doc);
+        }
+    }
+    return result;
 }

@@ -1,8 +1,11 @@
 import { change, getHeads, init, load, loadIncremental, merge, save } from '@automerge/automerge';
 
-import { type EncodedIncremental, type IncrementalEncodingInput } from '../../models/NativeIncrementalEncoding';
+import {
+    encodeNativeIncrementals,
+    type EncodedIncremental,
+    type IncrementalEncodingInput,
+} from '../../models/NativeIncrementalEncoding';
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
-import { encodeNativeIncrementals } from '../encodeNativeIncrementals';
 
 import type { TransactionalPersistence } from '../../testing/transactionalPersistence';
 

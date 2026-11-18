@@ -30,8 +30,7 @@
 
 import { type Doc, type Heads, getHeads, load, loadIncremental, merge, save } from '@automerge/automerge';
 
-import { type IncrementalEncodingInput } from '../models/NativeIncrementalEncoding';
-import { encodeNativeIncrementals } from '../repositories/encodeNativeIncrementals';
+import { encodeNativeIncrementals, type IncrementalEncodingInput } from '../models/NativeIncrementalEncoding';
 
 import { inspectCheckpointRootMedia } from './checkpointRootMedia';
 
