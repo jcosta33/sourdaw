@@ -161,14 +161,16 @@ const midiStrategyDefinitions = [
     },
     {
         name: 'editMidiNotes',
-        transform: ({ call, context, index }) =>
-            isMidiNoteEditProposal(call.arguments) && findEditableMidiClip(context, call.arguments.clipId)
-                ? { type: 'editMidiNotes', payload: call.arguments }
-                : rejection(
-                      index,
-                      call.name,
-                      'Expected one existing writable MIDI clip and bounded patch, delete or insert operations'
-                  ),
+        transform: ({ call, context, index }) => {
+            if (isMidiNoteEditProposal(call.arguments) && findEditableMidiClip(context, call.arguments.clipId)) {
+                return { type: 'editMidiNotes', payload: call.arguments };
+            }
+            return rejection(
+                index,
+                call.name,
+                'Expected one existing writable MIDI clip and bounded patch, delete or insert operations'
+            );
+        },
     },
     {
         name: 'quantizeNotes',

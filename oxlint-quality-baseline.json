@@ -7571,11 +7571,8 @@
         }
     },
     "src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 1
-        },
         "sourdaw-craft/no-useless-clone-spread": {
-            "count": 4
+            "count": 2
         }
     },
     "src/modules/MIDI/useCases/midiNoteTransforms/projectSyncopatedArpeggio.ts": {
