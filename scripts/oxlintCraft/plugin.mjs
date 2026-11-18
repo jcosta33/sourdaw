@@ -3,7 +3,7 @@
  * Messages tell the author the fix. `{ ...record, field }` and `fn(...args)` stay legal.
  */
 
-import { qualityRules } from './qualityRules.mjs';
+import { hasSameFunctionNode, qualityRules } from './qualityRules.mjs';
 
 const ARRAY_PIPELINE_METHODS = new Set(['map', 'filter', 'sort', 'flatMap', 'reduce']);
 
@@ -360,12 +360,27 @@ const fixTernary = (context, node, statement, fixer) => {
     const consequent = `${branchPrefix}(${source.getText(node.consequent)})`;
     const alternate = `${branchPrefix}(${source.getText(node.alternate)})`;
     const openConsequent = beforeConsequent.replace('?', '{');
+    const guarded = `if (${test})${openConsequent}${consequent}; }`;
+    if (returnsValue) {
+        const beforeReturn = beforeAlternate.replace(/:[ \t]?/u, '') || ' ';
+        return fixer.replaceText(statement, `${guarded}${beforeReturn}${alternate}${terminator}`);
+    }
     const openAlternate = beforeAlternate.replace(':', 'else {');
-    return fixer.replaceText(
-        statement,
-        `if (${test})${openConsequent}${consequent}; }${openAlternate}${alternate}${terminator} }`
-    );
+    return fixer.replaceText(statement, `${guarded}${openAlternate}${alternate}${terminator} }`);
 };
+
+function isControlFlowTernary(context, node, parent) {
+    if (getAncestors(context, node).some(isJsxNode)) {
+        return false;
+    }
+    if (parent?.type === 'ExpressionStatement') {
+        return true;
+    }
+    if (isSimpleValue(node.consequent) && isSimpleValue(node.alternate)) {
+        return false;
+    }
+    return isMultiline(context, node);
+}
 
 const noControlFlowTernary = {
     meta: {
@@ -379,11 +394,11 @@ const noControlFlowTernary = {
     create(context) {
         return {
             ConditionalExpression(node) {
-                if (getAncestors(context, node).some(isJsxNode)) {
+                const parent = unwrap(node.parent);
+                if (!isControlFlowTernary(context, node, parent)) {
                     return;
                 }
-                const parent = unwrap(node.parent);
-                if (parent?.type === 'ExpressionStatement') {
+                if (parent.type === 'ExpressionStatement') {
                     context.report({
                         node,
                         message: 'Do not use a ternary as a statement. Use `if` / `else`.',
@@ -391,20 +406,52 @@ const noControlFlowTernary = {
                     });
                     return;
                 }
-                if (isSimpleValue(node.consequent) && isSimpleValue(node.alternate)) {
-                    return;
-                }
-                if (isJsxNode(unwrap(node.consequent)) && isJsxNode(unwrap(node.alternate))) {
-                    return;
-                }
-                if (!isMultiline(context, node)) {
-                    return;
-                }
-                const canSplitReturn = parent?.type === 'ReturnStatement' && parent.argument === node;
+                const canSplitReturn = parent.type === 'ReturnStatement' && parent.argument === node;
                 context.report({
                     node,
                     message:
                         'Do not use a ternary as an if. Keep `cond ? value : value` or JSX `cond ? <A /> : <B />`; use `if` for statements and calls.',
+                    fix: canSplitReturn ? (fixer) => fixTernary(context, node, parent, fixer) : undefined,
+                });
+            },
+        };
+    },
+};
+
+function hasSubstantialBranchWork(context, branch) {
+    let calls = 0;
+    return hasSameFunctionNode(context, branch, (node) => {
+        if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression') {
+            return true;
+        }
+        if (node.type === 'CallExpression' || node.type === 'NewExpression') {
+            calls += 1;
+        }
+        return calls >= 3;
+    });
+}
+
+const noComplexTernaryBranch = {
+    meta: {
+        type: 'problem',
+        fixable: 'code',
+        docs: { description: 'Disallow substantial work in a ternary branch regardless of line breaks.' },
+        schema: [],
+    },
+    create(context) {
+        return {
+            ConditionalExpression(node) {
+                const parent = unwrap(node.parent);
+                if (
+                    isControlFlowTernary(context, node, parent) ||
+                    ![node.consequent, node.alternate].some((branch) => hasSubstantialBranchWork(context, branch))
+                ) {
+                    return;
+                }
+                const canSplitReturn = parent.type === 'ReturnStatement' && parent.argument === node;
+                context.report({
+                    node,
+                    message: 'Move the branch computation or mutation into explicit if/else control flow.',
                     fix: canSplitReturn ? (fixer) => fixTernary(context, node, parent, fixer) : undefined,
                 });
             },
@@ -423,6 +470,7 @@ const plugin = {
         'no-json-parse-stringify': noJsonParseStringify,
         'no-long-array-chain': noLongArrayChain,
         'no-control-flow-ternary': noControlFlowTernary,
+        'no-complex-ternary-branch': noComplexTernaryBranch,
         ...qualityRules,
     },
 };

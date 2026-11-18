@@ -44,8 +44,11 @@ rules retained in ESLint. The committed ESLint counts only shrink.
 The quality pass uses Oxlint's public JSON diagnostics on the checked files, including the
 final bytes after cofix. `oxlint-quality-baseline.json` holds counts by path and rule. Extra
 diagnostics fail the check. When the count drops, reduce or remove the entry in the same
-change. Both check and fix require the ledger and leave its bytes alone. The PR static
-check refuses new entries and raised counts against the merge base. Delivery checks for
+change. Both check and fix require the ledger and leave its bytes alone. During first activation,
+an error rule added to `.oxlint-quality.json` may record counts for unchanged source files already
+tracked at the merge base. The native check requires an exact count. The PR static check refuses
+counts for added or changed files during activation and all growth after the rule appears in the
+configuration. Delivery checks for
 source and ledger changes that cross on `main` and the pull request. The historical counts
 record existing syntactic matches, which can include intentional handling of cleanup or
 observational failures. An intentional new instance whose full contract the rule cannot
@@ -57,11 +60,28 @@ run on a linted file, so using that shared file would erase another pass's ledge
 The runner refuses an implicit `oxlint-suppressions.json` before starting. The quality
 pass uses the public diagnostic output.
 
+The product pilot counts stock complexity over 12, functions over 80 non-blank, non-comment
+lines (including IIFEs), nesting over 4 and more than four parameters. It covers TS and TSX
+under `src/`, excluding declarations, specs, tests, mocks, `setupTests.ts`, `__tests__/` and
+`testing/`. The historical 20/100/4 checks and their existing warning and exclusion scopes
+still run through `.oxlint-plugins.json`. The counted limits detect when another function
+crosses a cap. Review compares changes to functions already above a cap with their merge-base
+definitions. Multiple explicit `boolean` slots, including optional annotations and unannotated
+literal boolean defaults, need named options. A function passed directly as a callback or
+annotated with an imported callback type takes its parameter shape from that contract.
+
+In the product pilot the stock assertion ban diagnoses TypeScript's postfix `!`. Existing fixes from native
+`typescript/no-unnecessary-type-assertion` still remove assertions the type checker finds
+redundant. A non-null assertion that changes a type needs a guard or an explicit invariant.
+The stock type-aware generic rule reports parameters that establish no type relationship.
+The quality pass counts `no-else-return` findings when a preceding branch already returns on every
+path. It allows `else if` chains and keeps `else` branches that prevent fall-through.
+
 To convert control-flow ternaries in one file, run Oxlint directly from the repository
 root with no implicit `oxlint-suppressions.json`.
 
 ```sh
-pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --fix path/to/file.ts
+pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --allow=no-else-return --fix path/to/file.ts
 ```
 
 The fixer handles semicolon-terminated ternaries directly in function bodies and
@@ -69,9 +89,12 @@ preserves their existing line breaks. Statement branches may await calls, assign
 update values, or call an unmodified function by name. The named function must be
 declared in the same body with an explicit `void` return type or a single expression
 statement and no attached annotation. This prevents formatting from exposing
-TypeScript assertion or `never` control flow. Multiline return
-ternaries with call or awaited-call branches can be split when the enclosing
-non-generator function declares its return type. Ternaries with attached comments,
+TypeScript assertion or `never` control flow. The original rule covers statement and
+multiline forms. A second rule catches an assignment, update, or at least three call or
+constructor expressions in one branch, ignoring nested function bodies. The same return
+fixer serves both rules. Return ternaries with call or awaited-call branches become a guarded return
+followed by the alternate return when the enclosing non-generator function declares its return
+type. Ternaries used as statements still become `if` / `else`. Ternaries with attached comments,
 wrapped ternaries, and other value expressions require manual review.
 
 The focused command can report remaining findings after writing eligible changes.
@@ -99,6 +122,9 @@ sleeps include Playwright's timeout, directly awaited timer promises and test he
 return only a delay. Tests that
 measure a real observation window can use a line-scoped reason for the duration.
 
+The stock Vitest assertion-presence pilot applies to TS and TSX specs and tests under `src/`,
+excluding `*.e2e.spec.*`. It uses Vitest's default `expect`, `expectTypeOf`, `assert`, and
+`assertType` names. Review still checks whether the assertion observes the case's claim.
 The stock Vitest conditional-expect rule runs only on Vitest specs. The local assertion
 rule checks imported Vitest `expect`, including aliases, `soft`, and `poll`, and leaves
 Chai getter assertions and static asymmetric matchers available. Oxlint 1.93 and the

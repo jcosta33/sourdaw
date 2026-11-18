@@ -23,6 +23,7 @@ describe('sourdaw-craft plugin surface', () => {
     it('should register every craft rule under the plugin name', () => {
         expect(plugin.meta.name).toBe('sourdaw-craft');
         expect(Object.keys(rules).sort()).toEqual([
+            'no-complex-ternary-branch',
             'no-conditional-empty-spread',
             'no-conditional-playwright-admission',
             'no-control-flow-ternary',
@@ -32,6 +33,7 @@ describe('sourdaw-craft plugin surface', () => {
             'no-invalid-vitest-expect',
             'no-json-parse-stringify',
             'no-long-array-chain',
+            'no-positional-boolean-flags',
             'no-silent-catch',
             'no-spread-clone-array-method',
             'no-useless-clone-spread',
@@ -300,7 +302,26 @@ runCraftRule('no-control-flow-ternary', {
         },
         {
             code: 'function change(): number {\n    return armed\n        ? arm()\n        : disarm();\n}',
-            output: 'function change(): number {\n    if (armed)\n        { return (arm()); }\n        else { return (disarm()); }\n}',
+            output: 'function change(): number {\n    if (armed)\n        { return (arm()); }\n        return (disarm());\n}',
+            errors: [{ message: /Do not use a ternary as an if/ }],
+        },
+        {
+            code: [
+                'async function change(): Promise<number> {',
+                '    return check()',
+                '        ? await arm()',
+                '        : await disarm()',
+                '          ;',
+                '}',
+            ].join('\r\n'),
+            output: [
+                'async function change(): Promise<number> {',
+                '    if (check())',
+                '        { return (await arm()); }',
+                '        return (await disarm())',
+                '          ;',
+                '}',
+            ].join('\r\n'),
             errors: [{ message: /Do not use a ternary as an if/ }],
         },
         {
