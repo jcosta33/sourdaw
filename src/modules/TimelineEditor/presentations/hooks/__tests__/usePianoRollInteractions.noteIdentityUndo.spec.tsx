@@ -140,9 +140,9 @@ const Harness = ({ args: { openedClipIds, ...args } }: { args: HarnessArgs }): R
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const midi = useStore(midiStore);
     const [selectedNoteIds, setSelectedNoteIds] = useState(args.selectedNoteIds);
-    const notes = midi?.notesByClipId[args.clipId] ?? [];
+    const notes = midi.notesByClipId[args.clipId] ?? [];
     const openedClipNotes =
-        openedClipIds && Object.fromEntries(openedClipIds.map((id) => [id, midi?.notesByClipId[id] ?? []]));
+        openedClipIds && Object.fromEntries(openedClipIds.map((id) => [id, midi.notesByClipId[id] ?? []]));
     const handlers = usePianoRollInteractions({
         ...args,
         canvasRef,
