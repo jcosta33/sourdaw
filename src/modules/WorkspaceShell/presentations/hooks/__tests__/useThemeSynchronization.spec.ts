@@ -73,15 +73,21 @@ describe('useThemeSynchronization', () => {
         expect(document.documentElement).toHaveClass('light');
         dark = true;
         act(() => {
-            for (const listener of listeners) listener();
+            for (const listener of listeners) {
+                listener();
+            }
         });
         expect(document.documentElement).toHaveClass('dark');
         mocks.preferences.current = { theme: 'light' };
         act(() => {
-            for (const listener of mocks.listeners) listener();
+            for (const listener of mocks.listeners) {
+                listener();
+            }
         });
         act(() => {
-            for (const listener of listeners) listener();
+            for (const listener of listeners) {
+                listener();
+            }
         });
         expect(document.documentElement).toHaveClass('light');
         unmount();
