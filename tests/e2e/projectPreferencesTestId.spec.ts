@@ -33,7 +33,7 @@ test.describe('Project name & preferences — test-id targeted', () => {
 
     test('keeps the project name editor open when Enter confirms IME composition', async ({ page }) => {
         await page.getByTestId('project-name').click();
-        const editor = page.locator('input.transport-bar__project-name-input');
+        const editor = page.getByRole('textbox', { name: 'Project name' });
         await editor.fill('新しい曲');
         await editor.dispatchEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true });
         await expect(editor).toBeVisible();

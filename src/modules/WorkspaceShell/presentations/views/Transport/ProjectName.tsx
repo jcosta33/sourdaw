@@ -27,6 +27,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
         return (
             <Row gap={1.5} shrink={false} className="transport-bar__project-name">
                 <DawCompactInput
+                    aria-label="Project name"
                     className="transport-bar__project-name-input daw-readout-well w-32 min-w-0 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
                     onChange={(event) => setValue(event.target.value)}

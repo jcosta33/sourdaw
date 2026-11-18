@@ -158,6 +158,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
 
                         <Row align="stretch" gap={1.5}>
                             <Input
+                                aria-label="New branch name"
                                 value={newBranchName}
                                 onChange={(event) => setNewBranchName(event.target.value)}
                                 placeholder="New branch name"
