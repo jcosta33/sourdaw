@@ -1,5 +1,6 @@
-import { act, fireEvent, render, renderHook } from '@testing-library/react';
 import { createElement } from 'react';
+
+import { act, fireEvent, render, renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
