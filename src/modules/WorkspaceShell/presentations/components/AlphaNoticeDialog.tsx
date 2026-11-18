@@ -31,11 +31,11 @@ export const AlphaNoticeDialog = ({ open, onOpenChange }: AlphaNoticeDialogProps
                     style={{ zIndex: -1 }}
                 >
                     <div
-                        className="absolute size-[300px] rounded-full blur-3xl opacity-[0.1] -top-10 left-1/4 animate-pulse"
+                        className="absolute size-[300px] rounded-full blur-3xl opacity-[0.1] -top-10 left-1/4 motion-safe:animate-pulse"
                         style={{ background: 'var(--color-accent-orange)', animationDuration: '7s' }}
                     />
                     <div
-                        className="absolute size-64 rounded-full blur-3xl opacity-[0.06] bottom-4 right-8 animate-pulse"
+                        className="absolute size-64 rounded-full blur-3xl opacity-[0.06] bottom-4 right-8 motion-safe:animate-pulse"
                         style={{
                             background: 'var(--color-accent-lavender)',
                             animationDuration: '10s',

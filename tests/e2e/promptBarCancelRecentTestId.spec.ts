@@ -145,6 +145,26 @@ test.describe('PromptBar cancel-processing control', () => {
 });
 
 test.describe('LaunchScreen recent-project cards', () => {
+    test('ambient glows respect reduced motion', async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+        await setupWorkspace(page);
+        const launch = page.getByLabel('Sourdaw — start a project');
+        await expect(launch).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
+        const glows = launch.locator('[aria-hidden="true"] > div[style*="animation-duration"]');
+        await expect(glows).toHaveCount(3);
+        await expect
+            .poll(() =>
+                glows.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationName))
+            )
+            .toEqual(['pulse', 'pulse', 'pulse']);
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await expect
+            .poll(() =>
+                glows.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationName))
+            )
+            .toEqual(['none', 'none', 'none']);
+    });
+
     test('fresh profile renders no recent-project cards', async ({ page }) => {
         await setupWorkspace(page);
 

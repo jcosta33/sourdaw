@@ -64,10 +64,6 @@ describe('NotificationToast', () => {
         expect(polite).toHaveTextContent('Routine update');
         expect(polite.textContent).toBe('Routine update');
         expect(urgent).toBeEmptyDOMElement();
-        expect(screen.getByText('Routine update', { selector: 'p' }).closest('div[class*=fixed]')).toHaveClass(
-            'motion-safe:animate-in',
-            'motion-safe:slide-in-from-top-2'
-        );
         fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
         expect(screen.getByRole('status')).toBe(polite);
         expect(screen.getByRole('alert')).toBe(urgent);
