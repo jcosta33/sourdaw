@@ -115,6 +115,52 @@ type PianoRollToolbarProps = {
     mpeExpressionLanes?: readonly MpeExpressionLane[];
 };
 
+type ExpressionLane = NonNullable<PianoRollToolbarProps['activeExpressionLane']>;
+
+type ExpressionLaneAccessoryProps = {
+    activeExpressionLane: ExpressionLane;
+    onActiveExpressionLaneChange: (lane: ExpressionLane) => void;
+    mpeExpressionLanes: readonly MpeExpressionLane[];
+    onReturnToVelocity: () => void;
+};
+
+const ExpressionLaneAccessory = ({
+    activeExpressionLane,
+    onActiveExpressionLaneChange,
+    mpeExpressionLanes,
+    onReturnToVelocity,
+}: ExpressionLaneAccessoryProps): ReactElement => {
+    if (mpeExpressionLanes.length > 0) {
+        return (
+            <DawCompactSelect
+                value={activeExpressionLane}
+                onChange={(event) => onActiveExpressionLaneChange(event.target.value as ExpressionLane)}
+                size="micro"
+                aria-label="Active expression lane"
+            >
+                <option value="velocity">Velocity</option>
+                {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
+                    <option key={lane} value={lane}>
+                        {MPE_LANE_LABELS[lane]}
+                    </option>
+                ))}
+            </DawCompactSelect>
+        );
+    }
+    if (activeExpressionLane === 'velocity') {
+        return (
+            <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                Velocity only for this instrument
+            </span>
+        );
+    }
+    return (
+        <Button variant="ghost" size="xs" onClick={onReturnToVelocity}>
+            Return to Velocity
+        </Button>
+    );
+};
+
 const ExpressionControl = ({
     showExpressionView,
     onToggleExpressionView,
@@ -148,48 +194,17 @@ const ExpressionControl = ({
                 Expression
             </Button>
 
-            {showExpressionView &&
-                activeExpressionLane !== undefined &&
-                onActiveExpressionLaneChange !== undefined &&
-                mpeExpressionLanes.length === 0 &&
-                (activeExpressionLane === 'velocity' ? (
-                    <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
-                        Velocity only for this instrument
-                    </span>
-                ) : (
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                            onActiveExpressionLaneChange('velocity');
-                            expressionToggleRef.current?.focus();
-                        }}
-                    >
-                        Return to Velocity
-                    </Button>
-                ))}
-            {showExpressionView &&
-                activeExpressionLane !== undefined &&
-                onActiveExpressionLaneChange !== undefined &&
-                mpeExpressionLanes.length > 0 && (
-                    <DawCompactSelect
-                        value={activeExpressionLane}
-                        onChange={(event) =>
-                            onActiveExpressionLaneChange(
-                                event.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend'
-                            )
-                        }
-                        size="micro"
-                        aria-label="Active expression lane"
-                    >
-                        <option value="velocity">Velocity</option>
-                        {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
-                            <option key={lane} value={lane}>
-                                {MPE_LANE_LABELS[lane]}
-                            </option>
-                        ))}
-                    </DawCompactSelect>
-                )}
+            {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
+                <ExpressionLaneAccessory
+                    activeExpressionLane={activeExpressionLane}
+                    onActiveExpressionLaneChange={onActiveExpressionLaneChange}
+                    mpeExpressionLanes={mpeExpressionLanes}
+                    onReturnToVelocity={() => {
+                        onActiveExpressionLaneChange('velocity');
+                        expressionToggleRef.current?.focus();
+                    }}
+                />
+            ) : null}
         </>
     );
 };
