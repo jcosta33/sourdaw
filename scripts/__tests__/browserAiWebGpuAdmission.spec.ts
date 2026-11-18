@@ -5,6 +5,8 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import admissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { selectTestSideSpecs } from '../e2eTestSideGraph';
+import { selectValidationPlan } from '../prValidationScope';
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const admissionSpecPath = join(repositoryRoot, 'tests/e2e/browserAiWebGpuAdmission.spec.ts');
@@ -72,11 +74,30 @@ describe('Browser AI WebGPU admission', () => {
         if (!server || Array.isArray(server)) {
             throw new Error('Expected the admission config to own one server');
         }
-        expect(server.command).toBe('pnpm dev --host 127.0.0.1 --port 5188 --strictPort');
+        expect(server.command).toBe('node scripts/e2eDevServer.ts --browser-ai-admission');
+        expect(server.cwd).toBe(repositoryRoot);
         expect(server.url).toBe('http://localhost:5188');
         expect(server.env).toEqual({ NO_HMR: '0' });
         expect(server.reuseExistingServer).toBe(false);
         expect(server.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
+    });
+
+    it('selects the hardware job when only its non-spec Playwright config changes', () => {
+        const configPath = 'tests/e2e/browserAiWebGpuAdmission.playwright.config.ts';
+        const specs = ['tests/e2e/smoke.spec.ts', 'tests/e2e/browserAiWebGpuAdmission.spec.ts'];
+        const routes = selectTestSideSpecs([configPath], specs, {
+            kind: 'graph',
+            graph: [{ source: configPath, dependencies: [] }],
+            references: [],
+        });
+
+        expect(routes).toEqual([{ path: configPath, kind: 'full', reason: 'imported by no browser spec' }]);
+        expect(selectValidationPlan([configPath], specs, undefined, false, undefined, undefined, routes)).toMatchObject(
+            {
+                browser: true,
+                browserAi: true,
+            }
+        );
     });
 
     it('reserves the cold-start budget needed before the launch-screen readiness gate', () => {

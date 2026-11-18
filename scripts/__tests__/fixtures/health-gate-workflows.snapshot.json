@@ -482,12 +482,13 @@
           },
           {
             "name": "Run Browser AI WebGPU admission",
+            "id": "webgpu-admission",
             "timeout-minutes": 20,
             "shell": "bash",
             "env": {
               "DEBUG": "pw:api,pw:browser"
             },
-            "run": "set -o pipefail\nlog=browser-ai-webgpu-admission.log\nprintf '[browser-ai-webgpu] started %s\\n' \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" | tee \"$log\"\nset +e\npnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a \"$log\"\nstatuses=(\"${PIPESTATUS[@]}\")\nset -e\nprintf '[browser-ai-webgpu] completed %s command=%s log=%s\\n' \\\n  \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" \"${statuses[0]}\" \"${statuses[1]}\" | tee -a \"$log\"\nif [ \"${statuses[0]}\" -ne 0 ]; then\n  exit \"${statuses[0]}\"\nfi\nexit \"${statuses[1]}\"\n"
+            "run": "set -o pipefail\nlog=browser-ai-webgpu-admission.log\ncrash_dir=\nif runner_temp=$(cd -P -- \"${RUNNER_TEMP:-}\" 2>/dev/null && pwd -P) &&\n   staging=$(umask 077 && mktemp -d \"$runner_temp/sourdaw-webgpu.XXXXXXXX\" 2>/dev/null); then\n  crash_dir=\"$staging\"\nfi\nprintf '[browser-ai-webgpu] started %s\\n' \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" | tee \"$log\"\nset +e\nSOURDAW_BROWSER_AI_CRASH_DIRECTORY=\"$crash_dir\" pnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a \"$log\"\nstatuses=(\"${PIPESTATUS[@]}\")\nset -e\nfooter_status=0\nprintf '[browser-ai-webgpu] completed %s command=%s log=%s\\n' \\\n  \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" \"${statuses[0]}\" \"${statuses[1]}\" | tee -a \"$log\" || footer_status=$?\nif [ \"${statuses[0]}\" -ne 0 ]; then\n  if [ -n \"$crash_dir\" ] &&\n     SOURDAW_BROWSER_AI_CRASH_DIRECTORY=\"$crash_dir\" node scripts/browserAiMacCrashSummary.ts 2>/dev/null &&\n     [ -f vite-native-crash.json ] && [ ! -L vite-native-crash.json ]; then\n    # A checkout-relative path preserves the existing upload archive layout.\n    printf 'crash-summary=vite-native-crash.json\\n' 2>/dev/null >> \"${GITHUB_OUTPUT:-}\" || true\n  fi\n  exit \"${statuses[0]}\"\nfi\nif [ \"${statuses[1]}\" -ne 0 ]; then\n  exit \"${statuses[1]}\"\nfi\nexit \"$footer_status\"\n"
           },
           {
             "name": "Upload Browser AI WebGPU diagnostics",
@@ -496,7 +497,7 @@
             "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "browser-ai-webgpu-diagnostics",
-              "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n",
+              "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n${{ steps.webgpu-admission.outputs.crash-summary }}\n",
               "retention-days": 7,
               "if-no-files-found": "warn"
             }

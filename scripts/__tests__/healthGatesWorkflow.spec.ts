@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    statSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -170,6 +180,7 @@ const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     'test-results/**/trace.zip',
     'test-results/**/error-context.md',
     'test-results/.last-run.json',
+    '${{ steps.webgpu-admission.outputs.crash-summary }}',
 ];
 const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
     // A slow merge-ref fetch timed out a 1-minute checkout (run 39588034702).
@@ -192,7 +203,7 @@ const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
 // assertions, and a dropped entry retires that proof without failing anything.
 const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'];
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
-const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
+const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'node scripts/e2eDevServer.ts --browser-ai-admission';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
 const GATE_MEMBERS = ['scope', 'e2e-build', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
@@ -2329,6 +2340,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     }
     if (
         admission['timeout-minutes'] !== BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES ||
+        admission.id !== 'webgpu-admission' ||
         admission.shell !== 'bash' ||
         recordAt(admission, 'env').DEBUG !== 'pw:api,pw:browser'
     ) {
@@ -2348,7 +2360,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         JSON.stringify(uploadPaths) !== JSON.stringify(BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS)
     ) {
         throw new Error(
-            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+            'Browser AI WebGPU diagnostics must upload only the log, failure traces and exact crash summary'
         );
     }
     assertBrowserAiWebGpuStepBudget(job);
@@ -4844,31 +4856,99 @@ describe('health gates workflow contract', () => {
             stepNamed(jobAt(heavyWorkflow, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission'),
             'run'
         );
-        for (const exitCode of [0, 7]) {
+        for (const [commandExit, teeExit, footerExit, expected, allowStaging, summaryMode] of [
+            [0, 0, 0, 0, true, 'missing'],
+            [0, 0, 71, 71, true, 'missing'],
+            [7, 0, 71, 7, true, 'missing'],
+            [0, 4, 71, 4, true, 'missing'],
+            [7, 4, 71, 7, true, 'fresh'],
+            [7, 4, 71, 7, true, 'existing'],
+            [7, 4, 71, 7, false, 'missing'],
+        ] as const) {
             const directory = mkdtempSync(join(tmpdir(), 'sourdaw-browser-ai-webgpu-diagnostics-'));
             try {
                 writeFileSync(
                     join(directory, 'pnpm'),
-                    '#!/bin/sh\nprintf "pnpm called: %s; DEBUG=%s\\n" "$*" "$DEBUG"\nexit "$FAKE_PNPM_EXIT"\n',
+                    '#!/bin/sh\nprintf "pnpm called: %s; DEBUG=%s\\n" "$*" "$DEBUG"\nprintf "%s" "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY" > child-directory\nexit "$FAKE_PNPM_EXIT"\n',
                     { mode: 0o755 }
                 );
-                const result = spawnSync('bash', ['-c', admissionRun], {
+                writeFileSync(
+                    join(directory, 'node'),
+                    `#!/bin/sh
+printf '%s\\n%s' "$*" "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY" > collector
+if [ "$FAKE_SUMMARY" = missing ]; then exit 99; fi
+printf '%s' "$FIXTURE_SUMMARY" > "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY/vite-native-crash.json"
+printf 'private launch receipt' > "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY/start.json"
+printf 'private exit receipt' > "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY/exit.json"
+exec "$NODE_BINARY" --input-type=module -e '
+    const { exportBrowserAiMacCrashSummary } = await import(process.env.FIXTURE_COLLECTOR_MODULE);
+    exportBrowserAiMacCrashSummary(process.env.SOURDAW_BROWSER_AI_CRASH_DIRECTORY);
+' 2> collector-error
+`,
+                    { mode: 0o755 }
+                );
+                writeFileSync(
+                    join(directory, 'tee'),
+                    '#!/bin/sh\nbody=$(cat)\nprintf "%s\\n" "$body" | /usr/bin/tee "$@"\ncase "$body" in\n  "[browser-ai-webgpu] completed "*) exit "$FAKE_FOOTER_EXIT" ;;\n  "pnpm called: "*) exit "$FAKE_TEE_EXIT" ;;\nesac\n',
+                    { mode: 0o755 }
+                );
+                const runnerTemp = join(directory, 'runner temp');
+                if (allowStaging) {
+                    mkdirSync(runnerTemp);
+                }
+                const runnerLink = join(directory, 'runner-link');
+                symlinkSync(runnerTemp, runnerLink, 'dir');
+                const githubOutput = join(directory, 'output');
+                const summaryFile = 'vite-native-crash.json';
+                const summaryBytes = '{"signal":"SIGSEGV","frames":[{"imageOffset":33}]}\n';
+                const original = 'a previous checkout file';
+                if (summaryMode === 'existing') {
+                    writeFileSync(join(directory, summaryFile), original);
+                }
+                const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', admissionRun], {
                     cwd: directory,
                     encoding: 'utf8',
                     env: {
                         ...process.env,
                         DEBUG: 'pw:api,pw:browser',
-                        FAKE_PNPM_EXIT: String(exitCode),
+                        FAKE_PNPM_EXIT: String(commandExit),
+                        FAKE_TEE_EXIT: String(teeExit),
+                        FAKE_FOOTER_EXIT: String(footerExit),
+                        FAKE_SUMMARY: summaryMode,
+                        FIXTURE_SUMMARY: summaryBytes,
+                        FIXTURE_COLLECTOR_MODULE: pathToFileURL(
+                            join(repositoryRoot, 'scripts/browserAiMacCrashSummary.ts')
+                        ).href,
+                        NODE_BINARY: process.execPath,
+                        RUNNER_TEMP: runnerLink,
+                        GITHUB_OUTPUT: githubOutput,
                         PATH: `${directory}${delimiter}${process.env.PATH ?? ''}`,
                     },
                     timeout: 10_000,
                 });
                 expect(result.error).toBeUndefined();
-                expect(result.status).toBe(exitCode);
+                expect(result.status).toBe(expected);
                 const log = readFileSync(join(directory, BROWSER_AI_WEBGPU_LOG), 'utf8');
                 expect(log).toContain('pnpm called: test:e2e:browser-ai-webgpu-admission; DEBUG=pw:api,pw:browser');
                 expect(log).toMatch(/\[browser-ai-webgpu\] started \d{4}-\d{2}-\d{2}T/);
-                expect(log).toContain(`command=${exitCode} log=0`);
+                expect(log).toContain(`command=${commandExit} log=${teeExit}`);
+                const staging = readFileSync(join(directory, 'child-directory'), 'utf8');
+                const rootFiles = readdirSync(directory);
+                const readIfWritten = (name: string): string | undefined =>
+                    rootFiles.includes(name) ? readFileSync(join(directory, name), 'utf8') : undefined;
+                expect(Boolean(staging)).toBe(allowStaging);
+                expect(dirname(staging)).toBe(allowStaging ? realpathSync(runnerTemp) : '.');
+                expect(staging ? statSync(staging).mode & 0o777 : undefined).toBe(allowStaging ? 0o700 : undefined);
+                expect(readIfWritten('collector')).toBe(
+                    commandExit && allowStaging ? `scripts/browserAiMacCrashSummary.ts\n${staging}` : undefined
+                );
+                expect(readIfWritten('output'), readIfWritten('collector-error')).toBe(
+                    summaryMode === 'fresh' ? 'crash-summary=vite-native-crash.json\n' : undefined
+                );
+                const expectedSummary = { missing: undefined, fresh: summaryBytes, existing: original };
+                expect(readIfWritten(summaryFile)).toBe(expectedSummary[summaryMode]);
+                expect(rootFiles).not.toEqual(expect.arrayContaining(['start.json']));
+                expect(rootFiles).not.toEqual(expect.arrayContaining(['exit.json']));
             } finally {
                 rmSync(directory, { recursive: true, force: true });
             }
@@ -4907,7 +4987,17 @@ describe('health gates workflow contract', () => {
         stepNamed(jobAt(skippedDiagnostics, BROWSER_AI_WEBGPU_JOB), 'Upload Browser AI WebGPU diagnostics').if =
             '${{ success() }}';
         expect(() => assertBrowserAiWebGpuJob(skippedDiagnostics)).toThrow(
-            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+            'Browser AI WebGPU diagnostics must upload only the log, failure traces and exact crash summary'
+        );
+
+        const broadDiagnostics = asRecord(structuredClone(heavyWorkflow), 'broad Browser AI diagnostics');
+        const broadUpload = stepNamed(
+            jobAt(broadDiagnostics, BROWSER_AI_WEBGPU_JOB),
+            'Upload Browser AI WebGPU diagnostics'
+        );
+        recordAt(broadUpload, 'with').path = [...BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS, 'test-results/**'].join('\n');
+        expect(() => assertBrowserAiWebGpuJob(broadDiagnostics)).toThrow(
+            'Browser AI WebGPU diagnostics must upload only the log, failure traces and exact crash summary'
         );
 
         const unboundedHeavyInstall = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI heavyWorkflow');
