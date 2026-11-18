@@ -50,6 +50,7 @@ import {
     replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
     sessionUndoWitnessStampPort,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
@@ -60,6 +61,7 @@ import {
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+import { resolveAutomationCurveSplit } from '#/utils/resolveAutomationCurveSplit';
 import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 import { isRecord } from '#/utils/structuralEquality';
 
@@ -191,6 +193,25 @@ function refusalState() {
         history: structuredClone(readHistory()),
         pending: countPendingAutomergeStorageWrites(),
     };
+}
+
+async function enqueueSplitDuringSnapshot(boundary: Omit<AutomationPoint, 'id'>, beat: number) {
+    expect(resolveAutomationCurveSplit(readLane(), beat)).toBeDefined();
+    const entered = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<void>();
+    const snapshot = transactSnapshot(async () => {
+        entered.resolve();
+        await held.promise;
+    });
+    await entered.promise;
+    const first = insertAutomationLanePoints(targetLane, { kind: 'point', point: boundary }).then(refusalState);
+    const split = insertAutomationLanePoints(targetLane, { kind: 'split', beat });
+    const waiting = refusalState();
+    held.resolve();
+    const [afterFirst] = await Promise.all([first, split, snapshot]);
+    expect(waiting.raw.automation.lanes[0]?.points).toStrictEqual(initialPoints);
+    expect(waiting.history?.past).toEqual([]);
+    return afterFirst;
 }
 
 function editRawLane(edit: (lane: AutomationLane) => void) {
@@ -472,6 +493,59 @@ describe('local automation lane insertion', () => {
         ]);
         expect(readLane().map((point) => point.beat)).toEqual([2, 3.98, 4.5, 5, 6, 6, 8.01, 12]);
         expect(notices).toEqual([]);
+    });
+
+    it('splits the curve left by a pending point and replays both edits in order after reload', async () => {
+        const boundary = { beat: 3, value: 0.1, curve: 'linear', tension: 0.5 } as const;
+        const beat = 3.5;
+        const afterFirst = await enqueueSplitDuringSnapshot(boundary, beat);
+        const afterBoundary = [initialPoints[0], { ...boundary, id: expect.any(String) }, ...initialPoints.slice(1)];
+        expect(afterFirst.raw.automation.lanes[0]?.points).toStrictEqual(afterBoundary);
+        const inserted = readLane();
+        const value = 0.1 + (0.8 - 0.1) * ((beat - 3) / (3.98 - 3));
+        expect(inserted).toStrictEqual([
+            ...afterBoundary.slice(0, 2),
+            { id: expect.any(String), beat, value, curve: 'linear', tension: 0.5 },
+            ...afterBoundary.slice(2),
+        ]);
+        const entries = readHistory()?.past;
+        expect(entries?.map((entry) => entry.label)).toEqual(['Add automation point', 'Add automation point']);
+        expect(entries?.[1]).toMatchObject({
+            kind: 'action',
+            action: {
+                payload: {
+                    insertion: { kind: 'split', beat },
+                    capture: { before: afterBoundary, after: inserted, changedBeats: [beat] },
+                },
+            },
+        });
+        expect(notices).toEqual([]);
+
+        await reloadFromIndexedDb();
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
+        expect(readLane()).toStrictEqual(afterFirst.raw.automation.lanes[0]?.points);
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
+        expect(readLane()).toStrictEqual(initialPoints);
+        await redo({ stepOverConflicts: false });
+        expect(readLane()).toStrictEqual(afterFirst.raw.automation.lanes[0]?.points);
+        await redo({ stepOverConflicts: false });
+        expect(readLane()).toStrictEqual(inserted);
+    });
+
+    it('refuses a queued split if the preceding point leaves an unsplittable curve', async () => {
+        const boundary = { beat: 3, value: 0.1, curve: 'exponential', tension: 0.5 } as const;
+        const afterFirst = await enqueueSplitDuringSnapshot(boundary, 3.5);
+
+        expect(readLane()).toStrictEqual([
+            initialPoints[0],
+            { ...boundary, id: expect.any(String) },
+            ...initialPoints.slice(1),
+        ]);
+        expect(readHistory()?.past.map((entry) => entry.label)).toEqual(['Add automation point']);
+        expect(refusalState()).toEqual(afterFirst);
+        expect(notices).toEqual([
+            { level: 'warning', message: expect.stringContaining('was refused because the project') },
+        ]);
     });
 
     it('does not carry a queued gesture over a root installation', async () => {

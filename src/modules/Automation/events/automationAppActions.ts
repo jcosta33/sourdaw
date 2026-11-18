@@ -4,6 +4,7 @@ import { type AutomationPointSnapshot } from './automationSnapshots';
 
 type AutomationLaneInsertion =
     | { kind: 'point'; point: Omit<AutomationPointSnapshot, 'id'> }
+    | { kind: 'split'; beat: number }
     | {
           kind: 'shape';
           shape: 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';

@@ -1,4 +1,5 @@
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import { resolveAutomationCurveSplit } from '#/utils/resolveAutomationCurveSplit';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { type AutomationLane, type AutomationPoint } from '../../models/Automation';
@@ -28,6 +29,10 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isNonNegativeBeat(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0;
+}
+
 function isCycleCount(value: unknown): boolean {
     return (
         value === undefined ||
@@ -42,13 +47,15 @@ export function isLaneInsertion(insertion: unknown): insertion is ValidatedInser
     if (insertion.kind === 'point') {
         return is_exact_automation_point(insertion.point) && !Object.hasOwn(insertion.point, 'id');
     }
+    if (insertion.kind === 'split') {
+        return Object.keys(insertion).length === 2 && isNonNegativeBeat(insertion.beat);
+    }
     const { startBeat, endBeat, cycles } = insertion;
     return (
         insertion.kind === 'shape' &&
         SHAPES.has(insertion.shape) &&
-        isFiniteNumber(startBeat) &&
+        isNonNegativeBeat(startBeat) &&
         isFiniteNumber(endBeat) &&
-        startBeat >= 0 &&
         startBeat < endBeat &&
         isCycleCount(cycles)
     );
@@ -66,6 +73,10 @@ export function isInsertionOwner(value: unknown): value is InsertionOwner {
 function planInsertionPoints(range: LaneRange, before: AutomationPoint[], insertion: ValidatedInsertion) {
     if (insertion.kind === 'point') {
         return insertAutomationPointAtBeat(before, insertion.point);
+    }
+    if (insertion.kind === 'split') {
+        const point = resolveAutomationCurveSplit(before, insertion.beat);
+        return point === undefined ? null : insertAutomationPointAtBeat(before, point);
     }
     return planAutomationShapeInsertion(
         { ...range, points: before },

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { resolveAutomationCurveSplit } from '#/utils/resolveAutomationCurveSplit';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { insertAutomationPointPreservingShape } from '../automationDrag';
@@ -83,7 +84,16 @@ describe('insertAutomationPointPreservingShape', () => {
             beat: 3,
             inserted: { value: 0.3, curve: 'linear', tension: 0 },
         },
-    ])('dispatches a point $name that preserves values on both sides', ({ points, beat, inserted }) => {
+        {
+            name: 'after the last point of a lane ending on a stairs segment',
+            points: [
+                { id: 'a', beat: 0, value: 0.1, curve: 'linear', tension: 0 },
+                { id: 'b', beat: 2, value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
+            ],
+            beat: 3,
+            inserted: { value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
+        },
+    ])('dispatches the beat $name and preserves values on both sides', ({ points, beat, inserted }) => {
         automationStore.set({ lanes: [makeLane(points)] });
         const before = sampleLane();
 
@@ -95,20 +105,17 @@ describe('insertAutomationPointPreservingShape', () => {
                 payload: {
                     laneId: 'lane-1',
                     owner: { trackId: 'track-1', parameterId: 'volume' },
-                    insertion: { kind: 'point', point: { beat, ...inserted } },
+                    insertion: { kind: 'split', beat },
                 },
             },
             expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
         );
-        const [action] = vi.mocked(executeUserAppAction).mock.calls[0]!;
-        if (action.type !== 'insertAutomationLanePoints' || action.payload.insertion.kind !== 'point') {
-            throw new Error('Expected a point insertion');
+        expect(storedPoints()).toStrictEqual(points);
+        const splitPoint = resolveAutomationCurveSplit(points, beat);
+        if (splitPoint === undefined) {
+            throw new Error('Expected an exact curve split');
         }
-        const added = action.payload.insertion.point;
-        if (added.curve !== inserted.curve) {
-            throw new Error('Expected the captured segment curve');
-        }
-        const splitPoint = { ...added, curve: added.curve };
+        expect(splitPoint).toStrictEqual({ beat, ...inserted });
         automationStore.set({ lanes: [makeLane([...points, splitPoint].sort((a, b) => a.beat - b.beat))] });
         expectSameSamples(before, sampleLane());
     });
@@ -198,30 +205,5 @@ describe('insertAutomationPointPreservingShape', () => {
 
         expect(storedPoints()).toEqual([]);
         expect(executeUserAppAction).not.toHaveBeenCalled();
-    });
-
-    it('copies the step count after the last point of a lane ending on a stairs segment', () => {
-        const points: AutomationPoint[] = [
-            { id: 'a', beat: 0, value: 0.1, curve: 'linear', tension: 0 },
-            { id: 'b', beat: 2, value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
-        ];
-        automationStore.set({ lanes: [makeLane(points)] });
-
-        expect(insertAutomationPointPreservingShape('lane-1', 3)).toBe(true);
-
-        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(
-            {
-                type: 'insertAutomationLanePoints',
-                payload: {
-                    laneId: 'lane-1',
-                    owner: { trackId: 'track-1', parameterId: 'volume' },
-                    insertion: {
-                        kind: 'point',
-                        point: { beat: 3, value: 0.5, curve: 'stairs', tension: 0, stairSteps: 6 },
-                    },
-                },
-            },
-            expect.objectContaining({ authorizeFirstHandler: expect.any(Function) })
-        );
     });
 });

@@ -17015,9 +17015,6 @@
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 1
         },
