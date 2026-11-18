@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { type Locator, type Page } from 'playwright';
 
+import { FermenterDriveError, type FermenterDrive } from './desktopFermenterEvidence.ts';
 import { emptyDiagnostics } from './desktopLatencyDiagnostics.ts';
 import {
     dismissAlphaNotice,
@@ -13,7 +14,6 @@ import {
     waitForWorkspaceOrLaunchScreen,
 } from './desktopLatencyLaunch.ts';
 import { launchPackagedApp, removeProfileDir, step, STEP_TIMEOUT_MS, type PackagedApp } from './packagedAppSession.ts';
-import { FermenterDriveError, type FermenterDrive } from './desktopFermenterEvidence.ts';
 
 async function readyWorkspace(page: Page, browser: Locator, playback: Locator): Promise<void> {
     const startedAt = await waitForWorkspaceOrLaunchScreen(page, STEP_TIMEOUT_MS);
@@ -44,7 +44,7 @@ async function openFermenter(page: Page, browser: Locator, card: Locator, editor
     assert(await editor.evaluate((element) => element === document.activeElement));
 }
 
-async function useTransport(playback: Locator, editor: Locator): Promise<void> {
+async function exerciseTransport(playback: Locator, editor: Locator): Promise<void> {
     const play = playback.getByRole('button', { name: 'Play', exact: true });
     await play.click();
     await playback.getByRole('button', { name: 'Pause', exact: true }).waitFor({ state: 'visible' });
@@ -107,7 +107,7 @@ export const driveDesktopFermenter: FermenterDrive = async (binary, report) => {
         report('project-ready');
         await observe('dialog-open-failed', () => openFermenter(page, browser, card, editor), 6 * STEP_TIMEOUT_MS);
         report('dialog-open-and-focused');
-        await observe('transport-failed', () => useTransport(playback, editor), 5 * STEP_TIMEOUT_MS);
+        await observe('transport-failed', () => exerciseTransport(playback, editor), 5 * STEP_TIMEOUT_MS);
         report('transport-play-stop');
         await observe('dialog-close-failed', () => closeFermenter(card, editor), 3 * STEP_TIMEOUT_MS);
         report('dialog-closed-and-opener-focused');

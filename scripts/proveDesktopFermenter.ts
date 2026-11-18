@@ -265,6 +265,7 @@ function writeFinalJson(path: string, value: object): void {
             rmSync(directory, { recursive: true, force: true });
         } catch {
             // The final hard link, once published, remains valid if temp cleanup fails.
+            process.stderr.write('Could not remove the Fermenter receipt staging directory.\n');
         }
     }
 }
