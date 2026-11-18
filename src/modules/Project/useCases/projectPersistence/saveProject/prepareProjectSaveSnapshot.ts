@@ -118,6 +118,56 @@ function createSaveCommitValidation(
     };
 }
 
+function captureSavePreparationInputs(signal: AbortSignal, expectedOutgoingProjectIdentity: string | undefined) {
+    assertAvailable(signal, expectedOutgoingProjectIdentity);
+    const revision = settlePendingProjectWritesAndCaptureRevision();
+    const identity = captureProjectIdentity();
+    const root = getCrdtDoc('root');
+    const project = projectStore.value;
+    const arrangements = arrangementStore.value;
+    if (!root || !project || !arrangements || !isRecord(root.projectMeta)) {
+        throw new Error('Project Save preparation requires native project metadata and arrangements');
+    }
+    const projectId = readProjectIdAfterSettlement(signal, expectedOutgoingProjectIdentity);
+    const sources = sourceValues();
+    const updatedAt = Date.now();
+    const nextProject = { ...project, updatedAt, dirty: true };
+    const nextArrangements = {
+        ...arrangements,
+        arrangements: arrangements.arrangements.map((snapshot) =>
+            snapshot.id === arrangements.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
+        ),
+    };
+    const canonicalArrangements = canonicalValue(nextArrangements);
+    const canonicalProject = canonicalValue(nextProject);
+    const expectedNativeMetadata = { ...root.projectMeta, updatedAt };
+    return {
+        revision,
+        identity,
+        project,
+        arrangements,
+        projectId,
+        sources,
+        nextProject,
+        nextArrangements,
+        canonicalArrangements,
+        canonicalProject,
+        expectedNativeMetadata,
+    };
+}
+
+function prepareSaveArrangementSnapshot(
+    preparationScope: Parameters<typeof prepareArrangementStoreState>[0],
+    captured: ReturnType<typeof captureSavePreparationInputs>
+) {
+    const refresh = !valuesEqual(canonicalValue(captured.arrangements), captured.canonicalArrangements);
+    const plan = refresh ? prepareArrangementStoreState(preparationScope, captured.nextArrangements) : undefined;
+    if (refresh && !plan) {
+        throw new Error('Bounded native Save snapshot preparation is unavailable');
+    }
+    return plan;
+}
+
 /**
  * Prepare the Save-owned snapshot under the caller's existing transaction.
  * This stages only; Command retains final validation, publication and abort.
@@ -132,41 +182,20 @@ export async function prepareProjectSaveSnapshot(
     if (!preparationScope) {
         throw new Error('Project Save preparation requires an open owning transaction');
     }
-    assertAvailable(signal, expectedOutgoingProjectIdentity);
-    const revision = settlePendingProjectWritesAndCaptureRevision();
-    const identity = captureProjectIdentity();
-    const root = getCrdtDoc('root');
-    const project = projectStore.value;
-    const arrangements = arrangementStore.value;
-    if (!root || !project || !arrangements || !isRecord(root.projectMeta)) {
-        throw new Error('Project Save preparation requires native project metadata and arrangements');
-    }
-    const projectId = readProjectIdAfterSettlement(signal, expectedOutgoingProjectIdentity);
-    const sources = sourceValues();
-    let expectedProject = project;
-    let expectedArrangements = arrangements;
-    const updatedAt = Date.now();
-    const nextProject = { ...project, updatedAt, dirty: true };
-    const nextArrangements = {
-        ...arrangements,
-        arrangements: arrangements.arrangements.map((snapshot) =>
-            snapshot.id === arrangements.activeArrangementId ? takeSnapshot(snapshot.id, snapshot.name) : snapshot
-        ),
-    };
-    const canonicalArrangements = canonicalValue(nextArrangements);
-    const canonicalProject = canonicalValue(nextProject);
-    const expectedNativeMetadata = { ...root.projectMeta, updatedAt };
+    const captured = captureSavePreparationInputs(signal, expectedOutgoingProjectIdentity);
+    let expectedProject = captured.project;
+    let expectedArrangements = captured.arrangements;
 
     function assertCurrent(): void {
         const currentProjectId = assertAvailable(signal, expectedOutgoingProjectIdentity);
-        if (captureProjectIdentity() !== identity || currentProjectId !== projectId) {
+        if (captureProjectIdentity() !== captured.identity || currentProjectId !== captured.projectId) {
             throw new Error('Project authority changed during Save preparation');
         }
         if (
-            captureProjectRevision() !== revision ||
+            captureProjectRevision() !== captured.revision ||
             projectStore.value !== expectedProject ||
             arrangementStore.value !== expectedArrangements ||
-            sourceValues().some((value, index) => value !== sources[index])
+            sourceValues().some((value, index) => value !== captured.sources[index])
         ) {
             throw new ProjectSavePreparationStaleError();
         }
@@ -178,11 +207,7 @@ export async function prepareProjectSaveSnapshot(
         scope(assertCurrent);
     }
 
-    const refresh = !valuesEqual(canonicalValue(arrangements), canonicalArrangements);
-    const plan = refresh ? prepareArrangementStoreState(preparationScope, nextArrangements) : undefined;
-    if (refresh && !plan) {
-        throw new Error('Bounded native Save snapshot preparation is unavailable');
-    }
+    const plan = prepareSaveArrangementSnapshot(preparationScope, captured);
     try {
         assertPreparationCurrent();
         if (plan) {
@@ -202,24 +227,30 @@ export async function prepareProjectSaveSnapshot(
         }
         assertPreparationCurrent();
         scope(() => {
-            projectStore.set(nextProject);
-            if (!valuesEqual(projectStore.value, canonicalProject)) {
+            projectStore.set(captured.nextProject);
+            const stagedProject = projectStore.value;
+            if (!stagedProject || !valuesEqual(stagedProject, captured.canonicalProject)) {
                 throw new ProjectSavePreparationStaleError();
             }
-            expectedProject = projectStore.value;
+            expectedProject = stagedProject;
             assertCurrent();
             if (plan && !plan.stage()) {
                 throw new ProjectSavePreparationStaleError();
             }
-            if (!valuesEqual(arrangementStore.value, canonicalArrangements)) {
+            const stagedArrangements = arrangementStore.value;
+            if (!stagedArrangements || !valuesEqual(stagedArrangements, captured.canonicalArrangements)) {
                 throw new ProjectSavePreparationStaleError();
             }
-            expectedArrangements = arrangementStore.value;
+            expectedArrangements = stagedArrangements;
             assertCurrent();
         });
         return {
             status: 'written',
-            commitValidation: createSaveCommitValidation(assertCurrent, canonicalArrangements, expectedNativeMetadata),
+            commitValidation: createSaveCommitValidation(
+                assertCurrent,
+                captured.canonicalArrangements,
+                captured.expectedNativeMetadata
+            ),
         };
     } finally {
         plan?.discard();

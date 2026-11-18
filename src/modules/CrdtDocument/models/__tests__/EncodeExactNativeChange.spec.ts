@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { change, clone, decodeChange, encodeChange, from, getChanges } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
-import { encodeExactNativeChange } from '../encodeExactNativeChange';
+import { encodeExactNativeChange } from '../EncodeExactNativeChange';
 
 describe('exact native change encoding', () => {
     it('preserves a negative IEEE-754 zero and checksums the repaired bytes', () => {

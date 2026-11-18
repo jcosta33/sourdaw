@@ -1,5 +1,6 @@
 import {
     type DecodedChange,
+    type ChangeMetadata,
     type Doc,
     type Heads,
     applyChanges,
@@ -13,7 +14,7 @@ import {
     getMissingDeps,
 } from '@automerge/automerge';
 
-import { encodeExactNativeChange } from '../models/encodeExactNativeChange';
+import { encodeExactNativeChange } from '../models/EncodeExactNativeChange';
 import { sameNativeHeads } from '../models/NativeIncrementalEncoding';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
@@ -69,8 +70,10 @@ function yieldToHost(signal: AbortSignal): Promise<void> {
     });
 }
 
-function measure(name: string, start: number, end: number, primaryKey: string, index?: number): void {
-    performance.measure(name, { start, end, detail: { primaryKey, sequenceIndex: index } });
+type SequenceMeasureDetail = { primaryKey: string; sequenceIndex: number | undefined };
+
+function measure(name: string, start: number, end: number, detail: SequenceMeasureDetail): void {
+    performance.measure(name, { start, end, detail });
     performance.clearMeasures(name);
 }
 
@@ -88,28 +91,33 @@ function ownBoundedChange(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
     return Uint8Array.from(bytes);
 }
 
-function assertDecodedAuthority(
-    decoded: DecodedChange,
-    expected: {
-        actor: string;
-        sequence: number;
-        startOp: number;
-        dependencies: ReadonlySet<string>;
-        message: string | undefined;
-        time?: number;
-    }
-): number {
+type DecodedAuthorityExpectation = {
+    actor: string;
+    sequence: number;
+    startOp: number;
+    dependencies: ReadonlySet<string>;
+    message: string | undefined;
+    time?: number;
+};
+
+function matchesDecodedSequenceIdentity(decoded: DecodedChange, expected: DecodedAuthorityExpectation): boolean {
+    return (
+        decoded.actor === expected.actor &&
+        !hasOpaqueNativeMetadata(decoded) &&
+        isAbsentNativeAuthor(decoded.author) &&
+        decoded.seq === expected.sequence &&
+        decoded.startOp === expected.startOp &&
+        Number.isSafeInteger(decoded.time) &&
+        (expected.time === undefined || decoded.time === expected.time) &&
+        nativeChangeMessage(decoded.message) === nativeChangeMessage(expected.message)
+    );
+}
+
+function assertDecodedAuthority(decoded: DecodedChange, expected: DecodedAuthorityExpectation): number {
     const operationCount = nativeOperationCount(decoded);
     const dependencies = new Set(decoded.deps);
     if (
-        decoded.actor !== expected.actor ||
-        hasOpaqueNativeMetadata(decoded) ||
-        !isAbsentNativeAuthor(decoded.author) ||
-        decoded.seq !== expected.sequence ||
-        decoded.startOp !== expected.startOp ||
-        !Number.isSafeInteger(decoded.time) ||
-        (expected.time !== undefined && decoded.time !== expected.time) ||
-        nativeChangeMessage(decoded.message) !== nativeChangeMessage(expected.message) ||
+        !matchesDecodedSequenceIdentity(decoded, expected) ||
         decoded.deps.length !== dependencies.size ||
         dependencies.size !== expected.dependencies.size ||
         decoded.deps.some((head) => !expected.dependencies.has(head)) ||
@@ -135,6 +143,21 @@ type AppliedSequenceExpectation = {
     span: number;
 };
 
+function matchesAppliedSequenceHistory(addition: ChangeMetadata, expected: AppliedSequenceExpectation): boolean {
+    return (
+        addition.hash === expected.decoded.hash &&
+        addition.actor === expected.decoded.actor &&
+        isAbsentNativeAuthor(addition.author) &&
+        !hasOpaqueNativeMetadata(addition) &&
+        addition.seq === expected.sequence &&
+        addition.startOp === expected.startOp &&
+        addition.maxOp === expected.startOp + expected.span - 1 &&
+        nativeChangeMessage(addition.message) === nativeChangeMessage(expected.decoded.message) &&
+        addition.time === expected.decoded.time &&
+        sameNativeHeads(addition.deps, expected.decoded.deps)
+    );
+}
+
 function assertAppliedSequenceChange<TDoc>(document: Doc<TDoc>, expected: AppliedSequenceExpectation): string {
     if (getMissingDeps(document, []).length > 0 || getMissingDeps(document, expected.previousHeads).length > 0) {
         throw new Error('Native sequence lost its captured dependency frontier');
@@ -144,16 +167,7 @@ function assertAppliedSequenceChange<TDoc>(document: Doc<TDoc>, expected: Applie
     if (
         additions.length !== 1 ||
         !addition ||
-        addition.hash !== expected.decoded.hash ||
-        addition.actor !== expected.decoded.actor ||
-        !isAbsentNativeAuthor(addition.author) ||
-        hasOpaqueNativeMetadata(addition) ||
-        addition.seq !== expected.sequence ||
-        addition.startOp !== expected.startOp ||
-        addition.maxOp !== expected.startOp + expected.span - 1 ||
-        nativeChangeMessage(addition.message) !== nativeChangeMessage(expected.decoded.message) ||
-        addition.time !== expected.decoded.time ||
-        !sameNativeHeads(addition.deps, expected.decoded.deps) ||
+        !matchesAppliedSequenceHistory(addition, expected) ||
         !sameNativeHeads(getHeads(document), [addition.hash]) ||
         getActorId(document) !== expected.actor ||
         !isAbsentNativeAuthor(getAuthor(document))
@@ -178,11 +192,10 @@ type SequenceCursor<TDoc> = {
 function admitSequenceChunk<TDoc>(
     input: Input<TDoc>,
     cursor: SequenceCursor<TDoc>,
-    bytes: Uint8Array<ArrayBuffer>,
-    index: number,
-    totalOperations: number,
+    chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; totalOperations: number },
     assertCurrent: () => void
 ): void {
+    const { bytes, index, totalOperations } = chunk;
     const started = performance.now();
     assertCurrent();
     let responseEnded = started;
@@ -248,10 +261,11 @@ function admitSequenceChunk<TDoc>(
         } else if (phase === 'apply') {
             applyEnded = ended;
         }
-        measure('automerge-prospective-response-task', started, responseEnded, input.key, index);
-        measure('automerge-prospective-apply-task', responseEnded, applyEnded, input.key, index);
-        measure('automerge-prospective-authority-task', applyEnded, ended, input.key, index);
-        measure('automerge-prospective-sequence-slice-task', started, ended, input.key, index);
+        const detail = { primaryKey: input.key, sequenceIndex: index };
+        measure('automerge-prospective-response-task', started, responseEnded, detail);
+        measure('automerge-prospective-apply-task', responseEnded, applyEnded, detail);
+        measure('automerge-prospective-authority-task', applyEnded, ended, detail);
+        measure('automerge-prospective-sequence-slice-task', started, ended, detail);
     }
 }
 
@@ -290,10 +304,13 @@ export async function admitBoundedNativeSequence<TDoc>(input: Input<TDoc>): Prom
         state.startOp = history.reduce((maximum, entry) => Math.max(maximum, entry.maxOp), 0) + 1;
         state.previousOwnHash = latestOwn?.hash;
         assertCurrent();
-        measure('automerge-prospective-sequence-planning-task', planningStarted, performance.now(), input.key);
+        measure('automerge-prospective-sequence-planning-task', planningStarted, performance.now(), {
+            primaryKey: input.key,
+            sequenceIndex: undefined,
+        });
         for (const [index, bytes] of changes.entries()) {
             await yieldToHost(input.signal);
-            admitSequenceChunk(input, state, bytes, index, sequence.operationCount, assertCurrent);
+            admitSequenceChunk(input, state, { bytes, index, totalOperations: sequence.operationCount }, assertCurrent);
         }
         if (
             state.operationCount !== sequence.operationCount ||

@@ -11,7 +11,7 @@ import {
     type ChangeMetadata,
 } from '@automerge/automerge/slim';
 
-import { encodeExactNativeChange } from '../models/encodeExactNativeChange';
+import { encodeExactNativeChange } from '../models/EncodeExactNativeChange';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
     NATIVE_SEQUENCE_MAX_OPERATIONS,
@@ -21,6 +21,18 @@ import {
     nativeOperationCount,
 } from '../models/NativeMutationSequence';
 import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
+
+function matchesCanonicalChangeHistory(decoded: DecodedChange, metadata: ChangeMetadata): boolean {
+    return (
+        decoded.seq === metadata.seq &&
+        decoded.hash === metadata.hash &&
+        nativeChangeMessage(decoded.message) === nativeChangeMessage(metadata.message) &&
+        decoded.time === metadata.time &&
+        Number.isSafeInteger(decoded.time) &&
+        decoded.startOp === metadata.startOp &&
+        metadata.maxOp - metadata.startOp + 1 === nativeOperationCount(decoded)
+    );
+}
 
 function assertCanonicalNativeMetadata(
     document: Doc<unknown>,
@@ -34,13 +46,7 @@ function assertCanonicalNativeMetadata(
         hasOpaqueNativeMetadata(metadata) ||
         hasOpaqueNativeMetadata(decoded) ||
         decoded.actor !== getActorId(document) ||
-        decoded.seq !== metadata.seq ||
-        decoded.hash !== metadata.hash ||
-        nativeChangeMessage(decoded.message) !== nativeChangeMessage(metadata.message) ||
-        decoded.time !== metadata.time ||
-        !Number.isSafeInteger(decoded.time) ||
-        decoded.startOp !== metadata.startOp ||
-        metadata.maxOp - metadata.startOp + 1 !== nativeOperationCount(decoded)
+        !matchesCanonicalChangeHistory(decoded, metadata)
     ) {
         throw new Error('Unsupported canonical native change metadata');
     }

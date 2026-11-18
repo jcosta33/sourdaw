@@ -1656,7 +1656,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         value: TData | null;
         write: PendingAutomergeStorageWrite;
         claimedExecution: ClaimedAutomergeStorageWrite | null;
-        prepared?: { candidate: PreparedStorageCandidate; matches(): boolean; port: AutomergeStoragePort };
+        prepared?: Omit<PreparedStorageReuse, 'owner'>;
     };
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
