@@ -643,7 +643,7 @@ describe('required unit account isolation', () => {
             expect(runUnitPhase(context, 'browsers', undefined, ports)).toBe(7);
             expect(run).toHaveBeenCalledTimes(1);
             const [file, args, options] = run.mock.calls[0] ?? [];
-            expect([file, args]).toEqual([context.pnpm, ['exec', 'playwright', 'install', 'chromium']]);
+            expect([file, args]).toEqual([context.pnpm, ['exec', 'playwright', 'install', 'chromium', '--only-shell']]);
             // The browser cache resolves from the account's private HOME; no
             // browser path is admitted into the environment.
             expect(options?.env).toEqual(ports.env);

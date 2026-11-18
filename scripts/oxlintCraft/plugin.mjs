@@ -360,11 +360,13 @@ const fixTernary = (context, node, statement, fixer) => {
     const consequent = `${branchPrefix}(${source.getText(node.consequent)})`;
     const alternate = `${branchPrefix}(${source.getText(node.alternate)})`;
     const openConsequent = beforeConsequent.replace('?', '{');
+    const guarded = `if (${test})${openConsequent}${consequent}; }`;
+    if (returnsValue) {
+        const beforeReturn = beforeAlternate.replace(/:[ \t]?/u, '') || ' ';
+        return fixer.replaceText(statement, `${guarded}${beforeReturn}${alternate}${terminator}`);
+    }
     const openAlternate = beforeAlternate.replace(':', 'else {');
-    return fixer.replaceText(
-        statement,
-        `if (${test})${openConsequent}${consequent}; }${openAlternate}${alternate}${terminator} }`
-    );
+    return fixer.replaceText(statement, `${guarded}${openAlternate}${alternate}${terminator} }`);
 };
 
 function isControlFlowTernary(context, node, parent) {

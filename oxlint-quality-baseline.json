@@ -949,6 +949,9 @@
         }
     },
     "scripts/resourceGuard.ts": {
+        "eslint/no-else-return": {
+            "count": 1
+        },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 9
         },
@@ -984,9 +987,6 @@
         }
     },
     "scripts/restampDependencyBump.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 1
         }
@@ -1278,6 +1278,9 @@
         },
         "eslint/max-lines-per-function": {
             "count": 2
+        },
+        "eslint/no-else-return": {
+            "count": 1
         },
         "typescript/no-non-null-assertion": {
             "count": 3
@@ -6132,6 +6135,9 @@
         "eslint/max-params": {
             "count": 9
         },
+        "eslint/no-else-return": {
+            "count": 2
+        },
         "typescript/no-non-null-assertion": {
             "count": 3
         }
@@ -7356,6 +7362,9 @@
     },
     "src/modules/Arrangement/useCases/comping/prepareTempoAudioSourceWrite.ts": {
         "eslint/complexity": {
+            "count": 1
+        },
+        "eslint/no-else-return": {
             "count": 1
         }
     },
@@ -11288,6 +11297,9 @@
         "eslint/max-lines-per-function": {
             "count": 2
         },
+        "eslint/no-else-return": {
+            "count": 3
+        },
         "sourdaw-craft/no-silent-catch": {
             "count": 1
         }
@@ -11501,7 +11513,7 @@
             "count": 3
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 4
@@ -15951,6 +15963,9 @@
         "eslint/max-params": {
             "count": 2
         },
+        "eslint/no-else-return": {
+            "count": 8
+        },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
         },
@@ -16111,6 +16126,9 @@
         }
     },
     "src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.recording.integration.spec.ts": {
+        "eslint/no-else-return": {
+            "count": 1
+        },
         "sourdaw-craft/no-fixed-test-sleep": {
             "count": 3
         },
@@ -16885,6 +16903,9 @@
     "src/modules/SessionLauncher/presentations/views/SessionView.tsx": {
         "eslint/max-lines-per-function": {
             "count": 2
+        },
+        "eslint/no-else-return": {
+            "count": 1
         }
     },
     "src/modules/SessionLauncher/useCases/sessionLaunch/toggleSessionSlot.ts": {
@@ -19097,6 +19118,9 @@
         "eslint/max-lines-per-function": {
             "count": 2
         },
+        "eslint/no-else-return": {
+            "count": 1
+        },
         "typescript/no-non-null-assertion": {
             "count": 9
         }
@@ -19391,6 +19415,9 @@
     "src/modules/Yeast/workers/processors/MarkovChain.ts": {
         "eslint/complexity": {
             "count": 1
+        },
+        "eslint/no-else-return": {
+            "count": 3
         },
         "typescript/no-non-null-assertion": {
             "count": 9

@@ -5,6 +5,59 @@ import { createTrack } from '#/modules/Arrangement/useCases';
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
 describe('acceptance render law source reuse', () => {
+    it('bounds oscillator synthesis to one period while preserving the original waveform', () => {
+        const frequencies = [110, 330, 1000, 3000, 6000, 12_000];
+        const sampleRate = 48_000;
+        const tempo = 137;
+        const startBeat = 13.812345;
+        const durationBeats = 4.6;
+        const frames = Math.round((durationBeats * 60 * sampleRate) / tempo);
+        const track = { ...createTrack({ id: 'periodic', name: 'Periodic', kind: 'audio' }), gain: 1 };
+        for (const position of [0, 1, 2]) {
+            const law = createAcceptanceRenderLaw({
+                trackPosition: () => position,
+                tempo: () => tempo,
+                liveTracks: () => [track],
+                masterGain: () => 1,
+            });
+            const sin = vi.spyOn(Math, 'sin');
+            let rendered: AudioBuffer;
+            try {
+                rendered = law.renderTrack({
+                    targetTrackId: track.id,
+                    renderTracks: [track],
+                    startBeat,
+                    endBeat: startBeat + durationBeats,
+                });
+                expect(sin.mock.calls.length).toBeLessThanOrEqual(4800 * frequencies.length * 2 + frames + 1);
+            } finally {
+                sin.mockRestore();
+            }
+            const weights = frequencies.map((_, index) => 2 ** -Math.abs(index - position));
+            const norm = Math.sqrt(weights.reduce((sum, weight) => sum + weight * weight, 0));
+            const lag = (position * Math.PI) / 18;
+            let maxError = 0;
+            for (let frame = 0; frame < frames; frame++) {
+                const time = (startBeat * 60) / tempo + frame / sampleRate;
+                const sinceStrike = time % (60 / tempo);
+                const rise = 0.5 * (1 - Math.cos((Math.PI * Math.min(sinceStrike, 0.005)) / 0.005));
+                const decay = Math.exp(-Math.max(0, sinceStrike - 0.005) / 0.03);
+                const envelope =
+                    (0.12 + 0.03 * position) * (0.2 + 0.2 * position + (0.8 - 0.2 * position) * rise * decay);
+                let left = 0;
+                let right = 0;
+                for (let index = 0; index < frequencies.length; index++) {
+                    const phase = 2 * Math.PI * frequencies[index]! * time;
+                    left += (weights[index]! / norm) * Math.sin(phase);
+                    right += (weights[index]! / norm) * Math.sin(phase - lag * (index + 1));
+                }
+                maxError = Math.max(maxError, Math.abs(rendered.getChannelData(0)[frame]! - envelope * left));
+                maxError = Math.max(maxError, Math.abs(rendered.getChannelData(1)[frame]! - envelope * right));
+            }
+            expect(maxError).toBeLessThan(1e-7);
+        }
+    });
+
     it('reuses identical source samples without changing the rendered audio', () => {
         const track = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
         const law = createAcceptanceRenderLaw({
