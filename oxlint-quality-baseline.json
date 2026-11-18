@@ -3488,11 +3488,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/handlers/trackAlternative/handleSwitchTrackAlternative.ts": {
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 1

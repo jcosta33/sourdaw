@@ -422,10 +422,28 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
     });
 
     it.each([
-        { owner: 'another track’s active alternative', trackId: 'b', inactive: false },
-        { owner: 'another track’s inactive alternative', trackId: 'b', inactive: true },
-        { owner: 'the same track’s surviving alternative', trackId: 'a', inactive: false },
-    ])('refuses Undo while $owner holds the retired clip id', async ({ trackId, inactive }) => {
+        {
+            owner: 'another track’s active alternative',
+            trackId: 'b',
+            inactive: false,
+            activeId: 'alt-b',
+            staleName: undefined,
+        },
+        {
+            owner: 'another track’s inactive alternative',
+            trackId: 'b',
+            inactive: true,
+            activeId: 'alt-peer',
+            staleName: 'Peer Clip',
+        },
+        {
+            owner: 'the same track’s surviving alternative',
+            trackId: 'a',
+            inactive: false,
+            activeId: 'alt-1',
+            staleName: undefined,
+        },
+    ])('refuses Undo while $owner holds the retired clip id', async ({ trackId, inactive, activeId, staleName }) => {
         await executeAppAction(
             { type: 'deleteTrackAlternative', payload: { trackId: 'a', alternativeId: 'alt-2' } },
             { source: 'manual' }
@@ -476,11 +494,9 @@ describe('deleteTrackAlternative retires the clips the alternative held (#6633)'
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'c', ripple: false } }, peerOptions);
         const trackAfterRemoval = trackStore.value!.tracks.find((track) => track.id === trackId)!;
         expect(trackAfterRemoval.clips.some((clip) => clip.id === 'c')).toBe(false);
-        if (inactive) {
-            expect(trackAfterRemoval.activeAlternativeId).toBe('alt-peer');
-            const staleCopy = trackAfterRemoval.alternatives.find((alternative) => alternative.id === 'alt-peer');
-            expect(staleCopy?.clips.find((clip) => clip.id === 'c')?.name).toBe('Peer Clip');
-        }
+        expect(trackAfterRemoval.activeAlternativeId).toBe(activeId);
+        const staleCopy = trackAfterRemoval.alternatives.find((alternative) => alternative.id === 'alt-peer');
+        expect(staleCopy?.clips.find((clip) => clip.id === 'c')?.name).toBe(staleName);
 
         expect((await undo()).headConsumed).toBe(true);
         expect(trackStore.value!.tracks.find((track) => track.id === 'a')).toEqual(seededTracks[0]);
