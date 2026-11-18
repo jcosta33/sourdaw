@@ -25,6 +25,7 @@ import { stopSequencer } from '../../../useCases/stopSequencer';
 import { ToasterPanel } from '../ToasterPanel';
 
 const engine = vi.hoisted(() => ({
+    getAudioTime: vi.fn(() => 0),
     getTrackStrip: vi.fn(),
     ensureTrackStrip: vi.fn(),
     getToasterDeviceControls: vi.fn(),
@@ -38,7 +39,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ensureTrackStrip: engine.ensureTrackStrip,
     getToasterDeviceControls: engine.getToasterDeviceControls,
     writeNativeBuiltinParameters: engine.writeNativeBuiltinParameters,
-    getAudioTime: () => 0,
+    getAudioTime: engine.getAudioTime,
     getAudioSampleRate: () => 48000,
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -116,6 +117,50 @@ function selectedState() {
     return state;
 }
 
+async function startRepeatOverKickPattern(): Promise<void> {
+    const kit = createDefaultKit();
+    const kickTrack = kit.patterns[0]?.tracks.find((track) => track.padIndex === 0);
+    if (!kickTrack) {
+        throw new Error('Expected a Kick track');
+    }
+    for (const step of kickTrack.steps) {
+        step.active = true;
+    }
+    await act(async () => {
+        toasterStore.set({ ...toasterStore.value, [DEVICE_ID]: { ...selectedState(), kit } });
+    });
+    vi.useFakeTimers();
+    const startTime = Date.now();
+    engine.getAudioTime.mockImplementation(() => (Date.now() - startTime) / 1000);
+    render(<ToasterPanel deviceId={DEVICE_ID} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Note repeat mode' }));
+    expect(current.scheduleHit).toHaveBeenCalledWith(expect.objectContaining({ pad: 0 }));
+    vi.clearAllMocks();
+}
+
+function advancePlayback(): void {
+    act(() => {
+        vi.advanceTimersByTime(500);
+    });
+}
+
+function expectIndependentKickScheduling(): void {
+    expect(current.scheduleHit).toHaveBeenCalled();
+    for (const call of current.scheduleHit.mock.calls) {
+        expect(call[0]).toEqual(expect.objectContaining({ pad: 0 }));
+    }
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    expect(current.allNotesOff).not.toHaveBeenCalled();
+    expect(current.noteOff).not.toHaveBeenCalled();
+    expect(engine.writeNativeBuiltinParameters).not.toHaveBeenCalled();
+    for (const control of Object.values(other)) {
+        if (typeof control === 'function') {
+            expect(control).not.toHaveBeenCalled();
+        }
+    }
+}
+
 describe('Toaster Simple and Full views keep the real performance connected', () => {
     let raf: MockInstance<typeof requestAnimationFrame>;
     let frames: FrameRequestCallback[];
@@ -131,6 +176,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
     }
     beforeEach(() => {
         vi.clearAllMocks();
+        engine.getAudioTime.mockReturnValue(0);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Toaster disclosure');
         removeCrdtDoc('root');
@@ -184,6 +230,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         projectStore.set(defaultProjectStoreState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        vi.useRealTimers();
     });
     it('reaches an independent B from the factory kit and persists its edit and morph controls', async ({
         onTestFailed,
@@ -398,6 +445,67 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(other.allNotesOff).not.toHaveBeenCalled();
         expect(other.noteOn).not.toHaveBeenCalled();
         expect(selectedState().isPlaying).toBe(true);
+    });
+    it('stops mouse repeats on window blur without a terminal and keeps the Kick pattern sounding', async () => {
+        await startRepeatOverKickPattern();
+        const pad = screen.getByTestId('toaster-pad-2');
+        fireEvent.mouseDown(pad, { button: 0 });
+        advancePlayback();
+        expect(current.noteOn.mock.calls.length).toBeGreaterThan(1);
+        for (const call of current.noteOn.mock.calls) {
+            expect(call).toEqual([2, 100]);
+        }
+
+        vi.clearAllMocks();
+        fireEvent.blur(window);
+        advancePlayback();
+        expect(current.noteOn).not.toHaveBeenCalled();
+        expectIndependentKickScheduling();
+
+        vi.clearAllMocks();
+        fireEvent.blur(window);
+        fireEvent.mouseUp(pad, { button: 0 });
+        fireEvent.mouseLeave(pad);
+        advancePlayback();
+        expect(current.noteOn).not.toHaveBeenCalled();
+        expectIndependentKickScheduling();
+
+        fireEvent.mouseDown(pad, { button: 0 });
+        advancePlayback();
+        expect(current.noteOn.mock.calls.length).toBeGreaterThan(1);
+        expect(current.noteOn).toHaveBeenLastCalledWith(2, 100);
+        fireEvent.mouseUp(pad, { button: 0 });
+        current.noteOn.mockClear();
+        advancePlayback();
+        expect(current.noteOn).not.toHaveBeenCalled();
+    });
+    it('keeps mouse repeats running when the superseded keyboard pad blurs and releases', async () => {
+        await startRepeatOverKickPattern();
+        const keyPad = screen.getByTestId('toaster-pad-2');
+        const mousePad = screen.getByTestId('toaster-pad-3');
+        act(() => keyPad.focus());
+        fireEvent.keyDown(keyPad, { key: ' ' });
+        advancePlayback();
+        expect(current.noteOn.mock.calls.length).toBeGreaterThan(1);
+        expect(current.noteOn).toHaveBeenLastCalledWith(2, 100);
+
+        vi.clearAllMocks();
+        fireEvent.mouseDown(mousePad, { button: 0 });
+        act(() => mousePad.focus());
+        expect(mousePad).toHaveFocus();
+        fireEvent.keyUp(keyPad, { key: ' ' });
+        advancePlayback();
+        expect(current.noteOn.mock.calls.length).toBeGreaterThan(1);
+        for (const call of current.noteOn.mock.calls) {
+            expect(call).toEqual([3, 100]);
+        }
+        expectIndependentKickScheduling();
+
+        vi.clearAllMocks();
+        fireEvent.mouseUp(mousePad, { button: 0 });
+        advancePlayback();
+        expect(current.noteOn).not.toHaveBeenCalled();
+        expectIndependentKickScheduling();
     });
     it('stops a held pad fader drag from writing after Full unmounts', async () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);

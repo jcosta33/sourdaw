@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -17,6 +17,17 @@ type PadGridProps = {
     targetPadName?: string;
     onReleasePad?: (index: number) => void;
 };
+
+type PadHold = { source: 'mouse'; index: number } | { source: 'keyboard'; index: number; key: string };
+
+function releasePadHold(hold: RefObject<PadHold | null>, onReleasePad: PadGridProps['onReleasePad']): void {
+    const current = hold.current;
+    if (current === null) {
+        return;
+    }
+    hold.current = null;
+    onReleasePad?.(current.index);
+}
 
 function getLevelText(target: SixteenLevelsTarget, index: number): string {
     const fraction = (index + 1) / TOASTER_PAD_COUNT;
@@ -45,9 +56,11 @@ export const PadGrid = ({
 }: PadGridProps): ReactElement => {
     const [flashingPads, setFlashingPads] = useState<Set<number>>(new Set());
     const flashTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-    const pressedPadRef = useRef<number | null>(null);
-    const pressedKeyRef = useRef<{ index: number; key: string } | null>(null);
-    const handledActivationRef = useRef(false);
+    const heldPadRef = useRef<PadHold | null>(null);
+    const mouseActivationRef = useRef<number | null>(null);
+    const keyboardActivationRef = useRef<number | null>(null);
+    const releasePadRef = useRef(onReleasePad);
+    releasePadRef.current = onReleasePad;
 
     function triggerFlash(index: number): void {
         setFlashingPads((previous) => new Set(previous).add(index));
@@ -94,10 +107,19 @@ export const PadGrid = ({
         };
     }, []);
 
-    function releaseKey(index: number): void {
-        if (pressedKeyRef.current?.index === index) {
-            pressedKeyRef.current = null;
-            onReleasePad?.(index);
+    useEffect(() => {
+        function handleWindowBlur(): void {
+            releasePadHold(heldPadRef, releasePadRef.current);
+        }
+
+        window.addEventListener('blur', handleWindowBlur);
+        return () => window.removeEventListener('blur', handleWindowBlur);
+    }, []);
+
+    function releaseMouse(index: number): void {
+        const held = heldPadRef.current;
+        if (held?.source === 'mouse' && held.index === index) {
+            releasePadHold(heldPadRef, onReleasePad);
         }
     }
 
@@ -137,9 +159,10 @@ export const PadGrid = ({
                                     : `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 12px ${activeColor}12`,
                             transform: isFlashing ? 'scale(0.97)' : 'scale(1)',
                         }}
-                        onClick={() => {
-                            if (handledActivationRef.current) {
-                                handledActivationRef.current = false;
+                        onClick={(event) => {
+                            const activation = event.detail > 0 ? mouseActivationRef : keyboardActivationRef;
+                            if (activation.current === index) {
+                                activation.current = null;
                                 if (!sixteenLevelsTarget) {
                                     onSelectPad(index);
                                 }
@@ -154,25 +177,19 @@ export const PadGrid = ({
                         }}
                         onMouseDown={(event) => {
                             if (event.button === 0) {
-                                handledActivationRef.current = true;
-                                pressedPadRef.current = index;
+                                // The click can arrive after blur or leave has already ended the hold.
+                                mouseActivationRef.current = index;
+                                heldPadRef.current = { source: 'mouse', index };
                                 onTriggerPad(index);
                                 triggerFlash(index);
                             }
                         }}
-                        onMouseUp={() => {
-                            if (pressedPadRef.current === index) {
-                                pressedPadRef.current = null;
-                                onReleasePad?.(index);
+                        onMouseUp={(event) => {
+                            if (event.button === 0) {
+                                releaseMouse(index);
                             }
                         }}
-                        onMouseLeave={() => {
-                            handledActivationRef.current = false;
-                            if (pressedPadRef.current === index) {
-                                pressedPadRef.current = null;
-                                onReleasePad?.(index);
-                            }
-                        }}
+                        onMouseLeave={() => releaseMouse(index)}
                         onKeyDown={(event) => {
                             // Enter/Space also selects via the button's native
                             // click; here we add the trigger + flash so keyboard
@@ -181,21 +198,25 @@ export const PadGrid = ({
                                 if (event.repeat) {
                                     return;
                                 }
-                                pressedKeyRef.current = { index, key: event.key };
-                                handledActivationRef.current = true;
+                                heldPadRef.current = { source: 'keyboard', index, key: event.key };
+                                keyboardActivationRef.current = index;
                                 onTriggerPad(index);
                                 triggerFlash(index);
                             }
                         }}
                         onKeyUp={(event) => {
-                            if (pressedKeyRef.current?.key === event.key) {
-                                releaseKey(index);
+                            const held = heldPadRef.current;
+                            if (held?.source === 'keyboard' && held.index === index && held.key === event.key) {
+                                releasePadHold(heldPadRef, onReleasePad);
                             }
                         }}
                         onBlur={() => {
-                            if (pressedKeyRef.current?.index === index) {
-                                handledActivationRef.current = false;
-                                releaseKey(index);
+                            if (keyboardActivationRef.current === index) {
+                                keyboardActivationRef.current = null;
+                            }
+                            const held = heldPadRef.current;
+                            if (held?.source === 'keyboard' && held.index === index) {
+                                releasePadHold(heldPadRef, onReleasePad);
                             }
                         }}
                     >
