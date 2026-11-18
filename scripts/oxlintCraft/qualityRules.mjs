@@ -993,7 +993,7 @@ function bindingConsumption(context, expression, declaration) {
     return undefined;
 }
 
-function hasSameFunctionNode(context, node, predicate) {
+export function hasSameFunctionNode(context, node, predicate) {
     if (isFunction(node) || node.type === 'FunctionDeclaration') {
         return false;
     }
@@ -1117,11 +1117,52 @@ const noInvalidVitestExpect = rule(
     })
 );
 
+function isPositionalBoolean(parameter) {
+    const positional = parameter.type === 'TSParameterProperty' ? parameter.parameter : parameter;
+    const hasDefault = positional.type === 'AssignmentPattern';
+    const binding = hasDefault ? positional.left : positional;
+    if (binding.type !== 'Identifier') {
+        return false;
+    }
+    if (binding.typeAnnotation) {
+        return binding.typeAnnotation.typeAnnotation.type === 'TSBooleanKeyword';
+    }
+    return hasDefault && positional.right.type === 'Literal' && typeof positional.right.value === 'boolean';
+}
+
+function hasCallerParameterShape(context, node) {
+    const expression = throughErasedParents(node);
+    const parent = expression.parent;
+    if (parent?.type === 'CallExpression' || parent?.type === 'NewExpression') {
+        return parent.arguments.includes(expression);
+    }
+    const annotation = parent?.type === 'VariableDeclarator' && parent.id.typeAnnotation?.typeAnnotation;
+    return (
+        annotation?.type === 'TSTypeReference' &&
+        definitions(context, annotation.typeName).some((definition) => definition.type === 'ImportBinding')
+    );
+}
+
+const noPositionalBooleanFlags = rule('Name multiple boolean flags in an options object.', (context) => {
+    function inspect(node) {
+        const flags = node.params.filter(isPositionalBoolean);
+        if (flags.length >= 2 && !hasCallerParameterShape(context, node)) {
+            context.report({
+                node: flags[1],
+                message: 'Multiple positional boolean flags hide their meaning. Name them in an options object.',
+            });
+        }
+    }
+
+    return { FunctionDeclaration: inspect, FunctionExpression: inspect, ArrowFunctionExpression: inspect };
+});
+
 export const qualityRules = {
     'no-conditional-playwright-admission': noConditionalPlaywrightAdmission,
     'no-external-data-assertion': noExternalDataAssertion,
     'no-failed-operation-success': noFailedOperationSuccess,
     'no-fixed-test-sleep': noFixedTestSleep,
     'no-invalid-vitest-expect': noInvalidVitestExpect,
+    'no-positional-boolean-flags': noPositionalBooleanFlags,
     'no-silent-catch': noSilentCatch,
 };
