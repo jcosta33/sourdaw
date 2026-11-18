@@ -4,10 +4,17 @@ import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseQualityReport, QUALITY_BUDGET } from '../lintQualityBudget';
+import { parseQualityReport, QUALITY_BUDGET, QUALITY_CONFIG } from '../lintQualityBudget';
 import { buildQualityLintArgv } from '../runLint';
 
 const root = resolve(import.meta.dirname, '../..');
+
+function isolateTypeScriptProject(directory: string, parent: string, files: string[]) {
+    writeFileSync(
+        join(directory, 'tsconfig.json'),
+        JSON.stringify({ extends: resolve(root, parent), files, include: [], exclude: [] })
+    );
+}
 
 describe('production quality lint', () => {
     it('observes typed, Vitest and Playwright failures from one real CLI pass', () => {
@@ -22,6 +29,14 @@ describe('production quality lint', () => {
             const sourceHelper = join(source, 'testing/sourceHelper.ts');
             mkdirSync(join(scripts, '__tests__'));
             mkdirSync(join(source, 'testing'));
+            // Type-aware lint must not enumerate other tests' transient files while they are removed.
+            isolateTypeScriptProject(scripts, 'scripts/tsconfig.json', [
+                'typed.ts',
+                'unit.spec.ts',
+                '__tests__/unitHelper.ts',
+            ]);
+            isolateTypeScriptProject(source, 'tsconfig.json', ['testing/sourceHelper.ts']);
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['browser.spec.ts']);
             writeFileSync(
                 runTime,
                 `
@@ -392,7 +407,10 @@ describe('production quality lint', () => {
                     'if (missing) { return; } // immutable missing guard skips the assertion',
                 ])
             );
-            expect(report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted()).toEqual(
+            expect(
+                report.diagnostics.map(({ file, rule }) => [basename(file), rule]).toSorted(),
+                `Oxlint stdout:\n${result.stdout}\nOxlint stderr:\n${result.stderr}`
+            ).toEqual(
                 [
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
                     ['browser.spec.ts', 'sourdaw-craft/no-conditional-playwright-admission'],
@@ -429,10 +447,106 @@ describe('production quality lint', () => {
         }
     }, 75_000);
 
+    it('applies the native ternary fix to only the selected file and preserves its effects', () => {
+        const scripts = mkdtempSync(join(root, 'scripts/lint-quality-fix-'));
+        try {
+            const target = join(scripts, 'target.ts');
+            const neighbor = join(scripts, 'neighbor.ts');
+            const ledgerPath = join(root, QUALITY_BUDGET);
+            const ledger = readFileSync(ledgerPath);
+            const ternary = "check() ? start('stärt') : await stop();";
+            const manual = 'check() ? /* keep this note */ start() : stop();';
+            const source = `
+const effects = [];
+async function run(choice, fail) {
+    function check() { effects.push('prüfen'); return choice; }
+    function start(label) { effects.push(label); }
+    async function stop() {
+        effects.push('stop');
+        await Promise.resolve();
+        effects.push('resumed');
+        if (fail) throw new Error('failed');
+    }
+    ${ternary}
+    effects.push('after');
+}
+function leaveForManualReview() {
+    ${manual}
+}
+await run(true, false);
+await run(false, false);
+try { await run(false, true); } catch (error) { effects.push(error.message); }
+console.log(JSON.stringify(effects));
+`;
+            writeFileSync(target, source);
+            writeFileSync(neighbor, source);
+            const runFixture = (code: string) => {
+                const result = spawnSync(process.execPath, ['--input-type=module', '--eval', code], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                });
+                expect(result.error).toBeUndefined();
+                expect(result.status, result.stderr).toBe(0);
+                return JSON.parse(result.stdout);
+            };
+            const fixTarget = () => {
+                const result = spawnSync(
+                    'pnpm',
+                    [
+                        'exec',
+                        'oxlint',
+                        '--config',
+                        QUALITY_CONFIG,
+                        '--disable-nested-config',
+                        '--threads=2',
+                        '--fix',
+                        '--format=json',
+                        target,
+                    ],
+                    { cwd: root, encoding: 'utf8', timeout: 60_000 }
+                );
+                expect(result.error).toBeUndefined();
+                expect(result.status, result.stdout + result.stderr).toBe(1);
+                const report = parseQualityReport(result.stdout, root);
+                expect(report.fileCount).toBe(1);
+                expect(report.diagnostics.map((diagnostic) => diagnostic.rule)).toEqual([
+                    'sourdaw-craft/no-control-flow-ternary',
+                ]);
+            };
+
+            const before = runFixture(source);
+            expect(before).toEqual([
+                'prüfen',
+                'stärt',
+                'after',
+                'prüfen',
+                'stop',
+                'resumed',
+                'after',
+                'prüfen',
+                'stop',
+                'resumed',
+                'failed',
+            ]);
+            fixTarget();
+            const fixed = readFileSync(target, 'utf8');
+            expect(fixed).toBe(source.replace(ternary, "if (check()) { (start('stärt')); } else { (await stop()); }"));
+            expect(runFixture(fixed)).toEqual(before);
+            fixTarget();
+            expect(readFileSync(target, 'utf8')).toBe(fixed);
+            expect(readFileSync(neighbor, 'utf8')).toBe(source);
+            expect(readFileSync(ledgerPath)).toEqual(ledger);
+        } finally {
+            rmSync(scripts, { recursive: true, force: true });
+        }
+    }, 135_000);
+
     it('keeps the final bytes and the ledger stable across real focused check and fix', () => {
         const e2e = mkdtempSync(join(root, 'tests/e2e/lint-quality-run-'));
         try {
             const fixture = join(e2e, 'quietWindow.spec.ts');
+            isolateTypeScriptProject(e2e, 'tests/tsconfig.json', ['quietWindow.spec.ts']);
             const ledgerPath = join(root, QUALITY_BUDGET);
             const ledger = readFileSync(ledgerPath);
             const formatted = `import { expect, test } from '../e2eTest';

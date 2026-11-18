@@ -276,9 +276,48 @@ const noLongArrayChain = {
     },
 };
 
+const FUNCTION_NODES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
+
+const isBranchCall = (node) =>
+    node.type === 'CallExpression' || (node.type === 'AwaitExpression' && node.argument.type === 'CallExpression');
+
+const fixStatementTernary = (context, node, statement, fixer) => {
+    const block = statement.parent;
+    if (
+        block.type !== 'BlockStatement' ||
+        !FUNCTION_NODES.has(block.parent.type) ||
+        isMultiline(context, statement) ||
+        statement.range[0] !== node.test.range[0] ||
+        !isBranchCall(node.consequent) ||
+        !isBranchCall(node.alternate)
+    ) {
+        return null;
+    }
+
+    const source = context.sourceCode;
+    const between = (left, right) => source.text.slice(left.range[1], right.range[0]).trim();
+    if (
+        between(node.test, node.consequent) !== '?' ||
+        between(node.consequent, node.alternate) !== ':' ||
+        source.text.slice(node.alternate.range[1], statement.range[1]).trim() !== ';' ||
+        source.getCommentsBefore(statement).length > 0 ||
+        source.getCommentsInside(statement).length > 0 ||
+        source.getCommentsAfter(statement).some((comment) => comment.loc.start.line === statement.loc.end.line)
+    ) {
+        return null;
+    }
+
+    const test = source.getText(node.test);
+    const consequent = source.getText(node.consequent);
+    const alternate = source.getText(node.alternate);
+    // A call starting with a class, function or object expression needs grouping in statement position.
+    return fixer.replaceText(statement, `if (${test}) { (${consequent}); } else { (${alternate}); }`);
+};
+
 const noControlFlowTernary = {
     meta: {
         type: 'problem',
+        fixable: 'code',
         docs: {
             description: 'Disallow ternaries used as if/else. Simple values and JSX remain allowed.',
         },
@@ -295,6 +334,7 @@ const noControlFlowTernary = {
                     context.report({
                         node,
                         message: 'Do not use a ternary as a statement. Use `if` / `else`.',
+                        fix: (fixer) => fixStatementTernary(context, node, parent, fixer),
                     });
                     return;
                 }

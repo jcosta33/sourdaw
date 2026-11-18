@@ -10,6 +10,7 @@ type Stereo = { left: Float64Array; right: Float64Array };
 type Biquad = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
 const SAMPLE_RATE = 48_000;
+const SOURCE_CACHE_BYTES = 64 * 1024 * 1024;
 
 /** One partial in each analysis band from bass to air, so every spectral figure has something to move. */
 const PARTIAL_HZ = [110, 330, 1000, 3000, 6000, 12_000] as const;
@@ -64,20 +65,30 @@ export function createAcceptanceRenderLaw(input: {
     liveTracks: () => readonly Track[];
     masterGain: () => number;
 }) {
+    const sourceCache = new Map<string, Stereo>();
+    let sourceCacheBytes = 0;
+
     function seconds(beats: number): number {
         return (beats * 60) / input.tempo();
     }
 
     function source(track: Track, startBeat: number, frames: number): Stereo {
         const position = input.trackPosition(track.id);
+        const beatSeconds = seconds(1);
+        const start = seconds(startBeat);
+        const key = JSON.stringify([position, beatSeconds, start, frames]);
+        const cached = sourceCache.get(key);
+        if (cached !== undefined) {
+            sourceCache.delete(key);
+            sourceCache.set(key, cached);
+            return cached;
+        }
         const centre = position % PARTIAL_HZ.length;
         const weights = PARTIAL_HZ.map((_, index) => 2 ** -Math.abs(index - centre));
         const norm = Math.sqrt(weights.reduce((total, weight) => total + weight * weight, 0));
         const level = 0.12 + 0.03 * (position % 4);
         const sustain = 0.2 + 0.2 * (position % 4);
         const lag = ((position % 3) * Math.PI) / 18;
-        const beatSeconds = seconds(1);
-        const start = seconds(startBeat);
         const left = new Float64Array(frames);
         const right = new Float64Array(frames);
         for (let frame = 0; frame < frames; frame++) {
@@ -98,7 +109,21 @@ export function createAcceptanceRenderLaw(input: {
             left[frame] = envelope * l;
             right[frame] = envelope * r;
         }
-        return { left, right };
+        const signal = { left, right };
+        const bytes = left.byteLength + right.byteLength;
+        if (bytes > 0 && bytes <= SOURCE_CACHE_BYTES) {
+            while (sourceCacheBytes + bytes > SOURCE_CACHE_BYTES) {
+                const oldest = sourceCache.entries().next().value;
+                if (oldest === undefined) {
+                    break;
+                }
+                sourceCache.delete(oldest[0]);
+                sourceCacheBytes -= oldest[1].left.byteLength + oldest[1].right.byteLength;
+            }
+            sourceCache.set(key, signal);
+            sourceCacheBytes += bytes;
+        }
+        return signal;
     }
 
     function parameters(device: Track['devices'][number]): Record<string, number> {
