@@ -145,6 +145,12 @@ function advancePlayback(): void {
     });
 }
 
+function expectNoDeviceCalls({ ready: _ready, ...spies }: ReturnType<typeof controls>): void {
+    for (const spy of Object.values(spies)) {
+        expect(spy).not.toHaveBeenCalled();
+    }
+}
+
 function expectIndependentKickScheduling(): void {
     expect(current.scheduleHit).toHaveBeenCalled();
     for (const call of current.scheduleHit.mock.calls) {
@@ -154,11 +160,7 @@ function expectIndependentKickScheduling(): void {
     expect(current.allNotesOff).not.toHaveBeenCalled();
     expect(current.noteOff).not.toHaveBeenCalled();
     expect(engine.writeNativeBuiltinParameters).not.toHaveBeenCalled();
-    for (const control of Object.values(other)) {
-        if (typeof control === 'function') {
-            expect(control).not.toHaveBeenCalled();
-        }
-    }
+    expectNoDeviceCalls(other);
 }
 
 describe('Toaster Simple and Full views keep the real performance connected', () => {
@@ -394,13 +396,8 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(selectedState().currentStep).toBe(state.currentStep);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
         expect(undoStore.value).toBe(history);
-        for (const control of [current, other]) {
-            for (const spy of Object.values(control)) {
-                if (typeof spy === 'function') {
-                    expect(spy).not.toHaveBeenCalled();
-                }
-            }
-        }
+        expectNoDeviceCalls(current);
+        expectNoDeviceCalls(other);
         expect(engine.writeNativeBuiltinParameters).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: '16 Levels mode' })).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByRole('button', { name: 'Note repeat mode' })).toHaveAttribute('aria-pressed', 'true');
