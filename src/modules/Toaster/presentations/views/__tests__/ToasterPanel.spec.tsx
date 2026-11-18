@@ -264,7 +264,7 @@ describe('ToasterPanel', () => {
         const pad4 = screen.getByTestId('toaster-pad-3');
         fireEvent.mouseDown(pad4, { button: 0 });
         fireEvent.mouseUp(pad4);
-        fireEvent.click(pad4);
+        fireEvent.click(pad4, { detail: 1 });
 
         expect(mocks.trigger16Level).toHaveBeenCalledTimes(1);
         expect(mocks.trigger16Level).toHaveBeenCalledWith(3, 'toaster-test');
@@ -292,7 +292,8 @@ describe('ToasterPanel', () => {
         expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 100, 120, '1/8');
 
         fireEvent.mouseUp(pad0);
-        fireEvent.click(pad0);
+        fireEvent.click(pad0, { detail: 1 });
+        expect(mocks.startNoteRepeat).toHaveBeenCalledTimes(1);
         expect(mocks.stopNoteRepeat).toHaveBeenCalledTimes(1);
         expect(mocks.stopNoteRepeat).toHaveBeenCalledWith('toaster-test');
         expect(mocks.triggerToasterPad).not.toHaveBeenCalled();
@@ -315,7 +316,7 @@ describe('ToasterPanel', () => {
         const pad2 = screen.getByTestId('toaster-pad-2');
         fireEvent.mouseDown(pad2, { button: 0 });
         fireEvent.mouseUp(pad2);
-        fireEvent.click(pad2);
+        fireEvent.click(pad2, { detail: 1 });
 
         expect(mocks.startNoteRepeat).toHaveBeenCalledTimes(1);
         expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 127, 120, '1/16');
@@ -345,7 +346,7 @@ describe('ToasterPanel', () => {
         const pad7 = screen.getByTestId('toaster-pad-7');
         fireEvent.mouseDown(pad7, { button: 0 });
         fireEvent.mouseUp(pad7);
-        fireEvent.click(pad7);
+        fireEvent.click(pad7, { detail: 1 });
 
         expect(mocks.startNoteRepeat).toHaveBeenCalledTimes(1);
         expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 64, 120, '1/16');
@@ -425,9 +426,10 @@ describe('ToasterPanel', () => {
         expect(mocks.setStepMicroTiming).toHaveBeenCalledWith('toaster-test', 0, 0, 0.25);
     });
 
-    it('ensures section cards do not collapse in the bottom panel', () => {
+    it('sizes scrollable Full rows to their content and keeps individual cards from shrinking', () => {
         const { container } = render(<ToasterPanel deviceId="toaster-test" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+        expect(screen.getByRole('region', { name: 'Toaster controls' })).toHaveClass('auto-rows-max');
         const sectionCards = container.querySelectorAll('section.toaster-window.shrink-0');
         expect(sectionCards.length).toBe(8);
         for (const title of [

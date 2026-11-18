@@ -38,6 +38,29 @@ describe('lint quality budget', () => {
         });
     });
 
+    it('admits one legacy complexity finding and refuses a second function over the cap', () => {
+        const complexity = { ...clone, code: 'eslint(complexity)', message: 'Function complexity is 13.' };
+        const budget = parseQualityBudget(JSON.stringify({ [file]: { 'eslint/complexity': { count: 1 } } }));
+        const check = (diagnostics: object[]) =>
+            reconcileQualityBudget(
+                parseQualityReport(JSON.stringify({ number_of_files: 1, diagnostics }), root),
+                budget,
+                [file],
+                root
+            );
+
+        expect(check([complexity]).failed).toBe(false);
+        expect(
+            check([complexity, { ...complexity, message: 'Another function has complexity 13.' }]).diagnostics
+        ).toEqual([
+            `${file}:1:5: error (eslint/complexity): Function complexity is 13.`,
+            `${file}:1:5: error (eslint/complexity): Another function has complexity 13.`,
+        ]);
+        expect(check([]).diagnostics).toEqual([
+            `${file}: stale eslint/complexity budget in oxlint-quality-baseline.json (1 recorded, 0 observed). Shrink or remove the count.`,
+        ]);
+    });
+
     it('does not spend a budget on a different file, rule, or parse error', () => {
         const verdictForMixed = verdict([
             clone,

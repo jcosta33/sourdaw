@@ -83,6 +83,15 @@ findings without a concrete break ("I'd prefer if") are discarded.
     `scripts/__tests__/runLint.spec.ts` "fails a pass one file short, however large the tree", and
     deleting the coverage assertion from the full run must fail "fails a plugin pass that lints fewer
     files than the targets track, before ESLint runs".
+11. **Formatting changes the type behavior of a lint autofix (PR #7033).** The ternary
+    fixer grouped statement calls. Prettier removed the grouping and TypeScript
+    treated the calls as assertions. Probe a ternary whose branches call a declared
+    assertion and whose function subsequently returns the asserted value. Compare the
+    inferred declaration before the fix and after formatting. Also use a locally
+    inferred assertion callee, which produces TS2775 if formatted as a bare call,
+    and a computed member or immediately invoked function, which can produce TS2776.
+    Require eligible fixtures to retain their types and runtime effects after the
+    documented formatting step.
 
 ## Retired lessons
 

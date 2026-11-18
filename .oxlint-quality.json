@@ -33,6 +33,7 @@
         "scripts/oxlintCraft/__tests__/fixtures/**"
     ],
     "rules": {
+        "typescript/no-unnecessary-type-parameters": "error",
         "typescript/switch-exhaustiveness-check": [
             "error",
             {
@@ -45,11 +46,40 @@
         "sourdaw-craft/no-json-parse-stringify": "error",
         "sourdaw-craft/no-long-array-chain": "error",
         "sourdaw-craft/no-control-flow-ternary": "error",
+        "sourdaw-craft/no-complex-ternary-branch": "error",
         "sourdaw-craft/no-silent-catch": "error",
         "sourdaw-craft/no-failed-operation-success": "error",
         "sourdaw-craft/no-external-data-assertion": "error"
     },
     "overrides": [
+        {
+            "files": ["src/**/*.{ts,tsx}"],
+            "excludeFiles": [
+                "**/*.d.ts",
+                "**/*.{spec,test,mock}.{ts,tsx}",
+                "**/setupTests.ts",
+                "**/__tests__/**",
+                "src/**/testing/**"
+            ],
+            "rules": {
+                "complexity": ["error", 12],
+                "max-depth": ["error", 4],
+                "max-lines-per-function": [
+                    "error",
+                    { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }
+                ],
+                "max-params": ["error", { "max": 4 }],
+                "sourdaw-craft/no-positional-boolean-flags": "error",
+                "typescript/no-non-null-assertion": "error"
+            }
+        },
+        {
+            "files": ["src/**/*.{spec,test}.{ts,tsx}"],
+            "excludeFiles": ["**/*.e2e.spec.*"],
+            "rules": {
+                "vitest/expect-expect": "error"
+            }
+        },
         {
             "files": ["**/*.{spec,test}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
             "excludeFiles": ["**/*.e2e.spec.*", "tests/e2e/**", "server/**", "electron/out/**"],
