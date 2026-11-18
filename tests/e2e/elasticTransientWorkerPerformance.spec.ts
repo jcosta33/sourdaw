@@ -104,6 +104,7 @@ const TRACE_CATEGORIES = [
     'disabled-by-default-v8.cpu_profiler',
     'disabled-by-default-devtools.timeline',
 ];
+const UNION_TRACE_CATEGORIES = ['disabled-by-default-devtools.timeline', 'blink.user_timing'];
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -933,6 +934,10 @@ async function startElasticTaskTrace(
     requireUnion = false,
     marks: TraceMarks = DETECT_TRACE_MARKS
 ): Promise<ElasticTaskTrace> {
+    // The long Save overlap needs complete task and mark evidence. Optional CPU/detail
+    // sampling fills a nonwrapping trace before Save settles; ordinary SDK controls retain it.
+    const captureCpuStacks = !requireUnion;
+    const byteCap = requireUnion ? 64 * 1024 * 1024 : TRACE_BYTE_CAP;
     const session = await page.context().newCDPSession(page);
     const failures: string[] = [];
     const chunks: Buffer[] = [];
@@ -980,11 +985,11 @@ async function startElasticTaskTrace(
                         while (!complete) {
                             const part = await session.send('IO.read', { handle, size: 1024 * 1024 });
                             const bytes = Buffer.from(part.data, part.base64Encoded ? 'base64' : 'utf8');
-                            const remaining = TRACE_BYTE_CAP - byteLength;
+                            const remaining = byteCap - byteLength;
                             chunks.push(bytes.subarray(0, remaining));
                             byteLength += Math.min(bytes.length, remaining);
                             if (bytes.length > remaining) {
-                                throw new Error('Elastic trace exceeded its 32 MiB byte cap');
+                                throw new Error(`Elastic trace exceeded its ${byteCap / 1024 / 1024} MiB byte cap`);
                             }
                             complete = part.eof === true;
                         }
@@ -1012,7 +1017,7 @@ async function startElasticTaskTrace(
                     mainThreadTasks = readElasticIntervalTasks(records, interval);
                     taskCount = mainThreadTasks.length;
                     cpuSampleCount = countElasticIntervalCpuSamples(records, interval);
-                    if (dataLossOccurred || taskCount === 0 || cpuSampleCount === 0) {
+                    if (dataLossOccurred || taskCount === 0 || (captureCpuStacks && cpuSampleCount === 0)) {
                         throw new Error('Elastic trace lost events or omitted measured-interval task/CPU attribution');
                     }
                 } catch (error) {
@@ -1046,6 +1051,8 @@ async function startElasticTaskTrace(
                         complete,
                         byteLength,
                         dataLossOccurred,
+                        byteCap,
+                        captureCpuStacks,
                         phaseComplete: interval !== null,
                         interval,
                         unionInterval,
@@ -1071,8 +1078,8 @@ async function startElasticTaskTrace(
             transferMode: 'ReturnAsStream',
             traceConfig: {
                 recordMode: 'recordUntilFull',
-                traceBufferSizeInKb: 16384,
-                includedCategories: TRACE_CATEGORIES,
+                traceBufferSizeInKb: requireUnion ? 65536 : 16384,
+                includedCategories: requireUnion ? UNION_TRACE_CATEGORIES : TRACE_CATEGORIES,
             },
         });
         started = true;
