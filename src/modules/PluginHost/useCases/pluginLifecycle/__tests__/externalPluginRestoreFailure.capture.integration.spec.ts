@@ -1,6 +1,9 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -25,6 +28,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { exportProjectFile, saveProject } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 import { bytesToBase64 } from '#/utils/base64';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -193,6 +197,7 @@ function seedSavedProject(instanceId: string, stateChunk: string | undefined): v
         ...structuredClone(defaultProjectStoreState),
         createdAt: CREATED_AT,
         dirty: true,
+        initialized: true,
         loading: false,
         name: 'Restore Failure',
         projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
@@ -239,6 +244,8 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         vi.clearAllMocks();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
         Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('external plugin restore failure persistence');
@@ -249,6 +256,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -282,6 +290,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
 
     afterEach(async () => {
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        await settleNativePreparationWorkers();
         agentProjectInspectionPort.setProvider(null);
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -327,8 +336,8 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
     // the old chunk in project truth while the cache claimed the fresh chunk
     // was captured — the next save with an unchanged host skipped the write
     // and the plugin edit never reached disk. Here the refusal is the real
-    // command machinery: with no handler registered, `executeAppActionBatch`
-    // rejects before any project write.
+    // command machinery: without the Arrangement capture handler,
+    // `executeAppActionBatch` rejects before any plugin state write.
     it('retries a precommit-rejected capture on the next save and persists the fresh host state', async () => {
         const instanceId = 'inst-rejected-capture';
         seedSavedProject(instanceId, ORIGINAL_CHUNK);
@@ -336,6 +345,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-host-edit'));
 
         clearHandlerRegistry();
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
         await expect(saveProject()).resolves.toBe(true);
 
         // The host was read, but nothing was written: the snapshot still holds

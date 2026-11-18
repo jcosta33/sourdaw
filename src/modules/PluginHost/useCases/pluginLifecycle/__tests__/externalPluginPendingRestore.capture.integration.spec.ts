@@ -1,6 +1,9 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
@@ -129,6 +132,7 @@ async function loadContracts() {
         projectUseCases,
         transportStores,
         pluginHostStores,
+        { getWorkspaceHandlers },
         base64,
         activation,
         lifecycleReset,
@@ -147,6 +151,7 @@ async function loadContracts() {
         import('#/modules/Project/useCases'),
         import('#/modules/Transport/stores'),
         import('#/modules/PluginHost/stores'),
+        import('#/modules/WorkspaceShell/useCases'),
         import('#/utils/base64'),
         import('../activateExternalPlugin'),
         import('../clearLoadedExternalPlugins'),
@@ -166,6 +171,7 @@ async function loadContracts() {
         ...projectUseCases,
         ...transportStores,
         ...pluginHostStores,
+        getWorkspaceHandlers,
         ...base64,
         ...activation,
         ...lifecycleReset,
@@ -190,6 +196,7 @@ function seedSavedProject(instanceId: string, stateChunk: string): void {
         ...structuredClone(contracts.defaultProjectStoreState),
         createdAt: CREATED_AT,
         dirty: true,
+        initialized: true,
         loading: false,
         name: 'Pending Restore',
         projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaa3693',
@@ -289,6 +296,8 @@ describe('external plugin capture while saved-state restore is pending (issue 36
         vi.clearAllMocks();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
         localStorage.clear();
         Reflect.deleteProperty(window, 'showSaveFilePicker');
         Reflect.deleteProperty(window, 'sourdaw');
@@ -302,6 +311,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
         contracts.registerCrdtStorageRuntime();
         contracts.clearHandlerRegistry();
         contracts.registerHandlerMap(contracts.getArrangementHandlers());
+        contracts.registerHandlerMap({ saveProject: contracts.getWorkspaceHandlers().saveProject });
         contracts.clearUndoHistory();
         contracts.resetActionReplayAuthority();
         contracts.setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -337,6 +347,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
 
     afterEach(async () => {
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        await settleNativePreparationWorkers();
         contracts.agentProjectInspectionPort.setProvider(null);
         contracts.clearUndoHistory();
         contracts.resetActionReplayAuthority();
