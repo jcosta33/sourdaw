@@ -23,6 +23,9 @@ export type YeastPreviewDecisionSink = Pick<
 
 const LOST_DECISION = -2;
 const LOST_LINEAGE_TOKEN = -1;
+const DEFAULT_PREVIEW_BLOCK_OPTIONS = { preserveInputTrackIds: false };
+
+type NoteOff = Extract<MidiEvent['kind'], { type: 'noteOff' }>;
 
 function createPreviewPage(): YeastPreviewPackedPage {
     return {
@@ -209,7 +212,7 @@ export class YeastPreviewSidecar {
         trackId: string,
         captureEpoch: number,
         projectionVersion: number,
-        preserveInputTrackIds = false
+        options: Readonly<{ preserveInputTrackIds: boolean }> = DEFAULT_PREVIEW_BLOCK_OPTIONS
     ): void {
         this.captureRequested = false;
         this.captureBlock = false;
@@ -223,7 +226,7 @@ export class YeastPreviewSidecar {
         this.currentRackId = rackId;
         this.currentRouteId = routeId;
         this.currentTrackId = trackId;
-        this.preserveInputTrackIds = preserveInputTrackIds;
+        this.preserveInputTrackIds = options.preserveInputTrackIds;
         this.currentRouteIndex = -1;
         const existingRoute = this.findRoute(rackId, routeId);
 
@@ -619,12 +622,7 @@ export class YeastPreviewSidecar {
                 this.removeQueuedPreview(queuedPreview);
                 continue;
             }
-            const previewableEvent = event.kind.type === 'noteOn' || event.kind.type === 'noteOff';
-            if (
-                previewableEvent &&
-                event.timeSamples >= this.blockEndSamples &&
-                !this.appendQueuedPreview(event, trackId)
-            ) {
+            if (!this.queuePreviewIfDeferred(event, trackId)) {
                 this.recordDrop();
                 continue;
             }
@@ -658,7 +656,7 @@ export class YeastPreviewSidecar {
             }
             this.recordNoteOn(event, trackId, decision);
         } else if (event.kind.type === 'noteOff') {
-            const match = this.findPendingNote(event, trackId, event.kind.channel, event.kind.note);
+            const match = this.findPendingNote(event, trackId, event.kind);
             this.recordNoteOff(event.timeSamples, match);
         }
     }
@@ -824,7 +822,7 @@ export class YeastPreviewSidecar {
         this.removePending(match);
     }
 
-    private findPendingNote(event: MidiEvent, trackId: string, channel: number, pitch: number): number {
+    private findPendingNote(event: MidiEvent, trackId: string, note: NoteOff): number {
         const routeIndex = this.findRouteForTrack(trackId);
         const rackId = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
         const routeId = routeIndex === -1 ? this.currentRouteId : this.routeId[routeIndex]!;
@@ -835,14 +833,11 @@ export class YeastPreviewSidecar {
         let matchSequence = Number.POSITIVE_INFINITY;
         for (let index = 0; index < this.pendingCount; index++) {
             if (
-                this.pendingPitch[index] === pitch &&
-                this.pendingChannel[index] === channel &&
+                this.matchesPendingVoice(index, note, occurrenceId, noteInstanceId) &&
                 this.pendingTrackId[index] === trackId &&
                 this.pendingRackId[index] === rackId &&
                 this.pendingRouteId[index] === routeId &&
                 this.pendingCaptureEpoch[index] === captureEpoch &&
-                this.pendingOccurrenceId[index] === occurrenceId &&
-                this.pendingNoteInstanceId[index] === noteInstanceId &&
                 this.pendingSequence[index]! < matchSequence
             ) {
                 match = index;
@@ -850,6 +845,20 @@ export class YeastPreviewSidecar {
             }
         }
         return match;
+    }
+
+    private matchesPendingVoice(
+        index: number,
+        note: NoteOff,
+        occurrenceId: string | undefined,
+        noteInstanceId: string | undefined
+    ): boolean {
+        return (
+            this.pendingPitch[index] === note.note &&
+            this.pendingChannel[index] === note.channel &&
+            this.pendingOccurrenceId[index] === occurrenceId &&
+            this.pendingNoteInstanceId[index] === noteInstanceId
+        );
     }
 
     private findOrigin(event: MidiEvent): number {
@@ -1107,7 +1116,12 @@ export class YeastPreviewSidecar {
         this.pendingProcessorId[index] = this.pendingProcessorId[last]!;
     }
 
-    private appendQueuedPreview(event: MidiEvent, trackId: string): boolean {
+    private queuePreviewIfDeferred(event: MidiEvent, trackId: string): boolean {
+        const isNote = event.kind.type === 'noteOn' || event.kind.type === 'noteOff';
+        const isDeferredNote = isNote && event.timeSamples >= this.blockEndSamples;
+        if (!isDeferredNote) {
+            return true;
+        }
         if (this.queuedPreviewCount === YEAST_PREVIEW_CAPACITY) {
             return false;
         }
