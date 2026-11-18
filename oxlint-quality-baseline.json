@@ -984,9 +984,6 @@
         }
     },
     "scripts/restampDependencyBump.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 1
         }
@@ -11509,7 +11506,7 @@
             "count": 3
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 3
+            "count": 2
         },
         "sourdaw-craft/no-spread-clone-array-method": {
             "count": 4
