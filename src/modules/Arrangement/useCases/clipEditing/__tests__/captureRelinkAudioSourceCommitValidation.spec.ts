@@ -111,6 +111,7 @@ describe('relink source commit observation provenance', () => {
             const peer = change(clone(root, 'bbbbbbbbbbbbbbbb'), (draft) => {
                 draft.tracks.tracks[0]!.clips[0]!.audioBufferId = 'peer';
             });
+            let tracksBeforeNotification: Project['tracks']['tracks'] | undefined;
             try {
                 if (publicationScope === 'outside') {
                     replaceCrdtDocInLineage({ id: 'root', doc: peer });
@@ -121,11 +122,14 @@ describe('relink source commit observation provenance', () => {
                     }
                     if (publicationScope === 'inside-before-notification') {
                         trackStore.set({ tracks: [], selectedTrackId: null });
-                        expect(trackStore.value?.tracks).toEqual([]);
+                        tracksBeforeNotification = trackStore.value?.tracks;
                     }
                     trackStore.hydrate();
                     expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('peer');
                 });
+                expect(tracksBeforeNotification).toEqual(
+                    publicationScope === 'inside-before-notification' ? [] : undefined
+                );
                 expect(proof.validation.beforeCommit()).not.toBeNull();
                 expect(proof.validation.beforeMutation?.(peer)).not.toBeNull();
                 expect(proof.validation.validateDocument(candidate())).not.toBeNull();

@@ -235,8 +235,9 @@ describe('missing-media recovery through real CRDT and Command', () => {
             await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
             flushAutomergeStorageWrites();
             expect(rawClip().audioBufferId).toBe('replacement');
+            let supportedReplacement: boolean | undefined;
             if (route === 'supported source replacement') {
-                expect(replaceClipAudioBuffer('clip-a', 'later-authority')).toBe(true);
+                supportedReplacement = replaceClipAudioBuffer('clip-a', 'later-authority');
                 flushAutomergeStorageWrites();
             } else {
                 mutateCrdtDoc<Root>({
@@ -253,6 +254,7 @@ describe('missing-media recovery through real CRDT and Command', () => {
                 });
                 trackStore.hydrate();
             }
+            expect(supportedReplacement).toBe(route === 'supported source replacement' ? true : undefined);
             expect(rawClip().audioBufferId).toBe('later-authority');
             expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('later-authority');
             expect(undoStore.value?.past).toHaveLength(1);
@@ -533,9 +535,7 @@ describe('missing-media recovery through real CRDT and Command', () => {
 
             expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(tracksBefore);
             expect(JSON.stringify(undoHistoryStore.value)).toBe(historyBefore);
-            if (stage === 'picker') {
-                expect(io.decode).not.toHaveBeenCalled();
-            }
+            expect(io.decode).toHaveBeenCalledTimes(stage === 'picker' ? 0 : 1);
             expect(notifyUser).not.toHaveBeenCalled();
         }
     );

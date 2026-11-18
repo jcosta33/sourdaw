@@ -643,10 +643,11 @@ describe('locateMissingMedia', () => {
         vi.mocked(confirmUser).mockResolvedValue(true);
         const handler = getArrangementHandlers().relinkClipAudioSources;
         const execute = handler.execute;
+        let stagedBassSource: string | undefined;
         vi.spyOn(handler, 'execute').mockImplementation(async (action, context) => {
             const result = await execute(action, context);
             if (action.payload.targets[0]?.before.audioBufferId === 'buf-bass') {
-                expect(trackStore.value?.tracks[1]?.clips[0]?.audioBufferId).toBe('decoded-Bass.wav');
+                stagedBassSource = trackStore.value?.tracks[1]?.clips[0]?.audioBufferId;
                 addPeerBassSource();
             }
             return result;
@@ -654,6 +655,7 @@ describe('locateMissingMedia', () => {
 
         await locateMissingMedia({ sourceBufferId: 'buf-first', label: 'First.wav' });
 
+        expect(stagedBassSource).toBe('decoded-Bass.wav');
         expect(handler.execute).toHaveBeenCalledTimes(2);
         expectOnlyInitialRepair(['buf-bass', 'buf-peer']);
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledExactlyOnceWith('decoded-Bass.wav');

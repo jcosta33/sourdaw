@@ -4126,11 +4126,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/relinkClipAudioSource.ts": {
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts": {
         "vitest/no-conditional-expect": {
             "count": 2
@@ -8507,11 +8502,6 @@
         },
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 5
-        }
-    },
-    "src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
         }
     },
     "src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx": {
