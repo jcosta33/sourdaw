@@ -10,7 +10,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - **Observe the outcome.** Assert both the promised result and ownership or non-effects when they matter: an earlier revision must not overwrite a newer one, a late async completion must not revive retired state, and grouped undo must preserve unrelated edits. Control completion explicitly and await the resulting observable; do not rely on fixed microtask counts. For combinatorial invariants, use reproducible seeded property cases and retain a failing seed.
 - **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm guard --profile broad -- pnpm test:e2e <spec>`. Prefer Vitest for behavior observable below the browser; use an environment that actually renders audio, uses hardware, or hosts the full UI when that is the claim.
 - **E2E files take `test` and `expect` from `tests/e2e/e2eTest.ts`.** That module is the one place a per-test fixture reaches every test, so importing them from `@playwright/test` bypasses it; `scripts/__tests__/e2eSharedTestFixture.spec.ts` enforces the import. Type-only names still come from `@playwright/test`.
-- **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
+- **Ad-hoc live-UI probes.** Keep one-off scripts and screenshots in the artifact workspace outside the checkout. Follow the lane setup and guarded execution steps in the [Playwright UI bridge skill](../.agents/skills/playwright-ui-bridge/SKILL.md).
 - **CI browser shards serve a production-mode build.** The dev server's cold module transform is about half of all browser runner time, so a CI shard serves `vite build --mode e2e` through `vite preview` with one Playwright worker. A build serves no `/src/...` module URLs, so any file that loads one at runtime (itself, through a helper, or through an HTML probe) is listed in `tests/e2e/devServerOnlySpecs.ts` and runs against a dev server started in the same shard. Local runs, the offline smoke job, and nightly use the dev server throughout. A built shard runs a production React build, so a browser spec asserting zero console errors there cannot see React's development-only warnings; the dev-server runs still can. `scripts/__tests__/e2eDevServerOnlySpecs.spec.ts` fails when a file loads a `/src/...` URL without being listed, or stays listed after it stops.
 - **Browser performance gates observe the product, not the runner.** Main-thread work the product can split, defer or move off-thread keeps an absolute ceiling, such as the 50 ms long-task line: exceeding it is a product defect to fix by splitting the work. A single third-party operation the product cannot split is bounded against the same operation measured in the same page and run (a robust figure from several standalone samples, plus a stated margin, derived from measured shares and written beside the constant, for the work that has to share its task). Never gate a task with a bare wall-clock ceiling that it reaches only on a slower runner. That gate measures runner speed, and its failure points at no product change. Record every figure in the spec's attachment, and say in a comment which gates block and why.
 - **Browser specs run with reduced motion.** `playwright.config.ts` emulates `prefers-reduced-motion: reduce`, so decorative transitions do not add a fixed wait to every boot. The product must honour that preference wherever motion delays interaction, such as the launch overlay's exit. A spec that asserts a full-motion path opts back in with `test.use({ reducedMotion: 'no-preference' })`, as `tests/e2e/launchFlows.spec.ts` does for the launch fade.
@@ -676,6 +676,40 @@ mod tests {
 
 Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(test)]` coverage. Add command tests beside the Rust module they exercise; test the body directly rather than routing through the desktop shell's IPC.
 
+### Hosted effect WAV export
+
+The [hosted effect export spec](../src/modules/AudioRendering/presentations/views/__tests__/hostedEffectExportSamples.integration.spec.tsx)
+requires macOS with a 44.1 or 48 kHz default audio output. Run it explicitly from the checkout you want
+to verify. It scans the harness CLAP effect in a disposable native profile and drives the mixdown
+dialog. The picker supplies a temporary destination and the native export transaction commits the
+WAV. The spec reads those file bytes and checks the stereo taps, the gain change, and the echo past
+the clip end against static-gain and zero-tail exports.
+
+Choose an artifact directory outside the checkout on its drive. With dependencies installed, run:
+
+```bash
+export SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS=/absolute/path/to/hosted-effect-export
+export SOURDAW_HOSTED_EFFECT_EXPORT_FIXTURES="$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS/target/debug"
+mkdir -p "$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS"
+
+pnpm guard --profile broad --show-output -- cargo build \
+    --package sourdaw-native --lib --features napi-addon --package sourdaw-harness-fx \
+    --target-dir "$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS/target"
+pnpm guard --profile focused --show-output -- cargo build \
+    --package sourdaw-native --bin sourdaw-plugin-scan-helper \
+    --target-dir "$SOURDAW_HOSTED_EFFECT_EXPORT_ARTIFACTS/target"
+cp "$SOURDAW_HOSTED_EFFECT_EXPORT_FIXTURES/libsourdaw_native.dylib" \
+    "$SOURDAW_HOSTED_EFFECT_EXPORT_FIXTURES/sourdaw-native.node"
+
+pnpm guard --profile focused --show-output -- pnpm test:run \
+    src/modules/AudioRendering/presentations/views/__tests__/hostedEffectExportSamples.integration.spec.tsx
+```
+
+The default unit run skips this hardware-dependent case. The focused run requires the configured
+binaries and fails if the render cannot use the native engine. It copies the three verified WAVs to
+the artifact directory. Auto-detect displays the plugin's reported tail, and the dialog's two-second
+minimum determines the Auto WAV length for this fixture.
+
 ### Hosted browser quantum measurements
 
 Changes to the browser quantum harness, its measured DSP closure, or the committed WASM it loads trigger
@@ -915,7 +949,7 @@ To use an approved updated checkout without changing the stopped lane, invoke th
 directory and passing `--recover -- <finite-proof-command>`; lane detection, dependency preflight,
 recorded cwd and receipt ownership still come from the stopped lane.
 
-Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
+Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-istanbul`.
 
 CI owns lint and all TypeScript typechecks, including the spec-inclusive `tsconfig.test.json` check. Do not run lint or typecheck commands locally; use the pull request's CI results as their verification evidence. When you touch a spec, dummy factory, or model shape mirrored by fixtures, keep fixtures aligned with the real types and never silence errors with `any` or `@ts-expect-error`.
 
@@ -965,6 +999,34 @@ into the shard with the least recorded time, so one slow shard does not hold `Ga
 a file without a recording weighs as the median file.
 CodeQL runs for JavaScript/TypeScript and relevant workflow or security configuration changes;
 the PR secret scan and dependency review remain in required validation even when CodeQL is skipped.
+
+### Required PR unit coverage
+
+The four isolated PR unit shards run the existing test suite with Istanbul coverage. Istanbul
+instruments production sources selectively so test helpers, dependencies and compiler tooling
+run without coverage instrumentation. The coverage job checks all four reports belong to the
+current run attempt and tested revision, merges them into one production report and contributes
+its result to the required `Gate`. The unit coverage artifact contains the HTML report, exact
+covered/total counts, the uncovered changed file and line list in `gate.json`, and shard
+wall-clock durations.
+
+Coverage applies to production TypeScript and TSX under `src/`. It excludes declarations, test
+specs and test helpers, the test setup and the app bootstrap entry point. The coverage configuration
+includes files the shards never import. The PR must cover at least 90% of changed executable lines,
+counted once each using Istanbul statement-start line coverage. The diff uses the tested integration
+commit and its first parent, so reported lines match the tested tree even when the base advances.
+A change without executable lines has an explicit zero-line result. If Istanbul omits a file, the
+gate verifies that its tested Git blob has no Istanbul-instrumentable body. It permits an empty
+body, static import and export declarations, and empty undecorated classes without a base class.
+A missing executable file or shard fails the check.
+
+The overall floors for lines, statements, branches and functions live in
+`scripts/unitCoverageFloors.json`. They are measured from the merged report, in hundredths of
+a percentage point rounded down. The gate compares exact counts to these floors and rejects
+any proposed decrease against the tested base. The initial floors come from the hosted unit
+suite's measured baseline. To raise them, review `measured-floors.json` in the unit coverage
+artifact and commit the desired increases. A successful change must meet the proposed floors
+as well as the changed-line minimum.
 
 The nightly keeps the full E2E matrix, Browser AI hardware admission, platform and desktop proofs,
 full-history secret scan and security analysis. Production deployment remains downstream of that

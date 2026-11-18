@@ -5,6 +5,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { downloadProjectFile } from '../../../repositories/project/downloadProjectFile';
 import { captureExternalPluginStates } from '../saveProject/captureExternalPluginStates';
+import { pluginStateEditCount } from '../saveProject/pluginStateEditCount';
 
 import { buildProjectData } from './buildProjectData';
 import { buildProjectOriginalMediaArchive } from './projectOriginalMediaArchive';
@@ -26,6 +27,7 @@ async function captureEveryPluginState(): Promise<boolean> {
 }
 
 export async function exportProjectFile(): Promise<void> {
+    const pluginEditsAtCapture = pluginStateEditCount.read();
     const everyPluginCaptured = await captureEveryPluginState();
     // The one sanctioned base64 producer: an explicit, user-initiated export.
     // Every other caller leaves it off — see `BuildProjectDataInput`.
@@ -54,9 +56,15 @@ export async function exportProjectFile(): Promise<void> {
         if (outcome !== 'written') {
             return;
         }
+        const pluginEditedDuringExport = pluginStateEditCount.read() !== pluginEditsAtCapture;
         if (!everyPluginCaptured) {
             notifyUser(
                 'Project exported, but the latest state of one or more plugins could not be read — the file holds their last captured state.',
+                'warning'
+            );
+        } else if (pluginEditedDuringExport) {
+            notifyUser(
+                'Project exported, but one or more plugins reported changes during export — the file may contain an earlier plugin state.',
                 'warning'
             );
         }
@@ -68,12 +76,13 @@ export async function exportProjectFile(): Promise<void> {
             );
             return;
         }
+        if (!everyPluginCaptured || pluginEditedDuringExport) {
+            return;
+        }
     } catch (error) {
         logger.error(new Error('Project export failed', { cause: error }));
         notifyUser('Failed to export project', 'error');
         return;
     }
-    if (everyPluginCaptured) {
-        notifyUser('Project exported successfully', 'info');
-    }
+    notifyUser('Project exported successfully', 'info');
 }

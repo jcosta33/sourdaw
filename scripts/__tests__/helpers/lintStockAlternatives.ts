@@ -58,13 +58,13 @@ function stockRules(engine: 'eslint' | 'oxlint', options: Options): Linter.Rules
     return rules;
 }
 
-function stockArguments(engine: 'eslint' | 'oxlint', config: string, options: Options): string[] {
+function stockArguments(engine: 'eslint' | 'oxlint', config: string, options: Options, root: string): string[] {
     if (engine === 'eslint') {
         return ['--no-config-lookup', '--config', config, '--format=json'];
     }
     let selectedConfig = config;
     if (options.production) {
-        selectedConfig = resolve('.oxlint-plugins.json');
+        selectedConfig = join(root, '.oxlint-plugins.json');
     }
     return [`--config=${selectedConfig}`, '--threads=2', '--format=json'];
 }
@@ -96,7 +96,7 @@ export function withStockLintAlternatives<Value>(
     }) => Value,
     fixtureOptions: { filename?: string; prepare?: (fixture: string) => void } = {}
 ): Value {
-    return withLintFixture(code, fixtureOptions.filename ?? 'scripts/example.js', (fixture) => {
+    return withLintFixture(code, fixtureOptions.filename ?? 'scripts/example.js', (fixture, root) => {
         fixtureOptions.prepare?.(fixture);
         const configDirectory = mkdtempSync(join(dirname(fixture), 'lint-stock-config-'));
         const configuration = join(configDirectory, 'stock-alternative');
@@ -150,12 +150,13 @@ export function withStockLintAlternatives<Value>(
                     })
                 );
             }
-            const args = stockArguments(engine, config, options);
+            const args = stockArguments(engine, config, options, root);
             if (options.fix) {
                 args.push('--fix');
             }
             args.push(fixture);
             const result = spawnSync(resolve('node_modules/.bin', engine), args, {
+                cwd: root,
                 encoding: 'utf8',
                 timeout: 60_000,
             });

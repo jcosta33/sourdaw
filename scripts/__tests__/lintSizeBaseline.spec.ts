@@ -41,7 +41,11 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
-import { checkSizeBaselineShrinks as checkSizeBaselineShrinksWith, isEntryModule } from '../checkSizeBaselineShrinks';
+import {
+    checkQualityBudgetShrinks,
+    checkSizeBaselineShrinks as checkSizeBaselineShrinksWith,
+    isEntryModule,
+} from '../checkSizeBaselineShrinks';
 import {
     countFileLines,
     describeSizeBaselineGrowth,
@@ -634,6 +638,75 @@ describe('size baseline check against the merge base', () => {
         expect(findings.some((finding) => finding.startsWith('z.ts: added to eslint.size-baseline.mjs'))).toBe(true);
     });
 
+    it('seeds quality budget only for files already in the base', () => {
+        const budgetPath = join(dir, 'oxlint-quality-baseline.json');
+        const text = (file: string) => JSON.stringify({ [file]: { 'vitest/no-conditional-expect': { count: 1 } } });
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        expect(() => checkQualityBudgetShrinks(dir)).toThrow('oxlint-quality-baseline.json');
+        writeFileSync(budgetPath, text('untracked.ts'));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            'untracked.ts: cannot seed a lint quality budget for a path absent at the merge base.',
+        ]);
+        writeFileSync(budgetPath, text('eslint.size-baseline.mjs'));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+    });
+
+    it('binds quality budget growth to the recorded merge base', () => {
+        const budgetPath = join(dir, 'oxlint-quality-baseline.json');
+        const count = (value: number) =>
+            JSON.stringify({ 'a.ts': { 'vitest/no-conditional-expect': { count: value } } });
+        writeFileSync(budgetPath, count(2));
+        commit('seed quality counts');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeFileSync(budgetPath, count(1));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+        writeFileSync(budgetPath, count(3));
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            'a.ts: vitest/no-conditional-expect budget increased from 2 to 3 in oxlint-quality-baseline.json.',
+        ]);
+    });
+
+    it('seeds a newly configured rule only for unchanged tracked files', () => {
+        const config = join(dir, '.oxlint-quality.json');
+        const budget = join(dir, 'oxlint-quality-baseline.json');
+        const newRule = 'vitest/no-conditional-expect';
+        const oldRule = 'sourdaw-craft/no-control-flow-ternary';
+        const write = (path: string, value: object) => writeFileSync(path, JSON.stringify(value));
+        writeFileSync(join(dir, 'unchanged.ts'), 'export const count = 1;\n');
+        writeFileSync(join(dir, 'edited.ts'), 'export const count = 1;\n');
+        write(config, { rules: { [oldRule]: 'error' } });
+        write(budget, { 'unchanged.ts': { [oldRule]: { count: 2 } } });
+        commit('quality rule already in force');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+
+        write(config, {
+            rules: { [oldRule]: 'error' },
+            overrides: [{ files: ['*.ts'], rules: { [newRule]: 'error' } }],
+        });
+        write(budget, { 'unchanged.ts': { [oldRule]: { count: 1 }, [newRule]: { count: 2 } } });
+        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+
+        writeFileSync(join(dir, 'edited.ts'), 'export const count = 2;\n');
+        writeFileSync(join(dir, 'new.ts'), 'export const count = 1;\n');
+        write(budget, {
+            'unchanged.ts': { [oldRule]: { count: 1 }, [newRule]: { count: 2 } },
+            'edited.ts': { [newRule]: { count: 1 } },
+            'new.ts': { [newRule]: { count: 1 } },
+            'eslint.size-baseline.mjs': { [oldRule]: { count: 1 } },
+        });
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            `edited.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+            `new.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+            `eslint.size-baseline.mjs: ${oldRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+        ]);
+
+        write(config, { rules: { [oldRule]: 'error', [newRule]: 'off' } });
+        write(budget, { 'unchanged.ts': { [newRule]: { count: 1 } } });
+        expect(checkQualityBudgetShrinks(dir)).toEqual([
+            `unchanged.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+        ]);
+    });
+
     it('should accept a head that only removes a path and lowers a ceiling', async () => {
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeBaseline(['a.ts'], { 'a.ts': 650 });
@@ -809,9 +882,10 @@ describe('size baseline check against the merge base', () => {
     describe('as a command', () => {
         function runCli(): { status: number; stdout: string; stderr: string } {
             mkdirSync(join(dir, 'scripts'), { recursive: true });
-            for (const name of ['checkSizeBaselineShrinks.ts', 'lintSizeCeilings.ts']) {
+            for (const name of ['checkSizeBaselineShrinks.ts', 'lintSizeCeilings.ts', 'lintQualityBudget.ts']) {
                 copyFileSync(resolve(__dirname, '..', name), join(dir, 'scripts', name));
             }
+            writeFileSync(join(dir, 'oxlint-quality-baseline.json'), '{}\n');
             const result = spawnSync('node', ['scripts/checkSizeBaselineShrinks.ts'], { cwd: dir, encoding: 'utf8' });
             return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
         }
@@ -866,7 +940,7 @@ describe('size baseline check against the merge base', () => {
             const { status, stdout } = runCli();
             expect({ status, stdout }).toEqual({
                 status: 0,
-                stdout: 'Size baseline only shrinks against the merge base.\n',
+                stdout: 'Size and lint quality baselines only shrink against the merge base.\n',
             });
         });
     });

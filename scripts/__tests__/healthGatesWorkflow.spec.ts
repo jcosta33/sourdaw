@@ -203,6 +203,7 @@ const VALIDATION_JOBS = [
     'lint',
     'boundaries',
     'unit',
+    'unit-coverage',
     'tooling-unit',
     'smoke',
     'build',
@@ -2131,6 +2132,15 @@ function assertJobGraph(set: WorkflowSet): void {
     }
     if (JSON.stringify(Object.keys(recordAt(set.validation, 'jobs'))) !== JSON.stringify([...VALIDATION_JOBS])) {
         throw new Error('validation.yml must hold exactly the pinned job list, in order');
+    }
+    const coverage = jobAt(set.validation, 'unit-coverage');
+    if (
+        JSON.stringify(arrayAt(coverage, 'needs')) !== JSON.stringify(['decide', 'unit']) ||
+        coverage.if !== BUILD_CONDITION ||
+        coverage['continue-on-error'] !== undefined ||
+        stepNamed(coverage, 'Enforce PR coverage')['continue-on-error'] !== undefined
+    ) {
+        throw new Error('unit coverage must require the unit matrix and block web validation on failure');
     }
     assertBlockingSuites(set);
     assertNightlySecurityGraph(set.nightly);
@@ -4450,7 +4460,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(28);
+        expect(callers).toBe(29);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
@@ -4731,7 +4741,7 @@ describe('health gates workflow contract', () => {
     it.each([
         ['validation.yml', validationWorkflow],
         ['nightly.yml', nightly],
-    ])('runs %s unit install and shards through a fresh unprivileged identity', (_file, workflow) => {
+    ])('runs %s unit install and shards through a fresh unprivileged identity', (file, workflow) => {
         const unit = jobAt(workflow, 'unit');
         const prepare = stepNamed(unit, 'Prepare isolated unit account');
         const install = stepNamed(unit, 'Install dependencies');
@@ -4748,8 +4758,10 @@ describe('health gates workflow contract', () => {
         expect(stringAt(install, 'run')).toBe(
             'node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"'
         );
+        const phase = file === 'validation.yml' ? 'coverage-shard' : 'shard';
         expect(stringAt(shard, 'run')).toBe(
-            'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4'
+            `node scripts/runIsolatedUnitShard.ts ${phase} ` +
+                '--context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4'
         );
         for (const step of [prepare, install, shard]) {
             expect(step.if).toBeUndefined();
@@ -4778,7 +4790,7 @@ describe('health gates workflow contract', () => {
         );
         expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Install dependencies')) + 1);
         expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Run shard')) - 1);
-        expect(browsers['timeout-minutes']).toBe(2);
+        expect(browsers['timeout-minutes']).toBe(10);
         expect(browsers.if).toBeUndefined();
         expect(browsers['continue-on-error']).toBeUndefined();
         expect(browsers.env).toBeUndefined();
@@ -5277,7 +5289,7 @@ describe('health gates workflow contract', () => {
         );
         full.decide = { result: 'success', outputs: broadScope };
         expect(run(full)).toBe(0);
-        const broadJobs = ['unit', 'build', 'rust', 'native-macos', 'native-windows', 'native-parity'];
+        const broadJobs = ['unit', 'unit-coverage', 'build', 'rust', 'native-macos', 'native-windows', 'native-parity'];
         for (const job of broadJobs) {
             for (const outcome of ['failure', 'cancelled', 'skipped']) {
                 expect(run({ ...full, [job]: { result: outcome } })).not.toBe(0);

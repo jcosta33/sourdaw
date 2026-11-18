@@ -1,7 +1,8 @@
 # Lint engine ownership
 
 For checks, `scripts/runLint.ts` runs the existing native `.oxlintrc.json` pass, the native core rules and public JavaScript
-plugins in `.oxlint-plugins.json`, then the retained `eslint.config.mjs` pass. The plugin
+plugins in `.oxlint-plugins.json`, then the retained `eslint.config.mjs` pass and the
+read-only quality pass in `.oxlint-quality.json`. The plugin
 and final ESLint passes retain the previous ESLint targets and ignore set, with
 `scripts/lint/sourdaw.mjs` explicitly added to their full targets. The native pass
 excludes some JavaScript tooling and existing TypeScript debt that still needs these checks.
@@ -37,8 +38,105 @@ extra violations fail, and unused counts fail until explicitly pruned. This incl
 counted suppression machinery, but its `--fix` path automatically prunes stale counts,
 and a missing implicit `oxlint-suppressions.json` does not fail a clean run. Its
 suppression-generation and pruning switches are hidden from the public CLI help.
-Those contracts cannot replace the required file and explicit-prune-only behavior here;
-budgeted rules stay in ESLint and must not run twice. The committed counts only shrink.
+Those contracts cannot replace the required file and explicit-prune-only behavior for the
+rules retained in ESLint. The committed ESLint counts only shrink.
+
+The quality pass uses Oxlint's public JSON diagnostics on the checked files, including the
+final bytes after cofix. `oxlint-quality-baseline.json` holds counts by path and rule. Extra
+diagnostics fail the check. When the count drops, reduce or remove the entry in the same
+change. Both check and fix require the ledger and leave its bytes alone. During first activation,
+an error rule added to `.oxlint-quality.json` may record counts for unchanged source files already
+tracked at the merge base. The native check requires an exact count. The PR static check refuses
+counts for added or changed files during activation and all growth after the rule appears in the
+configuration. Delivery checks for
+source and ledger changes that cross on `main` and the pull request. The historical counts
+record existing syntactic matches, which can include intentional handling of cleanup or
+observational failures. An intentional new instance whose full contract the rule cannot
+observe can use a reasoned `oxlint-disable-next-line` naming that rule.
+
+The native Oxlint suppression file is implicit for every invocation, including other
+passes and the initial `--fix`. Oxlint 1.93 prunes entries for rules that a pass did not
+run on a linted file, so using that shared file would erase another pass's ledger.
+The runner refuses an implicit `oxlint-suppressions.json` before starting. The quality
+pass uses the public diagnostic output.
+
+The product pilot counts stock complexity over 12, functions over 80 non-blank, non-comment
+lines (including IIFEs), nesting over 4 and more than four parameters. It covers TS and TSX
+under `src/`, excluding declarations, specs, tests, mocks, `setupTests.ts`, `__tests__/` and
+`testing/`. The historical 20/100/4 checks and their existing warning and exclusion scopes
+still run through `.oxlint-plugins.json`. The counted limits detect when another function
+crosses a cap. Review compares changes to functions already above a cap with their merge-base
+definitions. Multiple explicit `boolean` slots, including optional annotations and unannotated
+literal boolean defaults, need named options. A function passed directly as a callback or
+annotated with an imported callback type takes its parameter shape from that contract.
+
+In the product pilot the stock assertion ban diagnoses TypeScript's postfix `!`. Existing fixes from native
+`typescript/no-unnecessary-type-assertion` still remove assertions the type checker finds
+redundant. A non-null assertion that changes a type needs a guard or an explicit invariant.
+The stock type-aware generic rule reports parameters that establish no type relationship.
+The quality pass counts `no-else-return` findings when a preceding branch already returns on every
+path. It allows `else if` chains and keeps `else` branches that prevent fall-through.
+
+To convert control-flow ternaries in one file, run Oxlint directly from the repository
+root with no implicit `oxlint-suppressions.json`.
+
+```sh
+pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --allow=no-else-return --fix path/to/file.ts
+```
+
+The fixer handles semicolon-terminated ternaries directly in function bodies and
+preserves their existing line breaks. Statement branches may await calls, assign or
+update values, or call an unmodified function by name. The named function must be
+declared in the same body with an explicit `void` return type or a single expression
+statement and no attached annotation. This prevents formatting from exposing
+TypeScript assertion or `never` control flow. The original rule covers statement and
+multiline forms. A second rule catches an assignment, update, or at least three call or
+constructor expressions in one branch, ignoring nested function bodies. The same return
+fixer serves both rules. Return ternaries with call or awaited-call branches become a guarded return
+followed by the alternate return when the enclosing non-generator function declares its return
+type. Ternaries used as statements still become `if` / `else`. Ternaries with attached comments,
+wrapped ternaries, and other value expressions require manual review.
+
+The focused command can report remaining findings after writing eligible changes.
+Review the diff and run `pnpm format path/to/file.ts`. If the fix removes counted
+diagnostics, shrink or remove their entries in `oxlint-quality-baseline.json` and
+run `pnpm lint path/to/file.ts`.
+
+The failure rules flag empty catches and direct success objects from handlers that do no
+recovery. A detached catch keeps the original rejection observable when its remaining
+statements preserve the unchanged promise on every successful exit the rule can prove.
+The proof follows explicit local exits and awaited rejections in the same function.
+An enclosing catch can absorb a failure that leaves the statement sequence and skip
+the return. An inner catch can resume the sequence and reach the return.
+Writes from a closure leave the promise identity unproven.
+A supporting throw must leave the same function without interception by a handler
+or replacement by a `finally` exit.
+Returning `Promise.allSettled` with that promise exposes its rejection as explicit data.
+A boolean value by itself cannot distinguish success from a conservative
+predicate or policy. The boundary rule follows direct JSON parsing, a response with
+local `fetch` or `Response` provenance, and the imported desktop bridge. Assigning the
+result to `unknown` keeps the validation step explicit. Playwright admission checks
+locally visible guards that would let the case finish without an assertion, including assertions
+inside awaited Playwright steps with or without type wrappers. Fixed test
+sleeps include Playwright's timeout, directly awaited timer promises and test helpers that
+return only a delay. Tests that
+measure a real observation window can use a line-scoped reason for the duration.
+
+The stock Vitest assertion-presence pilot applies to TS and TSX specs and tests under `src/`,
+excluding `*.e2e.spec.*`. It uses Vitest's default `expect`, `expectTypeOf`, `assert`, and
+`assertType` names. Review still checks whether the assertion observes the case's claim.
+The stock Vitest conditional-expect rule runs only on Vitest specs. The local assertion
+rule checks imported Vitest `expect`, including aliases, `soft`, and `poll`, and leaves
+Chai getter assertions and static asymmetric matchers available. Oxlint 1.93 and the
+[public Vitest ESLint rule](https://github.com/vitest-dev/eslint-plugin-vitest/blob/main/src/rules/valid-expect.ts)
+report a raw async matcher promise assigned to a variable even when the test awaits the
+same binding after advancing fake timers. The local rule verifies direct await or return,
+or an immutable local binding observed later in the same block, including `Promise.all`.
+Erased TypeScript wrappers preserve those observation routes.
+An enclosing catch can handle an awaited rejection. A simple rethrow keeps it visible,
+and returning the assertion promise delivers its later rejection to the runner. A
+conditional await, rejection handler or `finally` exit that can let the test succeed
+cannot establish observation. Complex promise control flow still requires review.
 
 ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
 `@tanstack/query/no-void-query-fn`, `@tanstack/query/no-rest-destructuring`, and
@@ -122,12 +220,13 @@ a concrete version; ESLint retains its original settings.
 Oxlint parses `.cjs` as CommonJS. Valid `require`/`module.exports` tooling remains
 covered; ESM `export` syntax in a `.cjs` file is now rejected as invalid Node input.
 
-`scripts/__tests__/oxlintPluginMigration.spec.ts` owns all real lint processes and
-workspace fixtures, including local AST diagnostics, explicit suppressions, compiler
-rules, formatting fixes, warning-gate probes, retained typed checks, frozen core-rule parity controls, native candidate gaps, and
-warning-baseline parity. Its cases run
-sequentially: a native TypeScript program must not discover another worker's fixture
-just before that worker deletes it. The config and warning specs keep read-only
-metadata checks and the original parser's in-memory compatibility cases.
+`scripts/__tests__/oxlintPluginMigration.spec.ts` owns the live plugin migration and
+parity probes with their workspace fixtures. Its cases run sequentially so one native
+TypeScript program cannot discover a fixture that another case is about to delete.
+`scripts/__tests__/lintQualityIntegration.spec.ts` owns the native quality diagnostics
+and final-byte check and fix probes. Its cases use separate temporary fixture paths,
+write the files before starting their lint processes, and delete them after those
+processes exit. The config and warning specs keep read-only metadata checks and the
+original parser's in-memory compatibility cases.
 Typed fixture probes reset the public TypeScript parser caches after creating a new
 file, so CI's single-run program snapshot includes that file without widening its project.

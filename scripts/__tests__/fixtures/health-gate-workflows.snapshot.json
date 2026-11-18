@@ -845,7 +845,7 @@
         "needs": "decide",
         "if": "(needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 45,
+        "timeout-minutes": 55,
         "strategy": {
           "fail-fast": false,
           "matrix": {
@@ -863,7 +863,8 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
               "fetch-depth": 0,
-              "persist-credentials": false
+              "persist-credentials": false,
+              "ref": "${{ github.sha }}"
             }
           },
           {
@@ -900,7 +901,7 @@
           },
           {
             "name": "Install Chromium",
-            "timeout-minutes": 2,
+            "timeout-minutes": 10,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
@@ -909,7 +910,7 @@
             "env": {
               "VITEST_MAX_WORKERS": 2
             },
-            "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
+            "run": "node scripts/runIsolatedUnitShard.ts coverage-shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
           {
             "name": "Report shard failure",
@@ -918,6 +919,86 @@
               "SHARD": "${{ matrix.shard }}"
             },
             "run": "printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### Unit suite shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          },
+          {
+            "name": "Upload unit coverage shard",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "unit-coverage-shard-${{ github.run_attempt }}-${{ matrix.shard }}",
+              "path": "${{ runner.temp }}/unit-coverage-shard/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "unit-coverage": {
+        "name": "PR unit coverage",
+        "needs": [
+          "decide",
+          "unit"
+        ],
+        "if": "(needs.decide.outputs.web == 'true')",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Download unit coverage shards",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "with": {
+              "pattern": "unit-coverage-shard-${{ github.run_attempt }}-*",
+              "merge-multiple": true,
+              "path": "${{ runner.temp }}/unit-coverage-input/"
+            }
+          },
+          {
+            "name": "Enforce PR coverage",
+            "id": "enforce",
+            "env": {
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "COVERAGE_SHARDS": "${{ runner.temp }}/unit-coverage-input/",
+              "COVERAGE_REPORT": "${{ runner.temp }}/unit-coverage-report/"
+            },
+            "run": "node scripts/unitCoverageGate.ts"
+          },
+          {
+            "name": "Upload unit coverage report",
+            "if": "${{ !cancelled() && steps.enforce.outcome != 'skipped' }}",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "pr-unit-coverage-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/unit-coverage-report/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
           }
         ]
       },
@@ -1413,6 +1494,7 @@
           "lint",
           "boundaries",
           "unit",
+          "unit-coverage",
           "tooling-unit",
           "smoke",
           "build",
@@ -1433,7 +1515,7 @@
               "RESULTS": "${{ toJSON(needs) }}",
               "PULL_REQUEST": "${{ github.event.pull_request != null }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"unit-coverage\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"unit-coverage\"].result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }
@@ -1728,7 +1810,7 @@
           },
           {
             "name": "Install Chromium",
-            "timeout-minutes": 2,
+            "timeout-minutes": 10,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {

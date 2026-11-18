@@ -8,7 +8,7 @@ This guide defines coding conventions and patterns for clarity, consistency, and
 
 - Use real types. Do not escape through `any`, unsafe casts, or broad index signatures.
 - Narrow unknown values at their boundary.
-- Do not suppress errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules. The one exception is an interface that is a declaration-merging target (module augmentation): it may carry a line-scoped disable for the rules that refuse merge targets, with the reason beside it ([ADR 0058](../.agents/decisions/0058-app-actions-live-with-their-owning-modules.md)).
+- Do not suppress actual errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules. An interface that is a declaration-merging target (module augmentation) may carry a line-scoped disable for the rules that refuse merge targets, with the reason beside it ([ADR 0058](../.agents/decisions/0058-app-actions-live-with-their-owning-modules.md)). An intentional duration measurement or failure-observation path that a quality rule cannot prove may carry a line-scoped disable naming the rule, with a specific reason and a test or other evidence that would expose the failure ([lint quality checks](../scripts/lint/README.md)).
 - Fix fixtures and tests to match production contracts. Never weaken the contract to make a check pass.
 
 ## Prefer explicit control flow
@@ -450,6 +450,10 @@ export const validateTrackSettings = (track: Track): void => {
 
 ### Early returns over complex ternaries
 
+Use a ternary for a choice between values or JSX. Give a branch its own control flow when it assigns
+or updates a value, or contains three or more call or constructor expressions outside nested function
+bodies. The quality check detects those shapes on one line as well as across line breaks.
+
 ```typescript
 // ✅ Good: Early return pattern
 export const TrackCard = ({ track }: TrackCardProps): ReactElement => {
@@ -784,23 +788,34 @@ file in the same change.
 
 - **Equality and basics**: Use `===`/`!==` (no loose equality); prefer `const`; prefer template strings; no `eval`; no `debugger`.
 - **Curly braces**: Required for all conditionals and loops. ([`curly`](https://eslint.org/docs/latest/rules/curly))
-- **TypeScript**: Use `import { type MyType }`. ([`@typescript-eslint/consistent-type-imports`](https://typescript-eslint.io/rules/consistent-type-imports))
+- **TypeScript**: Use `import { type MyType }`. Narrow optional values before use. Keep a type parameter when it relates input, output, or other types in the API. Use the underlying constraint or `unknown` for a parameter whose type has no relationship to preserve. ([`consistent-type-imports`](https://typescript-eslint.io/rules/consistent-type-imports), [`no-non-null-assertion`](https://oxc.rs/docs/guide/usage/linter/rules/typescript/no-non-null-assertion), [`no-unnecessary-type-parameters`](https://oxc.rs/docs/guide/usage/linter/rules/typescript/no-unnecessary-type-parameters))
 - **Promises**: Always handle promises (`return`/`catch`/`await`). Avoid floating promises.
 - **React**: No class components; no default React import; JSX uses double quotes; no `forwardRef` (use `ref` as a prop); no manual `useMemo`/`useCallback`/`React.memo` (the React Compiler handles memoization).
 - **DOM**: Prefer `textContent` over `innerText`. ([`unicorn/prefer-dom-node-text-content`](https://github.com/sindresorhus/eslint-plugin-unicorn/blob/main/docs/rules/prefer-dom-node-text-content.md))
 - **Imports**: Enforce group order and alphabetical sort. ([`import/order`](https://github.com/import-js/eslint-plugin-import/blob/main/docs/rules/order.md))
 - **Storage**: Do not use `localStorage` directly; persist via `Store` with `LocalStorageStorage`. This is enforced by a custom lint rule. ([`no-restricted-syntax`](https://eslint.org/docs/latest/rules/no-restricted-syntax))
 - **File size**: A file holds at most 600 non-blank, non-comment lines, so a reviewer can hold the whole file in their head; past that, split it by responsibility. ([`max-lines`](https://eslint.org/docs/latest/rules/max-lines))
-- **Function size**: A function body (IIFEs included) holds at most 100 non-blank, non-comment lines; a longer function is doing more than one thing and should be decomposed, per _Semantic decomposition_ above. ([`max-lines-per-function`](https://eslint.org/docs/latest/rules/max-lines-per-function))
+- **Function size**: In ordinary product TypeScript under `src/`, use at most 80 non-blank, non-comment lines per function, including IIFEs. The historical check elsewhere keeps its ceiling of 100. Decompose longer functions by responsibility, per _Semantic decomposition_ above. ([`max-lines-per-function`](https://eslint.org/docs/latest/rules/max-lines-per-function))
 - **Nesting depth**: Control-flow blocks nest at most 4 deep; deeper nesting buries the happy path and calls for the guard clauses and early returns covered under _Prefer explicit control flow_. ([`max-depth`](https://eslint.org/docs/latest/rules/max-depth))
-- **Cyclomatic complexity**: A function's cyclomatic complexity stays at most 20; past that, its branching cannot be reasoned about or tested exhaustively and should be split. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
+- **Cyclomatic complexity**: In ordinary product TypeScript under `src/`, keep a function at 12 or below. The historical check elsewhere keeps its ceiling of 20. Split complex branching by responsibility. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
 - **Burn-down baseline**: Files that already exceed one of the four limits above are listed in `eslint.size-baseline.mjs`, which holds those files to `warn` instead of `error` so they keep reporting without failing the build. A file leaves the list only once it complies with all four rules; no file is ever added, and `scripts/checkSizeBaselineShrinks.ts` (run in CI) refuses any path absent from the merge base's list.
 - **Baseline line ceilings**: Because `warn` alone would let a baselined file grow without bound, each baselined file may not exceed its recorded line ceiling in `scripts/lintSizeCeilings.json`, where a file's line count is its number of newline characters. A file over 600 lines is recorded at its line count plus 50, a fixed headroom granted once; a file within 600 lines is recorded at 600, so the ratchet never lets a short file newly exceed `max-lines`. A ceiling more than 100 lines above the ceiling the file's current length earns is stale and must be lowered to that value. Ceilings are never raised: `scripts/checkSizeBaselineShrinks.ts` refuses any new or raised figure in `scripts/lintSizeCeilings.json` against the merge base. An over-ceiling file is fixed by moving code into a new file, which the size rules hold. Generated files named in the exemption list in `scripts/lintSizeCeilings.ts` carry no ceiling, because their size follows their generator's input. `scripts/__tests__/lintSizeBaseline.spec.ts` enforces that no file exceeds its ceiling, that no ceiling is stale, that the ceilings file lists each non-exempt baseline path exactly once in sorted order, and that each exemption names an existing generator stated in the exempt file's header.
 - **oxlint burn-down baselines**: Some oxlint rules run at `error` while files that already violated them at promotion are exempt. Each such rule has one override at the end of `.oxlintrc.json` that turns it `off` for an exact, sorted list of file paths, so every other file, new ones included, is held to the rule. A path leaves once its file complies, and none is ever added; `scripts/__tests__/oxlintWarnLevels.spec.ts` fails when a listed path is a glob, unsorted, or no longer exists.
 - **Suppressed violations**: Every other ESLint rule is configured at `error`. Violations that predate a rule's promotion are recorded per file and rule in `eslint-suppressions.json`, ESLint's native bulk-suppressions file, which the lint gate reads. A file that gains one violation beyond its recorded count fails, as does any violation in a file the record does not name. The record only shrinks: after fixing a suppressed violation, run ESLint on the file with `--prune-suppressions` (the gate fails until the count matches), and never regenerate it with `--suppress-all` or `--suppress-rule` to admit a new violation. Because two pull requests can each be green alone yet leave a file's recorded figure wrong once both land, `pnpm deliver` refuses a pull request when `main` has, since it branched, touched a file the pull request also touched and any lint ledger (this record, a burn-down baseline, or a size ceiling) names, where touching means editing the file or changing what a ledger records for it; merge current `main` into the lane and publish so a fresh `Gate` measures the combination.
 - **Dependency-boundary baselines**: `.dependency-cruiser-known-violations.json` and its `-contract-reexports`, `-worker-spawns`, `-reachability`, `-types` and `-tests` siblings hold rows whose `from` names a file, which `scripts/check-dependency-boundaries.mjs` compares exactly. Delivery treats them like the other lint ledgers: it refuses a pull request when `main` and the pull request both changed a file that a row names, or changed that file's rows, since their merge base.
+- **Quality counts**: `oxlint-quality-baseline.json` counts existing findings by file and rule. A new quality rule may record measured findings from unchanged files tracked at the merge base. After activation, reduce or remove a count when the finding goes away. The [lint guide](../scripts/lint/README.md) lists the pilot scope and fix limits.
+
+### Review checks
+
+- Compare each edited legacy function already beyond a decision or depth cap with the same function in the merge base. Inspect the source branches and nesting, and record the before-and-after complexity and depth when either exceeded the cap of 12 or 4. Complexity 16 to 17 grows the same function even though the file still has one finding. Depth 5 to 4 removes its depth finding and calls for pruning that count. Keep new functions within both caps.
+- Tie each added compatibility path to a supported caller, existing data format, or supported execution environment. Name the saved input or caller and show where normal execution reaches the branch. Exercise that input and the current path. When support ends, remove the branch with its obsolete contract.
+- For a mutation that can fail and be retried, identify the commit boundary and what the caller can observe on either side. Verify that a pre-commit failure leaves no visible partial change, or that rollback completes before retry. When a caller can retry after a commit whose result it did not receive, bind the retry to the same operation identity and verify one committed effect and one corresponding receipt or history entry where applicable.
 
 ### Parameter patterns
+
+Keep product functions to four positional parameters and name multiple boolean flags in an options
+object. When an external contract requires a flagged signature, give a line-scoped lint reason
+that names the contract. Verify the caller before changing an existing signature.
 
 ```typescript
 // ✅ Good: Descriptive parameter names

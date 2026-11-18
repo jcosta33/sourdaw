@@ -116,20 +116,52 @@ describe('bounded native sequence authority', () => {
         const { source, result, target } = fixture();
         const decode = vi.mocked(A.decodeChange).mockClear();
         const encode = vi.mocked(A.encodeChange).mockClear();
+        const apply = vi.mocked(A.applyChanges).mockClear();
         try {
             const candidate = await admit(source, result);
             try {
-                const canonicalBytes = new Set(
-                    encode.mock.results.filter((outcome) => outcome.type === 'return').map((outcome) => outcome.value)
-                );
-                const decodeInputs = decode.mock.calls.map(([bytes]) => bytes);
-                expect(canonicalBytes.size).toBe(result.changes.length);
-                for (const bytes of canonicalBytes) {
-                    expect(decodeInputs.filter((input) => input === bytes)).toHaveLength(1);
+                const decodes = decode.mock.results.map((outcome, index) => {
+                    if (outcome.type !== 'return') {
+                        throw new Error('Expected a completed native decode');
+                    }
+                    return {
+                        order: decode.mock.invocationCallOrder[index]!,
+                        bytes: decode.mock.calls[index]![0],
+                        change: outcome.value,
+                    };
+                });
+                expect(encode).toHaveBeenCalledTimes(result.changes.length);
+                expect(apply).toHaveBeenCalledTimes(result.changes.length);
+
+                let previousApply = 0;
+                let observedDecodes = 0;
+                let observedFloatRepair = false;
+                for (const [index, bytes] of result.changes.entries()) {
+                    const encodeOrder = encode.mock.invocationCallOrder[index]!;
+                    const applyOrder = apply.mock.invocationCallOrder[index]!;
+                    expect(encodeOrder).toBeGreaterThan(previousApply);
+                    expect(applyOrder).toBeGreaterThan(encodeOrder);
+
+                    const incoming = decodes.filter(({ order }) => previousApply < order && order < encodeOrder);
+                    expect(incoming.map((entry) => entry.bytes)).toEqual([bytes]);
+                    const received = incoming[0]!.change;
+
+                    const canonical = decodes.filter(({ order }) => encodeOrder < order && order < applyOrder);
+                    expect(canonical.length).toBeGreaterThanOrEqual(1);
+                    const encoded = canonical[0]!.change;
+                    const repairedFloat = received.ops.some(
+                        (op, opIndex) => op.datatype === 'float64' && !Object.is(op.value, encoded.ops[opIndex]?.value)
+                    );
+                    expect(canonical).toHaveLength(repairedFloat ? 2 : 1);
+                    expect(canonical.at(-1)?.change.hash).toBe(received.hash);
+                    expect(apply.mock.calls[index]?.[1]).toEqual([bytes]);
+
+                    observedDecodes += incoming.length + canonical.length;
+                    observedFloatRepair ||= repairedFloat;
+                    previousApply = applyOrder;
                 }
-                const receivedDecodes = decodeInputs.filter((bytes) => !canonicalBytes.has(bytes));
-                expect(receivedDecodes).toHaveLength(result.changes.length);
-                expect(receivedDecodes).toEqual(result.changes);
+                expect(decodes).toHaveLength(observedDecodes);
+                expect(observedFloatRepair).toBe(true);
                 expect(A.toJS(candidate)).toEqual({ slot: target });
             } finally {
                 A.free(candidate);
@@ -197,6 +229,8 @@ describe('bounded native sequence authority', () => {
         const truth = A.toJS(source);
         const heads = A.getHeads(source);
         let invalid: ProspectiveMutationWorkerResult = result;
+        let authoredControl: { author: string | undefined; changeAuthor: string | undefined } | undefined;
+        let type2Control: number | undefined;
         if (kind === 'author') {
             const authored = A.change(
                 A.clone(source, { actor: ACTOR, author: 'cccccccccccccccc' }),
@@ -206,9 +240,11 @@ describe('bounded native sequence authority', () => {
                 }
             );
             try {
-                expect(A.getAuthor(authored)).toBe('cccccccccccccccc');
                 const bytes = Uint8Array.from(A.getLastLocalChange(authored)!);
-                expect(A.getChangesMetaSince(authored, heads)[0]?.author).toBe('cccccccccccccccc');
+                authoredControl = {
+                    author: A.getAuthor(authored),
+                    changeAuthor: A.getChangesMetaSince(authored, heads)[0]?.author,
+                };
                 invalid = {
                     changes: [bytes],
                     heads: A.getHeads(authored),
@@ -245,7 +281,7 @@ describe('bounded native sequence authority', () => {
             const first = Uint8Array.from(result.changes[0]!);
             if (kind === 'type2') {
                 first[8] = 2;
-                expect(first[8]).toBe(2);
+                type2Control = first[8];
             } else {
                 first[4] ^= 1;
             }
@@ -273,26 +309,30 @@ describe('bounded native sequence authority', () => {
             invalid = { ...result, heads };
         }
         const nativeApplicationsBeforeAdmission = vi.mocked(A.applyChanges).mock.calls.length;
+        expect(authoredControl).toEqual(
+            kind === 'author' ? { author: 'cccccccccccccccc', changeAuthor: 'cccccccccccccccc' } : undefined
+        );
+        expect(type2Control).toBe(kind === 'type2' ? 2 : undefined);
         try {
-            if (kind === 'type2') {
-                await expect(admit(source, invalid)).rejects.toThrow('Invalid bounded native sequence change');
-            } else {
-                await expect(admit(source, invalid)).rejects.toThrow();
+            await expect(admit(source, invalid)).rejects.toThrow(
+                kind === 'type2' ? 'Invalid bounded native sequence change' : undefined
+            );
+            const rejectsBeforeApply = [
+                'actor',
+                'author',
+                'skipped-sequence',
+                'start-op',
+                'dependencies',
+                'checksum',
+                'type2',
+                'oversized',
+            ].includes(kind);
+            let unexpectedApplications = 0;
+            if (rejectsBeforeApply) {
+                unexpectedApplications =
+                    vi.mocked(A.applyChanges).mock.calls.length - nativeApplicationsBeforeAdmission;
             }
-            if (
-                [
-                    'actor',
-                    'author',
-                    'skipped-sequence',
-                    'start-op',
-                    'dependencies',
-                    'checksum',
-                    'type2',
-                    'oversized',
-                ].includes(kind)
-            ) {
-                expect(vi.mocked(A.applyChanges).mock.calls).toHaveLength(nativeApplicationsBeforeAdmission);
-            }
+            expect(unexpectedApplications).toBe(0);
             expect(A.toJS(source)).toEqual(truth);
             expect(A.getHeads(source)).toEqual(heads);
         } finally {
