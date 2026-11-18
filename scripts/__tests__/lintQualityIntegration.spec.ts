@@ -4,7 +4,7 @@ import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseQualityReport, QUALITY_BUDGET, QUALITY_CONFIG } from '../lintQualityBudget';
+import { parseQualityReport, QUALITY_BUDGET, QUALITY_CONFIG, reconcileQualityBudget } from '../lintQualityBudget';
 import { buildQualityLintArgv } from '../runLint';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -579,6 +579,69 @@ export function helper(a: number, b: number, c: number, d: number, e: number) { 
         }
     }, 75_000);
 
+    it('keeps necessary branches and reports only an else after an unconditional return', () => {
+        const directory = mkdtempSync(join(root, 'scripts/lint-early-returns-'));
+        try {
+            const target = join(directory, 'returns.ts');
+            isolateTypeScriptProject(directory, 'scripts/tsconfig.json', ['returns.ts']);
+            writeFileSync(
+                target,
+                `export function redundant(enabled: boolean): number {
+    if (enabled) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+export function fallthrough(enabled: boolean, steps: string[]): number {
+    if (enabled) {
+        steps.push('enabled');
+    } else {
+        return 2;
+    }
+    return 3;
+}
+
+export function chain(value: number): number {
+    if (value > 0) {
+        return 1;
+    } else if (value === 0) {
+        return 2;
+    }
+    return 3;
+}
+
+export function guard(enabled: boolean): number {
+    if (enabled) {
+        return 1;
+    }
+    return 2;
+}
+`
+            );
+            const result = spawnSync('pnpm', buildQualityLintArgv([target]), {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 60_000,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+            const report = parseQualityReport(result.stdout, root);
+            expect(report.fileCount).toBe(1);
+            expect(report.diagnostics.map(({ rule, line, column }) => [rule, line, column])).toEqual([
+                ['eslint/no-else-return', 3, 9],
+            ]);
+            const budget = reconcileQualityBudget(report, new Map(), [target], root);
+            expect(budget.failed).toBe(true);
+            expect(budget.diagnostics).toEqual([
+                expect.stringContaining(':3:9: error (eslint/no-else-return): Unnecessary `else` after `return`.'),
+            ]);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    }, 75_000);
+
     it('applies the native ternary fix to only the selected file and preserves its effects', () => {
         const scripts = mkdtempSync(join(root, 'scripts/lint-quality-fix-'));
         try {
@@ -782,7 +845,11 @@ console.log(JSON.stringify([select(true), select(false), redundant(3), required(
                 ]);
             const qualityFix = () => {
                 const report = parseQualityReport(
-                    execute(oxlint, [...buildQualityLintArgv([]).slice(2), '--fix', target], 1),
+                    execute(
+                        oxlint,
+                        [...buildQualityLintArgv([]).slice(2), '--allow=no-else-return', '--fix', target],
+                        1
+                    ),
                     root
                 );
                 expect(report.fileCount).toBe(1);
@@ -801,7 +868,7 @@ console.log(JSON.stringify([select(true), select(false), redundant(3), required(
             expect(readFileSync(target, 'utf8')).toBe(
                 stockFixed.replace(
                     eligible,
-                    "    if (check(choice)) { return (step(step(step(0, 'inner'), 'middle'), 'outer')); } else { return (step(9, 'else')); }"
+                    "    if (check(choice)) { return (step(step(step(0, 'inner'), 'middle'), 'outer')); } return (step(9, 'else'));"
                 )
             );
             format();
@@ -809,9 +876,8 @@ console.log(JSON.stringify([select(true), select(false), redundant(3), required(
                 eligible,
                 `    if (check(choice)) {
         return step(step(step(0, 'inner'), 'middle'), 'outer');
-    } else {
-        return step(9, 'else');
-    }`
+    }
+    return step(9, 'else');`
             );
             expect(readFileSync(target, 'utf8')).toBe(fixed);
             expect(execute(process.execPath, [target])).toBe(runtime);
