@@ -22,6 +22,10 @@ export const DawMenuInlineEditor = ({
     autoFocus = true,
 }: DawMenuInlineEditorProps): ReactElement => {
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+        if (event.nativeEvent.isComposing) {
+            event.stopPropagation();
+            return;
+        }
         if (event.key === 'Enter') {
             event.preventDefault();
             event.stopPropagation();

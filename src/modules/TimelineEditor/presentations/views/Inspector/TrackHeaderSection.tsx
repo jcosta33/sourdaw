@@ -150,6 +150,9 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                             onChange={(event) => setNameValue(event.target.value)}
                             onBlur={commitName}
                             onKeyDown={(event) => {
+                                if (event.nativeEvent.isComposing) {
+                                    return;
+                                }
                                 if (event.key === 'Enter') {
                                     commitName();
                                 }
