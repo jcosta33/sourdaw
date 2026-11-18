@@ -232,7 +232,10 @@ function writeFixtureSource(root: string, yes: string, prefix = ''): void {
 }
 `
     );
+    writeFileSync(join(root, 'src/commentOnly.ts'), '// No events yet.\n');
+    writeFileSync(join(root, 'src/abstractClass.ts'), 'export abstract class EventBus { abstract emit(): void; }\n');
     writeFileSync(join(root, 'src/never.ts'), 'export type Shape = boolean;\nMath.abs(-1);\n');
+    writeFileSync(join(root, 'src/runtimeClass.ts'), 'export class Counter { value = Math.abs(-1); }\n');
     writeFileSync(join(root, 'src/typeOnly.ts'), 'export type State = { run: boolean };\n');
 }
 
@@ -291,7 +294,12 @@ it('collects complementary Istanbul hits across disjoint roots and enforces floo
         `
         );
         command(sourceRoot, process.execPath, [vitestBin, 'run', '--coverage', '--coverage.reporter=json']);
-        const coverage: unknown = JSON.parse(readFileSync(join(sourceRoot, 'coverage/coverage-final.json'), 'utf8'));
+        const coverage: Record<string, unknown> = JSON.parse(
+            readFileSync(join(sourceRoot, 'coverage/coverage-final.json'), 'utf8')
+        );
+        for (const path of ['src/commentOnly.ts', 'src/abstractClass.ts']) {
+            expect(Object.hasOwn(coverage, join(sourceRoot, path))).toBe(false);
+        }
         writeFileSync(
             join(input, `shard-${shard}.json`),
             JSON.stringify({
@@ -364,6 +372,11 @@ it('collects complementary Istanbul hits across disjoint roots and enforces floo
 
     base = revision;
     command(checkout, 'git', ['switch', '-qc', 'type-change']);
+    writeFileSync(join(checkout, 'src/commentOnly.ts'), '// Still no events.\n');
+    writeFileSync(
+        join(checkout, 'src/abstractClass.ts'),
+        'export abstract class EventBus { abstract emit(name: string): void; }\n'
+    );
     writeFileSync(join(checkout, 'src/typeOnly.ts'), 'export type State = { run: number };\n');
     head = commit(checkout);
     command(checkout, 'git', ['switch', '--detach', base]);
@@ -382,21 +395,27 @@ it('collects complementary Istanbul hits across disjoint roots and enforces floo
     expect(changedType.stderr).toBe('');
     expect(changedType.status).toBe(0);
     expect(readFileSync(summary, 'utf8')).toContain('No changed executable lines.');
+    const zeroLines: { changed: unknown } = JSON.parse(readFileSync(join(output, 'gate.json'), 'utf8'));
+    expect(zeroLines.changed).toEqual({ covered: 0, total: 0, uncovered: [] });
 
     const originals = new Map<string, string>();
     for (let shard = 1; shard <= 4; shard++) {
         const path = join(input, `shard-${shard}.json`);
         const original = readFileSync(path, 'utf8');
         const packet: { coverage: Record<string, unknown>; sourceRoot: string } = JSON.parse(original);
-        const runtime = join(packet.sourceRoot, 'src/never.ts');
-        expect(Object.hasOwn(packet.coverage, runtime)).toBe(true);
+        for (const runtimePath of ['src/never.ts', 'src/runtimeClass.ts']) {
+            const runtime = join(packet.sourceRoot, runtimePath);
+            expect(Object.hasOwn(packet.coverage, runtime)).toBe(true);
+            delete packet.coverage[runtime];
+        }
         originals.set(path, original);
-        delete packet.coverage[runtime];
         writeFileSync(path, JSON.stringify(packet));
     }
     const missingRuntime = runGate();
     expect(missingRuntime.status).toBe(1);
-    expect(missingRuntime.stderr).toContain('Merged coverage omitted production files: "src/never.ts"');
+    expect(missingRuntime.stderr).toContain(
+        'Merged coverage omitted production files: "src/never.ts", "src/runtimeClass.ts"'
+    );
     for (const [path, original] of originals) {
         writeFileSync(path, original);
     }

@@ -977,12 +977,13 @@ covered/total counts, the uncovered changed file and line list in `gate.json`, a
 wall-clock durations.
 
 Coverage applies to production TypeScript and TSX under `src/`. It excludes declarations, test
-specs and test helpers, the test setup and the app bootstrap entry point. Files the shards never
-import are included. The PR must cover at least 90% of changed executable lines, counted once
-each using Istanbul statement-start line coverage. The diff uses the tested integration commit
-and its first parent, so reported lines match the tested tree even when the base advances. A
-change without executable lines has an explicit zero-line result. If Istanbul omits a file,
-the gate checks the tested Git blob for an empty runtime body or static import/export declarations.
+specs and test helpers, the test setup and the app bootstrap entry point. The coverage configuration
+includes files the shards never import. The PR must cover at least 90% of changed executable lines,
+counted once each using Istanbul statement-start line coverage. The diff uses the tested integration
+commit and its first parent, so reported lines match the tested tree even when the base advances.
+A change without executable lines has an explicit zero-line result. If Istanbul omits a file, the
+gate verifies that its tested Git blob has no Istanbul-instrumentable body. It permits an empty
+body, static import and export declarations, and empty undecorated classes without a base class.
 A missing executable file or shard fails the check.
 
 The overall floors for lines, statements, branches and functions live in

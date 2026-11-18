@@ -478,8 +478,7 @@ function reportEvaluation(
 }
 
 function hasNoInstrumentableBody(root: string, revision: string, path: string): boolean {
-    // Istanbul omits empty remapped files. Prove each omitted tracked blob has
-    // no runtime statements beyond static imports and exports.
+    // Istanbul omits empty remapped files. Verify the tested blob before accepting an omission.
     const source = git(root, ['show', `${revision}:${path}`]);
     const emitted = ts.transpileModule(source, {
         fileName: path,
@@ -487,6 +486,7 @@ function hasNoInstrumentableBody(root: string, revision: string, path: string): 
         compilerOptions: {
             target: ts.ScriptTarget.ESNext,
             module: ts.ModuleKind.ESNext,
+            moduleDetection: ts.ModuleDetectionKind.Force,
             jsx: ts.JsxEmit.Preserve,
             verbatimModuleSyntax: true,
         },
@@ -496,7 +496,13 @@ function hasNoInstrumentableBody(root: string, revision: string, path: string): 
     }
     const parsed = ts.createSourceFile(path, emitted.outputText, ts.ScriptTarget.ESNext, false, ts.ScriptKind.JSX);
     return parsed.statements.every(
-        (statement) => ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)
+        (statement) =>
+            ts.isImportDeclaration(statement) ||
+            ts.isExportDeclaration(statement) ||
+            (ts.isClassDeclaration(statement) &&
+                statement.members.length === 0 &&
+                statement.heritageClauses === undefined &&
+                ts.getDecorators(statement) === undefined)
     );
 }
 
