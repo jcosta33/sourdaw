@@ -1,8 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { clearCaches } from '@typescript-eslint/parser';
 import { ESLint } from 'eslint';
+
+import { createLintWorkspace } from './lintMigratedRules.ts';
 
 const octalCases = {
     legacyOn: { code: 'export const value = 012;\n', rule: 'error' },
@@ -25,7 +27,13 @@ function writeOctalFixtures(directory: string, extensions: readonly string[]) {
     return files;
 }
 
-async function syntaxSnapshot(production: ESLint, directory: string, extension: string, project?: string) {
+async function syntaxSnapshot(
+    production: ESLint,
+    directory: string,
+    extension: string,
+    project?: string,
+    root = process.cwd()
+) {
     const config = await production.calculateConfigForFile(join(directory, `${extension}-legacyOn.${extension}`));
     if (!config?.languageOptions?.parser) {
         throw new Error(`The production parser is missing for ${extension}`);
@@ -44,6 +52,7 @@ async function syntaxSnapshot(production: ESLint, directory: string, extension: 
             throw new Error(`Octal fixture bytes changed before linting ${file}`);
         }
         const eslint = new ESLint({
+            cwd: root,
             overrideConfigFile: true,
             overrideConfig: [
                 {
@@ -76,12 +85,13 @@ async function syntaxSnapshot(production: ESLint, directory: string, extension: 
 
 /** Exercise the production parser with a real type-aware project admitting every configured extension. */
 export async function lintOctalSyntax() {
-    const directory = mkdtempSync(resolve('src/app/lint-octal-'));
-    const extensions = ['js', 'jsx', 'ts', 'tsx', 'mts', 'cts'] as const;
-    const project = join(directory, 'tsconfig.json');
-    let scriptDirectory: string | undefined;
+    const root = createLintWorkspace();
     try {
-        scriptDirectory = mkdtempSync(resolve('scripts/lint-octal-'));
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        const directory = mkdtempSync(join(root, 'src/app/lint-octal-'));
+        const extensions = ['js', 'jsx', 'ts', 'tsx', 'mts', 'cts'] as const;
+        const project = join(directory, 'tsconfig.json');
+        const scriptDirectory = mkdtempSync(join(root, 'scripts/lint-octal-'));
         const files = writeOctalFixtures(directory, extensions);
         writeOctalFixtures(scriptDirectory, ['js']);
         writeFileSync(
@@ -91,12 +101,12 @@ export async function lintOctalSyntax() {
         // CI infers immutable single-run programs. Every syntax/rule pair must
         // already have its own matching disk bytes before any program is built.
         clearCaches();
-        const production = new ESLint();
+        const production = new ESLint({ cwd: root });
         const snapshots = [];
         for (const extension of extensions) {
-            snapshots.push(await syntaxSnapshot(production, directory, extension, project));
+            snapshots.push(await syntaxSnapshot(production, directory, extension, project, root));
         }
-        const script = await syntaxSnapshot(production, scriptDirectory, 'js');
+        const script = await syntaxSnapshot(production, scriptDirectory, 'js', undefined, root);
         const outside = await Promise.all(
             ['mjs', 'cjs'].map(async (extension) => {
                 const config = await production.calculateConfigForFile(join(directory, `control.${extension}`));
@@ -106,9 +116,6 @@ export async function lintOctalSyntax() {
         return { snapshots, script, outside };
     } finally {
         clearCaches();
-        if (scriptDirectory !== undefined) {
-            rmSync(scriptDirectory, { recursive: true, force: true });
-        }
-        rmSync(directory, { recursive: true, force: true });
+        rmSync(root, { recursive: true, force: true });
     }
 }
