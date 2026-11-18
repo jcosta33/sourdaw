@@ -49,29 +49,47 @@ function matchesNoteBucket(actual: NoteBucket, expectedNotes: readonly MidiNote[
     );
 }
 
+function isEditPayload(
+    value: unknown
+): value is { clipId: string; guard: Record<string, unknown>; operations: unknown } {
+    return (
+        isRecord(value) &&
+        Reflect.ownKeys(value).length === 3 &&
+        Object.hasOwn(value, 'clipId') &&
+        Object.hasOwn(value, 'guard') &&
+        Object.hasOwn(value, 'operations') &&
+        isId(value.clipId) &&
+        isRecord(value.guard)
+    );
+}
+
+function isEditGuard(
+    guard: Record<string, unknown>,
+    actual?: NoteBucket
+): guard is Record<string, unknown> & {
+    trackId: string;
+    editWindow: { startBeat: number; endBeat: number };
+    expectedNotes: readonly MidiNote[];
+    expectedNotesBucketPresent: boolean;
+} {
+    return (
+        hasGuardKeys(guard) &&
+        isId(guard.trackId) &&
+        isBeatWindow(guard.editWindow) &&
+        isMidiNoteSnapshot(guard.expectedNotes) &&
+        typeof guard.expectedNotesBucketPresent === 'boolean' &&
+        (guard.expectedNotesBucketPresent || guard.expectedNotes.length === 0) &&
+        (!actual || matchesNoteBucket(actual, guard.expectedNotes, guard.expectedNotesBucketPresent))
+    );
+}
+
 /** Verify the captured source and plan the same exact delta for preview, execution and replay. */
 export function planGuardedMidiNoteEdits(value: unknown, actual?: NoteBucket) {
-    if (
-        !isRecord(value) ||
-        Reflect.ownKeys(value).length !== 3 ||
-        !Object.hasOwn(value, 'clipId') ||
-        !Object.hasOwn(value, 'guard') ||
-        !Object.hasOwn(value, 'operations') ||
-        !isId(value.clipId) ||
-        !isRecord(value.guard)
-    ) {
+    if (!isEditPayload(value)) {
         return null;
     }
     const { guard, operations } = value;
-    if (
-        !hasGuardKeys(guard) ||
-        !isId(guard.trackId) ||
-        !isBeatWindow(guard.editWindow) ||
-        !isMidiNoteSnapshot(guard.expectedNotes) ||
-        typeof guard.expectedNotesBucketPresent !== 'boolean' ||
-        (!guard.expectedNotesBucketPresent && guard.expectedNotes.length > 0) ||
-        (actual && !matchesNoteBucket(actual, guard.expectedNotes, guard.expectedNotesBucketPresent))
-    ) {
+    if (!isEditGuard(guard, actual)) {
         return null;
     }
 

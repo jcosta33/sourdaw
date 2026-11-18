@@ -4942,14 +4942,6 @@
             "count": 2
         }
     },
-    "src/modules/AiRuntime/useCases/reproposePendingChatActions.ts": {
-        "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/requireMidiNoteGenerationToolCall.ts": {
         "eslint/complexity": {
             "count": 1

@@ -186,9 +186,11 @@ function patchNote(note: MidiNote, patch: MidiNoteEditPatch): MidiNote {
 function planInsertion(
     scope: MidiNoteEditScope,
     note: MaterializedMidiNoteInsertion,
-    usedIds: ReadonlySet<string>,
-    protectedIds: ReadonlySet<string>,
-    insertedCount: number
+    {
+        usedIds,
+        protectedIds,
+        insertedCount,
+    }: { usedIds: ReadonlySet<string>; protectedIds: ReadonlySet<string>; insertedCount: number }
 ): MidiNote | RefusalReason {
     if (usedIds.has(note.id)) {
         return 'insert-id-collision';
@@ -213,17 +215,74 @@ function planInsertion(
     return after;
 }
 
-/** Plan one clip's ordered edits without writing project state or assigning new identities. */
-export function planMidiNoteEdits(input: { notes: unknown; operations: unknown; scope: unknown }): PlanResult {
+type ExistingEdit = Exclude<MaterializedMidiNoteEditOperation, { type: 'insert' }>;
+
+function applyExistingEdit(
+    operation: ExistingEdit,
+    scope: MidiNoteEditScope,
+    {
+        notes,
+        changes,
+        allowedIds,
+        protectedIds,
+    }: {
+        notes: MidiNote[];
+        changes: NoteEditChange[];
+        allowedIds: ReadonlySet<string>;
+        protectedIds: ReadonlySet<string>;
+    }
+): RefusalReason | null {
+    const index = notes.findIndex((note) => note.id === operation.noteId);
+    const before = notes[index];
+    if (!before) {
+        return 'note-not-found';
+    }
+    if (protectedIds.has(before.id)) {
+        return 'protected-note';
+    }
+    if (!allowedIds.has(before.id)) {
+        return 'note-not-allowed';
+    }
+    const after = operation.type === 'patch' ? patchNote(before, operation.patch) : null;
+    if (after && !isFiniteSpan(after.startBeat, after.duration)) {
+        return 'invalid-operations';
+    }
     if (
-        !isMidiNoteSnapshot(input.notes) ||
-        input.notes.some(
+        scope.protectedWindows.some(
+            (window) => overlapsWindow(before, window) || (after !== null && overlapsWindow(after, window))
+        )
+    ) {
+        return 'protected-window';
+    }
+    changes.push({
+        type: operation.type,
+        noteId: before.id,
+        before: copyNote(before),
+        after: after === null ? null : copyNote(after),
+    });
+    if (after) {
+        notes[index] = after;
+    } else {
+        notes.splice(index, 1);
+    }
+    return null;
+}
+
+function hasValidSource(notes: unknown): notes is MidiNote[] {
+    return (
+        isMidiNoteSnapshot(notes) &&
+        !notes.some(
             (note) =>
                 !isIntegerInRange(note.pitch, 0) ||
                 !isIntegerInRange(note.velocity, MIN_AUDIBLE_VELOCITY) ||
                 !isFiniteSpan(note.startBeat, note.duration)
         )
-    ) {
+    );
+}
+
+/** Plan one clip's ordered edits without writing project state or assigning new identities. */
+export function planMidiNoteEdits(input: { notes: unknown; operations: unknown; scope: unknown }): PlanResult {
+    if (!hasValidSource(input.notes)) {
         return { status: 'rejected', reason: 'invalid-source' };
     }
     if (!isScope(input.scope)) {
@@ -250,7 +309,7 @@ export function planMidiNoteEdits(input: { notes: unknown; operations: unknown; 
             return refuse('invalid-operations');
         }
         if (operation.type === 'insert') {
-            const after = planInsertion(input.scope, operation.note, usedIds, protectedIds, insertedCount);
+            const after = planInsertion(input.scope, operation.note, { usedIds, protectedIds, insertedCount });
             if (typeof after === 'string') {
                 return refuse(after);
             }
@@ -261,38 +320,9 @@ export function planMidiNoteEdits(input: { notes: unknown; operations: unknown; 
             continue;
         }
 
-        const index = notes.findIndex((note) => note.id === operation.noteId);
-        const before = notes[index];
-        if (!before) {
-            return refuse('note-not-found');
-        }
-        if (protectedIds.has(before.id)) {
-            return refuse('protected-note');
-        }
-        if (!allowedIds.has(before.id)) {
-            return refuse('note-not-allowed');
-        }
-        const after = operation.type === 'patch' ? patchNote(before, operation.patch) : null;
-        if (after && !isFiniteSpan(after.startBeat, after.duration)) {
-            return refuse('invalid-operations');
-        }
-        if (
-            input.scope.protectedWindows.some(
-                (window) => overlapsWindow(before, window) || (after !== null && overlapsWindow(after, window))
-            )
-        ) {
-            return refuse('protected-window');
-        }
-        changes.push({
-            type: operation.type,
-            noteId: before.id,
-            before: copyNote(before),
-            after: after === null ? null : copyNote(after),
-        });
-        if (after) {
-            notes[index] = after;
-        } else {
-            notes.splice(index, 1);
+        const reason = applyExistingEdit(operation, input.scope, { notes, changes, allowedIds, protectedIds });
+        if (reason !== null) {
+            return refuse(reason);
         }
     }
     return { status: 'planned', notes, changes };

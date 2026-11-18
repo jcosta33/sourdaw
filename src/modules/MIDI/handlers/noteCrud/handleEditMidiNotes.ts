@@ -41,21 +41,10 @@ function describePlan(plan: EditPlan): string {
     return `Edit MIDI notes (${patched.length} updated, ${removed.length} removed, ${inserted.length} inserted)`;
 }
 
-function planAgainstProject(action: EditAction, context?: HandlerValidationContext): EditPlan | null {
-    const target = getWritableMidiClipReplayGuardForBatch(action.payload.clipId);
-    if (!target) {
-        return null;
-    }
-    const bucket = projectMidiNoteEditPrefix(action.payload.clipId, target.trackId, context);
-    const plan = bucket && planGuardedMidiNoteEdits(action.payload, bucket);
-    if (!plan || plan.trackId !== target.trackId) {
-        return null;
-    }
-    const tracks = trackStore.value?.tracks.filter((candidate) => candidate.id === target.trackId) ?? [];
-    const clip = tracks.length === 1 ? tracks[0]?.clips.find((candidate) => candidate.id === plan.clipId) : undefined;
-    if (!clip) {
-        return null;
-    }
+function editFitsClip(
+    plan: EditPlan,
+    clip: NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number]
+): boolean {
     const loopEnabled = clip.loopEnabled === true;
     const expansion = projectClipLoopExpansion({
         clipDurationBeats: clip.endBeat - clip.startBeat,
@@ -69,11 +58,29 @@ function planAgainstProject(action: EditAction, context?: HandlerValidationConte
             loopOriginBeat: clip.loopOriginBeat,
             loopEnabled,
         });
-    return expansion.iterationCount > 0 &&
+    return (
+        expansion.iterationCount > 0 &&
         plan.editWindow.startBeat >= regionStartBeat &&
         plan.editWindow.endBeat <= regionStartBeat + expansion.loopLengthBeats
-        ? plan
-        : null;
+    );
+}
+
+function planAgainstProject(action: EditAction, context?: HandlerValidationContext): EditPlan | null {
+    const target = getWritableMidiClipReplayGuardForBatch(action.payload.clipId);
+    if (!target) {
+        return null;
+    }
+    const bucket = projectMidiNoteEditPrefix(action.payload.clipId, target.trackId, context);
+    const plan = bucket && planGuardedMidiNoteEdits(action.payload, bucket);
+    if (!plan || plan.trackId !== target.trackId) {
+        return null;
+    }
+    const tracks = trackStore.value?.tracks.filter((candidate) => candidate.id === target.trackId) ?? [];
+    const clip = tracks.length === 1 ? tracks[0]?.clips.find((candidate) => candidate.id === plan.clipId) : undefined;
+    if (!clip || !editFitsClip(plan, clip)) {
+        return null;
+    }
+    return plan;
 }
 
 function isEditMidiNotesSessionEntry(entry: HandlerSessionActionEntry): boolean {

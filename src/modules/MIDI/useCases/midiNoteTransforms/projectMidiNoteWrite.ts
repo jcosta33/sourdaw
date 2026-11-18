@@ -10,6 +10,34 @@ import { getRestoreMidiClipNotesStatus } from './getRestoreMidiClipNotesStatus';
 type NoteWrite = Extract<AppAction, { type: 'addNotes' | 'editMidiNotes' | 'restoreMidiClipNotes' }>;
 type NoteBucket = { present: boolean; value: readonly unknown[] };
 
+function projectRestore(
+    payload: Extract<NoteWrite, { type: 'restoreMidiClipNotes' }>['payload'],
+    bucket: NoteBucket,
+    strict: boolean
+): NoteBucket | null {
+    if (!isRestoreMidiClipNotesReplayArguments(payload)) {
+        return null;
+    }
+    if (
+        strict &&
+        (!isMidiNoteSnapshot(bucket.value) ||
+            getRestoreMidiClipNotesStatus({
+                ...payload,
+                projectedNotes: bucket.value,
+                projectedNotesBucketPresent: bucket.present,
+            }) === 'conflict')
+    ) {
+        return null;
+    }
+    if (payload.notesBucketPresent === false) {
+        return { present: false, value: [] };
+    }
+    if (payload.notesBucketPresent === undefined && !bucket.present && payload.notes.length === 0) {
+        return bucket;
+    }
+    return { present: true, value: payload.notes };
+}
+
 /** Project the three explicit note writes, preserving the presence of an empty notes bucket. */
 export function projectMidiNoteWrite(
     action: NoteWrite,
@@ -36,26 +64,5 @@ export function projectMidiNoteWrite(
         return !strict || isMidiNoteSnapshot(value) ? { present: true, value } : null;
     }
 
-    const { payload } = action;
-    if (!isRestoreMidiClipNotesReplayArguments(payload)) {
-        return null;
-    }
-    if (
-        strict &&
-        (!isMidiNoteSnapshot(bucket.value) ||
-            getRestoreMidiClipNotesStatus({
-                ...payload,
-                projectedNotes: bucket.value,
-                projectedNotesBucketPresent: bucket.present,
-            }) === 'conflict')
-    ) {
-        return null;
-    }
-    if (payload.notesBucketPresent === false) {
-        return { present: false, value: [] };
-    }
-    if (payload.notesBucketPresent === undefined && !bucket.present && payload.notes.length === 0) {
-        return bucket;
-    }
-    return { present: true, value: payload.notes };
+    return projectRestore(action.payload, bucket, strict);
 }

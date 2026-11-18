@@ -52,6 +52,12 @@ function namesTarget(value: unknown, id: string): boolean {
     return isRecord(value) && Object.values(value).some((entry) => namesTarget(entry, id));
 }
 
+function isNoteWrite(
+    action: NonNullable<HandlerValidationContext>['actions'][number]
+): action is Extract<typeof action, { type: 'addNotes' | 'editMidiNotes' | 'restoreMidiClipNotes' }> {
+    return action.type === 'addNotes' || action.type === 'editMidiNotes' || action.type === 'restoreMidiClipNotes';
+}
+
 /** Refuse an unprojected predecessor that may change the selected row bucket or its owner. */
 export function projectMidiNoteEditPrefix(clipId: string, trackId: string, context?: HandlerValidationContext) {
     const state = midiStore.value;
@@ -63,7 +69,7 @@ export function projectMidiNoteEditPrefix(clipId: string, trackId: string, conte
         value: state.notesByClipId[clipId] ?? [],
     };
     for (const action of context?.actions.slice(0, context.actionIndex) ?? []) {
-        if (action.type === 'addNotes' || action.type === 'editMidiNotes' || action.type === 'restoreMidiClipNotes') {
+        if (isNoteWrite(action)) {
             const projected = projectMidiNoteWrite(action, clipId, bucket, true);
             if (!projected) {
                 return null;
