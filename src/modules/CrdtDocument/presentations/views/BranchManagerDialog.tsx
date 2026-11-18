@@ -163,6 +163,9 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                                 placeholder="New branch name"
                                 className="h-7 flex-1 text-xs"
                                 onKeyDown={(event) => {
+                                    if (event.nativeEvent.isComposing) {
+                                        return;
+                                    }
                                     if (event.key === 'Enter') {
                                         void handleCreate();
                                     }

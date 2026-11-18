@@ -575,6 +575,9 @@ export const ExpandedChannelStrip = ({
                         setIsRenaming(false);
                     }}
                     onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) {
+                            return;
+                        }
                         if (event.key === 'Enter') {
                             actions.rename(event.currentTarget.value);
                             setIsRenaming(false);

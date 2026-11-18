@@ -81,6 +81,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn(() => 'fixture-root'),
     subscribeToCrdtChanges: vi.fn(),
     getCrdtDoc: vi.fn(),
     createCrdtDoc: vi.fn(),

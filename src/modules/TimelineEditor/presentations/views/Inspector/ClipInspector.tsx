@@ -202,6 +202,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             onChange={(event) => setNameValue(event.target.value)}
                             onBlur={commitClipName}
                             onKeyDown={(event) => {
+                                if (event.nativeEvent.isComposing) {
+                                    return;
+                                }
                                 if (event.key === 'Enter') {
                                     commitClipName();
                                 }
@@ -397,6 +400,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             onChange={(event) => setGainText(event.target.value)}
                             onBlur={commitGainText}
                             onKeyDown={(event) => {
+                                if (event.nativeEvent.isComposing) {
+                                    return;
+                                }
                                 if (event.key === 'Enter') {
                                     commitGainText();
                                 }

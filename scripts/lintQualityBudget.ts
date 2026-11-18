@@ -26,6 +26,7 @@ export const qualityRuleIds = [
     'sourdaw-craft/no-useless-clone-spread',
     'typescript/no-non-null-assertion',
     'typescript/no-unnecessary-type-parameters',
+    'typescript/no-unsafe-type-assertion',
     'typescript/switch-exhaustiveness-check',
     'vitest/expect-expect',
     'vitest/no-conditional-expect',

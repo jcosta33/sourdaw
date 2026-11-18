@@ -33,7 +33,7 @@ type ParsedSemanticProjectQueryInput =
 
 type QueryPage = NonNullable<SemanticProjectQueryInput['page']>;
 
-const ALLOWED_INPUT_KEYS = ['type', 'filters', 'page', 'sinceRevision'];
+const ALLOWED_INPUT_KEYS = ['type', 'filters', 'page', 'sinceRevision', 'expectedRevision', 'selectionToken'];
 
 export const STRING_FILTER_KEYS = [
     'stableId',
@@ -103,6 +103,17 @@ function assignFilter<Key extends keyof SemanticProjectQueryFilters>(
     filters[key] = value;
 }
 
+function isValidNumericFilter(key: string, value: unknown): value is number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return false;
+    }
+    // Confidence out of range is a malformed request rather than an empty answer.
+    if (key === 'minInferredConfidence') {
+        return value >= MIN_INFERRED_CONFIDENCE_RANGE.minimum && value <= MIN_INFERRED_CONFIDENCE_RANGE.maximum;
+    }
+    return true;
+}
+
 function assignQueryFilter(filters: SemanticProjectQueryFilters, key: string, value: unknown): boolean {
     if (isStringFilterKey(key)) {
         if (!isBoundedString(value, MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH)) {
@@ -119,15 +130,7 @@ function assignQueryFilter(filters: SemanticProjectQueryFilters, key: string, va
         return true;
     }
     if (isNumberFilterKey(key)) {
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-            return false;
-        }
-        // The one filter with a stated range: a confidence outside it matches
-        // nothing, so it is a malformed request rather than an empty answer.
-        if (
-            key === 'minInferredConfidence' &&
-            (value < MIN_INFERRED_CONFIDENCE_RANGE.minimum || value > MIN_INFERRED_CONFIDENCE_RANGE.maximum)
-        ) {
+        if (!isValidNumericFilter(key, value)) {
             return false;
         }
         assignFilter(filters, key, value);
@@ -182,6 +185,36 @@ function parsePage(value: unknown): QueryPage | null {
     return page;
 }
 
+function validMusicalFilters(filters: SemanticProjectQueryInput['filters']): boolean {
+    return (
+        !!filters &&
+        !Object.keys(filters).some((key) => !['stableId', 'startBeat', 'endBeat'].includes(key)) &&
+        filters.stableId !== undefined &&
+        filters.startBeat !== undefined &&
+        filters.endBeat !== undefined &&
+        filters.endBeat > filters.startBeat
+    );
+}
+
+function bindMusicalQuery(
+    input: SemanticProjectQueryInput,
+    value: Record<string, unknown>
+): ParsedSemanticProjectQueryInput {
+    if (!validMusicalFilters(input.filters)) {
+        return { status: 'invalid', reason: 'filters' };
+    }
+    if (
+        !isBoundedString(value.expectedRevision, MAX_SEMANTIC_QUERY_REVISION_TOKEN_LENGTH) ||
+        !isBoundedString(value.selectionToken, MAX_SEMANTIC_QUERY_CURSOR_LENGTH) ||
+        value.sinceRevision !== undefined
+    ) {
+        return { status: 'invalid', reason: 'revision' };
+    }
+    input.expectedRevision = value.expectedRevision;
+    input.selectionToken = value.selectionToken;
+    return { status: 'valid', input };
+}
+
 export function parseSemanticProjectQueryInput(value: unknown): ParsedSemanticProjectQueryInput {
     if (!isRecord(value) || Object.keys(value).some((key) => !ALLOWED_INPUT_KEYS.includes(key))) {
         return { status: 'invalid', reason: 'arguments' };
@@ -209,6 +242,12 @@ export function parseSemanticProjectQueryInput(value: unknown): ParsedSemanticPr
             return { status: 'invalid', reason: 'revision' };
         }
         input.sinceRevision = value.sinceRevision;
+    }
+    if (value.type === 'musical-content') {
+        return bindMusicalQuery(input, value);
+    }
+    if (value.expectedRevision !== undefined || value.selectionToken !== undefined) {
+        return { status: 'invalid', reason: 'arguments' };
     }
     return { status: 'valid', input };
 }
