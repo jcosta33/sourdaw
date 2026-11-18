@@ -69,6 +69,8 @@ export class YeastPreviewSidecar {
     private readonly pendingRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly pendingRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly pendingTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly pendingOccurrenceId = Array.from<string | undefined>({ length: YEAST_PREVIEW_CAPACITY });
+    private readonly pendingNoteInstanceId = Array.from<string | undefined>({ length: YEAST_PREVIEW_CAPACITY });
     private readonly pendingProcessorId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
 
     private readonly routeRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
@@ -116,6 +118,7 @@ export class YeastPreviewSidecar {
     private readonly retainedRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly retainedRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly retainedTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedOccurrenceId = Array.from<string | undefined>({ length: YEAST_PREVIEW_CAPACITY });
     private readonly retainedCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
 
     private readonly retainedCheckpointSlot = new Int32Array(YEAST_PREVIEW_CAPACITY);
@@ -129,6 +132,9 @@ export class YeastPreviewSidecar {
     private readonly retainedCheckpointRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly retainedCheckpointRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly retainedCheckpointTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedCheckpointOccurrenceId = Array.from<string | undefined>({
+        length: YEAST_PREVIEW_CAPACITY,
+    });
     private readonly retainedCheckpointCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
 
     private readonly queuedPreviewEvent: Array<MidiEvent | undefined> = Array.from(
@@ -165,6 +171,7 @@ export class YeastPreviewSidecar {
     private currentRackId = '';
     private currentRouteId = '';
     private currentTrackId = '';
+    private preserveInputTrackIds = false;
     private captureRequested = false;
     private captureBlock = false;
     private pageBusy = false;
@@ -201,7 +208,8 @@ export class YeastPreviewSidecar {
         routeId: string,
         trackId: string,
         captureEpoch: number,
-        projectionVersion: number
+        projectionVersion: number,
+        preserveInputTrackIds = false
     ): void {
         this.captureRequested = false;
         this.captureBlock = false;
@@ -215,6 +223,7 @@ export class YeastPreviewSidecar {
         this.currentRackId = rackId;
         this.currentRouteId = routeId;
         this.currentTrackId = trackId;
+        this.preserveInputTrackIds = preserveInputTrackIds;
         this.currentRouteIndex = -1;
         const existingRoute = this.findRoute(rackId, routeId);
 
@@ -242,6 +251,7 @@ export class YeastPreviewSidecar {
 
         if (this.routeTrackId[routeIndex] !== trackId || this.routeCaptureEpoch[routeIndex] !== captureEpoch) {
             this.invalidateRoutePending(rackId, routeId);
+            this.invalidateRouteRetained(rackId, routeId);
             this.resetRouteMetadata(routeIndex);
             this.routeTrackId[routeIndex] = trackId;
             this.routeCaptureEpoch[routeIndex] = captureEpoch;
@@ -384,6 +394,7 @@ export class YeastPreviewSidecar {
             this.retainedRackId[slot] = this.currentRackId;
             this.retainedRouteId[slot] = this.currentRouteId;
             this.retainedTrackId[slot] = this.currentTrackId;
+            this.retainedOccurrenceId[slot] = this.clipOccurrenceId(source.trackId);
             this.retainedCaptureEpoch[slot] =
                 this.currentRouteIndex === -1 ? -1 : this.routeCaptureEpoch[this.currentRouteIndex]!;
             return generation * YEAST_PREVIEW_CAPACITY + slot + 1;
@@ -443,16 +454,19 @@ export class YeastPreviewSidecar {
             this.retainedRackId[slot] = '';
             this.retainedRouteId[slot] = '';
             this.retainedTrackId[slot] = '';
+            this.retainedOccurrenceId[slot] = undefined;
         }
     }
 
-    private retainedLineageMatchesCurrentRoute(slot: number, trackId: string): boolean {
+    private retainedLineageMatchesCurrentRoute(slot: number, eventTrackId: string): boolean {
+        const trackId = this.captureTrackId(eventTrackId);
         const routeIndex = this.findRouteForTrack(trackId);
         return (
             routeIndex !== -1 &&
             this.retainedRackId[slot] === this.routeRackId[routeIndex] &&
             this.retainedRouteId[slot] === this.routeId[routeIndex] &&
             this.retainedTrackId[slot] === trackId &&
+            this.retainedOccurrenceId[slot] === this.clipOccurrenceId(eventTrackId) &&
             this.retainedCaptureEpoch[slot] === this.routeCaptureEpoch[routeIndex]
         );
     }
@@ -502,6 +516,7 @@ export class YeastPreviewSidecar {
             this.retainedRackId[slot] = this.retainedCheckpointRackId[checkpoint]!;
             this.retainedRouteId[slot] = this.retainedCheckpointRouteId[checkpoint]!;
             this.retainedTrackId[slot] = this.retainedCheckpointTrackId[checkpoint]!;
+            this.retainedOccurrenceId[slot] = this.retainedCheckpointOccurrenceId[checkpoint];
             this.retainedCaptureEpoch[slot] = this.retainedCheckpointCaptureEpoch[checkpoint]!;
         }
         this.retainedCheckpointCount = 0;
@@ -533,6 +548,7 @@ export class YeastPreviewSidecar {
         this.retainedCheckpointRackId[checkpoint] = this.retainedRackId[slot]!;
         this.retainedCheckpointRouteId[checkpoint] = this.retainedRouteId[slot]!;
         this.retainedCheckpointTrackId[checkpoint] = this.retainedTrackId[slot]!;
+        this.retainedCheckpointOccurrenceId[checkpoint] = this.retainedOccurrenceId[slot];
         this.retainedCheckpointCaptureEpoch[checkpoint] = this.retainedCaptureEpoch[slot]!;
     }
 
@@ -597,7 +613,8 @@ export class YeastPreviewSidecar {
         let unrealizedIndex = 0;
         for (let eventIndex = 0; eventIndex < events.length; eventIndex++) {
             const event = events[eventIndex]!;
-            const queuedPreview = this.findQueuedPreviewEvent(event, fallbackTrackId);
+            const trackId = this.captureTrackId(event.trackId ?? fallbackTrackId);
+            const queuedPreview = this.findQueuedPreviewEvent(event, trackId);
             if (queuedPreview !== -1) {
                 this.removeQueuedPreview(queuedPreview);
                 continue;
@@ -606,7 +623,7 @@ export class YeastPreviewSidecar {
             if (
                 previewableEvent &&
                 event.timeSamples >= this.blockEndSamples &&
-                !this.appendQueuedPreview(event, fallbackTrackId)
+                !this.appendQueuedPreview(event, trackId)
             ) {
                 this.recordDrop();
                 continue;
@@ -621,7 +638,7 @@ export class YeastPreviewSidecar {
                 this.recordUnrealizedDecision(unrealizedDecision);
                 unrealizedIndex += 1;
             }
-            this.recordTerminalEvent(event, fallbackTrackId, decision);
+            this.recordTerminalEvent(event, trackId, decision);
         }
         while (unrealizedIndex < unrealizedCount) {
             this.recordUnrealizedDecision(this.unrealizedOrder[unrealizedIndex]!);
@@ -629,8 +646,7 @@ export class YeastPreviewSidecar {
         }
     }
 
-    private recordTerminalEvent(event: MidiEvent, fallbackTrackId: string, decision: number): void {
-        const trackId = event.trackId ?? fallbackTrackId;
+    private recordTerminalEvent(event: MidiEvent, trackId: string, decision: number): void {
         if (event.kind.type === 'noteOn') {
             if (decision === LOST_DECISION || (decision === -1 && this.lineageCompromised)) {
                 this.recordDrop();
@@ -642,11 +658,8 @@ export class YeastPreviewSidecar {
             }
             this.recordNoteOn(event, trackId, decision);
         } else if (event.kind.type === 'noteOff') {
-            if (!this.captureBlock) {
-                this.dropPendingNoteOff(trackId, event.kind.channel, event.kind.note);
-                return;
-            }
-            this.recordNoteOff(event.timeSamples, trackId, event.kind.channel, event.kind.note);
+            const match = this.findPendingNote(event, trackId, event.kind.channel, event.kind.note);
+            this.recordNoteOff(event.timeSamples, match);
         }
     }
 
@@ -744,12 +757,7 @@ export class YeastPreviewSidecar {
         const flags = decision === -1 && origin !== -1 ? this.originFlags[origin]! : 0;
         const routeIndex = this.findRouteForTrack(trackId);
         const rackId = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
-        let routeId = trackId;
-        if (routeIndex !== -1) {
-            routeId = this.routeId[routeIndex]!;
-        } else if (trackId === this.currentTrackId) {
-            routeId = this.currentRouteId;
-        }
+        const routeId = this.routeIdForTrack(routeIndex, trackId);
 
         const pendingSlot = this.pendingCount++;
         this.pendingEventId[pendingSlot] = eventId;
@@ -766,6 +774,8 @@ export class YeastPreviewSidecar {
         this.pendingRackId[pendingSlot] = rackId;
         this.pendingRouteId[pendingSlot] = routeId;
         this.pendingTrackId[pendingSlot] = trackId;
+        this.pendingOccurrenceId[pendingSlot] = this.clipOccurrenceId(event.trackId);
+        this.pendingNoteInstanceId[pendingSlot] = this.preserveInputTrackIds ? event.noteInstanceId : undefined;
         this.pendingProcessorId[pendingSlot] = processorId;
 
         const pageSlot = this.page.count++;
@@ -786,12 +796,11 @@ export class YeastPreviewSidecar {
         );
     }
 
-    private recordNoteOff(timeSamples: number, trackId: string, channel: number, pitch: number): void {
-        const match = this.findPendingNote(trackId, channel, pitch);
+    private recordNoteOff(timeSamples: number, match: number): void {
         if (match === -1) {
             return;
         }
-        if (this.page.count === YEAST_PREVIEW_CAPACITY) {
+        if (!this.captureBlock || this.page.count === YEAST_PREVIEW_CAPACITY) {
             this.removePending(match);
             this.recordDrop();
             return;
@@ -815,20 +824,13 @@ export class YeastPreviewSidecar {
         this.removePending(match);
     }
 
-    private dropPendingNoteOff(trackId: string, channel: number, pitch: number): void {
-        const match = this.findPendingNote(trackId, channel, pitch);
-        if (match === -1) {
-            return;
-        }
-        this.removePending(match);
-        this.recordDrop();
-    }
-
-    private findPendingNote(trackId: string, channel: number, pitch: number): number {
+    private findPendingNote(event: MidiEvent, trackId: string, channel: number, pitch: number): number {
         const routeIndex = this.findRouteForTrack(trackId);
         const rackId = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
         const routeId = routeIndex === -1 ? this.currentRouteId : this.routeId[routeIndex]!;
         const captureEpoch = routeIndex === -1 ? -1 : this.routeCaptureEpoch[routeIndex]!;
+        const occurrenceId = this.clipOccurrenceId(event.trackId);
+        const noteInstanceId = this.preserveInputTrackIds ? event.noteInstanceId : undefined;
         let match = -1;
         let matchSequence = Number.POSITIVE_INFINITY;
         for (let index = 0; index < this.pendingCount; index++) {
@@ -839,6 +841,8 @@ export class YeastPreviewSidecar {
                 this.pendingRackId[index] === rackId &&
                 this.pendingRouteId[index] === routeId &&
                 this.pendingCaptureEpoch[index] === captureEpoch &&
+                this.pendingOccurrenceId[index] === occurrenceId &&
+                this.pendingNoteInstanceId[index] === noteInstanceId &&
                 this.pendingSequence[index]! < matchSequence
             ) {
                 match = index;
@@ -928,7 +932,7 @@ export class YeastPreviewSidecar {
             this.recordDrop();
             return;
         }
-        const trackId = this.decisionTrackId[decision]!;
+        const trackId = this.captureTrackId(this.decisionTrackId[decision]!);
         const routeIndex = this.findRouteForTrack(trackId);
         const slot = this.page.count++;
         this.writeEvent(
@@ -971,6 +975,16 @@ export class YeastPreviewSidecar {
             }
         }
         return -1;
+    }
+
+    // Track-scoped playback preserves each clip occurrence on the MIDI event.
+    // Preview records belong to the track whose capture the block admitted.
+    private captureTrackId(eventTrackId: string): string {
+        return this.preserveInputTrackIds ? this.currentTrackId : eventTrackId;
+    }
+
+    private clipOccurrenceId(eventTrackId: string | undefined): string | undefined {
+        return this.preserveInputTrackIds ? (eventTrackId ?? this.currentTrackId) : undefined;
     }
 
     private createRoute(rackId: string, routeId: string, trackId: string): number {
@@ -1017,6 +1031,7 @@ export class YeastPreviewSidecar {
             return;
         }
         this.invalidateRoutePending(this.routeRackId[index]!, this.routeId[index]!);
+        this.invalidateRouteRetained(this.routeRackId[index]!, this.routeId[index]!);
         this.resetRouteMetadata(index);
         this.routeActive[index] = 0;
         this.routeRackId[index] = '';
@@ -1047,6 +1062,7 @@ export class YeastPreviewSidecar {
                 this.retainedRackId[index] = '';
                 this.retainedRouteId[index] = '';
                 this.retainedTrackId[index] = '';
+                this.retainedOccurrenceId[index] = undefined;
             }
         }
     }
@@ -1065,6 +1081,10 @@ export class YeastPreviewSidecar {
 
     private removePending(index: number): void {
         const last = --this.pendingCount;
+        const occurrenceId = this.pendingOccurrenceId[last];
+        const noteInstanceId = this.pendingNoteInstanceId[last];
+        this.pendingOccurrenceId[last] = undefined;
+        this.pendingNoteInstanceId[last] = undefined;
         if (index === last) {
             return;
         }
@@ -1082,16 +1102,18 @@ export class YeastPreviewSidecar {
         this.pendingRackId[index] = this.pendingRackId[last]!;
         this.pendingRouteId[index] = this.pendingRouteId[last]!;
         this.pendingTrackId[index] = this.pendingTrackId[last]!;
+        this.pendingOccurrenceId[index] = occurrenceId;
+        this.pendingNoteInstanceId[index] = noteInstanceId;
         this.pendingProcessorId[index] = this.pendingProcessorId[last]!;
     }
 
-    private appendQueuedPreview(event: MidiEvent, fallbackTrackId: string): boolean {
+    private appendQueuedPreview(event: MidiEvent, trackId: string): boolean {
         if (this.queuedPreviewCount === YEAST_PREVIEW_CAPACITY) {
             return false;
         }
-        const trackId = event.trackId ?? fallbackTrackId;
         const routeIndex = this.findRouteForTrack(trackId);
         const slot = this.queuedPreviewCount++;
+        // The event reference preserves the occurrence independently of the capture scope.
         this.queuedPreviewEvent[slot] = event;
         this.queuedPreviewRackId[slot] = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
         this.queuedPreviewRouteId[slot] = this.routeIdForTrack(routeIndex, trackId);
@@ -1101,8 +1123,7 @@ export class YeastPreviewSidecar {
         return true;
     }
 
-    private findQueuedPreviewEvent(event: MidiEvent, fallbackTrackId: string): number {
-        const trackId = event.trackId ?? fallbackTrackId;
+    private findQueuedPreviewEvent(event: MidiEvent, trackId: string): number {
         const routeIndex = this.findRouteForTrack(trackId);
         const rackId = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
         const routeId = this.routeIdForTrack(routeIndex, trackId);
@@ -1181,6 +1202,7 @@ export class YeastPreviewSidecar {
     private clearRetainedLineage(): void {
         this.retainedActive.fill(0);
         this.retainedReferences.fill(0);
+        this.retainedOccurrenceId.fill(undefined);
     }
 
     private toBeatTime(timeSamples: number): number {
@@ -1211,13 +1233,7 @@ export class YeastPreviewSidecar {
         this.page.probability[slot] = probability ?? Number.NaN;
         this.page.flags[slot] = (realized ? YEAST_PREVIEW_REALIZED_FLAG : 0) | provenanceFlags;
         this.page.rackIds[slot] = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
-        let routeId = trackId;
-        if (routeIndex !== -1) {
-            routeId = this.routeId[routeIndex]!;
-        } else if (trackId === this.currentTrackId) {
-            routeId = this.currentRouteId;
-        }
-        this.page.routeIds[slot] = routeId;
+        this.page.routeIds[slot] = this.routeIdForTrack(routeIndex, trackId);
         this.page.trackIds[slot] = trackId;
         this.page.processorId[slot] = processorId;
     }

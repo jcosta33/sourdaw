@@ -187,7 +187,8 @@ export class MidiRack {
             routeId,
             trackId,
             captureEpoch,
-            this.projectionVersion
+            this.projectionVersion,
+            preserveInputTrackIds
         );
         const preview = previewEnabled ? this.preview : undefined;
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
@@ -289,7 +290,8 @@ export class MidiRack {
                     routeId,
                     trackId,
                     captureEpoch,
-                    this.projectionVersion
+                    this.projectionVersion,
+                    preserveInputTrackIds
                 );
                 preview?.recordProcessorEvents(input, processor.id, false, true);
                 preview?.recordProcessorProvenance(processor.id, false, true, 0);
