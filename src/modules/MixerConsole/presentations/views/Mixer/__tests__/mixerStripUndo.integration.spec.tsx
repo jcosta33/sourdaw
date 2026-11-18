@@ -233,6 +233,9 @@ vi.mock('#/modules/Project/useCases', async () => {
         newProject: actual.newProject,
         pendingProjectReplacements: actual.pendingProjectReplacements,
         pickFiles: actual.pickFiles,
+        prepareProjectSaveSnapshot: vi.fn(() => {
+            throw new Error('Unexpected Project Save preparation in the mixer strip fixture');
+        }),
         saveProject: actual.saveProject,
         saveProjectBeforeReplacement: actual.saveProjectBeforeReplacement,
     };

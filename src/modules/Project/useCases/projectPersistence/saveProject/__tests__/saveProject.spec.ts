@@ -89,6 +89,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectIdentity: vi.fn(() => 'project-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
+    getCrdtDoc: vi.fn(() => {
+        throw new Error('Unexpected native preparation document read in the serialized Save fixture');
+    }),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => {
+        throw new Error('Unexpected native preparation settlement in the serialized Save fixture');
+    }),
     persistCrdtProject: mocks.persistCrdtProject,
 }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({

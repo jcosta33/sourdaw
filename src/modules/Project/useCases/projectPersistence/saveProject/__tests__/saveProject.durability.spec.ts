@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
     flushAutomergeStorageWrites: vi.fn<() => void>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     buildProjectData: vi.fn<
-        (input?: { includeAudioBuffers?: boolean }) => Promise<{
+        (input?: { includeAudioBuffers?: boolean; usePreparedSaveSnapshot?: boolean }) => Promise<{
             data: unknown;
             requiredAudioBufferIds: readonly string[];
             snapshotRevision: string;
@@ -78,6 +78,13 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
         throw new Error('Unexpected directory document export in this fixture');
     }),
     captureProjectRevision: mocks.captureProjectRevision,
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
+    getCrdtDoc: vi.fn(() => {
+        throw new Error('Unexpected native preparation document read in the serialization durability fixture');
+    }),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => {
+        throw new Error('Unexpected native preparation settlement in the serialization durability fixture');
+    }),
     persistCrdtProject: mocks.persistCrdtProject,
 }));
 
@@ -151,9 +158,15 @@ async function importSaveProject(): Promise<() => Promise<boolean>> {
 }
 
 describe('saveProject durability', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        // Public Save and IndexedDB stay real here; native snapshot preparation
+        // is doubled at the public Command seam, including its committed witness.
+        const command = await import('#/modules/Command/useCases');
+        vi.spyOn(command, 'executeAppAction').mockImplementation(async (_action, options) => {
+            options?.onCommitted?.();
+        });
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         localStorage.clear();
         mocks.projectStoreValue.value = makeProject();
@@ -169,6 +182,7 @@ describe('saveProject durability', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.resetModules();
     });
@@ -450,14 +464,14 @@ describe('saveProject durability', () => {
 
     it('rejects the saved snapshot when project truth changes while it is being written', async () => {
         installFakeIndexedDb();
-        mocks.captureProjectRevision
-            .mockReturnValueOnce('saved-revision')
-            .mockReturnValueOnce('saved-revision')
-            .mockReturnValueOnce('newer-revision');
+        mocks.persistCrdtProject.mockImplementation(async () => {
+            mocks.captureProjectRevision.mockReturnValue('newer-revision');
+        });
         const saveProject = await importSaveProject();
 
         await expect(saveProject()).resolves.toBe(false);
 
+        expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
@@ -470,10 +484,12 @@ describe('saveProject durability', () => {
 
         const buildOrder = mocks.buildProjectData.mock.invocationCallOrder[0];
         const flushOrder = mocks.flushAutomergeStorageWrites.mock.invocationCallOrder[0];
-        const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder[0];
+        const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder.find(
+            (order) => order > (flushOrder ?? 0)
+        );
         const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder[0];
-        // Build returns its own revision. Save flushes queued writes and checks
-        // that revision before it starts either durability barrier.
+        // Preparation also reads the revision. After Build, Save flushes queued
+        // writes and checks the serialized revision before persistence.
         expect(buildOrder ?? 0).toBeLessThan(flushOrder ?? 0);
         expect(flushOrder ?? 0).toBeLessThan(captureOrder ?? 0);
         expect(captureOrder ?? 0).toBeLessThan(persistOrder ?? 0);
@@ -481,12 +497,12 @@ describe('saveProject durability', () => {
 
     // AC-5. The live save snapshot references audio by id; the PCM itself lives
     // in the runtime audio cache's IndexedDB store as raw Float32Array. The
-    // stand-in below embeds base64 PCM whenever the caller lets it, so the
+    // stand-in below embeds base64 PCM only when the caller opts in, so the
     // persisted bytes prove which shape `saveProject` asked for.
     //
-    // Mutation: reverting saveProject to `buildProjectData()` (no argument) reds
-    // both `toHaveBeenCalledWith({ includeAudioBuffers: false })` and the exact
+    // Mutation: opting Save into `includeAudioBuffers: true` reds the exact
     // persisted-snapshot equality — the stand-in then embeds 30 MB of base64.
+    // The argument assertion also pins reuse of the prepared Save snapshot.
     it('persists a save snapshot that carries no embedded audio payload', async () => {
         const controls = installFakeIndexedDb();
         const snapshotWithoutAudio = { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } };
@@ -504,7 +520,7 @@ describe('saveProject durability', () => {
         }
         mocks.buildProjectData.mockImplementation((input) =>
             Promise.resolve({
-                data: input?.includeAudioBuffers === false ? snapshotWithoutAudio : embedAudio(snapshotWithoutAudio),
+                data: input?.includeAudioBuffers === true ? embedAudio(snapshotWithoutAudio) : snapshotWithoutAudio,
                 requiredAudioBufferIds: ['buffer-1'],
                 snapshotRevision: 'saved-revision',
             })
@@ -521,7 +537,7 @@ describe('saveProject durability', () => {
         const saveProject = await importSaveProject();
         await expect(saveProject()).resolves.toBe(true);
 
-        expect(mocks.buildProjectData).toHaveBeenCalledWith({ includeAudioBuffers: false });
+        expect(mocks.buildProjectData).toHaveBeenCalledWith({ usePreparedSaveSnapshot: true });
         expect(controls.values.get(RECENT_KEY)).toBe(JSON.stringify(snapshotWithoutAudio));
     });
 

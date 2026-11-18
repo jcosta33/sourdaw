@@ -156,6 +156,9 @@ vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
     pendingProjectReplacements: { capture: vi.fn(() => () => true), withdraw: vi.fn() },
     pickFiles: vi.fn(),
+    prepareProjectSaveSnapshot: vi.fn(() => {
+        throw new Error('Unexpected Project Save preparation in the track deletion fixture');
+    }),
     saveProject: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),
 }));
