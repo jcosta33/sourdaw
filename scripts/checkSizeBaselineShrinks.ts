@@ -3,7 +3,14 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { findQualityBudgetGrowth, parseQualityBudget, QUALITY_BUDGET, readQualityBudget } from './lintQualityBudget.ts';
+import {
+    findQualityBudgetGrowth,
+    parseConfiguredQualityRules,
+    parseQualityBudget,
+    QUALITY_BUDGET,
+    QUALITY_CONFIG,
+    readQualityBudget,
+} from './lintQualityBudget.ts';
 import {
     describeSizeBaselineGrowth,
     findSizeBaselineGrowth,
@@ -90,12 +97,36 @@ export async function checkSizeBaselineShrinks(root: string, load: ModuleLoader 
     return describeSizeBaselineGrowth(growth);
 }
 
-/** The first tracked budget seeds measured debt. Once present, no path or rule count can increase. */
+function trackedPaths(root: string, commit: string): string[] {
+    return git(root, ['ls-tree', '-r', '--name-only', '-z', commit]).split('\0').filter(Boolean);
+}
+
+function qualityBudgetSeed(root: string, mergeBase: string) {
+    const configPath = resolve(root, QUALITY_CONFIG);
+    if (!existsSync(configPath)) {
+        return undefined;
+    }
+    const { errors } = parseConfiguredQualityRules(readFileSync(configPath, 'utf8'), QUALITY_CONFIG);
+    let baseConfig = '{}';
+    if (existsAtCommit(root, mergeBase, QUALITY_CONFIG)) {
+        baseConfig = git(root, ['show', `${mergeBase}:${QUALITY_CONFIG}`]);
+    }
+    const { present } = parseConfiguredQualityRules(baseConfig, `${mergeBase}:${QUALITY_CONFIG}`);
+    const rules = errors.difference(present);
+    if (rules.size === 0) {
+        return undefined;
+    }
+    const modified = new Set(git(root, ['diff', '--name-only', '--no-renames', '-z', mergeBase, '--']).split('\0'));
+    const files = new Set(trackedPaths(root, mergeBase).filter((file) => !modified.has(file)));
+    return { rules, files };
+}
+
+/** Counts only shrink after a rule enters the quality pass. Its first counts may cover unchanged tracked files. */
 export function checkQualityBudgetShrinks(root: string): string[] {
     const mergeBase = resolveMergeBase(root);
     const head = readQualityBudget(root);
     if (!existsAtCommit(root, mergeBase, QUALITY_BUDGET)) {
-        const basePaths = new Set(git(root, ['ls-tree', '-r', '--name-only', '-z', mergeBase]).split('\0'));
+        const basePaths = new Set(trackedPaths(root, mergeBase));
         const findings: string[] = [];
         for (const file of head.keys()) {
             if (!basePaths.has(file)) {
@@ -108,7 +139,7 @@ export function checkQualityBudgetShrinks(root: string): string[] {
         git(root, ['show', `${mergeBase}:${QUALITY_BUDGET}`]),
         `${mergeBase}:${QUALITY_BUDGET}`
     );
-    return findQualityBudgetGrowth(base, head);
+    return findQualityBudgetGrowth(base, head, qualityBudgetSeed(root, mergeBase));
 }
 
 /**

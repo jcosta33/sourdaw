@@ -23,6 +23,7 @@ describe('sourdaw-craft plugin surface', () => {
     it('should register every craft rule under the plugin name', () => {
         expect(plugin.meta.name).toBe('sourdaw-craft');
         expect(Object.keys(rules).sort()).toEqual([
+            'no-complex-ternary-branch',
             'no-conditional-empty-spread',
             'no-conditional-playwright-admission',
             'no-control-flow-ternary',
@@ -32,6 +33,7 @@ describe('sourdaw-craft plugin surface', () => {
             'no-invalid-vitest-expect',
             'no-json-parse-stringify',
             'no-long-array-chain',
+            'no-positional-boolean-flags',
             'no-silent-catch',
             'no-spread-clone-array-method',
             'no-useless-clone-spread',
