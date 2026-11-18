@@ -176,13 +176,11 @@ describe('PR unit coverage gate', () => {
         await mergeUnitCoverage(input, output, root, identity, new Set([path]));
         const merged: Record<string, object> = JSON.parse(readFileSync(join(output, 'coverage-final.json'), 'utf8'));
         expect(merged[absolutePath]).toMatchObject({ statementMap, s: { 0: 1, 1: 0 } });
-        const result = evaluateUnitCoverage(
-            { [path]: { ...merged[absolutePath], path } },
-            new Map([[path, [{ start: 24, count: 10 }]]]),
-            floors,
-            floors
-        );
+        const coverage = { [path]: { ...merged[absolutePath], path } };
+        const result = evaluateUnitCoverage(coverage, new Map([[path, [{ start: 24, count: 10 }]]]), floors, floors);
         expect(result.changed).toEqual({ covered: 1, total: 2, uncovered: [{ path, line: 24 }] });
+        const startLine = evaluateUnitCoverage(coverage, new Map([[path, [{ start: 33, count: 1 }]]]), floors, floors);
+        expect(startLine.changed).toEqual({ covered: 1, total: 1, uncovered: [] });
     });
 
     it.each([

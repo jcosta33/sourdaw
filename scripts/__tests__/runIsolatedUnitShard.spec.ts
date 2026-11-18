@@ -215,25 +215,26 @@ describe('required unit account isolation', () => {
                         stderr: 'useradd warning: selected uid is greater than SYS_UID_MAX\n',
                     };
                 }
-                expect(args).toEqual(
-                    expect.arrayContaining([
-                        '--uid',
-                        '20000',
-                        '--gid',
-                        '--no-create-home',
-                        '--no-log-init',
-                        '--password',
-                        '!',
-                        '--home-dir',
-                        context.home,
-                        '--shell',
-                        '/usr/sbin/nologin',
-                    ])
-                );
             }
             return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
         });
         expect(() => prepareUnitIsolation(ports)).not.toThrow();
+        const useradd = run.mock.calls.find(([, args]) => args.includes('/usr/sbin/useradd'));
+        expect(useradd?.[1]).toEqual(
+            expect.arrayContaining([
+                '--uid',
+                '20000',
+                '--gid',
+                '--no-create-home',
+                '--no-log-init',
+                '--password',
+                '!',
+                '--home-dir',
+                context.home,
+                '--shell',
+                '/usr/sbin/nologin',
+            ])
+        );
         expect(mailCreated).toBe(false);
         expect(run.mock.calls.some(([, args]) => args.includes('verify'))).toBe(true);
         expect(run.mock.calls.some(([, args]) => args.includes('install'))).toBe(false);
@@ -362,18 +363,6 @@ describe('required unit account isolation', () => {
         const report = { [join(context.workspace, 'src/choice.ts')]: { s: { 0: 1 } } };
         run.mockImplementation((file, args, options) => {
             if (args.includes('/usr/bin/head')) {
-                expect(file).toBe('/usr/bin/sudo');
-                expect(args).toEqual(
-                    expect.arrayContaining([
-                        '/usr/bin/setpriv',
-                        '--reuid=20000',
-                        '--regid=20000',
-                        '--no-new-privs',
-                        '/usr/bin/head',
-                        join(context.temp, 'unit-coverage-shard/coverage-final.json'),
-                    ])
-                );
-                expect(args).not.toContain('/runner-temp');
                 return { status: 0, stdout: JSON.stringify(report), stderr: '' };
             }
             return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
@@ -381,6 +370,19 @@ describe('required unit account isolation', () => {
 
         expect(launchUnitPhase(contextPath, 'coverage-shard', '3/4', ports)).toBe(0);
         expect(run.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['coverage-shard', '3/4']));
+        const [headFile, headArgs] = run.mock.calls.find(([, args]) => args.includes('/usr/bin/head')) ?? [];
+        expect(headFile).toBe('/usr/bin/sudo');
+        expect(headArgs).toEqual(
+            expect.arrayContaining([
+                '/usr/bin/setpriv',
+                '--reuid=20000',
+                '--regid=20000',
+                '--no-new-privs',
+                '/usr/bin/head',
+                join(context.temp, 'unit-coverage-shard/coverage-final.json'),
+            ])
+        );
+        expect(headArgs).not.toContain('/runner-temp');
         expect(ports.mkdir).toHaveBeenCalledWith('/runner-temp/unit-coverage-shard', 0o700);
         const [path, packet, mode] = write.mock.calls[0] ?? [];
         expect(path).toBe('/runner-temp/unit-coverage-shard/shard-3.json');
@@ -396,14 +398,17 @@ describe('required unit account isolation', () => {
             coverage: report,
         });
 
+        const successfulCallCount = run.mock.calls.length;
         run.mockImplementation((file, args, options) => {
             if (file === '/usr/bin/sudo') {
-                expect(args).not.toContain('/usr/bin/head');
                 return { status: 7, stdout: '', stderr: '' };
             }
             return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
         });
         expect(launchUnitPhase(contextPath, 'coverage-shard', '3/4', ports)).toBe(7);
+        const failureCalls = run.mock.calls.slice(successfulCallCount);
+        expect(failureCalls.filter(([file]) => file === '/usr/bin/sudo')).toHaveLength(1);
+        expect(failureCalls.some(([, args]) => args.includes('/usr/bin/head'))).toBe(false);
         expect(write).toHaveBeenCalledTimes(1);
     });
 
@@ -593,9 +598,8 @@ describe('required unit account isolation', () => {
             if (shardArgs === undefined) {
                 throw new Error('all three guard and normal shard producers are required');
             }
-            if (isolated.length === 0) {
+            if (shard === '1/4') {
                 isolated = commands.slice(0, 3).flatMap((args) => collect(args));
-                expect(isolated).toEqual(sequentialGuardSpecs);
             }
             const selected = collect([...shardArgs, ...targets]);
             for (const spec of sequentialGuardSpecs) {
@@ -603,6 +607,7 @@ describe('required unit account isolation', () => {
             }
             sharded.push(...selected);
         }
+        expect(isolated).toEqual(sequentialGuardSpecs);
         expect(sharded.sort()).toEqual(control.filter((path) => !sequentialGuardSpecs.includes(path)));
         expect([...isolated, ...sharded].sort()).toEqual(control);
     }, 60_000);
