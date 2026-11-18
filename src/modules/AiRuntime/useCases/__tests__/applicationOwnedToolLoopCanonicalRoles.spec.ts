@@ -135,8 +135,6 @@ describe('canonical roles at the provider continuation boundary', () => {
                 async ({
                     turn,
                     receiptContext,
-                    directive,
-                    budgetNote,
                 }: {
                     turn: number;
                     receiptContext: string | null;
@@ -150,19 +148,12 @@ describe('canonical roles at the provider continuation boundary', () => {
                         };
                     }
                     if (turn === 2) {
-                        expect(directive).toEqual({
-                            mode: 'required',
-                            toolNames: ['project.query'],
-                            parallelToolCalls: false,
-                        });
-                        expect(budgetNote).toContain(`"endBeat":${selected ? '4' : '12'}`);
                         return {
                             status: 'complete' as const,
                             toolCalls: [{ id: 'premature', name: 'setTempo', arguments: { bpm: 120 } }],
                         };
                     }
                     if (turn === 3) {
-                        expect(receiptContext).toContain('musical-read-required');
                         return {
                             status: 'complete' as const,
                             toolCalls: [
@@ -200,9 +191,17 @@ describe('canonical roles at the provider continuation boundary', () => {
                 requestTurn,
             });
             expect(result.status).toBe('complete');
-            if (result.status === 'complete') {
-                expect(result.toolCalls.map((call) => call.id)).toEqual(['fresh']);
+            if (result.status !== 'complete') {
+                throw new Error('Expected a completed planning result');
             }
+            expect(result.toolCalls.map((call) => call.id)).toEqual(['fresh']);
+            expect(requestTurn.mock.calls[1]?.[0].directive).toEqual({
+                mode: 'required',
+                toolNames: ['project.query'],
+                parallelToolCalls: false,
+            });
+            expect(requestTurn.mock.calls[1]?.[0].budgetNote).toContain(`"endBeat":${selected ? '4' : '12'}`);
+            expect(requestTurn.mock.calls[2]?.[0].receiptContext).toContain('musical-read-required');
             expect(result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')).toBe(true);
             expect(
                 result.receipts.some((receipt) => receipt.toolName === 'project.query' && receipt.status === 'success')
@@ -382,6 +381,7 @@ describe('canonical roles at the provider continuation boundary', () => {
             uncertainty: 'none' as const,
         };
         let admitted = false;
+        const budgetNotes: string[] = [];
         const result = await runApplicationOwnedToolLoop({
             loopId: 'late-selected',
             musicalContentBinding: captureMusicalContentBinding(),
@@ -395,11 +395,11 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
             terminalToolNames: new Set(['setTempo']),
             requestTurn: async ({ turn, budgetNote, receiptContext }) => {
+                budgetNotes.push(budgetNote);
                 if (turn === 1) {
                     return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
                 }
                 if (turn === 2) {
-                    expect(budgetNote).toContain('"startBeat":200');
                     return {
                         status: 'complete',
                         toolCalls: [
@@ -423,6 +423,7 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
         });
         expect(result.status).toBe('complete');
+        expect(budgetNotes[1]).toContain('"startBeat":200');
     });
 
     it('uses the actual late frozen view occurrence for selected read coverage', async () => {
@@ -492,6 +493,7 @@ describe('canonical roles at the provider continuation boundary', () => {
             uncertainty: 'none' as const,
         };
         let admitted = false;
+        const budgetNotes: string[] = [];
         const result = await runApplicationOwnedToolLoop({
             loopId: 'late-frozen',
             musicalContentBinding: captureMusicalContentBinding(),
@@ -505,11 +507,11 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
             terminalToolNames: new Set(['setTempo']),
             requestTurn: async ({ turn, budgetNote, receiptContext }) => {
+                budgetNotes.push(budgetNote);
                 if (turn === 1) {
                     return { status: 'complete', toolCalls: [{ id: 'intake', name: 'interpret', arguments: {} }] };
                 }
                 if (turn === 2) {
-                    expect(budgetNote).toContain('"startBeat":204');
                     return {
                         status: 'complete',
                         toolCalls: [
@@ -533,6 +535,7 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
         });
         expect(result.status).toBe('complete');
+        expect(budgetNotes[1]).toContain('"startBeat":204');
     });
 
     it.each(['wrong-window', 'partial', 'stale', 'await-stale'] as const)(
@@ -614,9 +617,11 @@ describe('canonical roles at the provider continuation boundary', () => {
                 },
             });
             expect(result.status).toBe('rejected');
-            if (failure !== 'stale' && failure !== 'await-stale') {
-                expect(result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')).toBe(true);
-            }
+            expect(
+                failure === 'stale' ||
+                    failure === 'await-stale' ||
+                    result.receipts.some((receipt) => receipt.error?.code === 'musical-read-required')
+            ).toBe(true);
         }
     );
 
@@ -748,9 +753,10 @@ describe('canonical roles at the provider continuation boundary', () => {
             },
         });
         expect(result.status).toBe('complete');
-        if (result.status === 'complete') {
-            expect(result.decline?.kind).toBe('clarify');
+        if (result.status !== 'complete') {
+            throw new Error('Expected a completed decline');
         }
+        expect(result.decline?.kind).toBe('clarify');
         expect(result.receipts.some((receipt) => receipt.toolName === 'project.query')).toBe(false);
     });
 

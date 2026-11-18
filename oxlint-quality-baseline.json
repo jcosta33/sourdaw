@@ -2743,7 +2743,7 @@
             "count": 20
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 20
+            "count": 18
         }
     },
     "src/modules/AiRuntime/useCases/buildAgentContext.ts": {

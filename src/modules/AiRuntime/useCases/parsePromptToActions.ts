@@ -1182,14 +1182,24 @@ const planPromptIntent = inject({ logger })(
                         },
                     };
                 };
+                const offeredMusicalWorkflows: NonNullable<
+                    Parameters<typeof runApplicationOwnedToolLoop>[0]['offeredMusicalWorkflows']
+                >[number][] = [];
+                if (articulationTransferCapability) {
+                    offeredMusicalWorkflows.push('articulation-transfer');
+                }
+                if (midiOverlapTransformCapability) {
+                    offeredMusicalWorkflows.push('midi-overlap-shortening');
+                }
+                if (syncopatedArpeggioCapability) {
+                    offeredMusicalWorkflows.push('syncopated-arpeggio');
+                }
+                if (drumPreviewBranchesCapability) {
+                    offeredMusicalWorkflows.push('drum-preview-branches');
+                }
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     musicalContentBinding,
-                    offeredMusicalWorkflows: [
-                        ...(articulationTransferCapability ? ['articulation-transfer' as const] : []),
-                        ...(midiOverlapTransformCapability ? ['midi-overlap-shortening' as const] : []),
-                        ...(syncopatedArpeggioCapability ? ['syncopated-arpeggio' as const] : []),
-                        ...(drumPreviewBranchesCapability ? ['drum-preview-branches' as const] : []),
-                    ],
+                    offeredMusicalWorkflows,
                     readCreativeAuthority: () => creativeAuthority,
                     ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
                     // The loop binds this authority to the actual admitted generic or workflow intake.
