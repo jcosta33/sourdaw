@@ -8638,11 +8638,6 @@
             "count": 4
         }
     },
-    "src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx": {
-        "vitest/no-conditional-expect": {
-            "count": 1
-        }
-    },
     "src/modules/Toaster/stores/toasterStore.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 2
