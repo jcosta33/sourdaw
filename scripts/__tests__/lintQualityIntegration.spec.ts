@@ -579,15 +579,24 @@ export function helper(a: number, b: number, c: number, d: number, e: number) { 
         }
     }, 75_000);
 
-    it('rejects unsafe assertions only in the typed product pilot', () => {
+    it('rejects unsafe assertions only in the configured product scope', () => {
         const command = mkdtempSync(join(root, 'src/modules/CommandInterface/useCases/lint-unsafe-assertion-'));
         const shell = mkdtempSync(join(root, 'src/modules/WorkspaceShell/presentations/views/lint-unsafe-assertion-'));
         const otherSource = mkdtempSync(join(root, 'src/modules/WorkspaceShell/presentations/lint-unsafe-assertion-'));
+        const tuner = mkdtempSync(join(root, 'src/modules/Tuner/lint-unsafe-assertion-'));
+        const shellUseCases = mkdtempSync(join(root, 'src/modules/WorkspaceShell/useCases/lint-unsafe-assertion-'));
+        const sharedUi = mkdtempSync(join(root, 'src/components/ui/lint-unsafe-assertion-'));
         const scripts = mkdtempSync(join(root, 'scripts/lint-unsafe-assertion-'));
+        const directories = [command, shell, otherSource, tuner, shellUseCases, sharedUi, scripts];
         const narrow = 'export function narrow(value: string | number) { return value as string; }';
         const fixtures = [
             [command, 'product.ts', narrow],
             [shell, 'product.tsx', narrow],
+            [tuner, 'product.ts', narrow],
+            [shellUseCases, 'product.ts', narrow],
+            [sharedUi, 'product.tsx', narrow],
+            [tuner, 'testing/helper.ts', narrow],
+            [sharedUi, 'guarded.tsx', "export const mode = 'draw' satisfies string;"],
             [
                 shell,
                 'guarded.tsx',
@@ -621,7 +630,7 @@ export function stayedInside(event: DragEvent<HTMLDivElement>) {
                 writeFileSync(target, `${content}\n`);
                 return target;
             });
-            for (const directory of [command, shell, otherSource, scripts]) {
+            for (const directory of directories) {
                 const files = fixtures.filter(([dir]) => dir === directory).map(([, file]) => file);
                 isolateTypeScriptProject(
                     directory,
@@ -641,9 +650,13 @@ export function stayedInside(event: DragEvent<HTMLDivElement>) {
             expect(result.error).toBeUndefined();
             const report = parseQualityReport(result.stdout, root);
             const rule = 'typescript/no-unsafe-type-assertion';
-            const unsafeTargets = [join(command, 'product.ts'), join(shell, 'product.tsx')].map((path) =>
-                relative(root, path).replaceAll('\\', '/')
-            );
+            const unsafeTargets = [
+                join(command, 'product.ts'),
+                join(shell, 'product.tsx'),
+                join(tuner, 'product.ts'),
+                join(shellUseCases, 'product.ts'),
+                join(sharedUi, 'product.tsx'),
+            ].map((path) => relative(root, path).replaceAll('\\', '/'));
             expect(report.fileCount).toBe(targets.length);
             expect(report.diagnostics.map(({ file, rule, line }) => [file, rule, line]).toSorted()).toEqual(
                 unsafeTargets.map((path) => [path, rule, 1]).toSorted()
@@ -667,7 +680,7 @@ export function stayedInside(event: DragEvent<HTMLDivElement>) {
                 hadErrors: true,
             });
         } finally {
-            for (const directory of [command, shell, otherSource, scripts]) {
+            for (const directory of directories) {
                 rmSync(directory, { recursive: true, force: true });
             }
         }
