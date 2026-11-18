@@ -184,15 +184,19 @@ export const NotificationToast = (): ReactElement | null => {
                 markAllRead={markAllRead}
                 runAction={runAction}
             />
+            <div role="status" className="sr-only">
+                {current?.level !== 'error' ? current?.message : null}
+            </div>
+            <div role="alert" className="sr-only">
+                {current?.level === 'error' ? current.message : null}
+            </div>
             {current ? (
                 <div
                     className={cn(
-                        'pointer-events-none fixed top-14 right-4 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-top-2',
+                        'pointer-events-none fixed top-14 right-4 w-80 rounded-lg border p-3 shadow-xl motion-safe:animate-in motion-safe:slide-in-from-top-2',
                         DIALOG_SERVICE_LAYER,
                         levelSurface
                     )}
-                    role="alert"
-                    aria-live="assertive"
                 >
                     <Row align="start" gap={2}>
                         <AlertTriangle
@@ -203,7 +207,9 @@ export const NotificationToast = (): ReactElement | null => {
                                     : 'text-[var(--color-state-warning)]'
                             )}
                         />
-                        <p className="flex-1 text-xs text-foreground">{current.message}</p>
+                        <p aria-hidden="true" className="flex-1 text-xs text-foreground">
+                            {current.message}
+                        </p>
                         <Button
                             variant="ghost"
                             size="xs"

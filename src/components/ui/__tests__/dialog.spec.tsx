@@ -23,6 +23,25 @@ describe('Dialog', () => {
         expect(screen.getByText('Actions')).toBeInTheDocument();
     });
 
+    it('limits overlay and content animations to users who allow motion', () => {
+        render(
+            <Dialog open>
+                <DialogContent showCloseButton={false} aria-describedby={undefined}>
+                    <DialogTitle>Motion</DialogTitle>
+                </DialogContent>
+            </Dialog>
+        );
+        const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+        expect(overlay).toHaveClass(
+            'motion-safe:data-[state=open]:animate-in',
+            'motion-safe:data-[state=closed]:animate-out'
+        );
+        expect(screen.getByRole('dialog')).toHaveClass(
+            'motion-safe:data-[state=open]:animate-in',
+            'motion-safe:data-[state=closed]:animate-out'
+        );
+    });
+
     it('provides a viewport-bounded workspace size for complex settings surfaces', () => {
         render(
             <Dialog open>

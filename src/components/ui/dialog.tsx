@@ -41,7 +41,7 @@ export function DialogOverlay({ className, ...props }: ComponentProps<typeof Dia
         <DialogPrimitive.Overlay
             data-slot="dialog-overlay"
             className={cn(
-                'fixed inset-0 z-50 bg-bg-scrim backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+                'fixed inset-0 z-50 bg-bg-scrim backdrop-blur-[2px] motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=closed]:fade-out-0 motion-safe:data-[state=open]:animate-in motion-safe:data-[state=open]:fade-in-0',
                 className
             )}
             {...props}
@@ -165,7 +165,7 @@ export function DialogContent({
                 data-slot="dialog-content"
                 {...focusReturn}
                 className={cn(
-                    'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-black/40 border-t-[var(--color-light-edge)] bg-surface-dialog p-6 shadow-elevation-modal duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
+                    'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-black/40 border-t-[var(--color-light-edge)] bg-surface-dialog p-6 shadow-elevation-modal duration-200 outline-none motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=closed]:fade-out-0 motion-safe:data-[state=closed]:zoom-out-95 motion-safe:data-[state=open]:animate-in motion-safe:data-[state=open]:fade-in-0 motion-safe:data-[state=open]:zoom-in-95 sm:max-w-lg',
                     DIALOG_SIZE_CLASS_NAMES[size],
                     className
                 )}
