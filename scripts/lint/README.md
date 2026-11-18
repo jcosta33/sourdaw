@@ -57,19 +57,27 @@ run on a linted file, so using that shared file would erase another pass's ledge
 The runner refuses an implicit `oxlint-suppressions.json` before starting. The quality
 pass uses the public diagnostic output.
 
-To convert statement ternaries in one file, run Oxlint directly from the repository
+To convert control-flow ternaries in one file, run Oxlint directly from the repository
 root with no implicit `oxlint-suppressions.json`.
 
 ```sh
 pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --fix path/to/file.ts
 ```
 
-The rule fixes single-line, semicolon-terminated ternaries directly in function bodies
-when both branches are calls or awaited calls. Ternaries with attached comments,
-wrapped ternaries, and value expressions still require manual review. The focused
-command can report remaining findings after writing eligible changes. Review the diff
-and run `pnpm format path/to/file.ts`. If the fix removes counted diagnostics, shrink
-or remove their entries in `oxlint-quality-baseline.json` and run `pnpm lint path/to/file.ts`.
+The fixer handles semicolon-terminated ternaries directly in function bodies and
+preserves their existing line breaks. Statement branches may await calls, assign or
+update values, or call an unmodified function by name. The named function must be
+declared in the same body with an explicit `void` return type or a single expression
+statement and no attached annotation. This prevents formatting from exposing
+TypeScript assertion or `never` control flow. Multiline return
+ternaries with call or awaited-call branches can be split when the enclosing
+non-generator function declares its return type. Ternaries with attached comments,
+wrapped ternaries, and other value expressions require manual review.
+
+The focused command can report remaining findings after writing eligible changes.
+Review the diff and run `pnpm format path/to/file.ts`. If the fix removes counted
+diagnostics, shrink or remove their entries in `oxlint-quality-baseline.json` and
+run `pnpm lint path/to/file.ts`.
 
 The failure rules flag empty catches and direct success objects from handlers that do no
 recovery. A detached catch keeps the original rejection observable when its remaining
