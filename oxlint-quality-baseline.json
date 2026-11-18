@@ -17066,14 +17066,6 @@
             "count": 3
         }
     },
-    "src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts": {
-        "eslint/max-lines-per-function": {
-            "count": 1
-        },
-        "eslint/max-params": {
-            "count": 1
-        }
-    },
     "src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts": {
         "eslint/complexity": {
             "count": 2
