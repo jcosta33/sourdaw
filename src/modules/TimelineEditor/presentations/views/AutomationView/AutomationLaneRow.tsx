@@ -331,16 +331,11 @@ export const AutomationLaneRow = ({
     };
 
     const handleShapeInsert = (shape: AutomationShapeType) => {
-        if (!contextMenu) {
-            return;
+        if (contextMenu) {
+            const { beat } = contextMenu;
+            void insertAutomationLanePoints(lane, { kind: 'shape', shape, startBeat: beat, endBeat: beat + 4 });
+            setContextMenu(null);
         }
-        void insertAutomationLanePoints(lane, {
-            kind: 'shape',
-            shape,
-            startBeat: contextMenu.beat,
-            endBeat: contextMenu.beat + 4,
-        });
-        setContextMenu(null);
     };
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
