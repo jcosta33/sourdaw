@@ -5,10 +5,10 @@ import { getHeads, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { isRecord } from '#/utils/structuralEquality';
 
-import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 import { isHydratableProjectData } from '../../helpers/isHydratableProjectData';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';

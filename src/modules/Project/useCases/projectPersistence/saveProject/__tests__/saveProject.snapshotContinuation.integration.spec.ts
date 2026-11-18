@@ -3,9 +3,8 @@ import { MessageChannel } from 'node:worker_threads';
 import { from, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
-
-import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
 

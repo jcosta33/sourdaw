@@ -3,6 +3,7 @@ import { MessageChannel } from 'node:worker_threads';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
@@ -10,7 +11,6 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 import { syncCurrentArrangementToStore } from '../../../arrangement/syncCurrentArrangementToStore';
 import { takeSnapshot } from '../../../arrangement/takeSnapshot';
 import { isHydratableProjectData } from '../../helpers/isHydratableProjectData';

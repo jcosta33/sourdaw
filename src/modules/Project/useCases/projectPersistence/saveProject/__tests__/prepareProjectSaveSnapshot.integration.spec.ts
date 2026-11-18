@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import {
     captureAutomergeStoragePreparationScope,
@@ -36,7 +37,6 @@ import { type HandlerExecutionResult } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
-import { NativePreparationWorker, settleNativePreparationWorkers } from '../../../../__tests__/nativePreparationWorker';
 import { seedDenseProject } from '../../../../__tests__/seedDenseProject';
 import { createProjectId } from '../../../../models/ProjectData';
 import { arrangementStore } from '../../../../stores/arrangementStore';

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import {
     captureAutomergeStoragePreparationScope,
     configureAutomergeStoragePort,
@@ -26,7 +27,6 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { NativePreparationWorker, settleNativePreparationWorkers } from '../../__tests__/nativePreparationWorker';
 import { seedDenseProject } from '../../__tests__/seedDenseProject';
 import { takeSnapshot } from '../../useCases/arrangement/takeSnapshot';
 import { arrangementStore, prepareArrangementStoreState } from '../arrangementStore';
