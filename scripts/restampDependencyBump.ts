@@ -260,9 +260,8 @@ function assembledProof(
 ): ProofAttempt {
     if (record.ecosystem === 'cargo') {
         return cargoAssembledProof(root, record, sourceDirectory, cargoHome, carried);
-    } else {
-        return npmAssembledProof(root, record, carried);
     }
+    return npmAssembledProof(root, record, carried);
 }
 
 function archiveProofRefusal(

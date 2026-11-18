@@ -74,12 +74,14 @@ In the product pilot the stock assertion ban diagnoses TypeScript's postfix `!`.
 `typescript/no-unnecessary-type-assertion` still remove assertions the type checker finds
 redundant. A non-null assertion that changes a type needs a guard or an explicit invariant.
 The stock type-aware generic rule reports parameters that establish no type relationship.
+The quality pass counts `no-else-return` findings when a preceding branch already returns on every
+path. It allows `else if` chains and keeps `else` branches that prevent fall-through.
 
 To convert control-flow ternaries in one file, run Oxlint directly from the repository
 root with no implicit `oxlint-suppressions.json`.
 
 ```sh
-pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --fix path/to/file.ts
+pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --allow=no-else-return --fix path/to/file.ts
 ```
 
 The fixer handles semicolon-terminated ternaries directly in function bodies and
@@ -90,8 +92,9 @@ statement and no attached annotation. This prevents formatting from exposing
 TypeScript assertion or `never` control flow. The original rule covers statement and
 multiline forms. A second rule catches an assignment, update, or at least three call or
 constructor expressions in one branch, ignoring nested function bodies. The same return
-fixer serves both rules. Return ternaries with call or awaited-call branches can be split when the enclosing
-non-generator function declares its return type. Ternaries with attached comments,
+fixer serves both rules. Return ternaries with call or awaited-call branches become a guarded return
+followed by the alternate return when the enclosing non-generator function declares its return
+type. Ternaries used as statements still become `if` / `else`. Ternaries with attached comments,
 wrapped ternaries, and other value expressions require manual review.
 
 The focused command can report remaining findings after writing eligible changes.
