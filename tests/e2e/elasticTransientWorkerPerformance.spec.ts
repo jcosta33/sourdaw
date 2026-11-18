@@ -1322,7 +1322,8 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
         previousHashes: string[],
         phase: string,
         saved: boolean,
-        persistedTruth: typeof expected = truth
+        persistedTruth: typeof expected = truth,
+        persistedWire: typeof expected.wire = persistedTruth.wire
     ) => {
         const actual = await capture(current);
         const source = await sourceState(current);
@@ -1349,13 +1350,28 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
             expect(typeof updatedAt).toBe('number');
             return { ...wire, meta };
         };
-        expect(jsonValuesEqual(wireView(actual.wire), wireView(truth.wire))).toBe(true);
+        const liveWireView = (wire: typeof expected.wire) => {
+            const snapshot = wireView(wire);
+            if (snapshot.warpStates === undefined) {
+                return snapshot;
+            }
+            // The builder enumerates a clip-keyed map; hydration can change that
+            // enumeration without changing rows. Marker order remains significant.
+            const clipIds = snapshot.warpStates.map((state) => state.clipId);
+            expect(new Set(clipIds).size, 'Live wire must not contain duplicate clip warp rows').toBe(clipIds.length);
+            return {
+                ...snapshot,
+                warpStates: snapshot.warpStates.toSorted((left, right) => left.clipId.localeCompare(right.clipId)),
+            };
+        };
+        expect(jsonValuesEqual(liveWireView(actual.wire), liveWireView(truth.wire))).toBe(true);
         if (!isRecord(named) || !isRecord(named.meta)) {
             throw new Error('Named JSON wire metadata is missing');
         }
         const { updatedAt, ...namedMeta } = named.meta;
         expect(typeof updatedAt).toBe('number');
-        expect(jsonValuesEqual({ ...named, meta: namedMeta }, wireView(persistedTruth.wire))).toBe(true);
+        const savedWire = saved ? actual.wire : persistedWire;
+        expect(jsonValuesEqual({ ...named, meta: namedMeta }, wireView(savedWire))).toBe(true);
         if (saved) {
             expect(actual.dirty).toBe(false);
         }
@@ -1415,7 +1431,15 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
         expect(await finishProspectiveObservation(info)).toEqual([]);
         await page.close();
         const firstBoot = await coldBoot();
-        await verify(firstBoot, postBoot, firstSaved.historyHashes, 'first-cold-boot', false, expected);
+        await verify(
+            firstBoot,
+            postBoot,
+            firstSaved.historyHashes,
+            'first-cold-boot',
+            false,
+            expected,
+            firstSaved.wire
+        );
         // Settle the actual public persistence queue before measuring the later edit-to-Save route.
         await firstBoot.evaluate(async () => {
             const { persistCrdtProject } = await import('/src/modules/CrdtDocument/useCases/index.ts');
@@ -1499,7 +1523,15 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
         ).toBe(true);
         await firstBoot.close();
         const secondBoot = await coldBoot();
-        const final = await verify(secondBoot, edited, secondSaved.historyHashes, 'second-cold-boot', false);
+        const final = await verify(
+            secondBoot,
+            edited,
+            secondSaved.historyHashes,
+            'second-cold-boot',
+            false,
+            edited,
+            secondSaved.wire
+        );
         expect(final.historyHashes).toEqual(expect.arrayContaining(renameHashes));
     } finally {
         try {
