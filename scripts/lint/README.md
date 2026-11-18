@@ -55,7 +55,21 @@ The native Oxlint suppression file is implicit for every invocation, including o
 passes and the initial `--fix`. Oxlint 1.93 prunes entries for rules that a pass did not
 run on a linted file, so using that shared file would erase another pass's ledger.
 The runner refuses an implicit `oxlint-suppressions.json` before starting. The quality
-pass neither uses hidden suppression flags nor introduces another fixer.
+pass uses the public diagnostic output.
+
+To convert statement ternaries in one file, run Oxlint directly from the repository
+root with no implicit `oxlint-suppressions.json`.
+
+```sh
+pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --fix path/to/file.ts
+```
+
+The rule fixes single-line, semicolon-terminated ternaries directly in function bodies
+when both branches are calls or awaited calls. Ternaries with attached comments,
+wrapped ternaries, and value expressions still require manual review. The focused
+command can report remaining findings after writing eligible changes. Review the diff
+and run `pnpm format path/to/file.ts`. If the fix removes counted diagnostics, shrink
+or remove their entries in `oxlint-quality-baseline.json` and run `pnpm lint path/to/file.ts`.
 
 The failure rules flag empty catches and direct success objects from handlers that do no
 recovery. A detached catch keeps the original rejection observable when its remaining
