@@ -3153,7 +3153,10 @@ export function loadRepositorySnapshot(
     const rootRealPath = realpathSync(root);
     const readBudget = repositoryReadBudget(readFile);
     const trackedFilesInWorktree =
-        trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+        trackedFiles ??
+        execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+            .split('\n')
+            .filter(Boolean);
     const isSafeTrackedPath = (path: string): boolean =>
         isCanonicalPathAddress(path) &&
         trackedFilesInWorktree.includes(path) &&
