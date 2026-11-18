@@ -1,5 +1,9 @@
+import { MessageChannel } from 'node:worker_threads';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerKernelPorts } from '#/app/registerKernelPorts';
+import { NativePreparationWorker, settleNativePreparationWorkers } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -8,6 +12,7 @@ import {
     type TransactionalIndexedDbInstallation,
 } from '#/infra/testing/installTransactionalIndexedDb';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { getWorkspaceHandlers } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 const CREATED_AT = 1_700_000_000_000;
@@ -191,6 +196,8 @@ describe('saved audio collection race', () => {
         window.localStorage.clear();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+        vi.stubGlobal('Worker', NativePreparationWorker);
+        vi.stubGlobal('MessageChannel', MessageChannel);
         installation = installTransactionalIndexedDb();
         injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
     });
@@ -202,10 +209,12 @@ describe('saved audio collection race', () => {
         ]);
         configureDurableAudioBufferOwnership(null);
         stopActiveAutoSave();
+        await settleNativePreparationWorkers();
         clearHandlerRegistry();
         Container.clear();
         vi.restoreAllMocks();
         await installation.dispose();
+        vi.unstubAllGlobals();
         window.localStorage.clear();
     });
 
@@ -254,6 +263,9 @@ describe('saved audio collection race', () => {
         reportStage('restore:done');
         arrangement.setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(arrangement.getArrangementHandlers());
+        registerHandlerMap(getWorkspaceHandlers());
+        registerKernelPorts();
+        const prepareSave = vi.spyOn(project, 'prepareProjectSaveSnapshot');
 
         crdt.registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
@@ -327,6 +339,8 @@ describe('saved audio collection race', () => {
             const saved = await saving;
             console.info('[savedAudioCollectionRace] save:result', saved);
             reportStage('save:done');
+            expect(saved).toBe(true);
+            expect(prepareSave).toHaveBeenCalledOnce();
             const projectAKey = project.getProjectSnapshotKey(CREATED_AT);
             const namedJson = await readNamedProjectJson(projectAKey);
 
@@ -338,12 +352,6 @@ describe('saved audio collection race', () => {
             const storedBeforeCollection = await readStoredValue(audioDatabase, AUDIO_BUFFER_STORE_NAME, bufferId);
             console.info('[savedAudioCollectionRace] rawRead:record', describeStoredValue(storedBeforeCollection));
             reportStage('rawRead:done');
-
-            if (!saved) {
-                expect(namedJson).toBeNull();
-                expect(milestones).toEqual([`census:${bufferId}`]);
-                return;
-            }
 
             milestones.push('save:Project A');
             expect(namedJson).toContain(bufferId);
@@ -375,6 +383,12 @@ describe('saved audio collection race', () => {
                 describeStoredValue(storedAfterCollection)
             );
             expect(readFirstChannel(storedAfterCollection)).toEqual(PCM);
+            await expect(project.loadRecentProject(projectAKey)).resolves.toBe('committed');
+            expect(projectStore.value?.name).toBe('Project A');
+            expect(
+                trackStore.value?.tracks.flatMap((track) => track.clips).some((clip) => clip.audioBufferId === bufferId)
+            ).toBe(true);
+            expect(audio.getCachedAudioBuffer({ bufferId })?.getChannelData(0)).toEqual(PCM);
         } finally {
             releaseCapturedCensus.resolve();
             await collection?.catch(() => undefined);

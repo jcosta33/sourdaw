@@ -16034,9 +16034,6 @@
         },
         "sourdaw-craft/no-silent-catch": {
             "count": 2
-        },
-        "vitest/no-conditional-expect": {
-            "count": 2
         }
     },
     "src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts": {
