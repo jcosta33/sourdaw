@@ -375,6 +375,26 @@ describe('planMidiNoteEdits', () => {
         });
     });
 
+    it('refuses malformed scopes and operations without changing the source notes', () => {
+        const notes = sourceNotes();
+        const before = structuredClone(notes);
+        const operation = { type: 'delete', noteId: 'filler' };
+        expect(
+            planMidiNoteEdits({ notes, scope: { ...scope(), allowedNoteIds: null }, operations: [operation] })
+        ).toEqual({ status: 'rejected', reason: 'invalid-scope' });
+        expect(
+            planMidiNoteEdits({ notes, scope: { ...scope(), protectedWindows: null }, operations: [operation] })
+        ).toEqual({ status: 'rejected', reason: 'invalid-scope' });
+        expect(planMidiNoteEdits({ notes, scope: scope(), operations: [] })).toEqual({
+            status: 'rejected',
+            reason: 'invalid-operations',
+        });
+        expect(
+            planMidiNoteEdits({ notes, scope: scope(), operations: [{ type: 'replace', noteId: 'filler' }] })
+        ).toEqual({ status: 'rejected', reason: 'invalid-operations', operationIndex: 0 });
+        expect(notes).toEqual(before);
+    });
+
     it('keeps returned notes and evidence independent of the input and one another', () => {
         const notes = sourceNotes();
         const before = structuredClone(notes);

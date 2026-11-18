@@ -51,6 +51,7 @@ import {
     setPianoRollSelection,
 } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { captureMusicalContentBinding, resolveMusicalContentReadScope } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -64,9 +65,11 @@ import {
     proposePendingActionConfirmation,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { captureMidiNoteEditGuard } from '../actionStateGuards/captureMidiNoteEditGuard';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { revertAiActionGroup } from '../aiHistoryActions';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
+import { checkMidiNoteEditAuthority } from '../checkMidiNoteEditAuthority';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
@@ -298,6 +301,43 @@ function seedMidiPhrase(clipName = 'Lead Motif') {
         },
     });
     selectPhraseNotes([THIRD.id, FILLER.id]);
+}
+
+function capturedPhraseAuthority() {
+    const binding = captureMusicalContentBinding();
+    const windows = resolveMusicalContentReadScope(binding, [PHRASE_CLIP_ID]);
+    const authority: NonNullable<Parameters<typeof checkMidiNoteEditAuthority>[0]['authority']> = {
+        schemaVersion: 1,
+        authorityId: 'phrase-authority',
+        catalogId: 'catalog',
+        requestDigest: 'request',
+        revision: binding.expectedRevision,
+        selection: { trackId: PHRASE_TRACK_ID, clipId: PHRASE_CLIP_ID, clipIds: [PHRASE_CLIP_ID], activeView: 'clip' },
+        mode: 'edit',
+        targets: [
+            {
+                provenance: 'explicit-reference',
+                objectType: 'clip',
+                objectIds: [PHRASE_CLIP_ID],
+                parentTrackId: PHRASE_TRACK_ID,
+            },
+        ],
+        editDimensions: ['midi-content'],
+        prohibitions: [],
+        creationSlots: [],
+        uncertainty: 'none',
+    };
+    const input = {
+        call: { name: 'editMidiNotes', arguments: { clipId: PHRASE_CLIP_ID } },
+        proof: { binding, windows, authorityId: authority.authorityId },
+        authority,
+        revision: binding.expectedRevision,
+    };
+    const admitted = checkMidiNoteEditAuthority(input);
+    if (!admitted) {
+        throw new Error('Expected live phrase authority');
+    }
+    return { input, admitted };
 }
 
 function assertMidiReadReceipt(
@@ -636,6 +676,90 @@ describe('high-level intent execution', () => {
         await undo();
         expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
         expect(trackStore.value).toEqual(tracksBefore);
+    });
+
+    it('refuses edits when the admitted clip or track is protected, but retains a note protection in the guard', () => {
+        seedMidiPhrase();
+        const { input } = capturedPhraseAuthority();
+        for (const prohibition of [
+            { kind: 'exclude-dimension', dimension: 'midi-content' },
+            { kind: 'protect-object', objectId: PHRASE_CLIP_ID },
+            { kind: 'protect-object', objectId: PHRASE_TRACK_ID },
+        ] as const) {
+            expect(
+                checkMidiNoteEditAuthority({ ...input, authority: { ...input.authority, prohibitions: [prohibition] } })
+            ).toBeNull();
+        }
+        const authority = {
+            ...input.authority,
+            prohibitions: [{ kind: 'protect-object' as const, objectId: THIRD.id }],
+        };
+        const admitted = checkMidiNoteEditAuthority({ ...input, authority });
+        if (!admitted) {
+            throw new Error('Expected the clip to remain admissible');
+        }
+        expect(captureMidiNoteEditGuard(admitted)?.scope.protectedNoteIds).toContain(THIRD.id);
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it.each(['locked', 'linked'] as const)('refuses the captured phrase when its clip becomes %s', (state) => {
+        seedMidiPhrase();
+        const { admitted } = capturedPhraseAuthority();
+        const tracks = structuredClone(trackStore.value);
+        const clip = tracks?.tracks
+            .find((track) => track.id === PHRASE_TRACK_ID)
+            ?.clips.find((item) => item.id === PHRASE_CLIP_ID);
+        if (!tracks || !clip) {
+            throw new Error('Expected the phrase clip');
+        }
+        if (state === 'locked') {
+            clip.locked = true;
+        } else {
+            clip.isLinkedInstance = true;
+        }
+        trackStore.set(tracks);
+        expect(captureMidiNoteEditGuard(admitted)).toBeNull();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('refuses a selected phrase when a take owns its clip', () => {
+        seedMidiPhrase();
+        const { admitted } = capturedPhraseAuthority();
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: PHRASE_TRACK_ID,
+                    takes: [
+                        {
+                            id: 'take',
+                            clipId: PHRASE_CLIP_ID,
+                            name: 'Take',
+                            startBeat: 16,
+                            endBeat: 24,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [],
+                },
+            ],
+        });
+        expect(captureMidiNoteEditGuard(admitted)).toBeNull();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('refuses stale selection and a read window that does not cover the selected notes', () => {
+        seedMidiPhrase();
+        const { admitted } = capturedPhraseAuthority();
+        const windows = admitted.proof.windows.map((window) => ({ ...window, startBeat: window.endBeat }));
+        expect(captureMidiNoteEditGuard({ ...admitted, proof: { ...admitted.proof, windows } })).toBeNull();
+        clearPianoRollSelection();
+        expect(captureMidiNoteEditGuard(admitted)).toBeNull();
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value?.past).toHaveLength(0);
     });
 
     it.each([
