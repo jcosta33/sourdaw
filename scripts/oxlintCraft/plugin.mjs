@@ -3,12 +3,7 @@
  * Messages tell the author the fix. `{ ...record, field }` and `fn(...args)` stay legal.
  */
 
-import { dirname, isAbsolute, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { craftBaselineFiles } from '../../oxlint.craft-baseline.mjs';
-
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
+import { qualityRules } from './qualityRules.mjs';
 
 const ARRAY_PIPELINE_METHODS = new Set(['map', 'filter', 'sort', 'flatMap', 'reduce']);
 
@@ -29,27 +24,6 @@ const unwrap = (node) => {
     }
     return current;
 };
-
-export const relativeFilename = (filename) => {
-    if (!filename) {
-        return '';
-    }
-    const normalized = filename.split('\\').join('/');
-    if (!isAbsolute(filename)) {
-        return normalized.replace(/^\.\//, '');
-    }
-    return relative(repoRoot, filename).split('\\').join('/');
-};
-
-export const isCraftBaselineFile = (filename, ruleId) => {
-    const listed = craftBaselineFiles[ruleId];
-    if (!listed) {
-        return false;
-    }
-    return listed.includes(relativeFilename(filename));
-};
-
-const filenameOf = (context) => context.filename ?? context.physicalFilename ?? '';
 
 const propertyName = (node) => {
     if (!node || node.type !== 'MemberExpression' || node.computed) {
@@ -152,16 +126,6 @@ const isMultiline = (context, node) => {
     }
     return context.sourceCode.getText(node).includes('\n');
 };
-
-const skipIfBaselined = (ruleId, rule) => ({
-    ...rule,
-    create(context) {
-        if (isCraftBaselineFile(filenameOf(context), ruleId)) {
-            return {};
-        }
-        return rule.create(context);
-    },
-});
 
 const reportConditionalOrLogicalSpread = (context, node) => {
     const argument = unwrap(node.argument);
@@ -312,9 +276,48 @@ const noLongArrayChain = {
     },
 };
 
+const FUNCTION_NODES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
+
+const isBranchCall = (node) =>
+    node.type === 'CallExpression' || (node.type === 'AwaitExpression' && node.argument.type === 'CallExpression');
+
+const fixStatementTernary = (context, node, statement, fixer) => {
+    const block = statement.parent;
+    if (
+        block.type !== 'BlockStatement' ||
+        !FUNCTION_NODES.has(block.parent.type) ||
+        isMultiline(context, statement) ||
+        statement.range[0] !== node.test.range[0] ||
+        !isBranchCall(node.consequent) ||
+        !isBranchCall(node.alternate)
+    ) {
+        return null;
+    }
+
+    const source = context.sourceCode;
+    const between = (left, right) => source.text.slice(left.range[1], right.range[0]).trim();
+    if (
+        between(node.test, node.consequent) !== '?' ||
+        between(node.consequent, node.alternate) !== ':' ||
+        source.text.slice(node.alternate.range[1], statement.range[1]).trim() !== ';' ||
+        source.getCommentsBefore(statement).length > 0 ||
+        source.getCommentsInside(statement).length > 0 ||
+        source.getCommentsAfter(statement).some((comment) => comment.loc.start.line === statement.loc.end.line)
+    ) {
+        return null;
+    }
+
+    const test = source.getText(node.test);
+    const consequent = source.getText(node.consequent);
+    const alternate = source.getText(node.alternate);
+    // A call starting with a class, function or object expression needs grouping in statement position.
+    return fixer.replaceText(statement, `if (${test}) { (${consequent}); } else { (${alternate}); }`);
+};
+
 const noControlFlowTernary = {
     meta: {
         type: 'problem',
+        fixable: 'code',
         docs: {
             description: 'Disallow ternaries used as if/else. Simple values and JSX remain allowed.',
         },
@@ -331,6 +334,7 @@ const noControlFlowTernary = {
                     context.report({
                         node,
                         message: 'Do not use a ternary as a statement. Use `if` / `else`.',
+                        fix: (fixer) => fixStatementTernary(context, node, parent, fixer),
                     });
                     return;
                 }
@@ -358,12 +362,13 @@ const plugin = {
         name: 'sourdaw-craft',
     },
     rules: {
-        'no-conditional-empty-spread': skipIfBaselined('no-conditional-empty-spread', noConditionalEmptySpread),
-        'no-useless-clone-spread': skipIfBaselined('no-useless-clone-spread', noUselessCloneSpread),
-        'no-spread-clone-array-method': skipIfBaselined('no-spread-clone-array-method', noSpreadCloneArrayMethod),
-        'no-json-parse-stringify': skipIfBaselined('no-json-parse-stringify', noJsonParseStringify),
-        'no-long-array-chain': skipIfBaselined('no-long-array-chain', noLongArrayChain),
-        'no-control-flow-ternary': skipIfBaselined('no-control-flow-ternary', noControlFlowTernary),
+        'no-conditional-empty-spread': noConditionalEmptySpread,
+        'no-useless-clone-spread': noUselessCloneSpread,
+        'no-spread-clone-array-method': noSpreadCloneArrayMethod,
+        'no-json-parse-stringify': noJsonParseStringify,
+        'no-long-array-chain': noLongArrayChain,
+        'no-control-flow-ternary': noControlFlowTernary,
+        ...qualityRules,
     },
 };
 

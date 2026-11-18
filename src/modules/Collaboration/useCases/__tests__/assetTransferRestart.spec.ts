@@ -17,6 +17,8 @@ import {
 } from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import * as resumeIndexedDb from '../../repositories/assetTransferResumeIndexedDb';
+import { ASSET_STORE, createDurableAssetIndexedDb } from '../../repositories/durableAssetIndexedDb';
+import { createDurableAssetRepository } from '../../repositories/durableAssetRepository';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
 
@@ -264,6 +266,123 @@ describe('persisted asset restart over production serialized frames', () => {
         expect(restarted.sent).toHaveLength(sentBeforeRetry);
         expect(restarted.callbacks.onAssetAvailable).not.toHaveBeenCalled();
     });
+
+    it('reports a corrupt owned original and reopens repaired bytes only after cooldown', async () => {
+        const nativeClone = structuredClone;
+        vi.stubGlobal('structuredClone', (value: unknown) => {
+            const cloned: unknown = nativeClone(value);
+            if (
+                value &&
+                typeof value === 'object' &&
+                'blob' in value &&
+                value.blob instanceof Blob &&
+                cloned &&
+                typeof cloned === 'object'
+            ) {
+                Reflect.set(cloned, 'blob', value.blob.slice());
+            }
+            return cloned;
+        });
+        // The durable database connection is cached across the per-test IndexedDB factories.
+        const owner = 'dddddddd-dddd-8ddd-8ddd-dddddddddddd';
+        const saved = createDurableAssetRepository(owner);
+        const original = new Blob(['verified original']);
+        const { hash, leaseId } = await saved.stageAsset('owned-original', original, 'owned.wav');
+
+        const storage = createDurableAssetIndexedDb();
+        const database = await storage.openDurableAssetDatabase();
+        async function overwriteStoredBlob(blob: Blob): Promise<void> {
+            const transaction = database.transaction(ASSET_STORE, 'readwrite');
+            const completion = storage.awaitTransaction(transaction);
+            const store = transaction.objectStore(ASSET_STORE);
+            const request = store.get(hash);
+            request.onsuccess = () => {
+                const record: unknown = request.result;
+                if (!storage.isAssetRecord(record)) {
+                    transaction.abort();
+                    return;
+                }
+                store.put({ ...record, blob });
+            };
+            await completion;
+        }
+
+        try {
+            expect(await saved.promoteStagedAsset(leaseId, hash)).toMatchObject({ status: 'promoted' });
+            await overwriteStoredBlob(new Blob(['modified original']));
+            vi.useFakeTimers({ toFake: ['Date'] });
+            const restarted = endpoint(owner);
+            const peerRequest = restarted.request(hash);
+            await Promise.race([restarted.failure, restarted.completion, peerRequest]);
+            expect(restarted.callbacks.onTransferFailed).toHaveBeenCalledExactlyOnceWith(
+                hash,
+                'asset request failed (Project original failed integrity verification: stored-hash-mismatch)',
+                'cooldown'
+            );
+            expect(restarted.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+            expect(restarted.transfer.getAsset(hash)).toBeUndefined();
+            expect(restarted.sent).toEqual([]);
+
+            await overwriteStoredBlob(original);
+            const retryAt = Date.now() + ASSET_REQUEST_RETRY_COOLDOWN_MS;
+            vi.setSystemTime(retryAt - 1);
+            const open = vi.spyOn(indexedDB, 'open');
+            restarted.transfer.requestAsset(hash);
+            expect(open).not.toHaveBeenCalled();
+
+            vi.setSystemTime(retryAt);
+            restarted.transfer.requestAsset(hash);
+            await Promise.race([restarted.completion, peerRequest]);
+            expect(restarted.callbacks.onAssetAvailable).toHaveBeenCalledExactlyOnceWith(hash);
+            expect(await restarted.transfer.getAsset(hash)?.text()).toBe('verified original');
+            expect(restarted.callbacks.onTransferFailed).toHaveBeenCalledTimes(1);
+            expect(restarted.sent).toEqual([]);
+        } finally {
+            await saved.releaseOwner();
+        }
+    });
+
+    it.each(['completes', 'rejects'] as const)(
+        'discards cancelled journal recovery when the stored chunk digest %s',
+        async (digestOutcome) => {
+            const { sender, receiver, bytes, hash } = await partialFixture();
+            receiver.transfer.dispose();
+            const started = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const nativeDigest = crypto.subtle.digest.bind(crypto.subtle);
+            vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(async (...args) => {
+                started.resolve();
+                await release.promise;
+                if (digestOutcome === 'rejects') {
+                    throw new Error('Stored chunk digest unavailable');
+                }
+                return nativeDigest(...args);
+            });
+            const warn = vi.spyOn(logger, 'warn');
+            const restarted = endpoint();
+            restarted.transfer.requestAsset(hash);
+            await started.promise;
+            const cancelled = restarted.transfer.cancelAssetRequest(hash);
+            release.resolve();
+            await cancelled;
+
+            expect(await journalRows()).toEqual({ metadata: [], chunks: [] });
+            expect(restarted.sent).toEqual([]);
+            expect(restarted.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+            expect(warn).not.toHaveBeenCalledWith(
+                '[AssetTransfer] Resume storage could not be read:',
+                expect.anything()
+            );
+
+            const retry = await restarted.request(hash);
+            expect(control(retry).missingChunks).toEqual([]);
+            await finish(sender, restarted, retry);
+            expect(restarted.callbacks.onAssetAvailable).toHaveBeenCalledExactlyOnceWith(hash);
+            expect(new Uint8Array(await restarted.transfer.getAsset(hash)!.arrayBuffer())).toEqual(bytes);
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+        }
+    );
 
     it('reports only one terminal failure when journal cleanup also fails', async () => {
         const { sender, receiver, hash } = await partialFixture();

@@ -42,6 +42,7 @@ const STATIC_ANALYSIS_CONFIG = new Set([
     '.editorconfig',
     '.oxlintrc.json',
     '.oxlint-plugins.json',
+    '.oxlint-quality.json',
     '.prettierignore',
     '.prettierrc',
     'eslint.config.mjs',
@@ -51,6 +52,7 @@ const STATIC_ANALYSIS_CONFIG = new Set([
     'knip.json',
     'oxlint.craft-baseline.d.mts',
     'oxlint.craft-baseline.mjs',
+    'oxlint-quality-baseline.json',
     'tsconfig.eslint.json',
     'tsconfig.eslint-config.json',
 ]);

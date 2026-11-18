@@ -1,42 +1,42 @@
-/**
- * Guard: the sourdaw-craft burn-down lists stay honest.
- *
- * scripts/oxlintCraft/plugin.mjs skips a rule for exactly the paths listed
- * under that rule in oxlint.craft-baseline.mjs. Those lists only burn down
- * if they can only shrink: a path that no longer exists must be removed by
- * hand, and a duplicate or an out-of-order entry would let a merge quietly
- * re-add a path that already left the list.
- */
+import { readFileSync } from 'node:fs';
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-
+import { ESLint } from 'eslint';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { craftBaselineFiles, craftRuleIds } from '../../../oxlint.craft-baseline.mjs';
+import { QUALITY_CONFIG, qualityRuleIds } from '../../lintQualityBudget';
 
-const repoRoot = resolve(import.meta.dirname, '../../..');
+function readConfig(file: string): { ignorePatterns: string[]; rules: object; overrides: { rules?: object }[] } {
+    const result = ts.parseConfigFileTextToJson(file, readFileSync(file, 'utf8'));
+    if (result.error) {
+        throw new Error(`Could not parse ${file}`);
+    }
+    return result.config as { ignorePatterns: string[]; rules: object; overrides: { rules?: object }[] };
+}
 
-describe('oxlint craft baseline', () => {
-    it('should key a list for every craft rule id and no other keys', () => {
-        expect(Object.keys(craftBaselineFiles).sort()).toEqual([...craftRuleIds].sort());
+describe('quality lint configuration', () => {
+    it('keeps the existing native file exclusions and assigns each budgeted ID to one dedicated pass', () => {
+        const config = readConfig(QUALITY_CONFIG);
+        const original = readConfig('.oxlintrc.json');
+        const publicPlugins = readConfig('.oxlint-plugins.json');
+        const ruleNames = (value: typeof config) => [
+            ...Object.keys(value.rules),
+            ...value.overrides.flatMap(({ rules }) => Object.keys(rules ?? {})),
+        ];
+
+        expect(config.ignorePatterns).toEqual(original.ignorePatterns);
+        expect(ruleNames(config).toSorted()).toEqual(qualityRuleIds.toSorted());
+        expect(
+            [...ruleNames(original), ...ruleNames(publicPlugins)].filter((name) =>
+                qualityRuleIds.some((rule) => rule === name)
+            )
+        ).toEqual([]);
     });
 
-    it('should list every path relative to the repo root, sorted and free of duplicates', () => {
-        for (const ruleId of craftRuleIds) {
-            const files = craftBaselineFiles[ruleId];
-            const sorted = [...files].sort();
-            expect(files, ruleId).toEqual(sorted);
-            expect(new Set(files).size, ruleId).toBe(files.length);
-        }
-    });
+    it('registers the real craft rules as known ESLint directive names without enabling them twice', async () => {
+        const config = await new ESLint().calculateConfigForFile('tests/e2e/smoke.spec.ts');
 
-    it('should name only files that still exist on disk', () => {
-        const missing = craftRuleIds.flatMap((ruleId) =>
-            craftBaselineFiles[ruleId]
-                .filter((relativePath) => !existsSync(resolve(repoRoot, relativePath)))
-                .map((relativePath) => `${ruleId}:${relativePath}`)
-        );
-        expect(missing).toEqual([]);
+        expect(config?.plugins?.['sourdaw-craft']?.rules?.['no-fixed-test-sleep']?.create).toBeTypeOf('function');
+        expect(config?.rules).not.toHaveProperty('sourdaw-craft/no-fixed-test-sleep');
     });
 });

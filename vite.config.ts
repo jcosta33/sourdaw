@@ -18,6 +18,7 @@ import {
 } from './scripts/e2eServerIdentity.ts';
 import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
 import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses.ts';
+import { unitCoverageExclude, unitCoverageInclude } from './scripts/unitCoveragePaths.ts';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -239,25 +240,12 @@ export default defineConfig({
             '**/*.e2e.spec.*',
         ],
         coverage: {
-            all: true,
-            provider: 'v8',
+            provider: 'istanbul',
             reportsDirectory: './coverage',
             reporter: ['text', 'json', 'html', 'lcov'],
-            include: ['src/**/*.{ts,tsx}'],
-            exclude: [
-                '**/node_modules/**',
-                'dist/**',
-                '**/*.spec.ts',
-                '**/*.spec.tsx',
-                'src/vite-env.d.ts',
-                'src/app/main.tsx',
-            ],
-            thresholds: {
-                lines: 90,
-                statements: 87,
-                branches: 76,
-                functions: 88,
-            },
+            include: unitCoverageInclude,
+            exclude: unitCoverageExclude,
+            excludeAfterRemap: true,
         },
     },
     resolve: {

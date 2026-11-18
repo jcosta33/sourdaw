@@ -73,6 +73,11 @@ export const AutomationContextMenu = ({
                 <DawMenuButton
                     key={opt.value}
                     className="justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground"
+                    leadingContent={
+                        <span aria-hidden="true" className="w-4 shrink-0 text-center">
+                            {opt.glyph}
+                        </span>
+                    }
                     onClick={() => onShapeInsert(opt.value)}
                 >
                     {opt.label}
