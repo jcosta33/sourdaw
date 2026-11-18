@@ -11,7 +11,7 @@ describe('DawMenuInlineEditor', () => {
         render(
             <DawMenuInlineEditor label="Name" value="a" onChange={onChange} onSubmit={onSubmit} onCancel={onCancel} />
         );
-        const input = screen.getByRole('textbox');
+        const input = screen.getByRole('textbox', { name: 'Name' });
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(onSubmit).toHaveBeenCalled();
         fireEvent.keyDown(input, { key: 'Escape' });

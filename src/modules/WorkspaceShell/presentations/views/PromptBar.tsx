@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useId } from 'react';
 
 import {
     Sparkles,
@@ -84,10 +84,12 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
 
 const FuzzyResultItem = ({
     result,
+    id,
     isSelected,
     onExecute,
 }: {
     result: PromptFuzzyResult;
+    id: string;
     isSelected: boolean;
     onExecute: () => void;
 }): ReactElement => {
@@ -106,7 +108,9 @@ const FuzzyResultItem = ({
                 event.preventDefault();
                 onExecute();
             }}
+            id={id}
             role="option"
+            tabIndex={-1}
             aria-selected={isSelected}
         >
             <Icon className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
@@ -126,6 +130,7 @@ const FuzzyResultItem = ({
 
 export const PromptBar = ({ onReviewRun }: { onReviewRun: (runId: string) => void }): ReactElement => {
     const prompt = usePromptExecution();
+    const listboxId = useId();
 
     if (prompt.approval) {
         const { runId } = prompt.approval;
@@ -145,7 +150,11 @@ export const PromptBar = ({ onReviewRun }: { onReviewRun: (runId: string) => voi
     // ── Main render ─────────────────────────────────────────────────────
     const hasQuery = prompt.value.trim().length > 0;
     const showNoMatchesHint = prompt.isFocused && hasQuery && prompt.fuzzyResults.length === 0;
-    const dropdownOpen = prompt.fuzzyResults.length > 0 || showNoMatchesHint;
+    const listboxOpen = prompt.fuzzyResults.length > 0;
+    const dropdownOpen = listboxOpen || showNoMatchesHint;
+    const optionId = (result: PromptFuzzyResult): string =>
+        `${listboxId}-option-${encodeURIComponent(result.preset.id)}`;
+    const activeResult = listboxOpen ? prompt.fuzzyResults[prompt.selectedIndex] : undefined;
 
     // The control leading the input: a cancel button while an AI action runs,
     // otherwise the icon saying whether the typed command will use the LLM.
@@ -182,27 +191,27 @@ export const PromptBar = ({ onReviewRun }: { onReviewRun: (runId: string) => voi
             return null;
         }
         return (
-            <div
-                id="prompt-results"
-                role="listbox"
-                aria-label="Command suggestions"
-                className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1"
-            >
-                {!hasQuery && prompt.fuzzyResults.length > 0 ? (
-                    <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
-                        Available commands
+            <div className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1">
+                {listboxOpen ? (
+                    <div id={listboxId} role="listbox" aria-label="Command suggestions">
+                        {!hasQuery && prompt.fuzzyResults.length > 0 ? (
+                            <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                                Available commands
+                            </div>
+                        ) : null}
+                        {prompt.fuzzyResults.map((result, index) => (
+                            <FuzzyResultItem
+                                key={result.preset.id}
+                                result={result}
+                                id={optionId(result)}
+                                isSelected={index === prompt.selectedIndex}
+                                onExecute={() => void prompt.executePreset(result)}
+                            />
+                        ))}
                     </div>
                 ) : null}
-                {prompt.fuzzyResults.map((result, index) => (
-                    <FuzzyResultItem
-                        key={result.preset.id}
-                        result={result}
-                        isSelected={index === prompt.selectedIndex}
-                        onExecute={() => void prompt.executePreset(result)}
-                    />
-                ))}
                 {showNoMatchesHint ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground/60 italic">
+                    <div role="status" className="px-3 py-2 text-xs text-muted-foreground/60 italic">
                         No matching commands — press Enter to try AI
                     </div>
                 ) : null}
@@ -237,9 +246,11 @@ export const PromptBar = ({ onReviewRun }: { onReviewRun: (runId: string) => voi
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
                     aria-label="Prompt command input"
                     data-testid="prompt-input"
+                    role="combobox"
                     aria-autocomplete="list"
-                    aria-expanded={dropdownOpen}
-                    aria-controls="prompt-results"
+                    aria-expanded={listboxOpen}
+                    aria-controls={listboxOpen ? listboxId : undefined}
+                    aria-activedescendant={activeResult ? optionId(activeResult) : undefined}
                     disabled={prompt.isProcessing}
                 />
                 <Button
