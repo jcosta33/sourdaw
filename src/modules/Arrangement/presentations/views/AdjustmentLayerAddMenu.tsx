@@ -2,6 +2,7 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type MouseEvent as ReactMouseEvent,
     type ReactElement,
+    type Ref,
     useEffect,
     useRef,
     useState,
@@ -14,6 +15,8 @@ import { DawMenuButton, DawMenuMutedRow } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 
 import { type AdjustmentEffectType } from '../../stores/adjustmentLayer';
+
+type MenuAnchor = { x: number; y: number };
 
 type AdjustmentLayerAddMenuProps = {
     onCreate: (effectType: AdjustmentEffectType) => void;
@@ -34,8 +37,69 @@ const ALL_EFFECT_TYPES: AdjustmentEffectType[] = [
     'pan',
 ];
 
+type AdjustmentLayerEffectMenuProps = AdjustmentLayerAddMenuProps & {
+    ref: Ref<HTMLDivElement>;
+    anchor: MenuAnchor;
+    onClose: () => void;
+};
+
+const AdjustmentLayerEffectMenu = ({
+    ref,
+    anchor,
+    onClose,
+    onCreate,
+}: AdjustmentLayerEffectMenuProps): ReactElement => {
+    const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+            return;
+        }
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        const current = options.findIndex((option) => option === event.target);
+        const next = event.key === 'ArrowDown' ? (current + 1) % options.length : current - 1;
+        (options[next] ?? options.at(-1))?.focus();
+    };
+
+    return (
+        <DawContextMenuSurface
+            ref={ref}
+            x={anchor.x}
+            y={anchor.y}
+            xClampOffset={Math.min(ADD_MENU_WIDTH, window.innerWidth)}
+            yClampOffset={ADD_MENU_HEIGHT}
+            onClose={onClose}
+            onKeyDown={handleKeyDown}
+            className="w-[200px] max-w-[100vw] p-1"
+            role="menu"
+            aria-label="New Adjustment Layer"
+        >
+            <DawMenuMutedRow className="px-2">New Adjustment Layer</DawMenuMutedRow>
+            {ALL_EFFECT_TYPES.map((effectType) => (
+                <DawMenuButton
+                    key={effectType}
+                    role="menuitem"
+                    onClick={() => {
+                        onCreate(effectType);
+                        onClose();
+                    }}
+                >
+                    {effectType.charAt(0).toUpperCase() + effectType.slice(1)}
+                </DawMenuButton>
+            ))}
+        </DawContextMenuSurface>
+    );
+};
+
 export const AdjustmentLayerAddMenu = ({ onCreate }: AdjustmentLayerAddMenuProps): ReactElement => {
-    const [addMenuAnchor, setAddMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+    const [addMenuAnchor, setAddMenuAnchor] = useState<MenuAnchor | null>(null);
     const addMenuRef = useRef<HTMLDivElement>(null);
     const addMenuTriggerRef = useRef<HTMLButtonElement>(null);
 
@@ -69,25 +133,6 @@ export const AdjustmentLayerAddMenu = ({ onCreate }: AdjustmentLayerAddMenuProps
         setAddMenuAnchor({ x: Math.max(0, right - ADD_MENU_WIDTH), y: bottom });
     };
 
-    const handleAddMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            closeAddMenu();
-            return;
-        }
-        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
-            return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
-        const current = options.findIndex((option) => option === event.target);
-        const next = event.key === 'ArrowDown' ? (current + 1) % options.length : current - 1;
-        (options[next] ?? options.at(-1))?.focus();
-    };
-
     return (
         <>
             <Button
@@ -110,32 +155,12 @@ export const AdjustmentLayerAddMenu = ({ onCreate }: AdjustmentLayerAddMenuProps
                 <Plus className="size-3" />
             </Button>
             {addMenuAnchor ? (
-                <DawContextMenuSurface
+                <AdjustmentLayerEffectMenu
                     ref={addMenuRef}
-                    x={addMenuAnchor.x}
-                    y={addMenuAnchor.y}
-                    xClampOffset={Math.min(ADD_MENU_WIDTH, window.innerWidth)}
-                    yClampOffset={ADD_MENU_HEIGHT}
+                    anchor={addMenuAnchor}
                     onClose={closeAddMenu}
-                    onKeyDown={handleAddMenuKeyDown}
-                    className="w-[200px] max-w-[100vw] p-1"
-                    role="menu"
-                    aria-label="New Adjustment Layer"
-                >
-                    <DawMenuMutedRow className="px-2">New Adjustment Layer</DawMenuMutedRow>
-                    {ALL_EFFECT_TYPES.map((effectType) => (
-                        <DawMenuButton
-                            key={effectType}
-                            role="menuitem"
-                            onClick={() => {
-                                onCreate(effectType);
-                                closeAddMenu();
-                            }}
-                        >
-                            {effectType.charAt(0).toUpperCase() + effectType.slice(1)}
-                        </DawMenuButton>
-                    ))}
-                </DawContextMenuSurface>
+                    onCreate={onCreate}
+                />
             ) : null}
         </>
     );

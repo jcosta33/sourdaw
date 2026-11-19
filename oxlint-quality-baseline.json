@@ -6182,9 +6182,6 @@
         }
     },
     "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 4
         }
