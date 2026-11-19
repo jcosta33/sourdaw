@@ -736,6 +736,19 @@ function resolvesBatchLocalDeviceParameterTarget(input: {
     );
 }
 
+function hasBoundedDirectTarget(
+    input: { selectorArgument?: string; admittedMidiEditClipId?: string },
+    targetArgument: string,
+    value: unknown
+): boolean {
+    return (
+        input.selectorArgument !== undefined ||
+        (input.admittedMidiEditClipId !== undefined &&
+            targetArgument === 'clipId' &&
+            value === input.admittedMidiEditClipId)
+    );
+}
+
 function validateTargetArgumentsWithoutSelectors(input: {
     context: ProjectContext;
     item: SemanticCommandListItem;
@@ -808,14 +821,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
             stableIdsByArgument.set(targetRule.argument, [value as string]);
             continue;
         }
-        if (
-            input.selectorArgument === undefined &&
-            !(
-                input.admittedMidiEditClipId !== undefined &&
-                targetRule.argument === 'clipId' &&
-                value === input.admittedMidiEditClipId
-            )
-        ) {
+        if (!hasBoundedDirectTarget(input, targetRule.argument, value)) {
             return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
         }
         let stableIds: string[];
@@ -1147,38 +1153,73 @@ function compileMidiTransformItem(input: {
     };
 }
 
-export function compileArbitraryCommandList(input: {
+type CommandListCompilationInput = {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     revision: string;
     creativeAuthority?: CreativeRequestAuthority;
     musicalReadProof?: Parameters<typeof checkMidiNoteEditAuthority>[0]['proof'];
-}): ArbitraryCommandListCompilation {
-    const proposalCalls = input.calls.filter((call) => call.name === 'command.batch.propose');
-    if (proposalCalls.length === 0) {
-        if (containsMidiNoteEditCall(input.calls)) {
-            return { status: 'rejected', reason: 'Selective MIDI editing requires one structured command list item.' };
-        }
-        return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
+};
+
+function validateUnstructuredCalls(
+    input: CommandListCompilationInput,
+    proposalArguments: unknown
+): ArbitraryCommandListCompilation {
+    if (containsMidiNoteEditCall(input.calls)) {
+        return { status: 'rejected', reason: 'Selective MIDI editing requires one structured command list item.' };
     }
+    const directCommands = isRecord(proposalArguments) ? proposalArguments.commands : undefined;
+    const directRejection = Array.isArray(directCommands)
+        ? rejectOverCreationBudget(directCommands.filter(isToolCallResult))
+        : null;
+    if (directRejection !== null) {
+        return directRejection;
+    }
+    return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
+}
+
+function admitSelectiveMidiEdit(
+    input: CommandListCompilationInput,
+    items: readonly SemanticCommandListItem[]
+): { status: 'accepted'; clipId?: string } | RejectedCompilation {
+    const editItem = items.find((item) => item.name === 'editMidiNotes');
+    if (editItem === undefined) {
+        return { status: 'accepted' };
+    }
+    if (
+        items.length === 1 &&
+        input.calls.length === 1 &&
+        editItem.selector === undefined &&
+        editItem.repeat === undefined &&
+        isMidiNoteEditProposal(editItem.arguments)
+    ) {
+        const admission = checkMidiNoteEditAuthority({
+            call: editItem,
+            proof: input.musicalReadProof,
+            authority: input.creativeAuthority,
+            revision: input.revision,
+        });
+        if (admission !== null) {
+            return { status: 'accepted', clipId: admission.clipId };
+        }
+    }
+    return {
+        status: 'rejected',
+        reason: 'Selective MIDI editing requires a single clip with positive edit authority and complete current musical evidence.',
+    };
+}
+
+export function compileArbitraryCommandList(input: CommandListCompilationInput): ArbitraryCommandListCompilation {
+    const proposalCalls = input.calls.filter((call) => call.name === 'command.batch.propose');
     // Everything below reads one proposal. Accepting a turn that carried two would apply the budget
     // and the target rules to the first and let the second through unexamined.
     if (proposalCalls.length > 1) {
         return { status: 'rejected', reason: 'Provider returned more than one command batch proposal in one turn.' };
     }
-    const proposal = proposalCalls[0]!;
-    if (!isRecord(proposal.arguments) || proposal.arguments.list === undefined) {
-        if (containsMidiNoteEditCall(input.calls)) {
-            return { status: 'rejected', reason: 'Selective MIDI editing requires one structured command list item.' };
-        }
-        const directCommands = isRecord(proposal.arguments) ? proposal.arguments.commands : undefined;
-        const directRejection = Array.isArray(directCommands)
-            ? rejectOverCreationBudget(directCommands.filter(isToolCallResult))
-            : null;
-        if (directRejection) {
-            return directRejection;
-        }
-        return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
+    const [proposal] = proposalCalls;
+    const proposalArguments = proposal?.arguments;
+    if (!isRecord(proposalArguments) || proposalArguments.list === undefined) {
+        return validateUnstructuredCalls(input, proposalArguments);
     }
     if (input.revision.length === 0) {
         return {
@@ -1192,14 +1233,14 @@ export function compileArbitraryCommandList(input: {
             reason: 'Structured command list creative authority was admitted against a different project snapshot.',
         };
     }
-    if (!hasOnlyKeys(proposal.arguments, ['list', 'plan']) || !isRecord(proposal.arguments.list)) {
+    if (!hasOnlyKeys(proposalArguments, ['list', 'plan']) || !isRecord(proposalArguments.list)) {
         return {
             status: 'rejected',
             reason: 'Structured command list does not match the versioned application contract.',
         };
     }
-    const plan = normalizeAgentPlanProposal(proposal.arguments.plan);
-    const parsedList = parseSemanticCommandList(proposal.arguments.list);
+    const plan = normalizeAgentPlanProposal(proposalArguments.plan);
+    const parsedList = parseSemanticCommandList(proposalArguments.list);
     if (parsedList.status === 'rejected') {
         return parsedList;
     }
@@ -1208,25 +1249,9 @@ export function compileArbitraryCommandList(input: {
         return sortedItems;
     }
     const items = sortedItems.items;
-    const editItem = items.find((item) => item.name === 'editMidiNotes');
-    if (
-        editItem &&
-        (items.length !== 1 ||
-            input.calls.length !== 1 ||
-            editItem.selector !== undefined ||
-            editItem.repeat !== undefined ||
-            !isMidiNoteEditProposal(editItem.arguments) ||
-            !checkMidiNoteEditAuthority({
-                call: editItem,
-                proof: input.musicalReadProof,
-                authority: input.creativeAuthority,
-                revision: input.revision,
-            }))
-    ) {
-        return {
-            status: 'rejected',
-            reason: 'Selective MIDI editing requires a single clip with positive edit authority and complete current musical evidence.',
-        };
+    const midiEditAdmission = admitSelectiveMidiEdit(input, items);
+    if (midiEditAdmission.status === 'rejected') {
+        return midiEditAdmission;
     }
 
     const candidates = collectSemanticCommandListCandidates({
@@ -1314,8 +1339,7 @@ export function compileArbitraryCommandList(input: {
                 item,
                 itemsById,
                 producersByBinding,
-                admittedMidiEditClipId:
-                    editItem === item && typeof item.arguments.clipId === 'string' ? item.arguments.clipId : undefined,
+                admittedMidiEditClipId: midiEditAdmission.clipId,
                 targetRules: rules.targetRules,
             });
             if (targetValidation.status === 'rejected') {
@@ -1559,7 +1583,7 @@ export function compileArbitraryCommandList(input: {
                       expandedMidiTransforms: [...expandedMidiTransforms],
                   },
         calls: input.calls.map((call) =>
-            call === proposal ? { name: call.name, arguments: { plan: proposal.arguments.plan, commands } } : call
+            call === proposal ? { name: call.name, arguments: { plan: proposalArguments.plan, commands } } : call
         ),
     };
 }

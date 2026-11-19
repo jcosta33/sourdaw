@@ -7467,7 +7467,7 @@ function refuseWhenProtectionIsUnresolved(
     }
     // A protection binding any clip is a clip protection, so every member it lists must name an object.
     // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
-    const clipProtection = readClipProtection(input.midiToneProtectionPrompt ?? input.prompt, context, protections);
+    const clipProtection = readClipProtection(input.prompt, context, protections, input.midiToneProtectionPrompt);
     const unnamedMembers =
         clipProtection.clips.length > 0
             ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
@@ -7504,10 +7504,12 @@ function refuseWhenProtectionIsUnresolved(
  * extend an earlier exclusion; the blanked text keeps every offset of the request.
  */
 function readClipProtection(
-    prompt: string,
+    originalPrompt: string,
     context: ProjectContext,
-    trackProtections: ReturnType<typeof readExplicitProtections>
+    trackProtections: ReturnType<typeof readExplicitProtections>,
+    midiToneProtectionPrompt?: string
 ): ReturnType<typeof getExplicitClipProtection> & { read: string } {
+    const prompt = midiToneProtectionPrompt ?? originalPrompt;
     const clipProtection = getExplicitClipProtection(prompt, context);
     if (clipProtection.complete) {
         return { ...clipProtection, read: prompt };
@@ -7627,7 +7629,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            complete = readClipProtection(midiToneProtectionPrompt ?? prompt, context, trackProtections).complete;
+            complete = readClipProtection(prompt, context, trackProtections, midiToneProtectionPrompt).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));

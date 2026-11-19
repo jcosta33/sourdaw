@@ -4380,7 +4380,7 @@
             "count": 3
         },
         "typescript/no-non-null-assertion": {
-            "count": 4
+            "count": 3
         }
     },
     "src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts": {

@@ -111,6 +111,27 @@ function readParkedVibeBatchBriefDrift(confirmation: PendingAppActionConfirmatio
     return drift === null ? null : `The ${drift}.`;
 }
 
+function settleUncommittedApprovalRefusal(
+    confirmation: PendingAppActionConfirmation
+): Promise<TerminalConfirmationResult> | null {
+    const selectionRefusal = readMidiNoteEditApprovalRefusal(
+        confirmation.approvalSnapshot.actions,
+        confirmation.projectRevision
+    );
+    if (selectionRefusal !== null) {
+        return confirmationTerminalSettlement.invalidateForProjectChange(confirmation, selectionRefusal);
+    }
+    const briefDrift = readParkedVibeBatchBriefDrift(confirmation);
+    if (briefDrift !== null) {
+        return confirmationTerminalSettlement.failApprovalPreflight(confirmation, briefDrift, 'conflict');
+    }
+    const protectionFailure = readApprovedProtectionFailure(confirmation);
+    if (protectionFailure !== null) {
+        return confirmationTerminalSettlement.invalidateForProjectChange(confirmation, protectionFailure);
+    }
+    return null;
+}
+
 function consumeConfirmationAdmission(
     admission: ResolveConfirmationAdmissionResult
 ): ResolveConfirmationAdmissionResult {
@@ -271,36 +292,9 @@ async function resolveConfirmationAdmission(input: {
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
         priorVerifiedBatchReceipt.pendingEffects.length > 0;
     if (!hasPriorVerifiedBatchReceipt) {
-        const selectionRefusal = readMidiNoteEditApprovalRefusal(
-            confirmation.approvalSnapshot.actions,
-            confirmation.projectRevision
-        );
-        if (selectionRefusal !== null) {
-            return {
-                status: 'handled',
-                result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation, selectionRefusal),
-            };
-        }
-        const briefDrift = readParkedVibeBatchBriefDrift(confirmation);
-        if (briefDrift !== null) {
-            return {
-                status: 'handled',
-                result: await confirmationTerminalSettlement.failApprovalPreflight(
-                    confirmation,
-                    briefDrift,
-                    'conflict'
-                ),
-            };
-        }
-        const protectionFailure = readApprovedProtectionFailure(confirmation);
-        if (protectionFailure !== null) {
-            return {
-                status: 'handled',
-                result: await confirmationTerminalSettlement.invalidateForProjectChange(
-                    confirmation,
-                    protectionFailure
-                ),
-            };
+        const refusal = settleUncommittedApprovalRefusal(confirmation);
+        if (refusal !== null) {
+            return { status: 'handled', result: await refusal };
         }
     }
     if (!hasPriorVerifiedBatchReceipt && !approvedProjectRevision.matchesLive(confirmation.projectRevision)) {

@@ -2053,6 +2053,8 @@ export async function runApplicationOwnedToolLoop(
     const hasMeasurementWitness = (opportunity: MeasurementOpportunity): boolean =>
         measurementWitness !== null && sameMeasurementAuthority(measurementWitness.opportunity, opportunity);
 
+    const readCompletedMusicalProof = () => musicalRead?.completed();
+
     const validateTerminalCalls = (calls: readonly IdentifiedToolCall[]): ValidatedTerminalCalls =>
         validateCatalogTerminalCalls(
             calls,
@@ -2085,7 +2087,7 @@ export async function runApplicationOwnedToolLoop(
         turns: turn,
         interpretation,
         retainedCompilations: [...retainedCompilations.values()],
-        musicalReadProof: musicalRead?.completed(),
+        musicalReadProof: readCompletedMusicalProof(),
     });
 
     const releaseHeldTerminal = (held: HeldTerminal, turn: number): ApplicationOwnedToolLoopOutcome => {
@@ -3154,7 +3156,7 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
                 interpretation,
                 retainedCompilations: [...retainedCompilations.values()],
-                musicalReadProof: musicalRead?.completed(),
+                musicalReadProof: readCompletedMusicalProof(),
             };
         }
         if (isFinalTurn && heldTerminal === null) {
