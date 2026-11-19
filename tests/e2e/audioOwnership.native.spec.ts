@@ -108,18 +108,21 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
                 { registerDeviceEnginePorts },
                 { registerSupportingServicePorts },
                 { registerKernelPorts },
+                { getWorkspaceHandlers },
             ] = await Promise.all([
                 import('/src/app/registerProjectSlotProjections.ts'),
                 import('/src/app/registerProjectLifecycle.ts'),
                 import('/src/app/registerDeviceEnginePorts.ts'),
                 import('/src/app/registerSupportingServicePorts.ts'),
                 import('/src/app/registerKernelPorts.ts'),
+                import('/src/modules/WorkspaceShell/useCases/index.ts'),
             ]);
 
             await audio.restoreCachedAudioBuffersFromIdb({ audioContext: audio.audioEngine.context });
             arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
             command.clearHandlerRegistry();
             command.registerHandlerMap(arrangement.getArrangementHandlers());
+            command.registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
             crdt.registerCrdtStorageRuntime();
             registerProjectSlotProjections();
             registerProjectLifecycle();
