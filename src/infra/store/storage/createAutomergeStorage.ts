@@ -58,6 +58,7 @@ type AutomergeStoragePortMutationInput = {
     message?: string;
     snapshotTransaction?: object;
     canonicalMutation?: CanonicalStorageSlotMutation;
+    preparationOptions?: AutomergeStoragePreparationOptions;
 };
 
 type PreparedStorageCandidate = {
@@ -301,6 +302,12 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     preserveLocalRuntimeStateOnRecompute?: true;
 };
 
+export type AutomergeStoragePreparationOptions = {
+    readonly preparationPolicy: 'bounded-native-sequence-v1';
+    /** Map-key path relative to the prepared slot, supplied by the local write owner. */
+    readonly ownedPath: readonly [string, ...string[]];
+};
+
 /**
  * An Automerge-backed adapter can force only its own rAF-deferred, unscoped
  * write to settle. The method is bound to the adapter's private commit owner;
@@ -311,7 +318,8 @@ export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
     prepareSet?(
         scope: object | undefined,
         value: TData,
-        stageValue?: (value: TData) => void
+        stageValue?: (value: TData) => void,
+        options?: AutomergeStoragePreparationOptions
     ): PreparedStorageSet | undefined;
 };
 
@@ -521,6 +529,17 @@ export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
         return activeAutomergeStorageMutationProvenance.owner;
     }
     return activeAutomergeStorageTransaction?.commitOwner;
+}
+
+/** Capture provenance for synchronous authority checks after an asynchronous preparation. */
+export function captureAutomergeStorageMutationAuthority(assertAuthority: () => void): () => void {
+    const owner = getCurrentAutomergeStorageMutationOwner();
+    return (): void => {
+        if (owner && !openAutomergeStorageCommitOwners.has(owner)) {
+            throw new Error('Captured Automerge storage owner is no longer open');
+        }
+        runWithAutomergeStorageMutationOwner(owner, assertAuthority);
+    };
 }
 
 /** Metadata accompanies this owner's real document effect; it never creates a publication by itself. */
@@ -2788,7 +2807,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     };
 
     const adapter: AutomergeStorageAdapter<TData> = {
-        prepareSet(scope, requestedValue, stageValue) {
+        prepareSet(scope, requestedValue, stageValue, preparationOptions) {
             const captured = scope ? preparationScopes.get(scope) : undefined;
             const port = getAutomergeStoragePort();
             if (
@@ -2876,6 +2895,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 (captured.message === undefined || typeof captured.message === 'string')
                     ? { kind: 'canonical-json-slot-v1', key, baseValue, value, documentPresence: presence }
                     : undefined;
+            if (preparationOptions && !canonicalMutation) {
+                return undefined;
+            }
             const changeFn = canonicalMutation
                 ? (draft: AutomergeStorageMutableDoc) => applyCanonicalStorageSlotMutation(draft, canonicalMutation)
                 : createAutomergeStorageChangeFn([mutation], true, () => undefined);
@@ -2905,15 +2927,19 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     if (cloned || candidate) {
                         throw new Error('Prepared Automerge set was already cloned');
                     }
+                    const input: AutomergeStoragePortMutationInput = {
+                        docId,
+                        changedKeys: [key],
+                        changeFn,
+                        message: captured.message,
+                        snapshotTransaction: transaction.snapshotTransaction,
+                        canonicalMutation,
+                    };
+                    if (preparationOptions) {
+                        input.preparationOptions = preparationOptions;
+                    }
                     cloned = runWithAutomergeStorageMutationOwner(transaction.commitOwner, () =>
-                        cloneDocForMutation.call(port, {
-                            docId,
-                            changedKeys: [key],
-                            changeFn,
-                            message: captured.message,
-                            snapshotTransaction: transaction.snapshotTransaction,
-                            canonicalMutation,
-                        })
+                        cloneDocForMutation.call(port, input)
                     );
                     assertCurrent();
                 },

@@ -25,6 +25,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+    chmodSync,
     copyFileSync,
     existsSync,
     mkdirSync,
@@ -638,20 +639,20 @@ describe('size baseline check against the merge base', () => {
         expect(findings.some((finding) => finding.startsWith('z.ts: added to eslint.size-baseline.mjs'))).toBe(true);
     });
 
-    it('seeds quality budget only for files already in the base', () => {
+    it('seeds quality budget only for files already in the base', async () => {
         const budgetPath = join(dir, 'oxlint-quality-baseline.json');
         const text = (file: string) => JSON.stringify({ [file]: { 'vitest/no-conditional-expect': { count: 1 } } });
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-        expect(() => checkQualityBudgetShrinks(dir)).toThrow('oxlint-quality-baseline.json');
+        await expect(checkQualityBudgetShrinks(dir)).rejects.toThrow('oxlint-quality-baseline.json');
         writeFileSync(budgetPath, text('untracked.ts'));
-        expect(checkQualityBudgetShrinks(dir)).toEqual([
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([
             'untracked.ts: cannot seed a lint quality budget for a path absent at the merge base.',
         ]);
         writeFileSync(budgetPath, text('eslint.size-baseline.mjs'));
-        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([]);
     });
 
-    it('binds quality budget growth to the recorded merge base', () => {
+    it('binds quality budget growth to the recorded merge base', async () => {
         const budgetPath = join(dir, 'oxlint-quality-baseline.json');
         const count = (value: number) =>
             JSON.stringify({ 'a.ts': { 'vitest/no-conditional-expect': { count: value } } });
@@ -659,10 +660,51 @@ describe('size baseline check against the merge base', () => {
         commit('seed quality counts');
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeFileSync(budgetPath, count(1));
-        expect(checkQualityBudgetShrinks(dir)).toEqual([]);
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([]);
         writeFileSync(budgetPath, count(3));
-        expect(checkQualityBudgetShrinks(dir)).toEqual([
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([
             'a.ts: vitest/no-conditional-expect budget increased from 2 to 3 in oxlint-quality-baseline.json.',
+        ]);
+    });
+
+    it('seeds a newly configured rule only for unchanged tracked files', async () => {
+        const config = join(dir, '.oxlint-quality.json');
+        const budget = join(dir, 'oxlint-quality-baseline.json');
+        const newRule = 'vitest/no-conditional-expect';
+        const oldRule = 'sourdaw-craft/no-control-flow-ternary';
+        const write = (path: string, value: object) => writeFileSync(path, JSON.stringify(value));
+        writeFileSync(join(dir, 'unchanged.ts'), 'export const count = 1;\n');
+        writeFileSync(join(dir, 'edited.ts'), 'export const count = 1;\n');
+        write(config, { rules: { [oldRule]: 'error' } });
+        write(budget, { 'unchanged.ts': { [oldRule]: { count: 2 } } });
+        commit('quality rule already in force');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+
+        write(config, {
+            rules: { [oldRule]: 'error' },
+            overrides: [{ files: ['*.ts'], rules: { [newRule]: 'error' } }],
+        });
+        write(budget, { 'unchanged.ts': { [oldRule]: { count: 1 }, [newRule]: { count: 2 } } });
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([]);
+
+        writeFileSync(join(dir, 'edited.ts'), 'export const count = 2;\n');
+        writeFileSync(join(dir, 'new.ts'), 'export const count = 1;\n');
+        write(budget, {
+            'unchanged.ts': { [oldRule]: { count: 1 }, [newRule]: { count: 2 } },
+            'edited.ts': { [newRule]: { count: 1 } },
+            'new.ts': { [newRule]: { count: 1 } },
+            'eslint.size-baseline.mjs': { [oldRule]: { count: 1 } },
+        });
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([
+            `edited.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+            `new.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+            `eslint.size-baseline.mjs: ${oldRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
+        ]);
+
+        write(config, { rules: { [oldRule]: 'error', [newRule]: 'off' } });
+        write(budget, { 'unchanged.ts': { [newRule]: { count: 1 } } });
+        expect(await checkQualityBudgetShrinks(dir)).toEqual([
+            `unchanged.ts: ${newRule} budget increased from 0 to 1 in oxlint-quality-baseline.json.`,
         ]);
     });
 
@@ -848,6 +890,154 @@ describe('size baseline check against the merge base', () => {
             const result = spawnSync('node', ['scripts/checkSizeBaselineShrinks.ts'], { cwd: dir, encoding: 'utf8' });
             return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
         }
+
+        describe('existing native complexity findings', () => {
+            function runFixtureCli(): { status: number | null; stdout: string; stderr: string } {
+                const entry = pathToFileURL(join(repoRoot, 'scripts/checkSizeBaselineShrinks.ts')).href;
+                const result = spawnSync(
+                    process.execPath,
+                    [
+                        '--input-type=module',
+                        '--eval',
+                        `import { runSizeBaselineCheck } from ${JSON.stringify(entry)};
+                        process.exitCode = await runSizeBaselineCheck(process.cwd());`,
+                    ],
+                    { cwd: dir, encoding: 'utf8' }
+                );
+                return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+            }
+
+            function body(score: number): string {
+                const branches = Array.from({ length: score - 1 }, (_, index) => `if (value === ${index}) return 0;`);
+                return `{ ${branches.join(' ')} return value; }`;
+            }
+
+            function declaration(name: string, score: number): string {
+                return `export function ${name}(value: number) ${body(score)}`;
+            }
+
+            function writeCode(file: string, ...parts: string[]): void {
+                writeFileSync(join(dir, file), `${parts.join('\n')}\n`);
+            }
+
+            function setBase(count: number, file = 'a.ts'): void {
+                writeFileSync(
+                    join(dir, 'oxlint-quality-baseline.json'),
+                    JSON.stringify({
+                        [file]: { 'eslint/complexity': { count } },
+                    })
+                );
+                writeFileSync(
+                    join(dir, '.oxlint-quality.json'),
+                    JSON.stringify({
+                        overrides: [{ files: ['**/*.{ts,tsx}'], rules: { complexity: ['error', 15] } }],
+                    })
+                );
+                commit('base with native complexity findings');
+                git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            }
+
+            it('rejects higher complexity with the same count in the committed merge-base comparison', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                setBase(1);
+                const base = git('rev-parse', 'HEAD').trim();
+                writeCode('a.ts', declaration('apply', 19));
+                commit('main moves on');
+                git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+                git('checkout', '-q', '-b', 'feature', base);
+                writeCode('a.ts', '// 🎚', declaration('apply', 17));
+                commit('head with same count and higher complexity');
+                writeCode('a.ts', declaration('apply', 16));
+                expect(runFixtureCli()).toMatchObject({
+                    status: 1,
+                    stderr: 'a.ts: function apply complexity increased from 16 to 17 (maximum 15).\n',
+                });
+            });
+
+            it('accepts reductions, reordering, comments and renamed or nested functions', () => {
+                const nested = (score: number) =>
+                    `function outer(value: number) { function stable(value: number) ${body(score)} return stable(value); }`;
+                writeCode(
+                    'a.ts',
+                    declaration('stable', 16),
+                    declaration('reduce', 17),
+                    declaration('rename', 16),
+                    nested(16)
+                );
+                setBase(4);
+                writeCode(
+                    'a.ts',
+                    '// 🎚',
+                    nested(19),
+                    declaration('renamed', 18),
+                    declaration('reduce', 16),
+                    declaration('stable', 16)
+                );
+                commit('reorder, reduce and rename');
+                expect(runFixtureCli()).toMatchObject({ status: 0, stderr: '' });
+            });
+
+            it('tracks a unique overload implementation and a direct const arrow by identifier and kind', () => {
+                const arrow = (name: string, score: number) =>
+                    `export const ${name} = (value: number) => ${body(score)};`;
+                const overload = 'export function apply(value: number): number;';
+                writeCode('a.ts', overload, declaration('apply', 16), arrow('convert', 16), arrow('shape', 16));
+                setBase(3);
+                writeCode('a.ts', overload, declaration('apply', 17), arrow('convert', 18), declaration('shape', 19));
+                commit('grow the same implementation and arrow');
+                expect(runFixtureCli()).toMatchObject({
+                    status: 1,
+                    stderr: 'a.ts: function apply complexity increased from 16 to 17 (maximum 15).\na.ts: const convert arrow complexity increased from 16 to 18 (maximum 15).\n',
+                });
+            });
+
+            it('distinguishes a nested concise arrow from its const binding when they share an end', () => {
+                const nested = (score: number) => `const outer = () => (value: number) => ${body(score)};`;
+                const bound = (score: number) => `export const view = function (value: number) ${body(score)};`;
+                writeCode('a.tsx', nested(16), bound(17), 'export const label = <span>🎚</span>;');
+                setBase(2, 'a.tsx');
+                writeCode('a.tsx', 'export const label = <span>🎚</span>;', bound(18), nested(19));
+                commit('grow the inner arrow and the direct function expression');
+                expect(runFixtureCli()).toMatchObject({
+                    status: 1,
+                    stderr: 'a.tsx: const view function complexity increased from 17 to 18 (maximum 15).\n',
+                });
+            });
+
+            it('fails when native scoring reports a parser diagnostic', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                setBase(1);
+                writeCode('a.ts', 'export function broken( {');
+                commit('unparseable head content');
+                const result = runFixtureCli();
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('Unexpected Oxlint complexity diagnostic in a.ts');
+            });
+
+            it('accepts a decrease that eliminates the last native finding', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                setBase(1);
+                writeCode('a.ts', declaration('apply', 15));
+                writeFileSync(join(dir, 'oxlint-quality-baseline.json'), '{}\n');
+                commit('eliminate the last finding');
+                expect(runFixtureCli()).toMatchObject({ status: 0, stderr: '' });
+            });
+
+            it('skips unchanged, moved, and previously unbudgeted files', () => {
+                writeCode('a.ts', declaration('apply', 16));
+                writeCode('src.ts', declaration('apply', 17));
+                setBase(1);
+                writeCode('src.ts', declaration('apply', 18));
+                chmodSync(join(dir, 'a.ts'), 0o755);
+                rmSync(join(dir, '.oxlint-quality.json'));
+                commit('only an unbudgeted source file changes');
+                writeCode('a.ts', declaration('apply', 17));
+                expect(runFixtureCli()).toMatchObject({ status: 0, stderr: '' });
+                git('mv', 'a.ts', 'moved.ts');
+                commit('move the budgeted file');
+                expect(runFixtureCli()).toMatchObject({ status: 0, stderr: '' });
+            });
+        });
 
         it('should exit 1 and print the finding for an added path', () => {
             git('update-ref', 'refs/remotes/origin/main', 'HEAD');

@@ -3,7 +3,14 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { findQualityBudgetGrowth, parseQualityBudget, QUALITY_BUDGET, readQualityBudget } from './lintQualityBudget.ts';
+import {
+    findQualityBudgetGrowth,
+    parseConfiguredQualityRules,
+    parseQualityBudget,
+    QUALITY_BUDGET,
+    QUALITY_CONFIG,
+    readQualityBudget,
+} from './lintQualityBudget.ts';
 import {
     describeSizeBaselineGrowth,
     findSizeBaselineGrowth,
@@ -15,6 +22,7 @@ import {
 
 const BASE_REF = 'refs/remotes/origin/main';
 const BASELINE_PATH = 'eslint.size-baseline.mjs';
+const COMPLEXITY_RULE = 'eslint/complexity';
 function git(root: string, args: string[]): string {
     return execFileSync('git', args, {
         cwd: root,
@@ -90,12 +98,41 @@ export async function checkSizeBaselineShrinks(root: string, load: ModuleLoader 
     return describeSizeBaselineGrowth(growth);
 }
 
-/** The first tracked budget seeds measured debt. Once present, no path or rule count can increase. */
-export function checkQualityBudgetShrinks(root: string): string[] {
+function trackedPaths(root: string, commit: string): string[] {
+    return git(root, ['ls-tree', '-r', '--name-only', '-z', commit]).split('\0').filter(Boolean);
+}
+
+function qualityBudgetSeed(root: string, mergeBase: string) {
+    const configPath = resolve(root, QUALITY_CONFIG);
+    if (!existsSync(configPath)) {
+        return undefined;
+    }
+    const { errors } = parseConfiguredQualityRules(readFileSync(configPath, 'utf8'), QUALITY_CONFIG);
+    let baseConfig = '{}';
+    if (existsAtCommit(root, mergeBase, QUALITY_CONFIG)) {
+        baseConfig = git(root, ['show', `${mergeBase}:${QUALITY_CONFIG}`]);
+    }
+    const { present } = parseConfiguredQualityRules(baseConfig, `${mergeBase}:${QUALITY_CONFIG}`);
+    const rules = new Set<string>();
+    for (const rule of errors) {
+        if (!present.has(rule)) {
+            rules.add(rule);
+        }
+    }
+    if (rules.size === 0) {
+        return undefined;
+    }
+    const modified = new Set(git(root, ['diff', '--name-only', '--no-renames', '-z', mergeBase, '--']).split('\0'));
+    const files = new Set(trackedPaths(root, mergeBase).filter((file) => !modified.has(file)));
+    return { rules, files };
+}
+
+/** Quality counts only shrink after activation, and matched over-cap functions cannot grow more complex. */
+export async function checkQualityBudgetShrinks(root: string): Promise<string[]> {
     const mergeBase = resolveMergeBase(root);
     const head = readQualityBudget(root);
     if (!existsAtCommit(root, mergeBase, QUALITY_BUDGET)) {
-        const basePaths = new Set(git(root, ['ls-tree', '-r', '--name-only', '-z', mergeBase]).split('\0'));
+        const basePaths = new Set(trackedPaths(root, mergeBase));
         const findings: string[] = [];
         for (const file of head.keys()) {
             if (!basePaths.has(file)) {
@@ -108,7 +145,32 @@ export function checkQualityBudgetShrinks(root: string): string[] {
         git(root, ['show', `${mergeBase}:${QUALITY_BUDGET}`]),
         `${mergeBase}:${QUALITY_BUDGET}`
     );
-    return findQualityBudgetGrowth(base, head);
+    const findings = findQualityBudgetGrowth(base, head, qualityBudgetSeed(root, mergeBase));
+    const revision = git(root, ['rev-parse', 'HEAD']).trim();
+    const modified = git(root, [
+        'diff',
+        '--name-only',
+        '--no-renames',
+        '--diff-filter=M',
+        '-z',
+        mergeBase,
+        revision,
+        '--',
+    ]);
+    const files = modified.split('\0').filter((path) => /\.tsx?$/.test(path) && base.get(path)?.has(COMPLEXITY_RULE));
+    const pairs = files
+        .map((path) => ({
+            path,
+            base: git(root, ['show', `${mergeBase}:${path}`]),
+            head: git(root, ['show', `${revision}:${path}`]),
+        }))
+        .filter(({ base: previous, head: current }) => previous !== current);
+    if (pairs.length === 0) {
+        return findings;
+    }
+    const config = git(root, ['show', `${revision}:${QUALITY_CONFIG}`]);
+    const { findComplexityGrowth } = await import('./lintComplexityGrowth.ts');
+    return [...findings, ...findComplexityGrowth(config, pairs)];
 }
 
 /**
@@ -119,18 +181,22 @@ export function isEntryModule(moduleUrl: string, entry: string | undefined): boo
     return entry !== undefined && moduleUrl === pathToFileURL(realpathSync(entry)).href;
 }
 
-if (isEntryModule(import.meta.url, process.argv[1])) {
-    const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+export async function runSizeBaselineCheck(root: string): Promise<number> {
     try {
-        const findings = [...(await checkSizeBaselineShrinks(root)), ...checkQualityBudgetShrinks(root)];
+        const findings = [...(await checkSizeBaselineShrinks(root)), ...(await checkQualityBudgetShrinks(root))];
         if (findings.length > 0) {
             process.stderr.write(`${findings.join('\n')}\n`);
-            process.exitCode = 1;
-        } else {
-            process.stdout.write('Size and lint quality baselines only shrink against the merge base.\n');
+            return 1;
         }
+        process.stdout.write('Size and lint quality baselines only shrink against the merge base.\n');
+        return 0;
     } catch (error) {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        process.exitCode = 1;
+        return 1;
     }
+}
+
+if (isEntryModule(import.meta.url, process.argv[1])) {
+    const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+    process.exitCode = await runSizeBaselineCheck(root);
 }

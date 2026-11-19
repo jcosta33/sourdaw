@@ -289,6 +289,7 @@ const applicationIdMaterializerByActionType: {
     removeAutomationLane: materializeByIdRule,
     setAutomationLaneEnabled: materializeByIdRule,
     addAutomationPoint: materializeByIdRule,
+    insertAutomationLanePoints: materializeByIdRule,
     quantizeNotes: materializeByIdRule,
     removeShortMidiOverlaps: materializeByIdRule,
     createDrumPreviewBranches: materializeByIdRule,

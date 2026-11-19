@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    rmdirSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 
@@ -13,6 +22,7 @@ import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
 import { lintImportOrderParity } from './helpers/lintImportOrderParity.ts';
 import {
+    createLintWorkspace,
     lintBaselineMigratedRules,
     lintLegacyCoreRule,
     lintMigratedFile,
@@ -262,9 +272,29 @@ const coreMigrationCases: CoreMigrationCase[] = [
 ];
 
 // Keep real lint processes and their temporary workspace files in this one
-// sequential suite. A native TS program can enumerate another worker's fixture
-// before that worker deletes it, then fail when opening the missing file.
+// sequential suite. Each writer uses a private project so other workers cannot
+// enumerate its transient files in the checkout.
 describe('production Oxlint public-plugin migration', () => {
+    it('keeps lint fixtures out of production source', () => {
+        let path = '';
+        withLintFixture('export enum Fruit { Apple }\n', 'src/modules/Example/useCases/example.ts', (fixture, root) => {
+            path = fixture;
+            expect(existsSync(fixture)).toBe(true);
+            expect(relative(resolve('src'), fixture).startsWith('..')).toBe(true);
+            const fixturePath = relative(root, fixture);
+            expect(fixturePath).toMatch(/^src\/modules\/LintMigration-[^/]+\/useCases\/example\.ts$/);
+            expect(existsSync(resolve(fixturePath))).toBe(false);
+            const lint = spawnSync(
+                resolve('node_modules/.bin/oxlint'),
+                ['--config=.oxlint-plugins.json', '--threads=2', '--format=json', fixturePath],
+                { cwd: root, encoding: 'utf8' }
+            );
+            expect(lint.status, lint.stderr).toBe(1);
+            expect(lint.stdout).toContain('sourdaw(no-enum)');
+        });
+        expect(existsSync(path)).toBe(false);
+    });
+
     it.each([undefined, 'true'])(
         'drops redundant no-octal only while physical inputs are rejected (CI=%s)',
         async (ci) => {
@@ -825,10 +855,10 @@ describe('production Oxlint public-plugin migration', () => {
                 'export function Example() {\n    return [1].map((value, index) => <div key={index}><span key={index}>{value}</span></div>);\n}\n';
             const noViolation =
                 'export function Example() {\n    return [1].map((value) => <div key={value}>{value}</div>);\n}\n';
-            withLintFixture(oneViolation, 'src/app/Example.tsx', (fixture) => {
+            withLintFixture(oneViolation, 'src/app/Example.tsx', (fixture, root) => {
                 const directory = mkdtempSync(join(tmpdir(), 'lint-migration-suppressions-'));
                 const suppressionsFile = join(directory, 'eslint-suppressions.json');
-                const budget = JSON.stringify({ [relative(process.cwd(), fixture)]: { [rule]: { count: 1 } } });
+                const budget = JSON.stringify({ [relative(root, fixture)]: { [rule]: { count: 1 } } });
                 const run = (text: string, target = fixture) => {
                     writeFileSync(target, text);
                     const argv = buildEslintArgv({ fix, full: false }, [target]);
@@ -838,7 +868,7 @@ describe('production Oxlint public-plugin migration', () => {
                     expect(argv).not.toContain('--pass-on-unpruned-suppressions');
                     argv[location + 1] = suppressionsFile;
                     const result = spawnSync('pnpm', argv, {
-                        cwd: process.cwd(),
+                        cwd: root,
                         encoding: 'utf8',
                         timeout: suppressionLintChildTimeout,
                         env: eslintEnvironment(process.env, fix),
@@ -852,7 +882,7 @@ describe('production Oxlint public-plugin migration', () => {
                     const location = missingArgv.indexOf('--suppressions-location');
                     missingArgv[location + 1] = suppressionsFile;
                     const missing = spawnSync('pnpm', missingArgv, {
-                        cwd: process.cwd(),
+                        cwd: root,
                         encoding: 'utf8',
                         timeout: suppressionLintChildTimeout,
                         env: eslintEnvironment(process.env, fix),
@@ -869,8 +899,11 @@ describe('production Oxlint public-plugin migration', () => {
                     const unused = run(noViolation);
                     expect(unused.status, unused.output).toBe(2);
                     expect(unused.output).toContain('suppression');
-                    const unrecorded = withLintFixture(oneViolation, 'src/app/Unrecorded.tsx', (target) =>
-                        run(oneViolation, target)
+                    const unrecorded = withLintFixture(
+                        oneViolation,
+                        'src/app/Unrecorded.tsx',
+                        (target) => run(oneViolation, target),
+                        root
                     );
                     expect(unrecorded.status, unrecorded.output).toBe(1);
                     expect(unrecorded.output).toContain(rule);
@@ -1351,11 +1384,12 @@ describe('production Oxlint public-plugin migration', () => {
     it.each([false, true])(
         'rejects missing, unmatched, unsupported and partially missing targets (fix=%s)',
         (fix) => {
-            const directory = mkdtempSync(resolve('scripts/lint-targets-'));
-            const valid = join(directory, 'valid.ts');
-            const missing = join(directory, 'missing.ts');
-            const unsupported = join(directory, 'example.rs');
+            const root = createLintWorkspace();
             try {
+                const directory = mkdtempSync(join(root, 'scripts/lint-targets-'));
+                const valid = join(directory, 'valid.ts');
+                const missing = join(directory, 'missing.ts');
+                const unsupported = join(directory, 'example.rs');
                 writeFileSync(valid, 'export const value = 1;\n');
                 writeFileSync(unsupported, 'fn main() {}\n');
                 for (const targets of [
@@ -1364,13 +1398,13 @@ describe('production Oxlint public-plugin migration', () => {
                     [unsupported],
                     [valid, missing],
                 ]) {
-                    const args = ['scripts/runLint.ts'];
+                    const args = [resolve('scripts/runLint.ts')];
                     if (fix) {
                         args.push('--fix');
                     }
                     args.push(...targets);
                     const result = spawnSync(process.execPath, args, {
-                        cwd: process.cwd(),
+                        cwd: root,
                         encoding: 'utf8',
                         timeout: 120_000,
                         env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
@@ -1378,9 +1412,7 @@ describe('production Oxlint public-plugin migration', () => {
                     expect(result.status, result.stdout + result.stderr).toBe(1);
                 }
             } finally {
-                unlinkSync(valid);
-                unlinkSync(unsupported);
-                rmdirSync(directory);
+                rmSync(root, { recursive: true, force: true });
             }
         },
         180_000
@@ -1408,16 +1440,17 @@ describe('production Oxlint public-plugin migration', () => {
     }, 60_000);
 
     it('rejects a migrated violation in the production runner and accepts its valid replacement', () => {
-        const directory = mkdtempSync(resolve('scripts/lint-route-'));
-        const fixture = join(directory, 'example.ts');
-        const run = () =>
-            spawnSync(process.execPath, ['scripts/runLint.ts', fixture], {
-                cwd: process.cwd(),
-                encoding: 'utf8',
-                timeout: 120_000,
-                env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
-            });
+        const root = createLintWorkspace();
         try {
+            const directory = mkdtempSync(join(root, 'scripts/lint-route-'));
+            const fixture = join(directory, 'example.ts');
+            const run = () =>
+                spawnSync(process.execPath, [resolve('scripts/runLint.ts'), fixture], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 120_000,
+                    env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
+                });
             writeFileSync(fixture, 'export enum Fruit {\n    Apple,\n}\n');
             const rejected = run();
             expect(rejected.status, rejected.stdout + rejected.stderr).toBe(1);
@@ -1431,8 +1464,7 @@ describe('production Oxlint public-plugin migration', () => {
             expect(accepted.stdout).toContain('lint: oxlint-plugins passed');
             expect(accepted.stdout).toContain('lint: eslint passed');
         } finally {
-            unlinkSync(fixture);
-            rmdirSync(directory);
+            rmSync(root, { recursive: true, force: true });
         }
     }, 180_000);
 
@@ -1639,8 +1671,7 @@ describe('production Oxlint public-plugin migration', () => {
     // Load retained TypeScript programs after subprocess probes so their compiler heaps do not overlap.
 
     it('still rejects all four typed service gaps through the retained ESLint route', async () => {
-        const directory = mkdtempSync(resolve('src/app/retained-lint-'));
-        const fixture = join(directory, 'Example.tsx');
+        const root = createLintWorkspace();
         const code = `import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 declare function useWrapped(): UseQueryResult<number>;
 export function useExample() {
@@ -1653,9 +1684,12 @@ export function Example<T>({ count }: { count: number }) {
 }
 `;
         try {
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            const directory = mkdtempSync(join(root, 'src/app/retained-lint-'));
+            const fixture = join(directory, 'Example.tsx');
             writeFileSync(fixture, code);
             clearCaches();
-            const [result] = await new ESLint().lintText(code, { filePath: fixture });
+            const [result] = await new ESLint({ cwd: root }).lintText(code, { filePath: fixture });
             expect(result?.fatalErrorCount, JSON.stringify(result?.messages)).toBe(0);
             expect(result?.messages.map((message) => message.ruleId)).toEqual(
                 expect.arrayContaining([
@@ -1666,13 +1700,12 @@ export function Example<T>({ count }: { count: number }) {
                 ])
             );
         } finally {
-            rmSync(directory, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true });
         }
     }, 60_000);
 
     it('retains comment hygiene whose blanket-directive diagnostics need negative columns', async () => {
-        const directory = mkdtempSync(resolve('src/app/retained-comments-'));
-        const fixture = join(directory, 'example.ts');
+        const root = createLintWorkspace();
         const invalid = `/* eslint-disable sourdaw/no-enum */
 /* eslint-disable sourdaw/no-enum */
 /* eslint-disable sourdaw/no-type-assertion-escape */
@@ -1687,10 +1720,13 @@ export const value = 1;
 /* eslint-enable sourdaw/no-enum */
 `;
         try {
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            const directory = mkdtempSync(join(root, 'src/app/retained-comments-'));
+            const fixture = join(directory, 'example.ts');
             writeFileSync(fixture, invalid);
             // CI uses single-run programs, whose initial file list predates this fixture.
             clearCaches();
-            const eslint = new ESLint();
+            const eslint = new ESLint({ cwd: root });
             const [rejected] = await eslint.lintText(invalid, { filePath: fixture });
             expect(rejected?.fatalErrorCount, JSON.stringify(rejected?.messages)).toBe(0);
             expect(rejected?.messages.map((message) => message.ruleId)).toEqual(
@@ -1708,7 +1744,7 @@ export const value = 1;
                 accepted?.messages.filter((message) => message.ruleId?.startsWith('@eslint-community/eslint-comments/'))
             ).toEqual([]);
         } finally {
-            rmSync(directory, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true });
         }
     }, 60_000);
 });

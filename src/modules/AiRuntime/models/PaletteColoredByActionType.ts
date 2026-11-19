@@ -133,6 +133,7 @@ export const paletteColoredByActionType: { readonly [Type in AppActionType]: boo
     removeAutomationLane: false,
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
+    insertAutomationLanePoints: false,
     quantizeNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,

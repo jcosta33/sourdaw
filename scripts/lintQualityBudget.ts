@@ -5,6 +5,12 @@ export const QUALITY_CONFIG = '.oxlint-quality.json';
 export const QUALITY_BUDGET = 'oxlint-quality-baseline.json';
 
 export const qualityRuleIds = [
+    'eslint/complexity',
+    'eslint/max-depth',
+    'eslint/max-lines-per-function',
+    'eslint/max-params',
+    'eslint/no-else-return',
+    'sourdaw-craft/no-complex-ternary-branch',
     'sourdaw-craft/no-conditional-empty-spread',
     'sourdaw-craft/no-conditional-playwright-admission',
     'sourdaw-craft/no-control-flow-ternary',
@@ -14,11 +20,18 @@ export const qualityRuleIds = [
     'sourdaw-craft/no-invalid-vitest-expect',
     'sourdaw-craft/no-json-parse-stringify',
     'sourdaw-craft/no-long-array-chain',
+    'sourdaw-craft/no-positional-boolean-flags',
     'sourdaw-craft/no-silent-catch',
     'sourdaw-craft/no-spread-clone-array-method',
     'sourdaw-craft/no-useless-clone-spread',
+    'typescript/no-non-null-assertion',
+    'typescript/no-unnecessary-type-parameters',
+    'typescript/no-unsafe-type-assertion',
     'typescript/switch-exhaustiveness-check',
+    'vitest/expect-expect',
     'vitest/no-conditional-expect',
+    'vitest/no-disabled-tests',
+    'vitest/no-focused-tests',
 ] as const;
 
 const qualityRules: ReadonlySet<string> = new Set(qualityRuleIds);
@@ -37,6 +50,39 @@ function parseJson(text: string, label: string): unknown {
             cause: error,
         });
     }
+}
+
+export function canonicalQualityRule(name: string): string {
+    return name.includes('/') ? name : `eslint/${name}`;
+}
+
+export function parseConfiguredQualityRules(text: string, label: string) {
+    const config = parseJson(text, label);
+    if (
+        !record(config) ||
+        'extends' in config ||
+        (config.overrides !== undefined && !Array.isArray(config.overrides))
+    ) {
+        throw new Error(`${label} must declare its rules directly in the quality configuration.`);
+    }
+    const present = new Set<string>();
+    const errors = new Set<string>();
+    const overrides: unknown[] = config.overrides ?? [];
+    const layers = [config, ...overrides];
+    for (const layer of layers) {
+        if (!record(layer) || (layer.rules !== undefined && !record(layer.rules))) {
+            throw new Error(`${label} must declare quality rules by name.`);
+        }
+        for (const [name, value] of Object.entries(layer.rules ?? {})) {
+            const rule = canonicalQualityRule(name);
+            const severity: unknown = Array.isArray(value) ? value[0] : value;
+            present.add(rule);
+            if (severity === 'error' || severity === 'deny' || severity === 2) {
+                errors.add(rule);
+            }
+        }
+    }
+    return { present, errors };
 }
 
 export function parseQualityBudget(text: string, label: string = QUALITY_BUDGET): Budget {
@@ -208,12 +254,17 @@ export function reconcileQualityBudget(
     return { diagnostics, failed, hadErrors };
 }
 
-export function findQualityBudgetGrowth(base: Budget, head: Budget): string[] {
+export function findQualityBudgetGrowth(
+    base: Budget,
+    head: Budget,
+    seed?: { rules: ReadonlySet<string>; files: ReadonlySet<string> }
+): string[] {
     const findings: string[] = [];
     for (const [file, counts] of head) {
         for (const [rule, count] of counts) {
             const allowed = base.get(file)?.get(rule) ?? 0;
-            if (count > allowed) {
+            const canSeed = allowed === 0 && seed?.rules.has(rule) && seed.files.has(file);
+            if (count > allowed && !canSeed) {
                 findings.push(`${file}: ${rule} budget increased from ${allowed} to ${count} in ${QUALITY_BUDGET}.`);
             }
         }

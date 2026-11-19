@@ -4,6 +4,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { productionBriefRefusalByActionType } from '../models/ProductionBriefActionRefusal';
 import { productionBriefRouteByActionType } from '../models/ProductionBriefActionRoute';
@@ -120,6 +121,11 @@ function actionOverlapsRange(
     scope: ProductionBriefRangeScope,
     footprint: ProductionBriefActionFootprint
 ): boolean {
+    if (action.type === 'insertAutomationLanePoints') {
+        // The ordered capture includes every untouched point. Only the owner's
+        // verified changed beats describe this insertion's range footprint.
+        return specificRangeOverlap(action, scope, footprint);
+    }
     return (
         (!ownValue(carriesClipRelativeBeatsByActionType, action.type, false) &&
             valueOverlapsRange(action.payload, scope)) ||
@@ -193,7 +199,16 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
     const projectActions = actions.filter((action) => !isAdmittedRoute(action));
     const actionStrings = new Set<string>();
     for (const action of projectActions) {
-        collectActionStrings(action.payload, actionStrings);
+        if (action.type === 'insertAutomationLanePoints') {
+            const { laneId, owner, capture } = action.payload;
+            actionStrings.add(laneId);
+            if (isRecord(owner)) {
+                collectActionStrings([owner.trackId, owner.clipId], actionStrings);
+            }
+            collectActionStrings(capture?.changedPointIds, actionStrings);
+        } else {
+            collectActionStrings(action.payload, actionStrings);
+        }
     }
 
     const protectedScopes = collectProtectedScopes(brief).map((protection) => protection.scope);

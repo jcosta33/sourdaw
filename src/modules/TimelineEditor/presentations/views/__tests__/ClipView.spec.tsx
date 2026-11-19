@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { selectClip } from '#/modules/Arrangement/useCases';
+import { readPianoRollSelection, projectPianoRollTakeNotes } from '#/modules/MIDI/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -12,6 +13,11 @@ import { ClipView } from '../ClipView';
 const clipSelectionMocks = vi.hoisted(() => ({
     store: {
         value: { selectedClipId: null as string | null, selectedClipIds: [] as string[], marqueeSelection: null },
+        listeners: new Set<() => void>(),
+        subscribe(callback: () => void) {
+            this.listeners.add(callback);
+            return () => this.listeners.delete(callback);
+        },
     },
 }));
 
@@ -95,7 +101,15 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('../ClipView/PianoRoll', () => ({
-    PianoRoll: ({ clipId, trackId, openedClipIds, onScrollChange, onBeatWidthChange, onContentWidthChange }: any) => (
+    PianoRoll: ({
+        clipId,
+        trackId,
+        openedClipIds,
+        onScrollChange,
+        onBeatWidthChange,
+        onContentWidthChange,
+        onSelectedNoteIdsChange,
+    }: any) => (
         <div
             data-testid="piano-roll"
             data-clip-id={clipId}
@@ -110,6 +124,24 @@ vi.mock('../ClipView/PianoRoll', () => ({
             </button>
             <button type="button" onClick={() => onContentWidthChange(777)}>
                 trigger-content-width
+            </button>
+            <button
+                type="button"
+                onClick={() =>
+                    onSelectedNoteIdsChange(new Set(['note-a']), [
+                        {
+                            clipId,
+                            projection: projectPianoRollTakeNotes(
+                                { id: clipId, startBeat: 0, endBeat: 4 },
+                                trackId,
+                                null,
+                                [{ id: 'note-a', pitch: 60, startBeat: 0, duration: 1, velocity: 80 }]
+                            ),
+                        },
+                    ])
+                }
+            >
+                select-note
             </button>
         </div>
     ),
@@ -216,6 +248,28 @@ describe('ClipView', () => {
         vi.clearAllMocks();
         clipSelectionMocks.store.value = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
         vi.mocked(useTracks).mockReturnValue({ tracks: [], selectedTrackId: null });
+    });
+
+    it('publishes note selection and invalidates it on clip change and unmount', () => {
+        const clip = makeClip({ id: 'clip-midi', name: 'MIDI', type: 'midi' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+            selectedTrackId: 'track-1',
+        });
+        const view = renderWithTooltip(<ClipView />);
+        fireEvent.click(screen.getByText('select-note'));
+        const selected = readPianoRollSelection();
+        expect(selected).toMatchObject({ clipId: 'clip-midi', viewIds: ['note-a'] });
+        for (const notify of clipSelectionMocks.store.listeners) {
+            notify();
+        }
+        expect(readPianoRollSelection().token).not.toBe(selected.token);
+        expect(readPianoRollSelection().clipId).toBeNull();
+        fireEvent.click(screen.getByText('select-note'));
+        const reopened = readPianoRollSelection();
+        view.unmount();
+        expect(readPianoRollSelection().clipId).toBeNull();
+        expect(readPianoRollSelection().token).not.toBe(reopened.token);
     });
 
     it('should render without crashing', () => {
