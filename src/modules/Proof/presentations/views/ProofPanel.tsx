@@ -17,7 +17,6 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import {
     effectDisclosureLevel,
     effectDisclosureTierFromLevel,
@@ -65,6 +64,7 @@ import { ProofImagerSection } from '../components/ProofImagerSection';
 import { ProofLimiterSection } from '../components/ProofLimiterSection';
 import { TonalBalance } from '../components/TonalBalance';
 import { useProofAnalyser } from '../hooks/useProofAnalyser';
+import { useProofCeilingSettlement } from '../hooks/useProofCeilingSettlement';
 import { useProofLoudnessHistory } from '../hooks/useProofLoudnessHistory';
 import { useProofMeter } from '../hooks/useProofMeter';
 
@@ -425,7 +425,6 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const activeGestureTokenRef = useRef(0);
     const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
     const ceilingPreviewTokenRef = useRef<number | null>(null);
-    const panelLifetimeRef = useRef<symbol | null>(null);
     const gestureDeviceIdRef = useRef(deviceId);
     const patchSnapshotRef = useRef(patchSnapshot);
     const acceptedPatchSnapshotRef = useRef<string | null>(null);
@@ -469,12 +468,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         isCurrent: (token) => Object.is(activeGestureTokenRef.current, token),
     };
 
-    useLayoutEffect(() => {
-        panelLifetimeRef.current = Symbol();
-        return () => {
-            panelLifetimeRef.current = null;
-        };
-    }, [deviceId]);
+    const afterCeilingSettlement = useProofCeilingSettlement(deviceId);
 
     useLayoutEffect(() => {
         const previousDeviceId = gestureDeviceIdRef.current;
@@ -499,26 +493,6 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             advanceGestureOwner();
         }
     }, [deviceId, patchSnapshot]);
-
-    const afterCeilingSettlement = (apply: () => void): void => {
-        const settlement = proofLimiterCeiling.settlement(deviceId);
-        if (!settlement) {
-            apply();
-            return;
-        }
-        const lifetime = panelLifetimeRef.current;
-        settlement.done
-            .then(() => {
-                if (lifetime && panelLifetimeRef.current === lifetime && settlement.ownerIsCurrent()) {
-                    // An earlier callback can have released another ceiling while this one waited.
-                    return afterCeilingSettlement(apply);
-                }
-                return undefined;
-            })
-            .catch((error: unknown) => {
-                notifyUser(error instanceof Error ? error.message : 'Proof parameter change failed', 'error');
-            });
-    };
 
     const handlePatchChange: ProofPatchChange = (edit) => {
         const token = activeGestureTokenRef.current;
