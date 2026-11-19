@@ -176,12 +176,11 @@ function restoreFloatValues(bytes: Uint8Array, repairs: ReadonlyMap<number, Floa
     }
 }
 
-/** Preserve the native encoder's framing and restore only floats its decimal ingress rounded. */
-export function encodeExactNativeChange(
+function repairEncodedNativeChange(
     change: NativeChange,
-    { encodeChange, decodeChange }: NativeChangeCodec
+    bytes: Uint8Array<ArrayBuffer>,
+    decodeChange: NativeChangeCodec['decodeChange']
 ): { bytes: Uint8Array<ArrayBuffer>; hash: string } {
-    const bytes = Uint8Array.from(encodeChange(change));
     const encoded = decodeChange(bytes);
     const repairs = readFloatRepairs(change.ops, encoded.ops);
     if (repairs.size === 0) {
@@ -194,4 +193,30 @@ export function encodeExactNativeChange(
         throw new Error('Native change did not preserve exact floats');
     }
     return { bytes, hash: repaired.hash };
+}
+
+/** Preserve the native encoder's framing and restore only floats its decimal ingress rounded. */
+export function encodeExactNativeChange(change: NativeChange, codec: NativeChangeCodec) {
+    return repairEncodedNativeChange(change, Uint8Array.from(codec.encodeChange(change)), codec.decodeChange);
+}
+
+function equalChangeBytes(left: Uint8Array, right: Uint8Array): boolean {
+    return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+/** Identical canonical bytes already prove the round trip, without decoding that output again. */
+export function assertExactNativeChangeEncoding(
+    change: NativeChange,
+    original: Uint8Array<ArrayBuffer>,
+    codec: NativeChangeCodec
+): 'byte-equal' | 'exact-float-repair' {
+    const encoded = Uint8Array.from(codec.encodeChange(change));
+    if (equalChangeBytes(encoded, original)) {
+        return 'byte-equal';
+    }
+    const repaired = repairEncodedNativeChange(change, encoded, codec.decodeChange);
+    if (!equalChangeBytes(repaired.bytes, original)) {
+        throw new Error('Native sequence contains unsupported opaque metadata');
+    }
+    return 'exact-float-repair';
 }

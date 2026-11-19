@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -227,6 +228,7 @@ describe('bounded native sequence authority', () => {
                 let previousApply = 0;
                 let observedDecodes = 0;
                 let observedFloatRepair = false;
+                let observedByteEquality = false;
                 for (const [index, bytes] of result.changes.entries()) {
                     const encodeOrder = encode.mock.invocationCallOrder[index]!;
                     const applyOrder = apply.mock.invocationCallOrder[index]!;
@@ -238,21 +240,41 @@ describe('bounded native sequence authority', () => {
                     const received = incoming[0]!.change;
 
                     const canonical = decodes.filter(({ order }) => encodeOrder < order && order < applyOrder);
-                    expect(canonical.length).toBeGreaterThanOrEqual(1);
-                    const encoded = canonical[0]!.change;
-                    const repairedFloat = received.ops.some(
-                        (op, opIndex) => op.datatype === 'float64' && !Object.is(op.value, encoded.ops[opIndex]?.value)
-                    );
-                    expect(canonical).toHaveLength(repairedFloat ? 2 : 1);
-                    expect(canonical.at(-1)?.change.hash).toBe(received.hash);
+                    const encoded = encode.mock.results[index];
+                    if (encoded?.type !== 'return') {
+                        throw new Error('Expected one canonical encoding per chunk');
+                    }
+                    const byteEqual = Buffer.from(encoded.value).equals(Buffer.from(bytes));
+                    let expectedDecodes = 0;
+                    let repairedFloat = false;
+                    const expectedHashes: string[] = [];
+                    if (!byteEqual) {
+                        const encodedChange = canonical[0]?.change;
+                        if (!encodedChange) {
+                            throw new Error('A canonical byte mismatch requires exact float validation');
+                        }
+                        repairedFloat = received.ops.some(
+                            (op, opIndex) =>
+                                op.datatype === 'float64' && !Object.is(op.value, encodedChange.ops[opIndex]?.value)
+                        );
+                        expectedDecodes = 1;
+                        if (repairedFloat) {
+                            expectedDecodes = 2;
+                        }
+                        expectedHashes.push(received.hash);
+                    }
+                    expect(canonical).toHaveLength(expectedDecodes);
+                    expect(canonical.slice(-1).map((entry) => entry.change.hash)).toEqual(expectedHashes);
                     expect(apply.mock.calls[index]?.[1]).toEqual([bytes]);
 
                     observedDecodes += incoming.length + canonical.length;
                     observedFloatRepair ||= repairedFloat;
+                    observedByteEquality ||= byteEqual;
                     previousApply = applyOrder;
                 }
                 expect(decodes).toHaveLength(observedDecodes);
                 expect(observedFloatRepair).toBe(true);
+                expect(observedByteEquality).toBe(true);
                 expect(A.toJS(candidate)).toEqual({ slot: target });
             } finally {
                 A.free(candidate);

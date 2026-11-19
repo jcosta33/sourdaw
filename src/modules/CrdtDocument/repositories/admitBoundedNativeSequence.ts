@@ -15,7 +15,7 @@ import {
     getMissingDeps,
 } from '@automerge/automerge';
 
-import { encodeExactNativeChange } from '../models/EncodeExactNativeChange';
+import { assertExactNativeChangeEncoding } from '../models/EncodeExactNativeChange';
 import { sameNativeHeads } from '../models/NativeIncrementalEncoding';
 import {
     NATIVE_SEQUENCE_MAX_BYTES,
@@ -78,6 +78,7 @@ type SequenceMeasureDetail = {
     historyIndex?: number;
     visitedChangeCount?: number;
     historyComplete?: boolean;
+    canonicalEncoding?: 'byte-equal' | 'exact-float-repair';
 };
 
 function measure(name: string, start: number, end: number, detail: SequenceMeasureDetail): void {
@@ -121,7 +122,11 @@ function matchesDecodedSequenceIdentity(decoded: DecodedChange, expected: Decode
     );
 }
 
-function assertDecodedAuthority(decoded: DecodedChange, expected: DecodedAuthorityExpectation): number {
+function assertDecodedAuthority(
+    decoded: DecodedChange,
+    bytes: Uint8Array<ArrayBuffer>,
+    expected: DecodedAuthorityExpectation
+) {
     const operationCount = nativeOperationCount(decoded);
     const dependencies = new Set(decoded.deps);
     if (
@@ -135,11 +140,9 @@ function assertDecodedAuthority(decoded: DecodedChange, expected: DecodedAuthori
         throw new Error('Native sequence changed captured authority');
     }
     // The decoded operation stream must also survive canonical re-encoding unchanged.
-    const { hash, ...canonical } = decoded;
-    if (encodeExactNativeChange(canonical, { encodeChange, decodeChange }).hash !== hash) {
-        throw new Error('Native sequence contains unsupported opaque metadata');
-    }
-    return operationCount;
+    const { hash: _hash, ...canonical } = decoded;
+    const canonicalEncoding = assertExactNativeChangeEncoding(canonical, bytes, { encodeChange, decodeChange });
+    return { operationCount, canonicalEncoding };
 }
 
 type AppliedSequenceExpectation = {
@@ -254,25 +257,23 @@ async function readSourceSequenceAuthority<TDoc>(
     cursor.startOp++;
 }
 
-function admitSequenceChunk<TDoc>(
+function readSequenceChunk<TDoc>(
     input: Input<TDoc>,
     cursor: SequenceCursor<TDoc>,
     chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; totalOperations: number },
     assertCurrent: () => void
-): void {
+): { decoded: DecodedChange; span: number } {
     const { bytes, index, totalOperations } = chunk;
     const started = performance.now();
     assertCurrent();
-    let responseEnded = started;
-    let applyEnded = started;
-    let phase: 'response' | 'apply' | 'authority' = 'response';
+    let canonicalEncoding: SequenceMeasureDetail['canonicalEncoding'];
     try {
         const decoded = assertCompleteCanonicalChange(bytes);
         const dependencies = new Set(cursor.previousHeads);
         if (cursor.previousOwnHash) {
             dependencies.add(cursor.previousOwnHash);
         }
-        const span = assertDecodedAuthority(decoded, {
+        const authority = assertDecodedAuthority(decoded, bytes, {
             actor: input.actor,
             sequence: cursor.sequence,
             startOp: cursor.startOp,
@@ -280,13 +281,32 @@ function admitSequenceChunk<TDoc>(
             message: input.message,
             time: cursor.time,
         });
-        if (cursor.operationCount + span > totalOperations) {
+        canonicalEncoding = authority.canonicalEncoding;
+        if (cursor.operationCount + authority.operationCount > totalOperations) {
             throw new Error('Native sequence operation membership changed');
         }
-        cursor.time = decoded.time;
         assertCurrent();
-        responseEnded = performance.now();
-        phase = 'apply';
+        return { decoded, span: authority.operationCount };
+    } finally {
+        measure('automerge-prospective-response-task', started, performance.now(), {
+            primaryKey: input.key,
+            sequenceIndex: index,
+            canonicalEncoding,
+        });
+    }
+}
+
+function admitSequenceChunk<TDoc>(
+    input: Input<TDoc>,
+    cursor: SequenceCursor<TDoc>,
+    chunk: { bytes: Uint8Array<ArrayBuffer>; index: number; decoded: DecodedChange; span: number },
+    assertCurrent: () => void
+): void {
+    const { bytes, index, decoded, span } = chunk;
+    const started = performance.now();
+    assertCurrent();
+    let applyEnded: number | undefined;
+    try {
         [cursor.document] = applyChanges(cursor.document, [bytes], {
             patchCallback: (patches) => {
                 for (const patch of patches) {
@@ -303,7 +323,6 @@ function admitSequenceChunk<TDoc>(
             },
         });
         applyEnded = performance.now();
-        phase = 'authority';
         const hash = assertAppliedSequenceChange(cursor.document, {
             actor: input.actor,
             previousHeads: cursor.previousHeads,
@@ -318,18 +337,12 @@ function admitSequenceChunk<TDoc>(
         cursor.sequence++;
         cursor.startOp += span;
         cursor.operationCount += span;
+        cursor.time = decoded.time;
     } finally {
         const ended = performance.now();
-        if (phase === 'response') {
-            responseEnded = ended;
-            applyEnded = ended;
-        } else if (phase === 'apply') {
-            applyEnded = ended;
-        }
         const detail = { primaryKey: input.key, sequenceIndex: index };
-        measure('automerge-prospective-response-task', started, responseEnded, detail);
-        measure('automerge-prospective-apply-task', responseEnded, applyEnded, detail);
-        measure('automerge-prospective-authority-task', applyEnded, ended, detail);
+        measure('automerge-prospective-apply-task', started, applyEnded ?? ended, detail);
+        measure('automerge-prospective-authority-task', applyEnded ?? ended, ended, detail);
         measure('automerge-prospective-sequence-slice-task', started, ended, detail);
     }
 }
@@ -369,7 +382,14 @@ export async function admitBoundedNativeSequence<TDoc>(input: Input<TDoc>): Prom
         await readSourceSequenceAuthority(input, state, assertCurrent, history);
         for (const [index, bytes] of changes.entries()) {
             await yieldToHost(input.signal);
-            admitSequenceChunk(input, state, { bytes, index, totalOperations: sequence.operationCount }, assertCurrent);
+            const response = readSequenceChunk(
+                input,
+                state,
+                { bytes, index, totalOperations: sequence.operationCount },
+                assertCurrent
+            );
+            await yieldToHost(input.signal);
+            admitSequenceChunk(input, state, { bytes, index, ...response }, assertCurrent);
         }
         if (
             state.operationCount !== sequence.operationCount ||

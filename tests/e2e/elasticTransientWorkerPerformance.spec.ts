@@ -939,7 +939,36 @@ function assertNativeTaskBudget(measurement: NativeTaskMeasurement, reference: N
     expect(failures, `${reference.phase} main-thread budget`).toEqual([]);
 }
 
+function assertSeparatedSequenceTasks(measurement: NativeTaskMeasurement): void {
+    const responses = measurement.nativePhases.filter((phase) => phase.name === 'automerge-prospective-response-task');
+    for (const response of responses) {
+        const detail = measureDetail(response);
+        const findPhase = (name: string) => {
+            const matches = measurement.nativePhases.filter(
+                (phase) =>
+                    phase.name === name &&
+                    measureDetail(phase).primaryKey === detail.primaryKey &&
+                    measureDetail(phase).sequenceIndex === detail.sequenceIndex
+            );
+            expect(matches, `Missing or ambiguous ${name}`).toHaveLength(1);
+            return matches[0];
+        };
+        const apply = findPhase('automerge-prospective-apply-task');
+        const authority = findPhase('automerge-prospective-authority-task');
+        const slice = findPhase(SEQUENCE_SLICE_NAME);
+        expect(response.enclosingTask).toBeDefined();
+        expect(apply.enclosingTask).toBeDefined();
+        expect(response.enclosingTask).not.toBe(apply.enclosingTask);
+        expect(apply.enclosingTask).toBe(authority.enclosingTask);
+        expect(apply.enclosingTask).toBe(slice.enclosingTask);
+        expect(response.startTime + response.duration).toBeLessThanOrEqual(apply.startTime);
+        expect(slice.startTime).toBe(apply.startTime);
+        expect(slice.startTime + slice.duration).toBe(authority.startTime + authority.duration);
+    }
+}
+
 function assertElasticTiming(measurement: ElasticTiming, reference: NativeReferencePhase): void {
+    assertSeparatedSequenceTasks(measurement);
     expect(measurement.mainThreadTasks.length).toBeGreaterThan(0);
     assertNativeTaskBudget(measurement, reference);
     expect(measurement.preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);

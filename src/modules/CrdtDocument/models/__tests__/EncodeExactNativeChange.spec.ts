@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 
 import { change, clone, decodeChange, encodeChange, from, getChanges } from '@automerge/automerge';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { encodeExactNativeChange } from '../EncodeExactNativeChange';
+import { assertExactNativeChangeEncoding, encodeExactNativeChange } from '../EncodeExactNativeChange';
 
 describe('exact native change encoding', () => {
     it('preserves a negative IEEE-754 zero and checksums the repaired bytes', () => {
@@ -28,5 +28,26 @@ describe('exact native change encoding', () => {
         const checksum = createHash('sha256').update(bytes.subarray(8)).digest();
         expect([...bytes.subarray(4, 8)]).toEqual([...checksum.subarray(0, 4)]);
         expect(hash).toBe(checksum.toString('hex'));
+        const { hash: _repairedHash, ...canonical } = decoded;
+        const codec = { encodeChange: vi.fn(encodeChange), decodeChange: vi.fn(decodeChange) };
+        expect(assertExactNativeChangeEncoding(canonical, bytes, codec)).toBe('exact-float-repair');
+        expect(codec.encodeChange).toHaveBeenCalledOnce();
+        expect(codec.decodeChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('proves identical canonical bytes with one encode and no redundant decode', () => {
+        const source = from({ value: 1 }, { actor: 'aaaaaaaaaaaaaaaa' });
+        const updated = change(clone(source), (draft) => {
+            draft.value = 2;
+        });
+        const bytes = getChanges(source, updated)[0];
+        if (!bytes) {
+            throw new Error('Expected one native change');
+        }
+        const { hash: _hash, ...canonical } = decodeChange(bytes);
+        const codec = { encodeChange: vi.fn(encodeChange), decodeChange: vi.fn(decodeChange) };
+        expect(assertExactNativeChangeEncoding(canonical, Uint8Array.from(bytes), codec)).toBe('byte-equal');
+        expect(codec.encodeChange).toHaveBeenCalledOnce();
+        expect(codec.decodeChange).not.toHaveBeenCalled();
     });
 });
