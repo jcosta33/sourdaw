@@ -287,6 +287,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     removeAutomationLane: unaffected,
     setAutomationLaneEnabled: unaffected,
     addAutomationPoint: unaffected,
+    insertAutomationLanePoints: unaffected,
     quantizeNotes: unaffected,
     editMidiNotes: { before: (action) => [action.payload.clipId, action.payload.guard.trackId], after: noIds },
     removeShortMidiOverlaps: { before: readRemoveShortMidiOverlapsIds, after: noIds },

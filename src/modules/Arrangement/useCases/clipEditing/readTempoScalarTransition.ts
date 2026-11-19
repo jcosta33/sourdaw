@@ -153,6 +153,7 @@ const tempoScalarTransitionByActionType: {
     removeAutomationLane: notATempoAction,
     setAutomationLaneEnabled: notATempoAction,
     addAutomationPoint: notATempoAction,
+    insertAutomationLanePoints: notATempoAction,
     quantizeNotes: notATempoAction,
     editMidiNotes: notATempoAction,
     removeShortMidiOverlaps: notATempoAction,

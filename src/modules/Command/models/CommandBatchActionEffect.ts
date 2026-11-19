@@ -223,6 +223,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     removeAutomationLane: NONE,
     setAutomationLaneEnabled: NONE,
     addAutomationPoint: { create: true, automationPoints: countOne },
+    insertAutomationLanePoints: NONE,
     quantizeNotes: NONE,
     editMidiNotes: { create: countNoteInserts, delete: countNoteDeletes },
     removeShortMidiOverlaps: NONE,

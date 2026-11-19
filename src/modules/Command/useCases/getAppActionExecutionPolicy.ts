@@ -200,6 +200,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     removeAutomationLane: defaultPolicy,
     setAutomationLaneEnabled: defaultPolicy,
     addAutomationPoint: defaultPolicy,
+    insertAutomationLanePoints: defaultPolicy,
     quantizeNotes: boundedPolicy,
     editMidiNotes: destructivePolicy,
     removeShortMidiOverlaps: broadPolicy,

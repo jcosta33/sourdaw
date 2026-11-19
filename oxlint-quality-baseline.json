@@ -10622,11 +10622,6 @@
             "count": 1
         }
     },
-    "src/modules/Automation/useCases/automation/addAutomationPoint.ts": {
-        "typescript/no-non-null-assertion": {
-            "count": 1
-        }
-    },
     "src/modules/Automation/useCases/automation/automationTimeStateCodec.ts": {
         "eslint/complexity": {
             "count": 1
@@ -12433,6 +12428,9 @@
     "src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts": {
         "eslint/complexity": {
             "count": 1
+        },
+        "typescript/no-unsafe-type-assertion": {
+            "count": 1
         }
     },
     "src/modules/CommandInterface/stores/__tests__/shortcutStoreDeep.spec.ts": {
@@ -12737,11 +12735,6 @@
     },
     "src/modules/CrdtDocument/models/ActionHistoryState.ts": {
         "sourdaw-craft/no-long-array-chain": {
-            "count": 1
-        }
-    },
-    "src/modules/CrdtDocument/models/ProspectiveMutationWorkerProtocol.ts": {
-        "eslint/complexity": {
             "count": 1
         }
     },
@@ -17022,9 +17015,6 @@
         }
     },
     "src/modules/TimelineEditor/presentations/helpers/automationDrag.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 1
         },
@@ -18789,6 +18779,9 @@
             "count": 1
         },
         "typescript/no-non-null-assertion": {
+            "count": 1
+        },
+        "typescript/no-unsafe-type-assertion": {
             "count": 1
         }
     },

@@ -133,6 +133,7 @@ export const automationTransformByActionType: { readonly [Type in AppActionType]
     removeAutomationLane: false,
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
+    insertAutomationLanePoints: false,
     quantizeNotes: false,
     editMidiNotes: false,
     removeShortMidiOverlaps: false,

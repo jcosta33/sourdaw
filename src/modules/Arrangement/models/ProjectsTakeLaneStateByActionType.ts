@@ -133,6 +133,7 @@ export const projectsTakeLaneStateByActionType: { readonly [Type in AppActionTyp
     removeAutomationLane: false,
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
+    insertAutomationLanePoints: false,
     quantizeNotes: false,
     editMidiNotes: false,
     removeShortMidiOverlaps: false,

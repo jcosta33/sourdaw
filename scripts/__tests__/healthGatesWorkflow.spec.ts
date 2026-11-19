@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    statSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -170,6 +180,7 @@ const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     'test-results/**/trace.zip',
     'test-results/**/error-context.md',
     'test-results/.last-run.json',
+    '${{ steps.webgpu-admission.outputs.crash-summary }}',
 ];
 const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
     // A slow merge-ref fetch timed out a 1-minute checkout (run 39588034702).
@@ -192,7 +203,7 @@ const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
 // assertions, and a dropped entry retires that proof without failing anything.
 const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'];
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
-const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
+const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'node scripts/e2eDevServer.ts --browser-ai-admission';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
 const GATE_MEMBERS = ['scope', 'e2e-build', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
@@ -392,11 +403,19 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['WEB', 'web'],
     ['UNCLASSIFIED', 'unclassified'],
 ];
+const FERMENTER_CAPTURE = 'Capture the Fermenter build receipt';
+const FERMENTER_PROOF = 'Prove Fermenter in the packaged app';
+const FERMENTER_UPLOAD = 'Upload the Fermenter proof record';
 // The first filter attempt defers to the retry; Resolve scope fails when neither
 // attempt produced verdicts, so the softened step does not hide a failure.
 type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
+    ...[FERMENTER_CAPTURE, FERMENTER_PROOF, FERMENTER_UPLOAD].map((step) => ({
+        workflow: 'nightly.yml',
+        job: 'desktop-measure',
+        step,
+    })),
 ];
 // A setup-node cache step may soften because its failure only costs the
 // cache; the cap keeps a refused restore inside the deliberate 5-minute step cap.
@@ -1772,9 +1791,9 @@ function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
 // proved, and one on any step reports that step green whatever it ran. The
 // position-enumerated pins above each cover one named job or step; the sweep
 // covers every job in every file, because a softened leg reports a failing
-// proof as a passing summary wherever it lands. The single pinned exception is
-// the first paths-filter attempt, whose softening only hands the question to
-// its retry and the Resolve scope verdict guard.
+// proof as a passing summary wherever it lands. The paths-filter attempt
+// hands the question to its retry and verdict guard. The Fermenter steps
+// report their own verdict and do not decide the Nightly job result.
 function assertNoContinueOnError(set: WorkflowSet): void {
     const pins = new Map(
         CONTINUE_ON_ERROR_STEP_PINS.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
@@ -2329,6 +2348,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     }
     if (
         admission['timeout-minutes'] !== BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES ||
+        admission.id !== 'webgpu-admission' ||
         admission.shell !== 'bash' ||
         recordAt(admission, 'env').DEBUG !== 'pw:api,pw:browser'
     ) {
@@ -2348,7 +2368,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         JSON.stringify(uploadPaths) !== JSON.stringify(BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS)
     ) {
         throw new Error(
-            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+            'Browser AI WebGPU diagnostics must upload only the log, failure traces and exact crash summary'
         );
     }
     assertBrowserAiWebGpuStepBudget(job);
@@ -2734,7 +2754,78 @@ function assertCodeqlComparisonCategory(set: WorkflowSet): void {
     }
 }
 
+const FERMENTER_ADMISSION =
+    "${{ !cancelled() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && steps.build-packaged-app.outcome == 'success' }}";
+
+function assertFermenterProof(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const build = stepNamed(job, 'Build the packaged desktop app');
+    const capture = stepNamed(job, FERMENTER_CAPTURE);
+    const proof = stepNamed(job, FERMENTER_PROOF);
+    const upload = stepNamed(job, FERMENTER_UPLOAD);
+    expect(build.id).toBe('build-packaged-app');
+    expect(steps[steps.indexOf(build) + 1]).toBe(capture);
+    expect(steps.indexOf(capture)).toBeLessThan(steps.indexOf(proof));
+    expect(steps.indexOf(proof)).toBeLessThan(steps.indexOf(upload));
+    expect(capture.if).toBe(FERMENTER_ADMISSION);
+    expect(capture.id).toBe('capture-fermenter');
+    expect(capture.run).toBe(
+        'node scripts/proveDesktopFermenter.ts --capture --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"'
+    );
+    expect(proof.if).toBe(FERMENTER_ADMISSION);
+    expect(proof.id).toBe('prove-fermenter');
+    expect(recordAt(proof, 'env')).toEqual({ FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' });
+    expect(
+        stringAt(proof, 'run').split('\n', 3),
+        'Fermenter must execute the proof and capture its exit status'
+    ).toEqual([
+        'status=0',
+        'node scripts/proveDesktopFermenter.ts --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-fermenter-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" || status=$?',
+    ]);
+    expect(upload.if).toBe(
+        "${{ !cancelled() && (steps.prove-fermenter.outcome == 'success' || steps.prove-fermenter.outcome == 'failure') }}"
+    );
+    for (const step of [capture, proof, upload]) {
+        expect(step['continue-on-error']).toBe(true);
+    }
+    expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-fermenter-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-fermenter-proof-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
+
 describe('health gates workflow contract', () => {
+    it('runs the Fermenter proof only for an uncancelled scheduled main build and uploads only its finalized record', () => {
+        assertFermenterProof(nightly);
+        for (const broadened of [
+            FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", ''),
+            FERMENTER_ADMISSION.replace("github.ref == 'refs/heads/main' && ", ''),
+            FERMENTER_ADMISSION.replace(" && steps.build-packaged-app.outcome == 'success'", ''),
+            FERMENTER_ADMISSION.replace('!cancelled()', 'always()'),
+        ]) {
+            const candidate = cloneWorkflows('broadened Fermenter admission').nightly;
+            stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_PROOF).if = broadened;
+            expect(() => assertFermenterProof(candidate)).toThrow();
+        }
+        const candidate = cloneWorkflows('broad Fermenter artifact').nightly;
+        recordAt(stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_UPLOAD), 'with').path = '${{ runner.temp }}/';
+        expect(() => assertFermenterProof(candidate)).toThrow();
+    });
+
+    it('rejects a Nightly shell step that only prints the Fermenter proof command', () => {
+        const candidate = cloneWorkflows('printed Fermenter proof command').nightly;
+        const proof = stepNamed(jobAt(candidate, 'desktop-measure'), FERMENTER_PROOF);
+        proof.run = stringAt(proof, 'run').replace(/^node scripts\/proveDesktopFermenter\.ts /mu, 'echo $&');
+        expect(() => assertFermenterProof(candidate)).toThrow(
+            'Fermenter must execute the proof and capture its exit status'
+        );
+    });
+
     it('keeps the PR CodeQL category aligned with the nightly baseline', () => {
         expect(() => assertCodeqlComparisonCategory(workflowSet())).not.toThrow();
 
@@ -4844,31 +4935,99 @@ describe('health gates workflow contract', () => {
             stepNamed(jobAt(heavyWorkflow, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission'),
             'run'
         );
-        for (const exitCode of [0, 7]) {
+        for (const [commandExit, teeExit, footerExit, expected, allowStaging, summaryMode] of [
+            [0, 0, 0, 0, true, 'missing'],
+            [0, 0, 71, 71, true, 'missing'],
+            [7, 0, 71, 7, true, 'missing'],
+            [0, 4, 71, 4, true, 'missing'],
+            [7, 4, 71, 7, true, 'fresh'],
+            [7, 4, 71, 7, true, 'existing'],
+            [7, 4, 71, 7, false, 'missing'],
+        ] as const) {
             const directory = mkdtempSync(join(tmpdir(), 'sourdaw-browser-ai-webgpu-diagnostics-'));
             try {
                 writeFileSync(
                     join(directory, 'pnpm'),
-                    '#!/bin/sh\nprintf "pnpm called: %s; DEBUG=%s\\n" "$*" "$DEBUG"\nexit "$FAKE_PNPM_EXIT"\n',
+                    '#!/bin/sh\nprintf "pnpm called: %s; DEBUG=%s\\n" "$*" "$DEBUG"\nprintf "%s" "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY" > child-directory\nexit "$FAKE_PNPM_EXIT"\n',
                     { mode: 0o755 }
                 );
-                const result = spawnSync('bash', ['-c', admissionRun], {
+                writeFileSync(
+                    join(directory, 'node'),
+                    `#!/bin/sh
+printf '%s\\n%s' "$*" "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY" > collector
+if [ "$FAKE_SUMMARY" = missing ]; then exit 99; fi
+printf '%s' "$FIXTURE_SUMMARY" > "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY/vite-native-crash.json"
+printf 'private launch receipt' > "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY/start.json"
+printf 'private exit receipt' > "$SOURDAW_BROWSER_AI_CRASH_DIRECTORY/exit.json"
+exec "$NODE_BINARY" --input-type=module -e '
+    const { exportBrowserAiMacCrashSummary } = await import(process.env.FIXTURE_COLLECTOR_MODULE);
+    exportBrowserAiMacCrashSummary(process.env.SOURDAW_BROWSER_AI_CRASH_DIRECTORY);
+' 2> collector-error
+`,
+                    { mode: 0o755 }
+                );
+                writeFileSync(
+                    join(directory, 'tee'),
+                    '#!/bin/sh\nbody=$(cat)\nprintf "%s\\n" "$body" | /usr/bin/tee "$@"\ncase "$body" in\n  "[browser-ai-webgpu] completed "*) exit "$FAKE_FOOTER_EXIT" ;;\n  "pnpm called: "*) exit "$FAKE_TEE_EXIT" ;;\nesac\n',
+                    { mode: 0o755 }
+                );
+                const runnerTemp = join(directory, 'runner temp');
+                if (allowStaging) {
+                    mkdirSync(runnerTemp);
+                }
+                const runnerLink = join(directory, 'runner-link');
+                symlinkSync(runnerTemp, runnerLink, 'dir');
+                const githubOutput = join(directory, 'output');
+                const summaryFile = 'vite-native-crash.json';
+                const summaryBytes = '{"signal":"SIGSEGV","frames":[{"imageOffset":33}]}\n';
+                const original = 'a previous checkout file';
+                if (summaryMode === 'existing') {
+                    writeFileSync(join(directory, summaryFile), original);
+                }
+                const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', admissionRun], {
                     cwd: directory,
                     encoding: 'utf8',
                     env: {
                         ...process.env,
                         DEBUG: 'pw:api,pw:browser',
-                        FAKE_PNPM_EXIT: String(exitCode),
+                        FAKE_PNPM_EXIT: String(commandExit),
+                        FAKE_TEE_EXIT: String(teeExit),
+                        FAKE_FOOTER_EXIT: String(footerExit),
+                        FAKE_SUMMARY: summaryMode,
+                        FIXTURE_SUMMARY: summaryBytes,
+                        FIXTURE_COLLECTOR_MODULE: pathToFileURL(
+                            join(repositoryRoot, 'scripts/browserAiMacCrashSummary.ts')
+                        ).href,
+                        NODE_BINARY: process.execPath,
+                        RUNNER_TEMP: runnerLink,
+                        GITHUB_OUTPUT: githubOutput,
                         PATH: `${directory}${delimiter}${process.env.PATH ?? ''}`,
                     },
                     timeout: 10_000,
                 });
                 expect(result.error).toBeUndefined();
-                expect(result.status).toBe(exitCode);
+                expect(result.status).toBe(expected);
                 const log = readFileSync(join(directory, BROWSER_AI_WEBGPU_LOG), 'utf8');
                 expect(log).toContain('pnpm called: test:e2e:browser-ai-webgpu-admission; DEBUG=pw:api,pw:browser');
                 expect(log).toMatch(/\[browser-ai-webgpu\] started \d{4}-\d{2}-\d{2}T/);
-                expect(log).toContain(`command=${exitCode} log=0`);
+                expect(log).toContain(`command=${commandExit} log=${teeExit}`);
+                const staging = readFileSync(join(directory, 'child-directory'), 'utf8');
+                const rootFiles = readdirSync(directory);
+                const readIfWritten = (name: string): string | undefined =>
+                    rootFiles.includes(name) ? readFileSync(join(directory, name), 'utf8') : undefined;
+                expect(Boolean(staging)).toBe(allowStaging);
+                expect(dirname(staging)).toBe(allowStaging ? realpathSync(runnerTemp) : '.');
+                expect(staging ? statSync(staging).mode & 0o777 : undefined).toBe(allowStaging ? 0o700 : undefined);
+                expect(readIfWritten('collector')).toBe(
+                    commandExit && allowStaging ? `scripts/browserAiMacCrashSummary.ts\n${staging}` : undefined
+                );
+                expect(readIfWritten('output'), readIfWritten('collector-error')).toBe(
+                    summaryMode === 'fresh' ? 'crash-summary=vite-native-crash.json\n' : undefined
+                );
+                const expectedSummary = { missing: undefined, fresh: summaryBytes, existing: original };
+                expect(readIfWritten(summaryFile)).toBe(expectedSummary[summaryMode]);
+                expect(rootFiles).not.toEqual(expect.arrayContaining(['start.json']));
+                expect(rootFiles).not.toEqual(expect.arrayContaining(['exit.json']));
             } finally {
                 rmSync(directory, { recursive: true, force: true });
             }
@@ -4907,7 +5066,17 @@ describe('health gates workflow contract', () => {
         stepNamed(jobAt(skippedDiagnostics, BROWSER_AI_WEBGPU_JOB), 'Upload Browser AI WebGPU diagnostics').if =
             '${{ success() }}';
         expect(() => assertBrowserAiWebGpuJob(skippedDiagnostics)).toThrow(
-            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+            'Browser AI WebGPU diagnostics must upload only the log, failure traces and exact crash summary'
+        );
+
+        const broadDiagnostics = asRecord(structuredClone(heavyWorkflow), 'broad Browser AI diagnostics');
+        const broadUpload = stepNamed(
+            jobAt(broadDiagnostics, BROWSER_AI_WEBGPU_JOB),
+            'Upload Browser AI WebGPU diagnostics'
+        );
+        recordAt(broadUpload, 'with').path = [...BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS, 'test-results/**'].join('\n');
+        expect(() => assertBrowserAiWebGpuJob(broadDiagnostics)).toThrow(
+            'Browser AI WebGPU diagnostics must upload only the log, failure traces and exact crash summary'
         );
 
         const unboundedHeavyInstall = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI heavyWorkflow');

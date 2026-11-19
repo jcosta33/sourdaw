@@ -9,12 +9,12 @@ import {
     toggleAutomationVisibility,
     removeAutomationLane,
     restoreAutomationLanes,
-    insertAutomationShape,
     deleteSelectedPoints,
     getSelectionBounds,
     adjustYZoom,
     zoomToUsedRange,
     getAutomationLaneCeiling,
+    insertAutomationLanePoints,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { captureGestureBeat, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -331,11 +331,11 @@ export const AutomationLaneRow = ({
     };
 
     const handleShapeInsert = (shape: AutomationShapeType) => {
-        if (!contextMenu) {
-            return;
+        if (contextMenu) {
+            const { beat } = contextMenu;
+            void insertAutomationLanePoints(lane, { kind: 'shape', shape, startBeat: beat, endBeat: beat + 4 });
+            setContextMenu(null);
         }
-        insertAutomationShape(lane.id, shape, contextMenu.beat, contextMenu.beat + 4);
-        setContextMenu(null);
     };
 
     // ── Keyboard ─────────────────────────────────────────────────────────────

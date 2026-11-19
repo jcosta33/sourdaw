@@ -314,6 +314,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     removeAutomationLane: readEffectDeclaredEdits,
     setAutomationLaneEnabled: readEffectDeclaredEdits,
     addAutomationPoint: readEffectDeclaredEdits,
+    insertAutomationLanePoints: readEffectDeclaredEdits,
     quantizeNotes: readEffectDeclaredEdits,
     editMidiNotes: readEffectDeclaredEdits,
     removeShortMidiOverlaps: readEffectDeclaredEdits,

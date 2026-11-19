@@ -254,6 +254,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     removeAutomationLane: describeFromRegistry,
     setAutomationLaneEnabled: describeFromRegistry,
     addAutomationPoint: describeFromRegistry,
+    insertAutomationLanePoints: describeFromRegistry,
     quantizeNotes: (action, context) =>
         describeOnClip(
             action,

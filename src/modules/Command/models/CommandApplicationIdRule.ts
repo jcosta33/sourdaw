@@ -140,6 +140,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     removeAutomationLane: noApplicationIdRule,
     setAutomationLaneEnabled: noApplicationIdRule,
     addAutomationPoint: { argument: 'pointId', prefix: 'automation-point-command-' },
+    insertAutomationLanePoints: noApplicationIdRule,
     quantizeNotes: noApplicationIdRule,
     editMidiNotes: noApplicationIdRule,
     removeShortMidiOverlaps: noApplicationIdRule,

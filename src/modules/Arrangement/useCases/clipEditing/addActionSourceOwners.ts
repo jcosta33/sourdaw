@@ -309,6 +309,7 @@ const addActionSourceOwnersByActionType: {
     removeAutomationLane: addNoOwners,
     setAutomationLaneEnabled: addNoOwners,
     addAutomationPoint: addNoOwners,
+    insertAutomationLanePoints: addNoOwners,
     quantizeNotes: addNoOwners,
     editMidiNotes: addNoOwners,
     removeShortMidiOverlaps: addNoOwners,

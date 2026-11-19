@@ -302,6 +302,7 @@ const applicationIdMaterializerByActionType: {
     removeAutomationLane: materializeByIdRule,
     setAutomationLaneEnabled: materializeByIdRule,
     addAutomationPoint: materializeByIdRule,
+    insertAutomationLanePoints: materializeByIdRule,
     quantizeNotes: materializeByIdRule,
     editMidiNotes: materializeEditedNoteIds,
     removeShortMidiOverlaps: materializeByIdRule,

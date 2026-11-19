@@ -46,6 +46,17 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('commitRecording', payload),
             validateEntry: (entry) => getHandlerByType('commitRecording')?.validateSessionEntry?.(entry) === true,
         },
+        {
+            actionType: 'insertAutomationLanePoints',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) =>
+                validateVersionedCommandArguments('insertAutomationLanePoints', payload) &&
+                getHandlerByType('insertAutomationLanePoints')?.validateSessionActionArguments?.(payload) === true,
+            validateEntry: (entry) =>
+                getHandlerByType('insertAutomationLanePoints')?.validateSessionEntry?.(entry) === true,
+            restoreEntry: (entry) => getHandlerByType('insertAutomationLanePoints')?.restoreSessionEntry?.(entry),
+        },
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         {

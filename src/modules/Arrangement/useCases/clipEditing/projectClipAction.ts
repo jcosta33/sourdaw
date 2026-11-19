@@ -170,6 +170,7 @@ const projectClipActionByActionType: {
     removeAutomationLane: keepState,
     setAutomationLaneEnabled: keepState,
     addAutomationPoint: keepState,
+    insertAutomationLanePoints: keepState,
     quantizeNotes: keepState,
     editMidiNotes: keepState,
     removeShortMidiOverlaps: keepState,

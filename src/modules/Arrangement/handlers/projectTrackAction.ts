@@ -271,6 +271,7 @@ export const trackProjectionByActionType: {
     removeAutomationLane: keepTrack,
     setAutomationLaneEnabled: keepTrack,
     addAutomationPoint: keepTrack,
+    insertAutomationLanePoints: keepTrack,
     quantizeNotes: keepTrack,
     editMidiNotes: keepTrack,
     removeShortMidiOverlaps: keepTrack,

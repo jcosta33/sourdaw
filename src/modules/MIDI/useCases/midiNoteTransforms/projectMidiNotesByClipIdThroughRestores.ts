@@ -193,6 +193,7 @@ const notesProjectionByActionType: {
     removeAutomationLane: noNotesProjection,
     setAutomationLaneEnabled: noNotesProjection,
     addAutomationPoint: noNotesProjection,
+    insertAutomationLanePoints: noNotesProjection,
     quantizeNotes: noNotesProjection,
     removeShortMidiOverlaps: noNotesProjection,
     createDrumPreviewBranches: noNotesProjection,

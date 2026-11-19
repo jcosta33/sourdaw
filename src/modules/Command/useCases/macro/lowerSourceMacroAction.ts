@@ -194,6 +194,7 @@ const lowerByActionType: {
     removeAutomationLane: cloneForReplay,
     setAutomationLaneEnabled: cloneForReplay,
     addAutomationPoint: cloneForReplay,
+    insertAutomationLanePoints: cloneForReplay,
     quantizeNotes: cloneForReplay,
     editMidiNotes: cloneForReplay,
     removeShortMidiOverlaps: cloneForReplay,

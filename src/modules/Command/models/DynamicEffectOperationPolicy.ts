@@ -133,6 +133,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     removeAutomationLane: false,
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
+    insertAutomationLanePoints: false,
     quantizeNotes: false,
     editMidiNotes: false,
     removeShortMidiOverlaps: false,

@@ -196,6 +196,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     removeAutomationLane: noHandlerMintedIds,
     setAutomationLaneEnabled: noHandlerMintedIds,
     addAutomationPoint: noHandlerMintedIds,
+    insertAutomationLanePoints: noHandlerMintedIds,
     quantizeNotes: noHandlerMintedIds,
     editMidiNotes: noHandlerMintedIds,
     removeShortMidiOverlaps: noHandlerMintedIds,

@@ -148,6 +148,7 @@ const renderReceiptGateByActionType: GateLookup = {
     removeAutomationLane: notRenderReceiptGated,
     setAutomationLaneEnabled: notRenderReceiptGated,
     addAutomationPoint: notRenderReceiptGated,
+    insertAutomationLanePoints: notRenderReceiptGated,
     quantizeNotes: notRenderReceiptGated,
     editMidiNotes: notRenderReceiptGated,
     removeShortMidiOverlaps: notRenderReceiptGated,

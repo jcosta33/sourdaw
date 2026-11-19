@@ -179,6 +179,7 @@ const controllerRestoresByActionType: {
     removeAutomationLane: noControllerRestores,
     setAutomationLaneEnabled: noControllerRestores,
     addAutomationPoint: noControllerRestores,
+    insertAutomationLanePoints: noControllerRestores,
     quantizeNotes: noControllerRestores,
     editMidiNotes: noControllerRestores,
     removeShortMidiOverlaps: noControllerRestores,

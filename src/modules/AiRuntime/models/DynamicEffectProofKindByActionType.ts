@@ -137,6 +137,7 @@ export const dynamicEffectProofKindByActionType: { readonly [Type in AppActionTy
     removeAutomationLane: 'none',
     setAutomationLaneEnabled: 'none',
     addAutomationPoint: 'none',
+    insertAutomationLanePoints: 'none',
     quantizeNotes: 'none',
     editMidiNotes: 'none',
     removeShortMidiOverlaps: 'none',

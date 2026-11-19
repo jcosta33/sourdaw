@@ -207,6 +207,7 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     removeAutomationLane: describeAsPlanned,
     setAutomationLaneEnabled: describeAsPlanned,
     addAutomationPoint: describeAsPlanned,
+    insertAutomationLanePoints: describeAsPlanned,
     quantizeNotes: describeAsPlanned,
     editMidiNotes: describeAsPlanned,
     removeShortMidiOverlaps: describeAsPlanned,

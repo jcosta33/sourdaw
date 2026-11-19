@@ -179,6 +179,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     removeAutomationLane: ruleDrivenArguments,
     setAutomationLaneEnabled: ruleDrivenArguments,
     addAutomationPoint: ruleDrivenArguments,
+    insertAutomationLanePoints: ruleDrivenArguments,
     quantizeNotes: ruleDrivenArguments,
     editMidiNotes: midiNoteEditIdArguments,
     removeShortMidiOverlaps: ruleDrivenArguments,

@@ -146,6 +146,7 @@ export const recordingHostEffectByActionType: {
     removeAutomationLane: leaveHosts,
     setAutomationLaneEnabled: leaveHosts,
     addAutomationPoint: leaveHosts,
+    insertAutomationLanePoints: leaveHosts,
     quantizeNotes: leaveHosts,
     editMidiNotes: leaveHosts,
     removeShortMidiOverlaps: leaveHosts,

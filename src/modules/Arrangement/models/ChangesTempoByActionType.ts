@@ -133,6 +133,7 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     removeAutomationLane: false,
     setAutomationLaneEnabled: false,
     addAutomationPoint: false,
+    insertAutomationLanePoints: false,
     quantizeNotes: false,
     editMidiNotes: false,
     removeShortMidiOverlaps: false,
