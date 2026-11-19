@@ -24,6 +24,11 @@ describe('native patch ownership', () => {
         ).toBe(false);
     });
 
+    it('refuses to replace a list ancestor to reach the owned row', () => {
+        const rows = { action: 'put' as const, path: ['slot', 'rows'], value: {} };
+        expect(isNativePatchWithinOwnedPath(rows, ownedPath, { slot: [] })).toBe(false);
+    });
+
     it('allows an absent ancestor to become an empty map', () => {
         const slot = { action: 'put' as const, path: ['slot'], value: {} };
         const rows = { action: 'put' as const, path: ['slot', 'rows'], value: {} };

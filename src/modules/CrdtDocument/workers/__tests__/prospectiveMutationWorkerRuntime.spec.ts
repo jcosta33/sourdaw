@@ -20,6 +20,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
 import { parseProspectiveMutationWorkerRequest } from '../../models/ProspectiveMutationWorkerProtocol';
+import { encodeBoundedMutationSequence } from '../encodeBoundedMutationSequence';
 import { materializeProspectiveMutation } from '../prospectiveMutationWorkerRuntime';
 
 vi.mock('@automerge/automerge/slim', async (importOriginal) => {
@@ -60,6 +61,67 @@ function fixture() {
 }
 
 describe('private canonical materialization Worker runtime', () => {
+    it('keeps a bounded no-op on the original native heads with no changes', () => {
+        const { initial, mutation } = fixture();
+        const encoding = clone(initial, { actor });
+        try {
+            const heads = getHeads(initial);
+            expect(
+                materializeProspectiveMutation({
+                    seed: save(encoding),
+                    actor,
+                    heads,
+                    preparationPolicy: 'bounded-native-sequence-v1',
+                    mutation: { ...mutation, value: mutation.baseValue },
+                })
+            ).toEqual({ changes: [], heads, sequence: { changeCount: 0, operationCount: 0 } });
+        } finally {
+            native.free(encoding);
+            native.free(initial);
+        }
+    });
+
+    it('refuses to split a native history with two edits since capture', () => {
+        const initial = native.from({ markers: 0 }, { actor });
+        const heads = native.getHeads(initial);
+        const first = native.change(native.clone(initial, { actor }), (draft) => {
+            draft.markers = 1;
+        });
+        const second = native.change(first, (draft) => {
+            draft.markers = 2;
+        });
+        try {
+            expect(native.getChangesSince(second, heads)).toHaveLength(2);
+            expect(() => encodeBoundedMutationSequence(second, heads)).toThrow(
+                'Bounded native preparation requires one canonical no-author change'
+            );
+        } finally {
+            native.free(second);
+            native.free(initial);
+        }
+    });
+
+    it('refuses an indivisible native string operation above the uncompressed bound', () => {
+        const initial = native.from({ text: new native.ImmutableString('') }, { actor });
+        const heads = native.getHeads(initial);
+        const changed = native.change(native.clone(initial, { actor }), (draft) => {
+            draft.text = new native.ImmutableString('x'.repeat(65_536));
+        });
+        try {
+            const [bytes] = native.getChangesSince(changed, heads);
+            if (!bytes) {
+                throw new Error('Expected one actual native string change');
+            }
+            expect(native.decodeChange(bytes).ops).toHaveLength(1);
+            expect(() => encodeBoundedMutationSequence(changed, heads)).toThrow(
+                'Native sequence change exceeds its uncompressed bound'
+            );
+        } finally {
+            native.free(changed);
+            native.free(initial);
+        }
+    });
+
     it('bounds an explicitly requested native sequence while retaining the actual canonical target', () => {
         const initial = from({ slot: { text: '' } }, { actor });
         const result = materializeProspectiveMutation({
