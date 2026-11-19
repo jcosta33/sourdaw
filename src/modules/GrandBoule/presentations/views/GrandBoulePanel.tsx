@@ -23,7 +23,7 @@ import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi
 import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
 import { syncMidiCalibrationToEngine } from '../../useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine';
 import { hydrateGrandBouleConfigFromProject } from '../../useCases/hydrateGrandBouleConfigFromProject';
-import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
+import { findMatchingGrandBoulePresetId, listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
 import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
 import { onMidiNoteOn } from '../../useCases/midiEventSubscribers/onMidiNoteOn';
@@ -293,6 +293,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const liveState = state;
     const { config, parameters, pedals, morph, temperament } = liveState;
     const presets = listGrandBoulePresets();
+    const matchingPresetId = findMatchingGrandBoulePresetId(parameters);
 
     const handleNoteOn = (midiNote: number, velocity: number): void => {
         triggerGrandBouleNote({ engine, store, midiNote, velocity });
@@ -359,13 +360,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     <SectionCard title="Preset shelf" detail="Signature Grand Boule voicings.">
                         <Stack gap={1}>
                             {presets.map((preset) => {
-                                const active = config.activePresetId === preset.id;
+                                const active = matchingPresetId === preset.id;
                                 return (
                                     <Button
                                         variant="bare"
                                         size="bare"
                                         key={preset.id}
                                         type="button"
+                                        aria-pressed={active}
                                         onClick={() =>
                                             loadGrandBoulePreset({ deviceId, engine, store, presetId: preset.id })
                                         }
