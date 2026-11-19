@@ -27,10 +27,10 @@ import {
     type SemanticCommandListCandidate,
 } from '../services/semanticCommandListCandidates';
 import { containsMidiNoteEditCall } from '../transformers/containsMidiNoteEditCall';
-import { isMidiNoteEditProposal } from '../transformers/isMidiNoteEditProposal';
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import { admitSelectiveMidiEdit } from './admitSelectiveMidiEdit';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
     type BatchLocalBindingProducer,
@@ -43,7 +43,6 @@ import { findTargetOwnerTrackIds } from './agentReference/findTargetOwnerTrackId
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
 import { CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
-import { checkMidiNoteEditAuthority } from './checkMidiNoteEditAuthority';
 
 /**
  * A rejection reason reaches the chat, and a provider-authored argument is unbounded text. A
@@ -1158,7 +1157,7 @@ type CommandListCompilationInput = {
     context: ProjectContext;
     revision: string;
     creativeAuthority?: CreativeRequestAuthority;
-    musicalReadProof?: Parameters<typeof checkMidiNoteEditAuthority>[0]['proof'];
+    musicalReadProof?: Parameters<typeof admitSelectiveMidiEdit>[0]['proof'];
 };
 
 function validateUnstructuredCalls(
@@ -1176,37 +1175,6 @@ function validateUnstructuredCalls(
         return directRejection;
     }
     return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
-}
-
-function admitSelectiveMidiEdit(
-    input: CommandListCompilationInput,
-    items: readonly SemanticCommandListItem[]
-): { status: 'accepted'; clipId?: string } | RejectedCompilation {
-    const editItem = items.find((item) => item.name === 'editMidiNotes');
-    if (editItem === undefined) {
-        return { status: 'accepted' };
-    }
-    if (
-        items.length === 1 &&
-        input.calls.length === 1 &&
-        editItem.selector === undefined &&
-        editItem.repeat === undefined &&
-        isMidiNoteEditProposal(editItem.arguments)
-    ) {
-        const admission = checkMidiNoteEditAuthority({
-            call: editItem,
-            proof: input.musicalReadProof,
-            authority: input.creativeAuthority,
-            revision: input.revision,
-        });
-        if (admission !== null) {
-            return { status: 'accepted', clipId: admission.clipId };
-        }
-    }
-    return {
-        status: 'rejected',
-        reason: 'Selective MIDI editing requires a single clip with positive edit authority and complete current musical evidence.',
-    };
 }
 
 export function compileArbitraryCommandList(input: CommandListCompilationInput): ArbitraryCommandListCompilation {
@@ -1249,7 +1217,13 @@ export function compileArbitraryCommandList(input: CommandListCompilationInput):
         return sortedItems;
     }
     const items = sortedItems.items;
-    const midiEditAdmission = admitSelectiveMidiEdit(input, items);
+    const midiEditAdmission = admitSelectiveMidiEdit({
+        items,
+        callCount: input.calls.length,
+        proof: input.musicalReadProof,
+        authority: input.creativeAuthority,
+        revision: input.revision,
+    });
     if (midiEditAdmission.status === 'rejected') {
         return midiEditAdmission;
     }
