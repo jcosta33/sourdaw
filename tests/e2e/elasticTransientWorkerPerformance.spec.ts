@@ -1418,6 +1418,13 @@ async function assertDensePersistenceContinuation(page: Page, info: TestInfo, ta
         await current.goto(url);
         await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30000);
         await wait_for_workspace_ready(current);
+        expect(
+            await current.evaluate(async () => {
+                const { preferencesStore } = await import('/src/modules/Preferences/stores/index.ts');
+                return preferencesStore.value?.autoSave;
+            }),
+            'Cold renderer must restore the dense fixture full-snapshot timer preference'
+        ).toBe(false);
         await expect
             .poll(
                 async () =>
@@ -1690,6 +1697,18 @@ for (const projectScale of [false, true]) {
                     { timeout: 30000 }
                 )
                 .toBe(true);
+            if (projectScale) {
+                // The controlled Save overlap owns this fixture's full-snapshot writes.
+                // A periodic snapshot would add unrelated authority changes during later Detect routes.
+                expect(
+                    await page.evaluate(async () => {
+                        const { updatePreferences } = await import('/src/modules/Preferences/useCases/index.ts');
+                        const { preferencesStore } = await import('/src/modules/Preferences/stores/index.ts');
+                        updatePreferences({ patch: { autoSave: false } });
+                        return preferencesStore.value?.autoSave;
+                    })
+                ).toBe(false);
+            }
             const modifier = await page.evaluate(() =>
                 navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control'
             );
